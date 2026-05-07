@@ -1,0 +1,349 @@
+import { type EditorView, type KeyBinding } from "@codemirror/view";
+import { Facet, type EditorState, type ChangeSpec } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import { moveLineUp, moveLineDown } from "@codemirror/commands";
+
+/**
+ * When true, indent/outdent of a list item also moves any nested
+ * children (subsequent lines indented deeper than the current line,
+ * up to the next blank line or sibling/ancestor item).
+ */
+export const smartIndentListsFacet = Facet.define<boolean, boolean>({
+  combine: (values) => (values.length ? values[0] : false),
+});
+
+function wrapSelection(
+  state: EditorState,
+  before: string,
+  after: string,
+): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  const { from, to } = state.selection.main;
+
+  if (from === to) {
+    return {
+      changes: { from, insert: before + after },
+      selection: { anchor: from + before.length, head: from + before.length },
+    };
+  }
+
+  const selected = state.doc.sliceString(from, to);
+  if (
+    selected.startsWith(before) &&
+    selected.endsWith(after) &&
+    selected.length >= before.length + after.length
+  ) {
+    const inner = selected.slice(before.length, selected.length - after.length);
+    return {
+      changes: { from, to, insert: inner },
+      selection: { anchor: from, head: from + inner.length },
+    };
+  }
+
+  return {
+    changes: { from, to, insert: before + selected + after },
+    selection: { anchor: from + before.length, head: to + before.length },
+  };
+}
+
+function toggleBold(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "*", "*");
+}
+
+function toggleItalic(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "_", "_");
+}
+
+function toggleStrikethrough(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "#strike[", "]");
+}
+
+function toggleHighlight(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "#highlight[", "]");
+}
+
+function toggleInlineCode(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "`", "`");
+}
+
+function toggleInlineMath(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
+  return wrapSelection(state, "$", "$");
+}
+
+function adjustHeading(state: EditorState, delta: number): { changes: ChangeSpec; selection: { anchor: number } } | null {
+  const { from } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const text = line.text;
+
+  const match = text.match(/^(=+)\s?/);
+  const currentLevel = match ? match[1].length : 0;
+
+  let newLevel = currentLevel + delta;
+  if (newLevel < 0) newLevel = 0;
+  if (newLevel > 6) newLevel = 6;
+
+  if (newLevel === currentLevel) return null;
+
+  const contentStart = match ? match[0].length : 0;
+  const content = text.slice(contentStart);
+
+  const prefix = newLevel > 0 ? "=".repeat(newLevel) + " " : "";
+  const newText = prefix + content;
+
+  return {
+    changes: { from: line.from, to: line.to, insert: newText },
+    selection: { anchor: line.from + newText.length },
+  };
+}
+
+function insertListItem(state: EditorState, marker: string): { changes: ChangeSpec; selection: { anchor: number } } | null {
+  const { from } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const text = line.text;
+  const indent = text.match(/^(\s*)/)?.[1] ?? "";
+
+  if (text.trim() === "") {
+    const insert = `${indent}${marker} `;
+    return {
+      changes: { from: line.from, to: line.to, insert },
+      selection: { anchor: line.from + insert.length },
+    };
+  }
+
+  const insert = `\n${indent}${marker} `;
+  return {
+    changes: { from: line.to, insert },
+    selection: { anchor: line.to + insert.length },
+  };
+}
+
+function continueList(state: EditorState): { changes: ChangeSpec; selection: { anchor: number } } | null {
+  const { from } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const text = line.text;
+
+  const listMatch = text.match(/^(\s*)([-+])\s/);
+  if (!listMatch) return null;
+
+  const indent = listMatch[1];
+  const marker = listMatch[2];
+
+  if (text.trim() === marker) {
+    return {
+      changes: { from: line.from, to: line.to, insert: "" },
+      selection: { anchor: line.from },
+    };
+  }
+
+  const insert = `\n${indent}${marker} `;
+  return {
+    changes: { from, insert },
+    selection: { anchor: from + insert.length },
+  };
+}
+
+/**
+ * Plan a list indent or outdent.
+ *
+ * Returns an ascending-by-position list of per-line changes plus the
+ * final cursor anchor. The caller should apply changes in REVERSE order,
+ * one transaction per change: the codemirror-lang-typst parser uses an
+ * incremental edit API that expects positions in its current tree, but
+ * CodeMirror's iterChanges yields positions in the original document —
+ * so packing multiple shifted changes into a single transaction
+ * desynchronises the syntax tree and breaks list-marker decorations
+ * downstream. Reverse order keeps each dispatched edit's position valid.
+ */
+function indentList(state: EditorState, direction: 1 | -1): { changes: { from: number; to?: number; insert?: string }[]; finalAnchor: number } | null {
+  const { from } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const text = line.text;
+
+  if (!/^\s*[-+]\s/.test(text)) return null;
+
+  const currentIndent = text.match(/^(\s*)/)?.[1].length ?? 0;
+  const smart = state.facet(smartIndentListsFacet);
+
+  // Collect the parent line plus, when smart-indent is on, any descendant
+  // lines (anything indented deeper than the parent, until a blank line
+  // or a line at ≤ the parent's indent).
+  const lineStarts: number[] = [line.from];
+  if (smart) {
+    for (let n = line.number + 1; n <= state.doc.lines; n++) {
+      const nextLine = state.doc.line(n);
+      if (nextLine.text.trim() === "") break;
+      const nextIndent = nextLine.text.match(/^(\s*)/)?.[1].length ?? 0;
+      if (nextIndent <= currentIndent) break;
+      lineStarts.push(nextLine.from);
+    }
+  }
+
+  if (direction === 1) {
+    return {
+      changes: lineStarts.map((start) => ({ from: start, insert: "  " })),
+      finalAnchor: from + 2,
+    };
+  }
+
+  if (currentIndent === 0) return null;
+  // Remove the same byte count from every line so relative nesting is
+  // preserved. Children are guaranteed to have > currentIndent leading
+  // spaces (we only included lines with strictly greater indent), so they
+  // can absorb the same removal.
+  const remove = Math.min(2, currentIndent);
+  return {
+    changes: lineStarts.map((start) => ({ from: start, to: start + remove })),
+    finalAnchor: from - remove,
+  };
+}
+
+/**
+ * Apply a planned list indent/outdent. Dispatches one transaction per
+ * change in reverse document order so the Typst parser receives a
+ * sequence of edits whose positions remain valid in its current tree.
+ * Cursor selection is set on the final transaction, which targets the
+ * parent line — the line containing the cursor.
+ */
+function applyIndentPlan(view: EditorView, plan: { changes: { from: number; to?: number; insert?: string }[]; finalAnchor: number }): void {
+  const { changes, finalAnchor } = plan;
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const change = changes[i];
+    const spec: ChangeSpec = "insert" in change && change.insert !== undefined
+      ? { from: change.from, insert: change.insert }
+      : { from: change.from, to: change.to ?? change.from };
+    if (i === 0) {
+      view.dispatch({ changes: spec, selection: { anchor: finalAnchor } });
+    } else {
+      view.dispatch({ changes: spec });
+    }
+  }
+}
+
+export const typstKeymap: KeyBinding[] = [
+  {
+    key: "Mod-b",
+    run(view) {
+      const result = toggleBold(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-i",
+    run(view) {
+      const result = toggleItalic(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-Shift-x",
+    run(view) {
+      const result = toggleStrikethrough(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-Shift-h",
+    run(view) {
+      const result = toggleHighlight(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-e",
+    run(view) {
+      const result = toggleInlineCode(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-Shift-m",
+    run(view) {
+      const result = toggleInlineMath(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Ctrl-Shift-ArrowUp",
+    run(view) {
+      const result = adjustHeading(view.state, -1);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Ctrl-Shift-ArrowDown",
+    run(view) {
+      const result = adjustHeading(view.state, 1);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Enter",
+    run(view) {
+      const pos = view.state.selection.main.head;
+      if (pos < view.state.doc.length) {
+        const charAfter = view.state.doc.sliceString(pos, pos + 1);
+        if ("])*`$_".includes(charAfter)) {
+          const STEP_OUT_NODES = ["Strong", "Emph", "Raw", "Equation", "Args", "ContentBlock"];
+          const tree = syntaxTree(view.state);
+          let cur = tree.resolveInner(pos, -1);
+          let canStep = false;
+          while (cur) {
+            if (STEP_OUT_NODES.includes(cur.name) && cur.to === pos + 1) {
+              canStep = true;
+              break;
+            }
+            if (!cur.parent) break;
+            cur = cur.parent;
+          }
+          if (canStep) {
+            view.dispatch({ selection: { anchor: pos + 1 } });
+            return true;
+          }
+        }
+      }
+      const result = continueList(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Tab",
+    run(view) {
+      const result = indentList(view.state, 1);
+      if (!result) return false;
+      applyIndentPlan(view, result);
+      return true;
+    },
+  },
+  {
+    key: "Shift-Tab",
+    run(view) {
+      const result = indentList(view.state, -1);
+      if (!result) return false;
+      applyIndentPlan(view, result);
+      return true;
+    },
+  },
+  // Override the defaultKeymap's copyLineUp / copyLineDown bindings so that
+  // Shift-Alt-Up/Down moves lines instead of duplicating them — matching the
+  // behavior of plain Alt-Up/Down. Duplication is rarely the desired action
+  // when the user is reordering list items.
+  { key: "Shift-Alt-ArrowUp", run: moveLineUp },
+  { key: "Shift-Alt-ArrowDown", run: moveLineDown },
+];

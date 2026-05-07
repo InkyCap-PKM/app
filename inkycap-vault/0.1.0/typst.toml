@@ -1,0 +1,7 @@
+[package]
+name = "inkycap-vault"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["InkyCap"]
+description = "Vault primitives for InkyCap notes: metadata, tags, wikilinks, embeds, and callouts."
+categories = ["utility"]

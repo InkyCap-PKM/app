@@ -1,0 +1,32 @@
+# Node
+node_modules/
+
+# Rust / Tauri
+src-tauri/target/
+*.rs.bk
+
+# Frontend build
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Other
+.filenignore
+InkyCap.code-workspace
+
+# Design assets (WIP icons, not ready for repo)
+design-assets/
+
+# Sidecar binaries (downloaded per-platform, ~30MB each)
+src-tauri/binaries/

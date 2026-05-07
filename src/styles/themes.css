@@ -1,0 +1,381 @@
+/* InkyCap theme definitions.
+ * All colors are defined as CSS custom properties.
+ * Light theme is the default; dark theme is applied via [data-theme="dark"].
+ *
+ * Core palette:
+ *   Ink Black   #071E22
+ *   Deep Ocean  #1D7874
+ *   Jungle Teal #679289
+ *   Peach Glow  #F4C095
+ *   Racing Red  #EE2E31 */
+
+:root {
+  /* Editor font stacks (theme-independent). GNOME-friendly defaults:
+   * Adwaita first so the platform font is preferred when present, then
+   * a modern sans/mono fallback chain. */
+  --editor-font-body: "Adwaita Sans", Inter, "Fira Sans", "Ubuntu Sans",
+    system-ui, -apple-system, sans-serif;
+  --editor-font-mono: "Adwaita Mono", "Ubuntu Mono", "Fira Mono",
+    "IBM Plex Mono", "JetBrains Mono", Consolas, monospace;
+
+  /* Type scale — all UI font sizes reference these tokens.
+   * Adjust these values to scale the entire interface. */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 19px;
+  --text-3xl: 25px;
+
+  /* Icon sizing tokens */
+  --icon-sm: 18px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+}
+
+:root,
+[data-theme="light"] {
+  /* Backgrounds — cool gray palette (Adwaita-aligned) */
+  --bg-primary: #fafafa;
+  --bg-editor-toolbar: #f2f2f4;
+  --bg-secondary: #ebebed;
+  --bg-active: #dcdce0;
+  --bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 12%, transparent);
+  --bg-highlight: #d4d4d8;
+  --bg-input: #ffffff;
+  --bg-selection: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
+  --bg-matching-bracket: #d4d4d8;
+  --bg-search-match: #f4dfc0;
+
+  /* Borders */
+  --border-primary: #d1d1d6;
+  --border-subtle: #e0e0e3;
+  --border-input: #c5c5ca;
+  --border-input-focus: var(--accent-color, #1D7874);
+
+  /* Foreground — Ink Black as base text */
+  --fg-primary: #071E22;
+  --fg-secondary: #1a3a3e;
+  --fg-muted: #4d706a;
+  --fg-dim: #8a9e9a;
+  --fg-gutter: #8a9e9a;
+  --fg-separator: #d1d1d6;
+
+  /* Accents — Deep Ocean as primary accent */
+  --accent: var(--accent-color, #1D7874);
+  --accent-hover: color-mix(in srgb, var(--accent-color, #1D7874) 80%, black);
+  --accent-text: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --accent-purple: var(--accent-color, #1D7874);
+  --accent-purple-bg: color-mix(in srgb, var(--accent-color, #1D7874) 12%, white);
+  --accent-yellow: #9a6830;
+  --accent-green: #2a6a50;
+  --accent-orange: #a86430;
+  --accent-danger: #c42025;
+  --accent-danger-bg: #fde8e8;
+
+  /* Visual-editor decoration tokens (light) */
+  --pill-fg: #ffffff;
+  --warn-fg: #d97706;
+  --warn-bg-alpha: color-mix(in srgb, #d97706 12%, transparent);
+
+  /* Syntax highlighting */
+  --syntax-heading: #071E22;
+  --syntax-emphasis: #a86430;
+  --syntax-strong: #071E22;
+  --syntax-strike: #8a9e9a;
+  --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --syntax-mono: #a86430;
+  --syntax-mono-bg: #ebebed;
+  --syntax-quote: #2a6a50;
+  --syntax-keyword: var(--accent-color, #1D7874);
+  --syntax-string: #a86430;
+  --syntax-number: #2a6a50;
+  --syntax-comment: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --syntax-variable: #071E22;
+  --syntax-function: #9a6830;
+  --syntax-type: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+
+  /* Typst syntax decorations */
+  --wikilink: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --wikilink-bracket: #8a9e9a;
+  --embed: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --embed-bracket: #8a9e9a;
+  --hashtag: var(--accent-color, #1D7874);
+  --hashtag-bg: color-mix(in srgb, var(--accent-color, #1D7874) 12%, white);
+  --callout-type: #9a6830;
+  --highlight-bg: #f9e8cc;
+  --highlight-mark: #8a9e9a;
+
+  --block-id: #8a9e9a;
+  --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --footnote-def: #4d706a;
+
+  /* Code blocks */
+  --code-block-bg: #ebebed;
+  --code-block-border: #d1d1d6;
+
+  /* Callout types */
+  --callout-note: var(--accent-color, #1D7874);
+  --callout-abstract: #2a8a9a;
+  --callout-info: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --callout-tip: #2a6a50;
+  --callout-success: #2a6a50;
+  --callout-question: #c48a30;
+  --callout-warning: #c48a30;
+  --callout-failure: #c42025;
+  --callout-danger: #a81a1e;
+  --callout-bug: #c42025;
+  --callout-example: #6a5ea8;
+  --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+
+  /* Status bar — blends with secondary background */
+  --status-bg: #ebebed;
+  --status-fg: #071E22;
+  --status-btn-bg: color-mix(in srgb, var(--accent-color, #1D7874) 10%, transparent);
+  --status-btn-bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #c5c5ca;
+}
+
+[data-theme="dark"] {
+  /* Backgrounds — built from Ink Black */
+  --bg-primary: #071E22;
+  --bg-editor-toolbar: #0c2a2f;
+  --bg-secondary: #0c2a2f;
+  --bg-active: #123538;
+  --bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 25%, transparent);
+  --bg-highlight: #1a4045;
+  --bg-input: #0e2e33;
+  --bg-selection: rgba(80, 180, 220, 0.45);
+  --bg-matching-bracket: #1a4045;
+  --bg-search-match: #2a5a52;
+
+  /* Borders */
+  --border-primary: #1a4045;
+  --border-subtle: #0f3035;
+  --border-input: #2a5a52;
+  --border-input-focus: var(--accent-color, #1D7874);
+
+  /* Foreground */
+  --fg-primary: #d8e0e0;
+  --fg-secondary: #b8c8c6;
+  --fg-muted: #7a9490;
+  --fg-dim: #4d706a;
+  --fg-gutter: #7a9490;
+  --fg-separator: #1a4045;
+
+  /* Accents — Deep Ocean as primary accent */
+  --accent: var(--accent-color, #1D7874);
+  --accent-hover: color-mix(in srgb, var(--accent-color, #1D7874) 80%, white);
+  --accent-text: color-mix(in srgb, var(--accent-color, #1D7874) 55%, white);
+  --accent-purple: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --accent-purple-bg: color-mix(in srgb, var(--accent-color, #1D7874) 15%, #071e22);
+  --accent-yellow: #F4C095;
+  --accent-green: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --accent-orange: #F4C095;
+  --accent-danger: #EE2E31;
+  --accent-danger-bg: #3a1215;
+
+  /* Visual-editor decoration tokens (dark) */
+  --pill-fg: #ffffff;
+  --warn-fg: #f59e0b;
+  --warn-bg-alpha: color-mix(in srgb, #f59e0b 18%, transparent);
+
+  /* Syntax highlighting */
+  --syntax-heading: #d8e0e0;
+  --syntax-emphasis: #F4C095;
+  --syntax-strong: #d8e0e0;
+  --syntax-strike: #7a9490;
+  --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --syntax-mono: #F4C095;
+  --syntax-mono-bg: #0c2a2f;
+  --syntax-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --syntax-keyword: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --syntax-string: #F4C095;
+  --syntax-number: #8ec4a0;
+  --syntax-comment: color-mix(in srgb, var(--accent-color, #1D7874) 70%, white);
+  --syntax-variable: color-mix(in srgb, var(--accent-color, #1D7874) 35%, white);
+  --syntax-function: #F4C095;
+  --syntax-type: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+
+  /* Typst syntax decorations */
+  --wikilink: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --wikilink-bracket: #4d706a;
+  --embed: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --embed-bracket: #4d706a;
+  --hashtag: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --hashtag-bg: color-mix(in srgb, var(--accent-color, #1D7874) 15%, #071e22);
+  --callout-type: #F4C095;
+  --highlight-bg: #3d2e18;
+  --highlight-mark: #4d706a;
+
+  --block-id: #4d706a;
+  --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --footnote-def: #7a9490;
+
+  /* Code blocks */
+  --code-block-bg: #051519;
+  --code-block-border: #1a4045;
+
+  /* Callout types */
+  --callout-note: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --callout-abstract: #3da8c4;
+  --callout-info: var(--accent-color, #1D7874);
+  --callout-tip: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
+  --callout-success: #5a9a6e;
+  --callout-question: #F4C095;
+  --callout-warning: #e8a84c;
+  --callout-failure: #EE2E31;
+  --callout-danger: #d41e21;
+  --callout-bug: #EE2E31;
+  --callout-example: #8a7ec8;
+  --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 60%, white);
+
+  /* Status bar — blends with secondary background */
+  --status-bg: #0c2a2f;
+  --status-fg: #b8c8c6;
+  --status-btn-bg: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
+  --status-btn-bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 35%, transparent);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #2a5a52;
+}
+
+/* ── Warm palette: Coffee (light) ── */
+[data-palette="warm"][data-theme="light"],
+[data-palette="warm"]:not([data-theme="dark"]) {
+  --bg-primary: #faf8f5;
+  --bg-editor-toolbar: #f3f1ed;
+  --bg-secondary: #eceae6;
+  --bg-active: #e3e0db;
+  --bg-highlight: #d9d6d0;
+  --bg-input: #fdfcfa;
+  --bg-matching-bracket: #d9d6d0;
+  --bg-search-match: #f0e4d0;
+
+  --border-primary: #d5d2cc;
+  --border-subtle: #e3e0db;
+  --border-input: #cac7c0;
+
+  --fg-primary: #1c1b18;
+  --fg-secondary: #3a3835;
+  --fg-muted: #6b6862;
+  --fg-dim: #9a9790;
+  --fg-gutter: #9a9790;
+  --fg-separator: #d5d2cc;
+
+  --status-bg: #eceae6;
+  --status-fg: #1c1b18;
+
+  --code-block-bg: #f3f1ed;
+  --code-block-border: #d5d2cc;
+
+  --scrollbar-thumb: #cac7c0;
+}
+
+/* ── Warm palette: Warm Gray (dark) ── */
+[data-palette="warm"][data-theme="dark"] {
+  --bg-primary: #1e1e1e;
+  --bg-editor-toolbar: #272727;
+  --bg-secondary: #272727;
+  --bg-active: #333333;
+  --bg-highlight: #3e3e3e;
+  --bg-input: #232323;
+  --bg-matching-bracket: #3e3e3e;
+  --bg-search-match: #4a4030;
+
+  --border-primary: #3e3e3e;
+  --border-subtle: #303030;
+  --border-input: #4a4a4a;
+
+  --fg-primary: #e0e0e0;
+  --fg-secondary: #c0c0c0;
+  --fg-muted: #909090;
+  --fg-dim: #606060;
+  --fg-gutter: #909090;
+  --fg-separator: #3e3e3e;
+
+  --status-bg: #272727;
+  --status-fg: #c0c0c0;
+
+  --code-block-bg: #171717;
+  --code-block-border: #3e3e3e;
+
+  --scrollbar-thumb: #4a4a4a;
+}
+
+/* ── Wikilink suggest popup (body-level, outside CM editor) ── */
+
+.wikilink-suggest {
+  position: fixed;
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  min-width: 220px;
+  max-width: 380px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.wikilink-suggest__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+}
+
+.wikilink-suggest__item.is-selected {
+  background: var(--bg-selection);
+  color: var(--fg-primary);
+}
+
+.wikilink-suggest__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wikilink-suggest__match {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 2px;
+}
+
+.wikilink-suggest__folder {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wikilink-suggest__item--create {
+  font-style: italic;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.wikilink-suggest__empty {
+  padding: 8px 12px;
+  font-size: var(--text-md);
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+[data-theme="dark"] .cm-editor {
+  color-scheme: dark;
+}
+

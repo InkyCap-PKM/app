@@ -1,0 +1,184 @@
+use notify::event::{MetadataKind, ModifyKind, RenameMode};
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration;
+
+use crate::events::{AppEvent, ChangeKind};
+
+/// Directories to ignore when watching for changes.
+const IGNORED_DIRS: &[&str] = &[".obsidian", ".inkycap", ".git", "node_modules", ".trash"];
+
+fn should_ignore(path: &Path) -> bool {
+    path.components().any(|c| {
+        if let std::path::Component::Normal(name) = c {
+            let name = name.to_string_lossy();
+            IGNORED_DIRS.iter().any(|d| name.as_ref() == *d)
+        } else {
+            false
+        }
+    })
+}
+
+fn is_relevant_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("typ") | Some("collection")
+    )
+}
+
+fn is_watchable(path: &Path) -> bool {
+    !should_ignore(path) && is_relevant_file(path)
+}
+
+/// Upper bound on queued watcher events. The notify callback's `send` will
+/// backpressure (block briefly) once the dispatcher falls this far behind,
+/// which prevents an out-of-control burst — e.g. `rm -rf` on a huge folder,
+/// or a rapid git checkout — from growing the queue without limit and eating
+/// arbitrary memory. The bound is generous so that routine saves and file
+/// operations never block.
+const WATCHER_QUEUE_BOUND: usize = 1024;
+
+/// Start watching a vault directory for file changes.
+/// Returns a channel receiver that emits AppEvents.
+pub fn start_watching(
+    vault_root: &Path,
+) -> Result<(RecommendedWatcher, mpsc::Receiver<AppEvent>), notify::Error> {
+    let (tx, rx) = mpsc::sync_channel::<AppEvent>(WATCHER_QUEUE_BOUND);
+
+    let mut watcher = RecommendedWatcher::new(
+        move |res: Result<notify::Event, notify::Error>| {
+            let Ok(event) = res else { return };
+
+            // Renames/moves come through as `ModifyKind::Name(...)`. The
+            // path set depends on the backend: `Both` carries (from, to) as
+            // two entries in `event.paths`, while `From`/`To` carry a
+            // single path per event. Splitting renames into delete+create
+            // pairs is what lets the frontend's file-tree refresh logic
+            // pick them up — before this, renames were collapsed to
+            // `FileChanged` and the tree stayed stale until restart.
+            let send_events: Vec<AppEvent> = match event.kind {
+                EventKind::Create(_) => event
+                    .paths
+                    .iter()
+                    .filter(|p| is_watchable(p))
+                    .map(|p| AppEvent::FileCreated { path: p.clone() })
+                    .collect(),
+
+                EventKind::Remove(_) => event
+                    .paths
+                    .iter()
+                    .filter(|p| is_watchable(p))
+                    .map(|p| AppEvent::FileDeleted { path: p.clone() })
+                    .collect(),
+
+                EventKind::Modify(ModifyKind::Name(mode)) => match mode {
+                    RenameMode::From => event
+                        .paths
+                        .iter()
+                        .filter(|p| is_watchable(p))
+                        .map(|p| AppEvent::FileDeleted { path: p.clone() })
+                        .collect(),
+                    RenameMode::To => event
+                        .paths
+                        .iter()
+                        .filter(|p| is_watchable(p))
+                        .map(|p| AppEvent::FileCreated { path: p.clone() })
+                        .collect(),
+                    RenameMode::Both => {
+                        // `Both` arrives with exactly two paths — (from, to)
+                        // per notify's docs. Emit a delete for the source
+                        // and a create for the destination, but only when
+                        // each side passes the watchable filter. If one
+                        // side is filtered out (e.g. renaming a `.typ`
+                        // file to `.txt`), the other side still fires so
+                        // the tree mirrors what's on disk.
+                        let mut out: Vec<AppEvent> = Vec::with_capacity(2);
+                        let mut iter = event.paths.iter();
+                        if let Some(from) = iter.next() {
+                            if is_watchable(from) {
+                                out.push(AppEvent::FileDeleted { path: from.clone() });
+                            }
+                        }
+                        if let Some(to) = iter.next() {
+                            if is_watchable(to) {
+                                out.push(AppEvent::FileCreated { path: to.clone() });
+                            }
+                        }
+                        out
+                    }
+                    // `Any`/`Other` — backend can't tell us which side
+                    // this path refers to. Treating it as a structural
+                    // change is the safe default: emit both a delete and
+                    // a create so the tree refreshes either way. The
+                    // frontend debounces refreshes so the duplication
+                    // doesn't cause extra work.
+                    RenameMode::Any | RenameMode::Other => event
+                        .paths
+                        .iter()
+                        .filter(|p| is_watchable(p))
+                        .flat_map(|p| {
+                            [
+                                AppEvent::FileDeleted { path: p.clone() },
+                                AppEvent::FileCreated { path: p.clone() },
+                            ]
+                        })
+                        .collect(),
+                },
+
+                EventKind::Modify(ModifyKind::Data(_)) => event
+                    .paths
+                    .iter()
+                    .filter(|p| is_watchable(p))
+                    .map(|p| AppEvent::FileChanged {
+                        path: p.clone(),
+                        change: ChangeKind::Content,
+                    })
+                    .collect(),
+
+                EventKind::Modify(ModifyKind::Metadata(meta)) => {
+                    // Access-time changes are noise — the OS updates
+                    // atime on every read, and we don't care. Everything
+                    // else (perms, ownership, write time, xattr) is
+                    // reported as a metadata change.
+                    if matches!(meta, MetadataKind::AccessTime) {
+                        Vec::new()
+                    } else {
+                        event
+                            .paths
+                            .iter()
+                            .filter(|p| is_watchable(p))
+                            .map(|p| AppEvent::FileChanged {
+                                path: p.clone(),
+                                change: ChangeKind::Metadata,
+                            })
+                            .collect()
+                    }
+                }
+
+                // `Modify::Any` / `Modify::Other` — unknown modification.
+                // Treat as content change so at least the file re-parses.
+                EventKind::Modify(_) => event
+                    .paths
+                    .iter()
+                    .filter(|p| is_watchable(p))
+                    .map(|p| AppEvent::FileChanged {
+                        path: p.clone(),
+                        change: ChangeKind::Content,
+                    })
+                    .collect(),
+
+                _ => Vec::new(),
+            };
+
+            for evt in send_events {
+                let _ = tx.send(evt);
+            }
+        },
+        Config::default().with_poll_interval(Duration::from_millis(500)),
+    )?;
+
+    watcher.watch(vault_root, RecursiveMode::Recursive)?;
+
+    Ok((watcher, rx))
+}

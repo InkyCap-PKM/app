@@ -1,0 +1,349 @@
+import { Component, createSignal, onMount, onCleanup, Show } from "solid-js";
+import { save } from "@tauri-apps/plugin-dialog";
+import * as ipc from "../lib/ipc";
+
+export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "html" | "odt" | "docx" | "latex" | "pandoc-pdf";
+export type MetadataMode = "exclude" | "properties";
+
+const FORMAT_INFO: Record<ExportFormat, { label: string; ext: string; pandoc: boolean }> = {
+  pdf: { label: "PDF (native Typst)", ext: "pdf", pandoc: false },
+  typ: { label: "Self-contained .typ", ext: "typ", pandoc: false },
+  "typst-html": { label: "HTML (native Typst)", ext: "html", pandoc: false },
+  markdown: { label: "Markdown (.md)", ext: "md", pandoc: false },
+  html: { label: "HTML (Pandoc)", ext: "html", pandoc: true },
+  odt: { label: "OpenDocument ODT", ext: "odt", pandoc: true },
+  docx: { label: "Word DOCX", ext: "docx", pandoc: true },
+  latex: { label: "LaTeX", ext: "tex", pandoc: true },
+  "pandoc-pdf": { label: "PDF — includes properties", ext: "pdf", pandoc: true },
+};
+
+const METADATA_LABELS: Record<MetadataMode, string> = {
+  exclude: "Exclude metadata",
+  properties: "Include as document properties",
+};
+
+const METADATA_HINTS: Partial<Record<ExportFormat, Partial<Record<MetadataMode, string>>>> = {
+  pdf: {
+    exclude: "The #note() properties will not appear in the PDF metadata.",
+    properties: "Title, author, date, and tags from #note() will be set as PDF document properties.",
+  },
+  "typst-html": {
+    exclude: "The #note() properties will not appear in the HTML.",
+    properties: "Properties will appear as <meta> tags in the HTML <head>.",
+  },
+  html: {
+    exclude: "The #note() properties will be stripped from the output.",
+    properties: "Properties will appear as <meta> tags in the HTML <head>.",
+  },
+  docx: {
+    exclude: "The #note() properties will be stripped from the output.",
+    properties: "Properties like title, author, date will be set as Word document properties (File > Properties).",
+  },
+  odt: {
+    exclude: "The #note() properties will be stripped from the output.",
+    properties: "Properties like title, author, date will be set as document properties (File > Properties).",
+  },
+  "pandoc-pdf": {
+    exclude: "The #note() properties will be stripped from the output.",
+    properties: "Title, author, date, and tags will be set as PDF document properties via Pandoc/LaTeX.",
+  },
+};
+
+function supportsMetadataMode(fmt: ExportFormat): boolean {
+  return fmt === "pdf" || fmt === "typst-html" || FORMAT_INFO[fmt].pandoc;
+}
+
+const ExportDialog: Component = () => {
+  const [visible, setVisible] = createSignal(false);
+  const [filePath, setFilePath] = createSignal("");
+  const [collectionPath, setCollectionPath] = createSignal<string | null>(null);
+  const [format, setFormat] = createSignal<ExportFormat>("pdf");
+  const [metadataMode, setMetadataMode] = createSignal<MetadataMode>("exclude");
+  const [exporting, setExporting] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [success, setSuccess] = createSignal<string | null>(null);
+  const [pandocAvailable, setPandocAvailable] = createSignal<boolean | null>(null);
+  const [extractFigures, setExtractFigures] = createSignal(false);
+  const [stripWikilinks, setStripWikilinks] = createSignal(false);
+  const [markdownPreserveTypst, setMarkdownPreserveTypst] = createSignal(true);
+
+  function fileName(): string {
+    const p = filePath();
+    const slash = p.lastIndexOf("/");
+    const dot = p.lastIndexOf(".");
+    return p.slice(slash + 1, dot > slash ? dot : undefined);
+  }
+
+  function handleOpen(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    setFilePath(detail.path);
+    setCollectionPath(detail.collectionPath ?? null);
+    if (detail.format) setFormat(detail.format as ExportFormat);
+    setError(null);
+    setSuccess(null);
+    setExporting(false);
+    setMetadataMode("exclude");
+    setVisible(true);
+
+    ipc.detectPandoc().then((path) => setPandocAvailable(path !== null));
+  }
+
+  onMount(() => {
+    document.addEventListener("inkycap:export-dialog", handleOpen);
+  });
+
+  onCleanup(() => {
+    document.removeEventListener("inkycap:export-dialog", handleOpen);
+  });
+
+  function close() {
+    setVisible(false);
+  }
+
+  function handleBackdropClick(e: MouseEvent) {
+    if ((e.target as HTMLElement).classList.contains("export-dialog__backdrop")) {
+      close();
+    }
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === "Escape") close();
+  }
+
+  function metadataHint(): string | undefined {
+    const fmt = format();
+    const mode = metadataMode();
+    return METADATA_HINTS[fmt]?.[mode];
+  }
+
+  async function doExport() {
+    const fmt = format();
+    const info = FORMAT_INFO[fmt];
+    setError(null);
+    setSuccess(null);
+
+    if (info.pandoc && !pandocAvailable()) {
+      setError("Pandoc is not installed or not found. Install Pandoc or set a custom path in Settings > Export.");
+      return;
+    }
+
+    try {
+      if (fmt === "typ") {
+        const outputPath = await save({
+          defaultPath: `${fileName()}.typ`,
+          filters: [{ name: "Typst", extensions: ["typ"] }],
+        });
+        if (!outputPath) return;
+
+        setExporting(true);
+        await ipc.exportSelfContainedTyp(filePath(), outputPath);
+        setSuccess(`Exported to ${outputPath}`);
+      } else if (fmt === "pdf") {
+        const outputPath = await save({
+          defaultPath: `${fileName()}.pdf`,
+          filters: [{ name: "PDF", extensions: ["pdf"] }],
+        });
+        if (!outputPath) return;
+
+        setExporting(true);
+        if (collectionPath()) {
+          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode());
+        } else {
+          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode());
+        }
+        setSuccess(`Exported to ${outputPath}`);
+      } else if (fmt === "markdown") {
+        const outputPath = await save({
+          defaultPath: `${fileName()}.md`,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (!outputPath) return;
+
+        setExporting(true);
+        await ipc.exportNoteMarkdownToFile(
+          filePath(),
+          outputPath,
+          markdownPreserveTypst() ? "preserve" : "omit",
+        );
+        setSuccess(`Exported to ${outputPath}`);
+      } else if (fmt === "typst-html") {
+        const outputPath = await save({
+          defaultPath: `${fileName()}.html`,
+          filters: [{ name: "HTML", extensions: ["html"] }],
+        });
+        if (!outputPath) return;
+
+        setExporting(true);
+        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks());
+        setSuccess(`Exported to ${outputPath}`);
+      } else {
+        // Pandoc formats (including pandoc-pdf)
+        const outputPath = await save({
+          defaultPath: `${fileName()}.${info.ext}`,
+          filters: [{ name: info.label, extensions: [info.ext] }],
+        });
+        if (!outputPath) return;
+
+        setExporting(true);
+        await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode());
+        setSuccess(`Exported to ${outputPath}`);
+      }
+
+      if (extractFigures()) {
+        const outputPath = await save({
+          defaultPath: `${fileName()}-figures`,
+        });
+        if (outputPath) {
+          const dir = outputPath.replace(/\/[^/]*$/, "");
+          const figDir = `${dir}/${fileName()}-figures`;
+          const figures = await ipc.exportFigures(filePath(), figDir);
+          if (figures.length > 0) {
+            setSuccess((prev) => `${prev}\nExtracted ${figures.length} figure(s) to ${figDir}`);
+          }
+        }
+      }
+    } catch (e: any) {
+      setError(e?.toString() ?? "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Show when={visible()}>
+      <div
+        class="export-dialog__backdrop"
+        onClick={handleBackdropClick}
+        onKeyDown={handleKeyDown}
+      >
+        <div class="export-dialog">
+          <div class="export-dialog__header">
+            <h3>Export</h3>
+            <button class="export-dialog__close" onClick={close}>&times;</button>
+          </div>
+
+          <div class="export-dialog__body">
+            <div class="export-dialog__file-name">
+              {fileName()}
+            </div>
+
+            <Show when={collectionPath()}>
+              <div class="export-dialog__hint">
+                Exporting with collection template and bibliography style applied.
+              </div>
+            </Show>
+
+            <div class="export-dialog__field">
+              <label>Format</label>
+              <select
+                value={format()}
+                onChange={(e) => setFormat(e.currentTarget.value as ExportFormat)}
+              >
+                <optgroup label="Native">
+                  <option value="pdf">{FORMAT_INFO.pdf.label}</option>
+                  <option value="typ">{FORMAT_INFO.typ.label}</option>
+                  <option value="typst-html">{FORMAT_INFO["typst-html"].label}</option>
+                  <option value="markdown">{FORMAT_INFO.markdown.label}</option>
+                </optgroup>
+                <optgroup label="Via Pandoc">
+                  <option value="html">{FORMAT_INFO.html.label}</option>
+                  <option value="odt">{FORMAT_INFO.odt.label}</option>
+                  <option value="docx">{FORMAT_INFO.docx.label}</option>
+                  <option value="latex">{FORMAT_INFO.latex.label}</option>
+                  <option value="pandoc-pdf">{FORMAT_INFO["pandoc-pdf"].label}</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <Show when={FORMAT_INFO[format()].pandoc && !pandocAvailable()}>
+              <div class="export-dialog__warning">
+                Pandoc not found. Install it or set a custom path in Settings.
+              </div>
+            </Show>
+
+            <Show when={supportsMetadataMode(format())}>
+              <div class="export-dialog__field">
+                <label>Note metadata</label>
+                <select
+                  value={metadataMode()}
+                  onChange={(e) => setMetadataMode(e.currentTarget.value as MetadataMode)}
+                >
+                  <option value="exclude">{METADATA_LABELS.exclude}</option>
+                  <option value="properties">{METADATA_LABELS.properties}</option>
+                </select>
+                <Show when={metadataHint()}>
+                  <span class="export-dialog__hint">{metadataHint()}</span>
+                </Show>
+              </div>
+            </Show>
+
+            <div class="export-dialog__field">
+              <label class="export-dialog__checkbox">
+                <input
+                  type="checkbox"
+                  checked={extractFigures()}
+                  onChange={(e) => setExtractFigures(e.currentTarget.checked)}
+                />
+                Extract figures alongside export
+              </label>
+            </div>
+
+            <Show when={format() === "typst-html" || format() === "html"}>
+              <div class="export-dialog__field">
+                <label class="export-dialog__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={stripWikilinks()}
+                    onChange={(e) => setStripWikilinks(e.currentTarget.checked)}
+                  />
+                  Remove internal links (wikilinks)
+                </label>
+              </div>
+            </Show>
+
+            <Show when={format() === "markdown"}>
+              <div class="export-dialog__field">
+                <label class="export-dialog__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={markdownPreserveTypst()}
+                    onChange={(e) => setMarkdownPreserveTypst(e.currentTarget.checked)}
+                  />
+                  Preserve unconvertible Typst markup (as code blocks)
+                </label>
+                <span class="export-dialog__hint">
+                  {markdownPreserveTypst()
+                    ? "Typst-only constructs will be wrapped in ```typst code blocks so no content is lost."
+                    : "Typst-only constructs will be omitted for a cleaner markdown file."}
+                </span>
+              </div>
+            </Show>
+
+            <Show when={error()}>
+              <div class="export-dialog__error">{error()}</div>
+            </Show>
+
+            <Show when={success()}>
+              <div class="export-dialog__success">{success()}</div>
+            </Show>
+          </div>
+
+          <div class="export-dialog__footer">
+            <button class="export-dialog__btn--secondary" onClick={close}>
+              Cancel
+            </button>
+            <button
+              class="export-dialog__btn--primary"
+              onClick={doExport}
+              disabled={exporting() || (FORMAT_INFO[format()].pandoc && !pandocAvailable())}
+            >
+              {exporting() ? "Exporting..." : "Export"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Show>
+  );
+};
+
+export default ExportDialog;

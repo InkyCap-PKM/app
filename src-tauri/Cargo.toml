@@ -1,0 +1,78 @@
+[package]
+name = "inkycap"
+version = "0.1.0"
+edition = "2021"
+description = "A Tauri-based Typst editor for academic note-taking"
+
+[lib]
+name = "inkycap_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+walkdir = "2"
+notify = "8"
+pulldown-cmark = "0.12"
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-dialog = "2.7.0"
+dirs = "6.0.0"
+rayon = "1"
+unicase = "2"
+trash = "5"
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+flate2 = "1"
+sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
+bincode = "1"
+tempfile = "3"
+which = "7"
+zip = "2"
+
+# Typst compile pipeline. Pinned to 0.14.x to match the toolchain validated
+# in the Phase 0 spike (typst-cli v0.14.2). Bumping the minor requires
+# re-running spike-bench/bench-napi.mjs against the new pin.
+fontdb = "0.23"
+typst = "0.14"
+typst-library = "0.14"
+typst-svg = "0.14"
+typst-pdf = "0.14"
+typst-html = "0.14"
+typst-assets = { version = "0.14", features = ["fonts"] }
+hayagriva = "0.9"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
+# Native clipboard reader for macOS (NSPasteboard via Objective-C
+# runtime). Used by read_clipboard_file_paths to get file URIs the
+# webview can't see because of WebKit's cross-origin clipboard
+# policy. Same role as the `gtk` dep above, just a different OS.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+cocoa = "0.26"
+
+# Native clipboard reader for Windows (CF_HDROP via Win32). Same
+# role as the Linux/macOS deps above.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_UI_Shell",
+] }
+
+[dev-dependencies]
+tempfile = "3"
