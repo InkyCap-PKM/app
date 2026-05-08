@@ -179,7 +179,7 @@
 
 .right-panel__heading {
   font-size: var(--text-sm);
-  text-transform: uppercase;
+  font-weight: 600;
   letter-spacing: 0.5px;
   color: var(--fg-muted);
   margin-bottom: 8px;
@@ -505,7 +505,6 @@
   color: var(--fg-muted);
   font-weight: 600;
   font-size: var(--text-base);
-  text-transform: uppercase;
   letter-spacing: 0.3px;
   white-space: nowrap;
   cursor: pointer;
@@ -606,8 +605,8 @@
   border-bottom: 1px solid var(--border-primary);
   margin-bottom: 6px;
   font-size: var(--text-base);
+  font-weight: 600;
   color: var(--fg-muted);
-  text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
@@ -769,8 +768,8 @@
   align-items: center;
   margin-bottom: 8px;
   font-size: var(--text-base);
+  font-weight: 600;
   color: var(--fg-muted);
-  text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
@@ -923,8 +922,8 @@
   align-items: center;
   padding: 4px 4px 8px;
   font-size: var(--text-sm);
+  font-weight: 600;
   color: var(--fg-muted);
-  text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
@@ -1432,7 +1431,7 @@
 
 .vault-index__heading {
   font-size: var(--text-sm);
-  text-transform: uppercase;
+  font-weight: 600;
   letter-spacing: 0.3px;
   color: var(--fg-muted);
   padding: 0 4px 6px;
@@ -1558,6 +1557,24 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.settings__section-header {
+  padding-bottom: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-primary) 50%, transparent);
+}
+
+.settings__section-header + .settings__section-header,
+.settings__row + .settings__section-header,
+.settings__section-note + .settings__section-header {
+  margin-top: 16px;
+}
+
+.settings__section-header .settings__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--fg-muted);
 }
 
 .settings__row {
@@ -2234,15 +2251,17 @@
 .search-panel__results {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   overflow-y: auto;
 }
 
+.search-panel__file-group {
+  margin-bottom: 2px;
+}
+
 .search-panel__result {
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 2px 8px 2px 16px;
   cursor: pointer;
-  position: relative;
 }
 
 .search-panel__result:hover {
@@ -2250,10 +2269,31 @@
 }
 
 .search-panel__result-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-md);
   font-weight: 500;
   color: var(--fg-primary);
-  margin-bottom: 2px;
+  padding: 4px 8px;
+  cursor: pointer;
+  position: relative;
+}
+
+.search-panel__result-file:hover {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
+
+.search-panel__match-count {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 0 5px;
+  min-width: 16px;
+  text-align: center;
 }
 
 .search-panel__result-line {
@@ -2282,9 +2322,7 @@
 }
 
 .search-panel__result-replace-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+  margin-left: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-input);
   border-radius: 3px;
@@ -2295,7 +2333,7 @@
   opacity: 0;
 }
 
-.search-panel__result:hover .search-panel__result-replace-btn {
+.search-panel__result-file:hover .search-panel__result-replace-btn {
   opacity: 1;
 }
 
@@ -2618,8 +2656,8 @@
 
 .collection-meta__section-label {
   font-size: var(--text-sm);
+  font-weight: 600;
   color: var(--fg-muted);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 4px;
   padding-bottom: 2px;
@@ -2692,7 +2730,7 @@
   gap: 4px;
   padding: 0;
   font-size: var(--text-sm);
-  text-transform: uppercase;
+  font-weight: 600;
   letter-spacing: 0.5px;
 }
 
@@ -2717,7 +2755,6 @@
   font-size: var(--text-xs);
   color: var(--fg-dim);
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.4px;
   margin-top: 4px;
 }
@@ -4080,7 +4117,7 @@
 
 .cmd-palette__category-header {
   font-size: var(--text-xs);
-  text-transform: uppercase;
+  font-weight: 600;
   letter-spacing: 0.5px;
   color: var(--fg-muted);
   padding: 8px 12px 4px;
@@ -4588,7 +4625,6 @@
 }
 
 .typst-reading__diagnostic-severity {
-  text-transform: uppercase;
   font-weight: 600;
   font-size: var(--text-xs);
   letter-spacing: 0.04em;
@@ -4818,7 +4854,6 @@
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg-dim);
-  text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 

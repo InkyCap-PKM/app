@@ -5,6 +5,7 @@
 import {
   Component,
   createEffect,
+  createMemo,
   createSignal,
   For,
   Show,
@@ -169,6 +170,27 @@ const SearchPanel: Component = () => {
     }
   }
 
+  interface GroupedResult {
+    path: string;
+    file_name: string;
+    matches: SearchResult[];
+  }
+
+  const groupedResults = createMemo((): GroupedResult[] => {
+    const groups: GroupedResult[] = [];
+    const index = new Map<string, GroupedResult>();
+    for (const r of results()) {
+      let group = index.get(r.path);
+      if (!group) {
+        group = { path: r.path, file_name: r.file_name, matches: [] };
+        index.set(r.path, group);
+        groups.push(group);
+      }
+      group.matches.push(r);
+    }
+    return groups;
+  });
+
   return (
     <div class="search-panel">
       <div class="search-panel__input-row">
@@ -256,31 +278,40 @@ const SearchPanel: Component = () => {
       </Show>
 
       <div class="search-panel__results">
-        <For each={results()}>
-          {(result) => (
-            <div class="search-panel__result" onClick={() => openResult(result)}>
-              <div class="search-panel__result-file">{result.file_name}</div>
-              <div class="search-panel__result-line">
-                <span class="search-panel__result-lineno">
-                  {result.line_number}:
-                </span>
-                <HighlightedLine
-                  text={result.line_text}
-                  ranges={result.match_ranges}
-                />
+        <For each={groupedResults()}>
+          {(group) => (
+            <div class="search-panel__file-group">
+              <div class="search-panel__result-file" onClick={() => openResult(group.matches[0])}>
+                {group.file_name}
+                <span class="search-panel__match-count">{group.matches.length}</span>
+                <Show when={showReplace()}>
+                  <button
+                    class="search-panel__result-replace-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      replaceInFile(group.path);
+                    }}
+                    title="Replace in this file"
+                  >
+                    Replace
+                  </button>
+                </Show>
               </div>
-              <Show when={showReplace()}>
-                <button
-                  class="search-panel__result-replace-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    replaceInFile(result.path);
-                  }}
-                  title="Replace in this file"
-                >
-                  Replace
-                </button>
-              </Show>
+              <For each={group.matches}>
+                {(result) => (
+                  <div class="search-panel__result" onClick={() => openResult(result)}>
+                    <div class="search-panel__result-line">
+                      <span class="search-panel__result-lineno">
+                        {result.line_number}:
+                      </span>
+                      <HighlightedLine
+                        text={result.line_text}
+                        ranges={result.match_ranges}
+                      />
+                    </div>
+                  </div>
+                )}
+              </For>
             </div>
           )}
         </For>

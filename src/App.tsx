@@ -38,35 +38,47 @@ import { loadCreationRules } from "./stores/creation-rules";
 import * as ipc from "./lib/ipc";
 import { toastError } from "./stores/toasts";
 
-function applyStartupBehavior() {
+async function applyStartupBehavior() {
   const { behavior, target, last_active_file } = settings.startup;
 
   switch (behavior) {
     case "last-file":
       if (last_active_file) {
-        const name = last_active_file.split("/").pop() ?? last_active_file;
-        openTab({ type: "file", title: name, path: last_active_file });
+        try {
+          await ipc.readFileContent(last_active_file);
+          const name = last_active_file.split("/").pop() ?? last_active_file;
+          openTab({ type: "file", title: name, path: last_active_file });
+        } catch {
+          // File was deleted or moved since last session — start with empty state
+          updateSetting("startup", "last_active_file", null);
+        }
       }
       break;
 
     case "creation-rule":
       if (target) {
-        ipc.executeCreationRule(target).then((result) => {
+        try {
+          const result = await ipc.executeCreationRule(target);
           const name = result.path.split("/").pop() ?? "New Note";
           openTab(
             { type: "file", title: name, path: result.path },
             { cursorOffset: result.cursor_offset ?? undefined },
           );
-        }).catch((e) => {
+        } catch (e) {
           console.error("Startup creation rule failed:", e);
-        });
+        }
       }
       break;
 
     case "specific-page":
       if (target) {
-        const name = target.split("/").pop() ?? target;
-        openTab({ type: "file", title: name, path: target });
+        try {
+          await ipc.readFileContent(target);
+          const name = target.split("/").pop() ?? target;
+          openTab({ type: "file", title: name, path: target });
+        } catch {
+          // Target no longer exists — start with empty state
+        }
       }
       break;
   }
@@ -127,7 +139,7 @@ const App: Component = () => {
     onSettingsChange((s) => applyInterfaceFont(s.appearance.interface_font));
     initTheme();
     await initVault();
-    applyStartupBehavior();
+    await applyStartupBehavior();
     initKeyboard();
 
     // Register shortcut callbacks

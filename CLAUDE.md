@@ -145,6 +145,11 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - CodeMirror extensions modular: one file per extension/feature in `src/editor/typst-decorations/`
 - IPC calls go through the typed API layer in [src/lib/ipc.ts](src/lib/ipc.ts), never raw `invoke()`
 
+### UI typography
+- **Never use `text-transform: uppercase` or `font-variant: small-caps` for headings, section labels, or category headers.** All UI text stays mixed-case as authored.
+- Instead, distinguish heading/label elements with `font-weight: 600`, subtle `letter-spacing` (0.3–0.5px), muted color (`--fg-muted` / `--fg-dim`), or a border/background — not capitalization transforms.
+- This applies everywhere: sidebar headings, settings section labels, command palette categories, diagnostic badges, collection metadata labels.
+
 ### General
 - All user-facing text should go through i18n from the start (even if only English is supported initially)
 - Test the Typst compile pipeline against representative documents — round-trip identity (source ↔ visual mode) is a load-bearing invariant

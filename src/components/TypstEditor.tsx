@@ -25,6 +25,7 @@ import {
   goForward,
   getCachedEditorState,
   setCachedEditorState,
+  closeTab,
 } from "../stores/tabs";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
@@ -301,7 +302,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   const [content] = createResource(
     () => props.path,
-    async (path) => ipc.readFileContent(path),
+    async (path) => {
+      try {
+        return await ipc.readFileContent(path);
+      } catch (err) {
+        toastError("Could not open file", err);
+        closeTab(props.tabId);
+        return undefined;
+      }
+    },
   );
 
   createEffect(

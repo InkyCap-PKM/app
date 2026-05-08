@@ -334,8 +334,9 @@ impl SearchEngine {
                 None => continue,
             };
 
-            // Check if path is still in the index (wasn't soft-removed)
-            if !self.path_to_doc.contains_key(&doc.path) {
+            // Check this is the current doc_id for the path (skips stale
+            // entries left behind after updates or duplicate inserts).
+            if self.path_to_doc.get(&doc.path) != Some(doc_id) {
                 continue;
             }
 
@@ -428,7 +429,7 @@ impl SearchEngine {
                 // Return all docs NOT in the exclude set
                 let mut result = HashMap::new();
                 for (doc_id, doc) in self.docs.iter().enumerate() {
-                    if !exclude.contains_key(&doc_id) && self.path_to_doc.contains_key(&doc.path) {
+                    if !exclude.contains_key(&doc_id) && self.path_to_doc.get(&doc.path) == Some(&doc_id) {
                         // Include with first line as placeholder
                         let mut lines = HashMap::new();
                         if !doc.lines.is_empty() {
@@ -565,7 +566,7 @@ impl SearchEngine {
         let mut result = HashMap::new();
 
         for (doc_id, doc) in self.docs.iter().enumerate() {
-            if !self.path_to_doc.contains_key(&doc.path) {
+            if self.path_to_doc.get(&doc.path) != Some(&doc_id) {
                 continue;
             }
             let mut lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
@@ -597,7 +598,7 @@ impl SearchEngine {
         let mut result = HashMap::new();
 
         for (doc_id, doc) in self.docs.iter().enumerate() {
-            if !self.path_to_doc.contains_key(&doc.path) {
+            if self.path_to_doc.get(&doc.path) != Some(&doc_id) {
                 continue;
             }
 

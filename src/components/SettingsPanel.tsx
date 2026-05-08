@@ -147,8 +147,8 @@ function OverviewSection() {
   return (
     <div class="settings__section">
       {/* Version */}
-      <div class="settings__section-header" style={{ "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Version</span>
+      <div class="settings__section-header">
+        <span class="settings__label" >Version</span>
       </div>
       <div class="settings__row">
         <div class="settings__row-info">
@@ -158,8 +158,8 @@ function OverviewSection() {
       </div>
 
       {/* Help */}
-      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Help</span>
+      <div class="settings__section-header">
+        <span class="settings__label" >Help</span>
       </div>
       <div class="settings__row">
         <div class="settings__row-info">
@@ -168,8 +168,8 @@ function OverviewSection() {
       </div>
 
       {/* Language */}
-      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Language</span>
+      <div class="settings__section-header">
+        <span class="settings__label" >Language</span>
       </div>
       <div class="settings__row">
         <div class="settings__row-info">
@@ -264,8 +264,8 @@ function EditorSettingsSection() {
       />
 
       {/* Journal Scroll settings */}
-      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Journal Scroll</span>
+      <div class="settings__section-header">
+        <span class="settings__label" >Journal Scroll</span>
       </div>
       <SettingSelect
         label="Date sort"
@@ -319,8 +319,8 @@ function AppearanceSettingsSection() {
   return (
     <div class="settings__section">
       {/* InkyCap Appearance */}
-      <div class="settings__section-header" style={{ "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>InkyCap Appearance</span>
+      <div class="settings__section-header">
+        <span class="settings__label" >InkyCap Appearance</span>
       </div>
       <p class="settings__section-note">
         Controls how the editor interface looks. These settings do not affect compiled output or exports.
@@ -399,8 +399,8 @@ function AppearanceSettingsSection() {
       />
 
       {/* Rendering Defaults */}
-      <div class="settings__section-header" style={{ "margin-top": "24px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Rendering Defaults</span>
+      <div class="settings__section-header" style={{ "margin-top": "24px" }}>
+        <span class="settings__label" >Rendering Defaults</span>
       </div>
       <p class="settings__section-note">
         Defaults for compiled output and reading view. Override per collection or per note.

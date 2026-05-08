@@ -102,7 +102,14 @@ const RightPanel: Component = () => {
 
   const [metadata, { refetch: refetchMetadata }] = createResource(
     () => activeFileTab()?.path,
-    async (path) => (path ? ipc.getFileMetadata(path) : undefined),
+    async (path) => {
+      if (!path) return undefined;
+      try {
+        return await ipc.getFileMetadata(path);
+      } catch {
+        return undefined;
+      }
+    },
   );
 
   // Refetch metadata when the note is saved by the editor.
@@ -117,19 +124,28 @@ const RightPanel: Component = () => {
     () => activeFileTab()?.path,
     async (path): Promise<BacklinkWithContext[]> => {
       if (!path) return [];
-      const links = await ipc.getBacklinks(path);
-      // Fetch context snippets for each backlink
-      const withContext = await Promise.all(
-        links.map(async (link) => {
-          try {
-            const ctx = await ipc.getBacklinkContext(link.path, path);
-            return { ...link, context: ctx ?? undefined };
-          } catch {
-            return { ...link };
-          }
-        }),
-      );
-      return withContext;
+      try {
+        const links = await ipc.getBacklinks(path);
+        // Deduplicate by path — a note may link to us multiple times
+        const seen = new Set<string>();
+        const unique = links.filter((link) => {
+          if (seen.has(link.path)) return false;
+          seen.add(link.path);
+          return true;
+        });
+        return await Promise.all(
+          unique.map(async (link) => {
+            try {
+              const ctx = await ipc.getBacklinkContext(link.path, path);
+              return { ...link, context: ctx ?? undefined };
+            } catch {
+              return { ...link };
+            }
+          }),
+        );
+      } catch {
+        return [];
+      }
     },
   );
 
@@ -137,34 +153,38 @@ const RightPanel: Component = () => {
     () => activeFileTab()?.path,
     async (path): Promise<ForwardLinkResolved[]> => {
       if (!path) return [];
-      const meta = await ipc.getFileMetadata(path);
-      if (!meta) return [];
+      try {
+        const meta = await ipc.getFileMetadata(path);
+        if (!meta) return [];
 
-      // Resolve each link target
-      const resolved = await Promise.all(
-        meta.links.map(async (target) => {
-          const resolvedPath = await ipc.resolveWikilink(target);
-          if (resolvedPath) {
-            const name = resolvedPath
-              .split("/")
-              .pop()
-              ?.replace(/\.[^.]+$/, "") ?? target;
+        // Deduplicate targets before resolving
+        const uniqueTargets = [...new Set(meta.links)];
+        return await Promise.all(
+          uniqueTargets.map(async (target) => {
+            const resolvedPath = await ipc.resolveWikilink(target);
+            if (resolvedPath) {
+              const name = resolvedPath
+                .split("/")
+                .pop()
+                ?.replace(/\.[^.]+$/, "") ?? target;
+              return {
+                path: resolvedPath,
+                name,
+                resolved: true,
+                target,
+              } as ForwardLinkResolved;
+            }
             return {
-              path: resolvedPath,
-              name,
-              resolved: true,
+              path: "",
+              name: target,
+              resolved: false,
               target,
             } as ForwardLinkResolved;
-          }
-          return {
-            path: "",
-            name: target,
-            resolved: false,
-            target,
-          } as ForwardLinkResolved;
-        }),
-      );
-      return resolved;
+          }),
+        );
+      } catch {
+        return [];
+      }
     },
   );
 
