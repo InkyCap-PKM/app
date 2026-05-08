@@ -118,10 +118,6 @@ pub struct FileSettings {
     pub attachment_folder: String,
     /// Regex patterns for files to exclude from search and quick-open.
     pub excluded_files_regex: Vec<String>,
-    /// Default link format: "wikilink" or "markdown".
-    pub link_format: String,
-    /// How autocomplete inserts link paths: "shortest", "relative", or "absolute".
-    pub link_path_format: String,
     /// Automatically update wikilinks when a file is renamed or moved.
     pub auto_update_links_on_rename: bool,
     /// Folder path (relative to vault root) containing scaffold files.
@@ -145,8 +141,6 @@ impl Default for FileSettings {
             new_note_folder: String::new(),
             attachment_folder: "assets".to_string(),
             excluded_files_regex: Vec::new(),
-            link_format: "wikilink".to_string(),
-            link_path_format: "shortest".to_string(),
             auto_update_links_on_rename: true,
             scaffold_folder: ".inkycap/scaffolds".to_string(),
             typst_templates_folder: ".inkycap/templates".to_string(),
@@ -163,6 +157,8 @@ pub struct StartupSettings {
     pub behavior: String,
     /// Target: creation rule ID or file/base path (depends on behavior).
     pub target: String,
+    /// Vault-relative path of the last active file, persisted by the frontend.
+    pub last_active_file: Option<String>,
 }
 
 impl Default for StartupSettings {
@@ -170,6 +166,7 @@ impl Default for StartupSettings {
         Self {
             behavior: "last-file".to_string(),
             target: String::new(),
+            last_active_file: None,
         }
     }
 }

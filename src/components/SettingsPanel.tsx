@@ -2,7 +2,7 @@
 // Organized into tabs: Editor, Appearance, Files, Startup.
 
 import { Component, Show, createSignal, createResource, For, onMount } from "solid-js";
-import { settings, updateSetting, resetAllSettings } from "../stores/settings";
+import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPalette } from "../stores/theme";
 import type { UserSettings, AccentSource, BgPalette } from "../lib/types";
 import * as ipc from "../lib/ipc";
@@ -16,20 +16,32 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "editor" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "startup";
+type SettingsTab = "overview" | "editor" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
 
 const TABS: { id: SettingsTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
   { id: "editor", label: "Editor" },
   { id: "appearance", label: "Appearance" },
   { id: "files", label: "Files & Links" },
   { id: "citations", label: "Citations" },
   { id: "export", label: "Import / Export" },
-  { id: "creation-rules", label: "Creation Rules" },
-  { id: "startup", label: "Startup" },
+  { id: "creation-rules", label: "Rules & Scaffolding" },
+  { id: "behaviour", label: "Behaviour" },
 ];
 
+const TAB_SETTING_GROUPS: Record<SettingsTab, (keyof UserSettings)[]> = {
+  overview: [],
+  editor: ["editor", "journal_scroll"],
+  appearance: ["appearance", "document"],
+  files: ["files"],
+  citations: ["citations"],
+  export: ["export"],
+  "creation-rules": [],
+  behaviour: ["startup"],
+};
+
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("editor");
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
 
   function handleOverlayClick(e: MouseEvent) {
     if ((e.target as HTMLElement).classList.contains("settings__overlay")) {
@@ -61,50 +73,67 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
             </button>
           </div>
 
-          {/* Tab bar */}
-          <div class="settings__tabs">
-            <For each={TABS}>
-              {(tab) => (
-                <button
-                  class={`settings__tab ${activeTab() === tab.id ? "settings__tab--active" : ""}`}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              )}
-            </For>
-          </div>
+          <div class="settings__content">
+            {/* Sidebar navigation */}
+            <div class="settings__sidebar">
+              <For each={TABS}>
+                {(tab) => (
+                  <button
+                    class={`settings__tab ${activeTab() === tab.id ? "settings__tab--active" : ""}`}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                )}
+              </For>
+            </div>
 
-          {/* Tab content */}
-          <div class="settings__body">
-            <Show when={activeTab() === "editor"}>
-              <EditorSettingsSection />
-            </Show>
-            <Show when={activeTab() === "appearance"}>
-              <AppearanceSettingsSection />
-            </Show>
-            <Show when={activeTab() === "files"}>
-              <FileSettingsSection />
-            </Show>
-            <Show when={activeTab() === "citations"}>
-              <CitationsSettingsSection />
-            </Show>
-            <Show when={activeTab() === "export"}>
-              <ExportSettingsSection />
-            </Show>
-            <Show when={activeTab() === "creation-rules"}>
-              <CreationRuleEditor />
-            </Show>
-            <Show when={activeTab() === "startup"}>
-              <StartupSettingsSection />
-            </Show>
-          </div>
+            {/* Main content area */}
+            <div class="settings__main">
+              <div class="settings__body">
+                <Show when={activeTab() === "overview"}>
+                  <OverviewSection />
+                </Show>
+                <Show when={activeTab() === "editor"}>
+                  <EditorSettingsSection />
+                </Show>
+                <Show when={activeTab() === "appearance"}>
+                  <AppearanceSettingsSection />
+                </Show>
+                <Show when={activeTab() === "files"}>
+                  <FileSettingsSection />
+                </Show>
+                <Show when={activeTab() === "citations"}>
+                  <CitationsSettingsSection />
+                </Show>
+                <Show when={activeTab() === "export"}>
+                  <ExportSettingsSection />
+                </Show>
+                <Show when={activeTab() === "creation-rules"}>
+                  <div class="settings__section">
+                    <p class="settings__section-note">
+                      Rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties about the note, an optional Typst template, a target folder, and a shortcut.
+                    </p>
+                  </div>
+                  <CreationRuleEditor />
+                </Show>
+                <Show when={activeTab() === "behaviour"}>
+                  <BehaviourSettingsSection />
+                </Show>
+              </div>
 
-          {/* Footer */}
-          <div class="settings__footer">
-            <button class="settings__reset-btn" onClick={resetAllSettings}>
-              Reset to Defaults
-            </button>
+              {/* Footer */}
+              <div class="settings__footer">
+                <Show when={TAB_SETTING_GROUPS[activeTab()].length > 0}>
+                  <button
+                    class="settings__reset-btn"
+                    onClick={() => resetSettingGroups(TAB_SETTING_GROUPS[activeTab()])}
+                  >
+                    Reset to Defaults
+                  </button>
+                </Show>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -113,6 +142,43 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 };
 
 // --- Section Components ---
+
+function OverviewSection() {
+  return (
+    <div class="settings__section">
+      {/* Version */}
+      <div class="settings__section-header" style={{ "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
+        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Version</span>
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <label class="settings__label">InkyCap</label>
+          <span class="settings__description">Version information will appear here.</span>
+        </div>
+      </div>
+
+      {/* Help */}
+      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
+        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Help</span>
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <span class="settings__description">Help links and documentation will appear here.</span>
+        </div>
+      </div>
+
+      {/* Language */}
+      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
+        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Language</span>
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <span class="settings__description">Language settings will appear here.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EditorSettingsSection() {
   return (
@@ -178,38 +244,6 @@ function EditorSettingsSection() {
             v as "source" | "live-preview",
           )
         }
-      />
-      <SettingSelect
-        label="Default reading format"
-        description="SVG shows paginated output; HTML shows flowing, copyable text"
-        value={settings.editor.default_reading_format}
-        options={[
-          { value: "svg", label: "SVG (paginated)" },
-          { value: "html", label: "HTML (continuous)" },
-        ]}
-        onChange={(v) =>
-          updateSetting(
-            "editor",
-            "default_reading_format",
-            v as "svg" | "html",
-          )
-        }
-      />
-      {/* Rendering settings */}
-      <div class="settings__section-header" style={{ "margin-top": "16px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Rendering</span>
-      </div>
-      <SettingToggle
-        label="Show inline wikilinks"
-        description="Display wikilinks in rendered output (reading mode and export)"
-        value={settings.editor.show_inline_wikilinks}
-        onChange={(v) => updateSetting("editor", "show_inline_wikilinks", v)}
-      />
-      <SettingToggle
-        label="Show inline tags"
-        description="Display tags in rendered output (reading mode and export)"
-        value={settings.editor.show_inline_tags}
-        onChange={(v) => updateSetting("editor", "show_inline_tags", v)}
       />
       <SettingSelect
         label="Focus mode"
@@ -284,9 +318,9 @@ const PAGE_SIZE_OPTIONS = [
 function AppearanceSettingsSection() {
   return (
     <div class="settings__section">
-      {/* Editor Appearance */}
+      {/* InkyCap Appearance */}
       <div class="settings__section-header" style={{ "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Editor Appearance</span>
+        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>InkyCap Appearance</span>
       </div>
       <p class="settings__section-note">
         Controls how the editor interface looks. These settings do not affect compiled output or exports.
@@ -364,13 +398,42 @@ function AppearanceSettingsSection() {
         onChange={(v) => updateSetting("editor", "font_size", v)}
       />
 
-      {/* Document Defaults */}
+      {/* Rendering Defaults */}
       <div class="settings__section-header" style={{ "margin-top": "24px", "padding-bottom": "4px", "border-bottom": `1px solid color-mix(in srgb, var(--border-primary) 50%, transparent)` }}>
-        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Document Defaults</span>
+        <span class="settings__label" style={{ "font-size": "12px", "text-transform": "uppercase", "letter-spacing": "0.5px", color: "var(--fg-muted)" }}>Rendering Defaults</span>
       </div>
       <p class="settings__section-note">
         Defaults for compiled output and reading view. Override per collection or per note.
       </p>
+
+      <SettingSelect
+        label="Default reading format"
+        description="SVG shows paginated output; HTML shows flowing, copyable text"
+        value={settings.editor.default_reading_format}
+        options={[
+          { value: "svg", label: "SVG (paginated)" },
+          { value: "html", label: "HTML (continuous)" },
+        ]}
+        onChange={(v) =>
+          updateSetting(
+            "editor",
+            "default_reading_format",
+            v as "svg" | "html",
+          )
+        }
+      />
+      <SettingToggle
+        label="Show inline wikilinks"
+        description="Display wikilinks in rendered output (reading mode and export)"
+        value={settings.editor.show_inline_wikilinks}
+        onChange={(v) => updateSetting("editor", "show_inline_wikilinks", v)}
+      />
+      <SettingToggle
+        label="Show inline tags"
+        description="Display tags in rendered output (reading mode and export)"
+        value={settings.editor.show_inline_tags}
+        onChange={(v) => updateSetting("editor", "show_inline_tags", v)}
+      />
 
       <div class="settings__row">
         <div class="settings__row-info">
@@ -451,35 +514,6 @@ function FileSettingsSection() {
         value={settings.files.typst_templates_folder}
         onChange={(v) => updateSetting("files", "typst_templates_folder", v)}
       />
-      <SettingSelect
-        label="Link format"
-        description="Default format for new links"
-        value={settings.files.link_format}
-        options={[
-          { value: "wikilink", label: "Wikilinks [[note]]" },
-          { value: "markdown", label: "Markdown [note](note.md)" },
-        ]}
-        onChange={(v) =>
-          updateSetting("files", "link_format", v as "wikilink" | "markdown")
-        }
-      />
-      <SettingSelect
-        label="Link path format"
-        description="How autocomplete inserts link paths"
-        value={settings.files.link_path_format}
-        options={[
-          { value: "shortest", label: "Shortest unique path" },
-          { value: "relative", label: "Relative path" },
-          { value: "absolute", label: "Absolute path" },
-        ]}
-        onChange={(v) =>
-          updateSetting(
-            "files",
-            "link_path_format",
-            v as "shortest" | "relative" | "absolute",
-          )
-        }
-      />
       <SettingToggle
         label="Auto-update links on rename"
         description="Automatically update wikilinks when a file is renamed"
@@ -549,7 +583,7 @@ function CitationsSettingsSection() {
   return (
     <div class="settings__section">
       <p class="settings__section-note">
-        Changes take effect on the next compile. Switch to reading mode or reopen your file to see updates.
+        Changes take effect after restarting InkyCap.
       </p>
       <SettingSelect
         label="Citation source"
@@ -693,10 +727,10 @@ function ExportSettingsSection() {
 
   return (
     <div class="settings__section">
+      <p class="settings__section-note">
+        Create a zip archive of the directory of markdown files that you would like to import then click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
+      </p>
       <div class="settings__label">Import markdown files</div>
-      <div class="settings__description">
-        Create a zip archive of the directory of markdown files (e.g. an Obsidian vault) that you would like to import. Click the Import button to select the zip archive. InkyCap will convert the files and map the properties as best as possible.
-      </div>
       <div style={{ "margin-top": "8px" }}>
         <button
           class="settings__detect-btn"
@@ -727,7 +761,7 @@ function ExportSettingsSection() {
   );
 }
 
-function StartupSettingsSection() {
+function BehaviourSettingsSection() {
   return (
     <div class="settings__section">
       <SettingSelect

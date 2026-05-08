@@ -43,12 +43,3 @@ pub async fn update_settings(
     *state.settings.write().await = settings;
     Ok(())
 }
-
-/// Reset all settings to defaults and persist.
-#[tauri::command]
-pub async fn reset_settings(state: State<'_, AppState>) -> Result<UserSettings> {
-    let defaults = UserSettings::default();
-    crate::settings::save_settings(&defaults)?;
-    *state.settings.write().await = defaults.clone();
-    Ok(defaults)
-}

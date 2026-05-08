@@ -1,4 +1,4 @@
-import { Component, createSignal, ErrorBoundary, onCleanup, onMount, Show } from "solid-js";
+import { Component, createEffect, createSignal, ErrorBoundary, onCleanup, onMount, Show } from "solid-js";
 import LeftSidebar from "./components/LeftSidebar";
 import MainContent from "./components/MainContent";
 import RightPanel from "./components/RightPanel";
@@ -30,13 +30,47 @@ import { initSettings, onSettingsChange, settings, updateSetting } from "./store
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard, onShortcut } from "./lib/keyboard";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
-import { openTab, getActiveTab } from "./stores/tabs";
+import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules } from "./stores/creation-rules";
 import * as ipc from "./lib/ipc";
 import { toastError } from "./stores/toasts";
+
+function applyStartupBehavior() {
+  const { behavior, target, last_active_file } = settings.startup;
+
+  switch (behavior) {
+    case "last-file":
+      if (last_active_file) {
+        const name = last_active_file.split("/").pop() ?? last_active_file;
+        openTab({ type: "file", title: name, path: last_active_file });
+      }
+      break;
+
+    case "creation-rule":
+      if (target) {
+        ipc.executeCreationRule(target).then((result) => {
+          const name = result.path.split("/").pop() ?? "New Note";
+          openTab(
+            { type: "file", title: name, path: result.path },
+            { cursorOffset: result.cursor_offset ?? undefined },
+          );
+        }).catch((e) => {
+          console.error("Startup creation rule failed:", e);
+        });
+      }
+      break;
+
+    case "specific-page":
+      if (target) {
+        const name = target.split("/").pop() ?? target;
+        openTab({ type: "file", title: name, path: target });
+      }
+      break;
+  }
+}
 
 const App: Component = () => {
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
@@ -48,6 +82,16 @@ const App: Component = () => {
   const [snapshotVisible, setSnapshotVisible] = createSignal(false);
   const [snapshotPath, setSnapshotPath] = createSignal("");
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
+
+  // Persist the active file path so "last-file" startup behavior can restore it.
+  createEffect(() => {
+    const id = activeTabId();
+    if (!id) return;
+    const tab = tabs.find((t) => t.id === id);
+    if (tab && tab.type === "file" && tab.path) {
+      updateSetting("startup", "last_active_file", tab.path);
+    }
+  });
 
   const toggleSettings = () => setSettingsVisible((v) => !v);
   const toggleQuickOpen = () => setQuickOpenVisible((v) => !v);
@@ -82,7 +126,8 @@ const App: Component = () => {
     onSettingsChange((s) => applyMonospaceFont(s.appearance.monospace_font));
     onSettingsChange((s) => applyInterfaceFont(s.appearance.interface_font));
     initTheme();
-    initVault();
+    await initVault();
+    applyStartupBehavior();
     initKeyboard();
 
     // Register shortcut callbacks

@@ -1,5 +1,6 @@
 import {
   Component,
+  createEffect,
   createMemo,
   createSignal,
   createResource,
@@ -27,7 +28,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { vaultInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/vault";
-import { openTab, closeTab, tabs } from "../stores/tabs";
+import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
@@ -132,6 +133,20 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [tagRenameValue, setTagRenameValue] = createSignal("");
   const [renamingProperty, setRenamingProperty] = createSignal<string | null>(null);
   const [propertyRenameValue, setPropertyRenameValue] = createSignal("");
+
+  // "Show in File Tree" reveal support
+  const [revealPath, setRevealPath] = createSignal<string | null>(null);
+
+  const onRevealInTree = (e: Event) => {
+    const path = (e as CustomEvent<string>).detail;
+    if (!path) return;
+    setMode("filetree");
+    setRevealPath(path);
+    // Clear after a tick so scroll-into-view has time to fire
+    setTimeout(() => setRevealPath(null), 500);
+  };
+  document.addEventListener("inkycap:reveal-in-tree", onRevealInTree);
+  onCleanup(() => document.removeEventListener("inkycap:reveal-in-tree", onRevealInTree));
 
   function openSearchFor(query: string) {
     setMode("search");
@@ -673,6 +688,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   onRenameInput={setFileRenameValue}
                   onRenameCommit={commitFileRename}
                   onRenameCancel={() => setFileRenamingPath(null)}
+                  activePath={getActiveTab()?.path ?? null}
+                  revealPath={revealPath()}
                 />
               )}
             </For>
@@ -1021,12 +1038,38 @@ const TreeNode: Component<{
   onRenameInput: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
+  activePath: string | null;
+  revealPath: string | null;
   depth?: number;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const depth = props.depth ?? 0;
 
   const isRenaming = () => props.renamingPath === props.node.path;
+  const isActive = () =>
+    !props.node.is_dir && props.activePath === props.node.path;
+
+  // Auto-expand directory if it's an ancestor of the reveal target
+  const isAncestorOfReveal = () => {
+    const rp = props.revealPath;
+    return props.node.is_dir && rp != null && rp.startsWith(props.node.path + "/");
+  };
+
+  // When revealPath changes and this dir is an ancestor, expand it
+  createEffect(() => {
+    if (isAncestorOfReveal()) {
+      setExpanded(true);
+    }
+  });
+
+  let itemRef: HTMLDivElement | undefined;
+
+  // Scroll into view when this node is the reveal target
+  createEffect(() => {
+    if (props.revealPath === props.node.path && itemRef) {
+      itemRef.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  });
 
   return (
     <div>
@@ -1034,7 +1077,8 @@ const TreeNode: Component<{
         when={isRenaming()}
         fallback={
           <div
-            class={`sidebar-item ${props.node.is_dir ? "sidebar-item--dir" : ""}`}
+            ref={itemRef}
+            class={`sidebar-item ${props.node.is_dir ? "sidebar-item--dir" : ""}${isActive() ? " sidebar-item--active" : ""}`}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
             onClick={(e) => {
               if (props.node.is_dir) {
@@ -1090,6 +1134,8 @@ const TreeNode: Component<{
               onRenameInput={props.onRenameInput}
               onRenameCommit={props.onRenameCommit}
               onRenameCancel={props.onRenameCancel}
+              activePath={props.activePath}
+              revealPath={props.revealPath}
               depth={depth + 1}
             />
           )}

@@ -225,8 +225,6 @@ export interface FileSettings {
   new_note_folder: string;
   attachment_folder: string;
   excluded_files_regex: string[];
-  link_format: "wikilink" | "markdown";
-  link_path_format: "shortest" | "relative" | "absolute";
   auto_update_links_on_rename: boolean;
   scaffold_folder: string;
   typst_templates_folder: string;
@@ -244,6 +242,7 @@ export interface CitationSettings {
 export interface StartupSettings {
   behavior: "last-file" | "creation-rule" | "specific-page";
   target: string;
+  last_active_file: string | null;
 }
 
 export interface JournalScrollSettings {

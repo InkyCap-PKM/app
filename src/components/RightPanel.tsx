@@ -470,6 +470,15 @@ const RightPanel: Component = () => {
     }
   }
 
+  function menuShowInFileTree() {
+    setFileMenu(null);
+    const tab = activeFileTab();
+    if (!tab) return;
+    document.dispatchEvent(
+      new CustomEvent("inkycap:reveal-in-tree", { detail: tab.path }),
+    );
+  }
+
   async function menuDelete() {
     setFileMenu(null);
     const tab = activeFileTab();
@@ -767,6 +776,9 @@ const RightPanel: Component = () => {
               Replace...
             </button>
             <div class="context-menu__separator" />
+            <button class="context-menu__item" onClick={menuShowInFileTree}>
+              Show in file tree
+            </button>
             <button class="context-menu__item" onClick={menuShowInExplorer}>
               Show in system explorer
             </button>

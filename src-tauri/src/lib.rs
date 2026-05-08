@@ -216,7 +216,6 @@ pub fn run() {
             commands::files::get_backlink_context,
             commands::settings::get_settings,
             commands::settings::update_settings,
-            commands::settings::reset_settings,
             commands::properties::get_property_types,
             commands::properties::set_property_type,
             commands::properties::rename_property_key,

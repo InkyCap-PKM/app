@@ -290,10 +290,6 @@ export async function updateSettings(settings: UserSettings): Promise<void> {
   return invoke<void>("update_settings", { settings });
 }
 
-export async function resetSettings(): Promise<UserSettings> {
-  return invoke<UserSettings>("reset_settings");
-}
-
 /**
  * Query the operating system's accent color, returning `#rrggbb` when a
  * reliable source is available and `null` otherwise. The frontend treats

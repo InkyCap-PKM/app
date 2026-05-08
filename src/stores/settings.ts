@@ -38,8 +38,6 @@ const DEFAULTS: UserSettings = {
     new_note_folder: "",
     attachment_folder: "assets",
     excluded_files_regex: [],
-    link_format: "wikilink",
-    link_path_format: "shortest",
     auto_update_links_on_rename: true,
     scaffold_folder: ".inkycap/scaffolds",
     typst_templates_folder: ".inkycap/templates",
@@ -48,6 +46,7 @@ const DEFAULTS: UserSettings = {
   startup: {
     behavior: "last-file",
     target: "",
+    last_active_file: null,
   },
   journal_scroll: {
     date_sort: "created",
@@ -150,15 +149,17 @@ export function replaceSettings(newSettings: UserSettings) {
   notifyListeners();
 }
 
-/** Reset all settings to defaults. */
-export async function resetAllSettings() {
-  try {
-    const defaults = await ipc.resetSettings();
-    setSettings(defaults);
-    notifyListeners();
-  } catch (err) {
-    console.error("Failed to reset settings:", err);
-  }
+/** Reset one or more setting groups to their defaults. */
+export function resetSettingGroups(groups: (keyof UserSettings)[]) {
+  setSettings(
+    produce((s) => {
+      for (const g of groups) {
+        (s as any)[g] = structuredClone((DEFAULTS as any)[g]);
+      }
+    }),
+  );
+  scheduleSave();
+  notifyListeners();
 }
 
 export { settings };
