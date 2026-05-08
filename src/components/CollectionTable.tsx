@@ -1062,6 +1062,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     fileName: string;
   } | null>(null);
   const [showExportMenu, setShowExportMenu] = createSignal(false);
+  const [exportPdfStandard, setExportPdfStandard] = createSignal<ipc.PdfStandardPreset>("standard");
   const [exportStatus, setExportStatus] = createSignal<string | null>(null);
   // Visible-overlay state for long-running export operations. The status
   // bar message is easy to miss for compiles that take 5–60 seconds, so
@@ -1260,11 +1261,13 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setBusyMessage("Exporting collection as PDF files…");
       setBusyDetail(`Output folder: ${outputDir}`);
       setExportStatus("Exporting all notes as PDF...");
+      const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const exported = await ipc.exportCollectionBatchPdf(
         props.path,
         activeView(),
         outputDir as string,
         "properties",
+        std,
       );
       setExportStatus(`Exported ${exported.length} PDF(s)`);
       setTimeout(() => setExportStatus(null), 4000);
@@ -1291,10 +1294,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setBusyMessage("Compiling merged book…");
       setBusyDetail(`Output: ${outputPath}`);
       setExportStatus("Exporting book…");
+      const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const written = await ipc.exportCollectionBookPdf(
         props.path,
         activeView(),
         outputPath,
+        std ? { pdfStandard: std } : undefined,
       );
       setExportStatus(`Exported book to ${written}`);
       setTimeout(() => setExportStatus(null), 4000);
@@ -1495,6 +1500,19 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                         Table as TSV
                       </button>
                       <div class="context-menu__separator" />
+                      <div class="collection-table__export-menu-field">
+                        <label class="collection-table__export-menu-label">PDF standard</label>
+                        <select
+                          class="collection-table__export-menu-select"
+                          value={exportPdfStandard()}
+                          onChange={(e) => setExportPdfStandard(e.currentTarget.value as ipc.PdfStandardPreset)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="standard">Standard (PDF 1.7)</option>
+                          <option value="pdf-a4">PDF/A-4 (archival)</option>
+                          <option value="pdf-ua1">PDF/UA-1 (accessible)</option>
+                        </select>
+                      </div>
                       <button
                         class="context-menu__item"
                         onClick={exportAllPdf}

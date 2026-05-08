@@ -11,12 +11,46 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use typst::layout::PagedDocument;
 use typst_html::HtmlDocument;
+use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 use crate::typst_pipeline::world::VaultWorld;
+
+/// PDF standard presets exposed to the frontend. Each variant maps to a
+/// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
+///
+/// As of typst-pdf 0.14, only one PDF substandard (validator) can be active at
+/// a time — `PdfStandards::new` rejects e.g. `[A_4, Ua_1]` together. If a
+/// future typst-pdf release lifts this restriction, add a combined variant
+/// like `PdfA4Ua` here and pass `&[PdfStandard::A_4, PdfStandard::Ua_1]` in
+/// `to_pdf_standards`. The frontend type in `ipc.ts` and the select options in
+/// `ExportDialog.tsx` / `CollectionTable.tsx` would each need one new entry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PdfStandardPreset {
+    /// Plain PDF 1.7 (Typst default). No archival or accessibility conformance.
+    #[default]
+    Standard,
+    /// PDF/A-4 — long-term archival (PDF 2.0 base).
+    PdfA4,
+    /// PDF/UA-1 — Universal Accessibility with full tagged structure.
+    PdfUa1,
+}
+
+impl PdfStandardPreset {
+    pub fn to_pdf_standards(self) -> PdfStandards {
+        match self {
+            Self::Standard => PdfStandards::default(),
+            Self::PdfA4 => PdfStandards::new(&[PdfStandard::A_4])
+                .expect("PDF/A-4 is a valid standard"),
+            Self::PdfUa1 => PdfStandards::new(&[PdfStandard::Ua_1])
+                .expect("PDF/UA-1 is a valid standard"),
+        }
+    }
+}
 
 /// Compile output ready for IPC. SVG strings travel through Tauri as plain
 /// JSON; for the 4-page bench-doc this is ~700KB total — well under the
@@ -190,6 +224,7 @@ impl TypstCompiler {
         &mut self,
         abs_path: &Path,
         source: String,
+        pdf_standard: PdfStandardPreset,
     ) -> Result<Vec<u8>, CompileError> {
         self.world
             .set_main(abs_path, source)
@@ -199,7 +234,10 @@ impl TypstCompiler {
 
         match warned.output {
             Ok(document) => {
-                let options = typst_pdf::PdfOptions::default();
+                let options = PdfOptions {
+                    standards: pdf_standard.to_pdf_standards(),
+                    ..PdfOptions::default()
+                };
                 typst_pdf::pdf(&document, &options)
                     .map_err(|errs| {
                         let msg = errs
@@ -231,13 +269,14 @@ impl TypstCompiler {
         source: String,
         template: &str,
         bib_style: Option<&str>,
+        pdf_standard: PdfStandardPreset,
     ) -> Result<Vec<u8>, CompileError> {
         let with_template = inject_template_import(&source, template);
         let old_style = self.bibliography_style.clone();
         if let Some(style) = bib_style {
             self.bibliography_style = Some(style.to_string());
         }
-        let result = self.compile_pdf(abs_path, with_template);
+        let result = self.compile_pdf(abs_path, with_template, pdf_standard);
         self.bibliography_style = old_style;
         result
     }

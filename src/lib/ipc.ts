@@ -556,12 +556,22 @@ export async function exportNotePdf(path: string): Promise<number[]> {
   return invoke<number[]>("export_note_pdf", { path });
 }
 
+/// PDF standard presets for native Typst PDF export. Mirrors `PdfStandardPreset`
+/// on the Rust side (kebab-case serde).
+export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1";
+
 export async function exportNotePdfToFile(
   path: string,
   outputPath: string,
   metadataMode: string = "exclude",
+  pdfStandard?: PdfStandardPreset,
 ): Promise<void> {
-  return invoke<void>("export_note_pdf_to_file", { path, outputPath, metadataMode });
+  return invoke<void>("export_note_pdf_to_file", {
+    path,
+    outputPath,
+    metadataMode,
+    pdfStandard: pdfStandard ?? null,
+  });
 }
 
 export async function exportSelfContainedTyp(
@@ -585,12 +595,14 @@ export async function exportCollectionNotePdf(
   collectionPath: string,
   outputPath: string,
   metadataMode?: string,
+  pdfStandard?: PdfStandardPreset,
 ): Promise<void> {
   return invoke<void>("export_collection_note_pdf", {
     notePath,
     collectionPath,
     outputPath,
     metadataMode: metadataMode ?? null,
+    pdfStandard: pdfStandard ?? null,
   });
 }
 
@@ -599,12 +611,14 @@ export async function exportCollectionBatchPdf(
   viewName: string,
   outputDir: string,
   metadataMode?: string,
+  pdfStandard?: PdfStandardPreset,
 ): Promise<string[]> {
   return invoke<string[]>("export_collection_batch_pdf", {
     collectionPath,
     viewName,
     outputDir,
     metadataMode: metadataMode ?? null,
+    pdfStandard: pdfStandard ?? null,
   });
 }
 
@@ -635,6 +649,7 @@ export interface BookExportOverrides {
   includeTitlePage?: boolean;
   includeOutline?: boolean;
   pageNumbering?: BookPageNumbering;
+  pdfStandard?: PdfStandardPreset;
 }
 
 export async function exportCollectionBookPdf(

@@ -331,6 +331,90 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
         .collect()
 }
 
+// ── Heading normalization (PDF/UA) ─────────────────────────────────────────
+
+/// Normalize heading levels in a note body so they nest under a level-1
+/// chapter heading without gaps. PDF/UA-1 requires strictly consecutive
+/// heading levels — you cannot jump from h1 to h3.
+///
+/// Strategy: find the minimum `=` level in the note, shift all headings so
+/// that minimum becomes `target_min` (typically 2, the level directly under
+/// the chapter heading), and compress any remaining gaps so no level is
+/// skipped. A note with `=`, `===` headings targeted at min=2 becomes
+/// `==`, `===` (shifted, gap-free).
+pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
+    let lines: Vec<&str> = body.lines().collect();
+
+    // First pass: collect the heading levels present.
+    let mut levels_present: Vec<u8> = Vec::new();
+    for line in &lines {
+        let trimmed = line.trim_start();
+        if let Some(level) = heading_level(trimmed) {
+            if !levels_present.contains(&level) {
+                levels_present.push(level);
+            }
+        }
+    }
+
+    if levels_present.is_empty() {
+        return body.to_string();
+    }
+
+    levels_present.sort();
+
+    // Build a mapping from original level → normalized level.
+    // The lowest heading becomes `target_min`, next distinct level becomes
+    // `target_min + 1`, etc. This both shifts and compresses gaps.
+    let mut level_map = std::collections::HashMap::new();
+    for (i, &level) in levels_present.iter().enumerate() {
+        level_map.insert(level, target_min + i as u8);
+    }
+
+    // Second pass: rewrite headings.
+    let mut out = String::with_capacity(body.len());
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        let trimmed = line.trim_start();
+        if let Some(orig_level) = heading_level(trimmed) {
+            if let Some(&new_level) = level_map.get(&orig_level) {
+                let leading_ws = &line[..line.len() - trimmed.len()];
+                let after_equals = &trimmed[orig_level as usize..];
+                out.push_str(leading_ws);
+                for _ in 0..new_level {
+                    out.push('=');
+                }
+                out.push_str(after_equals);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    // Preserve trailing newline if the original had one.
+    if body.ends_with('\n') && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// Count the heading level of a line (number of leading `=` characters).
+/// Returns `None` if the line is not a Typst heading.
+fn heading_level(trimmed_line: &str) -> Option<u8> {
+    if !trimmed_line.starts_with('=') {
+        return None;
+    }
+    let count = trimmed_line.bytes().take_while(|&b| b == b'=').count();
+    // A heading must be followed by a space (or end of line). "==text" is
+    // not a heading in Typst.
+    let after = trimmed_line.as_bytes().get(count);
+    if after.is_none() || after == Some(&b' ') || after == Some(&b'\t') {
+        Some(count as u8)
+    } else {
+        None
+    }
+}
+
 // ── Wrapper generation ──────────────────────────────────────────────────────
 
 /// Vault-package version directory bundled by [`crate::vault_package`].
@@ -352,6 +436,9 @@ pub fn build_book_source(
     template_import: Option<&str>,
     bibliography_path: Option<&str>,
     bibliography_style: Option<&str>,
+    // When true, normalize each note's heading levels so they nest under
+    // the chapter h1 without gaps. Required for PDF/UA-1 compliance.
+    normalize_headings: bool,
     // Page-numbering pattern from the collection's Style Overrides
     // (e.g. "1", "Page 1", "-- 1 --"). Used as the body-section
     // pattern; the front-matter pattern is derived from it by
@@ -536,7 +623,12 @@ if p >= {start} {{ str(p - {start} + 1) }} else {{ none }} \
             s.push_str("#pagebreak(weak: true)\n");
         }
 
-        let body = prepare_note_for_include(&note.content);
+        let raw_body = prepare_note_for_include(&note.content);
+        let body = if normalize_headings {
+            normalize_heading_levels(&raw_body, 2)
+        } else {
+            raw_body
+        };
         let starts_with_heading = body
             .trim_start()
             .lines()
@@ -909,6 +1001,7 @@ After
             None,
             Some("refs.bib"),
             Some("ieee"),
+            false,
             None,
             None,
         );
@@ -922,7 +1015,7 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Fallback;
         let mut n = note("methods", "Body without heading.\n");
         n.title = Some("Methods".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(src.contains("= Methods <chap-methods>"));
     }
 
@@ -932,7 +1025,7 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Fallback;
         let mut n = note("intro", "= Introduction\nBody.\n");
         n.title = Some("Introduction".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         // The injected heading variant is the one that puts the title on the
         // same line as the chapter label. Fallback mode should NOT do that
         // because the note already has its own `=` heading.
@@ -946,14 +1039,14 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Always;
         let mut n = note("intro", "= Author's Heading\nBody.\n");
         n.title = Some("Introduction".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(src.contains("= Introduction <chap-intro>"));
     }
 
     #[test]
     fn build_book_emits_merged_context_set() {
         let n = note("a", "#note()\n= A\n");
-        let src = build_book_source(&[n], &options(), None, None, None, None, None, None);
+        let src = build_book_source(&[n], &options(), None, None, None, None, false, None, None);
         assert!(src.contains("#set-merged-context(active: true,"));
         assert!(src.contains("\"a\""));
     }
@@ -963,7 +1056,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::RomanThenArabic;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         // Front matter in roman, body switches to arabic and resets.
         assert!(src.contains("#set page(numbering: \"i\")"));
         assert!(src.contains("#set page(numbering: \"1\")"));
@@ -975,7 +1068,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::ArabicFromChapters;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(src.contains("#set page(numbering: none)"));
         assert!(src.contains("#set page(numbering: \"1\")"));
         assert!(src.contains("#counter(page).update(1)"));
@@ -996,6 +1089,7 @@ After
             None,
             None,
             None,
+            false,
             Some("Page 1 of 1"),
             None,
         );
@@ -1030,6 +1124,7 @@ After
             None,
             None,
             None,
+            false,
             Some("-- 1 --"),
             None,
         );
@@ -1053,7 +1148,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::RomanThenArabic;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(src.contains("#set page(numbering: \"i\")"));
         assert!(src.contains("#set page(numbering: \"1\")"));
     }
@@ -1073,6 +1168,7 @@ After
             None,
             None,
             None,
+            false,
             Some("Page 1 of 1"),
             None,
         );
@@ -1101,7 +1197,7 @@ After
         let mut opts = options();
         opts.include_outline = false;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(
             !src.contains("show outline.entry"),
             "outline override leaked when outline was disabled:\n{}",
@@ -1125,6 +1221,7 @@ After
             None,
             None,
             None,
+            false,
             None,
             Some("I.A.1"),
         );
@@ -1155,6 +1252,7 @@ After
             None,
             None,
             None,
+            false,
             None,
             Some("I.A.1"),
         );

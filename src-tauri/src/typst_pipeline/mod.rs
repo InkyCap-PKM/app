@@ -19,5 +19,5 @@ pub mod style_injection;
 pub mod world;
 pub mod zotero;
 
-pub use compiler::{CompileError, TypstCompileResult, TypstCompiler, TypstFrame, TypstHtmlResult};
+pub use compiler::{CompileError, PdfStandardPreset, TypstCompileResult, TypstCompiler, TypstFrame, TypstHtmlResult};
 pub use diagnostic::TypstDiagnostic;

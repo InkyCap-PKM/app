@@ -13,6 +13,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::traits::VaultStorage;
+use crate::typst_pipeline::compiler::PdfStandardPreset;
 use crate::typst_pipeline::style_injection;
 
 // ── PDF export ────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ pub async fn export_note_pdf(
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let pdf_bytes = compiler
-        .compile_pdf(&path_buf, source)
+        .compile_pdf(&path_buf, source, PdfStandardPreset::default())
         .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     Ok(pdf_bytes)
@@ -56,6 +57,7 @@ pub async fn export_note_pdf_to_file(
     path: String,
     output_path: String,
     metadata_mode: String,
+    pdf_standard: Option<PdfStandardPreset>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -81,8 +83,10 @@ pub async fn export_note_pdf_to_file(
         .ok_or(InkyCapError::VaultNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
+    let standard = pdf_standard.unwrap_or_default();
+    let source = ensure_document_date_for_standard(source, standard);
     let pdf_bytes = compiler
-        .compile_pdf(&path_buf, source)
+        .compile_pdf(&path_buf, source, standard)
         .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     tokio::fs::write(&output_path, &pdf_bytes)
@@ -219,6 +223,7 @@ pub async fn export_collection_note_pdf(
     collection_path: String,
     output_path: String,
     metadata_mode: Option<String>,
+    pdf_standard: Option<PdfStandardPreset>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -270,6 +275,8 @@ pub async fn export_collection_note_pdf(
     let resolved_template = base.typst_template.as_deref()
         .map(|t| resolve_template_path_with_root(t, vault_root_ref));
 
+    let standard = pdf_standard.unwrap_or_default();
+    let source = ensure_document_date_for_standard(source, standard);
     let pdf_bytes: Vec<u8> = if let Some(ref template) = resolved_template {
         compiler
             .compile_pdf_with_template(
@@ -277,6 +284,7 @@ pub async fn export_collection_note_pdf(
                 source,
                 template,
                 base.bibliography_style.as_deref(),
+                standard,
             )
             .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?
     } else {
@@ -284,7 +292,7 @@ pub async fn export_collection_note_pdf(
             compiler.set_bibliography_style(Some(style.clone()));
         }
         let result = compiler
-            .compile_pdf(&note_path_buf, source)
+            .compile_pdf(&note_path_buf, source, standard)
             .map_err(|e| InkyCapError::ExportFailed(e.to_string()));
         compiler.set_bibliography_style(None);
         result?
@@ -304,6 +312,7 @@ pub async fn export_collection_batch_pdf(
     view_name: String,
     output_dir: String,
     metadata_mode: Option<String>,
+    pdf_standard: Option<PdfStandardPreset>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let data = crate::commands::collections::get_collection_data_internal(
@@ -372,6 +381,8 @@ pub async fn export_collection_batch_pdf(
             .ok_or(InkyCapError::VaultNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
+        let standard = pdf_standard.unwrap_or_default();
+        let source = ensure_document_date_for_standard(source, standard);
         let compile_result: Result<Vec<u8>, _> = if let Some(ref template) = resolved_template {
             compiler
                 .compile_pdf_with_template(
@@ -379,6 +390,7 @@ pub async fn export_collection_batch_pdf(
                     source,
                     template,
                     base.bibliography_style.as_deref(),
+                    standard,
                 )
                 .map_err(|e| format!("{}: {}", row.file_name, e))
         } else {
@@ -386,7 +398,7 @@ pub async fn export_collection_batch_pdf(
                 compiler.set_bibliography_style(Some(style.clone()));
             }
             let result = compiler
-                .compile_pdf(&note_path_buf, source)
+                .compile_pdf(&note_path_buf, source, standard)
                 .map_err(|e| format!("{}: {}", row.file_name, e));
             compiler.set_bibliography_style(None);
             result
@@ -449,6 +461,7 @@ pub struct BookExportOverrides {
     pub include_title_page: Option<bool>,
     pub include_outline: Option<bool>,
     pub page_numbering: Option<crate::collection_parser::model::BookPageNumbering>,
+    pub pdf_standard: Option<PdfStandardPreset>,
 }
 
 /// Detected user-label collision returned to the frontend so the UI can
@@ -493,6 +506,7 @@ pub async fn export_collection_book_pdf(
     }
 
     // 2. Resolve effective options: collection book config + dialog overrides.
+    let book_pdf_standard = overrides.as_ref().and_then(|o| o.pdf_standard).unwrap_or_default();
     let mut options = BookExportOptions::from_config(base.book.as_ref());
     if let Some(ov) = overrides {
         if ov.title.is_some() { options.title = ov.title; }
@@ -615,6 +629,7 @@ pub async fn export_collection_book_pdf(
         .and_then(|h| h.numbering.clone());
 
     // 6. Build the wrapper source.
+    let normalize_headings = book_pdf_standard == PdfStandardPreset::PdfUa1;
     let source = book_wrapper::build_book_source(
         &notes,
         &options,
@@ -622,6 +637,7 @@ pub async fn export_collection_book_pdf(
         template_import_line.as_deref(),
         bib_path_for_wrapper.as_deref(),
         base.bibliography_style.as_deref(),
+        normalize_headings,
         body_numbering_pattern.as_deref(),
         heading_numbering_pattern.as_deref(),
     );
@@ -636,8 +652,9 @@ pub async fn export_collection_book_pdf(
     if let Some(ref style) = base.bibliography_style {
         compiler.set_bibliography_style(Some(style.clone()));
     }
+    let source = ensure_document_date_for_standard(source, book_pdf_standard);
     let compile_result = compiler
-        .compile_pdf(&synthetic_main, source)
+        .compile_pdf(&synthetic_main, source, book_pdf_standard)
         .map_err(|e| InkyCapError::ExportFailed(e.to_string()));
     compiler.set_bibliography_style(None);
     let pdf_bytes = compile_result?;
@@ -1106,6 +1123,42 @@ fn inject_document_metadata(source: &str) -> String {
     result.push_str(&set_rule);
     result.push_str(&source[insert_after..]);
     result
+}
+
+/// Ensure the source has a `#set document(date: ...)` rule when exporting to a
+/// PDF standard that requires one (PDF/A-4, PDF/UA-1). If the note already has
+/// a date property and metadata injection is active, the date will already be
+/// present. Otherwise we inject today's date as a fallback so the export
+/// doesn't fail with "missing document date".
+fn ensure_document_date_for_standard(source: String, standard: PdfStandardPreset) -> String {
+    if standard == PdfStandardPreset::Standard {
+        return source;
+    }
+
+    // If a `#set document(` rule already exists, assume it covers the date.
+    if source.contains("#set document(") {
+        return source;
+    }
+
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let dt = parse_date_to_typst_datetime(&today)
+        .unwrap_or_else(|| "datetime.today()".to_string());
+    let set_rule = format!("#set document(date: {})\n", dt);
+
+    // Insert after the inkycap-vault import line if present, otherwise prepend.
+    let import_marker = "#import \"/.inkycap/packages/inkycap-vault/";
+    if let Some(pos) = source.find(import_marker) {
+        if let Some(line_end) = source[pos..].find('\n') {
+            let insert_at = pos + line_end + 1;
+            let mut result = String::with_capacity(source.len() + set_rule.len());
+            result.push_str(&source[..insert_at]);
+            result.push_str(&set_rule);
+            result.push_str(&source[insert_at..]);
+            return result;
+        }
+    }
+
+    format!("{}{}", set_rule, source)
 }
 
 /// Parse a date string like "2026-04-28" into a Typst `datetime()` call.

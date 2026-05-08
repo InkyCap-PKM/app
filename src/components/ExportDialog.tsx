@@ -1,6 +1,7 @@
 import { Component, createSignal, onMount, onCleanup, Show } from "solid-js";
 import { save } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
+import type { PdfStandardPreset } from "../lib/ipc";
 
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "html" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
@@ -49,8 +50,18 @@ const METADATA_HINTS: Partial<Record<ExportFormat, Partial<Record<MetadataMode, 
   },
 };
 
+const PDF_STANDARD_OPTIONS: { value: PdfStandardPreset; label: string; description: string }[] = [
+  { value: "standard", label: "Standard (PDF 1.7)", description: "Default Typst output. Widely compatible." },
+  { value: "pdf-a4", label: "PDF/A-4 (archival)", description: "Long-term archival format based on PDF 2.0. Suitable for institutional repositories." },
+  { value: "pdf-ua1", label: "PDF/UA-1 (accessible)", description: "Universal Accessibility. Produces fully tagged, structured PDF for assistive technologies." },
+];
+
 function supportsMetadataMode(fmt: ExportFormat): boolean {
   return fmt === "pdf" || fmt === "typst-html" || FORMAT_INFO[fmt].pandoc;
+}
+
+function supportsPdfStandard(fmt: ExportFormat): boolean {
+  return fmt === "pdf";
 }
 
 const ExportDialog: Component = () => {
@@ -66,6 +77,7 @@ const ExportDialog: Component = () => {
   const [extractFigures, setExtractFigures] = createSignal(false);
   const [stripWikilinks, setStripWikilinks] = createSignal(false);
   const [markdownPreserveTypst, setMarkdownPreserveTypst] = createSignal(true);
+  const [pdfStandard, setPdfStandard] = createSignal<PdfStandardPreset>("standard");
 
   function fileName(): string {
     const p = filePath();
@@ -83,6 +95,7 @@ const ExportDialog: Component = () => {
     setSuccess(null);
     setExporting(false);
     setMetadataMode("exclude");
+    setPdfStandard("standard");
     setVisible(true);
 
     ipc.detectPandoc().then((path) => setPandocAvailable(path !== null));
@@ -146,10 +159,11 @@ const ExportDialog: Component = () => {
         if (!outputPath) return;
 
         setExporting(true);
+        const std = pdfStandard() === "standard" ? undefined : pdfStandard();
         if (collectionPath()) {
-          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode());
+          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std);
         } else {
-          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode());
+          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std);
         }
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "markdown") {
@@ -254,6 +268,23 @@ const ExportDialog: Component = () => {
                 </optgroup>
               </select>
             </div>
+
+            <Show when={supportsPdfStandard(format())}>
+              <div class="export-dialog__field">
+                <label>PDF standard</label>
+                <select
+                  value={pdfStandard()}
+                  onChange={(e) => setPdfStandard(e.currentTarget.value as PdfStandardPreset)}
+                >
+                  {PDF_STANDARD_OPTIONS.map((opt) => (
+                    <option value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <span class="export-dialog__hint">
+                  {PDF_STANDARD_OPTIONS.find((o) => o.value === pdfStandard())?.description}
+                </span>
+              </div>
+            </Show>
 
             <Show when={FORMAT_INFO[format()].pandoc && !pandocAvailable()}>
               <div class="export-dialog__warning">

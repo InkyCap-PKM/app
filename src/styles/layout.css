@@ -479,6 +479,29 @@
   margin-top: 2px;
 }
 
+.collection-table__export-menu-field {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collection-table__export-menu-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.collection-table__export-menu-select {
+  flex: 1;
+  font-size: var(--text-xs);
+  padding: 2px 4px;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+}
+
 .collection-table__export-status {
   padding: 6px 12px;
   font-size: var(--text-sm);
