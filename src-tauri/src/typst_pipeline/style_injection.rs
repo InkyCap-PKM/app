@@ -32,9 +32,68 @@ pub fn ensure_length_unit(value: &str, default_unit: &str) -> String {
     }
 }
 
+/// Parse a CSS-style font stack (e.g. `"Adwaita Mono", "Ubuntu Mono", monospace`)
+/// into individual family names, dropping CSS generic keywords (`monospace`,
+/// `sans-serif`, `serif`, `system-ui`, etc.) that Typst doesn't recognize.
+/// Returns the families in the same order so Typst's own font fallback chain
+/// mirrors what the user sees in the editor.
+pub fn parse_font_stack(stack: &str) -> Vec<String> {
+    const GENERIC_KEYWORDS: &[&str] = &[
+        "monospace",
+        "sans-serif",
+        "serif",
+        "system-ui",
+        "-apple-system",
+        "ui-monospace",
+        "ui-sans-serif",
+        "ui-serif",
+        "cursive",
+        "fantasy",
+        "emoji",
+        "math",
+        "fangsong",
+    ];
+
+    stack
+        .split(',')
+        .filter_map(|raw| {
+            let trimmed = raw.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if GENERIC_KEYWORDS.iter().any(|k| trimmed.eq_ignore_ascii_case(k)) {
+                return None;
+            }
+            Some(trimmed.to_string())
+        })
+        .collect()
+}
+
+/// Format a list of font names as a Typst array literal, or a single quoted
+/// string when there's only one. Returns `None` if the list is empty.
+fn format_font_value(families: &[String]) -> Option<String> {
+    match families.len() {
+        0 => None,
+        1 => Some(format!("\"{}\"", sanitize_typst_string(&families[0]))),
+        _ => {
+            let inner = families
+                .iter()
+                .map(|f| format!("\"{}\"", sanitize_typst_string(f)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(format!("({})", inner))
+        }
+    }
+}
+
 /// Build `#set` rules from the app-level document defaults.
-/// Only emits rules for non-`None` fields.
-pub fn build_defaults_rules(doc: &DocumentDefaults) -> String {
+///
+/// `monospace_font` is the user's editor monospace stack (from
+/// `appearance.monospace_font`); when non-empty it becomes the default font
+/// for `#raw` (code) elements so reading mode mirrors what the user sees in
+/// the visual editor. Per-collection or per-note `#show raw: set text(...)`
+/// rules later in the document still win via Typst's cascade.
+pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> String {
     let mut rules = Vec::new();
 
     let mut text_args = Vec::new();
@@ -54,6 +113,11 @@ pub fn build_defaults_rules(doc: &DocumentDefaults) -> String {
         if !paper.is_empty() {
             rules.push(format!("#set page(paper: \"{}\")", sanitize_typst_string(paper)));
         }
+    }
+
+    let mono_families = parse_font_stack(monospace_font);
+    if let Some(value) = format_font_value(&mono_families) {
+        rules.push(format!("#show raw: set text(font: {})", value));
     }
 
     rules.join("\n")
@@ -133,7 +197,7 @@ mod tests {
     #[test]
     fn empty_defaults_no_injection() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_rules(&doc);
+        let rules = build_defaults_rules(&doc, "");
         assert!(rules.is_empty());
     }
 
@@ -144,9 +208,34 @@ mod tests {
             text_size: Some(12.0),
             page_size: Some("us-letter".to_string()),
         };
-        let rules = build_defaults_rules(&doc);
+        let rules = build_defaults_rules(&doc, "");
         assert!(rules.contains("#set text(font: \"Inter\", size: 12pt)"));
         assert!(rules.contains("#set page(paper: \"us-letter\")"));
+    }
+
+    #[test]
+    fn monospace_stack_emits_show_raw_rule() {
+        let doc = DocumentDefaults::default();
+        let rules = build_defaults_rules(
+            &doc,
+            "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", monospace",
+        );
+        assert!(rules.contains(
+            "#show raw: set text(font: (\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\"))"
+        ));
+    }
+
+    #[test]
+    fn monospace_single_family_emits_string_value() {
+        let doc = DocumentDefaults::default();
+        let rules = build_defaults_rules(&doc, "Adwaita Mono");
+        assert!(rules.contains("#show raw: set text(font: \"Adwaita Mono\")"));
+    }
+
+    #[test]
+    fn parse_font_stack_strips_generic_keywords() {
+        let families = parse_font_stack("\"JetBrains Mono\", Consolas, monospace");
+        assert_eq!(families, vec!["JetBrains Mono", "Consolas"]);
     }
 
     #[test]

@@ -238,7 +238,7 @@ pub async fn export_collection_note_pdf(
 
     // Inject style cascade: app defaults + collection style
     let app_settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document);
+    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
     let source = style_injection::inject_style_rules(
@@ -323,7 +323,7 @@ pub async fn export_collection_batch_pdf(
 
     // Pre-compute style injection strings (same for all notes in the collection)
     let app_settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document);
+    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
 
@@ -544,7 +544,7 @@ pub async fn export_collection_book_pdf(
 
     // 5. Resolve template, bibliography, and style cascade.
     let app_settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document);
+    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
 
@@ -694,7 +694,7 @@ pub async fn export_collection_static_site(
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
 
     let app_settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document);
+    let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
 

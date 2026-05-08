@@ -8,7 +8,6 @@ import * as ipc from "../lib/ipc";
 // Default settings (must match Rust defaults)
 const DEFAULTS: UserSettings = {
   editor: {
-    font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
     font_size: 15,
     body_font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
     body_font_size: 17,

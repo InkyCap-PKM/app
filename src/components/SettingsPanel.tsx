@@ -331,8 +331,8 @@ function AppearanceSettingsSection() {
           <span class="settings__description">Font for note content</span>
         </div>
         <FontPicker
-          value={settings.editor.font_family}
-          onChange={(v) => updateSetting("editor", "font_family", v)}
+          value={settings.editor.body_font_family}
+          onChange={(v) => updateSetting("editor", "body_font_family", v)}
         />
       </div>
       <SettingCombobox

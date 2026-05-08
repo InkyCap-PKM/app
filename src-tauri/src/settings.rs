@@ -14,12 +14,10 @@ use crate::errors::Result;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EditorSettings {
-    /// Font family for the editor content area in **source mode**.
-    pub font_family: String,
-    /// Base font size in pixels (source mode).
+    /// Base UI scale factor in pixels. Drives `--text-*` CSS sizes.
+    /// (The editor's textual content uses `body_font_size` instead.)
     pub font_size: u32,
-    /// Font family for the editor content area in **live preview mode**.
-    /// Empty string means "use the CSS variable --editor-font-body".
+    /// Font family for the editor content area.
     pub body_font_family: String,
     /// Base font size in pixels for live preview mode.
     pub body_font_size: u32,
@@ -55,7 +53,6 @@ pub struct EditorSettings {
 impl Default for EditorSettings {
     fn default() -> Self {
         Self {
-            font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
             font_size: 15,
             body_font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
             body_font_size: 17,

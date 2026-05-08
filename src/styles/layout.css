@@ -1702,6 +1702,18 @@
   z-index: 100;
 }
 
+/* Drop-up variant: opened above the input when there isn't enough space
+ * below. Mirrors the box-shadow direction so the menu still looks "lifted"
+ * relative to its anchor. The 240px max-height stays in sync with the JS
+ * threshold in FontPicker.tsx. */
+.settings__font-dropdown--up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 2px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+}
+
 .settings__font-option {
   display: block;
   width: 100%;
@@ -4616,7 +4628,7 @@
 }
 
 .typst-reading__html-content pre {
-  background: var(--bg-active);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 12px 16px;

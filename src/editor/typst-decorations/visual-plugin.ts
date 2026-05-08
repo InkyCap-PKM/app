@@ -322,6 +322,17 @@ function buildDecorations(state: EditorState): DecorationSet {
               decos.push(hide.range(node.to - 1, node.to));
               decos.push(rawInline.range(node.from + 1, node.to - 1));
             } else {
+              if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) {
+                const startLine = state.doc.lineAt(node.from);
+                const endLine = state.doc.lineAt(node.to);
+                for (let ln = startLine.number; ln <= endLine.number; ln++) {
+                  const line = state.doc.line(ln);
+                  decos.push(
+                    Decoration.line({ class: "cm-typst-codeblock-edit" }).range(line.from),
+                  );
+                }
+                return false;
+              }
               const firstNewline = text.indexOf("\n");
               const lang = firstNewline > 3 ? text.substring(3, firstNewline).trim() : "";
               const lastDelim = text.lastIndexOf("```");
@@ -693,7 +704,7 @@ function handleFuncCall(
           : hide
         ).range(from, content.from));
         decos.push(hide.range(content.to, to));
-        addSplitMarks(state, content.from, content.to, highlight, decos);
+        addSplitMarks(state, content.from, content.to, buildHighlightMark(text), decos);
       }
       return true;
     }
@@ -1017,6 +1028,75 @@ function extractBracketContent(text: string): string | null {
     }
   }
   return null;
+}
+
+const TYPST_COLORS: Record<string, string> = {
+  black: "#000", gray: "#808080", silver: "#c0c0c0", white: "#fff",
+  navy: "#001f3f", blue: "#2196f3", aqua: "#00bcd4", teal: "#009688",
+  eastern: "#239dad", purple: "#9c27b0", fuchsia: "#e91e63",
+  maroon: "#800000", red: "#f44336", orange: "#ff9800", yellow: "#ffeb3b",
+  olive: "#808000", green: "#4caf50", lime: "#8fce00",
+};
+
+function parseTypstColor(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (TYPST_COLORS[trimmed]) return TYPST_COLORS[trimmed];
+
+  const hexMatch = trimmed.match(/^rgb\(\s*"(#[0-9a-fA-F]{3,8})"\s*\)$/);
+  if (hexMatch) return hexMatch[1];
+
+  const rgbMatch = trimmed.match(
+    /^rgb\(\s*(\d+(?:\.\d+)?%?)\s*,\s*(\d+(?:\.\d+)?%?)\s*,\s*(\d+(?:\.\d+)?%?)\s*(?:,\s*(\d+(?:\.\d+)?%?)\s*)?\)$/,
+  );
+  if (rgbMatch) {
+    const conv = (v: string) => v.endsWith("%") ? Math.round(parseFloat(v) * 2.55) : parseInt(v);
+    const [, r, g, b, a] = rgbMatch;
+    if (a != null) return `rgba(${conv(r)}, ${conv(g)}, ${conv(b)}, ${a.endsWith("%") ? parseFloat(a) / 100 : parseInt(a) / 255})`;
+    return `rgb(${conv(r)}, ${conv(g)}, ${conv(b)})`;
+  }
+
+  const lumaMatch = trimmed.match(/^luma\(\s*(\d+)\s*\)$/);
+  if (lumaMatch) { const v = lumaMatch[1]; return `rgb(${v}, ${v}, ${v})`; }
+
+  return null;
+}
+
+function extractHighlightParams(text: string): { fill?: string; stroke?: string; radius?: string } {
+  const params: { fill?: string; stroke?: string; radius?: string } = {};
+
+  const fillMatch = text.match(/fill\s*:\s*([^,)\]]+)/);
+  if (fillMatch) {
+    const color = parseTypstColor(fillMatch[1]);
+    if (color) params.fill = color;
+  }
+
+  const strokeMatch = text.match(/stroke\s*:\s*([^,)\]]+)/);
+  if (strokeMatch) {
+    const color = parseTypstColor(strokeMatch[1]);
+    if (color) params.stroke = color;
+  }
+
+  const radiusMatch = text.match(/radius\s*:\s*(\d+(?:\.\d+)?)(pt|em|%)/);
+  if (radiusMatch) {
+    const val = radiusMatch[1];
+    const unit = radiusMatch[2] === "pt" ? "px" : radiusMatch[2];
+    params.radius = `${val}${unit}`;
+  }
+
+  return params;
+}
+
+function buildHighlightMark(text: string): Decoration {
+  const params = extractHighlightParams(text);
+  if (!params.fill && !params.stroke && !params.radius) return highlight;
+
+  const parts: string[] = [];
+  parts.push(`background-color: ${params.fill ?? "var(--bg-search-match)"}`);
+  if (params.stroke) parts.push(`outline: 1px solid ${params.stroke}`);
+  parts.push(`border-radius: ${params.radius ?? "2px"}`);
+  parts.push("padding: 0 2px");
+
+  return Decoration.mark({ attributes: { style: parts.join("; ") } });
 }
 
 const expandedFuncField = StateField.define<number | null>({
@@ -1511,13 +1591,42 @@ export const visualTheme = EditorView.theme({
     display: "block",
     overflow: "hidden",
   },
-  ".cm-typst-codeblock-lang": {
-    display: "block",
-    fontSize: "0.75em",
-    color: "var(--fg-dim)",
-    padding: "4px 10px 2px",
+  ".cm-typst-codeblock-header": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "6px",
+    padding: "2px 6px 2px 10px",
     borderBottom: "1px solid var(--border-subtle)",
     backgroundColor: "var(--bg-hover)",
+    minHeight: "22px",
+  },
+  ".cm-typst-codeblock-lang": {
+    fontSize: "0.75em",
+    color: "var(--fg-dim)",
+    fontFamily: "var(--editor-font-mono, monospace)",
+  },
+  ".cm-typst-codeblock-copy": {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "22px",
+    height: "22px",
+    padding: "0",
+    border: "none",
+    borderRadius: "4px",
+    background: "transparent",
+    color: "var(--fg-dim)",
+    cursor: "pointer",
+    transition: "background-color 0.12s, color 0.12s",
+    fontFamily: "inherit",
+  },
+  ".cm-typst-codeblock-copy:hover": {
+    backgroundColor: "var(--bg-tertiary, var(--bg-secondary))",
+    color: "var(--fg-primary)",
+  },
+  ".cm-typst-codeblock-copy.is-copied": {
+    color: "var(--accent-color, #1D7874)",
   },
   ".cm-typst-codeblock pre": {
     margin: "0",
@@ -1525,9 +1634,18 @@ export const visualTheme = EditorView.theme({
     overflow: "auto",
     fontSize: "0.9em",
     lineHeight: "1.5",
+    fontFamily: "inherit",
   },
   ".cm-typst-codeblock code": {
     fontFamily: "inherit",
+  },
+  // Edit-mode lines: when the cursor enters the code block we show the raw
+  // source instead of the widget. Just the monospace font + a tighter size;
+  // no surrounding frame, since the visible delimiters (` ``` `) already
+  // mark the block boundaries while editing.
+  ".cm-typst-codeblock-edit": {
+    fontFamily: "var(--editor-font-mono, monospace) !important",
+    fontSize: "0.9em",
   },
   ".cm-typst-block-pill-row": {
     display: "flex",

@@ -1,5 +1,6 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type ChangeSpec } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
 
 interface ToolbarAction {
   label: string;
@@ -54,10 +55,29 @@ function hideToolbar() {
   el.style.display = "none";
 }
 
+function isInsideRaw(view: EditorView, from: number, to: number): boolean {
+  const tree = syntaxTree(view.state);
+  let inside = false;
+  tree.iterate({
+    from, to,
+    enter(node) {
+      if (node.name === "Raw" || node.name === "RawBlock") {
+        if (node.from <= from && node.to >= to) inside = true;
+      }
+    },
+  });
+  return inside;
+}
+
 function showToolbar(view: EditorView) {
   activeView = view;
   const { from, to } = view.state.selection.main;
   if (from === to) {
+    hideToolbar();
+    return;
+  }
+
+  if (isInsideRaw(view, from, to)) {
     hideToolbar();
     return;
   }

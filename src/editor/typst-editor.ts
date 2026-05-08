@@ -79,6 +79,7 @@ function typstLanguage(): Extension {
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
 import { typstVisualMode, autoExpandFacet, protectedRangesField } from "./typst-decorations/visual-plugin";
+import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
 import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
@@ -261,6 +262,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     typstLanguage(),
     drawSelection(),
     syntaxHighlighting(inkycapHighlight),
+    sourceRawHighlight(),
     inkycapTheme,
     wikilinkSuggest,
     dragDropHandler,

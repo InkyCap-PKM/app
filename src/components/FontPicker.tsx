@@ -20,7 +20,25 @@ export function FontPicker(props: FontPickerProps) {
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  // When the input doesn't have enough space below to show the dropdown
+  // (e.g. near the bottom of the settings panel), flip it above the input.
+  const [dropUp, setDropUp] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
+  let inputRef: HTMLInputElement | undefined;
+
+  // Match the CSS rule below: `max-height: 240px`. Keep these in sync.
+  const DROPDOWN_MAX_HEIGHT = 240;
+  const MARGIN = 8;
+
+  function chooseDirection() {
+    if (!inputRef) return;
+    const rect = inputRef.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+    const spaceAbove = rect.top - MARGIN;
+    // Prefer below; flip up only if below is genuinely short and above is
+    // taller. This avoids flipping for menus that fit fine below.
+    setDropUp(spaceBelow < DROPDOWN_MAX_HEIGHT && spaceAbove > spaceBelow);
+  }
 
   const filtered = () => {
     const list = fonts() ?? [];
@@ -33,7 +51,7 @@ export function FontPicker(props: FontPickerProps) {
     setQuery(value);
     props.onChange(value);
     setSelectedIndex(0);
-    if (!open()) setOpen(true);
+    if (!open()) openMenu();
   }
 
   function selectFont(name: string) {
@@ -42,10 +60,15 @@ export function FontPicker(props: FontPickerProps) {
     setOpen(false);
   }
 
+  function openMenu() {
+    chooseDirection();
+    setOpen(true);
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (!open()) {
       if (e.key === "ArrowDown") {
-        setOpen(true);
+        openMenu();
         e.preventDefault();
       }
       return;
@@ -91,16 +114,20 @@ export function FontPicker(props: FontPickerProps) {
   return (
     <div class="settings__font-picker" ref={containerRef}>
       <input
+        ref={inputRef}
         type="text"
         class="settings__text-input"
         value={props.value}
         placeholder={props.placeholder ?? "Search fonts…"}
         onInput={(e) => handleInput(e.currentTarget.value)}
-        onFocus={() => { setQuery(""); setOpen(true); }}
+        onFocus={() => { setQuery(""); openMenu(); }}
         onKeyDown={handleKeyDown}
       />
       <Show when={open() && filtered().length > 0}>
-        <div class="settings__font-dropdown">
+        <div
+          class="settings__font-dropdown"
+          classList={{ "settings__font-dropdown--up": dropUp() }}
+        >
           <For each={filtered()}>
             {(name, i) => (
               <button

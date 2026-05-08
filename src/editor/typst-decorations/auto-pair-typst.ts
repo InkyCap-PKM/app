@@ -33,6 +33,20 @@ export const autoPairTypstInput = EditorView.inputHandler.of(
       return true;
     }
 
+    // Triple backtick: when two backticks already precede the cursor,
+    // insert the third backtick plus a code block template instead of
+    // auto-pairing a fourth backtick.
+    if (text === "`") {
+      const before = state.doc.sliceString(Math.max(0, from - 2), from);
+      if (before === "``") {
+        view.dispatch({
+          changes: { from, to, insert: "`\n\n```" },
+          selection: EditorSelection.cursor(from + 2),
+        });
+        return true;
+      }
+    }
+
     const after = state.doc.sliceString(from, from + 1);
     if (after === text) {
       view.dispatch({

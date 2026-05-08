@@ -25,7 +25,7 @@ import ToastHost from "./components/ToastHost";
 import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initVault } from "./stores/vault";
-import { initTheme, applyMonospaceFont } from "./stores/theme";
+import { initTheme, applyMonospaceFont, applyInterfaceFont } from "./stores/theme";
 import { initSettings, onSettingsChange, settings, updateSetting } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard, onShortcut } from "./lib/keyboard";
@@ -80,6 +80,7 @@ const App: Component = () => {
     applyUiScale(settings.editor.font_size);
     onSettingsChange((s) => applyUiScale(s.editor.font_size));
     onSettingsChange((s) => applyMonospaceFont(s.appearance.monospace_font));
+    onSettingsChange((s) => applyInterfaceFont(s.appearance.interface_font));
     initTheme();
     initVault();
     initKeyboard();
@@ -90,15 +91,18 @@ const App: Component = () => {
     onShortcut("command-palette", toggleCommandPalette);
     onShortcut("new-note", newNote);
     onShortcut("citation-picker", () => setCitationPickerVisible(true));
+    // Ctrl +/-/0 adjusts the editor content size (the note text), not the
+    // overall UI scale — the UI scale is configurable in settings but isn't
+    // what users typically want to nudge with zoom shortcuts.
     onShortcut("zoom-in", () => {
-      const newSize = Math.min(24, settings.editor.font_size + 1);
-      updateSetting("editor", "font_size", newSize);
+      const newSize = Math.min(32, settings.editor.body_font_size + 1);
+      updateSetting("editor", "body_font_size", newSize);
     });
     onShortcut("zoom-out", () => {
-      const newSize = Math.max(10, settings.editor.font_size - 1);
-      updateSetting("editor", "font_size", newSize);
+      const newSize = Math.max(8, settings.editor.body_font_size - 1);
+      updateSetting("editor", "body_font_size", newSize);
     });
-    onShortcut("zoom-reset", () => updateSetting("editor", "font_size", 15));
+    onShortcut("zoom-reset", () => updateSetting("editor", "body_font_size", 17));
 
     // Register all built-in commands with the command palette
     registerBuiltinCommands({

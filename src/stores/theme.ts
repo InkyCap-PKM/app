@@ -90,7 +90,7 @@ function applyAccent() {
 }
 
 /** Apply interface font as a CSS custom property. */
-function applyInterfaceFont(font: string) {
+export function applyInterfaceFont(font: string) {
   document.documentElement.style.setProperty("--interface-font", font);
 }
 

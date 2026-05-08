@@ -113,7 +113,10 @@ pub async fn compile_typst_html(
 /// `#set` rules later in the document win over both.
 pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
     let settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(&settings.document);
+    let defaults_rules = style_injection::build_defaults_rules(
+        &settings.document,
+        &settings.appearance.monospace_font,
+    );
 
     let collection_rules = resolve_collection_style(note_path, state).await;
 

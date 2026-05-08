@@ -3,6 +3,7 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
 import { expandFunc } from "./effects";
+import { highlightCodeInto } from "./code-highlight";
 
 // Build the small pill row that block elements (image, embed, callout,
 // blockquote) show at their top edge when the cursor is on the line.
@@ -178,23 +179,78 @@ export class CodeBlockWidget extends WidgetType {
     const wrap = document.createElement("div");
     wrap.className = "cm-typst-codeblock";
 
+    const header = document.createElement("div");
+    header.className = "cm-typst-codeblock-header";
     if (this.lang) {
       const label = document.createElement("span");
       label.className = "cm-typst-codeblock-lang";
       label.textContent = this.lang;
-      wrap.appendChild(label);
+      header.appendChild(label);
+    } else {
+      // Empty span keeps the header row tall and pushes the copy button to
+      // the right whether or not a language label is present.
+      const spacer = document.createElement("span");
+      spacer.className = "cm-typst-codeblock-lang";
+      header.appendChild(spacer);
     }
+
+    const codeText = this.code;
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "cm-typst-codeblock-copy";
+    copyBtn.title = "Copy code";
+    copyBtn.setAttribute("aria-label", "Copy code");
+    copyBtn.innerHTML =
+      // Single-glyph clipboard icon; swapped for a check on success.
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener("mousedown", (e) => {
+      // Stop CodeMirror from moving the selection into the widget on click.
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    copyBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void navigator.clipboard
+        .writeText(codeText)
+        .then(() => {
+          copyBtn.classList.add("is-copied");
+          copyBtn.title = "Copied";
+          setTimeout(() => {
+            copyBtn.classList.remove("is-copied");
+            copyBtn.title = "Copy code";
+          }, 1200);
+        })
+        .catch((err) => {
+          console.error("Failed to copy code block:", err);
+        });
+    });
+    header.appendChild(copyBtn);
+    wrap.appendChild(header);
 
     const pre = document.createElement("pre");
     const code = document.createElement("code");
-    code.textContent = this.code;
     pre.appendChild(code);
     wrap.appendChild(pre);
+
+    // Highlight asynchronously; the synchronous fallback inside
+    // highlightCodeInto fills `code` with plain text first so the widget
+    // is never visibly empty during the language load.
+    void highlightCodeInto(this.lang, this.code, code);
 
     return wrap;
   }
 
-  ignoreEvent() { return false; }
+  // Let clicks on the copy button (or text selection inside the widget)
+  // through to the DOM handlers; CodeMirror would otherwise treat the whole
+  // widget as opaque.
+  ignoreEvent(e: Event) {
+    if (e.type === "mousedown" || e.type === "click") {
+      const target = e.target as HTMLElement;
+      if (target.closest(".cm-typst-codeblock-copy")) return true;
+    }
+    return false;
+  }
 }
 
 export class ImageWidget extends WidgetType {

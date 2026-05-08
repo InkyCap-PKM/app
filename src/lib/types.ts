@@ -178,7 +178,6 @@ export interface BookExportConfig {
 // User settings (mirrors Rust UserSettings struct)
 
 export interface EditorSettings {
-  font_family: string;
   font_size: number;
   body_font_family: string;
   body_font_size: number;
