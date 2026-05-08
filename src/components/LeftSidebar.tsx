@@ -148,6 +148,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   document.addEventListener("inkycap:reveal-in-tree", onRevealInTree);
   onCleanup(() => document.removeEventListener("inkycap:reveal-in-tree", onRevealInTree));
 
+  // Other panels (e.g. SearchPanel) bookmark items asynchronously and
+  // dispatch this event to make the Bookmarks pane re-query.
+  const onBookmarksChanged = () => setRefreshTick((t) => t + 1);
+  document.addEventListener("inkycap:bookmarks-changed", onBookmarksChanged);
+  onCleanup(() =>
+    document.removeEventListener("inkycap:bookmarks-changed", onBookmarksChanged),
+  );
+
   function openSearchFor(query: string) {
     setMode("search");
     document.dispatchEvent(
@@ -764,7 +772,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     fallback={
                       <div
                         class="sidebar-item"
-                        onClick={() => openSearchFor(`property:${key}`)}
+                        onClick={() => openSearchFor(`property:${key}=`)}
                         onContextMenu={(e) => handlePropertyContext(e, key)}
                       >
                         <span class="sidebar-item__label">{key}</span>

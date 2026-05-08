@@ -336,10 +336,12 @@ export async function getOsAccentColor(): Promise<string | null> {
 export async function vaultSearch(
   query: string,
   maxResults?: number,
+  caseSensitive?: boolean,
 ): Promise<SearchResult[]> {
   return invoke<SearchResult[]>("vault_search", {
     query,
     maxResults: maxResults ?? null,
+    caseSensitive: caseSensitive ?? null,
   });
 }
 
@@ -356,6 +358,7 @@ export async function searchAndReplace(
     caseSensitive: caseSensitive ?? null,
   });
 }
+
 
 export async function getAllTags(): Promise<[string, number][]> {
   return invoke<[string, number][]>("get_all_tags");

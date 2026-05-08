@@ -17,6 +17,20 @@ pub struct SearchResult {
     pub match_ranges: Vec<(usize, usize)>,
     /// Relevance score (higher is better).
     pub score: f64,
+    /// File modification time as a Unix timestamp in seconds. 0 if unknown.
+    /// Surfaced so the UI can offer "Modified time" sort orders without a
+    /// second round-trip through the IPC layer.
+    pub modified_time: i64,
+    /// File creation time as a Unix timestamp in seconds. Falls back to
+    /// `modified_time` on platforms that don't expose creation time.
+    pub created_time: i64,
+    /// Lines immediately before `line_text` (max 2). The vault-library
+    /// import line is filtered out so users never see auto-injected
+    /// preamble in search results.
+    pub context_before: Vec<String>,
+    /// Lines immediately after `line_text` (max 2), with the same
+    /// import-line filter applied.
+    pub context_after: Vec<String>,
 }
 
 /// Scoring weights for ranking search results.

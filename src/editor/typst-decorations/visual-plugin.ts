@@ -186,7 +186,17 @@ function isCursorAdjacentOrInside(_state: EditorState, from: number, to: number,
   return false;
 }
 
-const IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-vault/';
+// The auto-injected vault library import. We accept both the canonical
+// version-less path and the legacy `/.inkycap/packages/inkycap-vault/<v>/`
+// path so notes from older vaults still hide their import line cleanly.
+const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/vault.typ"';
+const LEGACY_IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-vault/';
+function isVaultImportLine(text: string): boolean {
+  const t = text.trimStart();
+  return (
+    t.startsWith(CANONICAL_IMPORT_PREFIX) || t.startsWith(LEGACY_IMPORT_PREFIX)
+  );
+}
 
 const ANGLE_BRACKET_TAGS = /(?<!\\)<(script|style|iframe|object|embed|form|input|link|meta|base)(?:\s|>|\/)/gi;
 
@@ -229,7 +239,7 @@ function buildDecorations(state: EditorState): DecorationSet {
 
   for (let i = 1; i <= Math.min(state.doc.lines, 5); i++) {
     const line = state.doc.line(i);
-    if (line.text.startsWith(IMPORT_PREFIX)) {
+    if (isVaultImportLine(line.text)) {
       let hideEnd = line.to;
       if (hideEnd < state.doc.length) {
         hideEnd = Math.min(hideEnd + 1, state.doc.length);
@@ -1152,7 +1162,7 @@ function computeProtectedRanges(state: EditorState, expandedPos: number | null):
     const line = state.doc.line(i);
     const trimmed = line.text.trimStart();
 
-    const isImport = trimmed.startsWith(IMPORT_PREFIX);
+    const isImport = isVaultImportLine(line.text);
     const isNote = trimmed.startsWith("#note(");
     const isBibliography = trimmed.startsWith("#bibliography(");
 

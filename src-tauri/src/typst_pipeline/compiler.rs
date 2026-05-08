@@ -341,10 +341,12 @@ impl TypstCompiler {
 
 /// Inject a `#import` + `#show: <template>` after the inkycap-vault import.
 fn inject_template_import(source: &str, template: &str) -> String {
-    let import_marker = "#import \"/.inkycap/packages/inkycap-vault/";
-    if let Some(pos) = source.find(import_marker) {
-        if let Some(line_end) = source[pos..].find('\n') {
-            let insert_at = pos + line_end + 1;
+    // Find the line containing the inkycap-vault import (canonical or legacy).
+    let mut cursor = 0usize;
+    for line in source.split_inclusive('\n') {
+        let body = line.strip_suffix('\n').unwrap_or(line);
+        if crate::vault_package::is_vault_import_line(body) {
+            let insert_at = cursor + line.len();
             let import_line = format!("#import \"{}\": *\n", template);
             let mut result = String::with_capacity(source.len() + import_line.len());
             result.push_str(&source[..insert_at]);
@@ -352,6 +354,7 @@ fn inject_template_import(source: &str, template: &str) -> String {
             result.push_str(&source[insert_at..]);
             return result;
         }
+        cursor += line.len();
     }
     // Fallback: prepend
     format!("#import \"{}\": *\n{}", template, source)

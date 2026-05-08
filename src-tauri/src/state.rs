@@ -151,10 +151,13 @@ impl AppState {
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
 
-        // Scaffold the inkycap-vault package into .inkycap/packages/ so
+        // Scaffold the inkycap-vault library into .inkycap/vault.typ so
         // notes can `#import` it. Must happen before the compiler is
-        // constructed so that package files are on disk for any compile.
+        // constructed so that the file is on disk for any compile.
         crate::vault_package::scaffold(&canonical_path);
+        // One-time migration: rewrite legacy versioned import paths to the
+        // canonical `/.inkycap/vault.typ` form. Idempotent on later opens.
+        crate::vault_package::migrate_vault_imports(&canonical_path);
 
         // Pre-warm the Typst compiler at vault-open time so the first
         // reading-mode render doesn't pay the ~340ms font-discovery cost

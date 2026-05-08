@@ -8,16 +8,12 @@ pub struct MarkdownToTypstOptions {
     /// Whether to convert YAML frontmatter into a `#note(...)` call.
     /// When false, frontmatter is silently dropped.
     pub convert_frontmatter: bool,
-
-    /// The inkycap-vault package version to use in the import preamble.
-    pub package_version: String,
 }
 
 impl Default for MarkdownToTypstOptions {
     fn default() -> Self {
         Self {
             convert_frontmatter: true,
-            package_version: "0.1.0".to_string(),
         }
     }
 }
@@ -39,10 +35,9 @@ pub fn markdown_to_typst(input: &str, options: &MarkdownToTypstOptions) -> Strin
     let mut out = String::with_capacity(input.len());
 
     // Emit import preamble.
-    out.push_str(&format!(
-        "#import \"/.inkycap/packages/inkycap-vault/{}/lib.typ\": *\n",
-        options.package_version
-    ));
+    let _ = options; // reserved for future conversion knobs
+    out.push_str(&crate::vault_package::import_line());
+    out.push('\n');
 
     // Emit #note(...) from frontmatter.
     if options.convert_frontmatter {

@@ -319,10 +319,8 @@ fn rebuild_note_call(args: &[(String, String)]) -> String {
 /// Insert a `#note(...)` call into content that doesn't have one.
 /// Places it after the import line, or at the top if no import.
 fn insert_note_call(content: &str, call: &str) -> String {
-    let import_prefix = "#import \"/.inkycap/packages/inkycap-vault/";
-
     for (i, line) in content.lines().enumerate() {
-        if line.starts_with(import_prefix) {
+        if crate::vault_package::is_vault_import_line(line) {
             // Insert after this line
             let line_end = content
                 .match_indices('\n')

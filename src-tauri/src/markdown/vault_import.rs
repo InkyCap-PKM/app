@@ -373,11 +373,8 @@ mod tests {
         // Hidden dir skipped.
         assert!(!target.path().join(".obsidian").exists());
 
-        // Vault package scaffolded.
-        assert!(target
-            .path()
-            .join(".inkycap/packages/inkycap-vault/0.1.0/lib.typ")
-            .exists());
+        // Vault library scaffolded.
+        assert!(target.path().join(".inkycap/vault.typ").exists());
     }
 
     #[test]

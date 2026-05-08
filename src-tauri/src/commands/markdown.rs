@@ -35,7 +35,6 @@ pub async fn paste_markdown_as_typst(
 
     let options = MarkdownToTypstOptions {
         convert_frontmatter: true,
-        package_version: "0.1.0".to_string(),
     };
 
     let full = markdown_to_typst(&text, &options);
@@ -111,7 +110,6 @@ pub async fn convert_markdown_to_typst(
 ) -> Result<String, String> {
     let options = MarkdownToTypstOptions {
         convert_frontmatter: true,
-        package_version: "0.1.0".to_string(),
     };
 
     let full = markdown_to_typst(&markdown, &options);

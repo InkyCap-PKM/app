@@ -296,6 +296,10 @@ export interface SearchResult {
   line_text: string;
   match_ranges: [number, number][];
   score: number;
+  modified_time: number;
+  created_time: number;
+  context_before: string[];
+  context_after: string[];
 }
 
 export interface ReplaceResult {

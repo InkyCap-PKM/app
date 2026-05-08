@@ -2237,27 +2237,37 @@
   border-color: var(--accent);
 }
 
-.search-panel__toggle {
+/* Shared icon-button style. Used by the search-panel toggle row and any
+   other place that wants a square 28×28 button with a Lucide glyph. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   background: none;
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 4px 6px;
-  font-size: var(--text-base);
-  font-family: var(--editor-font-mono, monospace);
-  white-space: nowrap;
+  padding: 0;
+  flex: 0 0 auto;
 }
 
-.search-panel__toggle:hover {
+.icon-btn:hover {
   color: var(--fg-primary);
   border-color: var(--border-input);
 }
 
-.search-panel__toggle--active {
+.icon-btn--active {
   color: var(--accent-text);
   background: var(--bg-highlight);
   border-color: var(--accent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .search-panel__replace-btn {
@@ -2321,18 +2331,45 @@
 .search-panel__result-file {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: var(--text-md);
   font-weight: 500;
   color: var(--fg-primary);
-  padding: 4px 8px;
-  cursor: pointer;
+  padding: 4px 4px;
   position: relative;
 }
 
 .search-panel__result-file:hover {
   background: var(--bg-hover);
   border-radius: 4px;
+}
+
+.search-panel__group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.search-panel__group-chevron:hover {
+  color: var(--fg-primary);
+  background: var(--bg-secondary);
+}
+
+.search-panel__file-label {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .search-panel__match-count {
@@ -2348,10 +2385,9 @@
 
 .search-panel__result-line {
   font-size: var(--text-base);
-  color: var(--fg-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .search-panel__result-lineno {
@@ -2390,6 +2426,201 @@
 .search-panel__result-replace-btn:hover {
   border-color: var(--accent);
   color: var(--accent-text);
+}
+
+/* Reminder dropdown shown when the search input has focus and is empty. */
+.search-panel__hints {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-panel__hints-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+  padding: 2px 8px 4px;
+}
+
+.search-panel__hint {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 3px;
+}
+
+.search-panel__hint:hover {
+  background: var(--bg-hover);
+}
+
+.search-panel__hint-prefix {
+  font-family: var(--editor-font-mono, monospace);
+  font-weight: 600;
+  color: var(--accent-text, var(--fg-primary));
+  min-width: 70px;
+}
+
+.search-panel__hint-desc {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+/* Search-display settings panel (collapse, more context). */
+.search-panel__settings {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.search-panel__setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.search-panel__setting input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* Status row: result count + overflow menu + sort dropdown. */
+.search-panel__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.search-panel__status-count {
+  flex: 0 0 auto;
+}
+
+.search-panel__overflow-btn,
+.search-panel__sort-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: var(--text-sm);
+}
+
+.search-panel__sort-btn {
+  margin-left: auto;
+}
+
+.search-panel__overflow-btn:hover,
+.search-panel__sort-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+/* Re-anchor the shared .context-menu when used inside the search panel.
+   The base style positions absolutely; we just need to lock it to the
+   status row's overflow/sort buttons. */
+.search-panel__menu-anchored {
+  position: absolute;
+  top: 100%;
+  margin-top: 2px;
+  z-index: 10;
+}
+
+.search-panel__menu-anchored--right {
+  right: 0;
+}
+
+.search-panel__menu-anchored--left {
+  left: 0;
+}
+
+.context-menu__item--active {
+  background: var(--bg-highlight);
+  color: var(--accent-text);
+}
+
+/* Clear-X button inside the search input. Only visible when the input
+   has content. The wrap is `position: relative` so the absolute X sits
+   at the right edge inside the field. */
+.search-panel__input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.search-panel__input-wrap .search-panel__input {
+  padding-right: 26px;
+}
+
+.search-panel__clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.search-panel__clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Context lines shown around a matched line when "Show more context" is on. */
+.search-panel__result--wide {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-input);
+}
+
+.search-panel__result--wide:last-child {
+  border-bottom: none;
+}
+
+.search-panel__context-line {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-left: 32px; /* visually align under matched line text */
+}
+
+.search-panel__result--wide .search-panel__result-line {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+  word-break: break-word;
 }
 
 /* ── Creation Rules Editor ── */

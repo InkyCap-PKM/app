@@ -18,6 +18,7 @@ import {
   setTabEditingMode,
   consumePendingCursorOffset,
   consumePendingHeadingLabel,
+  consumePendingMatch,
   activeTabId,
   canGoBack,
   canGoForward,
@@ -46,6 +47,28 @@ export interface TypstEditorProps {
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 type TypstMode = "source" | "live" | "reading";
+
+/// Select a search-match range and scroll it into view. The CodeMirror
+/// selection itself acts as the visual highlight, which is the cheapest
+/// and most native way to draw the user's eye to the match.
+function scrollToMatch(
+  handle: TypstEditorHandle,
+  match: { line: number; charStart: number; charEnd: number },
+) {
+  const view = handle.view;
+  const lineCount = view.state.doc.lines;
+  const lineNo = Math.max(1, Math.min(match.line, lineCount));
+  const line = view.state.doc.line(lineNo);
+  const lineLen = line.to - line.from;
+  // Clamp to the line's bounds in case the file changed since indexing.
+  const start = line.from + Math.max(0, Math.min(match.charStart, lineLen));
+  const end = line.from + Math.max(0, Math.min(match.charEnd, lineLen));
+  view.dispatch({
+    selection: { anchor: start, head: end },
+    effects: EditorView.scrollIntoView(start, { y: "center", yMargin: 32 }),
+  });
+  view.focus();
+}
 
 function scrollToHeadingLabel(handle: TypstEditorHandle, doc: string, label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -354,7 +377,18 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       if (editorHandle && (currentMode() === "source" || currentMode() === "live")) {
         const pendingOffset = consumePendingCursorOffset(props.tabId);
         const pendingHeading = consumePendingHeadingLabel(props.tabId);
-        if (pendingHeading) {
+        const pendingMatch = consumePendingMatch(props.tabId);
+        if (pendingMatch) {
+          // Two rAFs let CM6 finish layout before we scroll, matching the
+          // heading-jump path. Without this the line measurements are
+          // pre-layout and scrollIntoView lands in the wrong spot.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!editorHandle) return;
+              scrollToMatch(editorHandle, pendingMatch);
+            });
+          });
+        } else if (pendingHeading) {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               if (!editorHandle) return;
@@ -388,6 +422,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       const doc = editorHandle.getText();
       if (!doc) return; // Doc not loaded yet — file-load effect will handle it
       const tab = tabs.find((t) => t.id === props.tabId);
+      if (tab?.pendingMatch) {
+        const m = consumePendingMatch(props.tabId);
+        if (m) scrollToMatch(editorHandle, m);
+        return;
+      }
       if (!tab?.pendingHeadingLabel) return;
       const label = consumePendingHeadingLabel(props.tabId);
       if (label) {

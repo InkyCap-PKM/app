@@ -15,6 +15,10 @@ export interface Tab {
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
   pendingHeadingLabel?: string;
+  /** One-shot match range to select and scroll to after the file loads.
+   *  `line` is 1-indexed; `charStart`/`charEnd` are offsets into that line.
+   *  Used by the search panel to deep-link a result row to its exact spot. */
+  pendingMatch?: { line: number; charStart: number; charEnd: number };
 }
 
 interface TabHistoryEntry {
@@ -84,6 +88,8 @@ export interface OpenTabOptions {
   cursorOffset?: number;
   /** Heading label to scroll to after the file loads. */
   headingLabel?: string;
+  /** Match range to select and scroll to after the file loads. */
+  match?: { line: number; charStart: number; charEnd: number };
 }
 
 /**
@@ -109,6 +115,9 @@ export function openTab(
         "pendingHeadingLabel",
         opts.headingLabel,
       );
+    }
+    if (opts?.match) {
+      setTabs((t) => t.id === existing.id, "pendingMatch", opts.match);
     }
     setActiveTabId(existing.id);
     return existing.id;
@@ -146,6 +155,7 @@ export function openTab(
         if (tab.viewName !== undefined) t.viewName = tab.viewName;
         t.pendingCursorOffset = opts?.cursorOffset;
         t.pendingHeadingLabel = opts?.headingLabel;
+        t.pendingMatch = opts?.match;
       }),
     );
     return active.id;
@@ -158,6 +168,7 @@ export function openTab(
     id,
     pendingCursorOffset: opts?.cursorOffset,
     pendingHeadingLabel: opts?.headingLabel,
+    pendingMatch: opts?.match,
   })));
   setActiveTabId(id);
   return id;
@@ -319,6 +330,17 @@ export function consumePendingHeadingLabel(tabId: string): string | undefined {
     undefined,
   );
   return label;
+}
+
+/** Consume and clear the pending match range for a tab. */
+export function consumePendingMatch(
+  tabId: string,
+): { line: number; charStart: number; charEnd: number } | undefined {
+  const tab = tabs.find((t) => t.id === tabId);
+  if (!tab?.pendingMatch) return undefined;
+  const m = tab.pendingMatch;
+  setTabs((t) => t.id === tabId, "pendingMatch", undefined);
+  return m;
 }
 
 export { tabs, activeTabId, setActiveTabId };

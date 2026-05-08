@@ -1,6 +1,13 @@
 // Search query parser: text → AST.
-// Supports: terms, "phrases", AND/OR/NOT, path:/tag:/file: filters,
-// wildcards (*), proximity (W/N, N/N), and regex (/pattern/).
+//
+// Supports terms, "phrases", AND/OR/NOT, wildcards (`*`), regex (`/pattern/`),
+// proximity operators (W/N, N/N), and a unified family of bare-prefix
+// filters that mirror Obsidian: `path:`, `file:`, `tag:`, `section:`,
+// `property:`. Filter values are single non-whitespace tokens; quote
+// (`property:author="Jane Doe"`) when the value contains spaces. Property
+// filters take a `key=value` form — `property:status=draft` matches notes
+// whose `status` property contains `draft`. The bare `property:key` form
+// matches any note that defines `key` regardless of value.
 
 use std::fmt;
 
@@ -21,7 +28,7 @@ pub enum QueryNode {
     Or(Box<QueryNode>, Box<QueryNode>),
     /// Logical NOT (exclude matches).
     Not(Box<QueryNode>),
-    /// A filter restricting to a field: path:, tag:, file:
+    /// A field-scoped filter: path:, file:, tag:, section:, property:.
     Filter {
         kind: FilterKind,
         value: String,
@@ -41,37 +48,48 @@ pub enum FilterKind {
     Path,
     Tag,
     File,
+    /// `section:keyword` — matches notes that have a heading whose text
+    /// contains `keyword`.
+    Section,
     /// `property:name` — notes whose `#note(...)` call contains the named key.
+    /// `property:name=value` — notes whose `name` property contains `value`.
     Property,
 }
 
-impl fmt::Display for FilterKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FilterKind::Path => write!(f, "path"),
-            FilterKind::Tag => write!(f, "tag"),
-            FilterKind::File => write!(f, "file"),
-            FilterKind::Property => write!(f, "property"),
+impl FilterKind {
+    fn from_prefix(prefix: &str) -> Option<Self> {
+        match prefix {
+            "path" => Some(Self::Path),
+            "file" => Some(Self::File),
+            "tag" => Some(Self::Tag),
+            "section" => Some(Self::Section),
+            "property" => Some(Self::Property),
+            _ => None,
         }
     }
 }
 
+impl fmt::Display for FilterKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            FilterKind::Path => "path",
+            FilterKind::Tag => "tag",
+            FilterKind::File => "file",
+            FilterKind::Section => "section",
+            FilterKind::Property => "property",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 /// Parse a search query string into a QueryNode AST.
-///
-/// Grammar (informal):
-///   query     = or_expr
-///   or_expr   = and_expr ("OR" and_expr)*
-///   and_expr  = not_expr ("AND"? not_expr)*
-///   not_expr  = "NOT" atom | "-" atom | atom
-///   atom      = "(" query ")" | filter | phrase | proximity | regex | wildcard | term
 pub fn parse_query(input: &str) -> Option<QueryNode> {
     let tokens = tokenize(input);
     if tokens.is_empty() {
         return None;
     }
     let mut pos = 0;
-    let result = parse_or(&tokens, &mut pos);
-    result
+    parse_or(&tokens, &mut pos)
 }
 
 // ── Tokenizer ──
@@ -87,7 +105,7 @@ enum Token {
     Or,
     Not,
     Minus,
-    /// filter:value
+    /// (kind, value) — value is already unquoted.
     Filter(String, String),
 }
 
@@ -98,13 +116,10 @@ fn tokenize(input: &str) -> Vec<Token> {
     let mut i = 0;
 
     while i < len {
-        // Skip whitespace
         if chars[i].is_whitespace() {
             i += 1;
             continue;
         }
-
-        // Parentheses
         if chars[i] == '(' {
             tokens.push(Token::LParen);
             i += 1;
@@ -126,7 +141,7 @@ fn tokenize(input: &str) -> Vec<Token> {
             let phrase: String = chars[start..i].iter().collect();
             tokens.push(Token::Phrase(phrase));
             if i < len {
-                i += 1; // skip closing quote
+                i += 1; // closing quote
             }
             continue;
         }
@@ -143,128 +158,101 @@ fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(Token::Regex(pattern));
             }
             if i < len {
-                i += 1; // skip closing /
+                i += 1;
             }
             continue;
         }
 
-        // Minus (NOT shorthand) — only if followed by a word
+        // Minus (NOT shorthand) — only if followed by a non-space character
         if chars[i] == '-' && i + 1 < len && !chars[i + 1].is_whitespace() {
             tokens.push(Token::Minus);
             i += 1;
             continue;
         }
 
-        // `property:` is special: its value may contain `=` and may
-        // span multiple words. Three accepted forms:
-        //
-        //   `property:key`                       — existence only
-        //   `property:key="multi word value"`    — quoted value, composes
-        //                                          with other filters
-        //   `property:key=unquoted rest of line` — greedy to EOF, must
-        //                                          be the last thing
-        //                                          in the query
-        //
-        // The quoted form is the safe way to combine `property:` with
-        // `tag:`, other `property:` filters, etc. The sidebar click
-        // only produces `property:name` without `=`, so hand-typed
-        // queries are the only place the distinction matters.
-        if i + 9 <= len {
-            let head: String = chars[i..i + 9].iter().collect();
-            if head.eq_ignore_ascii_case("property:") {
-                i += 9;
-                // Read key: up to `=`, whitespace, or EOF.
-                let key_start = i;
-                while i < len && chars[i] != '=' && !chars[i].is_whitespace() {
+        // Try filter prefix: identifier ':' value. Filter prefixes match
+        // path:, file:, tag:, section:, property: (case-insensitive). The
+        // value is either a quoted string (consumed verbatim, allowing
+        // spaces) or runs to the next whitespace / paren — single-token
+        // values match Obsidian's behavior and avoid accidental capture
+        // of subsequent filters.
+        if let Some((kind_len, kind)) = match_filter_prefix(&chars, i) {
+            i += kind_len + 1; // past "<kind>:"
+            // Read the value as a sequence of segments. A segment is either
+            // a quoted run (`"..."` — spaces allowed inside) or an unquoted
+            // run terminated by whitespace or a paren. Adjacent segments
+            // concatenate, which makes `property:status="in progress"`
+            // produce the value `status=in progress`.
+            let mut value = String::new();
+            let mut have_segment = false;
+            loop {
+                if i >= len || chars[i].is_whitespace() || chars[i] == '(' || chars[i] == ')' {
+                    break;
+                }
+                if chars[i] == '"' {
                     i += 1;
-                }
-                let key: String = chars[key_start..i].iter().collect();
-
-                let value: Option<String> = if i < len && chars[i] == '=' {
-                    i += 1; // past '='
-                    if i < len && chars[i] == '"' {
-                        // Quoted value — stops at matching '"', so
-                        // the rest of the query is left for normal
-                        // tokenization.
+                    while i < len && chars[i] != '"' {
+                        value.push(chars[i]);
                         i += 1;
-                        let val_start = i;
-                        while i < len && chars[i] != '"' {
-                            i += 1;
-                        }
-                        let v: String = chars[val_start..i].iter().collect();
-                        if i < len {
-                            i += 1; // past closing '"'
-                        }
-                        Some(v)
-                    } else {
-                        // Unquoted: greedy consume to EOF so spaces
-                        // and `=` work without quoting. The trailing
-                        // `trim` protects against `key=value   ` with
-                        // accidental whitespace at the end.
-                        let v: String = chars[i..]
-                            .iter()
-                            .collect::<String>()
-                            .trim()
-                            .to_string();
-                        i = len;
-                        Some(v)
                     }
+                    if i < len {
+                        i += 1; // closing quote
+                    }
+                    have_segment = true;
                 } else {
-                    None
-                };
-
-                if !key.is_empty() {
-                    let full = match value {
-                        Some(v) => format!("{}={}", key, v),
-                        None => key,
-                    };
-                    tokens.push(Token::Filter("property".to_string(), full));
+                    while i < len
+                        && !chars[i].is_whitespace()
+                        && chars[i] != '('
+                        && chars[i] != ')'
+                        && chars[i] != '"'
+                    {
+                        value.push(chars[i]);
+                        i += 1;
+                    }
+                    have_segment = true;
                 }
-                continue;
             }
+            if have_segment && !value.is_empty() {
+                tokens.push(Token::Filter(kind, value));
+            }
+            continue;
         }
 
-        // Read a word
+        // Read a word (term, AND/OR/NOT keyword, or proximity operator)
         let start = i;
         while i < len && !chars[i].is_whitespace() && chars[i] != '(' && chars[i] != ')' {
             i += 1;
         }
         let word: String = chars[start..i].iter().collect();
-
-        // Check for keywords
         match word.as_str() {
             "AND" => tokens.push(Token::And),
             "OR" => tokens.push(Token::Or),
             "NOT" => tokens.push(Token::Not),
-            _ => {
-                // Check for filter syntax: key:value
-                if let Some(colon_pos) = word.find(':') {
-                    let key = &word[..colon_pos];
-                    let value = &word[colon_pos + 1..];
-                    match key.to_lowercase().as_str() {
-                        "path" | "tag" | "file" | "property" => {
-                            if !value.is_empty() {
-                                tokens.push(Token::Filter(
-                                    key.to_lowercase(),
-                                    value.to_string(),
-                                ));
-                            } else {
-                                tokens.push(Token::Word(word));
-                            }
-                        }
-                        _ => tokens.push(Token::Word(word)),
-                    }
-                }
-                // Check for proximity: wordW/Nword or wordN/Nword
-                // Pattern: leftW/Nright or leftN/Nright (rare, skip for now — handle as plain words)
-                else {
-                    tokens.push(Token::Word(word));
-                }
-            }
+            _ => tokens.push(Token::Word(word)),
         }
     }
 
     tokens
+}
+
+/// If `chars[i..]` starts with `<prefix>:` for one of the known filter
+/// prefixes (case-insensitive), return `(prefix_len, lowercased_prefix)`.
+fn match_filter_prefix(chars: &[char], i: usize) -> Option<(usize, String)> {
+    const PREFIXES: &[&str] = &["path", "file", "tag", "section", "property"];
+    for prefix in PREFIXES {
+        let pl = prefix.len();
+        if i + pl + 1 > chars.len() {
+            continue;
+        }
+        if chars[i + pl] != ':' {
+            continue;
+        }
+        let head: String = chars[i..i + pl].iter().collect();
+        if head.eq_ignore_ascii_case(prefix) {
+            return Some((pl, prefix.to_string()));
+        }
+    }
+    None
 }
 
 // ── Recursive descent parser ──
@@ -281,7 +269,6 @@ fn parse_or(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             break;
         }
     }
-
     Some(left)
 }
 
@@ -289,14 +276,11 @@ fn parse_and(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
     let mut left = parse_not(tokens, pos)?;
 
     while *pos < tokens.len() {
-        // Explicit AND
         if tokens[*pos] == Token::And {
             *pos += 1;
             let right = parse_not(tokens, pos)?;
             left = QueryNode::And(Box::new(left), Box::new(right));
-        }
-        // Implicit AND: next token is an atom-starting token (not OR, not RParen)
-        else if matches!(
+        } else if matches!(
             tokens[*pos],
             Token::Word(_)
                 | Token::Phrase(_)
@@ -312,17 +296,14 @@ fn parse_and(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             break;
         }
     }
-
     Some(left)
 }
 
 fn parse_not(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
-    if *pos < tokens.len() {
-        if tokens[*pos] == Token::Not || tokens[*pos] == Token::Minus {
-            *pos += 1;
-            let inner = parse_atom(tokens, pos)?;
-            return Some(QueryNode::Not(Box::new(inner)));
-        }
+    if *pos < tokens.len() && (tokens[*pos] == Token::Not || tokens[*pos] == Token::Minus) {
+        *pos += 1;
+        let inner = parse_atom(tokens, pos)?;
+        return Some(QueryNode::Not(Box::new(inner)));
     }
     parse_atom(tokens, pos)
 }
@@ -336,7 +317,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
         Token::LParen => {
             *pos += 1;
             let inner = parse_or(tokens, pos)?;
-            // Consume RParen if present
             if *pos < tokens.len() && tokens[*pos] == Token::RParen {
                 *pos += 1;
             }
@@ -362,13 +342,7 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             Some(node)
         }
         Token::Filter(kind, value) => {
-            let filter_kind = match kind.as_str() {
-                "path" => FilterKind::Path,
-                "tag" => FilterKind::Tag,
-                "file" => FilterKind::File,
-                "property" => FilterKind::Property,
-                _ => return None,
-            };
+            let filter_kind = FilterKind::from_prefix(kind)?;
             let node = QueryNode::Filter {
                 kind: filter_kind,
                 value: value.clone(),
@@ -380,11 +354,10 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             let word = w.clone();
             *pos += 1;
 
-            // Check for proximity operator: word W/N word or word N/N word
+            // Proximity: word W/N word | word N/N word
             if *pos + 1 < tokens.len() {
                 if let Token::Word(op) = &tokens[*pos] {
                     let op_upper = op.to_uppercase();
-                    // W/N (ordered within N) or N/N (near N, unordered)
                     if let Some((ordered, dist)) = parse_proximity_op(&op_upper) {
                         if let Token::Word(right_word) = &tokens[*pos + 1] {
                             let node = QueryNode::Proximity {
@@ -400,7 +373,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
                 }
             }
 
-            // Plain term — check for wildcard
             if word.contains('*') {
                 Some(QueryNode::Wildcard(word.to_lowercase()))
             } else {
@@ -408,14 +380,12 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             }
         }
         _ => {
-            // Skip unexpected tokens
             *pos += 1;
             None
         }
     }
 }
 
-/// Parse proximity operator like "W/3" (ordered) or "N/5" (unordered).
 fn parse_proximity_op(op: &str) -> Option<(bool, usize)> {
     if op.len() >= 3 {
         let first = op.chars().next()?;
@@ -434,68 +404,96 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_term() {
+    fn parses_bare_filters() {
+        for (q, expected) in [
+            ("tag:rust", FilterKind::Tag),
+            ("path:journal/", FilterKind::Path),
+            ("file:meeting", FilterKind::File),
+            ("section:methods", FilterKind::Section),
+            ("property:author=alice", FilterKind::Property),
+        ] {
+            let parsed = parse_query(q).unwrap();
+            match parsed {
+                QueryNode::Filter { kind, .. } => assert_eq!(kind, expected),
+                other => panic!("expected Filter for {q}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn case_insensitive_prefix() {
+        let q = parse_query("Tag:rust").unwrap();
+        assert!(matches!(q, QueryNode::Filter { kind: FilterKind::Tag, .. }));
+    }
+
+    #[test]
+    fn property_with_quoted_value() {
+        let q = parse_query("property:author=\"Jane Doe\"").unwrap();
+        match q {
+            QueryNode::Filter { kind: FilterKind::Property, value } => {
+                assert_eq!(value, "author=Jane Doe");
+            }
+            other => panic!("expected Property filter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn property_then_keyword_compose() {
+        // `property:status=draft hello` → AND(Filter, Term)
+        let q = parse_query("property:status=draft hello").unwrap();
+        assert!(matches!(q, QueryNode::And(_, _)));
+    }
+
+    #[test]
+    fn keyword_then_property_compose() {
+        let q = parse_query("hello property:status=draft").unwrap();
+        assert!(matches!(q, QueryNode::And(_, _)));
+    }
+
+    #[test]
+    fn simple_term() {
         let q = parse_query("hello").unwrap();
         assert!(matches!(q, QueryNode::Term(ref s) if s == "hello"));
     }
 
     #[test]
-    fn test_phrase() {
-        let q = parse_query("\"hello world\"").unwrap();
-        assert!(matches!(q, QueryNode::Phrase(ref words) if words.len() == 2));
-    }
-
-    #[test]
-    fn test_implicit_and() {
+    fn implicit_and() {
         let q = parse_query("hello world").unwrap();
         assert!(matches!(q, QueryNode::And(_, _)));
     }
 
     #[test]
-    fn test_or() {
+    fn or_query() {
         let q = parse_query("hello OR world").unwrap();
         assert!(matches!(q, QueryNode::Or(_, _)));
     }
 
     #[test]
-    fn test_not() {
+    fn not_query() {
         let q = parse_query("NOT hello").unwrap();
         assert!(matches!(q, QueryNode::Not(_)));
     }
 
     #[test]
-    fn test_minus_not() {
+    fn minus_not() {
         let q = parse_query("-hello").unwrap();
         assert!(matches!(q, QueryNode::Not(_)));
     }
 
     #[test]
-    fn test_filter() {
-        let q = parse_query("tag:rust").unwrap();
-        assert!(matches!(q, QueryNode::Filter { kind: FilterKind::Tag, .. }));
-    }
-
-    #[test]
-    fn test_wildcard() {
+    fn wildcard() {
         let q = parse_query("hel*").unwrap();
         assert!(matches!(q, QueryNode::Wildcard(_)));
     }
 
     #[test]
-    fn test_complex_query() {
-        // (hello OR world) AND tag:rust
-        let q = parse_query("(hello OR world) tag:rust").unwrap();
-        assert!(matches!(q, QueryNode::And(_, _)));
-    }
-
-    #[test]
-    fn test_empty_query() {
+    fn empty_query_is_none() {
         assert!(parse_query("").is_none());
         assert!(parse_query("   ").is_none());
     }
 
     #[test]
-    fn test_regex() {
+    fn regex() {
         let q = parse_query("/hel+o/").unwrap();
         assert!(matches!(q, QueryNode::Regex(ref s) if s == "hel+o"));
     }

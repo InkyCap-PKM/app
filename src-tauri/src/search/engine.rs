@@ -89,6 +89,21 @@ struct DocEntry {
     lines: Vec<String>,
     /// Total word count.
     word_count: usize,
+    /// Heading text (lowercased) extracted from `=`-prefix lines. Used by
+    /// the `section:` filter.
+    headings: Vec<String>,
+    /// Indices of lines that are the auto-injected vault-library import.
+    /// These lines are kept in `lines` so result line numbers still point
+    /// at the source, but they are filtered out of every user-facing
+    /// path: word index, regex match scan, "best line" pick, filter
+    /// representative line, and context windows.
+    import_line_indices: Vec<usize>,
+    /// Filesystem modification time, Unix seconds. Defaulted to 0 if the
+    /// file's metadata could not be read.
+    modified_time: i64,
+    /// Filesystem creation time, Unix seconds. Falls back to
+    /// `modified_time` on platforms that don't expose creation time.
+    created_time: i64,
 }
 
 /// The inverted index: word → list of (doc_id, positions).
@@ -138,106 +153,29 @@ impl SearchEngine {
     ) -> Self {
         let mut engine = Self::new();
 
-        // Pre-process documents in parallel
-        let processed: Vec<(
-            PathBuf,
-            String,
-            Option<String>,
-            Vec<String>,
-            Vec<String>,
-            HashMap<String, Vec<String>>,
-            Vec<String>,
-            usize,
-            Vec<(String, Vec<WordPosition>)>,
-        )> = files
+        let processed: Vec<DocBuild> = files
             .into_par_iter()
             .map(|(path, content, tags, title, property_keys, property_values)| {
-                let file_name = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-                let mut word_count = 0usize;
-                let mut word_positions: Vec<(String, Vec<WordPosition>)> = Vec::new();
-
-                // Temporary map for this document
-                let mut local_index: HashMap<String, Vec<WordPosition>> = HashMap::new();
-
-                for (line_idx, line) in lines.iter().enumerate() {
-                    let mut word_idx = 0usize;
-                    for (char_start, word) in word_boundaries(line) {
-                        let lower = word.to_lowercase();
-                        if lower.is_empty() {
-                            continue;
-                        }
-                        word_count += 1;
-                        let pos = WordPosition {
-                            line: line_idx,
-                            word_index: word_idx,
-                            char_start,
-                            char_end: char_start + word.len(),
-                        };
-                        local_index
-                            .entry(lower)
-                            .or_default()
-                            .push(pos);
-                        word_idx += 1;
-                    }
-                }
-
-                // Convert local index to a vec of (word, positions)
-                for (word, positions) in local_index {
-                    word_positions.push((word, positions));
-                }
-
-                let property_keys_lower: Vec<String> =
-                    property_keys.iter().map(|k| k.to_lowercase()).collect();
-                (
+                let (mtime, ctime) = file_timestamps(&path);
+                build_doc(
                     path,
-                    file_name,
-                    title,
+                    &content,
                     tags,
-                    property_keys_lower,
+                    title,
+                    property_keys,
                     property_values,
-                    lines,
-                    word_count,
-                    word_positions,
+                    mtime,
+                    ctime,
                 )
             })
             .collect();
 
-        // Merge into the engine (single-threaded to build the shared index)
-        for (
-            path,
-            file_name,
-            title,
-            tags,
-            property_keys,
-            property_values,
-            lines,
-            word_count,
-            word_positions,
-        ) in processed
-        {
+        for built in processed {
             let doc_id = engine.docs.len();
-            engine.path_to_doc.insert(path.clone(), doc_id);
-            engine.docs.push(DocEntry {
-                path,
-                file_name,
-                title,
-                tags,
-                property_keys,
-                property_values,
-                lines,
-                word_count,
-            });
-
-            for (word, positions) in word_positions {
-                engine
-                    .index
-                    .entry(word)
-                    .or_default()
-                    .push((doc_id, positions));
+            engine.path_to_doc.insert(built.entry.path.clone(), doc_id);
+            engine.docs.push(built.entry);
+            for (word, positions) in built.word_positions {
+                engine.index.entry(word).or_default().push((doc_id, positions));
             }
         }
 
@@ -254,56 +192,29 @@ impl SearchEngine {
         property_keys: Vec<String>,
         property_values: HashMap<String, Vec<String>>,
     ) {
-        let property_keys: Vec<String> =
-            property_keys.iter().map(|k| k.to_lowercase()).collect();
         // Remove old entry if it exists
         self.remove_doc(path);
 
-        let file_name = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-        let mut word_count = 0usize;
+        let (mtime, ctime) = file_timestamps(path);
+        let built = build_doc(
+            path.to_path_buf(),
+            content,
+            tags,
+            title,
+            property_keys,
+            property_values,
+            mtime,
+            ctime,
+        );
 
         let doc_id = self.docs.len();
         self.path_to_doc.insert(path.to_path_buf(), doc_id);
+        self.docs.push(built.entry);
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            let mut word_idx = 0usize;
-            for (char_start, word) in word_boundaries(line) {
-                let lower = word.to_lowercase();
-                if lower.is_empty() {
-                    continue;
-                }
-                word_count += 1;
-                let pos = WordPosition {
-                    line: line_idx,
-                    word_index: word_idx,
-                    char_start,
-                    char_end: char_start + word.len(),
-                };
-                // Find or create posting list for this doc
-                let posting = self.index.entry(lower).or_default();
-                if let Some(entry) = posting.iter_mut().find(|(id, _)| *id == doc_id) {
-                    entry.1.push(pos);
-                } else {
-                    posting.push((doc_id, vec![pos]));
-                }
-                word_idx += 1;
-            }
+        for (word, positions) in built.word_positions {
+            let posting = self.index.entry(word).or_default();
+            posting.push((doc_id, positions));
         }
-
-        self.docs.push(DocEntry {
-            path: path.to_path_buf(),
-            file_name,
-            title,
-            tags,
-            property_keys,
-            property_values,
-            lines,
-            word_count,
-        });
     }
 
     /// Remove a document from the index.
@@ -320,12 +231,12 @@ impl SearchEngine {
         }
     }
 
-    /// Execute a search query and return ranked results.
+    /// Execute a search query and return ranked results — one entry per
+    /// matched line. The frontend groups by file. Lines that belong to
+    /// the auto-injected vault-library import are filtered out so users
+    /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
-        // Evaluate the query to get matching (doc_id, positions per line)
         let matches = self.evaluate(query);
-
-        // Build results
         let mut results: Vec<SearchResult> = Vec::new();
 
         for (doc_id, line_matches) in &matches {
@@ -333,13 +244,13 @@ impl SearchEngine {
                 Some(d) => d,
                 None => continue,
             };
-
-            // Check this is the current doc_id for the path (skips stale
-            // entries left behind after updates or duplicate inserts).
             if self.path_to_doc.get(&doc.path) != Some(doc_id) {
                 continue;
             }
 
+            // Compute per-doc score factors once; every line in this doc
+            // shares the same filename/title bonuses and word-count
+            // density baseline.
             let total_match_count: usize = line_matches.values().map(|v| v.len()).sum();
             let match_in_filename = {
                 let fname_lower = doc.file_name.to_lowercase();
@@ -349,42 +260,58 @@ impl SearchEngine {
                 let t_lower = t.to_lowercase();
                 self.query_matches_text(query, &t_lower)
             });
-
-            let score = compute_score(
+            let doc_score = compute_score(
                 match_in_filename,
                 match_in_title,
                 total_match_count,
                 doc.word_count,
             );
 
-            // Pick the best matching line for display
-            if let Some((&best_line, ranges)) = line_matches
+            // Walk matches in source order so the UI shows them in the
+            // same order they appear in the file.
+            let mut sorted_lines: Vec<(usize, &Vec<WordPosition>)> = line_matches
                 .iter()
-                .max_by_key(|(_, v)| v.len())
-            {
-                let line_text = doc
-                    .lines
-                    .get(best_line)
-                    .cloned()
-                    .unwrap_or_default();
-                let match_ranges: Vec<(usize, usize)> = ranges
+                .filter(|(line_idx, _)| !doc.import_line_indices.contains(line_idx))
+                .map(|(line, positions)| (*line, positions))
+                .collect();
+            sorted_lines.sort_by_key(|(line, _)| *line);
+
+            for (line_idx, positions) in sorted_lines {
+                let line_text = doc.lines.get(line_idx).cloned().unwrap_or_default();
+                let match_ranges: Vec<(usize, usize)> = positions
                     .iter()
                     .map(|p| (p.char_start, p.char_end))
                     .collect();
 
+                let (context_before, context_after) =
+                    collect_context(&doc.lines, &doc.import_line_indices, line_idx, 2);
+
                 results.push(SearchResult {
                     path: doc.path.to_string_lossy().to_string(),
                     file_name: doc.file_name.clone(),
-                    line_number: best_line + 1,
+                    line_number: line_idx + 1,
                     line_text,
                     match_ranges,
-                    score,
+                    // Per-line score: use the doc score plus a small bonus
+                    // for line density so the file's first match (often the
+                    // most relevant) ranks just slightly higher than later
+                    // hits inside the same file.
+                    score: doc_score + (positions.len() as f64) * 0.01,
+                    modified_time: doc.modified_time,
+                    created_time: doc.created_time,
+                    context_before,
+                    context_after,
                 });
             }
         }
 
-        // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Stable sort by score descending; per-line tie-break already
+        // preserved by the in-source-order traversal above.
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(max_results);
         results
     }
@@ -571,6 +498,9 @@ impl SearchEngine {
             }
             let mut lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
             for (line_idx, line) in doc.lines.iter().enumerate() {
+                if doc.import_line_indices.contains(&line_idx) {
+                    continue;
+                }
                 for m in re.find_iter(line) {
                     lines.entry(line_idx).or_default().push(WordPosition {
                         line: line_idx,
@@ -612,6 +542,12 @@ impl SearchEngine {
                 FilterKind::Tag => {
                     doc.tags.iter().any(|t| t.to_lowercase().contains(&value_lower))
                 }
+                FilterKind::Section => {
+                    // Match notes with a heading (lowercased) containing
+                    // the value as a substring. Heading text is collected
+                    // at index time from `=`-prefix lines.
+                    doc.headings.iter().any(|h| h.contains(&value_lower))
+                }
                 FilterKind::Property => {
                     // Two forms:
                     //   `property:name` — notes where the key exists
@@ -644,14 +580,30 @@ impl SearchEngine {
             };
 
             if matches {
+                // Pick the first non-empty, non-import line as a
+                // representative for filter-only matches. The import line
+                // is filtered later, but if every line in `lines` is
+                // either empty or the import line we still want a placeholder
+                // so the file shows up.
+                let representative = doc
+                    .lines
+                    .iter()
+                    .enumerate()
+                    .find(|(idx, line)| {
+                        !doc.import_line_indices.contains(idx) && !line.trim().is_empty()
+                    })
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
                 let mut lines = HashMap::new();
-                // Use first line as representative
-                lines.insert(0, vec![WordPosition {
-                    line: 0,
-                    word_index: 0,
-                    char_start: 0,
-                    char_end: 0,
-                }]);
+                lines.insert(
+                    representative,
+                    vec![WordPosition {
+                        line: representative,
+                        word_index: 0,
+                        char_start: 0,
+                        char_end: 0,
+                    }],
+                );
                 result.insert(doc_id, lines);
             }
         }
@@ -845,6 +797,166 @@ impl PersistedSearchIndex {
     }
 }
 
+/// Output of `build_doc`: a [`DocEntry`] paired with the per-word positions
+/// the engine still needs to merge into its inverted index.
+struct DocBuild {
+    entry: DocEntry,
+    word_positions: Vec<(String, Vec<WordPosition>)>,
+}
+
+/// Tokenize a single document into the structures the engine consumes.
+/// Lines that match the auto-injected vault library import are excluded
+/// from the inverted index — users searching for `vault` or `import`
+/// shouldn't get every note in the vault back.
+fn build_doc(
+    path: PathBuf,
+    content: &str,
+    tags: Vec<String>,
+    title: Option<String>,
+    property_keys: Vec<String>,
+    property_values: HashMap<String, Vec<String>>,
+    modified_time: i64,
+    created_time: i64,
+) -> DocBuild {
+    let file_name = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+
+    let mut word_count = 0usize;
+    let mut local_index: HashMap<String, Vec<WordPosition>> = HashMap::new();
+    let mut headings: Vec<String> = Vec::new();
+    let mut import_line_indices: Vec<usize> = Vec::new();
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        if crate::vault_package::is_vault_import_line(line) {
+            // Don't index the auto-injected import line, but keep it in
+            // `lines` so result line numbers still align with the source.
+            import_line_indices.push(line_idx);
+            continue;
+        }
+
+        if let Some(text) = heading_text(line) {
+            headings.push(text.to_lowercase());
+        }
+
+        let mut word_idx = 0usize;
+        for (char_start, word) in word_boundaries(line) {
+            let lower = word.to_lowercase();
+            if lower.is_empty() {
+                continue;
+            }
+            word_count += 1;
+            let pos = WordPosition {
+                line: line_idx,
+                word_index: word_idx,
+                char_start,
+                char_end: char_start + word.len(),
+            };
+            local_index.entry(lower).or_default().push(pos);
+            word_idx += 1;
+        }
+    }
+
+    let property_keys_lower: Vec<String> =
+        property_keys.iter().map(|k| k.to_lowercase()).collect();
+
+    DocBuild {
+        entry: DocEntry {
+            path,
+            file_name,
+            title,
+            tags,
+            property_keys: property_keys_lower,
+            property_values,
+            lines,
+            word_count,
+            headings,
+            import_line_indices,
+            modified_time,
+            created_time,
+        },
+        word_positions: local_index.into_iter().collect(),
+    }
+}
+
+/// Extract the visible text of a `=`-prefix Typst heading. Returns `None`
+/// for non-heading lines. We intentionally do NOT recognize `#` as a
+/// heading marker because `#` is a Typst function-call sigil, not a
+/// heading prefix.
+fn heading_text(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('=') {
+        return None;
+    }
+    let rest = trimmed.trim_start_matches('=');
+    if rest.is_empty() || !rest.starts_with(|c: char| c == ' ' || c == '\t') {
+        return None;
+    }
+    Some(rest.trim())
+}
+
+/// Collect up to `window` lines of context before and after `line_idx`,
+/// skipping vault-import lines. The returned tuples preserve source
+/// order — `before` runs from earliest to nearest, `after` runs from
+/// nearest to latest.
+fn collect_context(
+    lines: &[String],
+    import_indices: &[usize],
+    line_idx: usize,
+    window: usize,
+) -> (Vec<String>, Vec<String>) {
+    let mut before: Vec<String> = Vec::new();
+    if line_idx > 0 {
+        let mut idx = line_idx;
+        while idx > 0 && before.len() < window {
+            idx -= 1;
+            if import_indices.contains(&idx) {
+                continue;
+            }
+            if let Some(text) = lines.get(idx) {
+                before.push(text.clone());
+            }
+        }
+        before.reverse();
+    }
+
+    let mut after: Vec<String> = Vec::new();
+    let mut idx = line_idx + 1;
+    while idx < lines.len() && after.len() < window {
+        if !import_indices.contains(&idx) {
+            if let Some(text) = lines.get(idx) {
+                after.push(text.clone());
+            }
+        }
+        idx += 1;
+    }
+
+    (before, after)
+}
+
+/// Read filesystem mtime/ctime for a note. Errors are absorbed and surfaced
+/// as `(0, 0)` — sort order will simply group missing values together.
+fn file_timestamps(path: &Path) -> (i64, i64) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return (0, 0);
+    };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let ctime = meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(mtime);
+    (mtime, ctime)
+}
+
 /// Extract words and their byte positions from a line of text.
 /// Words are split on whitespace and punctuation, keeping alphanumeric runs.
 fn word_boundaries(line: &str) -> Vec<(usize, &str)> {
@@ -904,12 +1016,25 @@ mod tests {
         ])
     }
 
+    /// Distinct files among the result rows. Engine `search` emits one
+    /// row per matched line, so tests that care about file-level recall
+    /// need to deduplicate by path.
+    fn unique_paths(results: &[SearchResult]) -> usize {
+        let mut paths: Vec<&str> = results.iter().map(|r| r.path.as_str()).collect();
+        paths.sort();
+        paths.dedup();
+        paths.len()
+    }
+
     #[test]
     fn test_simple_search() {
         let engine = make_engine();
         let query = parse_query("rust").unwrap();
         let results = engine.search(&query, 10);
-        assert_eq!(results.len(), 2); // note1 and note2 both mention Rust
+        // note1 mentions Rust on two lines, note2 on one line — three
+        // result rows, two distinct files.
+        assert_eq!(results.len(), 3);
+        assert_eq!(unique_paths(&results), 2);
     }
 
     #[test]
@@ -926,7 +1051,11 @@ mod tests {
         let engine = make_engine();
         let query = parse_query("rust programming").unwrap();
         let results = engine.search(&query, 10);
-        assert_eq!(results.len(), 1); // only note1 has both
+        // Only note1 has both — `rust` appears on two lines while
+        // `programming` appears on one; the AND merge produces two rows
+        // for that file.
+        assert_eq!(unique_paths(&results), 1);
+        assert!(results.iter().all(|r| r.path.contains("note1")));
     }
 
     #[test]
@@ -950,8 +1079,8 @@ mod tests {
     #[test]
     fn test_property_value_filter() {
         // Two notes share a `status` key but with different values.
-        // `property:status=draft` should match only the first, and
-        // multi-word values must work without quotes.
+        // `property:status=draft` should match only the first; multi-word
+        // values require quoting in the query.
         let mut values1: HashMap<String, Vec<String>> = HashMap::new();
         values1.insert("status".to_string(), vec!["draft".to_string()]);
         let mut values2: HashMap<String, Vec<String>> = HashMap::new();
@@ -980,14 +1109,8 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert!(r[0].path.ends_with("a.md"));
 
-        let q = parse_query("property:status=in progress").unwrap();
-        let r = engine.search(&q, 10);
-        assert_eq!(r.len(), 1);
-        assert!(r[0].path.ends_with("b.md"));
-
-        // Quoted form — must compose with other filters, so the
-        // query parser is expected to stop the value at the closing
-        // `"` and tokenize the rest normally.
+        // Multi-word values must be quoted; an unquoted second word is
+        // parsed as a separate term and AND-composes with the filter.
         let q = parse_query("property:status=\"in progress\"").unwrap();
         let r = engine.search(&q, 10);
         assert_eq!(r.len(), 1);

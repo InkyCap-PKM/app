@@ -417,9 +417,6 @@ fn heading_level(trimmed_line: &str) -> Option<u8> {
 
 // ── Wrapper generation ──────────────────────────────────────────────────────
 
-/// Vault-package version directory bundled by [`crate::vault_package`].
-/// Kept in sync with the embedded `inkycap-vault/<version>/` resources.
-const VAULT_PACKAGE_VERSION: &str = "0.1.0";
 
 /// Build the merged book Typst source. The returned string is meant to be
 /// passed directly to [`crate::typst_pipeline::compiler::TypstCompiler::compile_pdf`].
@@ -455,11 +452,9 @@ pub fn build_book_source(
 ) -> String {
     let mut s = String::with_capacity(8 * 1024);
 
-    // Vault package import — same as every other compiled note.
-    s.push_str(&format!(
-        "#import \"/.inkycap/packages/inkycap-vault/{}/lib.typ\": *\n",
-        VAULT_PACKAGE_VERSION
-    ));
+    // Vault library import — same as every other compiled note.
+    s.push_str(&crate::vault_package::import_line());
+    s.push('\n');
 
     // Inform the vault package we're in a merged-book compile, so the
     // `wikilink` function can resolve internally / strip / fall through.

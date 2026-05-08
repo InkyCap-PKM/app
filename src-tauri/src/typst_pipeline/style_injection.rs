@@ -148,10 +148,7 @@ pub fn inject_style_rules(
         out.push_str(line);
         out.push('\n');
 
-        if !injected
-            && line.trim_start().starts_with("#import")
-            && line.contains("inkycap-vault")
-        {
+        if !injected && crate::vault_package::is_vault_import_line(line) {
             out.push_str(&injection);
             out.push('\n');
             injected = true;

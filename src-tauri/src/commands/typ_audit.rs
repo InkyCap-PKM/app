@@ -161,12 +161,12 @@ pub struct TypRepairSummary {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// Detect whether the file already pulls in the inkycap-vault package.
-/// We match the substring rather than the exact import string so files
-/// that import an older or future version of the package, or that use a
-/// non-glob import (`#import "...lib.typ": tag, wikilink`), still count.
+/// Detect whether the file already pulls in the inkycap-vault library.
+/// Accepts both the canonical version-less import path and the legacy
+/// versioned package path, including non-glob variants
+/// (`#import "...vault.typ": tag, wikilink`).
 fn has_vault_import(content: &str) -> bool {
-    content.contains("inkycap-vault")
+    content.lines().any(crate::vault_package::is_vault_import_line)
 }
 
 /// Build the corrected source for a single file. Two independent
@@ -199,13 +199,23 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
         return with_import;
     }
 
-    // Locate the line containing `inkycap-vault` and insert `#note()` on
-    // the line directly below it. If the marker is absent for some
-    // reason (e.g. an unusual import variant we didn't match earlier),
-    // fall back to prepending the stub.
-    let insert_at = with_import
-        .find("inkycap-vault")
-        .and_then(|pos| with_import[pos..].find('\n').map(|nl| pos + nl + 1));
+    // Locate the vault-library import line and insert `#note()` on the
+    // line directly below it. If the marker is absent for some reason
+    // (e.g. an unusual import variant we didn't match earlier), fall
+    // back to prepending the stub.
+    let insert_at = {
+        let mut cursor = 0usize;
+        let mut found: Option<usize> = None;
+        for line in with_import.split_inclusive('\n') {
+            let body = line.strip_suffix('\n').unwrap_or(line);
+            if crate::vault_package::is_vault_import_line(body) {
+                found = Some(cursor + line.len());
+                break;
+            }
+            cursor += line.len();
+        }
+        found
+    };
 
     match insert_at {
         Some(idx) => {
@@ -242,7 +252,7 @@ mod tests {
     fn repair_adds_both_when_missing() {
         let src = "= Body\nText.\n";
         let out = apply_preamble_fixes(src, &import_line());
-        assert!(out.contains("inkycap-vault"));
+        assert!(has_vault_import(&out));
         assert!(note_call_span(&out).is_some());
         assert!(out.ends_with("= Body\nText.\n"));
     }
@@ -268,8 +278,8 @@ mod tests {
         assert_eq!(note_call_span(&out).is_some(), true);
         // The user's existing #note() must be preserved verbatim.
         assert!(out.contains("#note(collection: (\"X\",))"));
-        // Import comes first.
-        assert!(out.starts_with("#import \"/.inkycap/packages/inkycap-vault/"));
+        // Import comes first (canonical version-less path).
+        assert!(out.starts_with("#import \"/.inkycap/vault.typ\""));
     }
 
     #[test]

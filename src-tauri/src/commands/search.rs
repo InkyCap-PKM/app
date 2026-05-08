@@ -19,12 +19,16 @@ pub async fn get_all_tags(
     Ok(pi.all_tags_sorted())
 }
 
-/// Full-text search across the vault.
+/// Full-text search across the vault. When `case_sensitive` is true,
+/// the (case-insensitive) inverted index is used to find candidate lines
+/// but every emitted match range is verified against the original-case
+/// query terms, so a search for `Tool` won't return `tool`.
 #[tauri::command]
 pub async fn vault_search(
     state: State<'_, AppState>,
     query: String,
     max_results: Option<usize>,
+    case_sensitive: Option<bool>,
 ) -> Result<Vec<SearchResult>, InkyCapError> {
     let max = max_results.unwrap_or(100);
 
@@ -33,8 +37,71 @@ pub async fn vault_search(
     })?;
 
     let engine = state.search_engine.read().await;
-    let results = engine.search(&parsed, max);
+    let mut results = engine.search(&parsed, max);
+
+    if case_sensitive.unwrap_or(false) {
+        // Term/Phrase nodes are lowercased at parse time, so we re-derive
+        // original-case tokens directly from the raw query string. Tokens
+        // that look like prefix:value filters are skipped — case
+        // sensitivity applies to text terms only.
+        let terms = original_case_terms(&query);
+        if !terms.is_empty() {
+            // Drop any match range whose substring doesn't equal one of
+            // the user's cased terms; drop the whole result if no ranges
+            // survive. Filter-only results (placeholder ranges of width 0)
+            // are dropped here too — those have no meaningful text match.
+            results.retain_mut(|r| {
+                r.match_ranges.retain(|(start, end)| {
+                    if *start >= *end || *end > r.line_text.len() {
+                        return false;
+                    }
+                    let span = &r.line_text[*start..*end];
+                    terms.iter().any(|t| t == span)
+                });
+                !r.match_ranges.is_empty()
+            });
+        }
+    }
+
     Ok(results)
+}
+
+/// Re-extract original-case word tokens from a raw query string. Used by
+/// case-sensitive search to verify that a match-range substring really
+/// equals what the user typed. Filter prefixes (`tag:foo`, `path:bar`,
+/// `property:k=v`, etc.), boolean operators, regex literals, and quoted
+/// phrases are skipped — none of them participate in the case-sensitivity
+/// check.
+fn original_case_terms(query: &str) -> Vec<String> {
+    const FILTER_PREFIXES: &[&str] = &["path:", "file:", "tag:", "section:", "property:"];
+    let mut out: Vec<String> = Vec::new();
+    for raw in query.split_whitespace() {
+        if matches!(raw, "AND" | "OR" | "NOT") {
+            continue;
+        }
+        let trimmed = raw.trim_start_matches('-');
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Skip regex literals and quoted phrases; their case-sensitivity
+        // semantics are owned by the user.
+        if trimmed.starts_with('/') || trimmed.starts_with('"') {
+            continue;
+        }
+        let lower = trimmed.to_lowercase();
+        if FILTER_PREFIXES.iter().any(|p| lower.starts_with(p)) {
+            continue;
+        }
+        // Strip a wildcard `*` if present so we keep the literal stem.
+        let cleaned: String = trimmed
+            .chars()
+            .filter(|c| *c != '*' && *c != '(' && *c != ')')
+            .collect();
+        if !cleaned.is_empty() {
+            out.push(cleaned);
+        }
+    }
+    out
 }
 
 /// Search and replace across specified files (or all vault files if none specified).
