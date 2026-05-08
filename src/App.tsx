@@ -26,7 +26,7 @@ import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initVault } from "./stores/vault";
 import { initTheme, applyMonospaceFont, applyInterfaceFont } from "./stores/theme";
-import { initSettings, onSettingsChange, settings, updateSetting } from "./stores/settings";
+import { initSettings, onSettingsChange, settings, updateSetting, flushSettingsSave } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard, onShortcut } from "./lib/keyboard";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
@@ -88,6 +88,7 @@ const App: Component = () => {
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
   const [quickOpenVisible, setQuickOpenVisible] = createSignal(false);
   const [settingsVisible, setSettingsVisible] = createSignal(false);
+  const [settingsInitialTab, setSettingsInitialTab] = createSignal<string>("overview");
   const [cmdPaletteVisible, setCmdPaletteVisible] = createSignal(false);
   const [composerVisible, setComposerVisible] = createSignal(false);
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
@@ -105,7 +106,10 @@ const App: Component = () => {
     }
   });
 
-  const toggleSettings = () => setSettingsVisible((v) => !v);
+  const toggleSettings = () => {
+    setSettingsInitialTab("overview");
+    setSettingsVisible((v) => !v);
+  };
   const toggleQuickOpen = () => setQuickOpenVisible((v) => !v);
   const toggleCommandPalette = () => setCmdPaletteVisible((v) => !v);
   const toggleComposer = () => setComposerVisible((v) => !v);
@@ -213,7 +217,16 @@ const App: Component = () => {
     onCleanup(() => document.removeEventListener("inkycap:insert-citation", insertCitationHandler));
   }
 
+  const onOpenSettings = (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    setSettingsInitialTab(detail?.tab ?? "overview");
+    setSettingsVisible(true);
+  };
+  document.addEventListener("inkycap:open-settings", onOpenSettings);
+  onCleanup(() => document.removeEventListener("inkycap:open-settings", onOpenSettings));
+
   onCleanup(() => {
+    flushSettingsSave();
     destroyKeyboard();
     stopLsp();
   });
@@ -271,6 +284,7 @@ const App: Component = () => {
         <SettingsPanel
           visible={settingsVisible()}
           onClose={() => setSettingsVisible(false)}
+          initialTab={settingsInitialTab()}
         />
         <CommandPalette
           visible={cmdPaletteVisible()}

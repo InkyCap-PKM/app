@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { VaultInfo } from "../lib/types";
+import type { VaultInfo, VaultRegistryEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import { onFileCreated, onFileDeleted } from "../lib/events";
@@ -9,6 +9,7 @@ import { reloadPropertyTypes } from "./propertyTypes";
 import { startLsp, stopLsp } from "./lsp";
 
 const [vaultInfo, setVaultInfo] = createSignal<VaultInfo | null>(null);
+const [vaultRegistry, setVaultRegistry] = createSignal<VaultRegistryEntry[]>([]);
 const [isLoading, setIsLoading] = createSignal(false);
 /**
  * `indexReady` is false during the brief window between vault open and the
@@ -111,6 +112,15 @@ async function ensureIndexEventListeners() {
   }
 }
 
+export async function loadVaultRegistry(): Promise<void> {
+  try {
+    const entries = await ipc.getVaultRegistry();
+    setVaultRegistry(entries);
+  } catch (err) {
+    console.error("Failed to load vault registry:", err);
+  }
+}
+
 export async function openVault(path: string) {
   setIsLoading(true);
   setIndexReady(false);
@@ -130,6 +140,8 @@ export async function openVault(path: string) {
     // Pre-warm Tinymist LSP so completions/hover are ready by the
     // time the user opens a file (~425ms cold start).
     startLsp(path).catch(console.error);
+    // Refresh the vault registry since open_vault upserts the entry
+    loadVaultRegistry().catch(console.error);
     return info;
   } finally {
     setIsLoading(false);
@@ -137,16 +149,19 @@ export async function openVault(path: string) {
 }
 
 export async function pickAndOpenVault(): Promise<VaultInfo | null> {
+  const current = vaultInfo();
   const selected = await open({
     directory: true,
     multiple: false,
     title: "Select InkyCap Vault Folder",
+    defaultPath: current?.path ?? undefined,
   });
   if (!selected) return null;
   return openVault(selected);
 }
 
 export async function initVault(): Promise<void> {
+  await loadVaultRegistry();
   const savedPath = await ipc.getSavedVaultPath();
   if (savedPath) {
     try {
@@ -164,4 +179,4 @@ export async function refreshVaultInfo() {
   setVaultInfo(info);
 }
 
-export { vaultInfo, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion };
+export { vaultInfo, vaultRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion };

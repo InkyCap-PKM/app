@@ -86,6 +86,19 @@ function scheduleSave() {
   }, 500);
 }
 
+/** Flush any pending debounced save immediately. Call on app close. */
+export async function flushSettingsSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    try {
+      await ipc.updateSettings(JSON.parse(JSON.stringify(settings)));
+    } catch (err) {
+      console.error("Failed to flush settings save:", err);
+    }
+  }
+}
+
 /** Load settings from backend. Call once during app init. */
 export async function initSettings() {
   try {

@@ -1,19 +1,25 @@
 // Settings panel — modal overlay for configuring user preferences.
 // Organized into tabs: Editor, Appearance, Files, Startup.
 
-import { Component, Show, createSignal, createResource, For, onMount } from "solid-js";
+import { Component, Show, createSignal, createEffect, createResource, For, onMount } from "solid-js";
 import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPalette } from "../stores/theme";
-import type { UserSettings, AccentSource, BgPalette } from "../lib/types";
+import { vaultInfo, vaultRegistry, loadVaultRegistry, openVault } from "../stores/vault";
+import type { UserSettings, AccentSource, BgPalette, VaultRegistryEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import { open } from "@tauri-apps/plugin-dialog";
+import { Pencil, Check, X } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
 import { SettingCombobox } from "./SettingCombobox";
+import { showToast } from "../stores/toasts";
+import inkycapLogo from "../assets/inkycap-logo.svg";
 
 interface SettingsPanelProps {
   visible: boolean;
   onClose: () => void;
+  initialTab?: string;
 }
 
 type SettingsTab = "overview" | "editor" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
@@ -42,6 +48,13 @@ const TAB_SETTING_GROUPS: Record<SettingsTab, (keyof UserSettings)[]> = {
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
+
+  createEffect(() => {
+    if (props.visible && props.initialTab) {
+      const tab = TABS.find((t) => t.id === props.initialTab);
+      if (tab) setActiveTab(tab.id);
+    }
+  });
 
   function handleOverlayClick(e: MouseEvent) {
     if ((e.target as HTMLElement).classList.contains("settings__overlay")) {
@@ -146,15 +159,24 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 function OverviewSection() {
   return (
     <div class="settings__section">
-      {/* Version */}
-      <div class="settings__section-header">
-        <span class="settings__label" >Version</span>
-      </div>
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">InkyCap</label>
-          <span class="settings__description">Version information will appear here.</span>
+      {/* Branding + Version */}
+      <div class="settings__overview-header">
+        <div>
+          <div class="settings__section-header">
+            <span class="settings__label">Version</span>
+          </div>
+          <div class="settings__row">
+            <div class="settings__row-info">
+              <label class="settings__label">InkyCap</label>
+              <span class="settings__description">Version information will appear here.</span>
+            </div>
+          </div>
         </div>
+        <img
+          src={inkycapLogo}
+          alt="InkyCap"
+          class="settings__overview-logo"
+        />
       </div>
 
       {/* Help */}
@@ -176,7 +198,247 @@ function OverviewSection() {
           <span class="settings__description">Language settings will appear here.</span>
         </div>
       </div>
+
+      <VaultManagementSection />
     </div>
+  );
+}
+
+function VaultManagementSection() {
+  const [showAddForm, setShowAddForm] = createSignal(false);
+  const [addPath, setAddPath] = createSignal("");
+  const [addName, setAddName] = createSignal("");
+  const [editingPath, setEditingPath] = createSignal<string | null>(null);
+  const [editName, setEditName] = createSignal("");
+
+  function startEdit(entry: VaultRegistryEntry) {
+    setEditingPath(entry.path);
+    setEditName(entry.display_name);
+  }
+
+  async function saveEdit(path: string) {
+    const name = editName().trim();
+    if (!name) return;
+    try {
+      await ipc.updateVaultEntry(path, name);
+      await loadVaultRegistry();
+    } catch (err) {
+      showToast("error", `Failed to rename vault: ${err}`);
+    }
+    setEditingPath(null);
+  }
+
+  function cancelEdit() {
+    setEditingPath(null);
+  }
+
+  async function handleRemove(path: string) {
+    try {
+      await ipc.removeVaultFromRegistry(path);
+      await loadVaultRegistry();
+    } catch (err) {
+      showToast("error", `Failed to remove vault: ${err}`);
+    }
+  }
+
+  async function handleShowInFilesystem(path: string) {
+    try {
+      await ipc.showInExplorer(path);
+    } catch (err) {
+      showToast("error", `Failed to open file manager: ${err}`);
+    }
+  }
+
+  async function handleMove(entry: VaultRegistryEntry) {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select new location for vault",
+      defaultPath: entry.path,
+    });
+    if (!selected) return;
+
+    const dirName = entry.path.split("/").pop() ?? entry.display_name;
+    const newPath = selected.endsWith("/")
+      ? selected + dirName
+      : selected + "/" + dirName;
+
+    try {
+      const result = await ipc.moveVault(entry.path, newPath);
+      await loadVaultRegistry();
+      if (result.was_active) {
+        await openVault(result.new_path);
+      }
+      showToast("info", `Vault moved to ${result.new_path}`);
+    } catch (err) {
+      showToast("error", `Failed to move vault: ${err}`);
+    }
+  }
+
+  async function browseForNewVault() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select vault folder",
+    });
+    if (!selected) return;
+    setAddPath(selected);
+    const dirName = selected.split("/").pop() ?? "Vault";
+    if (!addName()) setAddName(dirName);
+  }
+
+  async function confirmAdd() {
+    const path = addPath().trim();
+    const name = addName().trim();
+    if (!path) {
+      showToast("error", "Please select a vault folder.");
+      return;
+    }
+    try {
+      await ipc.registerVault(path, name || undefined);
+      await loadVaultRegistry();
+      setShowAddForm(false);
+      setAddPath("");
+      setAddName("");
+    } catch (err) {
+      showToast("error", `Failed to add vault: ${err}`);
+    }
+  }
+
+  function cancelAdd() {
+    setShowAddForm(false);
+    setAddPath("");
+    setAddName("");
+  }
+
+  return (
+    <>
+      <div class="settings__section-header">
+        <span class="settings__label">Vault Management</span>
+        <button
+          class="settings__detect-btn"
+          onClick={() => setShowAddForm(true)}
+          disabled={showAddForm()}
+        >
+          New vault
+        </button>
+      </div>
+
+      <For each={vaultRegistry()}>
+        {(entry) => {
+          const isActive = () => entry.path === vaultInfo()?.path;
+          const isEditing = () => editingPath() === entry.path;
+
+          return (
+            <div class="settings__row vault-row">
+              <div class="settings__row-info">
+                <div class="vault-row__name-line">
+                  <Show
+                    when={!isEditing()}
+                    fallback={
+                      <div class="vault-row__inline-edit">
+                        <input
+                          class="settings__text-input"
+                          value={editName()}
+                          onInput={(e) => setEditName(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEdit(entry.path);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          ref={(el) => setTimeout(() => el.focus(), 0)}
+                        />
+                        <button
+                          class="vault-row__icon-btn"
+                          onClick={() => saveEdit(entry.path)}
+                          title="Save"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          class="vault-row__icon-btn vault-row__icon-btn--cancel"
+                          onClick={cancelEdit}
+                          title="Cancel"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    }
+                  >
+                    <label class="settings__label">{entry.display_name}</label>
+                    <button
+                      class="vault-row__edit-btn"
+                      onClick={() => startEdit(entry)}
+                      title="Rename vault"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <Show when={isActive()}>
+                      <span class="vault-row__active-badge">active</span>
+                    </Show>
+                  </Show>
+                </div>
+                <span class="settings__description">{entry.path}</span>
+              </div>
+              <div class="vault-row__actions">
+                <button
+                  class="settings__detect-btn"
+                  onClick={() => handleShowInFilesystem(entry.path)}
+                >
+                  Show
+                </button>
+                <button
+                  class="settings__detect-btn"
+                  onClick={() => handleMove(entry)}
+                >
+                  Move
+                </button>
+                <button
+                  class="settings__detect-btn"
+                  onClick={() => handleRemove(entry.path)}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          );
+        }}
+      </For>
+
+      <Show when={showAddForm()}>
+        <div class="settings__row vault-row vault-row--add-form">
+          <div class="settings__row-info">
+            <input
+              class="settings__text-input"
+              placeholder="Display name"
+              value={addName()}
+              onInput={(e) => setAddName(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmAdd();
+                if (e.key === "Escape") cancelAdd();
+              }}
+            />
+            <span class="settings__description">
+              {addPath() || "No folder selected"}
+            </span>
+          </div>
+          <div class="vault-row__actions">
+            <button class="settings__detect-btn" onClick={browseForNewVault}>
+              Browse
+            </button>
+            <button
+              class="settings__detect-btn"
+              onClick={confirmAdd}
+              disabled={!addPath()}
+            >
+              Add
+            </button>
+            <button class="settings__detect-btn" onClick={cancelAdd}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
+    </>
   );
 }
 
@@ -727,10 +989,10 @@ function ExportSettingsSection() {
 
   return (
     <div class="settings__section">
-      <p class="settings__section-note">
-        Create a zip archive of the directory of markdown files that you would like to import then click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
-      </p>
       <div class="settings__label">Import markdown files</div>
+      <span class="settings__description">
+        Create a zip archive of the directory of markdown files that you would like to import then click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
+      </span>
       <div style={{ "margin-top": "8px" }}>
         <button
           class="settings__detect-btn"

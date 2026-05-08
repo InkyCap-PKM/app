@@ -105,10 +105,9 @@ pub async fn open_vault(
         }
     }
 
-    // Persist the vault path for next launch
+    // Persist the vault path and register in the vault registry
     let mut cfg = config::load_config();
     cfg.vault_path = Some(path.clone());
-    let _ = config::save_config(&cfg);
 
     let collection_files = state.collection_files.read().await;
     let collection_count = collection_files.len();
@@ -118,6 +117,9 @@ pub async fn open_vault(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Vault".to_string());
+
+    cfg.upsert_vault(&path, &name);
+    let _ = config::save_config(&cfg);
 
     // Phase B — spawn the heavy index build in the background. The UI is
     // already interactive at this point; features that depend on the indexes
@@ -260,4 +262,123 @@ pub async fn get_vault_info(
         collection_count: collection_files.len(),
         property_keys: index.property_keys.iter().cloned().collect(),
     }))
+}
+
+// ── Vault registry commands ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_vault_registry() -> Result<Vec<config::VaultRegistryEntry>, InkyCapError> {
+    let cfg = config::load_config();
+    let mut entries = cfg.vault_registry;
+    entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+    Ok(entries)
+}
+
+#[tauri::command]
+pub async fn register_vault(
+    path: String,
+    display_name: Option<String>,
+) -> Result<(), InkyCapError> {
+    let vault_path = std::path::PathBuf::from(&path);
+    if !vault_path.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Not a directory: {}",
+            path
+        )));
+    }
+    let name = display_name.unwrap_or_else(|| {
+        vault_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Vault".to_string())
+    });
+    let mut cfg = config::load_config();
+    cfg.upsert_vault(&path, &name);
+    config::save_config(&cfg)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_vault_entry(
+    path: String,
+    display_name: String,
+) -> Result<(), InkyCapError> {
+    let mut cfg = config::load_config();
+    let entry = cfg
+        .vault_registry
+        .iter_mut()
+        .find(|e| e.path == path)
+        .ok_or_else(|| {
+            InkyCapError::InvalidPath(format!("Vault not in registry: {}", path))
+        })?;
+    entry.display_name = display_name;
+    config::save_config(&cfg)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_vault_from_registry(path: String) -> Result<(), InkyCapError> {
+    let mut cfg = config::load_config();
+    cfg.remove_vault(&path);
+    config::save_config(&cfg)?;
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct VaultMoveResult {
+    pub new_path: String,
+    pub was_active: bool,
+}
+
+#[tauri::command]
+pub async fn move_vault(
+    old_path: String,
+    new_path: String,
+) -> Result<VaultMoveResult, InkyCapError> {
+    let old = std::path::PathBuf::from(&old_path);
+    let new = std::path::PathBuf::from(&new_path);
+
+    if !old.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Source vault not found: {}",
+            old_path
+        )));
+    }
+    if new.exists() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Destination already exists: {}",
+            new_path
+        )));
+    }
+    if let Some(parent) = new.parent() {
+        if !parent.is_dir() {
+            return Err(InkyCapError::InvalidPath(format!(
+                "Destination parent does not exist: {}",
+                parent.display()
+            )));
+        }
+    }
+
+    std::fs::rename(&old, &new).map_err(|e| {
+        InkyCapError::InvalidPath(format!(
+            "Failed to move vault from {} to {}: {}",
+            old_path, new_path, e
+        ))
+    })?;
+
+    let mut cfg = config::load_config();
+    let was_active = cfg.vault_path.as_deref() == Some(&old_path);
+
+    if let Some(entry) = cfg.vault_registry.iter_mut().find(|e| e.path == old_path) {
+        entry.path = new_path.clone();
+    }
+    if was_active {
+        cfg.vault_path = Some(new_path.clone());
+    }
+    config::save_config(&cfg)?;
+
+    Ok(VaultMoveResult {
+        new_path,
+        was_active,
+    })
 }

@@ -1559,7 +1559,34 @@
   gap: 2px;
 }
 
+.settings__overview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.settings__overview-header > div:first-child {
+  flex: 1;
+}
+
+.settings__overview-logo {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  flex-shrink: 0;
+  padding: 12px;
+}
+
+[data-theme="dark"] .settings__overview-logo {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.14) 30%, transparent 70%);
+}
+
 .settings__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding-bottom: 4px;
   border-bottom: 1px solid color-mix(in srgb, var(--border-primary) 50%, transparent);
 }
@@ -4289,17 +4316,107 @@
 /* ─── Status bar: clickable vault name ─── */
 
 .status-bar__vault-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: none;
   border: none;
   color: var(--status-fg);
   font-size: var(--text-base);
+  font-weight: 600;
   cursor: pointer;
   padding: 0;
   font-family: inherit;
+  transition: color 0.15s ease;
 }
 
 .status-bar__vault-name:hover {
-  text-decoration: underline;
+  color: var(--accent-color, #1D7874);
+}
+
+/* ─── Vault switcher popup ─── */
+
+.context-menu__item:has(.vault-switcher__name),
+.context-menu__item:has(svg) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-switcher__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* ─── Vault management (Settings > Overview) ─── */
+
+.vault-row {
+  align-items: flex-start;
+}
+
+.vault-row__name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-row__edit-btn {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.vault-row__edit-btn:hover {
+  color: var(--accent-color, #1D7874);
+}
+
+.vault-row__inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vault-row__inline-edit .settings__text-input {
+  flex: 1;
+}
+
+.vault-row__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.vault-row__icon-btn:hover {
+  color: var(--accent-color, #1D7874);
+}
+
+.vault-row__icon-btn--cancel:hover {
+  color: var(--fg-error, #f44336);
+}
+
+.vault-row__active-badge {
+  font-size: var(--text-xs, 11px);
+  color: var(--accent-color, #1D7874);
+  font-weight: 600;
+}
+
+.vault-row__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 

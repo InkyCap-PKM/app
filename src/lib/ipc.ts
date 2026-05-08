@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   VaultInfo,
+  VaultRegistryEntry,
+  VaultMoveResult,
   CollectionInfo,
   CollectionData,
   FileTreeNode,
@@ -38,6 +40,35 @@ export async function openVault(path: string): Promise<VaultInfo> {
 
 export async function getVaultInfo(): Promise<VaultInfo | null> {
   return invoke<VaultInfo | null>("get_vault_info");
+}
+
+export async function getVaultRegistry(): Promise<VaultRegistryEntry[]> {
+  return invoke<VaultRegistryEntry[]>("get_vault_registry");
+}
+
+export async function registerVault(
+  path: string,
+  displayName?: string,
+): Promise<void> {
+  return invoke<void>("register_vault", { path, displayName });
+}
+
+export async function updateVaultEntry(
+  path: string,
+  displayName: string,
+): Promise<void> {
+  return invoke<void>("update_vault_entry", { path, displayName });
+}
+
+export async function removeVaultFromRegistry(path: string): Promise<void> {
+  return invoke<void>("remove_vault_from_registry", { path });
+}
+
+export async function moveVault(
+  oldPath: string,
+  newPath: string,
+): Promise<VaultMoveResult> {
+  return invoke<VaultMoveResult>("move_vault", { oldPath, newPath });
 }
 
 export async function listCollections(): Promise<CollectionInfo[]> {

@@ -280,8 +280,19 @@ fn settings_path() -> PathBuf {
 /// Load settings from disk, returning defaults for any missing fields.
 pub fn load_settings() -> UserSettings {
     let path = settings_path();
-    let mut settings: UserSettings = std::fs::read_to_string(&path)
-        .ok()
+    let raw = std::fs::read_to_string(&path).ok();
+
+    // Check whether the raw JSON contains `accent_source` before
+    // deserializing — we need this to distinguish legacy files (which
+    // predate the field) from files where the user explicitly chose
+    // "default".
+    let has_accent_source = raw
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get("appearance")?.get("accent_source").cloned())
+        .is_some();
+
+    let mut settings: UserSettings = raw
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
@@ -290,11 +301,14 @@ pub fn load_settings() -> UserSettings {
         settings.files.scaffold_folder = ".inkycap/scaffolds".to_string();
     }
 
-    // Migrate legacy appearance settings: pre-`accent_source` configs land
-    // here with the default ("default") but may carry a non-default
-    // `accent_color`. Promote those to `accent_source = "custom"` so the
-    // user's chosen color survives the upgrade.
-    if settings.appearance.accent_source == "default"
+    // Migrate legacy appearance settings: pre-`accent_source` configs
+    // that lack the field entirely land with the serde default ("default")
+    // but may carry a non-default `accent_color`. Promote those to
+    // "custom" so the user's color survives the upgrade. Only run this
+    // when `accent_source` was truly absent — otherwise the user has
+    // explicitly chosen "default" and we must respect that.
+    if !has_accent_source
+        && settings.appearance.accent_source == "default"
         && !settings.appearance.accent_color.eq_ignore_ascii_case("#1D7874")
     {
         settings.appearance.accent_source = "custom".to_string();

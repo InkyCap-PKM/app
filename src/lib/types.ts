@@ -31,6 +31,17 @@ export interface VaultInfo {
   property_keys: string[];
 }
 
+export interface VaultRegistryEntry {
+  path: string;
+  display_name: string;
+  last_opened: number;
+}
+
+export interface VaultMoveResult {
+  new_path: string;
+  was_active: boolean;
+}
+
 export interface CollectionInfo {
   name: string;
   path: string;
