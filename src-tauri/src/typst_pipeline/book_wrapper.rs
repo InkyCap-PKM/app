@@ -55,6 +55,7 @@ pub struct BookExportOptions {
     pub include_title_page: bool,
     pub include_outline: bool,
     pub page_numbering: BookPageNumbering,
+    pub include_bibliography: bool,
 }
 
 impl BookExportOptions {
@@ -75,6 +76,7 @@ impl BookExportOptions {
             include_title_page: cfg.include_title_page.unwrap_or(true),
             include_outline: cfg.include_outline.unwrap_or(true),
             page_numbering: cfg.page_numbering.unwrap_or_default(),
+            include_bibliography: cfg.include_bibliography.unwrap_or(true),
         }
     }
 }

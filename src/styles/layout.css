@@ -792,12 +792,28 @@
   opacity: 0.8;
 }
 
-/* Per-row header: property key on the left, type/menu trigger on the right. */
-.property-row__header {
+/* Property row layout: name (icon + key) on left, value cell on right,
+   per-row options trigger floats at the far right and only appears on
+   hover. Mirrors Obsidian's two-column properties panel. */
+.property-row__name {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
+  min-width: 0;
+  flex: 0 0 40%;
+  max-width: 40%;
+  color: var(--fg-muted);
+  overflow: hidden;
+}
+.property-row__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+.property-row__value-cell {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .property-row__type-btn {
   background: none;
@@ -809,6 +825,7 @@
   line-height: 1;
   opacity: 0;
   transition: opacity 0.1s;
+  flex-shrink: 0;
 }
 .property-row:hover .property-row__type-btn {
   opacity: 0.7;
@@ -1080,14 +1097,19 @@
 
 .property-row {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   padding: 3px 0;
+  min-height: 24px;
 }
 
 .property-row__key {
   font-size: var(--text-sm);
   color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .property-row__value {
@@ -1142,8 +1164,12 @@
   border-color: var(--border-input-focus);
 }
 
-.property-row--custom .property-row__key::after {
-  content: "custom";
+/* Built-in InkyCap properties are tagged "system"; user-created properties
+   carry no label. (Reversed from the prior "custom" tag — most properties
+   are user-created in real vaults, so the label noise belongs on the
+   smaller built-in set.) */
+.property-row--system .property-row__key::after {
+  content: "system";
   font-size: var(--text-2xs);
   color: var(--fg-dim);
   margin-left: 4px;
@@ -1153,19 +1179,27 @@
 /* Property editor */
 .property-editor {
   min-height: 20px;
+  width: 100%;
 }
 
+/* Display value reads as a clickable affordance: hovering reveals a faint
+   1px underline so users notice the cell is editable. The cursor: text
+   hint matches what they get once an input replaces it. */
 .property-editor__value {
+  display: inline-block;
   font-size: var(--text-md);
   color: var(--fg-secondary);
   word-break: break-word;
-  cursor: pointer;
-  padding: 1px 2px;
+  cursor: text;
+  padding: 1px 4px;
   border-radius: 2px;
+  border-bottom: 1px solid transparent;
+  min-width: 60px;
 }
 
 .property-editor__value:hover {
   background: var(--bg-hover);
+  border-bottom-color: var(--border-input);
 }
 
 .property-editor__value--null,

@@ -9,12 +9,14 @@ import { indexReady, bumpPropertyVersion } from "../stores/vault";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
+  propertyTypeIcon,
   reloadPropertyTypes,
   propertyType as getPropertyType,
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
 import { EllipsisVertical, NotebookTabs, TableOfContents, Link, BrainCircuit, Quote } from "lucide-solid";
+import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
@@ -228,7 +230,7 @@ const RightPanel: Component = () => {
       });
 
       await ipc.updateProperty(tab.path, key, value);
-      refetchMetadata();
+      await refetchMetadata();
       bumpPropertyVersion();
       document.dispatchEvent(
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
@@ -252,7 +254,7 @@ const RightPanel: Component = () => {
         );
       });
       await ipc.removePropertyFromFile(tab.path, key);
-      refetchMetadata();
+      await refetchMetadata();
       bumpPropertyVersion();
       document.dispatchEvent(
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
@@ -605,25 +607,37 @@ const RightPanel: Component = () => {
                           return a.localeCompare(b);
                         })}
                     >
-                      {([key, value]) => (
-                        <div class={`property-row${KNOWN_FIELDS.has(key) ? "" : " property-row--custom"}`}>
-                          <div class="property-row__header">
-                            <span class="property-row__key">{key}</span>
+                      {([key, value]) => {
+                        const ty = () => {
+                          const declared = getPropertyType(key);
+                          if (declared !== "auto") return declared;
+                          return KNOWN_FIELD_TYPES[key] ?? "auto";
+                        };
+                        return (
+                          <div class={`property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}`}>
+                            <div class="property-row__name">
+                              <span class="property-row__icon" title={`Type: ${propertyTypeLabel(ty())}`}>
+                                <Dynamic component={propertyTypeIcon(ty())} size={14} />
+                              </span>
+                              <span class="property-row__key">{key}</span>
+                            </div>
+                            <div class="property-row__value-cell">
+                              <PropertyEditor
+                                propKey={key}
+                                value={value}
+                                onSave={handlePropertySave}
+                              />
+                            </div>
                             <button
                               class="property-row__type-btn"
-                              title={`Type: ${propertyTypeLabel(getPropertyType(key))}`}
+                              title="Property options"
                               onClick={(e) => openRowMenu(e, key)}
                             >
                               {"\u22EE"}
                             </button>
                           </div>
-                          <PropertyEditor
-                            propKey={key}
-                            value={value}
-                            onSave={handlePropertySave}
-                          />
-                        </div>
-                      )}
+                        );
+                      }}
                     </For>
                   </div>
                 )}

@@ -249,57 +249,30 @@
 // fields pass through unchanged.
 // ---------------------------------------------------------------------------
 
-#let note(
-  title: none,
-  aliases: (),
-  description: none,
-  tags: (),
-  date: none,
-  task: none,
-  status: (),
-  source: none,
-  zid: none,
-  collection: (),
-  ..rest,
-) = {
-  // Coerce known fields to expected types. A string passed for list-typed
-  // fields is wrapped in an array; mistyped date is stored as-is (the
-  // property editor and query pipeline handle both gracefully). This avoids
-  // compile failures that would blank the entire property panel.
-  let _title = title
-  let _date = date
-  let _tags = if type(tags) == array { tags } else if type(tags) == str and tags != "" { (tags,) } else if type(tags) == str { () } else { () }
-  let _status = if type(status) == array { status } else if type(status) == str and status != "" { (status,) } else if type(status) == str { () } else { () }
-  let _source = source
-  let _collection = if type(collection) == array { collection } else if type(collection) == str and collection != "" { (collection,) } else if type(collection) == str { () } else { () }
-  let _description = description
-  let _task = task
-  let _aliases = if type(aliases) == array { aliases } else if type(aliases) == str and aliases != "" { (aliases,) } else if type(aliases) == str { () } else { () }
-  let _zid = zid
-
+#let note(..args) = {
+  // Only explicitly-passed keys are emitted. This is intentional: the
+  // properties panel adds rows by writing the field with an empty default
+  // (e.g. `tags: ()`), and the panel reflects what's in the source. If we
+  // dropped empty-equals-default values here, those rows would vanish from
+  // the panel after every reindex.
+  //
+  // Known list-typed fields are coerced from a bare string to a 1-element
+  // array so a user typing `tags: "draft"` still works. Datetime values are
+  // stringified for stable downstream consumption.
+  let list_fields = ("tags", "status", "collection", "aliases")
   let data = (:)
-  if _title != none { data.insert("title", _title) }
-  if _date != none {
-    if type(_date) == datetime {
-      data.insert("date", _date.display("[year]-[month]-[day]"))
+  for (k, v) in args.named() {
+    let coerced = if k in list_fields {
+      if type(v) == array { v }
+      else if type(v) == str and v != "" { (v,) }
+      else if type(v) == str { () }
+      else { v }
+    } else if type(v) == datetime {
+      v.display("[year]-[month]-[day]")
     } else {
-      data.insert("date", _date)
+      v
     }
-  }
-  if _tags != () { data.insert("tags", _tags) }
-  if _status != () { data.insert("status", _status) }
-  if _source != none { data.insert("source", _source) }
-  if _collection != () { data.insert("collection", _collection) }
-  if _description != none { data.insert("description", _description) }
-  if _task != none { data.insert("task", _task) }
-  if _aliases != () { data.insert("aliases", _aliases) }
-  if _zid != none { data.insert("zid", _zid) }
-  for (k, v) in rest.named() {
-    if type(v) == datetime {
-      data.insert(k, v.display("[year]-[month]-[day]"))
-    } else {
-      data.insert(k, v)
-    }
+    data.insert(k, coerced)
   }
 
   // Emit the document-level metadata.

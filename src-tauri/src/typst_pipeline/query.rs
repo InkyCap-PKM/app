@@ -61,10 +61,31 @@ pub fn compile_and_query(
     abs_path: &Path,
     source: String,
 ) -> QueryResult {
-    match compiler.compile_document(abs_path, source) {
-        Some(document) => query_document(&document),
-        None => QueryResult::default(),
+    // First try compiling the full file. If that fails — typically because of
+    // unresolved citations on a file without an inline `#bibliography(...)`,
+    // a panic-free typst error in the body, an unresolved embed, etc. — fall
+    // back to compiling just the preamble (import + `#note(...)`). The
+    // metadata pipeline only cares about the labels emitted by `note()`, so
+    // a body-stripped recompile is enough to surface properties to the panel
+    // even when the full document doesn't render.
+    if let Some(document) = compiler.compile_document(abs_path, source.clone()) {
+        return query_document(&document);
     }
+    let preamble = extract_note_preamble(&source);
+    if preamble.len() < source.len() {
+        if let Some(document) = compiler.compile_document(abs_path, preamble) {
+            return query_document(&document);
+        }
+    }
+    QueryResult::default()
+}
+
+/// Return just the import preamble + `#note(...)` call as a standalone source.
+/// Mirror of [`crate::vault_package::strip_note_preamble`] — same parser, but
+/// keeps the prefix and drops the body.
+fn extract_note_preamble(content: &str) -> String {
+    let body_start = content.len() - crate::vault_package::strip_note_preamble(content).len();
+    content[..body_start].to_string()
 }
 
 // ---------------------------------------------------------------------------

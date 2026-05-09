@@ -184,6 +184,7 @@ export interface BookExportConfig {
     | { style: "roman_then_arabic" }
     | { style: "arabic_from_page"; start_page: number }
     | null;
+  include_bibliography?: boolean | null;
 }
 
 // User settings (mirrors Rust UserSettings struct)

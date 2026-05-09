@@ -7,7 +7,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { EditorState, EditorSelection, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
+import { Annotation, EditorState, EditorSelection, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
 import { expandFunc } from "./effects";
 import { syntaxTree } from "@codemirror/language";
 import {
@@ -1151,6 +1151,14 @@ const expandedFuncField = StateField.define<number | null>({
         next = e.value;
         return next;
       }
+      // External reloads (sidebar property edits) dispatch this effect to
+      // force visualField to rebuild against a fresh tree. The mapped
+      // expanded position is meaningless after a full-doc replace and would
+      // otherwise leave the previous #note() (or similar) func expanded —
+      // showing raw source until the user clicks elsewhere. Clear it.
+      if (e.is(rebuildVisualDecorations)) {
+        return null;
+      }
     }
     if (tr.selection && next !== null && next <= tr.state.doc.length) {
       const expandedLine = tr.state.doc.lineAt(next).number;
@@ -1376,7 +1384,14 @@ const protectedCursorFilter = EditorState.transactionFilter.of((tr) => {
   return [tr, { selection: EditorSelection.create(newRanges, tr.selection.mainIndex) }];
 });
 
+// Annotated by external reloads (sidebar property edits) so the protected-
+// range filter knows to step out of the way. Protected ranges exist to keep
+// the user from accidentally deleting through a widget while typing — they
+// must NOT preserve stale source against a wholesale buffer replacement.
+export const externalReload = Annotation.define<boolean>();
+
 const protectedChangeFilter = EditorState.changeFilter.of((tr) => {
+  if (tr.annotation(externalReload)) return true;
   const ranges = tr.startState.field(protectedRangesField, false);
   if (!ranges || ranges.length === 0) return true;
 
@@ -1435,7 +1450,15 @@ function cursorNearDecoTrigger(state: EditorState): boolean {
 // Effect dispatched by the post-history-rebuild plugin (below) once the
 // incremental parser has caught up after an undo/redo. Forces visualField
 // to re-iterate the now-complete tree and rebuild decorations.
-const rebuildVisualDecorations = StateEffect.define<null>();
+//
+// Also dispatched externally after a wholesale buffer replacement (e.g.
+// the right-panel "property changed" reload) — that path replaces the
+// doc and runs `ensureSyntaxTree` synchronously, but neither step fires
+// a follow-up transaction that visualField would treat as a "tree
+// changed" trigger, so its decorations otherwise stay anchored to the
+// pre-replace parse tree (with widget Replace ranges that mask the new
+// content, producing a blank-looking editor).
+export const rebuildVisualDecorations = StateEffect.define<null>();
 
 const visualField = StateField.define<DecorationSet>({
   create(state) {

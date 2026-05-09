@@ -500,6 +500,9 @@ const CollectionBookEditor: Component<{
   const [includeOutline, setIncludeOutline] = createSignal(
     cfg().include_outline ?? true,
   );
+  const [includeBibliography, setIncludeBibliography] = createSignal(
+    cfg().include_bibliography ?? true,
+  );
   const [injectMode, setInjectMode] = createSignal<"always" | "fallback" | "never">(
     cfg().inject_chapter_heading ?? "fallback",
   );
@@ -536,6 +539,7 @@ const CollectionBookEditor: Component<{
       include_title_page: includeTitlePage(),
       include_outline: includeOutline(),
       page_numbering: pageNumbering,
+      include_bibliography: includeBibliography(),
     };
   }
 
@@ -670,6 +674,25 @@ const CollectionBookEditor: Component<{
           />
           Number chapters and headings
         </label>
+      </div>
+      <div class="collection-meta__row">
+        <label class="collection-meta__label">Bibliography</label>
+        <label class="collection-meta__inline-check">
+          <input
+            type="checkbox"
+            checked={includeBibliography()}
+            onChange={(e) => {
+              setIncludeBibliography(e.currentTarget.checked);
+              flush();
+            }}
+          />
+          Include in output
+        </label>
+        <Show when={!includeBibliography()}>
+          <span class="collection-meta__hint" style={{ "margin-left": "12px" }}>
+            Citations resolve, but the reference list is hidden.
+          </span>
+        </Show>
       </div>
       <div class="collection-meta__row">
         <label class="collection-meta__label">Chapter heading</label>

@@ -241,6 +241,12 @@ pub struct BookExportConfig {
     pub include_outline: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_numbering: Option<BookPageNumbering>,
+    /// When `Some(false)`, the rendered bibliography is suppressed from the
+    /// output via `#show bibliography: it => hide(it)`. Citation resolution
+    /// is unaffected — only the visible reference list disappears. Defaults
+    /// to `true` (bibliography included) when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_bibliography: Option<bool>,
 }
 
 /// A parsed `.collection` file.

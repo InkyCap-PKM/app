@@ -7,6 +7,17 @@
 // changing one key triggers a single reactive update across all editors.
 
 import { createSignal } from "solid-js";
+import {
+  AlignLeft,
+  CalendarClock,
+  CalendarDays,
+  CircleDot,
+  Hash,
+  List,
+  SquareCheck,
+  type LucideProps,
+} from "lucide-solid";
+import type { Component } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { PropertyType } from "../lib/types";
 
@@ -55,5 +66,27 @@ export function propertyTypeLabel(ty: PropertyType): string {
       return "Number";
     case "text":
       return "Text";
+  }
+}
+
+/// Lucide icon component matching a property type. Used in the properties
+/// panel to show value-shape at a glance (matches Obsidian's affordance).
+export function propertyTypeIcon(ty: PropertyType): Component<LucideProps> {
+  switch (ty) {
+    case "checkbox":
+      return SquareCheck;
+    case "date":
+      return CalendarDays;
+    case "datetime":
+      return CalendarClock;
+    case "list":
+      return List;
+    case "number":
+      return Hash;
+    case "text":
+      return AlignLeft;
+    case "auto":
+    default:
+      return CircleDot;
   }
 }

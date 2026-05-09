@@ -480,13 +480,31 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     (async () => {
       try {
         const freshContent = await ipc.readFileContent(currentPath!);
-        if (freshContent === docText()) return;
+        // Compare against the actual editor buffer (not the cached
+        // docText signal) — otherwise transient signal updates can make
+        // the early-return fire when the buffer is still stale.
+        const bufferText = editorHandle?.getText() ?? docText();
+        if (freshContent === bufferText) {
+          // Buffer is already current, but make sure the dirty flag
+          // and lastSaved reflect that.
+          lastSaved = freshContent;
+          setDirty(false);
+          return;
+        }
         lastSaved = freshContent;
         suppressChange = true;
         try {
           setDocText(freshContent);
           if (editorHandle) {
             editorHandle.setText(freshContent);
+            // Visual mode reloads need a parse-aware rebuild. setText alone
+            // runs visualField's update against a possibly-partial tree, so
+            // pre-existing Replace widgets can mask the new content and the
+            // editor renders blank. rebuildVisual() retries until the tree
+            // spans the new doc, then dispatches the rebuild effect.
+            if (currentMode() === "live") {
+              editorHandle.rebuildVisual();
+            }
           }
         } finally {
           queueMicrotask(() => { suppressChange = false; });

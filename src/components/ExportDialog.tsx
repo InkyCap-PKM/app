@@ -78,6 +78,7 @@ const ExportDialog: Component = () => {
   const [stripWikilinks, setStripWikilinks] = createSignal(false);
   const [markdownPreserveTypst, setMarkdownPreserveTypst] = createSignal(true);
   const [pdfStandard, setPdfStandard] = createSignal<PdfStandardPreset>("standard");
+  const [includeBibliography, setIncludeBibliography] = createSignal(true);
 
   function fileName(): string {
     const p = filePath();
@@ -96,6 +97,7 @@ const ExportDialog: Component = () => {
     setExporting(false);
     setMetadataMode("exclude");
     setPdfStandard("standard");
+    setIncludeBibliography(true);
     setVisible(true);
 
     ipc.detectPandoc().then((path) => setPandocAvailable(path !== null));
@@ -160,10 +162,11 @@ const ExportDialog: Component = () => {
 
         setExporting(true);
         const std = pdfStandard() === "standard" ? undefined : pdfStandard();
+        const includeBib = includeBibliography() ? undefined : false;
         if (collectionPath()) {
-          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std);
+          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std, includeBib);
         } else {
-          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std);
+          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib);
         }
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "markdown") {
@@ -188,7 +191,8 @@ const ExportDialog: Component = () => {
         if (!outputPath) return;
 
         setExporting(true);
-        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks());
+        const includeBib = includeBibliography() ? undefined : false;
+        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib);
         setSuccess(`Exported to ${outputPath}`);
       } else {
         // Pandoc formats (including pandoc-pdf)
@@ -305,6 +309,24 @@ const ExportDialog: Component = () => {
                 <Show when={metadataHint()}>
                   <span class="export-dialog__hint">{metadataHint()}</span>
                 </Show>
+              </div>
+            </Show>
+
+            <Show when={format() === "pdf" || format() === "typst-html"}>
+              <div class="export-dialog__field">
+                <label class="export-dialog__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={includeBibliography()}
+                    onChange={(e) => setIncludeBibliography(e.currentTarget.checked)}
+                  />
+                  Include bibliography in output
+                </label>
+                <span class="export-dialog__hint">
+                  {includeBibliography()
+                    ? "The bibliography will appear at the end of the document."
+                    : "Citations resolve normally, but the rendered bibliography is omitted from the output."}
+                </span>
               </div>
             </Show>
 

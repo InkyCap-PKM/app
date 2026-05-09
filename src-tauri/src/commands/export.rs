@@ -22,6 +22,7 @@ use crate::typst_pipeline::style_injection;
 #[tauri::command]
 pub async fn export_note_pdf(
     path: String,
+    include_bibliography: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<u8>, InkyCapError> {
     let storage = state.get_storage().await?;
@@ -36,6 +37,7 @@ pub async fn export_note_pdf(
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
     let bib_style = resolve_user_bib_style(&state).await;
     let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
+    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -60,6 +62,7 @@ pub async fn export_note_pdf_to_file(
     output_path: String,
     metadata_mode: String,
     pdf_standard: Option<PdfStandardPreset>,
+    include_bibliography: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -80,6 +83,7 @@ pub async fn export_note_pdf_to_file(
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
     let bib_style = resolve_user_bib_style(&state).await;
     let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
+    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -165,6 +169,7 @@ pub async fn export_note_html(
     output_path: String,
     metadata_mode: String,
     strip_wikilinks: Option<bool>,
+    include_bibliography: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -191,6 +196,7 @@ pub async fn export_note_html(
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
     let bib_style = resolve_user_bib_style(&state).await;
     let source = maybe_inject_bibliography(content, effective_bib.as_deref(), bib_style.as_deref());
+    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -231,6 +237,7 @@ pub async fn export_collection_note_pdf(
     output_path: String,
     metadata_mode: Option<String>,
     pdf_standard: Option<PdfStandardPreset>,
+    include_bibliography: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -273,6 +280,7 @@ pub async fn export_collection_note_pdf(
         effective_bib.as_deref(),
         base.bibliography_style.as_deref(),
     );
+    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -322,6 +330,7 @@ pub async fn export_collection_batch_pdf(
     output_dir: String,
     metadata_mode: Option<String>,
     pdf_standard: Option<PdfStandardPreset>,
+    include_bibliography: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let data = crate::commands::collections::get_collection_data_internal(
@@ -384,6 +393,7 @@ pub async fn export_collection_batch_pdf(
             effective_bib.as_deref(),
             base.bibliography_style.as_deref(),
         );
+        let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
@@ -473,6 +483,7 @@ pub struct BookExportOverrides {
     pub include_outline: Option<bool>,
     pub page_numbering: Option<crate::collection_parser::model::BookPageNumbering>,
     pub pdf_standard: Option<PdfStandardPreset>,
+    pub include_bibliography: Option<bool>,
 }
 
 /// Detected user-label collision returned to the frontend so the UI can
@@ -532,6 +543,7 @@ pub async fn export_collection_book_pdf(
         if let Some(v) = ov.include_title_page { options.include_title_page = v; }
         if let Some(v) = ov.include_outline { options.include_outline = v; }
         if let Some(v) = ov.page_numbering { options.page_numbering = v; }
+        if let Some(v) = ov.include_bibliography { options.include_bibliography = v; }
     }
 
     // 3. Read each note, extracting its title for fallback chapter headings.
@@ -664,6 +676,7 @@ pub async fn export_collection_book_pdf(
         compiler.set_bibliography_style(Some(style.clone()));
     }
     let source = super::typst::maybe_inject_set_vault(&source, &state).await;
+    let source = apply_bibliography_visibility(source, options.include_bibliography);
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
     check_pdf_standard_requirements(&source, book_pdf_standard)?;
     let compile_result = compiler
@@ -1020,6 +1033,22 @@ async fn resolve_user_bib_style(state: &State<'_, AppState>) -> Option<String> {
                 .filter(|s| !s.is_empty() && *s != "custom")
                 .map(String::from)
         })
+}
+
+/// Suppress the rendered bibliography from export output without breaking
+/// citation resolution. When `include` is `false`, prepends a Typst show
+/// rule that replaces the bibliography element with `none` — the
+/// `#bibliography(...)` call still binds the bib file (so `@key` citations
+/// resolve) but its visible output is dropped entirely, leaving no blank
+/// trailing pages.
+///
+/// Per CLAUDE.md's Typst-first principle: this uses a Typst show rule
+/// rather than mutating user source or stripping the `#bibliography`
+/// call, so a user-written `#bibliography(...)` is suppressed by the
+/// same mechanism as our auto-injected one.
+fn apply_bibliography_visibility(source: String, include: bool) -> String {
+    if include { return source; }
+    format!("#show bibliography: _ => none\n\n{}", source)
 }
 
 /// Append a `#bibliography(...)` call to the source when the collection

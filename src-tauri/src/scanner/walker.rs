@@ -378,13 +378,30 @@ pub async fn scan_vault_cached(
                 };
 
                 if let Ok(content) = content_result {
-                    let note = cached_to_note(cached, path, vault_root, &stat);
-                    link_index
-                        .set_forward_links(path.clone(), note.links.clone());
-                    notes.push(note);
-                    contents.push((path.clone(), content));
-                    stats.cache_hits += 1;
-                    used_cache = true;
+                    // Reject cache entries that look like a previous compile
+                    // failure: zero properties parsed from a file that visibly
+                    // has a `#note(...)` call. These come from older builds
+                    // where a body-only error (e.g. unresolved citation)
+                    // tanked the whole compile and stored an empty result.
+                    // The body-stripped fallback in `compile_and_query` will
+                    // succeed on the re-parse path below.
+                    let non_file_props = cached
+                        .properties
+                        .keys()
+                        .any(|k| !k.starts_with("file."));
+                    let cached_empty = !non_file_props && cached.tags.is_empty();
+                    let looks_like_note = content.contains("#note(");
+                    if cached_empty && looks_like_note {
+                        // fall through to reparse
+                    } else {
+                        let note = cached_to_note(cached, path, vault_root, &stat);
+                        link_index
+                            .set_forward_links(path.clone(), note.links.clone());
+                        notes.push(note);
+                        contents.push((path.clone(), content));
+                        stats.cache_hits += 1;
+                        used_cache = true;
+                    }
                 }
             }
         }

@@ -1,7 +1,7 @@
 import { Compartment, EditorState, Prec, StateField, Transaction, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, crosshairCursor, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree } from "@codemirror/language";
+import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap, lintGutter } from "@codemirror/lint";
@@ -78,7 +78,7 @@ function typstLanguage(): Extension {
   );
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
-import { typstVisualMode, autoExpandFacet, protectedRangesField } from "./typst-decorations/visual-plugin";
+import { typstVisualMode, autoExpandFacet, protectedRangesField, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
 import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
@@ -100,6 +100,10 @@ export interface TypstEditorHandle {
   setFocusMode(mode: FocusMode, dim: boolean): void;
   setSmartIndentLists(enabled: boolean): void;
   ensureParsed(timeout?: number): void;
+  /** Force the visual decoration field to rebuild from a fully-parsed tree.
+   *  Call after setText() during external reloads (sidebar property edits)
+   *  to avoid stale Replace ranges blanking the editor. */
+  rebuildVisual(): void;
   setLsp(client: LspClient | null, documentUri: string): void;
   focus(): void;
   focusAtContent(): void;
@@ -355,7 +359,14 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       view.dispatch({
         changes: { from: 0, to: current.length, insert: text },
         effects: historyCompartment.reconfigure([]),
-        annotations: Transaction.addToHistory.of(false),
+        annotations: [
+          Transaction.addToHistory.of(false),
+          // Tells protectedChangeFilter to skip — otherwise the filter would
+          // preserve the OLD #note(...) source against this full-doc replace,
+          // shredding body content and leaving the editor visually broken
+          // until the user switches tabs and back (which destroys + remounts).
+          externalReload.of(true),
+        ],
       });
       view.dispatch({
         effects: historyCompartment.reconfigure(history()),
@@ -363,6 +374,41 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     },
     ensureParsed(timeout = 500) {
       ensureSyntaxTree(view.state, view.state.doc.length, timeout);
+    },
+    rebuildVisual() {
+      // The naive path — ensureParsed + dispatch — is fragile: ensureSyntaxTree
+      // may return early on large docs (timeout hits before parse completes),
+      // and rebuildVisualDecorations then runs against a partial tree. Tree
+      // iteration finds nothing, but pre-existing Replace decorations from the
+      // prior doc may still anchor across the new content via mapping, leaving
+      // the editor visually blank.
+      //
+      // Strategy: try a generous synchronous parse; if the tree still doesn't
+      // span the doc, retry on rAF until it does (cap retries to avoid an
+      // infinite loop on degenerate input). Always dispatch at least once so
+      // visualField doesn't stay anchored to the old doc.
+      const dispatch = () => {
+        view.dispatch({ effects: rebuildVisualDecorations.of(null) });
+      };
+      const docLen = view.state.doc.length;
+      ensureSyntaxTree(view.state, docLen, 2000);
+      let tree = syntaxTree(view.state);
+      if (tree.length >= docLen) {
+        dispatch();
+        return;
+      }
+      let attempts = 0;
+      const tick = () => {
+        attempts += 1;
+        ensureSyntaxTree(view.state, view.state.doc.length, 1000);
+        tree = syntaxTree(view.state);
+        if (tree.length >= view.state.doc.length || attempts >= 10) {
+          dispatch();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
     },
     setVisualMode(enabled: boolean) {
       isVisual = enabled;

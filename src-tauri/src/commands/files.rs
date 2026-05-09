@@ -38,9 +38,24 @@ pub async fn get_file_metadata(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<NoteMetadata, InkyCapError> {
-    let index = state.property_index.read().await;
     let path_buf = std::path::PathBuf::from(&path);
 
+    {
+        let index = state.property_index.read().await;
+        if let Some(meta) = index.notes.get(&path_buf).cloned() {
+            return Ok(meta);
+        }
+    }
+
+    // Fallback: file isn't in the index yet (initial vault scan may have
+    // missed it, or it was created out-of-band). Read it and reindex on
+    // demand so the panel doesn't stay permanently blank until the user
+    // edits the file.
+    let storage = state.get_storage().await?;
+    let content = storage.read_file(&path_buf).await?;
+    state.reindex_note(&path_buf, &content).await;
+
+    let index = state.property_index.read().await;
     index
         .notes
         .get(&path_buf)
@@ -126,6 +141,12 @@ pub async fn update_property(
     let path_buf = std::path::PathBuf::from(&path);
 
     let content = storage.read_file(&path_buf).await?;
+    // Ensure the inkycap-vault import is present before the rewriter
+    // synthesizes a `#note(...)` call. Without this, a note that has no
+    // import yet gets a `#note(...)` call referencing an unbound symbol —
+    // `typst query` fails on reindex, and the new property never reaches
+    // the property index, leaving the panel blank after first add.
+    let content = crate::vault_package::ensure_import(&content);
     let updated = note_rewriter::update_note_property(&content, &key, &value);
     storage.write_file(&path_buf, &updated).await?;
 

@@ -555,8 +555,14 @@ export async function splitNote(
 
 // Export
 
-export async function exportNotePdf(path: string): Promise<number[]> {
-  return invoke<number[]>("export_note_pdf", { path });
+export async function exportNotePdf(
+  path: string,
+  includeBibliography?: boolean,
+): Promise<number[]> {
+  return invoke<number[]>("export_note_pdf", {
+    path,
+    includeBibliography: includeBibliography ?? null,
+  });
 }
 
 /// PDF standard presets for native Typst PDF export. Mirrors `PdfStandardPreset`
@@ -568,12 +574,14 @@ export async function exportNotePdfToFile(
   outputPath: string,
   metadataMode: string = "exclude",
   pdfStandard?: PdfStandardPreset,
+  includeBibliography?: boolean,
 ): Promise<void> {
   return invoke<void>("export_note_pdf_to_file", {
     path,
     outputPath,
     metadataMode,
     pdfStandard: pdfStandard ?? null,
+    includeBibliography: includeBibliography ?? null,
   });
 }
 
@@ -589,8 +597,15 @@ export async function exportNoteHtml(
   outputPath: string,
   metadataMode: string = "exclude",
   stripWikilinks: boolean = false,
+  includeBibliography?: boolean,
 ): Promise<void> {
-  return invoke<void>("export_note_html", { path, outputPath, metadataMode, stripWikilinks });
+  return invoke<void>("export_note_html", {
+    path,
+    outputPath,
+    metadataMode,
+    stripWikilinks,
+    includeBibliography: includeBibliography ?? null,
+  });
 }
 
 export async function exportCollectionNotePdf(
@@ -599,6 +614,7 @@ export async function exportCollectionNotePdf(
   outputPath: string,
   metadataMode?: string,
   pdfStandard?: PdfStandardPreset,
+  includeBibliography?: boolean,
 ): Promise<void> {
   return invoke<void>("export_collection_note_pdf", {
     notePath,
@@ -606,6 +622,7 @@ export async function exportCollectionNotePdf(
     outputPath,
     metadataMode: metadataMode ?? null,
     pdfStandard: pdfStandard ?? null,
+    includeBibliography: includeBibliography ?? null,
   });
 }
 
@@ -615,6 +632,7 @@ export async function exportCollectionBatchPdf(
   outputDir: string,
   metadataMode?: string,
   pdfStandard?: PdfStandardPreset,
+  includeBibliography?: boolean,
 ): Promise<string[]> {
   return invoke<string[]>("export_collection_batch_pdf", {
     collectionPath,
@@ -622,6 +640,7 @@ export async function exportCollectionBatchPdf(
     outputDir,
     metadataMode: metadataMode ?? null,
     pdfStandard: pdfStandard ?? null,
+    includeBibliography: includeBibliography ?? null,
   });
 }
 
@@ -653,6 +672,10 @@ export interface BookExportOverrides {
   includeOutline?: boolean;
   pageNumbering?: BookPageNumbering;
   pdfStandard?: PdfStandardPreset;
+  /// When `false`, the merged PDF compiles with citation resolution intact
+  /// but the rendered bibliography is suppressed via a Typst show rule.
+  /// Defaults to `true` when omitted.
+  includeBibliography?: boolean;
 }
 
 export async function exportCollectionBookPdf(
