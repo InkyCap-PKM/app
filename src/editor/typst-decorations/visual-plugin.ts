@@ -656,10 +656,10 @@ function handleFuncCall(
     // the case below — no early return here.
   } else if (BLOCK_FUNCS.has(funcName)) {
     if (funcName === "table" && expandedPos === from) return false;
-    if (funcName === "verse") {
-      if (expandedPos === from) return false;
-      if (autoExpand && onCursor) return false;
-    }
+    // Verse always renders as its widget — the contentEditable canvas
+    // inside owns the editing experience. Focus routing on insertion
+    // is handled inside the widget's toDOM (auto-focus the canvas
+    // when CM selection is inside the widget's body range).
   } else {
     const isExpanded = expandedPos === from;
     if (isExpanded || (autoExpand && onCursor)) return false;
@@ -834,11 +834,21 @@ function handleFuncCall(
       return false;
     }
     case "verse": {
-      const body = extractFirstStringArg(text);
-      if (body !== null) {
+      const range = extractFirstEscapedStringArgRange(text, from);
+      if (range !== null) {
+        const source = state.doc.sliceString(range.from, range.to);
+        const alignArg = (text.match(/align-to\s*:\s*(left|center|right)\b/) ?? [])[1];
+        const fontArg = extractNamedStringArg(text, "font");
         decos.push(
           Decoration.replace({
-            widget: new VerseWidget(body, from, to),
+            widget: new VerseWidget({
+              source,
+              bodyFrom: range.from,
+              bodyTo: range.to,
+              callFrom: from,
+              align: (alignArg as "left" | "center" | "right") ?? "left",
+              font: fontArg ?? null,
+            }),
           }).range(from, to),
         );
       }
@@ -1012,6 +1022,26 @@ function extractFirstStringArgRange(
   const contentEnd = text.indexOf(quote, contentStart);
   if (contentEnd < 0) return null;
   return { from: nodeFrom + contentStart, to: nodeFrom + contentEnd };
+}
+
+/** Like {@link extractFirstStringArgRange} but honors `\\X` escapes inside
+ *  the string literal — needed for verse bodies, which routinely contain
+ *  `\"`, `\\`, `\n`, and markup-escape pairs like `\*`. */
+function extractFirstEscapedStringArgRange(
+  text: string,
+  nodeFrom: number,
+): { from: number; to: number } | null {
+  const m = text.match(/\(\s*"/);
+  if (!m || m.index == null) return null;
+  const contentStart = m.index + m[0].length;
+  let i = contentStart;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "\\") { i += 2; continue; }
+    if (ch === '"') return { from: nodeFrom + contentStart, to: nodeFrom + i };
+    i++;
+  }
+  return null;
 }
 
 function extractNamedStringArg(text: string, name: string): string | null {
@@ -1371,23 +1401,18 @@ const protectedChangeFilter = EditorState.changeFilter.of((tr) => {
   if (allContained) return false;
 
   // For changes that span protected ranges (like select-all + delete),
-  // compute allowed sections by excluding protected ranges
-  const allowed: number[] = [];
+  // return the protected sub-ranges so CodeMirror filters them OUT of the
+  // change — i.e. leaves them untouched. The returned array is a flat list
+  // of from/to pairs of ranges that must not be modified.
+  const filtered: number[] = [];
   tr.changes.iterChanges((fromA, toA) => {
-    let pos = fromA;
     for (const r of ranges) {
       if (r.from >= toA) break;
-      if (r.to <= pos) continue;
-      if (pos < r.from) {
-        allowed.push(pos, r.from);
-      }
-      pos = r.to;
-    }
-    if (pos < toA) {
-      allowed.push(pos, toA);
+      if (r.to <= fromA) continue;
+      filtered.push(Math.max(fromA, r.from), Math.min(toA, r.to));
     }
   });
-  return allowed;
+  return filtered;
 });
 
 const DECO_TRIGGER_CHARS = new Set(["*", "_", "\\", "$", "@", "#", "`", "/"]);
@@ -1893,35 +1918,109 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.9em",
     fontFamily: "var(--editor-font-mono, monospace)",
   },
+  // ── Verse ──
+  // First-class verse element: an open canvas, not a code-block. The
+  // pill at top-left identifies it and exposes alignment options; the
+  // canvas itself is contentEditable with inline formatting rendered.
   ".cm-typst-verse": {
     display: "block",
+    position: "relative",
+    margin: "10px 0",
+    padding: "0",
+    // Subtle dotted top/bottom rules demark the verse region without
+    // making it feel boxed-in. Pill at top-left identifies it.
+    borderTop: "1px dotted var(--border-subtle)",
+    borderBottom: "1px dotted var(--border-subtle)",
+    "--verse-active-font": "var(--verse-font, var(--editor-font-body, var(--md-body-font, serif)))",
+  },
+  ".cm-typst-verse-pill": {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "2px 8px 2px 4px",
+    fontSize: "0.7em",
+    fontWeight: "500",
+    letterSpacing: "0.3px",
+    color: "var(--fg-muted)",
+    backgroundColor: "var(--bg-hover)",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "12px",
+    cursor: "pointer",
+    userSelect: "none",
+    zIndex: "2",
+  },
+  ".cm-typst-verse-pill:hover": {
+    color: "var(--fg-primary)",
+    borderColor: "var(--accent)",
+  },
+  ".cm-typst-verse-canvas": {
+    display: "block",
+    minHeight: "1.6em",
+    padding: "20px 12px 12px 12px",
+    fontFamily: "var(--verse-active-font)",
+    fontSize: "inherit",
+    lineHeight: "1.7",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    color: "var(--fg-primary)",
+    outline: "none",
+    caretColor: "var(--accent)",
+    "-webkit-user-select": "text",
+    userSelect: "text",
+  },
+  ".cm-typst-verse-canvas:focus": {
+    backgroundColor: "var(--bg-hover-subtle, transparent)",
+  },
+  ".cm-typst-verse-canvas mark": {
+    backgroundColor: "var(--highlight-bg, #fff3a3)",
+    color: "inherit",
+    padding: "0 2px",
+    borderRadius: "2px",
+  },
+  ".cm-typst-verse-popover": {
+    // --bg-elevated isn't defined in InkyCap themes; fall back to the
+    // primary background so the popover has a solid backdrop instead
+    // of the transparent canvas behind it.
+    backgroundColor: "var(--bg-primary)",
     border: "1px solid var(--border-subtle)",
     borderRadius: "6px",
-    margin: "4px 0",
-    overflow: "hidden",
-  },
-  ".cm-typst-verse-label": {
-    display: "block",
-    fontSize: "0.75em",
-    color: "var(--fg-dim)",
-    padding: "4px 10px 2px",
-    borderBottom: "1px solid var(--border-subtle)",
-    backgroundColor: "var(--bg-hover)",
-  },
-  ".cm-typst-verse-textarea": {
-    display: "block",
-    width: "100%",
-    border: "none",
-    outline: "none",
-    resize: "vertical",
     padding: "8px 10px",
-    fontFamily: "var(--md-body-font, var(--editor-font-body, serif))",
-    fontSize: "inherit",
-    lineHeight: "1.6",
-    whiteSpace: "pre",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+    zIndex: "1000",
+    minWidth: "180px",
+  },
+  ".cm-typst-verse-popover-heading": {
+    fontSize: "0.7em",
+    fontWeight: "600",
+    letterSpacing: "0.3px",
+    color: "var(--fg-muted)",
+    marginBottom: "6px",
+  },
+  ".cm-typst-verse-popover-row": {
+    display: "flex",
+    gap: "4px",
+  },
+  ".cm-typst-verse-popover-btn": {
+    flex: "1",
+    padding: "4px 8px",
+    fontSize: "0.85em",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "4px",
     backgroundColor: "transparent",
     color: "var(--fg-primary)",
-    boxSizing: "border-box",
+    cursor: "pointer",
+  },
+  ".cm-typst-verse-popover-btn:hover": {
+    backgroundColor: "var(--bg-hover)",
+    borderColor: "var(--accent)",
+  },
+  ".cm-typst-verse-popover-btn.is-active": {
+    backgroundColor: "var(--accent)",
+    color: "var(--accent-fg, #fff)",
+    borderColor: "var(--accent)",
   },
   // ── Table widget ──
   ".cm-typst-table-wrap": {

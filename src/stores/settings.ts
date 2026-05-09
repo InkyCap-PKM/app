@@ -24,6 +24,8 @@ const DEFAULTS: UserSettings = {
     show_inline_tags: true,
     focus_mode: "none",
     focus_dim: false,
+    verse_font: null,
+    apply_verse_font_to_output: false,
   },
   appearance: {
     theme: "system",

@@ -578,6 +578,14 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     const root = document.documentElement;
     root.style.setProperty("--md-body-font", s.body_font_family);
     root.style.setProperty("--md-body-size", `${s.body_font_size}px`);
+    // Verse font: user-set override propagates as a CSS var so the
+    // visual editor's verse canvas picks it up. Empty/unset => unset
+    // the var so the canvas falls back to the body font.
+    if (s.verse_font && s.verse_font.trim() !== "") {
+      root.style.setProperty("--verse-font", s.verse_font);
+    } else {
+      root.style.removeProperty("--verse-font");
+    }
     root.style.setProperty(
       "--md-max-width",
       s.readable_line_length ? `${s.max_line_width}ch` : "100%",

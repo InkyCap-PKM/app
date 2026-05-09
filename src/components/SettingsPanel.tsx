@@ -650,6 +650,23 @@ function AppearanceSettingsSection() {
           onChange={(v) => updateSetting("appearance", "monospace_font", v)}
         />
       </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <label class="settings__label">Verse font</label>
+          <span class="settings__description">Optional override for #verse blocks. Empty = follow editor / output text font.</span>
+        </div>
+        <FontPicker
+          value={settings.editor.verse_font ?? ""}
+          onChange={(v) => updateSetting("editor", "verse_font", v.trim() === "" ? null : v)}
+          placeholder="(follow editor / output font)"
+        />
+      </div>
+      <SettingToggle
+        label="Apply verse font to reading view and output"
+        description="When off, the verse font is visual-editor-only; reading view and exports use the regular text font."
+        value={settings.editor.apply_verse_font_to_output}
+        onChange={(v) => updateSetting("editor", "apply_verse_font_to_output", v)}
+      />
       <SettingCombobox
         label="UI scale"
         description="Scale the entire interface (Ctrl+/Ctrl- to adjust)"

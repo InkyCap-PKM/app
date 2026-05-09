@@ -129,8 +129,10 @@ pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> Str
 /// `collection_rules`: from `CollectionStyle::to_typst_set_rules()` (collection-level)
 ///
 /// Both are optional and only injected when non-empty. The injection point
-/// is immediately after the `#import "/.inkycap/packages/inkycap-vault/..."`
-/// line. If that marker isn't found, rules are prepended to the source.
+/// is immediately after the inkycap-vault import line — recognized via
+/// [`crate::vault_package::is_vault_import_line`], which accepts both the
+/// canonical `/.inkycap/vault.typ` form and the legacy versioned package
+/// path. If no such line is found, rules are prepended to the source.
 pub fn inject_style_rules(
     source: &str,
     defaults_rules: Option<&str>,

@@ -740,65 +740,684 @@ export class WikilinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// VerseWidget — first-class verse element.
+// =====================================================================
+//
+// A "verse" in InkyCap is a freeform poetry/lyrics block. The visual
+// editor presents it as an open contentEditable canvas where the user
+// types, deletes, pastes, and applies inline formatting just like in
+// any rich-text editor. Behind the scenes, the canvas is a faithful
+// round-trip projection of a single Typst source call:
+//
+//   #verse("body string", align-to: center, font: "Newsreader")
+//
+// Because the source is the source of truth (CodeMirror Live Preview,
+// not ProseMirror), every edit eventually flows back to that string.
+// The pipeline below is the round-trip — anyone touching this code
+// should keep it in mind:
+//
+//                    ┌─────────────────────────────────┐
+//                    │   #verse("...", align-to: …)    │   Typst source
+//                    └────────────────┬────────────────┘
+//                                     │ extract body string
+//                                     ▼
+//                            decodeVerseLiteral(src)
+//                          (\n/\t/\"/\\/\u{} resolved;
+//                          markup escapes \* \_ etc.
+//                          PRESERVED for the renderer)
+//                                     │
+//                                     ▼
+//                             renderVerseBody
+//                       (line-by-line, parses *bold*,
+//                        _italic_, #strike[…] etc. into
+//                        <strong>/<em>/<s>/<mark>/<u>)
+//                                     │
+//                                     ▼
+//                          contentEditable canvas DOM
+//                          (user types, formats, edits)
+//                                     │ blur
+//                                     ▼
+//                            encodeVerseDOM(canvas)
+//                       (DOM walk → markup → escape for
+//                        Typst string literal)
+//                                     │
+//                                     ▼
+//                          new body string → dispatch
+//                          a CM transaction replacing
+//                          the between-quotes range
+//                                     │
+//                                     ▼
+//                          (back to top — re-render)
+//
+// All markup metacharacters and string-escape backslashes are hidden
+// from the user — the canvas presents plain text plus styled spans,
+// and the encoder/decoder pair is the single source of truth for
+// going between user-typed characters and the literal Typst storage.
+// User-typed metacharacters are persisted as `\X` so they round-trip
+// literally and are not re-interpreted as markup the next time the
+// body is decoded.
+//
+// ── Sharp edges this widget has accumulated ───────────────────────
+//
+// 1. Focus routing on insertion. Inserting `/verse` from the command
+//    palette lands the CM cursor INSIDE the widget's logical range
+//    (between the quotes). At that point the canvas DOM exists but
+//    doesn't have focus; CM's contentDOM does. Typed characters
+//    bypass the canvas and land at CM's cursor — which sits
+//    adjacent-to or inside the widget — producing scrambled output
+//    (often reverse-typed because CM normalization keeps pulling the
+//    cursor back to a stable widget-boundary position). Fix: when
+//    the widget mounts and CM's selection is inside the widget's
+//    body range, programmatically focus the canvas via
+//    queueMicrotask. Once focus is in the canvas, contentEditable
+//    owns the input loop and typing is normal.
+//
+// 2. Atomic wrap. `wrap.contentEditable = "false"` on the outer
+//    element marks the widget atomic for CM6's MutationObserver, so
+//    the editor doesn't try to interpret canvas keystrokes as edits
+//    to its own document. The inner canvas overrides hierarchically
+//    with `contentEditable = "true"`.
+//
+// 3. Blur-dispatch, not input-dispatch. If we resynced the source on
+//    every input event, each keystroke would tear the widget DOM
+//    down mid-keystroke (rebuild race) and scatter focus back to CM.
+//    The canvas instead accumulates DOM mutations until blur, at
+//    which point we encode it once and dispatch a single transaction.
+//
+// 4. Stop-propagation belt-and-braces. Even with (2) in place, we
+//    `stopPropagation` on input/beforeinput/composition*/keydown/
+//    mousedown so they don't bubble to CM's contentDOM listener.
+//    Defense in depth.
+//
+// 5. Undo/redo forwarding. Ctrl/Cmd-Z inside the canvas would
+//    otherwise hit the contentEditable's per-element history,
+//    leaving CM's source out of sync. We blur first (flushing the
+//    canvas to source) then redispatch the keydown on CM's
+//    contentDOM so the editor's undo stack handles it.
+//
+// 6. Tab inserts a literal tab character. Verse layouts routinely
+//    need indentation and the alternative (focus moves to the next
+//    UI control) breaks the open-canvas illusion.
+// =====================================================================
+
+const VERSE_MARKUP_META = new Set([
+  "\\", "*", "_", "#", "[", "]", "$", "`", "<", ">", "@", "~",
+]);
+
+/** Re-dispatch a Ctrl/Cmd-Z or -Y on CM's contentDOM so the editor's
+ *  undo stack handles it, rather than the contentEditable's internal
+ *  one. The caller should `.blur()` the editable element first so its
+ *  pending changes flush to source via the blur listener — otherwise
+ *  CM's undo would replay against a stale doc state. */
+function forwardUndoRedo(view: EditorView, e: KeyboardEvent): void {
+  view.focus();
+  view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
+    key: e.key,
+    code: e.code,
+    ctrlKey: e.ctrlKey,
+    shiftKey: e.shiftKey,
+    altKey: e.altKey,
+    metaKey: e.metaKey,
+    bubbles: true,
+    cancelable: true,
+  }));
+}
+
+/** Encode a markup chunk (already markup-escaped where needed) into a
+ *  Typst string literal — i.e., `\` → `\\`, `"` → `\"`, newline → `\n`. */
+function encodeAsStringLiteral(markup: string): string {
+  let out = "";
+  for (const ch of markup) {
+    if (ch === "\\") out += "\\\\";
+    else if (ch === '"') out += '\\"';
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\t") out += "\\t";
+    else if (ch === "\r") out += "\\r";
+    else out += ch;
+  }
+  return out;
+}
+
+/** Encode user-typed text: first escape any markup metacharacter so
+ *  Typst's `eval(..., mode: "markup")` treats it literally, then encode
+ *  the result for the surrounding string literal. */
+function encodeUserText(text: string): string {
+  let markup = "";
+  for (const ch of text) {
+    if (VERSE_MARKUP_META.has(ch)) markup += "\\" + ch;
+    else markup += ch;
+  }
+  return encodeAsStringLiteral(markup);
+}
+
+/** Walk the contentEditable DOM, emitting the source-level Typst string
+ *  literal contents. Structural inline formatting (`<strong>`, `<em>`,
+ *  …) becomes unescaped markup (`*x*`, `_x_`, `#strike[x]`, etc.); text
+ *  nodes are escape-laundered through {@link encodeUserText}.
+ *
+ *  Block boundary handling: browsers wrap line-broken content in `<div>`
+ *  or `<p>` after the first Enter (the canvas starts as text + `<br>`s
+ *  but Chromium-family contentEditable upgrades the structure once the
+ *  user presses Enter). Each block opens with an implicit newline
+ *  EXCEPT the first one — `firstBlock` suppresses that lead so the
+ *  encoded string doesn't gain a phantom blank line on every save.
+ *  We also coalesce consecutive boundaries (skip if the buffer already
+ *  ends in `\n`) so user-typed `<br>`s don't double up with the wrapper
+ *  block's implicit break.  */
+function encodeVerseDOM(canvas: HTMLElement): string {
+  const parts: string[] = [];
+  let firstBlock = true;
+  const blockBoundary = () => {
+    if (firstBlock) { firstBlock = false; return; }
+    if (parts.length === 0) return;
+    const last = parts[parts.length - 1];
+    if (!last.endsWith("\\n")) parts.push(encodeAsStringLiteral("\n"));
+  };
+  const walk = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(encodeUserText(node.textContent ?? ""));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+    if (tag === "BR") { parts.push(encodeAsStringLiteral("\n")); return; }
+    if (tag === "DIV" || tag === "P") {
+      blockBoundary();
+      for (const c of Array.from(el.childNodes)) walk(c);
+      return;
+    }
+    if (tag === "STRONG" || tag === "B") {
+      parts.push(encodeAsStringLiteral("*"));
+      for (const c of Array.from(el.childNodes)) walk(c);
+      parts.push(encodeAsStringLiteral("*"));
+      return;
+    }
+    if (tag === "EM" || tag === "I") {
+      parts.push(encodeAsStringLiteral("_"));
+      for (const c of Array.from(el.childNodes)) walk(c);
+      parts.push(encodeAsStringLiteral("_"));
+      return;
+    }
+    if (tag === "U") {
+      parts.push(encodeAsStringLiteral("#underline["));
+      for (const c of Array.from(el.childNodes)) walk(c);
+      parts.push(encodeAsStringLiteral("]"));
+      return;
+    }
+    if (tag === "S" || tag === "DEL" || tag === "STRIKE") {
+      parts.push(encodeAsStringLiteral("#strike["));
+      for (const c of Array.from(el.childNodes)) walk(c);
+      parts.push(encodeAsStringLiteral("]"));
+      return;
+    }
+    if (tag === "MARK") {
+      parts.push(encodeAsStringLiteral("#highlight["));
+      for (const c of Array.from(el.childNodes)) walk(c);
+      parts.push(encodeAsStringLiteral("]"));
+      return;
+    }
+    // Pass-through for SPAN and other neutral wrappers.
+    for (const c of Array.from(el.childNodes)) walk(c);
+  };
+  for (const c of Array.from(canvas.childNodes)) walk(c);
+  return parts.join("");
+}
+
+/** Decode the raw between-quotes Typst string literal into the user's
+ *  text — i.e., apply `\n`/`\t`/`\r`/`\"`/`\\`/`\u{…}` escapes.
+ *  Markup-level escapes (`\*`, `\_`, …) are PRESERVED so the line
+ *  renderer can recognize them and emit the literal char without
+ *  interpreting it as bold/italic markup. */
+export function decodeVerseLiteral(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    if (src[i] === "\\" && i + 1 < src.length) {
+      const next = src[i + 1];
+      if (next === "n") { out += "\n"; i += 2; continue; }
+      if (next === "t") { out += "\t"; i += 2; continue; }
+      if (next === "r") { out += "\r"; i += 2; continue; }
+      if (next === '"') { out += '"'; i += 2; continue; }
+      if (next === "\\") { out += "\\"; i += 2; continue; }
+      if (next === "u" && src[i + 2] === "{") {
+        const close = src.indexOf("}", i + 3);
+        if (close > i + 2) {
+          const hex = src.substring(i + 3, close);
+          const cp = parseInt(hex, 16);
+          if (!Number.isNaN(cp)) {
+            out += String.fromCodePoint(cp);
+            i = close + 1;
+            continue;
+          }
+        }
+      }
+      // Pass through \X for the markup-aware renderer.
+      out += src[i] + src[i + 1];
+      i += 2;
+      continue;
+    }
+    out += src[i];
+    i++;
+  }
+  return out;
+}
+
+/** Render one decoded verse line into `parent`, parsing `*bold*`,
+ *  `_italic_`, `#strike[…]`/`#highlight[…]`/`#underline[…]`, and `\X`
+ *  escapes. Recurses for nested formatting.
+ *
+ *  This is a deliberately tiny subset parser, not a full Typst markup
+ *  parser. The verse body is *constrained* to inline formatting only —
+ *  no headings, no lists, no math, no functions other than the three
+ *  bracket-content ones above — because the canvas can only present
+ *  what HTML can faithfully edit (contentEditable doesn't have a
+ *  notion of "headings nested inside a poem"). Anything beyond the
+ *  recognized vocabulary is preserved as literal text by `flush()`,
+ *  which means the user's source survives a round-trip even if it
+ *  contains markup we don't render specially.
+ *
+ *  Why mirror Typst's emphasis rules (non-whitespace required on the
+ *  inside of `*…*` and `_…_`): Typst itself rejects `* foo*` as
+ *  emphasis. If we recognized it here, the rendered DOM would show
+ *  bold but the compiled output wouldn't — a confusing source/visual
+ *  divergence. Easier to refuse it everywhere. */
+function renderVerseLine(parent: Element, line: string): void {
+  let i = 0;
+  let buf = "";
+  const flush = () => {
+    if (buf) { parent.appendChild(document.createTextNode(buf)); buf = ""; }
+  };
+  while (i < line.length) {
+    const ch = line[i];
+    // \X — literal next character (markup-level escape).
+    if (ch === "\\" && i + 1 < line.length) {
+      buf += line[i + 1];
+      i += 2;
+      continue;
+    }
+    // *…* → bold ; _…_ → italic — but only if a matching close exists
+    // on this line and the next char isn't whitespace (Typst's emphasis
+    // rules require non-space on the inside).
+    if ((ch === "*" || ch === "_") && i + 1 < line.length) {
+      const inner = line[i + 1];
+      if (inner !== ch && inner !== " " && inner !== "\t") {
+        const close = findVerseClose(line, i + 1, ch);
+        if (close > i + 1) {
+          flush();
+          const tag = ch === "*" ? "strong" : "em";
+          const el = document.createElement(tag);
+          renderVerseLine(el, line.substring(i + 1, close));
+          parent.appendChild(el);
+          i = close + 1;
+          continue;
+        }
+      }
+    }
+    // #strike[…] / #highlight[…] / #underline[…] — bracket-content funcs.
+    if (ch === "#") {
+      const m = line.substring(i).match(/^#(strike|highlight|underline)\[/);
+      if (m) {
+        const fnName = m[1];
+        const bodyStart = i + m[0].length;
+        const close = findUnescapedBracketClose(line, bodyStart);
+        if (close > bodyStart) {
+          flush();
+          const tag =
+            fnName === "strike" ? "s" :
+            fnName === "highlight" ? "mark" :
+            "u";
+          const el = document.createElement(tag);
+          renderVerseLine(el, line.substring(bodyStart, close));
+          parent.appendChild(el);
+          i = close + 1;
+          continue;
+        }
+      }
+    }
+    buf += ch;
+    i++;
+  }
+  flush();
+}
+
+/** Find the next unescaped `marker` after `start`. */
+function findVerseClose(line: string, start: number, marker: string): number {
+  let i = start + 1;
+  while (i < line.length) {
+    if (line[i] === "\\") { i += 2; continue; }
+    if (line[i] === marker) return i;
+    i++;
+  }
+  return -1;
+}
+
+/** Find the matching `]` for a `[` at `start - 1`, respecting nesting
+ *  and `\]` escapes. Returns the position of the closing bracket or -1. */
+function findUnescapedBracketClose(line: string, start: number): number {
+  let depth = 1;
+  let i = start;
+  while (i < line.length) {
+    if (line[i] === "\\") { i += 2; continue; }
+    if (line[i] === "[") depth++;
+    else if (line[i] === "]") {
+      depth--;
+      if (depth === 0) return i;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/** Render the full body (with real newlines) into the canvas as
+ *  inline-formatted HTML. */
+function renderVerseBody(canvas: HTMLElement, decoded: string): void {
+  canvas.replaceChildren();
+  const lines = decoded.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) canvas.appendChild(document.createElement("br"));
+    renderVerseLine(canvas, lines[i]);
+  }
+  // Ensure at least one node so the cursor has a landing spot.
+  if (canvas.childNodes.length === 0) {
+    canvas.appendChild(document.createElement("br"));
+  }
+}
+
+
+export type VerseAlign = "left" | "center" | "right";
+
+export interface VerseWidgetOptions {
+  /** Raw between-quotes Typst string literal contents (the current source). */
+  source: string;
+  /** Document offset of the first char inside the quotes. */
+  bodyFrom: number;
+  /** Document offset of the closing quote (exclusive). */
+  bodyTo: number;
+  /** Document offset of the entire `#verse(...)` call (for navigation). */
+  callFrom: number;
+  align: VerseAlign;
+  /** Explicit `font:` argument from source, or null to fall back to the
+   *  user's editor preference (resolved via CSS var --verse-font). */
+  font: string | null;
+}
+
 export class VerseWidget extends WidgetType {
-  constructor(
-    readonly body: string,
-    readonly from: number,
-    readonly to: number,
-  ) {
+  constructor(readonly opts: VerseWidgetOptions) {
     super();
   }
 
-  eq(other: VerseWidget) {
-    return this.body === other.body;
+  eq(other: VerseWidget): boolean {
+    return this.opts.source === other.opts.source
+      && this.opts.align === other.opts.align
+      && this.opts.font === other.opts.font
+      && this.opts.bodyFrom === other.opts.bodyFrom
+      && this.opts.bodyTo === other.opts.bodyTo;
   }
 
-  toDOM(view: import("@codemirror/view").EditorView) {
+  toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "cm-typst-verse";
+    wrap.style.textAlign = this.opts.align;
+    if (this.opts.font) {
+      wrap.style.setProperty("--verse-active-font", this.opts.font);
+    }
+    // contentEditable="false" on the wrap marks the widget atomic for
+    // CM6's MutationObserver. The inner canvas overrides hierarchically
+    // with contentEditable="true" so typing works inside.
+    wrap.contentEditable = "false";
 
-    const label = document.createElement("span");
-    label.className = "cm-typst-verse-label";
-    label.textContent = "verse";
-    wrap.appendChild(label);
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "cm-typst-verse-textarea";
-    textarea.value = this.body;
-    textarea.rows = Math.max(this.body.split("\n").length, 2);
-    textarea.spellcheck = false;
-
-    const verseFrom = this.from;
-    const verseTo = this.to;
-
-    textarea.addEventListener("input", () => {
-      const newBody = textarea.value;
-      textarea.rows = Math.max(newBody.split("\n").length, 2);
-
-      const fullText = view.state.doc.sliceString(verseFrom, verseTo);
-      const openQuote = fullText.indexOf('"');
-      const closeQuote = fullText.lastIndexOf('"');
-      if (openQuote < 0 || closeQuote <= openQuote) return;
-
-      const absFrom = verseFrom + openQuote + 1;
-      const absTo = verseFrom + closeQuote;
-
-      view.dispatch({
-        changes: { from: absFrom, to: absTo, insert: newBody },
-      });
+    // ── Pill (top-left): identifies the block as verse and opens the
+    // alignment popover on click. Hashed-circle to match other pill funcs.
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "cm-typst-verse-pill cm-typst-func-chip";
+    pill.title = "Verse — click for options";
+    const hash = document.createElement("span");
+    hash.className = "cm-typst-func-chip-hash";
+    pill.appendChild(hash);
+    const pillLabel = document.createElement("span");
+    pillLabel.textContent = "verse";
+    pill.appendChild(pillLabel);
+    pill.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
     });
+    pill.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openVersePopover(pill, view);
+    });
+    wrap.appendChild(pill);
 
-    textarea.addEventListener("keydown", (e) => {
+    // ── Canvas: contentEditable region with inline formatting rendered.
+    const canvas = document.createElement("div");
+    canvas.className = "cm-typst-verse-canvas";
+    canvas.contentEditable = "true";
+    canvas.spellcheck = true;
+    renderVerseBody(canvas, decodeVerseLiteral(this.opts.source));
+
+    canvas.addEventListener("mousedown", (e) => {
       e.stopPropagation();
     });
 
-    wrap.appendChild(textarea);
+    // Stop input-family events from bubbling to CM's `contentDOM`
+    // listener. Defense-in-depth on top of contentEditable=false on
+    // the wrap.
+    for (const t of ["beforeinput", "input", "compositionstart", "compositionupdate", "compositionend"] as const) {
+      canvas.addEventListener(t, (e) => { e.stopPropagation(); });
+    }
+
+    canvas.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === "b") { e.preventDefault(); document.execCommand("bold"); return; }
+        if (k === "i") { e.preventDefault(); document.execCommand("italic"); return; }
+        if (k === "u") { e.preventDefault(); document.execCommand("underline"); return; }
+        // Forward undo/redo to CM6 so it operates on the source
+        // document, not the contentEditable's internal history.
+        // Mixing the two leaves the widget DOM and the source out of
+        // sync, which manifests as "characters appear in weird
+        // places, then the widget collapses to source mode" mid-undo.
+        // Blur first so the canvas's pending edits flush to source
+        // before CM applies the undo.
+        if (k === "z" || k === "y") {
+          e.preventDefault();
+          canvas.blur();
+          forwardUndoRedo(view, e);
+          return;
+        }
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        document.execCommand("insertLineBreak");
+        return;
+      }
+      // Tab inside the canvas inserts a real tab character, rather
+      // than escaping focus to the next UI control. Verse layouts
+      // routinely need indentation — preserving Tab keeps the
+      // open-canvas feel honest.
+      if (e.key === "Tab") {
+        e.preventDefault();
+        document.execCommand("insertText", false, "\t");
+        return;
+      }
+    });
+
+    canvas.addEventListener("paste", (e) => {
+      // Sanitize pasted content to plain text. Browser-supplied HTML
+      // would import attributes that don't round-trip cleanly through
+      // the encoder; plain text passes through encodeUserText cleanly.
+      const text = e.clipboardData?.getData("text/plain");
+      if (text != null) {
+        e.preventDefault();
+        document.execCommand("insertText", false, text);
+      }
+    });
+
+    canvas.addEventListener("blur", () => {
+      this.flushToSource(canvas, view);
+    });
+
+    wrap.appendChild(canvas);
+
+    // Focus routing on insertion: if CM's selection is inside the
+    // widget's body range when this widget mounts, the user just
+    // inserted /verse (or otherwise positioned the cursor inside
+    // the widget). Without this, keystrokes go to CM's contentDOM
+    // and land adjacent to the widget — producing scrambled output.
+    // Transfer focus to the canvas and place the caret at the end
+    // of its content so typing flows into the canvas naturally.
+    const sel = view.state.selection.main;
+    if (sel.empty && sel.head >= this.opts.bodyFrom && sel.head <= this.opts.bodyTo) {
+      queueMicrotask(() => {
+        // Re-check after the microtask in case focus already moved
+        // somewhere intentional (e.g. the user clicked elsewhere).
+        if (!document.body.contains(canvas)) return;
+        canvas.focus({ preventScroll: true });
+        const range = document.createRange();
+        range.selectNodeContents(canvas);
+        range.collapse(false);
+        const docSel = window.getSelection();
+        docSel?.removeAllRanges();
+        docSel?.addRange(range);
+      });
+    }
+
     return wrap;
   }
 
-  ignoreEvent(e: Event) {
-    return e.type === "mousedown" || e.type === "input" || e.type === "keydown";
+  /** Read the canvas DOM, encode to Typst source, and dispatch a
+   *  transaction replacing the between-quotes range — but only if the
+   *  source actually changed. Recompute body bounds from the live
+   *  document because earlier edits elsewhere may have shifted them. */
+  private flushToSource(canvas: HTMLElement, view: EditorView): void {
+    const next = encodeVerseDOM(canvas);
+    if (next === this.opts.source) return;
+    const docLen = view.state.doc.length;
+    if (this.opts.bodyFrom < 0 || this.opts.bodyTo > docLen
+        || this.opts.bodyFrom > this.opts.bodyTo) {
+      return;
+    }
+    const current = view.state.doc.sliceString(this.opts.bodyFrom, this.opts.bodyTo);
+    if (current === next) return;
+    view.dispatch({
+      changes: { from: this.opts.bodyFrom, to: this.opts.bodyTo, insert: next },
+    });
   }
+
+  /** Tiny popover for alignment + (future) numbering / leading toggles.
+   *  Closes on outside click or Escape. */
+  private openVersePopover(anchor: HTMLElement, view: EditorView): void {
+    const existing = document.querySelector(".cm-typst-verse-popover");
+    if (existing) { existing.remove(); return; }
+
+    const pop = document.createElement("div");
+    pop.className = "cm-typst-verse-popover";
+
+    const heading = document.createElement("div");
+    heading.className = "cm-typst-verse-popover-heading";
+    heading.textContent = "Alignment";
+    pop.appendChild(heading);
+
+    const row = document.createElement("div");
+    row.className = "cm-typst-verse-popover-row";
+    for (const a of ["left", "center", "right"] as const) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = a;
+      btn.className = "cm-typst-verse-popover-btn";
+      if (a === this.opts.align) btn.classList.add("is-active");
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setAlign(a, view);
+        pop.remove();
+      });
+      row.appendChild(btn);
+    }
+    pop.appendChild(row);
+
+    const rect = anchor.getBoundingClientRect();
+    pop.style.position = "fixed";
+    pop.style.top = `${rect.bottom + 4}px`;
+    pop.style.left = `${rect.left}px`;
+    // Append inside the editor's DOM so the CM theme styles reach it.
+    // `document.body` would put it outside the theme scope, leaving the
+    // popover with native browser button styling.
+    view.dom.appendChild(pop);
+
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && pop.contains(e.target as Node)) return;
+      pop.remove();
+      document.removeEventListener("mousedown", close as EventListener, true);
+      document.removeEventListener("keydown", close as EventListener, true);
+    };
+    document.addEventListener("mousedown", close as EventListener, true);
+    document.addEventListener("keydown", close as EventListener, true);
+  }
+
+  /** Rewrite (or insert) the `align-to:` named argument in the source,
+   *  preserving the body string and any other arguments. */
+  private setAlign(next: VerseAlign, view: EditorView): void {
+    if (next === this.opts.align) return;
+    const callFrom = this.opts.callFrom;
+    // Find the call's closing paren by scanning forward from callFrom.
+    const docText = view.state.doc.sliceString(callFrom, Math.min(callFrom + 100000, view.state.doc.length));
+    const openParen = docText.indexOf("(");
+    if (openParen < 0) return;
+    let depth = 0;
+    let inStr = false;
+    let close = -1;
+    for (let i = openParen; i < docText.length; i++) {
+      const ch = docText[i];
+      if (ch === '"' && (i === 0 || docText[i - 1] !== "\\")) { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth === 0) { close = i; break; }
+      }
+    }
+    if (close < 0) return;
+    const argsText = docText.substring(openParen + 1, close);
+    const newArgsText = upsertAlignArg(argsText, next);
+    if (newArgsText === argsText) return;
+    view.dispatch({
+      changes: {
+        from: callFrom + openParen + 1,
+        to: callFrom + close,
+        insert: newArgsText,
+      },
+    });
+  }
+
+  ignoreEvent(): boolean {
+    // Let the contentEditable own its own input loop; CM resyncs on
+    // blur via {@link flushToSource}. See the class header for why.
+    return true;
+  }
+}
+
+/** Add or replace the `align-to:` named arg in a verse argument list,
+ *  preserving the leading body string and any other named args. */
+function upsertAlignArg(argsText: string, align: VerseAlign): string {
+  const re = /(,\s*align-to\s*:\s*)(left|center|right)/;
+  if (re.test(argsText)) {
+    if (align === "left") {
+      // Drop the arg entirely — left is the default, keep source clean.
+      return argsText.replace(/,\s*align-to\s*:\s*(left|center|right)/, "");
+    }
+    return argsText.replace(re, `$1${align}`);
+  }
+  if (align === "left") return argsText;
+  // Append after the existing arguments. Trim trailing whitespace so the
+  // separator lands cleanly.
+  return `${argsText.replace(/\s+$/, "")}, align-to: ${align}`;
 }
 
 export class FootnoteWidget extends WidgetType {

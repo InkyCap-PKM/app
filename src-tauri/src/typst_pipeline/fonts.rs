@@ -46,6 +46,24 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
 }
 
 /// Load fonts from the operating system's standard font directories.
+///
+/// Each fontdb face is registered into the typst `FontBook` under every
+/// family-name alias that fontdb reports for it (e.g. `"Newsreader"` AND
+/// `"Newsreader 16pt"`). This matters for two reasons:
+///
+/// 1. Typst's `Font::info().family` reads `nameID 1` from the OpenType
+///    `name` table, which for sub-family-bearing fonts (Newsreader,
+///    Source Sans 3, many Adobe families) is the *full* family name
+///    like `"Newsreader 16pt"`, not the user-friendly preferred family
+///    `"Newsreader"` (`nameID 16`).
+/// 2. The frontend `FontPicker` lists fontdb's preferred-family names
+///    (via `face.families.first()`), so the user picks `"Newsreader"`,
+///    we inject `#set text(font: "Newsreader")` into the source, and
+///    typst's lookup against the book fails because no entry has that
+///    exact family — even though the bytes are loaded.
+///
+/// Pushing one book entry per alias (all backed by the same cheap
+/// `Arc`-wrapped `Font` clone) keeps both views consistent.
 fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -60,14 +78,32 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
         let Ok(data) = std::fs::read(&path) else { continue };
         let buffer = Bytes::new(data);
 
-        for (i, font) in Font::iter(buffer).enumerate() {
-            if i as u32 == index {
-                book.push(font.info().clone());
-                slots.push(FontSlot {
-                    font: OnceLock::from(Some(font)),
-                });
-                break;
+        let Some(font) = Font::iter(buffer).nth(index as usize) else { continue };
+        let info = font.info().clone();
+
+        // Collect aliases: typst's own family + every fontdb alias.
+        // Dedupe case-insensitively so the same name doesn't get
+        // pushed twice when typst and fontdb agree.
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut aliases: Vec<String> = Vec::new();
+        let mut push_alias = |name: &str| {
+            let key = name.to_lowercase();
+            if seen.insert(key) {
+                aliases.push(name.to_string());
             }
+        };
+        push_alias(&info.family);
+        for (alias, _) in &face.families {
+            push_alias(alias);
+        }
+
+        for alias in aliases {
+            let mut info_for_alias = info.clone();
+            info_for_alias.family = alias;
+            book.push(info_for_alias);
+            slots.push(FontSlot {
+                font: OnceLock::from(Some(font.clone())),
+            });
         }
     }
 }

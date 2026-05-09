@@ -182,17 +182,33 @@ async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
     let settings = state.settings.read().await;
     let show_tags = settings.editor.show_inline_tags;
     let show_wikilinks = settings.editor.show_inline_wikilinks;
+    let verse_font = if settings.editor.apply_verse_font_to_output {
+        settings
+            .editor
+            .verse_font
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
 
-    if show_tags && show_wikilinks {
+    if show_tags && show_wikilinks && verse_font.is_none() {
         return source.to_string();
     }
 
-    let mut args = Vec::new();
+    let mut args: Vec<String> = Vec::new();
     if !show_tags {
-        args.push("show-inline-tags: false");
+        args.push("show-inline-tags: false".to_string());
     }
     if !show_wikilinks {
-        args.push("show-inline-wikilinks: false");
+        args.push("show-inline-wikilinks: false".to_string());
+    }
+    if let Some(font) = verse_font.as_deref() {
+        // Escape backslashes and quotes for the Typst string literal.
+        let escaped = font.replace('\\', "\\\\").replace('"', "\\\"");
+        args.push(format!("verse-font: \"{}\"", escaped));
     }
     let directive = format!("#set-vault({})", args.join(", "));
 
@@ -201,7 +217,14 @@ async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
     for line in source.lines() {
         out.push_str(line);
         out.push('\n');
-        if !injected && line.trim_start().starts_with("#import") && line.contains("inkycap-vault") {
+        // Use the canonical helper so this matches both the current
+        // `/.inkycap/vault.typ` import and the legacy versioned package
+        // path. The previous check (`line.contains("inkycap-vault")`)
+        // missed the canonical form, causing the directive to fall
+        // through to the end-of-file fallback below — which placed it
+        // AFTER any `#verse(...)` calls, so state.update() ran after
+        // state.get() and the verse-font override silently did nothing.
+        if !injected && crate::vault_package::is_vault_import_line(line) {
             out.push_str(&directive);
             out.push('\n');
             injected = true;

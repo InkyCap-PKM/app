@@ -115,18 +115,18 @@ pub async fn export_self_contained_typ(
 }
 
 /// Inline the `inkycap-vault` package into a note's source. Replaces the
-/// `#import "/.inkycap/packages/..."` line with the full package source
-/// prefixed by a comment marker.
+/// vault import line — whichever form it takes (canonical
+/// `/.inkycap/vault.typ` or the legacy versioned package path) — with the
+/// full package source prefixed by a comment marker.
 fn inline_package(source: &str) -> String {
     let lib_source = std::str::from_utf8(crate::vault_package::LIB_TYP_BYTES)
         .unwrap_or("// inkycap-vault package could not be inlined");
 
-    let import_prefix = "#import \"/.inkycap/packages/inkycap-vault/";
     let mut result = String::with_capacity(source.len() + lib_source.len() + 200);
 
     let mut found_import = false;
     for line in source.lines() {
-        if line.starts_with(import_prefix) && !found_import {
+        if !found_import && crate::vault_package::is_vault_import_line(line) {
             found_import = true;
             result.push_str("// ── inkycap-vault package (inlined for portability) ──\n");
             result.push_str(lib_source);
@@ -1145,17 +1145,23 @@ fn ensure_document_date_for_standard(source: String, standard: PdfStandardPreset
         .unwrap_or_else(|| "datetime.today()".to_string());
     let set_rule = format!("#set document(date: {})\n", dt);
 
-    // Insert after the inkycap-vault import line if present, otherwise prepend.
-    let import_marker = "#import \"/.inkycap/packages/inkycap-vault/";
-    if let Some(pos) = source.find(import_marker) {
-        if let Some(line_end) = source[pos..].find('\n') {
-            let insert_at = pos + line_end + 1;
+    // Insert after the inkycap-vault import line if present, otherwise
+    // prepend. Use `is_vault_import_line` so both the canonical
+    // `/.inkycap/vault.typ` form and the legacy versioned package path
+    // are recognized; otherwise notes created since the path migration
+    // would silently fall through to the prepend branch.
+    let mut byte_pos: usize = 0;
+    for line in source.lines() {
+        let line_with_nl_len = line.len() + 1; // +1 for the '\n' that .lines() consumed
+        if crate::vault_package::is_vault_import_line(line) {
+            let insert_at = (byte_pos + line_with_nl_len).min(source.len());
             let mut result = String::with_capacity(source.len() + set_rule.len());
             result.push_str(&source[..insert_at]);
             result.push_str(&set_rule);
             result.push_str(&source[insert_at..]);
             return result;
         }
+        byte_pos += line_with_nl_len;
     }
 
     format!("{}{}", set_rule, source)
@@ -2240,6 +2246,37 @@ Some text.
         assert!(result.contains("inkycap-vault package (inlined for portability)"));
         assert!(!result.contains("#import \"/.inkycap/packages"));
         assert!(result.contains("= Hello"));
+    }
+
+    /// Notes created since the path migration use the canonical
+    /// `/.inkycap/vault.typ` import. `inline_package` must recognize that
+    /// form too; otherwise the import line survives verbatim into the
+    /// exported source and the recipient hits a missing-file error.
+    #[test]
+    fn inline_package_replaces_canonical_import() {
+        let source = "#import \"/.inkycap/vault.typ\": *\n\n= Hello\n";
+        let result = inline_package(source);
+        assert!(result.contains("inkycap-vault package (inlined for portability)"));
+        assert!(!result.contains("#import \"/.inkycap/vault.typ\""));
+        assert!(result.contains("= Hello"));
+    }
+
+    /// Same regression coverage for the date injector in
+    /// `ensure_document_date_for_standard`: the `#set document(date: ...)`
+    /// rule has to land *after* the canonical import line, not get
+    /// prepended to a fresh top-of-file (which would shift line numbers
+    /// in diagnostics for users tracking source positions).
+    #[test]
+    fn ensure_document_date_after_canonical_import() {
+        let source = "#import \"/.inkycap/vault.typ\": *\n#note()\n\n= Body\n".to_string();
+        let result = ensure_document_date_for_standard(source, PdfStandardPreset::PdfA4);
+        let import_pos = result.find("#import \"/.inkycap/vault.typ\"").unwrap();
+        let date_pos = result.find("#set document(date:").unwrap();
+        assert!(
+            date_pos > import_pos,
+            "date injection should follow the import line, got:\n{}",
+            result
+        );
     }
 
     #[test]

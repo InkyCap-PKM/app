@@ -9,11 +9,11 @@ import {
   onCleanup,
 } from "solid-js";
 import {
-  Library,
+  LibraryBig,
   FolderTree,
   Tags,
   Search,
-  Bookmark,
+  BookMarked,
   Plus,
   Hash,
   ChevronRight,
@@ -564,7 +564,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Collections"
           aria-label="Collections"
         >
-          <Library size={16} />
+          <LibraryBig size={16} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "tags" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -588,7 +588,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Bookmarks"
           aria-label="Bookmarks"
         >
-          <Bookmark size={16} />
+          <BookMarked size={16} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "search" ? "left-sidebar__mode-btn--active" : ""}`}

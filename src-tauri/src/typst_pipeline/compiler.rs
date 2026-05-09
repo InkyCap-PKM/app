@@ -108,15 +108,24 @@ impl TypstCompiler {
         self.world.system_fonts_loaded()
     }
 
-    /// Load system fonts if settings indicate a non-embedded font is configured.
-    pub fn ensure_system_fonts_for_settings(&mut self, settings: &crate::settings::UserSettings) {
+    /// Load system fonts on first compile, unconditionally.
+    ///
+    /// This used to gate on which font settings were configured, but every
+    /// gate we added eventually missed a setting (verse_font, monospace
+    /// stack, future ones) — the symptom is always the same `unknown font
+    /// family` warning from Typst. Loading fonts is a one-time ~100ms cost
+    /// per session (subsequent calls short-circuit on `system_fonts_loaded`),
+    /// so the trade is "always pay once" vs "occasionally render the wrong
+    /// font and surface a warning the user has no way to act on". Pay once.
+    ///
+    /// The `_settings` arg is kept so call sites stay stable and so a
+    /// future variant (e.g. opt-in lazy mode for users with multi-thousand
+    /// font collections) can re-introduce gating without changing the API.
+    pub fn ensure_system_fonts_for_settings(&mut self, _settings: &crate::settings::UserSettings) {
         if self.system_fonts_loaded() {
             return;
         }
-        let needs = settings.document.text_font.as_ref().is_some_and(|f| !f.is_empty());
-        if needs {
-            self.ensure_system_fonts();
-        }
+        self.ensure_system_fonts();
     }
 
     /// Compile to a `PagedDocument` without rendering to SVG. Used by the

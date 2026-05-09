@@ -144,6 +144,68 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Solid.js stores for state; keep simple, avoid over-engineering
 - CodeMirror extensions modular: one file per extension/feature in `src/editor/typst-decorations/`
 - IPC calls go through the typed API layer in [src/lib/ipc.ts](src/lib/ipc.ts), never raw `invoke()`
+- **CM6 widgets that embed editable elements (contentEditable,
+  `<textarea>`, `<input>`) need a small but specific recipe to behave
+  correctly.** Skipping any one of these produces classic symptoms:
+  scrambled or reversed typing, characters routed adjacent to the
+  widget instead of inside it, focus stolen back to the source area.
+
+  **1. Atomic wrap.** `wrap.contentEditable = "false"` on the outer
+  widget element. CM6 keys off this to treat the widget as atomic
+  (MutationObserver leaves it alone, selection normalization rounds
+  to widget boundaries). The inner editable element overrides
+  hierarchically with `contentEditable="true"` and accepts input
+  normally.
+
+  **2. Focus routing on insertion (THE recurring sharp edge).** The
+  `contentEditable="false"` wrap is necessary but not sufficient on
+  its own — when a user inserts the widget via a command palette,
+  paste, or any path that leaves the CM cursor inside the widget's
+  range without a click, **CM's contentDOM still has focus, not the
+  inner editable element**. Keystrokes go to CM's input handler and
+  land at CM's logical cursor (which sits at a stable
+  widget-boundary position because the inner range is atomic),
+  producing the prepend/reverse-typing pattern. The widget's `toDOM`
+  must detect this case and transfer focus into the inner editable:
+
+  ```ts
+  toDOM(view: EditorView) {
+    // … build wrap, pill, input element …
+    const sel = view.state.selection.main;
+    if (sel.empty && sel.head >= bodyFrom && sel.head <= bodyTo) {
+      queueMicrotask(() => {
+        if (!document.body.contains(input)) return;
+        input.focus({ preventScroll: true });
+        // Place caret where typing should resume (often end-of-content):
+        const r = document.createRange();
+        r.selectNodeContents(input);
+        r.collapse(false);
+        const s = window.getSelection();
+        s?.removeAllRanges(); s?.addRange(r);
+      });
+    }
+    return wrap;
+  }
+  ```
+
+  Without this, `/verse`-then-type (or any equivalent flow) produces
+  the scrambled-output bug even though clicking into the widget then
+  typing works fine. The user has no way of knowing they need to click
+  first — fix it at the widget level.
+
+  **3. Dispatch on `blur`, not on `input`.** Input-dispatch tears the
+  widget DOM down mid-keystroke (rebuild race). Sync the source once
+  when focus leaves the input element.
+
+  **4. Stop propagation of input-family events** (`beforeinput`,
+  `input`, `compositionstart/update/end`, `keydown`, `mousedown`) on
+  the inner input element. Defense in depth on top of (1).
+
+  **5. Broad `ignoreEvent: () => true`** at the decoration level.
+
+  Canonical reference: [VerseWidget](src/editor/typst-decorations/widgets.ts).
+  [TableWidget](src/editor/typst-decorations/table-widget.ts) follows the
+  same pattern for table cells.
 
 ### UI typography
 - **Never use `text-transform: uppercase` or `font-variant: small-caps` for headings, section labels, or category headers.** All UI text stays mixed-case as authored.

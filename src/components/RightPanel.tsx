@@ -14,7 +14,7 @@ import {
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
-import { EllipsisVertical, NotebookPen, TableOfContents, Link, BrainCircuit, BookOpen } from "lucide-solid";
+import { EllipsisVertical, NotebookTabs, TableOfContents, Link, BrainCircuit, Quote } from "lucide-solid";
 import ReferencesPanel from "./ReferencesPanel";
 import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
@@ -543,7 +543,7 @@ const RightPanel: Component = () => {
             title="Properties"
             aria-label="Properties"
           >
-            <NotebookPen size={16} />
+            <NotebookTabs size={16} />
           </button>
           <button
             class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
@@ -559,7 +559,7 @@ const RightPanel: Component = () => {
             title="References"
             aria-label="References"
           >
-            <BookOpen size={16} />
+            <Quote size={16} />
           </button>
           <button
             class="right-panel__tab"

@@ -1781,6 +1781,35 @@
   flex-shrink: 0;
 }
 
+/* Reserve space on the right of the input so the clear button doesn't
+ * overlap typed text. Mirrors the SearchPanel pattern. */
+.settings__font-picker-input {
+  padding-right: 24px;
+}
+
+.settings__font-picker-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.settings__font-picker-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 .settings__font-dropdown {
   position: absolute;
   top: 100%;

@@ -7,8 +7,9 @@
 //   link-ref("Name")      link reference value (use inside note() fields)
 //   #embed("Name")        transclude another note (emits link)
 //   #callout("type")[...] styled admonition block
-//   #verse(body, ...)     whitespace-preserving free-form text
-//   #set-vault(...)       per-document rendering toggles
+//   #verse(body, ...)     whitespace-preserving free-form text with inline
+//                         markup (eval'd per line)
+//   #set-vault(...)       per-document rendering toggles + verse-font
 //
 // Three queryable labels:
 //   <inkycap-note>  — at most one per file, attached to a metadata dict
@@ -28,6 +29,10 @@
 
 #let _show-inline-tags = state("inkycap-show-inline-tags", true)
 #let _show-inline-wikilinks = state("inkycap-show-inline-wikilinks", true)
+// Verse font override. When set (via `set-vault(verse-font: "...")`), all
+// verse() calls without an explicit `font:` argument render in this font.
+// `none` means inherit the document body font.
+#let _verse-font-state = state("inkycap-verse-font", none)
 
 // Merged-book compile context. When `active` is true, `wikilink` resolves
 // targets internally to per-chapter labels (`<chap-stem>`) instead of
@@ -49,6 +54,7 @@
 #let set-vault(
   show-inline-tags: none,
   show-inline-wikilinks: none,
+  verse-font: none,
 ) = {
   if show-inline-tags != none {
     assert(type(show-inline-tags) == bool, message: "set-vault: show-inline-tags must be bool")
@@ -57,6 +63,10 @@
   if show-inline-wikilinks != none {
     assert(type(show-inline-wikilinks) == bool, message: "set-vault: show-inline-wikilinks must be bool")
     _show-inline-wikilinks.update(show-inline-wikilinks)
+  }
+  if verse-font != none {
+    assert(type(verse-font) == str, message: "set-vault: verse-font must be a string")
+    _verse-font-state.update(verse-font)
   }
 }
 
@@ -292,46 +302,188 @@
 }
 
 // ---------------------------------------------------------------------------
-// verse: whitespace-preserving free-form text (poetry, lyrics).
-// Takes a string body; preserves leading/internal spaces and line breaks.
+// verse: whitespace-preserving free-form text (poetry, lyrics, structured
+// blocks where layout matters). First-class element — not a code-block
+// derivative.
+//
+// Body is a string. Each line is whitespace-preserved (every ASCII space
+// becomes a non-breaking space) and then evaluated as Typst markup, so
+// inline formatting works naturally:
+//
+//   *bold*        _italic_         #strike[x]
+//   #highlight[x] #underline[x]    #link("…")[…]
+//
+// Backslash escapes any markup metacharacter for literal display:
+//   \*, \_, \#, \[, \\, etc.
+//
+// Arguments:
+//   font:       explicit font family (string). Overrides set-vault's
+//               verse-font. When `none`, falls back to the verse-font
+//               state, then to document body font.
+//   align-to:   left | center | right (alignment values, not strings).
+//   numbered:   show line numbers.
+//   numbering-pattern: pattern for numbered lines (default "1").
+//   leading:    line spacing within the verse.
+//   tracking:   letter-spacing (length, e.g. 0.05em).
+//   lang:       language code for shaping/hyphenation (e.g. "fr", "ar").
+//   dir:        text direction (auto | ltr | rtl).
 // ---------------------------------------------------------------------------
 
 #let verse(
   body,
   font: none,
+  align-to: left,
   numbered: false,
-  center: false,
+  numbering-pattern: "1",
   leading: 0.65em,
+  tracking: none,
+  lang: none,
+  dir: auto,
 ) = {
   assert(type(body) == str, message: "verse: body must be a string")
 
-  let lines = body.split("\n")
-  let rendered = {
-    set par(leading: leading)
-    let n = 0
-    for line in lines {
-      n = n + 1
-      // Convert leading/internal spaces to non-collapsing horizontal space.
-      // Each ASCII space → \u{00A0} (non-breaking) so Typst keeps them.
-      let preserved = line.replace(" ", "\u{00A0}")
-      let row = if numbered {
-        grid(
-          columns: (2em, 1fr),
-          align: (right + top, left + top),
-          text(fill: luma(60%), size: 0.8em, str(n)),
-          preserved,
-        )
-      } else {
-        preserved
-      }
-      if center { align(center, row) } else { row }
-      linebreak()
-    }
-  }
+  // Capture the built-in `align` function before any local shadowing.
+  let _align = align
 
-  if font != none {
-    text(font: font, rendered)
-  } else {
-    rendered
+  context {
+    // Resolve font: explicit arg > set-vault state > inherit (none →
+    // omit the font argument entirely so the document default applies).
+    // `text(font: auto)` is a type error in Typst — font must be string,
+    // dict, or array, never `auto` — so the argument has to be omitted
+    // rather than defaulted.
+    let resolved-font = if font != none {
+      font
+    } else {
+      _verse-font-state.get()
+    }
+
+    // Build text() arg dict so we only pass overrides the caller
+    // actually specified. Omitted args inherit document defaults.
+    let text-args = (:)
+    if resolved-font != none { text-args.insert("font", resolved-font) }
+    if tracking != none { text-args.insert("tracking", tracking) }
+    if lang != none { text-args.insert("lang", lang) }
+    if dir != auto { text-args.insert("dir", dir) }
+
+    // HTML target uses a different rendering path. Typst's HTML
+    // backend doesn't reliably translate the paged-target constructs
+    // we use for paged output (`align()` blocks, `linebreak()` joining
+    // a content sequence, `grid()` for numbered rows) — they either
+    // get dropped or cause surrounding output to be cut off. Emit a
+    // flat `<div>` with `white-space: pre-wrap` and explicit `<br>`
+    // separators instead; that maps cleanly to HTML.
+    if target() == "html" {
+      let css-align = if align-to == center { "center" }
+        else if align-to == right { "right" }
+        else { "left" }
+
+      let pieces = ()
+      let lines = body.split("\n")
+      let n = 0
+      for line in lines {
+        n = n + 1
+        let preserved = line.replace(" ", "\u{00A0}")
+        let body-content = if preserved.len() == 0 {
+          text("\u{00A0}")
+        } else {
+          eval(preserved, mode: "markup")
+        }
+        if numbered {
+          pieces.push(html.elem(
+            "span",
+            attrs: (style: "display: inline-block; width: 2.5em; text-align: right; color: #999; margin-right: 0.5em;"),
+            numbering(numbering-pattern, n),
+          ))
+        }
+        pieces.push(body-content)
+        if n < lines.len() {
+          pieces.push(html.elem("br"))
+        }
+      }
+
+      let style-parts = (
+        "white-space: pre-wrap;",
+        "text-align: " + css-align + ";",
+        "line-height: 1.4;",
+      )
+      if resolved-font != none {
+        style-parts.push("font-family: \"" + resolved-font + "\";")
+      }
+      html.elem(
+        "div",
+        attrs: (
+          class: "inkycap-verse",
+          style: style-parts.join(" "),
+        ),
+        pieces.join(),
+      )
+    } else {
+      // ── Paged target (PDF, SVG, PNG) ──
+      // Build the rendered body as a single piece of content, then
+      // wrap it with an explicit `text(..text-args, body)` call so
+      // the verse font wins against any outer `#set text(font: ...)`
+      // rule (e.g., the document text font). `set text` inside
+      // `context { ... }` doesn't reliably override an outer set;
+      // explicit wrapping does.
+      set par(leading: leading)
+      let lines = body.split("\n")
+      let total = lines.len()
+
+      let rendered = if numbered {
+        // Grid-per-line layout — each row is its own block; the grid
+        // controls row spacing, not `par.leading`.
+        let pieces = ()
+        let n = 0
+        for line in lines {
+          n = n + 1
+          let preserved = line.replace(" ", "\u{00A0}")
+          let body-content = if preserved.len() == 0 {
+            text("\u{00A0}")
+          } else {
+            eval(preserved, mode: "markup")
+          }
+          pieces.push(grid(
+            columns: (2.5em, 1fr),
+            align: (right + top, left + top),
+            text(fill: luma(60%), size: 0.85em, numbering(numbering-pattern, n)),
+            body-content,
+          ))
+        }
+        pieces.join()
+      } else {
+        // Single-block layout: lines joined by `linebreak()` so
+        // vertical spacing follows `par.leading`, not `block.spacing`.
+        let n = 0
+        let acc = []
+        for line in lines {
+          n = n + 1
+          // NBSP every ASCII space — Typst preserves these verbatim,
+          // so idiosyncratic indentation and run-spacing survive
+          // layout.
+          let preserved = line.replace(" ", "\u{00A0}")
+          // Empty line → single NBSP keeps the linebreak meaningful
+          // (otherwise the layout collapses adjacent breaks).
+          let body-content = if preserved.len() == 0 {
+            text("\u{00A0}")
+          } else {
+            eval(preserved, mode: "markup")
+          }
+          acc = acc + body-content
+          if n < total { acc = acc + linebreak() }
+        }
+        acc
+      }
+
+      // Wrap the rendered body in an explicit `text(..text-args, body)`
+      // call so the verse font wins against any outer document-level
+      // `#set text(font: ...)` rule (e.g., the style cascade injected
+      // by `inject_style_cascade`). A `set text` rule placed inside a
+      // `context { ... }` scope does not reliably override an outer
+      // set rule for content already constructed via `eval(..., mode:
+      // "markup")` — the eval'd content carries set-rule snapshots
+      // that bypass the inner scope. Explicit `text(...)` wrapping
+      // does override.
+      _align(align-to, text(..text-args, rendered))
+    }
   }
 }

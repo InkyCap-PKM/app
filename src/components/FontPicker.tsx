@@ -1,4 +1,5 @@
 import { createSignal, createResource, For, Show, onCleanup } from "solid-js";
+import { X } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 
 let fontCache: string[] | null = null;
@@ -43,8 +44,8 @@ export function FontPicker(props: FontPickerProps) {
   const filtered = () => {
     const list = fonts() ?? [];
     const q = query().toLowerCase();
-    if (!q) return list.slice(0, 100);
-    return list.filter((f) => f.toLowerCase().includes(q)).slice(0, 100);
+    if (!q) return list;
+    return list.filter((f) => f.toLowerCase().includes(q));
   };
 
   function handleInput(value: string) {
@@ -58,6 +59,16 @@ export function FontPicker(props: FontPickerProps) {
     props.onChange(name);
     setQuery("");
     setOpen(false);
+  }
+
+  // Clear the current value. The SettingsPanel callsites translate an
+  // empty string to `null` in the underlying setting, which means
+  // "fall back to the default" — so the placeholder hint becomes the
+  // user's effective choice. Mirrors SearchPanel's clearQuery UX.
+  function clearValue() {
+    props.onChange("");
+    setQuery("");
+    inputRef?.focus();
   }
 
   function openMenu() {
@@ -116,13 +127,28 @@ export function FontPicker(props: FontPickerProps) {
       <input
         ref={inputRef}
         type="text"
-        class="settings__text-input"
+        class="settings__text-input settings__font-picker-input"
         value={props.value}
         placeholder={props.placeholder ?? "Search fonts…"}
         onInput={(e) => handleInput(e.currentTarget.value)}
         onFocus={() => { setQuery(""); openMenu(); }}
         onKeyDown={handleKeyDown}
       />
+      <Show when={props.value.length > 0}>
+        <button
+          type="button"
+          class="settings__font-picker-clear"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            clearValue();
+          }}
+          title="Clear (use default)"
+          aria-label="Clear font"
+          tabIndex={-1}
+        >
+          <X size={12} />
+        </button>
+      </Show>
       <Show when={open() && filtered().length > 0}>
         <div
           class="settings__font-dropdown"
