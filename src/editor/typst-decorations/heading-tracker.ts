@@ -1,5 +1,15 @@
 // CM6 heading tracker — publishes the active document's heading list
 // to a Solid signal consumed by OutlinePanel.
+//
+// Why this is a CM-side regex scan and not a `typst query` round-trip:
+// the outline panel updates on every keystroke and renders alongside the
+// editor. Routing each keystroke through the Tauri IPC boundary, the
+// Typst compiler, and the introspector would add ~20ms of latency to every
+// edit for an outline that's authoritatively defined by `=` markers — a
+// purely lexical signal. CLAUDE.md's Typst-first principle ends with "as a
+// last resort or if necessary to accomplish something important"; this is
+// the "necessary" case — the live editor needs synchronous data, and the
+// answer is in the source text we already hold.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { createSignal } from "solid-js";

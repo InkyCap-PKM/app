@@ -17,6 +17,146 @@
 //   <inkycap-link>  — one per outgoing link (body wikilinks + link-refs in metadata)
 
 // ---------------------------------------------------------------------------
+// apply-vault-defaults / apply-collection-style: document-level styling hooks.
+//
+// The Rust side emits one or two `#show:` calls right after the package
+// import to apply app-level defaults and per-collection overrides. Using
+// `show: fn.with(...)` lets the function's `set` rules apply to the rest of
+// the document (a plain function call would scope the rules to the function
+// body and have no effect on the caller).
+//
+// Each parameter is `none` when the host hasn't configured that setting; the
+// function emits a `set` rule only for the parameters that are present, so a
+// default-free call is a true no-op.
+//
+// Usage (emitted by Rust):
+//
+//   #show: apply-vault-defaults.with(text-font: "Inter", text-size: 12pt)
+//   #show: apply-collection-style.with(page: (paper: "us-letter"))
+//
+// Both rules wrap the rest of the document; later show/set rules in the
+// document body still win via Typst's normal cascade.
+// ---------------------------------------------------------------------------
+
+// `body` is the positional parameter `show:` invokes the function with —
+// it must live directly on the function (not behind a nested `body => ...`
+// closure) so that `apply-vault-defaults.with(...)` returns a function that
+// still accepts the document body positionally.
+#let apply-vault-defaults(
+  text-font: none,
+  text-size: none,
+  page-paper: none,
+  monospace-font: none,
+  body,
+) = {
+  if text-font != none { set text(font: text-font) }
+  if text-size != none { set text(size: text-size) }
+  if page-paper != none { set page(paper: page-paper) }
+  if monospace-font != none {
+    show raw: set text(font: monospace-font)
+    body
+  } else {
+    body
+  }
+}
+
+// Collection-level style overrides. Each section is an optional dict whose
+// keys mirror the corresponding Typst function arguments — the function
+// forwards them via spread (`set page(..page)`) so any field Typst's own
+// function accepts is accepted here without enumerating them.
+//
+// Parameter names are deliberately distinct from the Typst built-in
+// element names (`page`, `text`, `heading`, `par`) so spreading the
+// captured dict into `set page(..)` etc. doesn't trip over a shadowed
+// identifier inside the function body.
+//
+// `none` for a section skips it entirely; `(:)` (empty dict) is also a no-op.
+#let apply-collection-style(
+  page-args: none,
+  text-args: none,
+  par-args: none,
+  heading-args: none,
+  body,
+) = {
+  if page-args != none and page-args.len() > 0 {
+    set page(..page-args)
+  }
+  if text-args != none and text-args.len() > 0 {
+    set text(..text-args)
+  }
+  if par-args != none and par-args.len() > 0 {
+    set par(..par-args)
+  }
+  if heading-args != none and heading-args.len() > 0 {
+    set heading(..heading-args)
+  }
+  body
+}
+
+// ---------------------------------------------------------------------------
+// apply-bibliography: thin wrapper around Typst's `#bibliography(...)`.
+//
+// Rust calls this when the vault has an auto-detected bibliography file and
+// the document doesn't declare one of its own. Keeping the call here (rather
+// than emitting `#bibliography(...)` from Rust) means Typst-specific concerns
+// like style coercion or per-vault default titles can evolve without
+// touching the Rust side.
+// ---------------------------------------------------------------------------
+
+#let apply-bibliography(path, ..opts) = bibliography(path, ..opts)
+
+// ---------------------------------------------------------------------------
+// make-offset-numbering: page-numbering closure that hides numbers on early
+// pages and starts arabic counting once the document reaches `start-page`.
+//
+// Used by the merged-book exporter for the "no numbers until page N, then
+// 1, 2, 3…" preset. The closure shape `(..n) => str | none` matches what
+// `#set page(numbering: ...)` accepts.
+//
+// Usage (emitted by Rust):
+//
+//   #set page(numbering: make-offset-numbering(5))
+//
+// Page 5 of the PDF prints "1", page 6 prints "2", etc. Pages before
+// `start-page` print no number at all.
+// ---------------------------------------------------------------------------
+
+#let make-offset-numbering(start-page) = (..n) => {
+  let p = here().page()
+  if p >= start-page { str(p - start-page + 1) } else { none }
+}
+
+// ---------------------------------------------------------------------------
+// outline-with-bare-page-numbers: render an outline whose entries always
+// show plain integer page numbers regardless of the body's page-numbering
+// pattern.
+//
+// Typst's default `outline.entry` formats each entry's page label using
+// the active page-numbering pattern. When the merged book uses a decorated
+// body pattern (e.g. "Page 1 of N", "-- 1 --"), that decoration leaks into
+// the TOC. This helper scopes a `show outline.entry` rule to a single
+// `outline(...)` call so the entries stay readable as a TOC.
+//
+// Used by the merged-book exporter:
+//
+//   #outline-with-bare-page-numbers(depth: 3)
+// ---------------------------------------------------------------------------
+
+#let outline-with-bare-page-numbers(depth: 3) = {
+  show outline.entry: it => link(
+    it.element.location(),
+    it.indented(
+      it.prefix(),
+      it.body()
+        + box(width: 1fr, repeat[.])
+        + h(0.5em)
+        + str(counter(page).at(it.element.location()).first()),
+    ),
+  )
+  outline(depth: depth)
+}
+
+// ---------------------------------------------------------------------------
 // State for per-document rendering toggles.
 // ---------------------------------------------------------------------------
 

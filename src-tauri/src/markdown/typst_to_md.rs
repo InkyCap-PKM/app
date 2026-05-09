@@ -1,3 +1,21 @@
+// ---------------------------------------------------------------------------
+// Why this is a Rust-side converter and not a Typst feature
+// ---------------------------------------------------------------------------
+//
+// Typst doesn't have a native typ → markdown emitter. The HTML backend
+// (`typst::compile::<HtmlDocument>`) gets close but loses our package-level
+// semantics: a `#wikilink("Foo")` becomes `<a href="Foo.typ">`, which is the
+// wrong shape for round-tripping with markdown ecosystems (Obsidian etc.)
+// that expect `[[Foo]]`. Likewise `#tag("x")` becomes prose, and `#note(...)`
+// vanishes into PDF metadata instead of YAML frontmatter.
+//
+// The exporter here is the `inkycap-vault` package's reverse map, kept in
+// Rust because it's the only place the package's vocabulary and markdown's
+// vocabulary both make sense. Per CLAUDE.md's Typst-first principle: the
+// rule says "before developing something outside" — we did look, the native
+// path doesn't reach.
+// ---------------------------------------------------------------------------
+
 use regex::Regex;
 use std::sync::LazyLock;
 

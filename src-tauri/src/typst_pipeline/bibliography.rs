@@ -44,6 +44,17 @@ pub fn detect_default(vault_root: &Path, override_path: Option<&str>) -> Option<
 /// counts. Typst itself errors on a duplicate bibliography call, so a
 /// false-positive that suppresses our injection is harmless; a false-negative
 /// would inject a duplicate and cause a compile error, which is worse.
+///
+/// Per CLAUDE.md's Typst-first principle: the obvious native alternative
+/// here is to parse with `typst::syntax` and look for a `FuncCall` whose
+/// callee is `bibliography`. We deliberately stay at the substring level
+/// because this check runs on every save, on user content that may be
+/// mid-edit and unparseable. A regex that recognises the call shape gives
+/// the right answer on broken source where the AST walk would either fail
+/// or omit the call from the tree. `note_rewriter` uses the AST because it
+/// rewrites — it can't operate without parsing — but this predicate only
+/// needs to *detect*, and the conservative-failure mode (false-positive
+/// suppresses injection) is exactly what we want for half-typed input.
 pub fn already_declares_bibliography(source: &str) -> bool {
     // Strip line comments (`// ...`) before searching so a `// #bibliography`
     // example in a docstring doesn't trip us. Block comments `/* */` are a
@@ -54,12 +65,16 @@ pub fn already_declares_bibliography(source: &str) -> bool {
 }
 
 /// Build the augmented source for compile. Returns the input unchanged if
-/// there's nothing to inject; otherwise appends `#bibliography("/<rel>")`
-/// at the end of the source (where users conventionally place references).
-/// When `style` is provided, it's included as
-/// `#bibliography("/<rel>", style: "<style>")`. If `style` looks like a
-/// file path (contains `/` or ends in `.csl`), it's quoted as a path;
-/// otherwise it's treated as a built-in style name.
+/// there's nothing to inject; otherwise appends a call to the vault
+/// package's [`apply-bibliography`] (a thin wrapper around Typst's own
+/// `#bibliography(...)`) at the end of the source. Citation collection in
+/// Typst is whole-document, so the appended call is purely about *where*
+/// the bibliography list renders — conventionally at the end.
+///
+/// `style`, when provided, is forwarded as the `style:` argument. Both
+/// built-in style names ("apa", "ieee") and CSL paths ("foo.csl",
+/// "/styles/foo.csl") flow through identically — Typst itself decides how
+/// to interpret the value.
 pub fn augment(
     source: &str,
     vault_root: &Path,
@@ -78,11 +93,11 @@ pub fn augment(
         .collect::<Vec<_>>()
         .join("/");
     let directive = match style {
-        Some(s) if s.contains('/') || s.ends_with(".csl") => {
-            format!("#bibliography(\"/{}\", style: \"{}\")\n", typst_path, s)
-        }
-        Some(s) => format!("#bibliography(\"/{}\", style: \"{}\")\n", typst_path, s),
-        None => format!("#bibliography(\"/{}\")\n", typst_path),
+        Some(s) => format!(
+            "#apply-bibliography(\"/{}\", style: \"{}\")\n",
+            typst_path, s
+        ),
+        None => format!("#apply-bibliography(\"/{}\")\n", typst_path),
     };
 
     let mut out = String::with_capacity(source.len() + directive.len() + 1);
@@ -347,15 +362,15 @@ mod tests {
     fn injects_at_end() {
         let src = "#import \"/lib.typ\": *\n= Title\n";
         let out = augment(src, &vault(), &vault().join("references.bib"), None);
-        assert!(out.contains("#bibliography(\"/references.bib\")"));
-        assert!(out.trim_end().ends_with("#bibliography(\"/references.bib\")"));
+        assert!(out.contains("#apply-bibliography(\"/references.bib\")"));
+        assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
     }
 
     #[test]
     fn injects_at_end_when_no_import() {
         let src = "= Title\nbody\n";
         let out = augment(src, &vault(), &vault().join("references.bib"), None);
-        assert!(out.trim_end().ends_with("#bibliography(\"/references.bib\")"));
+        assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
         assert!(out.starts_with("= Title"));
     }
 
@@ -369,7 +384,28 @@ mod tests {
     fn injects_with_style() {
         let src = "#import \"/lib.typ\": *\n= Title\n";
         let out = augment(src, &vault(), &vault().join("references.bib"), Some("apa"));
-        assert!(out.contains("#bibliography(\"/references.bib\", style: \"apa\")"));
+        assert!(
+            out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")")
+        );
+    }
+
+    /// Our injected wrapper must not be detected as a user-declared
+    /// `#bibliography(...)` call — otherwise re-augmenting an already
+    /// augmented source would short-circuit and we'd lose the directive
+    /// through some pipelines (export → reuse). The detection regex matches
+    /// `#bibliography(` only; `#apply-bibliography(` slips through, which is
+    /// what we want for our own emission, but we also lock down the inverse:
+    /// if a user calls Typst's bibliography directly, we still detect it.
+    #[test]
+    fn user_bibliography_call_is_detected() {
+        let src = "#bibliography(\"/x.bib\")\n";
+        assert!(already_declares_bibliography(src));
+    }
+
+    #[test]
+    fn our_apply_bibliography_call_is_not_misdetected() {
+        let src = "#apply-bibliography(\"/x.bib\")\n";
+        assert!(!already_declares_bibliography(src));
     }
 
     #[test]

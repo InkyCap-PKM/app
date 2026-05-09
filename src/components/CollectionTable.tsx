@@ -1064,6 +1064,15 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   const [showExportMenu, setShowExportMenu] = createSignal(false);
   const [exportPdfStandard, setExportPdfStandard] = createSignal<ipc.PdfStandardPreset>("standard");
   const [exportStatus, setExportStatus] = createSignal<string | null>(null);
+  // Errors are tracked separately so they persist (with a close button)
+  // until the user dismisses them. Multi-line PDF/UA-1 reports in
+  // particular need time to read, and auto-dismissing them defeats the
+  // point of the actionable error.
+  const [exportError, setExportError] = createSignal<string | null>(null);
+  function reportExportError(msg: string) {
+    setExportStatus(null);
+    setExportError(msg);
+  }
   // Visible-overlay state for long-running export operations. The status
   // bar message is easy to miss for compiles that take 5–60 seconds, so
   // we mirror the active export through this overlay.
@@ -1248,8 +1257,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(`Exported ${label} to ${outputPath}`);
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      setExportStatus(`${label} export failed: ${e}`);
-      setTimeout(() => setExportStatus(null), 6000);
+      reportExportError(`${label} export failed: ${e}`);
     }
   }
 
@@ -1272,8 +1280,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(`Exported ${exported.length} PDF(s)`);
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      setExportStatus(`Batch PDF export failed: ${e}`);
-      setTimeout(() => setExportStatus(null), 6000);
+      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      reportExportError(`Batch PDF export failed: ${msg}`);
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -1305,8 +1313,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
-      setExportStatus(`Book export failed: ${msg}`);
-      setTimeout(() => setExportStatus(null), 8000);
+      reportExportError(`Book export failed: ${msg}`);
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -1329,8 +1336,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(`Exported ${exported.length} file(s) to static site`);
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      setExportStatus(`Static site export failed: ${e}`);
-      setTimeout(() => setExportStatus(null), 6000);
+      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      reportExportError(`Static site export failed: ${msg}`);
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -1354,8 +1361,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(`Exported ${exported.length} Markdown file(s)`);
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      setExportStatus(`Markdown export failed: ${e}`);
-      setTimeout(() => setExportStatus(null), 6000);
+      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      reportExportError(`Markdown export failed: ${msg}`);
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -1690,6 +1697,20 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       <Show when={exportStatus()}>
         <div class="collection-table__export-status">
           {exportStatus()}
+        </div>
+      </Show>
+      <Show when={exportError()}>
+        <div class="collection-table__export-error" role="alert">
+          <pre class="collection-table__export-error-text">{exportError()}</pre>
+          <button
+            type="button"
+            class="collection-table__export-error-close"
+            aria-label="Dismiss error"
+            title="Dismiss"
+            onClick={() => setExportError(null)}
+          >
+            ✕
+          </button>
         </div>
       </Show>
     </div>

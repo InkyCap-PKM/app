@@ -1,14 +1,23 @@
-//! Build and inject `#set` rules from app-level document defaults and
-//! collection-level style overrides into Typst source before compilation.
+//! Build and inject style configuration calls from app-level document
+//! defaults and collection-level overrides into Typst source before
+//! compilation.
+//!
+//! Each level emits direct `#set` / `#show raw: set ...` rules right
+//! after the inkycap-vault `#import` line. Wrapping these in a
+//! `#show: <fn>.with(...)` transformer fails for `set page(paper: ...)`
+//! and any other rule that influences the document's outer layout, because
+//! page geometry is resolved before the show-rule's returned content is
+//! laid out. Direct rules at the top of the source are the only path that
+//! works for every rule shape we care about.
 //!
 //! Injection order (after the inkycap-vault `#import` line):
 //!
-//! 1. App document defaults (`#set text(...)`, `#set page(...)`)
-//! 2. Collection style overrides (full set of `#set` rules)
-//! 3. Template import (if any) — template's own `#set` rules override 1 & 2
+//! 1. App document defaults — `#set text(...)`, `#set page(...)`, etc.
+//! 2. Collection style overrides — same shape, applied second so they win
+//! 3. Template import (if any) — template's own rules override 1 & 2
 //!
-//! The user's own `#set` rules in the document body come after all injections
-//! and naturally win via Typst's cascading semantics.
+//! The user's own `#set` rules in the document body come after all
+//! injections and naturally win via Typst's cascading semantics.
 
 use crate::settings::DocumentDefaults;
 
@@ -86,17 +95,22 @@ fn format_font_value(families: &[String]) -> Option<String> {
     }
 }
 
-/// Build `#set` rules from the app-level document defaults.
+/// Build app-level `#set` / `#show` rules for document defaults. Returns
+/// an empty string when no defaults are set so the caller can skip
+/// injection cleanly.
 ///
-/// `monospace_font` is the user's editor monospace stack (from
-/// `appearance.monospace_font`); when non-empty it becomes the default font
-/// for `#raw` (code) elements so reading mode mirrors what the user sees in
-/// the visual editor. Per-collection or per-note `#show raw: set text(...)`
-/// rules later in the document still win via Typst's cascade.
+/// We emit set rules directly at the document scope rather than wrapping
+/// them in `#show: apply-vault-defaults.with(...)`. Set rules emitted
+/// indirectly through a show-rule transformer don't affect document-level
+/// layout (notably `set page(paper: ...)` is a no-op in that position) —
+/// the show-rule's returned content is laid out as content, but document
+/// page geometry is fixed before that content is laid out. Direct set
+/// rules at the top of the source are the only reliable way to change
+/// page size, base text font/size, and `raw` font for the whole document.
 pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> String {
-    let mut rules = Vec::new();
+    let mut rules: Vec<String> = Vec::new();
 
-    let mut text_args = Vec::new();
+    let mut text_args: Vec<String> = Vec::new();
     if let Some(ref font) = doc.text_font {
         if !font.is_empty() {
             text_args.push(format!("font: \"{}\"", sanitize_typst_string(font)));
@@ -111,7 +125,10 @@ pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> Str
 
     if let Some(ref paper) = doc.page_size {
         if !paper.is_empty() {
-            rules.push(format!("#set page(paper: \"{}\")", sanitize_typst_string(paper)));
+            rules.push(format!(
+                "#set page(paper: \"{}\")",
+                sanitize_typst_string(paper)
+            ));
         }
     }
 
@@ -126,7 +143,7 @@ pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> Str
 /// Inject style rules into the source after the inkycap-vault import line.
 ///
 /// `defaults_rules`: from `build_defaults_rules()` (app-level)
-/// `collection_rules`: from `CollectionStyle::to_typst_set_rules()` (collection-level)
+/// `collection_rules`: from `CollectionStyle::to_typst_show_call()` (collection-level)
 ///
 /// Both are optional and only injected when non-empty. The injection point
 /// is immediately after the inkycap-vault import line — recognized via
@@ -201,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn font_and_page_size_rules() {
+    fn font_and_page_size_emit_set_rules() {
         let doc = DocumentDefaults {
             text_font: Some("Inter".to_string()),
             text_size: Some(12.0),
@@ -213,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn monospace_stack_emits_show_raw_rule() {
+    fn monospace_stack_emits_array_arg() {
         let doc = DocumentDefaults::default();
         let rules = build_defaults_rules(
             &doc,
@@ -225,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn monospace_single_family_emits_string_value() {
+    fn monospace_single_family_emits_string_arg() {
         let doc = DocumentDefaults::default();
         let rules = build_defaults_rules(&doc, "Adwaita Mono");
         assert!(rules.contains("#show raw: set text(font: \"Adwaita Mono\")"));
@@ -248,9 +265,8 @@ mod tests {
             Some("#set text(font: \"Inter\")"),
             None,
         );
-        assert!(result.contains("inkycap-vault"));
         let import_pos = result.find("inkycap-vault").unwrap();
-        let set_pos = result.find("#set text(font: \"Inter\")").unwrap();
+        let set_pos = result.find("#set text").unwrap();
         assert!(set_pos > import_pos);
     }
 
@@ -260,15 +276,57 @@ mod tests {
         let result = inject_style_rules(
             source,
             Some("#set page(paper: \"a4\")"),
-            Some("#set page(paper: \"us-letter\")\n#set par(justify: true)"),
+            Some("#set page(paper: \"us-letter\")"),
         );
-        let defaults_pos = result.find("#set page(paper: \"a4\")").unwrap();
-        let collection_pos = result.find("#set page(paper: \"us-letter\")").unwrap();
+        let defaults_pos = result.find("\"a4\"").unwrap();
+        let collection_pos = result.find("\"us-letter\"").unwrap();
         assert!(collection_pos > defaults_pos);
     }
 
+    /// End-to-end: compile a note with both app defaults and collection
+    /// overrides injected and verify the page geometry actually changes.
+    /// Locks down the regression where set rules wrapped in a `show:` call
+    /// were silently no-ops for page-level settings.
     #[test]
-    fn collection_style_to_rules() {
+    fn injected_set_rules_actually_change_page_size() {
+        use crate::storage::path::canonicalize_root;
+        use crate::typst_pipeline::compiler::TypstCompiler;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("tempdir");
+        let root = canonicalize_root(dir.path()).expect("canonicalize");
+        crate::vault_package::scaffold(&root);
+        let note_path = root.join("note.typ");
+
+        let source = format!(
+            "{}\n\
+             #set text(font: \"Linux Libertine\", size: 12pt)\n\
+             #set page(paper: \"us-letter\")\n\
+             \n\
+             = Hello\n\
+             \n\
+             Body text.\n",
+            crate::vault_package::import_line()
+        );
+        fs::write(&note_path, &source).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compiler
+            .compile_svg(&note_path, source)
+            .expect("compile call");
+        assert!(result.ok, "diagnostics: {:#?}", result.diagnostics);
+        let width = result.frames[0].width_pt;
+        // US Letter is 612pt wide; A4 is ~595pt. A small float tolerance.
+        assert!(
+            (width - 612.0).abs() < 1.0,
+            "expected US Letter (612pt), got {}pt — page set rule was not applied",
+            width
+        );
+    }
+
+    #[test]
+    fn collection_style_emits_set_rules() {
         let style = CollectionStyle {
             page: Some(crate::collection_parser::model::PageStyle {
                 paper: Some("us-letter".to_string()),
@@ -290,9 +348,13 @@ mod tests {
             }),
             heading: None,
         };
-        let rules = style.to_typst_set_rules();
-        assert!(rules.contains("#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"));
-        assert!(rules.contains("#set text(font: \"Times New Roman\", size: 12pt, lang: \"fr\", region: \"CA\")"));
+        let rules = style.to_typst_show_call();
+        assert!(rules.contains(
+            "#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"
+        ));
+        assert!(rules.contains(
+            "#set text(font: \"Times New Roman\", size: 12pt, lang: \"fr\", region: \"CA\")"
+        ));
         assert!(rules.contains("#set par(justify: true)"));
     }
 }

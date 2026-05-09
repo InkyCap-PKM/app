@@ -13,6 +13,49 @@ InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, ac
 
 ## Critical Principles
 
+### ⚑ Typst-first by default
+
+**Before writing any new feature, function, conversion, or workflow, ask:
+"can Typst do this natively?"** Native means: a built-in function, show
+rule, set rule, label/query, package primitive, or behaviour of the
+`typst` / `typst-pdf` / `typst-html` / `typst-syntax` crates. The
+`inkycap-vault` Typst package is a first-class extension surface — adding
+a helper to `lib.typ` counts as the Typst-native answer.
+
+This isn't a stylistic preference. Typst is the source of truth for the
+document model, and code that reaches for it directly stays in sync as
+Typst evolves; code that reimplements it drifts. The cleanups in
+[.claude/plans/typst-native-opportunities.md](.claude/plans/typst-native-opportunities.md)
+deleted hundreds of lines of hand-rolled Typst-shaped logic by following
+this rule.
+
+The order of preference, strictly:
+
+1. **Built-in Typst feature.** Show rule, set rule, `#metadata` + label
+   + `query()`, `context`, the `typst::syntax` AST, `typst-pdf`'s own
+   PDF/A and PDF/UA standards, etc.
+2. **`inkycap-vault` package extension.** Add a function to `lib.typ`
+   so the Typst expression lives in `.typ` where it can be edited and
+   tested. Rust then emits a single function call.
+3. **Rust glue that orchestrates the above.** A thin layer that decides
+   *when* to invoke a Typst feature, validates user input at trust
+   boundaries, or threads per-vault state — but doesn't reimplement
+   parsing, evaluation, or layout work Typst already does.
+4. **Custom non-Typst code, as a last resort.** Only when the native
+   path is provably unreachable, *and* the gap is necessary to ship a
+   feature that matters. When you take this step, write a comment at
+   the call site naming what you considered and why it didn't work — so
+   the next reader (and the next refactor pass) sees the reasoning, not
+   just the workaround. Existing exceptions are tagged with the phrase
+   "Per CLAUDE.md's Typst-first principle" so they're greppable.
+
+If you find yourself writing a parser, a value serializer, a heading
+counter, a TOC builder, a metadata extractor, a citation formatter, a
+page-number formatter, or any kind of Typst-syntax string-builder *in
+Rust or TypeScript*, stop and check: Typst almost certainly does that
+already, and using it will be simpler, more correct, and more durable
+than what you were about to write.
+
 ### Typst-native syntax, not Markdown-translated
 
 The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` would compile literally — they are NOT supported as aliases. The only "translations" are explicit shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.

@@ -1,3 +1,19 @@
+// ---------------------------------------------------------------------------
+// Why link resolution lives in Rust, not Typst
+// ---------------------------------------------------------------------------
+//
+// Per CLAUDE.md's Typst-first principle, we use `typst query` to *extract*
+// outgoing wikilinks from each note (via `<inkycap-link>` metadata in the
+// vault package — see `inkycap-vault/0.1.0/lib.typ`). What Typst cannot do
+// is *resolve* a wikilink target string like `"Reading notes"` to an actual
+// file path on disk: that resolution is vault-specific (filename matching,
+// disambiguation, alias lookup) and Typst has no view of the vault as a
+// whole, only the file currently being compiled.
+//
+// So the split is deliberate and idiomatic: extraction is native (Typst
+// knows the source), resolution is Rust-side (Rust knows the vault).
+// ---------------------------------------------------------------------------
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

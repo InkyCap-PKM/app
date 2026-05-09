@@ -41,147 +41,30 @@ pub fn query_document(document: &PagedDocument) -> QueryResult {
     result
 }
 
-/// Compile a file and extract metadata in one step. Returns empty results
-/// if the file fails to compile.
+/// Compile a file and extract metadata in one step. Returns
+/// [`QueryResult::default()`] if the file fails to compile — callers that
+/// need a graceful display for broken files (e.g. the property panel)
+/// rely on the scanner's persisted [`MetadataCache`], which keeps the last
+/// successful query result keyed by `(mtime, size)` and short-circuits
+/// this function when the file hasn't changed since it last compiled.
+///
+/// Earlier versions of this module ran a hand-rolled raw-source extractor
+/// when compilation failed; that has been removed because the source-text
+/// fallback duplicated `note_rewriter`'s parsing surface and silently
+/// disagreed with Typst's own evaluation in edge cases (single-element
+/// tuples, `link-ref` round-trips, escape handling). For files that have
+/// truly never compiled, an empty result is the honest answer.
+///
+/// [`MetadataCache`]: crate::cache::MetadataCache
 pub fn compile_and_query(
     compiler: &mut TypstCompiler,
     abs_path: &Path,
     source: String,
 ) -> QueryResult {
-    match compiler.compile_document(abs_path, source.clone()) {
+    match compiler.compile_document(abs_path, source) {
         Some(document) => query_document(&document),
-        None => fallback_text_extraction(&source),
+        None => QueryResult::default(),
     }
-}
-
-/// When Typst compilation fails (e.g. missing import, syntax error),
-/// extract properties from the raw `#note(...)` text so the property
-/// panel still has something to display.
-fn fallback_text_extraction(source: &str) -> QueryResult {
-    use crate::typst_pipeline::note_rewriter;
-
-    let raw_args = note_rewriter::extract_note_properties(source);
-    if raw_args.is_empty() {
-        return QueryResult::default();
-    }
-
-    let mut result = QueryResult::default();
-    for (key, raw_value) in raw_args {
-        let pv = parse_raw_typst_value(&raw_value);
-        if key == "tags" {
-            if let PropertyValue::List(ref items) = pv {
-                for item in items {
-                    if let PropertyValue::String(s) = item {
-                        if !result.tags.contains(s) {
-                            result.tags.push(s.clone());
-                        }
-                    }
-                }
-            } else if let PropertyValue::String(ref s) = pv {
-                if !s.is_empty() && !result.tags.contains(s) {
-                    result.tags.push(s.clone());
-                }
-            }
-        }
-        result.properties.insert(key, pv);
-    }
-    result
-}
-
-/// Parse a raw Typst value fragment into a PropertyValue.
-/// Handles strings, numbers, booleans, arrays, and `none`.
-fn parse_raw_typst_value(raw: &str) -> PropertyValue {
-    let trimmed = raw.trim();
-
-    if trimmed == "none" {
-        return PropertyValue::Null;
-    }
-    if trimmed == "true" {
-        return PropertyValue::Bool(true);
-    }
-    if trimmed == "false" {
-        return PropertyValue::Bool(false);
-    }
-
-    // Quoted string
-    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-        let inner = &trimmed[1..trimmed.len() - 1];
-        return PropertyValue::String(
-            inner.replace("\\\"", "\"").replace("\\\\", "\\"),
-        );
-    }
-
-    // Array: (...) — parse elements
-    if trimmed.starts_with('(') && trimmed.ends_with(')') {
-        let inner = &trimmed[1..trimmed.len() - 1];
-        let items: Vec<PropertyValue> = split_array_elements(inner)
-            .into_iter()
-            .map(|s| parse_raw_typst_value(s.trim()))
-            .filter(|v| !matches!(v, PropertyValue::Null))
-            .collect();
-        // Single element without trailing comma = grouped expression, not array
-        if items.len() == 1 && !inner.trim_end().ends_with(',') {
-            return items.into_iter().next().unwrap();
-        }
-        return PropertyValue::List(items);
-    }
-
-    // Number
-    if let Ok(n) = trimmed.parse::<f64>() {
-        return PropertyValue::Number(n);
-    }
-
-    // link-ref("Target")
-    if let Some(rest) = trimmed.strip_prefix("link-ref(") {
-        if let Some(inner) = rest.strip_suffix(')') {
-            let target = parse_raw_typst_value(inner);
-            if let PropertyValue::String(s) = target {
-                return PropertyValue::String(format!("[[{}]]", s));
-            }
-        }
-    }
-
-    // Fallback: treat as opaque string
-    PropertyValue::String(trimmed.to_string())
-}
-
-/// Split comma-separated elements inside an array, respecting nested parens
-/// and quoted strings.
-fn split_array_elements(inner: &str) -> Vec<&str> {
-    let bytes = inner.as_bytes();
-    let mut items = Vec::new();
-    let mut start = 0;
-    let mut i = 0;
-    let mut depth: usize = 0;
-
-    while i < bytes.len() {
-        match bytes[i] {
-            b',' if depth == 0 => {
-                let segment = inner[start..i].trim();
-                if !segment.is_empty() {
-                    items.push(segment);
-                }
-                start = i + 1;
-            }
-            b'"' => {
-                i += 1;
-                while i < bytes.len() {
-                    if bytes[i] == b'\\' { i += 2; continue; }
-                    if bytes[i] == b'"' { break; }
-                    i += 1;
-                }
-            }
-            b'(' => depth += 1,
-            b')' => { if depth > 0 { depth -= 1; } }
-            _ => {}
-        }
-        i += 1;
-    }
-    let segment = inner[start..].trim();
-    if !segment.is_empty() {
-        items.push(segment);
-    }
-    items
 }
 
 // ---------------------------------------------------------------------------
@@ -457,13 +340,19 @@ mod tests {
         assert!(result.links.is_empty());
     }
 
+    /// When a file fails to compile, the query returns an empty result —
+    /// the scanner's persisted cache is the supported source of property
+    /// data for broken files. Earlier we extracted properties from the
+    /// raw source text on failure, but that duplicated `note_rewriter`'s
+    /// parsing and silently disagreed with Typst's evaluation in edge
+    /// cases.
     #[test]
-    fn fallback_extracts_properties_when_compilation_fails() {
+    fn returns_empty_result_when_compilation_fails() {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize");
         crate::vault_package::scaffold(&root);
 
-        // File has #note(...) but no import, so compilation will fail
+        // File has `#note(...)` but no import, so compilation will fail.
         let note_path = root.join("no_import.typ");
         let source = r#"#note(
   collection: ("Second Collection", "JC Collection 1"),
@@ -477,20 +366,13 @@ mod tests {
         let mut compiler = TypstCompiler::new(root);
         let result = compile_and_query(&mut compiler, &note_path, source.to_string());
 
-        // Fallback should extract properties from raw text
-        let collection = result.properties.get("collection").expect("collection");
-        match collection {
-            PropertyValue::List(items) => {
-                assert_eq!(items.len(), 2);
-                assert!(items.contains(&PropertyValue::String("Second Collection".into())));
-                assert!(items.contains(&PropertyValue::String("JC Collection 1".into())));
-            }
-            _ => panic!("expected list, got {:?}", collection),
-        }
-
-        // ("dogtag") is a grouped expression in Typst, not an array — should be a string
-        let tag = result.properties.get("tag").expect("tag");
-        assert_eq!(tag, &PropertyValue::String("dogtag".into()));
+        assert!(
+            result.properties.is_empty(),
+            "expected no properties when compile fails, got {:?}",
+            result.properties
+        );
+        assert!(result.tags.is_empty());
+        assert!(result.links.is_empty());
     }
 
     #[test]

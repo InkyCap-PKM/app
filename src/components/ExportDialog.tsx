@@ -351,7 +351,18 @@ const ExportDialog: Component = () => {
             </Show>
 
             <Show when={error()}>
-              <div class="export-dialog__error">{error()}</div>
+              <div class="export-dialog__error" role="alert">
+                <pre class="export-dialog__error-text">{error()}</pre>
+                <button
+                  type="button"
+                  class="export-dialog__error-close"
+                  aria-label="Dismiss error"
+                  title="Dismiss"
+                  onClick={() => setError(null)}
+                >
+                  ✕
+                </button>
+              </div>
             </Show>
 
             <Show when={success()}>

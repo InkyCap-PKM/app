@@ -1,3 +1,26 @@
+// ---------------------------------------------------------------------------
+// Why this is a Rust-side converter and not a Typst package
+// ---------------------------------------------------------------------------
+//
+// The Typst-native option here would be the `cmarker` package, which
+// renders CommonMark inside Typst. We deliberately don't use it because:
+//
+// 1. `cmarker` is consume-only (md → rendered output). It can't produce a
+//    `.typ` source file we can store as a note, which is what every InkyCap
+//    import path needs.
+// 2. InkyCap markdown carries first-class extensions — wikilinks, Obsidian
+//    tags, `==highlight==`, YAML frontmatter mapped to `#note(...)`. None of
+//    these survive a generic CommonMark parser; they have to be transformed
+//    pre-parse into their Typst-package equivalents (`#wikilink`, `#tag`,
+//    `#highlight`, `#note`).
+//
+// So the converter stays in Rust — it's not duplicating Typst, it's bridging
+// markdown semantics into our package's vocabulary. Per CLAUDE.md's
+// Typst-first principle: this is the "last resort, necessary to accomplish
+// something important" case. Don't replace this with a Typst-side renderer
+// without a plan for the four extensions above.
+// ---------------------------------------------------------------------------
+
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, CodeBlockKind, HeadingLevel};
 use regex::Regex;
 use std::sync::LazyLock;

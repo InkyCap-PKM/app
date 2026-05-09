@@ -64,11 +64,20 @@ pub struct HeadingStyle {
 }
 
 impl CollectionStyle {
-    /// Generate Typst `#set` rules from the non-`None` fields.
-    pub fn to_typst_set_rules(&self) -> String {
-        use crate::typst_pipeline::style_injection::sanitize_typst_string;
+    /// Build a sequence of direct `#set` rules for the collection's
+    /// non-`None` fields. Returns an empty string when no fields are set,
+    /// so the caller can skip the injection cleanly.
+    ///
+    /// Set rules are emitted directly (rather than via a
+    /// `#show: apply-collection-style.with(...)` wrapper) because page-level
+    /// rules like `set page(paper: ...)` are no-ops when applied through a
+    /// show-rule's returned content — page geometry is resolved before the
+    /// transformed content is laid out. See the matching note on
+    /// `style_injection::build_defaults_rules` for the full rationale.
+    pub fn to_typst_show_call(&self) -> String {
+        use crate::typst_pipeline::style_injection::{ensure_length_unit, sanitize_typst_string};
 
-        let mut rules = Vec::new();
+        let mut rules: Vec<String> = Vec::new();
 
         if let Some(ref page) = self.page {
             let mut args = Vec::new();
@@ -76,7 +85,6 @@ impl CollectionStyle {
                 args.push(format!("paper: \"{}\"", sanitize_typst_string(paper)));
             }
             if let Some(ref margin) = page.margin {
-                use crate::typst_pipeline::style_injection::ensure_length_unit;
                 args.push(format!("margin: {}", ensure_length_unit(margin, "pt")));
             }
             if let Some(cols) = page.columns {
@@ -96,7 +104,6 @@ impl CollectionStyle {
                 args.push(format!("font: \"{}\"", sanitize_typst_string(font)));
             }
             if let Some(ref size) = text.size {
-                use crate::typst_pipeline::style_injection::ensure_length_unit;
                 args.push(format!("size: {}", ensure_length_unit(size, "pt")));
             }
             if let Some(ref lang) = text.lang {
@@ -111,8 +118,6 @@ impl CollectionStyle {
         }
 
         if let Some(ref par) = self.paragraph {
-            use crate::typst_pipeline::style_injection::ensure_length_unit;
-
             let mut args = Vec::new();
             if let Some(ref leading) = par.leading {
                 args.push(format!("leading: {}", ensure_length_unit(leading, "em")));
@@ -133,7 +138,10 @@ impl CollectionStyle {
 
         if let Some(ref heading) = self.heading {
             if let Some(ref numbering) = heading.numbering {
-                rules.push(format!("#set heading(numbering: \"{}\")", sanitize_typst_string(numbering)));
+                rules.push(format!(
+                    "#set heading(numbering: \"{}\")",
+                    sanitize_typst_string(numbering)
+                ));
             }
         }
 

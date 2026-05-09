@@ -104,6 +104,13 @@ pub struct LabelCollision {
 /// (optionally indented), then walks balanced parentheses to the closing
 /// paren. Strings and escapes are tracked so a `)` inside a quoted argument
 /// does not end the call early.
+///
+/// Per CLAUDE.md's Typst-first principle: same reasoning as
+/// `bibliography::already_declares_bibliography` — the AST-based version
+/// would be cleaner on well-formed input but break on the half-typed or
+/// partially-broken notes we have to handle gracefully when assembling a
+/// merged book. The string-level walk gives correct stripping even when the
+/// surrounding note doesn't fully parse.
 pub fn strip_bibliography_call(content: &str) -> String {
     let bytes = content.as_bytes();
     let len = bytes.len();
@@ -123,8 +130,19 @@ pub fn strip_bibliography_call(content: &str) -> String {
             while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
                 j += 1;
             }
-            if content[j..].starts_with("#bibliography(") {
-                let call_start = j + "#bibliography".len(); // points at '('
+            // Match both Typst's own `#bibliography(...)` and our package
+            // wrapper `#apply-bibliography(...)` — the merged-book pipeline
+            // augments per-note sources before they reach this stripper, so
+            // the wrapper form must be removed too.
+            let call_prefix = if content[j..].starts_with("#bibliography(") {
+                Some("#bibliography")
+            } else if content[j..].starts_with("#apply-bibliography(") {
+                Some("#apply-bibliography")
+            } else {
+                None
+            };
+            if let Some(prefix) = call_prefix {
+                let call_start = j + prefix.len(); // points at '('
                 if let Some(end) = find_balanced_paren_end(content, call_start) {
                     // Drop the call (and the line's leading whitespace), plus
                     // a single trailing newline so we don't leave a blank
@@ -342,6 +360,18 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
 /// the chapter heading), and compress any remaining gaps so no level is
 /// skipped. A note with `=`, `===` headings targeted at min=2 becomes
 /// `==`, `===` (shifted, gap-free).
+///
+/// Why this is a Rust source rewrite and not a Typst `set heading(offset:)`
+/// rule: per CLAUDE.md's Typst-first principle, we considered the native
+/// path. `set heading(offset: N)` handles the *shift* half cleanly — it
+/// lifts every heading in scope by N levels — but it cannot compress gaps,
+/// because compressing requires looking at which levels actually appear in
+/// the body and remapping them onto consecutive integers. Typst show rules
+/// don't have that cross-element view at evaluation time. Splitting the
+/// algorithm (shift in Typst, compress in Rust) saves ~10 lines for a
+/// non-obvious split-responsibility design on a load-bearing PDF/UA-1 path.
+/// The veraPDF integration test in `tests/verapdf_pdf_ua.rs` is the
+/// regression net if this assumption is ever revisited.
 pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
     let lines: Vec<&str> = body.lines().collect();
 
@@ -456,6 +486,29 @@ pub fn build_book_source(
     s.push_str(&crate::vault_package::import_line());
     s.push('\n');
 
+    // Document-level metadata (title, author) for the PDF's catalog.
+    // Required for PDF/UA-1 conformance — Typst's PDF backend rejects an
+    // export with `missing document title` when the standard demands it.
+    // The date field is intentionally omitted here; the export pipeline's
+    // `ensure_document_date_for_standard` adds it, which keeps the
+    // "fall back to today's date" logic in one place.
+    let mut doc_args: Vec<String> = Vec::new();
+    if let Some(title) = &options.title {
+        doc_args.push(format!(
+            "title: \"{}\"",
+            typst_escape(title)
+        ));
+    }
+    if let Some(author) = &options.author {
+        doc_args.push(format!(
+            "author: \"{}\"",
+            typst_escape(author)
+        ));
+    }
+    if !doc_args.is_empty() {
+        s.push_str(&format!("#set document({})\n", doc_args.join(", ")));
+    }
+
     // Inform the vault package we're in a merged-book compile, so the
     // `wikilink` function can resolve internally / strip / fall through.
     let mode_str = match options.wikilink_mode {
@@ -549,37 +602,15 @@ pub fn build_book_source(
         }
     }
 
-    // Outline.
-    //
-    // Typst's default outline.entry uses the active page-numbering
-    // pattern when rendering each entry's page label, so a body pattern
-    // like "Page 1 of N" or `"{1}"` would leak into the table of
-    // contents — readers expect the TOC to show plain page numbers
-    // (1, 2, 3) regardless of how the page footer is decorated.
-    //
-    // This `#show outline.entry` rule rebuilds each entry by hand:
-    // - keep the prefix (chapter numbering) and the body (heading text),
-    // - keep the dotted fill,
-    // - replace the page label with the raw page counter at the
-    //   heading's location, formatted as a bare integer.
-    //
-    // We scope the rule to a single `#outline(...)` block so it doesn't
-    // leak into any later content the user might add.
+    // Outline. Routed through `outline-with-bare-page-numbers` in the
+    // vault package — that helper scopes a `show outline.entry` rule to a
+    // single outline call so decorated body page-numbering patterns
+    // ("Page 1 of N", etc.) don't leak into the TOC's page labels.
     if options.include_outline {
-        // `#{ … }` opens a code block whose `show` rules only apply
-        // within the block, so the custom outline-entry rendering does
-        // not leak into anything the user emits later.
-        s.push_str("#{\n");
-        s.push_str(
-            "  show outline.entry: it => link(\n    \
-               it.element.location(),\n    \
-               it.indented(\n      \
-                 it.prefix(),\n      \
-                 it.body() + box(width: 1fr, repeat[.]) + h(0.5em) + str(counter(page).at(it.element.location()).first()),\n    \
-               ),\n  \
-             )\n",
-        );
-        s.push_str(&format!("  outline(depth: {})\n}}\n", options.toc_depth));
+        s.push_str(&format!(
+            "#outline-with-bare-page-numbers(depth: {})\n",
+            options.toc_depth
+        ));
         s.push_str("#pagebreak()\n");
     }
 
@@ -598,16 +629,12 @@ pub fn build_book_source(
         }
         BookPageNumbering::ArabicFromPage { start_page } => {
             // Arabic numerals turn on once the document reaches `start_page`.
-            // The expression `if here().page() >= N { (N - start_page + 1) }`
-            // produces a sequence that reads 1, 2, 3 … starting at the
-            // requested page, leaving earlier pages unnumbered.
+            // The closure body lives in the vault package as
+            // `make-offset-numbering` so the Typst expression can be edited
+            // and tested in `.typ` rather than as a Rust string literal.
             let start = start_page.max(1);
             s.push_str(&format!(
-                "#set page(numbering: (..n) => {{ \
-let p = here().page(); \
-if p >= {start} {{ str(p - {start} + 1) }} else {{ none }} \
-}})\n",
-                start = start
+                "#set page(numbering: make-offset-numbering({start}))\n"
             ));
         }
     }
@@ -665,14 +692,17 @@ if p >= {start} {{ str(p - {start} + 1) }} else {{ none }} \
     // ── Bibliography ───────────────────────────────────────────────────────
     if let Some(path) = bibliography_path {
         s.push_str("#pagebreak(weak: true)\n");
+        // Route through the package wrapper for consistency with the
+        // single-note pipeline; behaviour is identical because
+        // `apply-bibliography` forwards to Typst's own `#bibliography`.
         match bibliography_style {
             Some(style) => s.push_str(&format!(
-                "#bibliography(\"{}\", style: \"{}\")\n",
+                "#apply-bibliography(\"{}\", style: \"{}\")\n",
                 typst_escape(path),
                 typst_escape(style)
             )),
             None => s.push_str(&format!(
-                "#bibliography(\"{}\")\n",
+                "#apply-bibliography(\"{}\")\n",
                 typst_escape(path)
             )),
         }
@@ -1000,8 +1030,22 @@ After
             None,
             None,
         );
-        let bib_count = src.matches("#bibliography(").count();
-        assert_eq!(bib_count, 1, "expected exactly one bibliography call, got source:\n{}", src);
+        // Wrapper emits exactly one `#apply-bibliography(...)`; any
+        // per-chapter user-written `#bibliography(...)` calls are stripped
+        // during chapter prep so the merged book has a single bibliography
+        // rendering point.
+        assert_eq!(
+            src.matches("#apply-bibliography(").count(),
+            1,
+            "expected exactly one wrapper bibliography call, got source:\n{}",
+            src
+        );
+        assert_eq!(
+            src.matches("#bibliography(").count(),
+            0,
+            "expected user-written #bibliography(...) to be stripped, got source:\n{}",
+            src
+        );
     }
 
     #[test]
@@ -1149,12 +1193,12 @@ After
     }
 
     #[test]
-    fn build_book_overrides_outline_entry_for_plain_toc_numbers() {
+    fn build_book_routes_outline_through_package_helper() {
         // The TOC must show bare page integers regardless of the page
-        // pattern set in Style Overrides. The implementation routes the
-        // page label through `str(counter(page).at(...).first())` inside
-        // a scoped `show outline.entry` rule, so the rendered TOC is
-        // independent of the body pattern.
+        // pattern set in Style Overrides. The wrapper now delegates this
+        // to `outline-with-bare-page-numbers` in the vault package — the
+        // helper installs the same show rule we used to inline here, so
+        // the rendered TOC stays independent of the body pattern.
         let n = note("a", "= A\n");
         let src = build_book_source(
             &[n],
@@ -1168,37 +1212,23 @@ After
             None,
         );
         assert!(
-            src.contains("show outline.entry: it => link("),
-            "expected outline.entry show rule in source:\n{}",
-            src
-        );
-        assert!(
-            src.contains("str(counter(page).at(it.element.location()).first())"),
-            "expected outline page label to use the raw page counter:\n{}",
-            src
-        );
-        // The show rule must be scoped to a `#{ … }` code block so it
-        // doesn't bleed into anything emitted after the outline.
-        assert!(
-            src.contains("#{\n"),
-            "expected a scoped code block around the outline override:\n{}",
+            src.contains("#outline-with-bare-page-numbers(depth:"),
+            "expected outline routed through the package helper:\n{}",
             src
         );
     }
 
     #[test]
-    fn build_book_skips_outline_override_when_outline_disabled() {
-        // No outline → no need (and no place) for the entry show rule.
+    fn build_book_skips_outline_helper_when_outline_disabled() {
         let mut opts = options();
         opts.include_outline = false;
         let n = note("a", "= A\n");
         let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
         assert!(
-            !src.contains("show outline.entry"),
-            "outline override leaked when outline was disabled:\n{}",
+            !src.contains("outline-with-bare-page-numbers"),
+            "outline helper leaked when outline was disabled:\n{}",
             src
         );
-        assert!(!src.contains("outline(depth:"));
     }
 
     #[test]

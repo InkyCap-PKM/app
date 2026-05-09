@@ -30,10 +30,12 @@ pub async fn export_note_pdf(
     let content = crate::vault_package::ensure_import(&content);
 
     let source = super::typst::inject_style_cascade(&content, &path_buf, &state).await;
+    let source = super::typst::maybe_inject_set_vault(&source, &state).await;
 
     let vault_root = state.vault_root.read().await;
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), None);
+    let bib_style = resolve_user_bib_style(&state).await;
+    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -72,10 +74,12 @@ pub async fn export_note_pdf_to_file(
     };
 
     let source = super::typst::inject_style_cascade(&source, &path_buf, &state).await;
+    let source = super::typst::maybe_inject_set_vault(&source, &state).await;
 
     let vault_root = state.vault_root.read().await;
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), None);
+    let bib_style = resolve_user_bib_style(&state).await;
+    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -85,6 +89,7 @@ pub async fn export_note_pdf_to_file(
 
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
+    check_pdf_standard_requirements(&source, standard)?;
     let pdf_bytes = compiler
         .compile_pdf(&path_buf, source, standard)
         .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
@@ -180,10 +185,12 @@ pub async fn export_note_html(
     };
 
     let content = super::typst::inject_style_cascade(&content, &path_buf, &state).await;
+    let content = super::typst::maybe_inject_set_vault(&content, &state).await;
 
     let vault_root = state.vault_root.read().await;
     let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let source = maybe_inject_bibliography(content, effective_bib.as_deref(), None);
+    let bib_style = resolve_user_bib_style(&state).await;
+    let source = maybe_inject_bibliography(content, effective_bib.as_deref(), bib_style.as_deref());
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -245,12 +252,13 @@ pub async fn export_collection_note_pdf(
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
-    let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
+    let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
     let source = style_injection::inject_style_rules(
         &source,
         if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
         collection_rules.as_deref().filter(|r| !r.is_empty()),
     );
+    let source = super::typst::maybe_inject_set_vault(&source, &state).await;
 
     let vault_root = state.vault_root.read().await;
     let vault_root_ref = vault_root.as_deref();
@@ -277,6 +285,7 @@ pub async fn export_collection_note_pdf(
 
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
+    check_pdf_standard_requirements(&source, standard)?;
     let pdf_bytes: Vec<u8> = if let Some(ref template) = resolved_template {
         compiler
             .compile_pdf_with_template(
@@ -334,7 +343,7 @@ pub async fn export_collection_batch_pdf(
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
-    let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
+    let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 
     let vault_root = state.vault_root.read().await;
     let vault_root_ref = vault_root.as_deref();
@@ -369,6 +378,7 @@ pub async fn export_collection_batch_pdf(
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
+        let source = super::typst::maybe_inject_set_vault(&source, &state).await;
         let source = maybe_inject_bibliography(
             source,
             effective_bib.as_deref(),
@@ -383,6 +393,7 @@ pub async fn export_collection_batch_pdf(
 
         let standard = pdf_standard.unwrap_or_default();
         let source = ensure_document_date_for_standard(source, standard);
+        check_pdf_standard_requirements(&source, standard)?;
         let compile_result: Result<Vec<u8>, _> = if let Some(ref template) = resolved_template {
             compiler
                 .compile_pdf_with_template(
@@ -560,7 +571,7 @@ pub async fn export_collection_book_pdf(
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
-    let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
+    let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 
     let mut style_rules = String::new();
     if !defaults_rules.is_empty() {
@@ -652,7 +663,9 @@ pub async fn export_collection_book_pdf(
     if let Some(ref style) = base.bibliography_style {
         compiler.set_bibliography_style(Some(style.clone()));
     }
+    let source = super::typst::maybe_inject_set_vault(&source, &state).await;
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
+    check_pdf_standard_requirements(&source, book_pdf_standard)?;
     let compile_result = compiler
         .compile_pdf(&synthetic_main, source, book_pdf_standard)
         .map_err(|e| InkyCapError::ExportFailed(e.to_string()));
@@ -713,7 +726,7 @@ pub async fn export_collection_static_site(
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
-    let collection_rules = base.style.as_ref().map(|s| s.to_typst_set_rules());
+    let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 
     // Build a map of note names → html filenames for wikilink rewriting
     let name_to_file: std::collections::HashMap<String, String> = data
@@ -738,7 +751,9 @@ pub async fn export_collection_static_site(
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
-        let source = maybe_inject_bibliography(content, effective_bib.as_deref(), None);
+        let content = super::typst::maybe_inject_set_vault(&content, &state).await;
+        let bib_style = resolve_user_bib_style(&state).await;
+        let source = maybe_inject_bibliography(content, effective_bib.as_deref(), bib_style.as_deref());
 
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
@@ -988,6 +1003,25 @@ async fn resolve_effective_bib(
     crate::state::configure_bibliography(vault_root, &settings.citations)
 }
 
+/// Resolve the user's preferred citation style from settings. Returns the
+/// custom CSL path when the user picked "custom"; otherwise the named
+/// style (e.g. `"chicago-notes"`). `None` when no style is configured.
+async fn resolve_user_bib_style(state: &State<'_, AppState>) -> Option<String> {
+    let settings = state.settings.read().await;
+    settings
+        .citations
+        .custom_csl_path
+        .clone()
+        .or_else(|| {
+            settings
+                .citations
+                .citation_style
+                .as_deref()
+                .filter(|s| !s.is_empty() && *s != "custom")
+                .map(String::from)
+        })
+}
+
 /// Append a `#bibliography(...)` call to the source when the collection
 /// specifies a bibliography file and the source contains `@` citations.
 fn maybe_inject_bibliography(source: String, bib_file: Option<&str>, bib_style: Option<&str>) -> String {
@@ -1125,18 +1159,178 @@ fn inject_document_metadata(source: &str) -> String {
     result
 }
 
+/// Pre-flight a source for issues that would block export under the
+/// chosen PDF standard, and return them all in a single actionable error.
+///
+/// Reporting issues up-front (rather than letting typst-pdf surface a
+/// single cryptic message for the first failure) is especially valuable
+/// for accessibility-driven exports like PDF/UA-1: the author needs the
+/// full list of fixes — alt text on every image, gap-free headings,
+/// document metadata — to make the document genuinely conformant. A
+/// silent fallback (e.g. injecting `alt: "<filename>"`) would let the
+/// export succeed but defeat the point of choosing the standard.
+///
+/// Returns `Ok(())` when the standard is `Standard` (no requirements) or
+/// when no issues are found.
+pub fn check_pdf_standard_requirements(
+    source: &str,
+    standard: PdfStandardPreset,
+) -> Result<(), InkyCapError> {
+    if standard == PdfStandardPreset::Standard {
+        return Ok(());
+    }
+
+    let mut issues: Vec<String> = Vec::new();
+
+    if standard == PdfStandardPreset::PdfUa1 {
+        let alt_offenders = images_missing_alt(source);
+        if !alt_offenders.is_empty() {
+            let mut block = String::from(
+                "Images missing alt text (PDF/UA-1 requires alt: on every image):\n",
+            );
+            for (line, path) in &alt_offenders {
+                block.push_str(&format!("  line {line}: #image(\"{path}\")\n"));
+            }
+            block.push_str(
+                "  Fix: add `alt: \"description\"` to each call.",
+            );
+            issues.push(block);
+        }
+
+        let gaps = heading_level_gaps(source);
+        if !gaps.is_empty() {
+            let mut block = String::from(
+                "Heading levels skip a step (PDF/UA-1 requires consecutive nesting):\n",
+            );
+            for (line, prev_lvl, this_lvl, text) in &gaps {
+                block.push_str(&format!(
+                    "  line {line}: jumps from level {prev_lvl} to level {this_lvl} ({text})\n"
+                ));
+            }
+            block.push_str(
+                "  Fix: insert the intermediate heading(s), or reduce this heading's depth.",
+            );
+            issues.push(block);
+        }
+    }
+
+    if issues.is_empty() {
+        return Ok(());
+    }
+
+    let label = match standard {
+        PdfStandardPreset::PdfUa1 => "PDF/UA-1",
+        PdfStandardPreset::PdfA4 => "PDF/A-4",
+        PdfStandardPreset::Standard => "PDF",
+    };
+    Err(InkyCapError::ExportFailed(format!(
+        "{label} export blocked by the following issue(s):\n\n{}",
+        issues.join("\n\n")
+    )))
+}
+
+/// Find heading-level jumps that skip one or more levels (e.g. `=` →
+/// `===`, which violates PDF/UA-1's consecutive-nesting rule). Returns
+/// `(1-based line, previous level, this level, heading text)` per
+/// offender, in source order. The first heading in the document is
+/// always treated as well-formed (no "previous" level to compare).
+fn heading_level_gaps(source: &str) -> Vec<(usize, u8, u8, String)> {
+    let mut last_level: Option<u8> = None;
+    let mut offenders = Vec::new();
+    for (i, raw_line) in source.lines().enumerate() {
+        let trimmed = raw_line.trim_start();
+        // Mirror book_wrapper::heading_level: count leading '=' followed
+        // by whitespace or end-of-line.
+        if !trimmed.starts_with('=') {
+            continue;
+        }
+        let count = trimmed.bytes().take_while(|&b| b == b'=').count();
+        if count == 0 || count > u8::MAX as usize {
+            continue;
+        }
+        let after = &trimmed[count..];
+        if !(after.is_empty() || after.starts_with(' ') || after.starts_with('\t')) {
+            continue;
+        }
+        let level = count as u8;
+        if let Some(prev) = last_level {
+            if level > prev + 1 {
+                let text = after.trim().chars().take(60).collect::<String>();
+                offenders.push((i + 1, prev, level, text));
+            }
+        }
+        last_level = Some(level);
+    }
+    offenders
+}
+
+/// Find every `#image(...)` call in `source` that lacks an `alt:`
+/// argument. Returns `(1-based line number, path-or-best-guess)` per
+/// offender, in source order.
+fn images_missing_alt(source: &str) -> Vec<(usize, String)> {
+    let mut offenders: Vec<(usize, String)> = Vec::new();
+    let pattern = "#image(";
+    let bytes = source.as_bytes();
+    let mut search_from: usize = 0;
+    while let Some(rel) = source[search_from..].find(pattern) {
+        let start = search_from + rel;
+        let after_hash = &source[start + 1..];
+        let args_open = "image".len();
+        let Some(args_close) = find_matching_paren(after_hash, args_open) else {
+            search_from = start + pattern.len();
+            continue;
+        };
+        let args_str = &after_hash[args_open + 1..args_close];
+        let has_alt = parse_named_string_arg(args_str, "alt").is_some()
+            || args_has_named_arg(args_str, "alt");
+        if !has_alt {
+            // 1-based line number of the call's `#`.
+            let line = bytes[..start].iter().filter(|&&b| b == b'\n').count() + 1;
+            let path = parse_first_string_arg(args_str)
+                .unwrap_or_else(|| "<unknown>".to_string());
+            offenders.push((line, path));
+        }
+        search_from = start + 1 + args_close + 1;
+    }
+    offenders
+}
+
+/// Cheap predicate: does this Typst args slice contain `<name>:` as a
+/// named-argument keyword? Used to detect non-string alt values
+/// (`alt: none`, `alt: my-var`) that `parse_named_string_arg` skips.
+fn args_has_named_arg(args: &str, name: &str) -> bool {
+    let needle = format!("{}:", name);
+    let mut search = args;
+    loop {
+        let Some(idx) = search.find(&needle) else { return false };
+        let preceding = if idx == 0 { None } else { search[..idx].chars().last() };
+        let is_word = preceding.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !is_word {
+            return true;
+        }
+        search = &search[idx + needle.len()..];
+    }
+}
+
 /// Ensure the source has a `#set document(date: ...)` rule when exporting to a
 /// PDF standard that requires one (PDF/A-4, PDF/UA-1). If the note already has
 /// a date property and metadata injection is active, the date will already be
 /// present. Otherwise we inject today's date as a fallback so the export
 /// doesn't fail with "missing document date".
-fn ensure_document_date_for_standard(source: String, standard: PdfStandardPreset) -> String {
+pub fn ensure_document_date_for_standard(
+    source: String,
+    standard: PdfStandardPreset,
+) -> String {
     if standard == PdfStandardPreset::Standard {
         return source;
     }
 
-    // If a `#set document(` rule already exists, assume it covers the date.
-    if source.contains("#set document(") {
+    // Skip injection only when the existing `#set document(...)` rules
+    // already include a `date:` entry. A wrapper that emits a title-only
+    // `#set document(...)` (e.g. the merged-book pipeline) still needs us
+    // to add the required date, so this check is more specific than just
+    // "does any document set rule exist".
+    if existing_document_set_has_date(&source) {
         return source;
     }
 
@@ -1168,6 +1362,118 @@ fn ensure_document_date_for_standard(source: String, standard: PdfStandardPreset
 }
 
 /// Parse a date string like "2026-04-28" into a Typst `datetime()` call.
+/// Whether the source already contains a `#set document(...)` rule with a
+/// `date:` argument. Conservative regex-free scan: walks each
+/// `#set document(...)` call and looks for the literal `date:` token at
+/// argument-list depth (not inside a nested string or paren group).
+fn existing_document_set_has_date(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let needle = "#set document(";
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find(needle) {
+        let abs = search_from + rel;
+        let mut i = abs + needle.len();
+        let mut depth: i32 = 1;
+        let mut in_string = false;
+        let mut escape = false;
+        while i < bytes.len() && depth > 0 {
+            let c = bytes[i];
+            if escape {
+                escape = false;
+                i += 1;
+                continue;
+            }
+            if in_string {
+                match c {
+                    b'\\' => escape = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
+                i += 1;
+                continue;
+            }
+            match c {
+                b'"' => in_string = true,
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            i += 1;
+        }
+        let call_end = i;
+        let call_args = &source[abs + needle.len()..call_end.saturating_sub(1)];
+        // Look for `date:` only at argument depth 0 (outside nested
+        // parens/strings) so a `description: "date: 2026"` doesn't match.
+        if contains_top_level_keyword(call_args, "date") {
+            return true;
+        }
+        search_from = call_end;
+    }
+    false
+}
+
+/// Look for `<keyword>:` at the top level of a Typst argument list — i.e.
+/// not inside nested parens/brackets or quoted strings.
+fn contains_top_level_keyword(args: &str, keyword: &str) -> bool {
+    let bytes = args.as_bytes();
+    let kw_with_colon = format!("{}:", keyword);
+    let kw_bytes = kw_with_colon.as_bytes();
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if escape {
+            escape = false;
+            i += 1;
+            continue;
+        }
+        if in_string {
+            match c {
+                b'\\' => escape = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => {
+                in_string = true;
+                i += 1;
+                continue;
+            }
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                i += 1;
+                continue;
+            }
+            b')' | b']' | b'}' => {
+                depth -= 1;
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
+        if depth == 0 && bytes[i..].starts_with(kw_bytes) {
+            // Must be at a token boundary (start of args or after a
+            // comma + whitespace) so `keydate:` doesn't match `date:`.
+            let prev_ok = if i == 0 {
+                true
+            } else {
+                let p = bytes[i - 1];
+                p == b',' || p == b' ' || p == b'\t' || p == b'\n' || p == b'\r' || p == b'('
+            };
+            if prev_ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 fn parse_date_to_typst_datetime(value: &str) -> Option<String> {
     let parts: Vec<&str> = value.split('-').collect();
     if parts.len() == 3 {
@@ -1223,19 +1529,17 @@ fn preprocess_for_pandoc(source: &str) -> String {
 fn strip_inkycap_functions(source: &str) -> String {
     let mut result = source.to_string();
 
-    // #wikilink("Note") → Note
-    // #wikilink("Note", display: "label") → label
-    let wikilink_re = regex::Regex::new(
-        r#"#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)"#,
-    )
-    .unwrap();
-    result = wikilink_re
-        .replace_all(&result, |caps: &regex::Captures| {
-            caps.get(2)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_else(|| caps[1].to_string())
-        })
-        .to_string();
+    // #wikilink("Note", ...named-args...) → display arg if provided, else Note.
+    // The regex previously hard-coded `display:` and missed any other named
+    // arg shape (`label:`, `display:` before another arg, etc.), leaving a
+    // raw `#wikilink(...)` call in the source for Pandoc to choke on. Walk
+    // the call with balanced-paren scanning so any combination of named
+    // args is consumed cleanly.
+    result = strip_function_calls(&result, "wikilink", |args| {
+        let name = parse_first_string_arg(args).unwrap_or_default();
+        let display = parse_named_string_arg(args, "display");
+        display.unwrap_or(name)
+    });
 
     // #tag("name") → (strip entirely)
     let tag_re = regex::Regex::new(r#"#tag\("[^"]*"\)\s*"#).unwrap();
@@ -1314,6 +1618,97 @@ fn rewrite_content_block_func(
     }
     result.push_str(remaining);
     result
+}
+
+/// Replace every `#<func_name>(...)` call in `source` with the result of
+/// `replace(args)`, where `args` is the raw text inside the parens. Uses
+/// balanced-paren scanning so any combination of named arguments and
+/// nested parens is consumed cleanly. Calls that fail to balance are
+/// passed through unchanged.
+fn strip_function_calls(
+    source: &str,
+    func_name: &str,
+    replace: impl Fn(&str) -> String,
+) -> String {
+    let pattern = format!("#{}(", func_name);
+    let mut out = String::with_capacity(source.len());
+    let mut remaining = source;
+    while let Some(start) = remaining.find(&pattern) {
+        out.push_str(&remaining[..start]);
+        let after_hash = &remaining[start + 1..];
+        let args_open = func_name.len(); // points at '('
+        let Some(args_close) = find_matching_paren(after_hash, args_open) else {
+            out.push_str(&remaining[start..start + pattern.len()]);
+            remaining = &remaining[start + pattern.len()..];
+            continue;
+        };
+        let args = &after_hash[args_open + 1..args_close];
+        out.push_str(&replace(args));
+        remaining = &after_hash[args_close + 1..];
+    }
+    out.push_str(remaining);
+    out
+}
+
+/// Extract the first positional string argument from a Typst args slice
+/// (e.g. `"foo"` from `"foo", display: "bar"`). Returns `None` if the args
+/// don't begin with a quoted string.
+fn parse_first_string_arg(args: &str) -> Option<String> {
+    let trimmed = args.trim_start();
+    if !trimmed.starts_with('"') {
+        return None;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut i = 1;
+    let mut buf = String::new();
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => {
+                buf.push(bytes[i + 1] as char);
+                i += 2;
+            }
+            b'"' => return Some(buf),
+            // Stay UTF-8 safe: walk by char when the byte is a leading
+            // multi-byte byte. ASCII bytes never appear inside multi-byte
+            // sequences so the simple cases above don't misalign.
+            b if b < 0x80 => {
+                buf.push(b as char);
+                i += 1;
+            }
+            _ => {
+                let rest = &trimmed[i..];
+                let Some(ch) = rest.chars().next() else { break };
+                buf.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+    }
+    None
+}
+
+/// Extract a named string argument value from a Typst args slice. Looks for
+/// `<name>:` followed by a quoted string. Returns `None` if not found.
+fn parse_named_string_arg(args: &str, name: &str) -> Option<String> {
+    let needle = format!("{}:", name);
+    let mut search = args;
+    loop {
+        let idx = search.find(&needle)?;
+        // Make sure this is not embedded in another identifier
+        // (e.g. `display:` is not part of `nondisplay:`). Look at the byte
+        // immediately preceding `idx`.
+        let preceding = if idx == 0 {
+            None
+        } else {
+            search[..idx].chars().last()
+        };
+        let is_word = preceding.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !is_word {
+            let after = &search[idx + needle.len()..];
+            let trimmed = after.trim_start();
+            return parse_first_string_arg(trimmed);
+        }
+        search = &search[idx + needle.len()..];
+    }
 }
 
 fn find_matching_paren(s: &str, open_pos: usize) -> Option<usize> {
@@ -2210,6 +2605,26 @@ mod tests {
         assert!(result.contains("See the note for details."));
     }
 
+    /// `#wikilink(name, label: "...")` (heading-deep-link form) used to leak
+    /// through the Pandoc preprocessor because the regex only matched the
+    /// `display:` keyword. Bracket-balanced stripping must drop the whole
+    /// call regardless of which named args appear.
+    #[test]
+    fn preprocess_wikilink_with_label_arg() {
+        let source = "See #wikilink(\"Other Note\", label: \"section-2\") here.\n";
+        let result = preprocess_for_pandoc(source);
+        assert!(!result.contains("#wikilink"), "wikilink must be stripped: {result}");
+        assert!(result.contains("See Other Note here."));
+    }
+
+    #[test]
+    fn preprocess_wikilink_display_and_label_args() {
+        let source = "See #wikilink(\"foo\", display: \"the foo\", label: \"intro\").\n";
+        let result = preprocess_for_pandoc(source);
+        assert!(!result.contains("#wikilink"));
+        assert!(result.contains("See the foo."));
+    }
+
     #[test]
     fn preprocess_strips_tags() {
         let source = "Some text #tag(\"physics\") and more.\n";
@@ -2277,6 +2692,55 @@ Some text.
             "date injection should follow the import line, got:\n{}",
             result
         );
+    }
+
+    /// PDF/UA-1 export surfaces a single, actionable error listing every
+    /// missing-alt image so authors can fix accessibility violations in
+    /// one pass — silent fallback would mask the issue.
+    #[test]
+    fn check_pdf_ua1_reports_missing_image_alt() {
+        let source = "= Title\n#image(\"a.png\")\nSome text.\n#image(\"b.svg\", alt: \"a thing\")\n";
+        let err = check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
+            .expect_err("expected ua-1 violation");
+        let msg = err.to_string();
+        assert!(msg.contains("a.png"), "should name offender: {msg}");
+        assert!(!msg.contains("b.svg"), "image with alt should not appear: {msg}");
+        assert!(msg.contains("line 2"), "should give a line number: {msg}");
+    }
+
+    /// Heading-level gaps (e.g. `=` → `===`) violate PDF/UA-1 and are
+    /// flagged in the same pre-flight report.
+    #[test]
+    fn check_pdf_ua1_reports_heading_level_gaps() {
+        let source = "= Top\n\nFirst body.\n\n=== Skipped a level\n\nMore.\n";
+        let err = check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
+            .expect_err("expected ua-1 violation");
+        let msg = err.to_string();
+        assert!(msg.contains("level 1"));
+        assert!(msg.contains("level 3"));
+        assert!(msg.contains("Skipped a level"));
+    }
+
+    #[test]
+    fn check_pdf_ua1_aggregates_multiple_issue_kinds() {
+        let source = "= H1\n#image(\"a.png\")\n=== H3 jump\n";
+        let err = check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
+            .expect_err("expected ua-1 violation");
+        let msg = err.to_string();
+        assert!(msg.contains("Images missing alt text"));
+        assert!(msg.contains("Heading levels skip"));
+    }
+
+    #[test]
+    fn check_pdf_ua1_passes_when_clean() {
+        let source = "= Top\n== Sub\n#image(\"a.png\", alt: \"a thing\")\n";
+        check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1).expect("clean");
+    }
+
+    #[test]
+    fn check_standard_pdf_is_always_ok() {
+        let source = "= h\n#image(\"x.png\")\n=== gap\n";
+        check_pdf_standard_requirements(source, PdfStandardPreset::Standard).expect("standard");
     }
 
     #[test]

@@ -74,11 +74,35 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
         return source.to_string();
     };
 
-    format!(
-        "{}\n\n#bibliography(\"{}\")\n",
-        source.trim_end(),
-        bib
-    )
+    let style = {
+        let settings = state.settings.read().await;
+        settings
+            .citations
+            .custom_csl_path
+            .clone()
+            .or_else(|| {
+                settings
+                    .citations
+                    .citation_style
+                    .as_deref()
+                    .filter(|s| !s.is_empty() && *s != "custom")
+                    .map(String::from)
+            })
+    };
+
+    match style {
+        Some(s) => format!(
+            "{}\n\n#bibliography(\"{}\", style: \"{}\")\n",
+            source.trim_end(),
+            bib,
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        ),
+        None => format!(
+            "{}\n\n#bibliography(\"{}\")\n",
+            source.trim_end(),
+            bib
+        ),
+    }
 }
 
 /// Compile the note at `path` to flowing HTML using Typst's native HTML
@@ -170,15 +194,18 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
 
     let base = crate::collection_parser::model::parse_collection_file(&collection_content).ok()?;
     let style = base.style?;
-    let rules = style.to_typst_set_rules();
+    let call = style.to_typst_show_call();
 
-    if rules.is_empty() { None } else { Some(rules) }
+    if call.is_empty() { None } else { Some(call) }
 }
 
 /// Inject `#set-vault(...)` after the `#import` line when the user has toggled
-/// show-inline-tags or show-inline-wikilinks off. Both default to `true` in
-/// the Typst package, so we only inject when suppressing.
-async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
+/// show-inline-tags or show-inline-wikilinks off, or has a verse-font configured
+/// for compiled output. Defaults are `true`/`none` in the Typst package, so we
+/// only inject when overriding. `pub(crate)` so export paths share the same
+/// directive — without it, exports rendered verse blocks in the document text
+/// font instead of the user's configured verse font.
+pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
     let settings = state.settings.read().await;
     let show_tags = settings.editor.show_inline_tags;
     let show_wikilinks = settings.editor.show_inline_wikilinks;
