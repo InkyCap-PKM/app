@@ -24,8 +24,8 @@ import { toastError, toastWarning } from "../stores/toasts";
 type RightPanelTab = "properties" | "outline" | "links" | "references";
 
 const KNOWN_FIELDS_ORDERED = [
-  "title", "aliases", "description", "tags", "date",
-  "task", "status", "source", "zid", "collection",
+  "title", "aliases", "description", "tags", "date", "date-due",
+  "task", "status", "disposition", "source", "zid", "collection",
 ];
 const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
 
@@ -35,8 +35,10 @@ const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   description: "text",
   tags: "list",
   date: "date",
+  "date-due": "date",
   task: "checkbox",
   status: "list",
+  disposition: "list",
   source: "text",
   zid: "number",
   collection: "list",
@@ -78,6 +80,7 @@ const RightPanel: Component = () => {
   const [newPropKey, setNewPropKey] = createSignal("");
   const [newPropType, setNewPropType] = createSignal<PropertyType>("text");
   const [allPropKeys, setAllPropKeys] = createSignal<string[]>([]);
+  const [addPropHighlight, setAddPropHighlight] = createSignal(0);
 
   // Per-row context menu state. Anchored to a DOM element so the menu
   // opens below the clicked type button without needing global mouse
@@ -114,10 +117,125 @@ const RightPanel: Component = () => {
     },
   );
 
+  // Source-order list of property keys so the right panel renders rows in
+  // whatever order the user has set inside the file's #note(...) — without
+  // this we'd snap rows back to KNOWN_FIELDS_ORDERED on every drag/drop.
+  const [propertyOrder, { refetch: refetchPropertyOrder }] = createResource(
+    () => activeFileTab()?.path,
+    async (path) => {
+      if (!path) return [] as string[];
+      try {
+        return await ipc.getPropertyOrder(path);
+      } catch {
+        return [] as string[];
+      }
+    },
+  );
+
+  // Drag/drop state. `draggingKey` is the row being dragged; `dragOverKey`
+  // identifies the hovered drop target; `dropPosition` says whether the
+  // drop indicator sits above or below the target row.
+  const [draggingKey, setDraggingKey] = createSignal<string | null>(null);
+  const [dragOverKey, setDragOverKey] = createSignal<string | null>(null);
+  const [dropPosition, setDropPosition] = createSignal<"before" | "after">("before");
+
+  function sortedPropertyEntries(): [string, PropertyValue][] {
+    const meta = metadata();
+    if (!meta) return [];
+    const entries = Object.entries(meta.properties).filter(
+      ([k]) => !k.startsWith("file."),
+    );
+    const order = propertyOrder() ?? [];
+    if (order.length === 0) {
+      // Fallback default sort: known-fields canonical order, then alpha.
+      return entries.sort(([a], [b]) => {
+        const ai = KNOWN_FIELDS_ORDERED.indexOf(a);
+        const bi = KNOWN_FIELDS_ORDERED.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      });
+    }
+    const orderIdx = new Map(order.map((k, i) => [k, i]));
+    return entries.sort(([a], [b]) => {
+      const ai = orderIdx.has(a) ? orderIdx.get(a)! : Infinity;
+      const bi = orderIdx.has(b) ? orderIdx.get(b)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    });
+  }
+
+  async function commitReorder(newOrder: string[]) {
+    const tab = activeFileTab();
+    if (!tab) return;
+    try {
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(resolve, 200);
+        document.dispatchEvent(
+          new CustomEvent("inkycap:flush-editor", {
+            detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
+          }),
+        );
+      });
+      await ipc.reorderProperties(tab.path, newOrder);
+      await refetchPropertyOrder();
+      await refetchMetadata();
+      bumpPropertyVersion();
+      document.dispatchEvent(
+        new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
+      );
+    } catch (err) {
+      toastError("Failed to reorder properties", err);
+    }
+  }
+
+  function handleDragStart(e: DragEvent, key: string) {
+    setDraggingKey(key);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      // Some browsers require non-empty data for drag to fire correctly.
+      e.dataTransfer.setData("text/plain", key);
+    }
+  }
+
+  function handleDragEnd() {
+    setDraggingKey(null);
+    setDragOverKey(null);
+  }
+
+  function handleDragOver(e: DragEvent, key: string) {
+    if (!draggingKey() || draggingKey() === key) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    setDropPosition(e.clientY < midpoint ? "before" : "after");
+    setDragOverKey(key);
+  }
+
+  function handleDrop(e: DragEvent, targetKey: string) {
+    e.preventDefault();
+    const src = draggingKey();
+    setDragOverKey(null);
+    setDraggingKey(null);
+    if (!src || src === targetKey) return;
+    const entries = sortedPropertyEntries().map(([k]) => k);
+    const without = entries.filter((k) => k !== src);
+    const targetIdx = without.indexOf(targetKey);
+    if (targetIdx === -1) return;
+    const insertAt = dropPosition() === "before" ? targetIdx : targetIdx + 1;
+    const next = [...without.slice(0, insertAt), src, ...without.slice(insertAt)];
+    commitReorder(next);
+  }
+
   // Refetch metadata when the note is saved by the editor.
   // The event fires after writeFileContent completes (reindex already done).
   const onNoteSaved = () => {
-    setTimeout(() => refetchMetadata(), 150);
+    setTimeout(() => {
+      refetchMetadata();
+      refetchPropertyOrder();
+    }, 150);
   };
   document.addEventListener("inkycap:note-saved", onNoteSaved);
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
@@ -231,6 +349,7 @@ const RightPanel: Component = () => {
 
       await ipc.updateProperty(tab.path, key, value);
       await refetchMetadata();
+      await refetchPropertyOrder();
       bumpPropertyVersion();
       document.dispatchEvent(
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
@@ -255,6 +374,7 @@ const RightPanel: Component = () => {
       });
       await ipc.removePropertyFromFile(tab.path, key);
       await refetchMetadata();
+      await refetchPropertyOrder();
       bumpPropertyVersion();
       document.dispatchEvent(
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
@@ -315,8 +435,8 @@ const RightPanel: Component = () => {
     }, 0);
   }
 
-  async function handleAddProperty() {
-    const key = newPropKey().trim();
+  async function handleAddProperty(forcedKey?: string) {
+    const key = (forcedKey ?? newPropKey()).trim();
     if (!key) return;
     const ty = newPropType();
     const knownType = KNOWN_FIELD_TYPES[key];
@@ -337,22 +457,65 @@ const RightPanel: Component = () => {
     setAddingProp(false);
   }
 
+  // Suggestions for the add-property input: known keys (canonical order)
+  // plus any custom keys, filtered by the current draft and excluding
+  // properties already present on the active note.
+  function addPropSuggestions(): string[] {
+    const current = metadata()?.properties ?? {};
+    const draft = newPropKey().trim().toLowerCase();
+    const universe = allPropKeys().filter((k) => !(k in current));
+    if (!draft) return universe;
+    return universe.filter((k) => k.toLowerCase().includes(draft));
+  }
+
   function handleAddKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") handleAddProperty();
+    const suggestions = addPropSuggestions();
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (suggestions.length === 0) return;
+      setAddPropHighlight((i) => Math.min(suggestions.length - 1, i + 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (suggestions.length === 0) return;
+      setAddPropHighlight((i) => Math.max(0, i - 1));
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const idx = addPropHighlight();
+      if (suggestions.length > 0 && idx >= 0 && idx < suggestions.length) {
+        pickSuggestion(suggestions[idx]);
+      } else {
+        handleAddProperty();
+      }
+      return;
+    }
     if (e.key === "Escape") {
       setAddingProp(false);
       setNewPropKey("");
       setNewPropType("text");
+      setAddPropHighlight(0);
     }
   }
 
   function onNewPropKeyInput(value: string) {
     setNewPropKey(value);
+    setAddPropHighlight(0);
     // Auto-select type from registry when the user picks an existing key
     const registryType = getPropertyType(value.trim());
     if (registryType !== "auto") {
       setNewPropType(registryType);
     }
+  }
+
+  // Picking a suggestion (click or Enter on highlight) commits the add
+  // immediately — no second Enter required.
+  function pickSuggestion(key: string) {
+    setNewPropKey(key);
+    setAddPropHighlight(0);
+    handleAddProperty(key);
   }
 
   async function loadPropertyKeysForAutocomplete() {
@@ -595,28 +758,40 @@ const RightPanel: Component = () => {
               <Show when={metadata()}>
                 {(meta) => (
                   <div class="properties-list">
-                    <For
-                      each={Object.entries(meta().properties)
-                        .filter(([k]) => !k.startsWith("file."))
-                        .sort(([a], [b]) => {
-                          const ai = KNOWN_FIELDS_ORDERED.indexOf(a);
-                          const bi = KNOWN_FIELDS_ORDERED.indexOf(b);
-                          if (ai !== -1 && bi !== -1) return ai - bi;
-                          if (ai !== -1) return -1;
-                          if (bi !== -1) return 1;
-                          return a.localeCompare(b);
-                        })}
-                    >
+                    <For each={sortedPropertyEntries()}>
                       {([key, value]) => {
                         const ty = () => {
                           const declared = getPropertyType(key);
                           if (declared !== "auto") return declared;
                           return KNOWN_FIELD_TYPES[key] ?? "auto";
                         };
+                        const isDragging = () => draggingKey() === key;
+                        const dropAbove = () =>
+                          dragOverKey() === key && dropPosition() === "before";
+                        const dropBelow = () =>
+                          dragOverKey() === key && dropPosition() === "after";
                         return (
-                          <div class={`property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}`}>
+                          <div
+                            class={
+                              `property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}` +
+                              `${isDragging() ? " property-row--dragging" : ""}` +
+                              `${dropAbove() ? " property-row--drop-above" : ""}` +
+                              `${dropBelow() ? " property-row--drop-below" : ""}`
+                            }
+                            onDragOver={(e) => handleDragOver(e, key)}
+                            onDrop={(e) => handleDrop(e, key)}
+                            onDragLeave={() => {
+                              if (dragOverKey() === key) setDragOverKey(null);
+                            }}
+                          >
                             <div class="property-row__name">
-                              <span class="property-row__icon" title={`Type: ${propertyTypeLabel(ty())}`}>
+                              <span
+                                class="property-row__icon property-row__drag-handle"
+                                title={`Type: ${propertyTypeLabel(ty())} \u2014 drag to reorder`}
+                                draggable={true}
+                                onDragStart={(e) => handleDragStart(e, key)}
+                                onDragEnd={handleDragEnd}
+                              >
                                 <Dynamic component={propertyTypeIcon(ty())} size={14} />
                               </span>
                               <span class="property-row__key">{key}</span>
@@ -658,21 +833,45 @@ const RightPanel: Component = () => {
                   <input
                     class="property-editor__input"
                     type="text"
-                    list="inkycap-prop-keys"
                     placeholder="Property name..."
                     value={newPropKey()}
                     onInput={(e) => onNewPropKeyInput(e.currentTarget.value)}
                     onKeyDown={handleAddKeyDown}
+                    onBlur={() => setTimeout(() => setAddPropHighlight(-1), 100)}
                     ref={(el) => setTimeout(() => el.focus(), 0)}
                   />
-                  <datalist id="inkycap-prop-keys">
-                    <For each={allPropKeys().filter((k) => {
-                      const current = metadata()?.properties;
-                      return !current || !(k in current);
-                    })}>
-                      {(key) => <option value={key} />}
-                    </For>
-                  </datalist>
+                  <Show when={addPropSuggestions().length > 0}>
+                    <div class="add-prop-suggestions">
+                      <For each={addPropSuggestions()}>
+                        {(key, idx) => (
+                          <button
+                            type="button"
+                            class={`add-prop-suggestions__item${addPropHighlight() === idx() ? " add-prop-suggestions__item--active" : ""}`}
+                            onMouseDown={(e) => {
+                              // mousedown so the click commits before the
+                              // input's blur handler clears highlight state.
+                              e.preventDefault();
+                              pickSuggestion(key);
+                            }}
+                            onMouseEnter={() => setAddPropHighlight(idx())}
+                          >
+                            <span class="add-prop-suggestions__icon">
+                              <Dynamic
+                                component={propertyTypeIcon(
+                                  KNOWN_FIELD_TYPES[key] ?? getPropertyType(key),
+                                )}
+                                size={12}
+                              />
+                            </span>
+                            <span>{key}</span>
+                            <Show when={KNOWN_FIELDS.has(key)}>
+                              <span class="add-prop-suggestions__badge">system</span>
+                            </Show>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                   <Show when={!KNOWN_FIELDS.has(newPropKey().trim()) && getPropertyType(newPropKey().trim()) === "auto"}>
                     <select
                       class="property-editor__type-select"
@@ -831,37 +1030,39 @@ const RightPanel: Component = () => {
             style={{ left: `${menu().x}px`, top: `${menu().y}px`, position: "fixed" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              class="context-menu__item context-menu__item--submenu"
-              onMouseEnter={() =>
-                setRowMenu({ ...menu(), typeSubmenuOpen: true })
-              }
-              onMouseLeave={() =>
-                setRowMenu({ ...menu(), typeSubmenuOpen: false })
-              }
-            >
-              Property type
-              <span class="context-menu__chevron">{"\u25B8"}</span>
-              <Show when={menu().typeSubmenuOpen}>
-                <div
-                  class={`context-menu context-menu--submenu ${menu().openLeft ? "context-menu--submenu-left" : ""}`}
-                >
-                  <For each={PROPERTY_TYPE_OPTIONS}>
-                    {(ty) => (
-                      <button
-                        class="context-menu__item"
-                        onClick={() => handleSetRowPropertyType(menu().key, ty)}
-                      >
-                        {propertyTypeLabel(ty)}
-                        <Show when={getPropertyType(menu().key) === ty}>
-                          <span class="context-menu__check">{"\u2713"}</span>
-                        </Show>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-            </div>
+            <Show when={!KNOWN_FIELDS.has(menu().key)}>
+              <div
+                class="context-menu__item context-menu__item--submenu"
+                onMouseEnter={() =>
+                  setRowMenu({ ...menu(), typeSubmenuOpen: true })
+                }
+                onMouseLeave={() =>
+                  setRowMenu({ ...menu(), typeSubmenuOpen: false })
+                }
+              >
+                Property type
+                <span class="context-menu__chevron">{"\u25B8"}</span>
+                <Show when={menu().typeSubmenuOpen}>
+                  <div
+                    class={`context-menu context-menu--submenu ${menu().openLeft ? "context-menu--submenu-left" : ""}`}
+                  >
+                    <For each={PROPERTY_TYPE_OPTIONS}>
+                      {(ty) => (
+                        <button
+                          class="context-menu__item"
+                          onClick={() => handleSetRowPropertyType(menu().key, ty)}
+                        >
+                          {propertyTypeLabel(ty)}
+                          <Show when={getPropertyType(menu().key) === ty}>
+                            <span class="context-menu__check">{"\u2713"}</span>
+                          </Show>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+            </Show>
             <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleRemoveProperty(menu().key)}

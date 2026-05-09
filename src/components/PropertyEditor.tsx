@@ -277,68 +277,177 @@ const BooleanEditor: Component<PropertyEditorProps> = (props) => {
         checked={props.value as boolean}
         onChange={toggle}
       />
-      <span>{props.value ? "true" : "false"}</span>
     </label>
   );
 };
 
+// Same shared-signal trick as the collection picker so the dropdown
+// survives parent re-renders triggered by metadata refetch on save.
+const [listPickerOpen, setListPickerOpen] = createSignal<string | null>(null);
+
 const ListEditor: Component<PropertyEditorProps> = (props) => {
-  const items = (): PropertyValue[] => {
+  let containerRef: HTMLDivElement | undefined;
+  let inputRef: HTMLInputElement | undefined;
+
+  const currentItems = (): string[] => {
     const v = props.value;
-    if (Array.isArray(v)) return v;
-    if (v !== null && v !== undefined && v !== "") return [v];
+    if (Array.isArray(v)) return v.map((i) => String(i ?? ""));
+    if (v !== null && v !== undefined && v !== "") return [String(v)];
     return [];
   };
 
-  const [editing, setEditing] = createSignal(false);
-  const [draft, setDraft] = createSignal("");
+  const [allValues, { refetch: refetchValues }] = createResource(
+    () => props.propKey,
+    async (key) => {
+      try {
+        return await ipc.getPropertyValues(key);
+      } catch {
+        return [];
+      }
+    },
+  );
 
-  function startEdit() {
-    setDraft(items().map((i) => String(i ?? "")).join(", "));
-    setEditing(true);
+  const [filter, setFilter] = createSignal("");
+
+  const isOpen = () => listPickerOpen() === props.propKey;
+  function openPicker() {
+    setFilter("");
+    setListPickerOpen(props.propKey);
+    refetchValues();
+    setTimeout(() => inputRef?.focus(), 0);
+  }
+  function closePicker() {
+    if (isOpen()) setListPickerOpen(null);
   }
 
-  function commit() {
-    setEditing(false);
-    const newItems = draft()
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    props.onSave(props.propKey, newItems);
+  // Items the user can pick from: union of values-in-this-property and any
+  // currently-selected items (so a stale entry not yet propagated to the
+  // global index still appears as checked).
+  const candidates = (): string[] => {
+    const universe = new Set<string>(allValues() ?? []);
+    for (const it of currentItems()) universe.add(it);
+    const filt = filter().trim().toLowerCase();
+    const arr = [...universe].sort((a, b) => a.localeCompare(b));
+    return filt ? arr.filter((v) => v.toLowerCase().includes(filt)) : arr;
+  };
+
+  const canCreate = () => {
+    const f = filter().trim();
+    if (!f) return false;
+    const universe = new Set<string>(allValues() ?? []);
+    for (const it of currentItems()) universe.add(it);
+    return !universe.has(f);
+  };
+
+  function toggle(name: string) {
+    const items = currentItems();
+    const next = items.includes(name)
+      ? items.filter((i) => i !== name)
+      : [...items, name];
+    props.onSave(props.propKey, next);
+  }
+
+  function commitNew() {
+    const v = filter().trim();
+    if (!v) return;
+    if (!currentItems().includes(v)) {
+      props.onSave(props.propKey, [...currentItems(), v]);
+    }
+    setFilter("");
+    setTimeout(() => inputRef?.focus(), 0);
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") commit();
-    if (e.key === "Escape") setEditing(false);
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // If the typed text uniquely matches a candidate, toggle it; else create.
+      const f = filter().trim();
+      const matches = candidates();
+      if (f && matches.length === 1) {
+        toggle(matches[0]);
+        setFilter("");
+        return;
+      }
+      if (canCreate()) commitNew();
+    } else if (e.key === "Escape") {
+      closePicker();
+    } else if (e.key === "Backspace" && filter() === "" && currentItems().length > 0) {
+      // Backspace with empty filter pops the last selected value.
+      const items = currentItems();
+      props.onSave(props.propKey, items.slice(0, -1));
+    }
   }
 
+  function handleClickOutside(e: MouseEvent) {
+    if (containerRef && !containerRef.contains(e.target as Node)) {
+      closePicker();
+    }
+  }
+
+  createEffect(() => {
+    if (isOpen()) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+  });
+  onCleanup(() => document.removeEventListener("mousedown", handleClickOutside));
+
   return (
-    <Show
-      when={editing()}
-      fallback={
-        <div class="property-editor__tags" onClick={startEdit}>
-          <For each={items()}>
-            {(item) => (
-              <span class="property-editor__tag">{String(item ?? "")}</span>
+    <div class="list-picker" ref={containerRef}>
+      <div
+        class="property-editor__tags"
+        onClick={() => (isOpen() ? closePicker() : openPicker())}
+      >
+        <For each={currentItems()}>
+          {(item) => <span class="property-editor__tag">{item}</span>}
+        </For>
+        <Show when={currentItems().length === 0}>
+          <span class="property-editor__value property-editor__value--empty">
+            Empty
+          </span>
+        </Show>
+      </div>
+
+      <Show when={isOpen()}>
+        <div class="collection-picker__dropdown">
+          <input
+            class="property-editor__input list-picker__filter"
+            type="text"
+            placeholder="Filter or add new…"
+            value={filter()}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            ref={(el) => (inputRef = el)}
+          />
+          <For each={candidates()} fallback={
+            <Show when={!canCreate()}>
+              <span class="collection-picker__empty">No values yet</span>
+            </Show>
+          }>
+            {(val) => (
+              <label class="collection-picker__item">
+                <input
+                  type="checkbox"
+                  checked={currentItems().includes(val)}
+                  onChange={() => toggle(val)}
+                />
+                <span>{val}</span>
+              </label>
             )}
           </For>
-          <Show when={items().length === 0}>
-            <span class="property-editor__value property-editor__value--empty">Empty</span>
+          <Show when={canCreate()}>
+            <button
+              class="collection-picker__item list-picker__create"
+              onClick={commitNew}
+              type="button"
+            >
+              + Add "{filter().trim()}"
+            </button>
           </Show>
         </div>
-      }
-    >
-      <input
-        class="property-editor__input"
-        type="text"
-        value={draft()}
-        onInput={(e) => setDraft(e.currentTarget.value)}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        placeholder="item1, item2, item3"
-        ref={(el) => setTimeout(() => el.focus(), 0)}
-      />
-    </Show>
+      </Show>
+    </div>
   );
 };
 

@@ -207,6 +207,57 @@ pub fn update_note_property(content: &str, key: &str, value: &PropertyValue) -> 
     out
 }
 
+/// Reorder named arguments inside `#note(...)` to match `order`. Keys in
+/// `order` that exist in the call are placed first in that order; any keys
+/// present in the call but missing from `order` keep their original
+/// relative position at the end. Returns `content` unchanged when no
+/// `#note(...)` call exists, or when reordering would be a no-op.
+///
+/// Values are preserved with their exact source bytes — same contract as
+/// [`update_note_property`].
+pub fn reorder_note_properties(content: &str, order: &[String]) -> String {
+    let root = parse(content);
+    let link = LinkedNode::new(&root);
+    let Some(call_link) = find_note_call_node(&link) else {
+        return content.to_string();
+    };
+    let existing = collect_named_args(&call_link, content);
+    if existing.is_empty() {
+        return content.to_string();
+    }
+
+    let mut by_key: std::collections::HashMap<&str, &CollectedNamed> =
+        std::collections::HashMap::with_capacity(existing.len());
+    for n in &existing {
+        by_key.insert(n.key.as_str(), n);
+    }
+
+    let mut placed: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut pieces: Vec<String> = Vec::with_capacity(existing.len());
+
+    for key in order {
+        if let Some(n) = by_key.get(key.as_str()) {
+            if placed.insert(n.key.as_str()) {
+                pieces.push(format!("{}: {}", n.key, &content[n.value_range.clone()]));
+            }
+        }
+    }
+    // Append any keys not mentioned in `order`, preserving original order.
+    for n in &existing {
+        if !placed.contains(n.key.as_str()) {
+            pieces.push(format!("{}: {}", n.key, &content[n.value_range.clone()]));
+        }
+    }
+
+    let new_call = render_pieces(&pieces);
+    let span = span_with_hash_prefix(content, call_link.range());
+    let mut out = String::with_capacity(content.len() + new_call.len());
+    out.push_str(&content[..span.start]);
+    out.push_str(&new_call);
+    out.push_str(&content[span.end..]);
+    out
+}
+
 /// Remove a single property from the `#note(...)` call. If the removed
 /// property was the last one, the entire call (and a single trailing
 /// blank line) is removed. Returns `content` unchanged when the call or
@@ -535,6 +586,52 @@ Some body text here.
         assert!(updated.contains("中文 العربية русский"));
         assert!(updated.contains("= Тело"));
         assert!(updated.contains("status: \"draft\""));
+    }
+
+    #[test]
+    fn reorder_basic() {
+        let updated = reorder_note_properties(
+            SAMPLE,
+            &[
+                "status".to_string(),
+                "title".to_string(),
+                "tags".to_string(),
+                "date".to_string(),
+            ],
+        );
+        let i_status = updated.find("status:").unwrap();
+        let i_title = updated.find("title:").unwrap();
+        let i_tags = updated.find("tags:").unwrap();
+        let i_date = updated.find("date:").unwrap();
+        assert!(i_status < i_title);
+        assert!(i_title < i_tags);
+        assert!(i_tags < i_date);
+        // Body content untouched.
+        assert!(updated.contains("= Introduction"));
+        // Complex values still preserved exactly.
+        assert!(updated.contains("datetime(year: 2026, month: 4, day: 29)"));
+        assert!(updated.contains("(\"philosophy\", \"phenomenology\")"));
+    }
+
+    #[test]
+    fn reorder_appends_unmentioned_keys() {
+        // `order` only mentions a subset; missing keys should land at the
+        // end in their original relative order.
+        let updated = reorder_note_properties(SAMPLE, &["status".to_string()]);
+        let i_status = updated.find("status:").unwrap();
+        let i_title = updated.find("title:").unwrap();
+        let i_date = updated.find("date:").unwrap();
+        let i_tags = updated.find("tags:").unwrap();
+        assert!(i_status < i_title);
+        assert!(i_title < i_date);
+        assert!(i_date < i_tags);
+    }
+
+    #[test]
+    fn reorder_no_note_call_is_noop() {
+        let content = "#import \"lib.typ\": *\n= Heading\n";
+        let updated = reorder_note_properties(content, &["title".to_string()]);
+        assert_eq!(updated, content);
     }
 
     /// Comments inside the call's arg list must not corrupt the parse —

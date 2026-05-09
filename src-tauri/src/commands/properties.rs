@@ -195,6 +195,96 @@ pub async fn remove_property_from_file(
     Ok(())
 }
 
+/// Return the ordered list of property keys exactly as they appear in
+/// the file's `#note(...)` call. Used by the right panel to render rows
+/// in source order rather than fighting the user's drag-and-drop layout.
+#[tauri::command]
+pub async fn get_property_order(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let path_buf = PathBuf::from(&path);
+    let content = storage.read_file(&path_buf).await?;
+    Ok(note_rewriter::extract_note_properties(&content)
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect())
+}
+
+/// Reorder properties inside the `#note(...)` call of a single file to
+/// match `order`. Keys present in the file but missing from `order` are
+/// appended in their original position; keys in `order` not present in
+/// the file are silently skipped.
+#[tauri::command]
+pub async fn reorder_properties(
+    path: String,
+    order: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let path_buf = PathBuf::from(&path);
+    let content = storage.read_file(&path_buf).await?;
+    let updated = note_rewriter::reorder_note_properties(&content, &order);
+    if updated != content {
+        storage.write_file(&path_buf, &updated).await?;
+        state.reindex_note(&path_buf, &updated).await;
+    }
+    Ok(())
+}
+
+/// Return the distinct values currently used for `key` across the vault,
+/// sorted alphabetically. List values are exploded — each member becomes a
+/// separate entry — so the picker for `tags`, `status`, etc. can show the
+/// universe of choices the user has previously committed to.
+///
+/// Non-string scalars (numbers, booleans) are stringified. `link-ref`-shaped
+/// strings keep their `[[Target]]` form.
+#[tauri::command]
+pub async fn get_property_values(
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, InkyCapError> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let index = state.property_index.read().await;
+    for note in index.notes.values() {
+        let Some(value) = note.properties.get(&key) else { continue };
+        push_property_strings(value, &mut seen);
+    }
+    Ok(seen.into_iter().collect())
+}
+
+fn push_property_strings(
+    value: &PropertyValue,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    match value {
+        PropertyValue::String(s) if !s.is_empty() => {
+            out.insert(s.clone());
+        }
+        PropertyValue::Number(n) => {
+            out.insert(if *n == (*n as i64) as f64 {
+                (*n as i64).to_string()
+            } else {
+                n.to_string()
+            });
+        }
+        PropertyValue::Bool(b) => {
+            out.insert(b.to_string());
+        }
+        PropertyValue::List(items) => {
+            for item in items {
+                push_property_strings(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 // ── Tag rename / delete ───────────────────────────────────────────────
 
 #[tauri::command]

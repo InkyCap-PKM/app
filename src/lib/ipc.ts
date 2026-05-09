@@ -203,6 +203,29 @@ export async function getAllPropertyKeys(): Promise<string[]> {
   return invoke<string[]>("get_all_property_keys");
 }
 
+/// Distinct values currently used for `key` across the vault. List values
+/// are exploded into individual entries. Used by the list-value picker so
+/// users can choose from values they've already committed to elsewhere.
+export async function getPropertyValues(key: string): Promise<string[]> {
+  return invoke<string[]>("get_property_values", { key });
+}
+
+/// Reorder named arguments inside the file's `#note(...)` call so they
+/// match `order`. Keys present in the file but missing from `order` are
+/// appended in their original relative position.
+export async function reorderProperties(
+  path: string,
+  order: string[],
+): Promise<void> {
+  return invoke<void>("reorder_properties", { path, order });
+}
+
+/// Ordered list of property keys exactly as they appear in the file's
+/// `#note(...)` call. Empty when no `#note(...)` exists.
+export async function getPropertyOrder(path: string): Promise<string[]> {
+  return invoke<string[]>("get_property_order", { path });
+}
+
 export async function getVaultIndex(): Promise<VaultIndex> {
   return invoke<VaultIndex>("get_vault_index");
 }
