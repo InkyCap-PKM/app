@@ -943,6 +943,17 @@ function handleFuncCall(
       );
       return false;
     }
+    case "figure": {
+      // Always render as a chip — figure's body is the first positional
+      // arg (often `image(...)`), not a `[...]` bracket. The default
+      // case's "first [ is the body" heuristic would mistakenly hide a
+      // `caption: [...]`, so figure opts out and exposes the caption
+      // through the menu instead (R7).
+      decos.push(Decoration.replace({
+        widget: new FuncChipWidget(from, "figure"),
+      }).range(from, to));
+      return false;
+    }
     default: {
       if (!hashOffset) return false;
       const content = extractContentBracket(text, from);
