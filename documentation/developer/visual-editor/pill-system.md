@@ -28,8 +28,8 @@ This table is the audit reference. Use it to verify any change preserves the int
 | `strike`, `highlight`, `emph`, `strong` | inline | cursor on line | cursor away | yes | open super-menu | yes | yes | per-pill (R7) | yes (formatted) |
 | Generic fallback `#fn[…]` | inline | cursor on line | cursor away | yes | open super-menu | yes | yes | none | yes |
 | `image`, `embed` | block-row above | cursor on line | cursor away | yes | open super-menu | yes | yes | per-pill (R7) | yes (rendered block) |
-| `callout` | block-row above | cursor on line | cursor away | yes | open super-menu | yes | yes | kind | yes (kind-colored container) |
-| `quote` / `blockquote` | block-row above | cursor on line | cursor away | yes | open super-menu | yes | yes | style, attribution | yes |
+| `callout` | block-row above rendered block; click pill to expand source | cursor on line | cursor away | yes | simple → expand source for editing; complex → super-menu | yes | yes | kind, title | rendered widget |
+| `quote` / `blockquote` | block-row above rendered block; click pill to expand source | cursor on line | cursor away | yes | simple → expand source for editing; complex → super-menu | yes | yes | style, attribution | rendered widget |
 | `bibliography` | embedded | always | never | no | open super-menu | yes | yes | none | path label only |
 | `line` (HR) | inline | cursor on line | cursor away (replaced by HR) | n/a | open super-menu | yes | yes | length, stroke | no — pill **is** the affordance |
 | `verse` | embedded | always | never | no | open super-menu | yes | yes | alignment | yes (contentEditable canvas) |
@@ -158,18 +158,25 @@ const PILL_REGISTRY: Record<string, PillSpec> = {
 
 Adding a new pill = one map entry. Adding options for a pill = one `*Options(view, callNode) => PillMenuSection[]` function.
 
-### R12 — Content-bracket pills keep their body directly editable
+### R12 — Inline content-bracket pills keep their body directly editable
 
-Content-bracket calls (`#fn[content]`) must let the user type into `content` *without* dropping into "Edit source" mode. The pill chrome (chip + any block decoration like callout container or quote rule) renders around the content; the `[` and `]` themselves stay hidden when the cursor is off the call; the inner text is plain editable Typst source the whole time. Highlight is the canonical implementation: typing inside a `#highlight[…]` just edits the text and the yellow background stays applied.
+Inline content-bracket calls (`#fn[content]` where the body is short, single-paragraph text in flow with surrounding prose) must let the user type into `content` *without* dropping into "Edit source" mode. The pill chrome renders alongside the content; the `[` and `]` themselves stay hidden when the cursor is off the call; the inner text is plain editable Typst source the whole time. Highlight is the canonical implementation: typing inside a `#highlight[…]` just edits the text and the yellow background stays applied.
 
-This rule extends to all text-style content-bracket pills, even multi-line ones:
+Applies to: `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, `hide`.
 
-- **Inline text-style:** `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, `hide`.
-- **Block text-style:** `callout`, `quote` / `blockquote`. Multi-line bodies are fine — the pill row sits above the block, but the body inside the brackets remains directly editable. The kind badge (callout) and the attribution / style options (quote) live in the menu; the body never requires a mode-switch to edit.
+**Block content-bracket pills (`callout`, `quote`) deliberately do NOT follow R12.** An earlier iteration tried to extend live-source-body editing to them and ran into structural problems: per-line CSS decorations dragged trailing text into the styled box, the body's start/end boundary became invisible, and Enter step-out behaviour fought multi-line bodies. The trade between "no mode switch" and "predictable boundaries" tipped the wrong way.
 
-Pills that don't fit this rule are call-only forms with no body bracket (`image`, `line`, `pagebreak`, `linebreak`, `lorem`) — for those, every meaningful argument must be exposed as a menu input (R7) so "Edit source" stays a rare path. Image's positional `path` argument counts: it's a menu input, not a hidden field that requires expanding source.
+Instead, callout and quote use the **rendered-widget + click-to-edit-source** model:
 
-The friction the user perceives ("I need to click the pill, then click Edit source, then edit") is the symptom of this rule being violated. If a pill makes the user reach for "Edit source" for a routine edit, fix the pill — either by promoting it to true content-bracket behaviour, or by adding the missing argument to R7.
+- **Cursor away:** rendered styled block (kind colour, attribution, etc.). The widget is the visual.
+- **Cursor on line:** same rendered block, with the pill row above. The pill is the affordance to edit.
+- **Click the pill** (or the simple-pill left-click shortcut, R5): expands the call's source between `[…]` for inline editing, with the rendered widget below for reference. Click again or move the cursor out to collapse.
+
+The kind badge (callout), attribution / style (quote), and other arguments still live in the pill menu (R7) so most edits don't require source expansion at all.
+
+Pills that are call-only forms with no body bracket (`image`, `line`, `pagebreak`, `linebreak`, `lorem`) — for those, every meaningful argument must be exposed as a menu input (R7) so "Edit source" stays a rare path. Image's positional `path` argument counts: it's a menu input, not a hidden field that requires expanding source.
+
+The friction R12 was originally fighting ("I need to click the pill, then click Edit source, then edit") shows up most often as missing menu options. Before reaching for live-edit, try R7: expose the argument the user keeps wanting to change.
 
 ### R11 — Source round-trip is preserved
 

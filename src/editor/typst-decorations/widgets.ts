@@ -30,57 +30,6 @@ function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTML
   return row;
 }
 
-/** Standalone block widget used by the R12 live-edit path for callout
- *  and quote: an above-the-body row carrying the pill plus a small
- *  kind / context label. Sits at side: -1 of the call's first line.
- *
- *  Distinct from `makeBlockPillRow` which is appended INSIDE another
- *  widget's DOM. This one is a CodeMirror block decoration in its own
- *  right, so the body source below it stays live-editable. */
-export class LiveBlockPillWidget extends WidgetType {
-  constructor(
-    readonly funcName: string,
-    readonly pos: number,
-    /** Optional label text shown next to the pill (e.g. callout kind). */
-    readonly contextLabel: string,
-    /** Optional CSS colour applied to the label and pill accents. */
-    readonly accentColor: string | null = null,
-  ) {
-    super();
-  }
-
-  eq(other: LiveBlockPillWidget): boolean {
-    return this.funcName === other.funcName
-      && this.pos === other.pos
-      && this.contextLabel === other.contextLabel
-      && this.accentColor === other.accentColor;
-  }
-
-  toDOM(view: EditorView): HTMLElement {
-    const row = document.createElement("div");
-    row.className = "cm-typst-live-pill-row";
-    if (this.accentColor) row.style.setProperty("--callout-color", this.accentColor);
-    row.appendChild(buildPillButton(this.funcName, view, () => {
-      const callTo = findCallEnd(view, this.pos);
-      return {
-        funcName: this.funcName,
-        callFrom: this.pos,
-        callTo,
-        optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
-      };
-    }));
-    if (this.contextLabel) {
-      const label = document.createElement("span");
-      label.className = "cm-typst-live-pill-context";
-      label.textContent = this.contextLabel;
-      if (this.accentColor) label.style.color = this.accentColor;
-      row.appendChild(label);
-    }
-    return row;
-  }
-
-  ignoreEvent(): boolean { return true; }
-}
 
 
 
@@ -143,7 +92,7 @@ function stripMetadata(source: string): string {
   return result.join("\n");
 }
 
-export const CALLOUT_COLORS: Record<string, string> = {
+const CALLOUT_COLORS: Record<string, string> = {
   note: "#448aff",
   tip: "#00bfa5",
   warning: "#ff9100",
