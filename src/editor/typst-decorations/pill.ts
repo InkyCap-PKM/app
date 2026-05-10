@@ -64,6 +64,12 @@ export interface PillModel {
   /** When false, suppress the "Edit source" item even for simple calls
    *  (e.g. embedded pills where the widget's canvas IS the editor). */
   allowEditSource?: boolean;
+  /** When true, pill left-click always runs `runEditSource` regardless
+   *  of the simple/complex classifier (R5/R8). Used for block content-
+   *  bracket pills (callout, quote) where the body is the whole point —
+   *  the user almost always wants the source revealed for editing, not
+   *  the menu. The menu remains reachable via right-click. */
+  alwaysExpandOnClick?: boolean;
 }
 
 // ── PillChip widget ─────────────────────────────────────────────────
@@ -123,7 +129,11 @@ export function buildPillButton(
     e.stopPropagation();
     const model = modelFor();
     const allowEdit = model.allowEditSource !== false;
-    if (allowEdit && isSimpleCall(view, model.callFrom, model.callTo)) {
+    const expand = allowEdit && (
+      model.alwaysExpandOnClick === true
+      || isSimpleCall(view, model.callFrom, model.callTo)
+    );
+    if (expand) {
       runEditSource(view, model);
     } else {
       openPillMenu(btn, view, model);
@@ -377,8 +387,12 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
   const items: PillMenuItem[] = [];
   const allowEdit = model.allowEditSource !== false;
   if (allowEdit) {
-    const simple = isSimpleCall(view, model.callFrom, model.callTo);
-    if (simple) {
+    // Show "Edit source" when either the call is simple by the R8
+    // classifier, or the pill explicitly opts into always-expand
+    // behaviour (R5: callout / quote where the body is the point).
+    const expandable = model.alwaysExpandOnClick === true
+      || isSimpleCall(view, model.callFrom, model.callTo);
+    if (expandable) {
       items.push({
         label: "Edit source",
         title: "Reveal raw Typst source for inline editing",
@@ -510,10 +524,13 @@ export function isSimpleCall(view: EditorView, from: number, to: number): boolea
  *  This is a fallback used when callers don't supply `callTo`. Most
  *  pill construction sites already know the call range from their
  *  decoration logic and should pass it explicitly. */
-export function findCallEnd(view: EditorView, pos: number): number {
-  const docLen = view.state.doc.length;
+export function findCallEnd(viewOrState: EditorView | { doc: { length: number; sliceString: (a: number, b: number) => string } }, pos: number): number {
+  // Accept either an EditorView (most call sites) or a plain { doc }
+  // so a StateField update fn can call this without smuggling a view in.
+  const doc = "state" in viewOrState ? viewOrState.state.doc : viewOrState.doc;
+  const docLen = doc.length;
   if (pos >= docLen) return pos;
-  const slice = view.state.doc.sliceString(pos, Math.min(pos + 4096, docLen));
+  const slice = doc.sliceString(pos, Math.min(pos + 4096, docLen));
   // Skip the function name (alphanumeric + dashes after the leading `#`).
   let i = 1;
   while (i < slice.length) {

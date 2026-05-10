@@ -15,6 +15,14 @@ import { getPillOptions } from "./pill-options";
 // plugin sees zero delta on pill clicks and doesn't drift, and
 // (b) there's no extra block-widget container introducing line-spacing
 // above the element.
+// Block content-bracket pills (callout, quote) where the body is the
+// real content — clicking the pill should always reveal the source for
+// editing, even when the call is "complex" by the simple/complex
+// classifier (multi-line / multi-paragraph callouts are the common
+// case). Other block-row pills (image, embed, figure) stick to the
+// default simple→expand / complex→menu split.
+const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote"]);
+
 function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTMLElement {
   const row = document.createElement("div");
   row.className = "cm-typst-block-pill-row";
@@ -25,6 +33,7 @@ function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTML
       callFrom: pos,
       callTo,
       optionSections: getPillOptions(funcName, view, pos, callTo),
+      alwaysExpandOnClick: ALWAYS_EXPAND_PILLS.has(funcName),
     };
   }));
   return row;
