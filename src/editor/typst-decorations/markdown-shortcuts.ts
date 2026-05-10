@@ -1,7 +1,7 @@
 // Markdown-style typing shortcuts that expand into Typst function calls.
 // These are typing conveniences only — the underlying source is always Typst.
 //
-//   "> "           at line start  →  #quote[<cursor>]
+//   "> "           at line start  →  #quote(block: true)[<cursor>]
 //   "+++"          alone on a line →  #line(length: 100%)
 //   "++<text>++"   inline          →  #footnote[<text>]
 //
@@ -29,7 +29,10 @@ function handleSpace(view: EditorView, from: number): boolean {
   // replaces the whole call — the cursor then snaps to the pill's left edge
   // and subsequent keystrokes appear in reverse order. expandFunc keeps the
   // call expanded as long as the cursor is on this line.
-  const insert = "#quote[]";
+  // Markdown's `>` is semantically a blockquote — map to the form that
+  // actually renders attribution and gets block styling. The pill's
+  // Inline option lets the user demote to `#quote[…]` after the fact.
+  const insert = "#quote(block: true)[]";
   view.dispatch({
     changes: { from: line.from, to: from, insert } as ChangeSpec,
     selection: { anchor: line.from + insert.length - 1 },

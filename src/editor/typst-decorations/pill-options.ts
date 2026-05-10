@@ -191,8 +191,17 @@ function calloutOptions(view: EditorView, from: number, to: number): PillMenuSec
 function quoteOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
   const blockArg = readNamedArg(src, "block");
-  const isBlock = blockArg !== "false"; // quote defaults to block in our usage
-  const attribution = unquote(readNamedArg(src, "attribution")) ?? "";
+  // Typst's quote defaults to inline (block: false). We mirror Typst's
+  // own default here so the pill's active state matches what the source
+  // actually compiles to — `/quote` inserts inline, `/blockquote` inserts
+  // explicit block:true.
+  const isBlock = blockArg === "true";
+  const attr = parseAttribution(readNamedArg(src, "attribution"));
+  // URL field only applies to plain-text attribution. If the current
+  // attribution is a bibkey label, linking is meaningless (the citation
+  // already carries the bib entry). Disable the field so the user sees
+  // the precedence rather than typing into a no-op input.
+  const urlDisabled = attr.kind === "bibkey";
   return [{
     heading: "Style",
     items: [
@@ -205,6 +214,7 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
       {
         label: "Inline",
         isActive: !isBlock,
+        title: "Attribution renders only in block mode",
         onSelect: () => applyCallTransform(view, from, (s) =>
           upsertNamedArg(s, "block", "false")),
       },
@@ -212,14 +222,93 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
   }, {
     items: [{
       label: "Attribution",
+      title: !isBlock
+        ? "Attribution is stored but renders only when Block is selected"
+        : "Plain text, or a bibliography key as <key>",
       input: {
-        value: attribution,
-        placeholder: "e.g. Albert Camus",
-        onCommit: (v) => applyCallTransform(view, from, (s) =>
-          upsertNamedArg(s, "attribution", v.trim() === "" ? null : quote(v))),
+        value: attr.text,
+        placeholder: "e.g. Albert Camus, or <camus1942>",
+        onCommit: (v) => applyCallTransform(view, from, (s) => {
+          // Re-read URL from the *just-edited* source so we don't clobber
+          // a URL the user set in the same menu session. Reading from the
+          // closed-over `attr` would race against rapid edits.
+          const cur = parseAttribution(readNamedArg(s, "attribution"));
+          const urlNow = cur.kind === "link" ? cur.url : "";
+          return upsertNamedArg(s, "attribution", buildAttributionExpr(v, urlNow));
+        }),
+      },
+    }, {
+      label: "Link URL",
+      title: urlDisabled
+        ? "Disabled: bibkey attribution links to the bibliography entry already"
+        : "Wraps attribution text in a link (e.g. license URL)",
+      disabled: urlDisabled,
+      input: {
+        value: attr.kind === "link" ? attr.url : "",
+        placeholder: "e.g. https://creativecommons.org/licenses/by-sa/4.0/",
+        onCommit: (v) => applyCallTransform(view, from, (s) => {
+          const cur = parseAttribution(readNamedArg(s, "attribution"));
+          if (cur.kind === "bibkey") return s; // disabled in UI; defensive
+          return upsertNamedArg(s, "attribution", buildAttributionExpr(cur.text, v));
+        }),
       },
     }],
   }];
+}
+
+// ── Attribution value helpers ───────────────────────────────────────
+//
+// Typst's `attribution` accepts three meaningful shapes for our pill:
+//   1. string literal:   attribution: "Albert Camus"
+//   2. label (bibkey):   attribution: <camus1942>
+//   3. link content:     attribution: link("https://…")[CC BY-SA]
+// The pill exposes a text field and an optional URL field; the helpers
+// below translate between the source form and that two-field UI.
+
+interface AttributionParts {
+  /** User-visible text (input value). For bibkey, the literal `<key>`
+   *  is shown so the user sees what they typed and can edit it back. */
+  text: string;
+  /** URL when the source uses `link("…")[…]`, else "". */
+  url: string;
+  /** How the source encodes the attribution; drives URL-field state. */
+  kind: "string" | "bibkey" | "link" | "raw" | "none";
+}
+
+function parseAttribution(src: string | null): AttributionParts {
+  if (src == null) return { text: "", url: "", kind: "none" };
+  const t = src.trim();
+  if (t === "") return { text: "", url: "", kind: "none" };
+  if (t.startsWith('"') && t.endsWith('"')) {
+    return { text: unquote(t) ?? "", url: "", kind: "string" };
+  }
+  // Typst label literals: `<` … `>` with no whitespace or angle brackets
+  // inside. Matches both `<bibkey>` and `<some-id>` forms.
+  if (/^<[^\s<>]+>$/.test(t)) {
+    return { text: t, url: "", kind: "bibkey" };
+  }
+  // link("url")[content] — capture the URL and the inner content as the
+  // editable text. The inner content is treated as raw Typst markup so
+  // round-trip preserves any inline formatting the user pasted in.
+  const m = t.match(/^link\(\s*"((?:\\.|[^"\\])*)"\s*\)\s*\[([\s\S]*)\]$/);
+  if (m) {
+    const url = m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    return { text: m[2], url, kind: "link" };
+  }
+  // Anything else (raw content like `[…]`, function calls, complex
+  // expressions) — surface verbatim so the user can still see and edit
+  // it. The URL field stays empty/inert for this case.
+  return { text: t, url: "", kind: "raw" };
+}
+
+function buildAttributionExpr(text: string, url: string): string | null {
+  const t = text.trim();
+  if (t === "") return null; // dropping the attribution arg entirely
+  // Bibkey label: emit unquoted, ignore URL (the citation already links).
+  if (/^<[^\s<>]+>$/.test(t)) return t;
+  const u = url.trim();
+  if (u !== "") return `link(${quote(u)})[${t}]`;
+  return quote(t);
 }
 
 function imageOptions(view: EditorView, from: number, to: number): PillMenuSection[] {

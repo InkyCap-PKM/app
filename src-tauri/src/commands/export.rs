@@ -1064,12 +1064,7 @@ fn maybe_inject_bibliography(source: String, bib_file: Option<&str>, bib_style: 
     });
     if has_explicit_bib { return source };
 
-    let has_citation = source.lines().any(|line| {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") { return false; }
-        trimmed.contains('@') && !trimmed.starts_with("#import") && !trimmed.starts_with("#set")
-    });
-    if !has_citation { return source };
+    if !crate::commands::typst::source_has_citation(&source) { return source };
 
     let style_arg = match bib_style {
         Some(s) if !s.is_empty() => format!(", style: \"{}\"", s),

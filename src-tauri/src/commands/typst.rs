@@ -58,14 +58,7 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
         return source.to_string();
     }
 
-    let has_citation = source.lines().any(|line| {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") { return false; }
-        trimmed.contains('@')
-            && !trimmed.starts_with("#import")
-            && !trimmed.starts_with("#set")
-    });
-    if !has_citation {
+    if !source_has_citation(source) {
         return source.to_string();
     }
 
@@ -103,6 +96,44 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
             bib
         ),
     }
+}
+
+/// True when `source` contains anything Typst will treat as a citation
+/// (and therefore needs a bibliography to resolve).
+///
+/// Two forms count:
+/// - `@key` — markup-mode citation sugar.
+/// - `attribution: <key>` — `quote`'s label-as-cite parameter form. The
+///   bare `<key>` literal in expression position is what `#quote(block:
+///   true, attribution: <camus1942>)` uses, and it's the same machinery
+///   as `cite(<camus1942>)` under the hood. Without this branch, a quote
+///   whose only citation lives inside `attribution:` would compile
+///   against no bibliography and Typst would raise "the document does
+///   not contain a bibliography" — which is what users hit when they
+///   add a bibkey via the quote pill.
+///
+/// Comment lines (`//`) and `#import` / `#set` lines are excluded so an
+/// `@` inside an import path or set rule doesn't false-positive.
+pub(crate) fn source_has_citation(source: &str) -> bool {
+    source.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") { return false; }
+        if trimmed.starts_with("#import") || trimmed.starts_with("#set") { return false; }
+        if trimmed.contains('@') { return true; }
+        // attribution: <foo> — anchor on the named arg so we don't pick
+        // up unrelated `<label>` markers attached to content elsewhere.
+        if let Some(idx) = trimmed.find("attribution") {
+            let after = &trimmed[idx + "attribution".len()..];
+            let after = after.trim_start();
+            if let Some(rest) = after.strip_prefix(':') {
+                let rest = rest.trim_start();
+                if rest.starts_with('<') {
+                    return true;
+                }
+            }
+        }
+        false
+    })
 }
 
 /// Compile the note at `path` to flowing HTML using Typst's native HTML

@@ -1,11 +1,20 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type ChangeSpec, type Extension } from "@codemirror/state";
+import { expandFunc } from "./effects";
 
 interface PaletteItem {
   label: string;
   category: string;
   insert: string;
   cursorOffset?: number;
+  /** When true, dispatch `expandFunc` for the inserted call so the
+   *  visual editor leaves its source brackets exposed for editing
+   *  rather than collapsing into a block widget. Required for any
+   *  call that the visual plugin replaces wholesale (callout, block
+   *  quote, etc.) — without it, the cursor lands at the widget's
+   *  edge and keystrokes appear outside the call body. Same trick the
+   *  markdown shortcut for `> ` already uses. */
+  expandOnInsert?: boolean;
 }
 
 const PALETTE_ITEMS: PaletteItem[] = [
@@ -28,7 +37,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Heading 6", category: "Structure", insert: '====== ', cursorOffset: 7 },
   { label: "Bullet list", category: "Structure", insert: '- ', cursorOffset: 2 },
   { label: "Ordered list", category: "Structure", insert: '+ ', cursorOffset: 2 },
-  { label: "Blockquote", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7 },
+  { label: "Quote (inline)", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7, expandOnInsert: true },
+  { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true },
 
   { label: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
   { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
@@ -51,7 +61,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11 },
   { label: "Embed", category: "InkyCap", insert: '#embed("")', cursorOffset: 8 },
-  { label: "Callout", category: "InkyCap", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
+  { label: "Callout", category: "InkyCap", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
 
   { label: "Page size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
@@ -207,6 +217,14 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
     selection: {
       anchor: deleteFrom + (item.cursorOffset ?? insert.length),
     },
+    // expandFunc keeps the call's source brackets visible after the
+    // visual plugin runs, so the cursor lands inside `[…]` and typing
+    // goes into the body. Without this, callout/quote/blockquote insert
+    // collapses immediately into a block widget and the cursor snaps to
+    // the widget edge — keystrokes then appear outside the call. Same
+    // technique [src/editor/typst-decorations/markdown-shortcuts.ts](markdown-shortcuts.ts)
+    // uses for the `> ` blockquote shortcut.
+    effects: item.expandOnInsert ? expandFunc.of(deleteFrom) : undefined,
   });
 }
 

@@ -415,6 +415,59 @@
 }
 
 // ---------------------------------------------------------------------------
+// highlight: thin wrapper around Typst's built-in `highlight` that fixes
+// the HTML output path. Typst's `typst-html` emitter renders `#highlight[…]`
+// as a bare `<mark>` element with no inline style, so the user's chosen
+// `fill` / `radius` is dropped and the browser default mark-yellow shows
+// regardless. We branch on `target() == "html"` and emit `<mark>` with
+// `background-color` / `border-radius` derived from the same arguments
+// the built-in accepts. The paged path forwards untouched.
+//
+// `stroke` is intentionally not translated — the pill UI only sets fill,
+// and `stroke` accepts compound forms (length, color, dict) that don't
+// have a clean single-property CSS analogue. Authors who set a stroke in
+// source still get correct paged output; the HTML view shows fill only.
+// ---------------------------------------------------------------------------
+
+// Capture the built-in before the let binding below shadows it for the
+// rest of the package.
+#let _std-highlight = highlight
+
+// `..rest` forwards any extra named args (e.g. parameters added in
+// future Typst versions) to the built-in on the paged path without
+// requiring this wrapper to track Typst's full signature.
+#let highlight(
+  body,
+  fill: rgb("#fff066"),
+  radius: 0pt,
+  extent: 0pt,
+  ..rest,
+) = context {
+  if target() == "html" {
+    let parts = ("background-color: " + fill.to-hex() + ";",)
+    if radius != 0pt and radius != none {
+      parts.push("border-radius: " + repr(radius) + ";")
+    }
+    if extent != 0pt {
+      parts.push("padding: 0 " + repr(extent) + ";")
+    }
+    html.elem(
+      "mark",
+      attrs: (style: parts.join(" ")),
+      body,
+    )
+  } else {
+    _std-highlight(
+      body,
+      fill: fill,
+      radius: radius,
+      extent: extent,
+      ..rest,
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
 // verse: whitespace-preserving free-form text (poetry, lyrics, structured
 // blocks where layout matters). First-class element — not a code-block
 // derivative.
