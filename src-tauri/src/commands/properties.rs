@@ -17,6 +17,7 @@ use crate::models::note::PropertyValue;
 use crate::property_types::{coerce_value, PropertyType};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 
 // ── Property type registry ────────────────────────────────────────────
@@ -186,7 +187,7 @@ pub async fn remove_property_from_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::remove_note_property(&content, &key);
     if updated != content {
@@ -205,7 +206,7 @@ pub async fn get_property_order(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(note_rewriter::extract_note_properties(&content)
         .into_iter()
@@ -224,7 +225,7 @@ pub async fn reorder_properties(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::reorder_note_properties(&content, &order);
     if updated != content {

@@ -64,21 +64,19 @@ pub struct HeadingStyle {
 }
 
 impl CollectionStyle {
-    /// Build a sequence of direct `#set` rules for the collection's
-    /// non-`None` fields. Returns an empty string when no fields are set,
-    /// so the caller can skip the injection cleanly.
+    /// Build style rules for a collection's non-`None` fields. Returns an
+    /// empty string when no fields are set.
     ///
-    /// Set rules are emitted directly (rather than via a
-    /// `#show: apply-collection-style.with(...)` wrapper) because page-level
-    /// rules like `set page(paper: ...)` are no-ops when applied through a
-    /// show-rule's returned content — page geometry is resolved before the
-    /// transformed content is laid out. See the matching note on
-    /// `style_injection::build_defaults_rules` for the full rationale.
+    /// Page geometry is emitted as a direct `#set page(...)` because
+    /// `set page` inside a show-rule wrapper is a no-op for document-level
+    /// layout. Text/par/heading settings go through
+    /// `#show: apply-collection-style.with(...)` (lib.typ).
     pub fn to_typst_show_call(&self) -> String {
         use crate::typst_pipeline::style_injection::{ensure_length_unit, sanitize_typst_string};
 
-        let mut rules: Vec<String> = Vec::new();
+        let mut lines: Vec<String> = Vec::new();
 
+        // Page geometry: direct #set rule
         if let Some(ref page) = self.page {
             let mut args = Vec::new();
             if let Some(ref paper) = page.paper {
@@ -94,58 +92,68 @@ impl CollectionStyle {
                 args.push(format!("numbering: \"{}\"", sanitize_typst_string(numbering)));
             }
             if !args.is_empty() {
-                rules.push(format!("#set page({})", args.join(", ")));
+                lines.push(format!("#set page({})", args.join(", ")));
             }
         }
 
+        // Text/par/heading: delegate to lib.typ via #show:
+        let mut show_args: Vec<String> = Vec::new();
+
         if let Some(ref text) = self.text {
-            let mut args = Vec::new();
+            let mut entries = Vec::new();
             if let Some(ref font) = text.font {
-                args.push(format!("font: \"{}\"", sanitize_typst_string(font)));
+                entries.push(format!("font: \"{}\"", sanitize_typst_string(font)));
             }
             if let Some(ref size) = text.size {
-                args.push(format!("size: {}", ensure_length_unit(size, "pt")));
+                entries.push(format!("size: {}", ensure_length_unit(size, "pt")));
             }
             if let Some(ref lang) = text.lang {
-                args.push(format!("lang: \"{}\"", sanitize_typst_string(lang)));
+                entries.push(format!("lang: \"{}\"", sanitize_typst_string(lang)));
             }
             if let Some(ref region) = text.region {
-                args.push(format!("region: \"{}\"", sanitize_typst_string(region)));
+                entries.push(format!("region: \"{}\"", sanitize_typst_string(region)));
             }
-            if !args.is_empty() {
-                rules.push(format!("#set text({})", args.join(", ")));
+            if !entries.is_empty() {
+                show_args.push(format!("text-args: ({})", entries.join(", ")));
             }
         }
 
         if let Some(ref par) = self.paragraph {
-            let mut args = Vec::new();
+            let mut entries = Vec::new();
             if let Some(ref leading) = par.leading {
-                args.push(format!("leading: {}", ensure_length_unit(leading, "em")));
+                entries.push(format!("leading: {}", ensure_length_unit(leading, "em")));
             }
             if let Some(ref spacing) = par.spacing {
-                args.push(format!("spacing: {}", ensure_length_unit(spacing, "em")));
+                entries.push(format!("spacing: {}", ensure_length_unit(spacing, "em")));
             }
             if let Some(ref indent) = par.first_line_indent {
-                args.push(format!("first-line-indent: {}", ensure_length_unit(indent, "em")));
+                entries.push(format!("first-line-indent: {}", ensure_length_unit(indent, "em")));
             }
             if let Some(justify) = par.justify {
-                args.push(format!("justify: {}", justify));
+                entries.push(format!("justify: {}", justify));
             }
-            if !args.is_empty() {
-                rules.push(format!("#set par({})", args.join(", ")));
+            if !entries.is_empty() {
+                show_args.push(format!("par-args: ({})", entries.join(", ")));
             }
         }
 
         if let Some(ref heading) = self.heading {
             if let Some(ref numbering) = heading.numbering {
-                rules.push(format!(
-                    "#set heading(numbering: \"{}\")",
+                show_args.push(format!(
+                    "heading-args: (numbering: \"{}\")",
                     sanitize_typst_string(numbering)
                 ));
             }
         }
 
-        rules.join("\n")
+        if !show_args.is_empty() {
+            lines.push(format!(
+                "#show: apply-collection-style.with({})",
+                show_args.join(", ")
+            ));
+        }
+
+        lines.join("\n")
     }
 }
 

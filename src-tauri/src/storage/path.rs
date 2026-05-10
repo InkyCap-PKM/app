@@ -38,6 +38,30 @@ pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
     })
 }
 
+/// Lightweight command-boundary validation for path arguments from the frontend.
+///
+/// Catches the most common injection patterns before the path reaches storage:
+/// null bytes and `..` traversal components. Accepts both absolute and relative
+/// paths — the frontend sends absolute paths (from `FileTreeNode.path`) for most
+/// operations. The downstream `LocalVaultStorage::resolve_path` performs the full
+/// canonical containment check against the vault root.
+pub fn sanitize_vault_arg(path: &str) -> Result<PathBuf> {
+    if path.contains('\0') {
+        return Err(InkyCapError::InvalidPath(
+            "path contains null byte".to_string(),
+        ));
+    }
+    let p = Path::new(path);
+    for component in p.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err(InkyCapError::InvalidPath(format!(
+                "path contains traversal: {path}"
+            )));
+        }
+    }
+    Ok(PathBuf::from(path))
+}
+
 /// Validate that `path` — absolute or relative — resolves to a location inside
 /// `canonical_root`, and return the canonical resolved path.
 ///

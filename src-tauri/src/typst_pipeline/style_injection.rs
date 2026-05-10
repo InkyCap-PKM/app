@@ -2,18 +2,16 @@
 //! defaults and collection-level overrides into Typst source before
 //! compilation.
 //!
-//! Each level emits direct `#set` / `#show raw: set ...` rules right
-//! after the inkycap-vault `#import` line. Wrapping these in a
-//! `#show: <fn>.with(...)` transformer fails for `set page(paper: ...)`
-//! and any other rule that influences the document's outer layout, because
-//! page geometry is resolved before the show-rule's returned content is
-//! laid out. Direct rules at the top of the source are the only path that
-//! works for every rule shape we care about.
+//! Uses a hybrid approach: text/font/paragraph/heading settings are
+//! delegated to `apply-vault-defaults` / `apply-collection-style` in
+//! `lib.typ` via `#show: fn.with(...)`. Page geometry (`set page(...)`)
+//! is emitted as a direct `#set` rule because `set page` inside a
+//! show-rule wrapper is a no-op for document-level layout in Typst.
 //!
 //! Injection order (after the inkycap-vault `#import` line):
 //!
-//! 1. App document defaults — `#set text(...)`, `#set page(...)`, etc.
-//! 2. Collection style overrides — same shape, applied second so they win
+//! 1. App document defaults — `#set page(...)` + `#show: apply-vault-defaults.with(...)`
+//! 2. Collection style overrides — `#set page(...)` + `#show: apply-collection-style.with(...)`
 //! 3. Template import (if any) — template's own rules override 1 & 2
 //!
 //! The user's own `#set` rules in the document body come after all
@@ -95,49 +93,49 @@ fn format_font_value(families: &[String]) -> Option<String> {
     }
 }
 
-/// Build app-level `#set` / `#show` rules for document defaults. Returns
-/// an empty string when no defaults are set so the caller can skip
-/// injection cleanly.
+/// Build style rules for app-level document defaults. Returns an empty
+/// string when no defaults are set so the caller can skip injection.
 ///
-/// We emit set rules directly at the document scope rather than wrapping
-/// them in `#show: apply-vault-defaults.with(...)`. Set rules emitted
-/// indirectly through a show-rule transformer don't affect document-level
-/// layout (notably `set page(paper: ...)` is a no-op in that position) —
-/// the show-rule's returned content is laid out as content, but document
-/// page geometry is fixed before that content is laid out. Direct set
-/// rules at the top of the source are the only reliable way to change
-/// page size, base text font/size, and `raw` font for the whole document.
-pub fn build_defaults_rules(doc: &DocumentDefaults, monospace_font: &str) -> String {
-    let mut rules: Vec<String> = Vec::new();
+/// Text/font/monospace settings are emitted as a single
+/// `#show: apply-vault-defaults.with(...)` call (lib.typ handles the
+/// actual `set` rules). Page geometry is emitted as a direct
+/// `#set page(...)` because `set page` inside a show-rule wrapper is a
+/// no-op for document-level layout in Typst.
+pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
 
-    let mut text_args: Vec<String> = Vec::new();
-    if let Some(ref font) = doc.text_font {
-        if !font.is_empty() {
-            text_args.push(format!("font: \"{}\"", sanitize_typst_string(font)));
-        }
-    }
-    if let Some(size) = doc.text_size {
-        text_args.push(format!("size: {}pt", size));
-    }
-    if !text_args.is_empty() {
-        rules.push(format!("#set text({})", text_args.join(", ")));
-    }
-
+    // Page geometry: direct #set rule (required for document-level effect)
     if let Some(ref paper) = doc.page_size {
         if !paper.is_empty() {
-            rules.push(format!(
+            lines.push(format!(
                 "#set page(paper: \"{}\")",
                 sanitize_typst_string(paper)
             ));
         }
     }
 
+    // Text/font defaults: delegate to lib.typ via #show:
+    let mut show_args: Vec<String> = Vec::new();
+    if let Some(ref font) = doc.text_font {
+        if !font.is_empty() {
+            show_args.push(format!("text-font: \"{}\"", sanitize_typst_string(font)));
+        }
+    }
+    if let Some(size) = doc.text_size {
+        show_args.push(format!("text-size: {}pt", size));
+    }
     let mono_families = parse_font_stack(monospace_font);
     if let Some(value) = format_font_value(&mono_families) {
-        rules.push(format!("#show raw: set text(font: {})", value));
+        show_args.push(format!("monospace-font: {}", value));
+    }
+    if !show_args.is_empty() {
+        lines.push(format!(
+            "#show: apply-vault-defaults.with({})",
+            show_args.join(", ")
+        ));
     }
 
-    rules.join("\n")
+    lines.join("\n")
 }
 
 /// Inject style rules into the source after the inkycap-vault import line.
@@ -213,39 +211,45 @@ mod tests {
     #[test]
     fn empty_defaults_no_injection() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_rules(&doc, "");
+        let rules = build_defaults_show_call(&doc, "");
         assert!(rules.is_empty());
     }
 
     #[test]
-    fn font_and_page_size_emit_set_rules() {
+    fn font_and_page_size_emit_hybrid_rules() {
         let doc = DocumentDefaults {
             text_font: Some("Inter".to_string()),
             text_size: Some(12.0),
             page_size: Some("us-letter".to_string()),
         };
-        let rules = build_defaults_rules(&doc, "");
-        assert!(rules.contains("#set text(font: \"Inter\", size: 12pt)"));
+        let rules = build_defaults_show_call(&doc, "");
+        // Page geometry: direct #set rule
         assert!(rules.contains("#set page(paper: \"us-letter\")"));
+        // Text settings: delegated to lib.typ
+        assert!(rules.contains("#show: apply-vault-defaults.with("));
+        assert!(rules.contains("text-font: \"Inter\""));
+        assert!(rules.contains("text-size: 12pt"));
+        // page-paper should NOT be in the show call
+        assert!(!rules.contains("page-paper"));
     }
 
     #[test]
     fn monospace_stack_emits_array_arg() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_rules(
+        let rules = build_defaults_show_call(
             &doc,
             "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", monospace",
         );
         assert!(rules.contains(
-            "#show raw: set text(font: (\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\"))"
+            "monospace-font: (\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\")"
         ));
     }
 
     #[test]
     fn monospace_single_family_emits_string_arg() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_rules(&doc, "Adwaita Mono");
-        assert!(rules.contains("#show raw: set text(font: \"Adwaita Mono\")"));
+        let rules = build_defaults_show_call(&doc, "Adwaita Mono");
+        assert!(rules.contains("monospace-font: \"Adwaita Mono\""));
     }
 
     #[test]
@@ -262,12 +266,12 @@ mod tests {
 "#;
         let result = inject_style_rules(
             source,
-            Some("#set text(font: \"Inter\")"),
+            Some("#show: apply-vault-defaults.with(text-font: \"Inter\")"),
             None,
         );
         let import_pos = result.find("inkycap-vault").unwrap();
-        let set_pos = result.find("#set text").unwrap();
-        assert!(set_pos > import_pos);
+        let show_pos = result.find("#show: apply-vault-defaults").unwrap();
+        assert!(show_pos > import_pos);
     }
 
     #[test]
@@ -275,20 +279,19 @@ mod tests {
         let source = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Hello\n";
         let result = inject_style_rules(
             source,
-            Some("#set page(paper: \"a4\")"),
-            Some("#set page(paper: \"us-letter\")"),
+            Some("#show: apply-vault-defaults.with(page-paper: \"a4\")"),
+            Some("#show: apply-collection-style.with(page-args: (paper: \"us-letter\"))"),
         );
-        let defaults_pos = result.find("\"a4\"").unwrap();
-        let collection_pos = result.find("\"us-letter\"").unwrap();
+        let defaults_pos = result.find("apply-vault-defaults").unwrap();
+        let collection_pos = result.find("apply-collection-style").unwrap();
         assert!(collection_pos > defaults_pos);
     }
 
-    /// End-to-end: compile a note with both app defaults and collection
-    /// overrides injected and verify the page geometry actually changes.
-    /// Locks down the regression where set rules wrapped in a `show:` call
-    /// were silently no-ops for page-level settings.
+    /// End-to-end: compile a note with the hybrid injection approach —
+    /// direct `#set page(...)` for geometry + `#show: apply-vault-defaults.with(...)`
+    /// for text — and verify both take effect.
     #[test]
-    fn injected_set_rules_actually_change_page_size() {
+    fn hybrid_injection_changes_page_size_and_text() {
         use crate::storage::path::canonicalize_root;
         use crate::typst_pipeline::compiler::TypstCompiler;
         use std::fs;
@@ -299,15 +302,17 @@ mod tests {
         crate::vault_package::scaffold(&root);
         let note_path = root.join("note.typ");
 
+        let doc = DocumentDefaults {
+            text_font: Some("Linux Libertine".to_string()),
+            text_size: Some(12.0),
+            page_size: Some("us-letter".to_string()),
+        };
+        let rules = build_defaults_show_call(&doc, "");
+
         let source = format!(
-            "{}\n\
-             #set text(font: \"Linux Libertine\", size: 12pt)\n\
-             #set page(paper: \"us-letter\")\n\
-             \n\
-             = Hello\n\
-             \n\
-             Body text.\n",
-            crate::vault_package::import_line()
+            "{}\n{}\n\n= Hello\n\nBody text.\n",
+            crate::vault_package::import_line(),
+            rules,
         );
         fs::write(&note_path, &source).expect("write note");
 
@@ -317,7 +322,6 @@ mod tests {
             .expect("compile call");
         assert!(result.ok, "diagnostics: {:#?}", result.diagnostics);
         let width = result.frames[0].width_pt;
-        // US Letter is 612pt wide; A4 is ~595pt. A small float tolerance.
         assert!(
             (width - 612.0).abs() < 1.0,
             "expected US Letter (612pt), got {}pt — page set rule was not applied",
@@ -326,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn collection_style_emits_set_rules() {
+    fn collection_style_emits_hybrid_rules() {
         let style = CollectionStyle {
             page: Some(crate::collection_parser::model::PageStyle {
                 paper: Some("us-letter".to_string()),
@@ -349,12 +353,15 @@ mod tests {
             heading: None,
         };
         let rules = style.to_typst_show_call();
+        // Page geometry: direct #set rule
         assert!(rules.contains(
             "#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"
         ));
+        // Text/par: delegated to lib.typ
+        assert!(rules.contains("#show: apply-collection-style.with("));
         assert!(rules.contains(
-            "#set text(font: \"Times New Roman\", size: 12pt, lang: \"fr\", region: \"CA\")"
+            "text-args: (font: \"Times New Roman\", size: 12pt, lang: \"fr\", region: \"CA\")"
         ));
-        assert!(rules.contains("#set par(justify: true)"));
+        assert!(rules.contains("par-args: (justify: true)"));
     }
 }

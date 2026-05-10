@@ -9,6 +9,7 @@ use crate::errors::InkyCapError;
 use crate::models::collection::{CollectionData, CollectionInfo, CollectionRow, ViewInfo};
 use crate::models::note::PropertyValue;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 
 /// List all `.collection` files in the vault with their view counts and icons. Requires an open vault.
@@ -69,7 +70,7 @@ pub async fn get_collection_data(
     state: State<'_, AppState>,
 ) -> Result<CollectionData, InkyCapError> {
     let storage = state.get_storage().await?;
-    let collection_path_buf = std::path::PathBuf::from(&collection_path);
+    let collection_path_buf = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
@@ -177,7 +178,7 @@ pub async fn create_collection_file(
     state: State<'_, AppState>,
 ) -> Result<CollectionInfo, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&folder).join(format!("{}.collection", name));
+    let path = sanitize_vault_arg(&folder)?.join(format!("{}.collection", name));
 
     if storage.exists(&path).await {
         return Err(InkyCapError::InvalidPath(format!(
@@ -210,7 +211,7 @@ pub async fn save_collection_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = serialize_collection_file(&collection_file)?;
     storage.write_file(&path, &content).await?;
     Ok(())
@@ -223,7 +224,7 @@ pub async fn delete_collection_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     storage.delete_file(&path).await?;
 
     // Remove from tracked collection files
@@ -241,7 +242,7 @@ pub async fn rename_collection_file(
     state: State<'_, AppState>,
 ) -> Result<CollectionInfo, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old_path = std::path::PathBuf::from(&collection_path);
+    let old_path = sanitize_vault_arg(&collection_path)?;
     let new_path = old_path
         .parent()
         .unwrap_or(std::path::Path::new(""))
@@ -281,7 +282,7 @@ pub async fn get_collection_file(
     state: State<'_, AppState>,
 ) -> Result<CollectionFile, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let base = parse_collection_file(&content)?;
     Ok(base)
@@ -296,7 +297,7 @@ pub async fn update_view_sort(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -321,7 +322,7 @@ pub async fn update_view_columns(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -346,7 +347,7 @@ pub async fn update_collection_filters(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -373,7 +374,7 @@ pub async fn add_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -403,7 +404,7 @@ pub async fn remove_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -429,7 +430,7 @@ pub async fn rename_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = std::path::PathBuf::from(&collection_path);
+    let path = sanitize_vault_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -502,7 +503,7 @@ pub async fn get_collection_data_internal(
     state: &State<'_, AppState>,
 ) -> Result<CollectionData, InkyCapError> {
     let storage = state.get_storage().await?;
-    let collection_path_buf = std::path::PathBuf::from(collection_path);
+    let collection_path_buf = sanitize_vault_arg(collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 

@@ -28,6 +28,8 @@ let currentSuggestState: SuggestState = EMPTY;
 
 interface SuggestItem {
   name: string;
+  label?: string;
+  level?: number;
   isCreate: boolean;
 }
 
@@ -190,6 +192,8 @@ async function showPopup(view: EditorView, state: SuggestState) {
 
     filteredItems = matched.map((h) => ({
       name: h.text,
+      label: h.label ?? undefined,
+      level: h.level,
       isCreate: false,
     }));
 
@@ -246,7 +250,8 @@ async function showPopup(view: EditorView, state: SuggestState) {
     if (i === 0) row.classList.add("is-selected");
 
     if (state.mode === "heading") {
-      row.textContent = item.name;
+      const indent = item.level && item.level > 1 ? " ".repeat(item.level - 1) : "";
+      row.textContent = `${indent}${item.name}`;
     } else {
       row.textContent = item.isCreate ? `Create: ${item.name}` : item.name;
     }
@@ -270,13 +275,11 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
   el.style.display = "block";
 }
 
-function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {
+async function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {
   let replaceTo: number;
   if (state.to !== undefined) {
-    // Func form: replace the entire `#wikilink(...)` call.
     replaceTo = state.to;
   } else {
-    // Bracket form: extend through any literal `]]` the user already typed.
     const cursor = view.state.selection.main.from;
     const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
     const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
@@ -285,7 +288,17 @@ function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {
 
   let insert: string;
   if (state.mode === "heading") {
-    insert = `#wikilink("${state.noteName}", label: "${item.name}")`;
+    let label = item.label;
+    if (!label) {
+      const path = resolveNotePath(state.noteName);
+      if (path) {
+        try {
+          label = await ipc.ensureHeadingLabel(path, item.name) ?? undefined;
+        } catch { /* fall through to text */ }
+      }
+    }
+    const labelVal = label ?? item.name;
+    insert = `#wikilink("${state.noteName}", label: "${labelVal}")`;
   } else {
     insert = `#wikilink("${item.name}")`;
   }
@@ -346,27 +359,32 @@ const suggestKeyHandler = Prec.highest(keymap.of([
       if (!isPopupVisible()) return false;
       const item = filteredItems[selectedIndex];
       if (!item) return true;
-      // In bracket form note mode, Tab autocompletes the note name in
-      // place so the user can keep typing (`::heading`) to drill into a
-      // heading without having to spell the whole note name first. For
-      // every other case (heading mode, "create new" item, func form),
-      // fall back to Enter-style commit.
+      // Tab drills into heading mode. In bracket form it appends `::`;
+      // in func form it rewrites to include `label: ""`. For heading
+      // mode or "create new" items, fall back to Enter-style commit.
       const state = currentSuggestState;
-      const isBracketNoteCompletion = state.mode === "note"
-        && state.to === undefined
-        && !item.isCreate;
-      if (!isBracketNoteCompletion) {
+      if (state.mode !== "note" || item.isCreate) {
         acceptItem(view, state, item);
         return true;
       }
-      const queryFrom = state.from + 2; // skip `[[`
-      const queryTo = queryFrom + state.query.length;
-      view.dispatch({
-        changes: { from: queryFrom, to: queryTo, insert: item.name } as ChangeSpec,
-        selection: { anchor: queryFrom + item.name.length },
-      });
-      // The tracker's selectionSet/docChanged update will re-detect the
-      // bracket context with the now-complete name and refresh the popup.
+      if (state.to === undefined) {
+        // Bracket form: complete note name and append `::`
+        const queryFrom = state.from + 2;
+        const queryTo = queryFrom + state.query.length;
+        const insertText = item.name + "::";
+        view.dispatch({
+          changes: { from: queryFrom, to: queryTo, insert: insertText } as ChangeSpec,
+          selection: { anchor: queryFrom + insertText.length },
+        });
+      } else {
+        // Func form: rewrite call to include label arg with cursor inside
+        const noteName = item.name;
+        const insert = `#wikilink("${noteName}", label: "")`;
+        view.dispatch({
+          changes: { from: state.from, to: state.to, insert } as ChangeSpec,
+          selection: { anchor: state.from + insert.length - 2 },
+        });
+      }
       return true;
     },
   },

@@ -4,6 +4,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct JournalScrollConfig {
@@ -33,7 +34,7 @@ pub async fn get_journal_scroll_files(
     state: State<'_, AppState>,
 ) -> Result<Vec<JournalScrollEntry>, InkyCapError> {
     let index = state.property_index.read().await;
-    let anchor = PathBuf::from(&anchor_path);
+    let anchor = sanitize_vault_arg(&anchor_path)?;
 
     match mode.as_str() {
         "date" => build_date_sequence(&index, &anchor, &config, offset, limit),

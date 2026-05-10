@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 
 /// A node in the flow view graph.
 #[derive(Debug, Clone, Serialize)]
@@ -45,7 +46,7 @@ pub async fn get_flow_data(
     let link_index = state.link_index.read().await;
 
     let max_depth = max_depth.unwrap_or(2).min(3);
-    let center_path = PathBuf::from(&path);
+    let center_path = sanitize_vault_arg(&path)?;
 
     let mut nodes: Vec<FlowNode> = Vec::new();
     let mut edges: Vec<FlowEdge> = Vec::new();

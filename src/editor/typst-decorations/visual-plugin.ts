@@ -2,15 +2,13 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
-  keymap,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { Annotation, EditorState, EditorSelection, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
+import { type ChangeSet, EditorState, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
 import { expandFunc } from "./effects";
-import { buildPillButton, findCallEnd } from "./pill";
-import { getPillOptions } from "./pill-options";
+import { findCallEnd } from "./pill";
 import { syntaxTree } from "@codemirror/language";
 import {
   CalloutBlockWidget,
@@ -27,17 +25,24 @@ import {
   FootnoteWidget,
 } from "./widgets";
 import { TableWidget } from "./table-widget";
-import { type TableData, type TableCell, parseCanonicalTable, serializeTable, parseClipboardAsGrid } from "./table-parser";
+import { parseCanonicalTable } from "./table-parser";
 import { selectionToolbar } from "./selection-toolbar";
 import { commandPalette } from "./command-palette";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { fileList } from "../../stores/filelist";
+import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS } from "./visual-widgets";
+import { highlight, buildHighlightMark } from "./visual-colors";
+import { visualTheme } from "./visual-theme";
+import { isVaultImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+export { externalReload } from "./visual-protected";
+import { linkClickHandler } from "./visual-links";
+import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
+import { createClickAnchorPlugin } from "./click-anchor";
 
 const escapedChar = Decoration.mark({ class: "cm-typst-escaped" });
 const bold = Decoration.mark({ class: "cm-typst-bold" });
 const italic = Decoration.mark({ class: "cm-typst-italic" });
 const strikethrough = Decoration.mark({ class: "cm-typst-strike" });
-const highlight = Decoration.mark({ class: "cm-typst-highlight" });
+// highlight imported from ./visual-colors
 const underlineMark = Decoration.mark({ class: "cm-typst-underline-mark" });
 const overlineMark = Decoration.mark({ class: "cm-typst-overline-mark" });
 const subMark = Decoration.mark({ class: "cm-typst-sub" });
@@ -79,79 +84,7 @@ export const autoExpandFacet = Facet.define<boolean, boolean>({
   combine: values => values.length > 0 ? values[values.length - 1] : false,
 });
 
-// FuncPillWidget and FuncChipWidget were two near-duplicate pill widgets.
-// They now both build the unified pill button (see pill.ts) which opens
-// the super-context-menu on click. Kept as separate names for the
-// existing call sites; both delegate to buildPillButton.
-// FuncPillWidget and FuncChipWidget were two near-duplicate pill widgets.
-// They now both build the unified pill button (see pill.ts) which opens
-// the super-context-menu on click. Per-pill options are looked up from
-// the pill-options registry so each function gets its widget-specific
-// menu section without per-widget plumbing.
-class FuncPillWidget extends WidgetType {
-  constructor(readonly pos: number, readonly funcName: string) { super(); }
-  eq(other: FuncPillWidget) { return this.pos === other.pos && this.funcName === other.funcName; }
-  toDOM(view: EditorView) {
-    return buildPillButton(this.funcName, view, () => {
-      const callTo = findCallEnd(view, this.pos);
-      return {
-        funcName: this.funcName,
-        callFrom: this.pos,
-        callTo,
-        optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
-      };
-    });
-  }
-  ignoreEvent() { return true; }
-}
-
-class FuncChipWidget extends WidgetType {
-  constructor(readonly pos: number, readonly funcName: string) { super(); }
-  eq(other: FuncChipWidget) { return this.pos === other.pos && this.funcName === other.funcName; }
-  toDOM(view: EditorView) {
-    return buildPillButton(this.funcName, view, () => {
-      const callTo = findCallEnd(view, this.pos);
-      return {
-        funcName: this.funcName,
-        callFrom: this.pos,
-        callTo,
-        optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
-      };
-    });
-  }
-  ignoreEvent() { return true; }
-}
-
-class BulletWidget extends WidgetType {
-  constructor(readonly marker: string) { super(); }
-  eq(other: BulletWidget) { return this.marker === other.marker; }
-  toDOM() {
-    const el = document.createElement("span");
-    el.className = "cm-typst-list-bullet";
-    el.textContent = this.marker;
-    return el;
-  }
-}
-
-class ShorthandWidget extends WidgetType {
-  constructor(readonly rendered: string, readonly raw: string) { super(); }
-  eq(other: ShorthandWidget) { return this.rendered === other.rendered; }
-  toDOM() {
-    const el = document.createElement("span");
-    el.className = "cm-typst-shorthand";
-    el.textContent = this.rendered;
-    el.title = this.raw;
-    return el;
-  }
-}
-
-class HrWidget extends WidgetType {
-  toDOM() {
-    const el = document.createElement("hr");
-    el.className = "cm-typst-hr";
-    return el;
-  }
-}
+// Widget classes imported from ./visual-widgets
 
 function cursorLines(state: EditorState): Set<number> {
   const lines = new Set<number>();
@@ -192,43 +125,14 @@ function isCursorAdjacentOrInside(_state: EditorState, from: number, to: number,
   return false;
 }
 
-// The auto-injected vault library import. We accept both the canonical
-// version-less path and the legacy `/.inkycap/packages/inkycap-vault/<v>/`
-// path so notes from older vaults still hide their import line cleanly.
-const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/vault.typ"';
-const LEGACY_IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-vault/';
-function isVaultImportLine(text: string): boolean {
-  const t = text.trimStart();
-  return (
-    t.startsWith(CANONICAL_IMPORT_PREFIX) || t.startsWith(LEGACY_IMPORT_PREFIX)
-  );
-}
-
-const ANGLE_BRACKET_TAGS = /(?<!\\)<(script|style|iframe|object|embed|form|input|link|meta|base)(?:\s|>|\/)/gi;
-
-class AngleBracketWarningWidget extends WidgetType {
-  constructor(readonly from: number, readonly to: number, readonly tag: string) { super(); }
-  eq(other: AngleBracketWarningWidget) { return this.from === other.from && this.tag === other.tag; }
-  toDOM(view: EditorView) {
-    const el = document.createElement("span");
-    el.className = "cm-typst-angle-bracket-warning";
-    el.title = `Bare <${this.tag}> is ambiguous in Typst — click to escape as \\<${this.tag}>`;
-    el.textContent = "⚠";
-    el.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const text = view.state.doc.sliceString(this.from, this.to);
-      const escaped = text.replace(/</g, "\\<");
-      view.dispatch({
-        changes: { from: this.from, to: this.to, insert: escaped },
-      });
-    });
-    return el;
+function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to: number }[]): boolean {
+  for (const r of ranges) {
+    if (from < r.to && to > r.from) return true;
   }
-  ignoreEvent() { return true; }
+  return false;
 }
 
-function buildDecorations(state: EditorState): DecorationSet {
+function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
   const autoExpand = state.facet(autoExpandFacet);
@@ -250,16 +154,39 @@ function buildDecorations(state: EditorState): DecorationSet {
       if (hideEnd < state.doc.length) {
         hideEnd = Math.min(hideEnd + 1, state.doc.length);
       }
-      decos.push(hide.range(line.from, hideEnd));
+      if (!onlyRanges || nodeOverlapsRanges(line.from, hideEnd, onlyRanges)) {
+        decos.push(hide.range(line.from, hideEnd));
+      }
     }
   }
 
+  if (onlyRanges && onlyRanges.length > 0 && onlyRanges[0].from > 0) {
+    syntaxTree(state).iterate({
+      from: 0,
+      to: onlyRanges[0].from,
+      enter(node) {
+        if (node.name === "EnumMarker") {
+          const line = state.doc.lineAt(node.from);
+          const indent = node.from - line.from;
+          if (indent !== lastEnumIndent || line.number > lastEnumLine + 1) {
+            enumCounter = 1;
+          } else {
+            enumCounter++;
+          }
+          lastEnumLine = line.number;
+          lastEnumIndent = indent;
+        }
+      },
+    });
+  }
+
   syntaxTree(state).iterate({
-    from: 0,
-    to: state.doc.length,
+    from: onlyRanges ? onlyRanges[0].from : 0,
+    to: onlyRanges ? onlyRanges[onlyRanges.length - 1].to : state.doc.length,
     enter(node) {
         if (node.from > state.doc.length || node.to > state.doc.length) return;
         if (node.from < consumedUntil) return false;
+        if (onlyRanges && !nodeOverlapsRanges(node.from, node.to, onlyRanges)) return;
         const onCursor = isOnCursorLine(state, node.from, node.to, focused);
 
         switch (node.name) {
@@ -550,9 +477,17 @@ function buildDecorations(state: EditorState): DecorationSet {
   // Text-level escape scan — fallback for cases where the parser doesn't
   // emit Escape nodes (e.g. \# may be parsed as code-mode entry instead).
   // Use escapeRanges (populated by tree-based Escape handler) to avoid doubles.
-  // Also skip positions inside hidden ranges (import lines, #note blocks, etc.).
   const ESCAPE_CHARS = "#*_$=~`\\";
-  for (let i = 1; i <= state.doc.lines; i++) {
+  const escScanLines = onlyRanges
+    ? onlyRanges.flatMap(r => {
+        const lines: number[] = [];
+        const startLine = state.doc.lineAt(r.from).number;
+        const endLine = state.doc.lineAt(Math.min(r.to, state.doc.length)).number;
+        for (let n = startLine; n <= endLine; n++) lines.push(n);
+        return lines;
+      })
+    : Array.from({ length: state.doc.lines }, (_, i) => i + 1);
+  for (const i of escScanLines) {
     const line = state.doc.line(i);
     if (autoExpand && isOnCursorLine(state, line.from, line.to, focused)) continue;
     const text = line.text;
@@ -569,13 +504,9 @@ function buildDecorations(state: EditorState): DecorationSet {
       idx = text.indexOf("\\", idx + 2);
     }
   }
-  // Add escape decorations, skipping any whose position overlaps with an
-  // existing replace decoration (hide or widget) to avoid CM6 range conflicts.
   if (escapeDecos.length > 0) {
     const takenPositions = new Set<number>();
     for (const d of decos) {
-      // Any replace decoration (hide or widget) at this position would conflict.
-      // Check by seeing if the decoration has a widget or is our `hide` const.
       if (d.from < d.to && (d.value === hide || d.value.spec?.widget != null)) {
         for (let p = d.from; p < d.to; p++) takenPositions.add(p);
       }
@@ -588,37 +519,37 @@ function buildDecorations(state: EditorState): DecorationSet {
     }
   }
 
-  // Detect bare HTML-like tags (e.g. <script>) that are ambiguous in Typst
-  const docText = state.doc.toString();
-  let match: RegExpExecArray | null;
-  ANGLE_BRACKET_TAGS.lastIndex = 0;
-  while ((match = ANGLE_BRACKET_TAGS.exec(docText)) !== null) {
-    const pos = match.index;
-    // Skip if inside a raw block or code block (check syntax tree node)
-    const tree = syntaxTree(state);
-    let inCode = false;
-    tree.iterate({
-      from: pos,
-      to: pos + 1,
-      enter(node) {
-        if (node.name === "Raw" || node.name === "RawBlock" || node.name === "CodeBlock"
-            || node.name === "Comment" || node.name === "String") {
-          inCode = true;
-          return false;
-        }
-      },
-    });
-    if (inCode) continue;
+  if (!onlyRanges) {
+    // Detect bare HTML-like tags (e.g. <script>) that are ambiguous in Typst
+    const docText = state.doc.toString();
+    let match: RegExpExecArray | null;
+    ANGLE_BRACKET_TAGS.lastIndex = 0;
+    while ((match = ANGLE_BRACKET_TAGS.exec(docText)) !== null) {
+      const pos = match.index;
+      const tree = syntaxTree(state);
+      let inCode = false;
+      tree.iterate({
+        from: pos,
+        to: pos + 1,
+        enter(node) {
+          if (node.name === "Raw" || node.name === "RawBlock" || node.name === "CodeBlock"
+              || node.name === "Comment" || node.name === "String") {
+            inCode = true;
+            return false;
+          }
+        },
+      });
+      if (inCode) continue;
 
-    // Find the full tag extent (from < to > or end of tag name)
-    const tagEnd = docText.indexOf(">", pos);
-    const end = tagEnd !== -1 ? tagEnd + 1 : pos + match[0].length;
-    decos.push(
-      Decoration.widget({
-        widget: new AngleBracketWarningWidget(pos, end, match[1]),
-        side: -1,
-      }).range(pos),
-    );
+      const tagEnd = docText.indexOf(">", pos);
+      const end = tagEnd !== -1 ? tagEnd + 1 : pos + match[0].length;
+      decos.push(
+        Decoration.widget({
+          widget: new AngleBracketWarningWidget(pos, end, match[1]),
+          side: -1,
+        }).range(pos),
+      );
+    }
   }
 
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -1174,92 +1105,6 @@ function extractBracketContent(text: string): string | null {
   return null;
 }
 
-const TYPST_COLORS: Record<string, string> = {
-  black: "#000", gray: "#808080", silver: "#c0c0c0", white: "#fff",
-  navy: "#001f3f", blue: "#2196f3", aqua: "#00bcd4", teal: "#009688",
-  eastern: "#239dad", purple: "#9c27b0", fuchsia: "#e91e63",
-  maroon: "#800000", red: "#f44336", orange: "#ff9800", yellow: "#ffeb3b",
-  olive: "#808000", green: "#4caf50", lime: "#8fce00",
-};
-
-function parseTypstColor(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (TYPST_COLORS[trimmed]) return TYPST_COLORS[trimmed];
-
-  const hexMatch = trimmed.match(/^rgb\(\s*"(#[0-9a-fA-F]{3,8})"\s*\)$/);
-  if (hexMatch) return hexMatch[1];
-
-  const rgbMatch = trimmed.match(
-    /^rgb\(\s*(\d+(?:\.\d+)?%?)\s*,\s*(\d+(?:\.\d+)?%?)\s*,\s*(\d+(?:\.\d+)?%?)\s*(?:,\s*(\d+(?:\.\d+)?%?)\s*)?\)$/,
-  );
-  if (rgbMatch) {
-    const conv = (v: string) => v.endsWith("%") ? Math.round(parseFloat(v) * 2.55) : parseInt(v);
-    const [, r, g, b, a] = rgbMatch;
-    if (a != null) return `rgba(${conv(r)}, ${conv(g)}, ${conv(b)}, ${a.endsWith("%") ? parseFloat(a) / 100 : parseInt(a) / 255})`;
-    return `rgb(${conv(r)}, ${conv(g)}, ${conv(b)})`;
-  }
-
-  const lumaMatch = trimmed.match(/^luma\(\s*(\d+)\s*\)$/);
-  if (lumaMatch) { const v = lumaMatch[1]; return `rgb(${v}, ${v}, ${v})`; }
-
-  return null;
-}
-
-function extractHighlightParams(text: string): { fill?: string; stroke?: string; radius?: string } {
-  const params: { fill?: string; stroke?: string; radius?: string } = {};
-
-  // The value pattern allows either bare tokens (`red`, `#fff`) or a single
-  // function call (`rgb("#fff3a3")`, `luma(80)`). The earlier `[^,)\]]+`
-  // form stopped at the first `)`, so it captured `rgb("#fff3a3"` and
-  // parseTypstColor's rgb regex (which requires a trailing `)`) failed
-  // silently — every non-default colour fell through to the unparameterized
-  // yellow mark. The paren-group alternative must come FIRST so the engine
-  // tries it before the single-char one — otherwise the simple alternative
-  // greedily eats the opening `(` (it's not in the exclusion set) and the
-  // compound alternative never gets a chance to fire.
-  const VALUE = /((?:\([^)]*\)|[^,)\]])+)/;
-
-  const fillMatch = text.match(new RegExp(`fill\\s*:\\s*${VALUE.source}`));
-  if (fillMatch) {
-    const color = parseTypstColor(fillMatch[1]);
-    if (color) params.fill = color;
-  }
-
-  const strokeMatch = text.match(new RegExp(`stroke\\s*:\\s*${VALUE.source}`));
-  if (strokeMatch) {
-    const color = parseTypstColor(strokeMatch[1]);
-    if (color) params.stroke = color;
-  }
-
-  const radiusMatch = text.match(/radius\s*:\s*(\d+(?:\.\d+)?)(pt|em|%)/);
-  if (radiusMatch) {
-    const val = radiusMatch[1];
-    const unit = radiusMatch[2] === "pt" ? "px" : radiusMatch[2];
-    params.radius = `${val}${unit}`;
-  }
-
-  return params;
-}
-
-function buildHighlightMark(text: string): Decoration {
-  const params = extractHighlightParams(text);
-  if (!params.fill && !params.stroke && !params.radius) return highlight;
-
-  const parts: string[] = [];
-  parts.push(`background-color: ${params.fill ?? "var(--bg-search-match)"}`);
-  if (params.stroke) parts.push(`outline: 1px solid ${params.stroke}`);
-  parts.push(`border-radius: ${params.radius ?? "2px"}`);
-  parts.push("padding: 0 2px");
-  // Pin dark text for readability on the light pastel fills (see
-  // .cm-typst-highlight in the theme above). Custom user fills could
-  // theoretically be dark, in which case this reads against the user;
-  // the highlight palette itself is fixed-light so the trade-off is
-  // worth making for the dark-mode common case.
-  parts.push("color: #1a1a1a");
-
-  return Decoration.mark({ attributes: { style: parts.join("; ") } });
-}
-
 const expandedFuncField = StateField.define<number | null>({
   create() { return null; },
   update(pos, tr) {
@@ -1312,272 +1157,6 @@ function setsEqual(a: Set<number>, b: Set<number>): boolean {
   return true;
 }
 
-// ── Protected ranges: hidden, non-editable regions ─────
-// Import lines and #note()/#bibliography() blocks are hidden in visual mode.
-// These ranges must also reject cursor entry and edits.
-
-interface ProtectedRange { from: number; to: number }
-
-function computeProtectedRanges(state: EditorState, expandedPos: number | null): ProtectedRange[] {
-  const ranges: ProtectedRange[] = [];
-  const docLen = state.doc.length;
-
-  // Import lines and #note()/#bibliography() calls in the first few lines
-  // (text-based, works before the syntax tree is ready).
-  // Tracks paren nesting so that array/dict values inside #note()
-  // arguments (e.g. `collection: ("Foo",),`) don't close the call early.
-  const maxScanLine = Math.min(state.doc.lines, 30);
-  for (let i = 1; i <= maxScanLine; i++) {
-    const line = state.doc.line(i);
-    const trimmed = line.text.trimStart();
-
-    const isImport = isVaultImportLine(line.text);
-    const isNote = trimmed.startsWith("#note(");
-    const isBibliography = trimmed.startsWith("#bibliography(");
-
-    if (!isImport && !isNote && !isBibliography) continue;
-
-    let hideEnd = line.to;
-
-    if (isNote || isBibliography) {
-      let depth = 0;
-      for (const ch of line.text) {
-        if (ch === "(") depth++;
-        else if (ch === ")") depth--;
-      }
-      if (depth > 0) {
-        for (let j = i + 1; j <= Math.min(state.doc.lines, i + 30); j++) {
-          const nextLine = state.doc.line(j);
-          for (const ch of nextLine.text) {
-            if (ch === "(") depth++;
-            else if (ch === ")") depth--;
-          }
-          hideEnd = nextLine.to;
-          if (depth <= 0) break;
-        }
-      }
-    }
-
-    // Include trailing newline
-    if (hideEnd < docLen) {
-      hideEnd = Math.min(hideEnd + 1, docLen);
-    }
-    // Absorb a following blank line
-    if (hideEnd < docLen) {
-      const nextLine = state.doc.lineAt(hideEnd);
-      if (nextLine.text.trim() === "") {
-        hideEnd = Math.min(nextLine.to + 1, docLen);
-      }
-    }
-    // Skip bibliography while it's expanded so the cursor can land inside.
-    if (isBibliography && expandedPos !== null && expandedPos >= line.from && expandedPos < hideEnd) {
-      continue;
-    }
-    ranges.push({ from: line.from, to: Math.min(hideEnd, docLen) });
-  }
-
-  // Also check via syntax tree for #note()/#bibliography() that may appear
-  // beyond the first few lines (e.g. bibliography at end of file)
-  syntaxTree(state).iterate({
-    from: 0,
-    to: docLen,
-    enter(node) {
-      if (node.name !== "FuncCall") return;
-      if (node.from > docLen || node.to > docLen) return;
-      const text = state.doc.sliceString(node.from, node.to);
-      const match = text.match(/^#(\w[\w-]*)/);
-      if (!match) return;
-      const funcName = match[1];
-      if (funcName !== "note" && funcName !== "bibliography") return;
-
-      // Skip if already covered by text-based scan
-      const alreadyCovered = ranges.some(
-        (r) => node.from >= r.from && node.to <= r.to,
-      );
-      if (alreadyCovered) return;
-
-      let hideEnd = node.to;
-      if (hideEnd < docLen) {
-        const afterLine = state.doc.lineAt(hideEnd);
-        if (hideEnd === afterLine.to) {
-          hideEnd = Math.min(hideEnd + 1, docLen);
-        }
-        if (hideEnd < docLen) {
-          const nextLine = state.doc.lineAt(hideEnd);
-          if (nextLine.text.trim() === "") {
-            hideEnd = Math.min(nextLine.to + 1, docLen);
-          }
-        }
-      }
-      if (funcName === "bibliography" && expandedPos !== null
-          && expandedPos >= node.from && expandedPos < hideEnd) {
-        return;
-      }
-      ranges.push({ from: node.from, to: Math.min(hideEnd, docLen) });
-    },
-  });
-
-  return ranges;
-}
-
-const protectedRangesField = StateField.define<ProtectedRange[]>({
-  create(state) {
-    const expanded = state.field(expandedFuncField, false) ?? null;
-    return computeProtectedRanges(state, expanded);
-  },
-  update(ranges, tr) {
-    const startExpanded = tr.startState.field(expandedFuncField, false) ?? null;
-    const newExpanded = tr.state.field(expandedFuncField, false) ?? null;
-    if (tr.docChanged
-        || syntaxTree(tr.state) !== syntaxTree(tr.startState)
-        || startExpanded !== newExpanded) {
-      return computeProtectedRanges(tr.state, newExpanded);
-    }
-    return ranges;
-  },
-});
-
-function isInProtectedRange(pos: number, ranges: ProtectedRange[]): boolean {
-  for (const r of ranges) {
-    if (pos >= r.from && pos < r.to) return true;
-  }
-  return false;
-}
-
-function pushOutOfProtected(pos: number, ranges: ProtectedRange[]): number {
-  for (const r of ranges) {
-    if (pos >= r.from && pos < r.to) {
-      return r.to;
-    }
-  }
-  return pos;
-}
-
-function adjustBlockWidgetCursor(state: EditorState, pos: number): number | null {
-  const line = state.doc.lineAt(pos);
-  const lineText = line.text;
-  for (const funcName of BLOCK_WIDGET_FUNCS) {
-    const prefix = `#${funcName}(`;
-    if (lineText.startsWith(prefix)) {
-      const argRange = extractFirstStringArgRange(lineText, line.from);
-      if (!argRange) continue;
-      if (pos >= line.from && pos < argRange.from) {
-        return argRange.from;
-      }
-      if (pos > argRange.to && pos < line.to) {
-        return argRange.to;
-      }
-    }
-  }
-  return null;
-}
-
-const protectedCursorFilter = EditorState.transactionFilter.of((tr) => {
-  if (!tr.selection) return tr;
-  // When the document is changing (typing, paste, etc.), selection positions
-  // are in the new document's coordinate space while protected ranges and
-  // block-widget positions are in the old document's space.  Skip cursor
-  // adjustments for doc-changing transactions — they only matter for
-  // navigation (arrow keys, clicks).
-  if (tr.docChanged) return tr;
-
-  const ranges = tr.startState.field(protectedRangesField, false);
-
-  const hasExpandEffect = tr.effects?.some((e: any) => e.is(expandFunc));
-  const expandedPos = tr.startState.field(expandedFuncField, false) ?? null;
-
-  let needsUpdate = false;
-  const newRanges = tr.selection.ranges.map((range) => {
-    let newHead = range.head;
-    let newAnchor = range.anchor;
-
-    // When an expandFunc effect fires, the user is intentionally moving the
-    // cursor into the function call (e.g. clicked the bibliography pill).
-    // Don't push them back out — the protected-ranges field will recompute
-    // on the next transaction with the new expandedFuncField and exclude
-    // the range, but for THIS transaction the old ranges still include it.
-    if (ranges && ranges.length > 0 && !hasExpandEffect) {
-      newHead = pushOutOfProtected(newHead, ranges);
-      newAnchor = range.empty ? newHead : pushOutOfProtected(newAnchor, ranges);
-    }
-
-    if (!hasExpandEffect) {
-      const line = tr.startState.doc.lineAt(newHead);
-      const lineExpanded = expandedPos !== null && expandedPos >= line.from && expandedPos <= line.to;
-      const isAutoExpand = tr.startState.facet(autoExpandFacet);
-      if (!lineExpanded && !isAutoExpand) {
-        const adjusted = adjustBlockWidgetCursor(tr.startState, newHead);
-        if (adjusted !== null) {
-          newHead = adjusted;
-          if (range.empty) newAnchor = newHead;
-        }
-      }
-    }
-
-    if (newHead !== range.head || newAnchor !== range.anchor) {
-      needsUpdate = true;
-      return EditorSelection.range(newAnchor, newHead);
-    }
-    return range;
-  });
-
-  if (!needsUpdate) return tr;
-  return [tr, { selection: EditorSelection.create(newRanges, tr.selection.mainIndex) }];
-});
-
-// Annotated by external reloads (sidebar property edits) so the protected-
-// range filter knows to step out of the way. Protected ranges exist to keep
-// the user from accidentally deleting through a widget while typing — they
-// must NOT preserve stale source against a wholesale buffer replacement.
-export const externalReload = Annotation.define<boolean>();
-
-const protectedChangeFilter = EditorState.changeFilter.of((tr) => {
-  if (tr.annotation(externalReload)) return true;
-  const ranges = tr.startState.field(protectedRangesField, false);
-  if (!ranges || ranges.length === 0) return true;
-
-  let hasOverlap = false;
-  let allContained = true;
-  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-    for (const r of ranges) {
-      // Pure insertions (fromA === toA) at the range boundary r.from
-      // must also be caught — use >= for fromA so we block text
-      // pushed into the start of a protected prelude.
-      const isPureInsert = fromA === toA && inserted.length > 0;
-      const overlaps = isPureInsert
-        ? (fromA >= r.from && fromA < r.to)
-        : (fromA < r.to && toA > r.from);
-      if (overlaps) {
-        hasOverlap = true;
-        if (fromA >= r.from && toA <= r.to) {
-          // Change entirely within a protected range — block it
-        } else {
-          // Change spans beyond a protected range (e.g. select-all + delete)
-          allContained = false;
-        }
-        return;
-      }
-    }
-  });
-
-  if (!hasOverlap) return true;
-  if (allContained) return false;
-
-  // For changes that span protected ranges (like select-all + delete),
-  // return the protected sub-ranges so CodeMirror filters them OUT of the
-  // change — i.e. leaves them untouched. The returned array is a flat list
-  // of from/to pairs of ranges that must not be modified.
-  const filtered: number[] = [];
-  tr.changes.iterChanges((fromA, toA) => {
-    for (const r of ranges) {
-      if (r.from >= toA) break;
-      if (r.to <= fromA) continue;
-      filtered.push(Math.max(fromA, r.from), Math.min(toA, r.to));
-    }
-  });
-  return filtered;
-});
-
 const DECO_TRIGGER_CHARS = new Set(["*", "_", "\\", "$", "@", "#", "`", "/"]);
 
 function cursorNearDecoTrigger(state: EditorState): boolean {
@@ -1591,6 +1170,92 @@ function cursorNearDecoTrigger(state: EditorState): boolean {
     }
   }
   return false;
+}
+
+function rebuildRanges(
+  existing: DecorationSet,
+  state: EditorState,
+  dirtyRanges: { from: number; to: number }[],
+): DecorationSet {
+  dirtyRanges.sort((a, b) => a.from - b.from);
+
+  const merged: { from: number; to: number }[] = [];
+  for (const r of dirtyRanges) {
+    const last = merged[merged.length - 1];
+    if (last && r.from <= last.to + 1) {
+      last.to = Math.max(last.to, r.to);
+    } else {
+      merged.push({ from: r.from, to: r.to });
+    }
+  }
+
+  if (merged.length === 0) return existing;
+
+  const totalDirty = merged.reduce((s, r) => s + (r.to - r.from), 0);
+  if (totalDirty > state.doc.length * 0.5) {
+    return buildDecorations(state);
+  }
+
+  const newDecos = buildDecorations(state, merged);
+
+  const kept: Range<Decoration>[] = [];
+  const iter = existing.iter();
+  while (iter.value) {
+    let inDirty = false;
+    for (const r of merged) {
+      if (iter.from < r.to && iter.to > r.from) {
+        inDirty = true;
+        break;
+      }
+    }
+    if (!inDirty) {
+      kept.push(iter.value.range(iter.from, iter.to));
+    }
+    iter.next();
+  }
+
+  const rebuilt: Range<Decoration>[] = [];
+  const rebuiltIter = newDecos.iter();
+  while (rebuiltIter.value) {
+    rebuilt.push(rebuiltIter.value.range(rebuiltIter.from, rebuiltIter.to));
+    rebuiltIter.next();
+  }
+
+  return RangeSet.of([...kept, ...rebuilt], true);
+}
+
+function rebuildDirtyLines(
+  existing: DecorationSet,
+  state: EditorState,
+  oldCursorLines: Set<number>,
+  newCursorLines: Set<number>,
+): DecorationSet {
+  const dirtyLines = new Set([...oldCursorLines, ...newCursorLines]);
+  const dirtyRanges: { from: number; to: number }[] = [];
+  for (const lineNum of dirtyLines) {
+    if (lineNum < 1 || lineNum > state.doc.lines) continue;
+    const line = state.doc.line(lineNum);
+    dirtyRanges.push({ from: line.from, to: line.to });
+  }
+  return rebuildRanges(existing, state, dirtyRanges);
+}
+
+function rebuildDocChange(
+  existing: DecorationSet,
+  tr: { state: EditorState; changes: ChangeSet },
+): DecorationSet {
+  const mapped = existing.map(tr.changes);
+  const dirtyRanges: { from: number; to: number }[] = [];
+  tr.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+    const startLine = tr.state.doc.lineAt(fromB);
+    const endLine = tr.state.doc.lineAt(Math.min(toB, tr.state.doc.length));
+    dirtyRanges.push({ from: startLine.from, to: endLine.to });
+  });
+  for (const r of tr.state.selection.ranges) {
+    const line = tr.state.doc.lineAt(r.head);
+    dirtyRanges.push({ from: line.from, to: line.to });
+  }
+  return rebuildRanges(mapped, tr.state, dirtyRanges);
 }
 
 
@@ -1618,7 +1283,10 @@ const visualField = StateField.define<DecorationSet>({
         return buildDecorations(tr.state);
       }
     }
-    if (tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
+    if (tr.docChanged) {
+      return rebuildDocChange(decos, tr);
+    }
+    if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
       return buildDecorations(tr.state);
     }
     if (tr.startState.facet(autoExpandFacet) !== tr.state.facet(autoExpandFacet)) {
@@ -1632,11 +1300,8 @@ const visualField = StateField.define<DecorationSet>({
     if (tr.selection) {
       const oldLines = cursorLines(tr.startState);
       const newLines = cursorLines(tr.state);
-      if (!setsEqual(oldLines, newLines)) {
-        return buildDecorations(tr.state);
-      }
-      if (cursorNearDecoTrigger(tr.startState) || cursorNearDecoTrigger(tr.state)) {
-        return buildDecorations(tr.state);
+      if (!setsEqual(oldLines, newLines) || cursorNearDecoTrigger(tr.startState) || cursorNearDecoTrigger(tr.state)) {
+        return rebuildDirtyLines(decos, tr.state, oldLines, newLines);
       }
     }
     return decos;
@@ -1679,1119 +1344,17 @@ const postHistoryRebuild = ViewPlugin.fromClass(class {
   }
 });
 
-export const visualTheme = EditorView.theme({
-  ".cm-scroller": { overflowAnchor: "none" },
-  ".cm-cursor": { maxHeight: "1.5em" },
-  ".cm-gutters": {
-    display: "none !important",
-  },
-  ".cm-typst-bold": { fontWeight: "bold" },
-  ".cm-typst-italic": { fontStyle: "italic", color: "inherit" },
-  ".cm-typst-strike": { textDecoration: "line-through", color: "var(--syntax-strike)" },
-  ".cm-typst-highlight": {
-    backgroundColor: "var(--bg-search-match)",
-    borderRadius: "2px",
-    padding: "0 2px",
-    // The five highlight palette colours are intentionally light pastels,
-    // chosen so the marking reads as a felt-pen highlight rather than a
-    // background tint. In dark mode the editor's default text colour is
-    // near-white, which becomes unreadable on those pastels — pin a near-
-    // black text colour on highlighted spans so the contrast is right
-    // regardless of theme.
-    color: "#1a1a1a",
-  },
-  // R12 marks for sub/super/underline/overline: visual representation
-  // applied directly to the live Typst source so the body stays editable.
-  ".cm-typst-underline-mark": {
-    textDecoration: "underline",
-    textUnderlineOffset: "2px",
-  },
-  ".cm-typst-overline-mark": {
-    textDecoration: "overline",
-  },
-  ".cm-typst-sub": {
-    fontSize: "0.75em",
-    verticalAlign: "sub",
-    lineHeight: "0",
-  },
-  ".cm-typst-sup": {
-    fontSize: "0.75em",
-    verticalAlign: "super",
-    lineHeight: "0",
-  },
-  // Inline #quote[…] body — wrap in smart quotes so the visual editor
-  // tracks Typst's inline-quote rendering (effectively HTML `<q>`). The
-  // ::before / ::after pseudo-elements are non-editable presentation
-  // only; the body content between them remains live source.
-  ".cm-typst-quote-inline::before": { content: '"\\201C"' },
-  ".cm-typst-quote-inline::after": { content: '"\\201D"' },
-  ".cm-typst-raw-inline": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    backgroundColor: "var(--syntax-mono-bg)",
-    borderRadius: "3px",
-    padding: "1px 4px",
-  },
-  ".cm-typst-link": {
-    color: "var(--syntax-link)",
-    textDecoration: "underline",
-  },
-  ".cm-typst-link-external-icon": {
-    display: "inline-block",
-    verticalAlign: "baseline",
-    marginLeft: "2px",
-    opacity: "0.5",
-    position: "relative",
-    top: "1px",
-  },
-  ".cm-link-hover": {
-    cursor: "pointer",
-  },
-  ".cm-typst-math-inline": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    color: "var(--syntax-string)",
-  },
-  ".cm-typst-math-display": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    color: "var(--syntax-string)",
-    display: "block",
-    padding: "0.5em 0",
-  },
-  ".cm-typst-label": {
-    color: "var(--syntax-type)",
-    opacity: "0.6",
-  },
-  ".cm-typst-ref": {
-    color: "var(--syntax-type)",
-    cursor: "pointer",
-  },
-  ".cm-typst-h1, .cm-typst-h2, .cm-typst-h3, .cm-typst-h4, .cm-typst-h5, .cm-typst-h6": {
-    color: "var(--fg-primary)",
-  },
-  ".cm-typst-h1 span, .cm-typst-h2 span, .cm-typst-h3 span, .cm-typst-h4 span, .cm-typst-h5 span, .cm-typst-h6 span": {
-    color: "inherit !important",
-  },
-  ".cm-typst-h1": { fontSize: "1.8em", fontWeight: "bold", lineHeight: "1.3" },
-  ".cm-typst-h2": { fontSize: "1.5em", fontWeight: "bold", lineHeight: "1.3" },
-  ".cm-typst-h3": { fontSize: "1.3em", fontWeight: "bold", lineHeight: "1.3" },
-  ".cm-typst-h4": { fontSize: "1.15em", fontWeight: "bold", lineHeight: "1.3" },
-  ".cm-typst-h5": { fontSize: "1.05em", fontWeight: "bold", lineHeight: "1.3" },
-  ".cm-typst-h6": { fontSize: "1em", fontWeight: "bold", fontStyle: "italic", lineHeight: "1.3" },
-  ".cm-typst-escaped, .cm-typst-escaped span": {
-    color: "inherit !important",
-    fontWeight: "inherit !important",
-    fontStyle: "inherit !important",
-  },
-  ".cm-typst-term-key": {
-    fontWeight: "bold",
-  },
-  ".cm-typst-term-sep": {
-    color: "var(--fg-dim)",
-    marginRight: "0.3em",
-  },
-  ".cm-typst-shorthand": {
-    color: "inherit",
-  },
-  ".cm-typst-list-bullet": {
-    color: "var(--accent)",
-    display: "inline-block",
-    width: "1.2em",
-    textAlign: "center",
-  },
-  ".cm-typst-hr": {
-    border: "none",
-    borderTop: "2px solid var(--border-primary)",
-    margin: "1em 0",
-    display: "block",
-  },
-  ".cm-typst-callout": {
-    borderLeft: "3px solid var(--accent)",
-    borderRadius: "4px",
-    padding: "8px 12px",
-    margin: "4px 0",
-    display: "block",
-  },
-  ".cm-typst-callout-heading": {
-    fontWeight: "bold",
-    fontSize: "0.95em",
-    marginBottom: "4px",
-  },
-  ".cm-typst-callout-body": {
-    fontSize: "0.95em",
-    lineHeight: "1.5",
-  },
-  ".cm-typst-codeblock": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    backgroundColor: "var(--bg-secondary)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "6px",
-    padding: "0",
-    margin: "4px 0",
-    display: "block",
-    overflow: "hidden",
-  },
-  ".cm-typst-codeblock-header": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "6px",
-    padding: "2px 6px 2px 10px",
-    borderBottom: "1px solid var(--border-subtle)",
-    backgroundColor: "var(--bg-hover)",
-    minHeight: "22px",
-  },
-  ".cm-typst-codeblock-lang": {
-    fontSize: "0.75em",
-    color: "var(--fg-dim)",
-    fontFamily: "var(--editor-font-mono, monospace)",
-  },
-  ".cm-typst-codeblock-copy": {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "22px",
-    height: "22px",
-    padding: "0",
-    border: "none",
-    borderRadius: "4px",
-    background: "transparent",
-    color: "var(--fg-dim)",
-    cursor: "pointer",
-    transition: "background-color 0.12s, color 0.12s",
-    fontFamily: "inherit",
-  },
-  ".cm-typst-codeblock-copy:hover": {
-    backgroundColor: "var(--bg-tertiary, var(--bg-secondary))",
-    color: "var(--fg-primary)",
-  },
-  ".cm-typst-codeblock-copy.is-copied": {
-    color: "var(--accent-color, #1D7874)",
-  },
-  ".cm-typst-codeblock pre": {
-    margin: "0",
-    padding: "8px 10px",
-    overflow: "auto",
-    fontSize: "0.9em",
-    lineHeight: "1.5",
-    fontFamily: "inherit",
-  },
-  ".cm-typst-codeblock code": {
-    fontFamily: "inherit",
-  },
-  // Edit-mode lines: when the cursor enters the code block we show the raw
-  // source instead of the widget. Just the monospace font + a tighter size;
-  // no surrounding frame, since the visible delimiters (` ``` `) already
-  // mark the block boundaries while editing.
-  ".cm-typst-codeblock-edit": {
-    fontFamily: "var(--editor-font-mono, monospace) !important",
-    fontSize: "0.9em",
-  },
-  ".cm-typst-block-pill-row": {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "1px 0",
-    margin: "0",
-    lineHeight: "1.4",
-  },
-  ".cm-typst-image-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-    textAlign: "center" as any,
-  },
-  ".cm-typst-image-block-path": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    fontSize: "0.85em",
-    color: "var(--fg-dim)",
-    marginLeft: "4px",
-  },
-  ".cm-typst-embed-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-  },
-  ".cm-typst-embed-block-name": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    fontSize: "0.85em",
-    color: "var(--fg-dim)",
-    marginLeft: "4px",
-  },
-  ".cm-typst-callout-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-  },
-  ".cm-typst-blockquote-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-  },
-  ".cm-typst-bibliography-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-  },
-  ".cm-typst-bibliography-block-path": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    fontSize: "0.85em",
-    color: "var(--fg-dim)",
-    marginLeft: "6px",
-    opacity: "0.8",
-  },
-  ".cm-typst-block-collapsed-body": {
-    fontSize: "0.9em",
-    color: "var(--fg-dim)",
-    marginLeft: "4px",
-  },
-  ".cm-typst-image": {
-    display: "block",
-    position: "relative",
-    margin: "4px 0",
-    textAlign: "center" as any,
-  },
-  ".cm-typst-image-img": {
-    maxWidth: "100%",
-    maxHeight: "400px",
-    borderRadius: "4px",
-    display: "block",
-    margin: "0 auto",
-  },
-  ".cm-typst-image-label": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    fontSize: "0.75em",
-    color: "var(--fg-dim)",
-    padding: "2px 6px",
-    textAlign: "center" as any,
-  },
-  ".cm-typst-embed": {
-    display: "block",
-    position: "relative",
-    backgroundColor: "var(--bg-secondary)",
-    border: "1px solid var(--border-subtle)",
-    borderLeft: "3px solid var(--accent, #1D7874)",
-    borderRadius: "4px",
-    margin: "4px 0",
-    overflow: "hidden",
-  },
-  ".cm-typst-embed-header": {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 10px",
-    fontSize: "0.9em",
-    fontWeight: "600",
-    color: "var(--accent-text)",
-    borderBottom: "1px solid var(--border-subtle)",
-    backgroundColor: "var(--bg-hover)",
-  },
-  ".cm-typst-embed-icon": {
-    fontSize: "1em",
-    color: "var(--fg-dim)",
-  },
-  ".cm-typst-embed-label": {
-    color: "var(--accent-text)",
-  },
-  ".cm-typst-embed-nav-btn": {
-    marginLeft: "auto",
-    cursor: "pointer",
-    opacity: "0.4",
-    display: "flex",
-    alignItems: "center",
-    padding: "2px",
-    borderRadius: "3px",
-    transition: "opacity 0.15s",
-  },
-  ".cm-typst-embed-nav-btn:hover": {
-    opacity: "1",
-    backgroundColor: "var(--bg-hover)",
-  },
-  ".cm-typst-embed-preview": {
-    padding: "8px 10px",
-    fontSize: "0.85em",
-    lineHeight: "1.5",
-    color: "var(--fg-muted)",
-    whiteSpace: "pre-line",
-    maxHeight: "6em",
-    overflow: "hidden",
-  },
-  ".cm-typst-embed-preview--error": {
-    fontStyle: "italic",
-    color: "var(--fg-dim)",
-  },
-  ".cm-typst-tag": {
-    display: "inline-block",
-    backgroundColor: "var(--accent-purple-bg)",
-    color: "var(--accent-text)",
-    borderRadius: "3px",
-    padding: "1px 6px",
-    fontSize: "0.85em",
-    cursor: "pointer",
-  },
-  ".cm-typst-wikilink": {
-    display: "inline",
-    color: "var(--syntax-link)",
-    textDecoration: "underline",
-    textDecorationStyle: "solid",
-    cursor: "pointer",
-  },
-  ".cm-typst-wikilink.cm-typst-wikilink--unresolved": {
-    textDecorationStyle: "dotted",
-    opacity: "0.85",
-  },
-  ".cm-typst-wikilink.cm-typst-strike": {
-    textDecoration: "underline line-through",
-  },
-  ".cm-typst-wikilink.cm-typst-highlight": {
-    backgroundColor: "var(--bg-search-match)",
-    borderRadius: "2px",
-    padding: "0 2px",
-  },
-  ".cm-typst-wikilink-sep": {
-    color: "var(--fg-dim)",
-    opacity: "0.6",
-  },
-  ".cm-typst-wikilink-label": {
-    fontSize: "0.85em",
-    fontWeight: "300",
-    opacity: "0.7",
-  },
-  ".cm-typst-footnote": {
-    color: "var(--syntax-link)",
-    cursor: "help",
-    fontSize: "0.8em",
-    verticalAlign: "super",
-    fontWeight: "bold",
-  },
-  ".cm-typst-blockquote": {
-    display: "block",
-    borderLeft: "3px solid var(--border-primary)",
-    padding: "8px 16px",
-    margin: "8px 0",
-    fontStyle: "italic",
-    color: "var(--fg-muted)",
-  },
-  ".cm-typst-blockquote-text": {
-    lineHeight: "1.6",
-  },
-  ".cm-typst-blockquote-attr": {
-    marginTop: "4px",
-    fontSize: "0.9em",
-    fontStyle: "normal",
-    color: "var(--fg-dim)",
-  },
-  // ── Pills (R1–R3) ──
-  // Single visual identity for every pill in the visual editor. Inline,
-  // block-row, and embedded sites all use this class. See
-  // documentation/developer/visual-editor/pill-system.md.
-  // .cm-typst-func-chip is kept as an alias so legacy call sites that
-  // still reference it pick up the same styles during the staged rollout.
-  ".cm-typst-pill, .cm-typst-func-chip": {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "3px",
-    backgroundColor: "var(--bg-secondary)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "12px",
-    padding: "1px 8px 1px 4px",
-    fontSize: "0.85em",
-    fontFamily: "var(--editor-font-mono, monospace)",
-    color: "var(--fg-muted)",
-    cursor: "pointer",
-    verticalAlign: "middle",
-    userSelect: "none",
-    // Reset native button visuals so a <button> matches a <span>.
-    font: "inherit",
-    lineHeight: "1.4",
-    margin: "0",
-  },
-  ".cm-typst-pill:hover, .cm-typst-func-chip:hover, .cm-typst-pill:focus-visible, .cm-typst-func-chip:focus-visible": {
-    color: "var(--fg-primary)",
-    borderColor: "var(--accent)",
-    outline: "none",
-  },
-  ".cm-typst-pill-hash, .cm-typst-func-chip-hash": {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "1.18em",
-    height: "1.18em",
-    borderRadius: "50%",
-    backgroundColor: "var(--accent, #1D7874)",
-    color: "var(--pill-fg, #fff)",
-    fontSize: "inherit",
-    lineHeight: "0",
-    transition: "background-color 0.12s ease",
-  },
-  ".cm-typst-pill-hash::after, .cm-typst-func-chip-hash::after": {
-    content: "'#'",
-    fontSize: "0.76em",
-    fontWeight: "bold",
-    lineHeight: "1",
-  },
-  // ── Pill super-context-menu (R6) ──
-  ".cm-typst-pill-menu": {
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "6px",
-    padding: "4px 0",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
-    zIndex: "1000",
-    minWidth: "200px",
-    fontSize: "0.9em",
-    fontFamily: "var(--editor-font-body, inherit)",
-  },
-  ".cm-typst-pill-menu-heading": {
-    padding: "4px 12px 2px",
-    fontSize: "0.78em",
-    fontWeight: "600",
-    letterSpacing: "0.3px",
-    color: "var(--fg-muted)",
-  },
-  ".cm-typst-pill-menu-sep": {
-    height: "1px",
-    margin: "4px 0",
-    backgroundColor: "var(--border-subtle)",
-  },
-  ".cm-typst-pill-menu-item": {
-    display: "flex",
-    alignItems: "center",
-    width: "100%",
-    padding: "5px 12px",
-    fontSize: "inherit",
-    fontFamily: "inherit",
-    color: "var(--fg-primary)",
-    backgroundColor: "transparent",
-    border: "none",
-    textAlign: "left",
-    cursor: "pointer",
-    gap: "8px",
-  },
-  ".cm-typst-pill-menu-item:hover, .cm-typst-pill-menu-item:focus-visible": {
-    backgroundColor: "var(--bg-hover)",
-    outline: "none",
-  },
-  ".cm-typst-pill-menu-item.is-disabled": {
-    color: "var(--fg-dim)",
-    cursor: "not-allowed",
-  },
-  ".cm-typst-pill-menu-item.is-active": {
-    color: "var(--accent)",
-  },
-  ".cm-typst-pill-menu-label": {
-    flex: "1",
-  },
-  // Sits to the right of the label (the label's flex:1 pushes it there).
-  // Keep a small left margin so it doesn't crowd long labels.
-  ".cm-typst-pill-menu-check": {
-    marginLeft: "8px",
-    color: "var(--accent)",
-    fontSize: "0.95em",
-    lineHeight: "1",
-  },
-  ".cm-typst-pill-menu-input-row": {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "5px 12px",
-    cursor: "default",
-  },
-  ".cm-typst-pill-menu-input-label": {
-    fontSize: "0.92em",
-    color: "var(--fg-muted)",
-    minWidth: "70px",
-    cursor: "text",
-  },
-  ".cm-typst-pill-menu-input": {
-    flex: "1",
-    minWidth: "0",
-    padding: "3px 6px",
-    fontSize: "inherit",
-    fontFamily: "inherit",
-    color: "var(--fg-primary)",
-    backgroundColor: "var(--bg-input, var(--bg-secondary))",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "3px",
-  },
-  ".cm-typst-pill-menu-input:focus": {
-    outline: "none",
-    borderColor: "var(--accent)",
-  },
-  ".cm-typst-citation": {
-    display: "inline-block",
-    backgroundColor: "var(--bg-secondary)",
-    color: "var(--syntax-type)",
-    borderRadius: "3px",
-    padding: "1px 5px",
-    fontSize: "0.9em",
-    fontFamily: "var(--editor-font-mono, monospace)",
-  },
-  // ── Verse ──
-  // First-class verse element: an open canvas, not a code-block. The
-  // pill at top-left identifies it and exposes alignment options; the
-  // canvas itself is contentEditable with inline formatting rendered.
-  ".cm-typst-verse": {
-    display: "block",
-    position: "relative",
-    margin: "10px 0",
-    padding: "0",
-    // Subtle dotted top/bottom rules demark the verse region without
-    // making it feel boxed-in. Pill at top-left identifies it.
-    borderTop: "1px dotted var(--border-subtle)",
-    borderBottom: "1px dotted var(--border-subtle)",
-    "--verse-active-font": "var(--verse-font, var(--editor-font-body, var(--md-body-font, serif)))",
-  },
-  // Verse uses the standard .cm-typst-pill class (R1). The verse-specific
-  // rule only sets positioning so the pill anchors to the canvas's
-  // top-left corner; sizing/colors come from the unified pill rule above.
-  ".cm-typst-verse-pill": {
-    position: "absolute",
-    top: "0",
-    left: "0",
-    zIndex: "2",
-  },
-  ".cm-typst-verse-canvas": {
-    display: "block",
-    minHeight: "1.6em",
-    padding: "32px 12px 12px 12px",
-    fontFamily: "var(--verse-active-font)",
-    fontSize: "inherit",
-    lineHeight: "1.7",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    color: "var(--fg-primary)",
-    outline: "none",
-    caretColor: "var(--accent)",
-    "-webkit-user-select": "text",
-    userSelect: "text",
-  },
-  ".cm-typst-verse-canvas:focus": {
-    backgroundColor: "var(--bg-hover-subtle, transparent)",
-  },
-  ".cm-typst-verse-canvas mark": {
-    backgroundColor: "var(--highlight-bg, #fff3a3)",
-    color: "inherit",
-    padding: "0 2px",
-    borderRadius: "2px",
-  },
-  // (Verse alignment popover replaced by the universal pill super-menu.
-  // Verse alignment options now live as a section in that menu — see
-  // VerseWidget.buildOptionSections in widgets.ts.)
-  // ── Table widget ──
-  ".cm-typst-table-wrap": {
-    display: "block",
-    position: "relative",
-    margin: "8px 0",
-    outline: "none",
-  },
-  ".cm-typst-table": {
-    borderCollapse: "collapse",
-    fontSize: "0.9em",
-  },
-  ".cm-typst-table th, .cm-typst-table td": {
-    border: "1px solid var(--border-subtle)",
-    padding: "0",
-    position: "relative",
-  },
-  ".cm-typst-table th": {
-    backgroundColor: "var(--bg-hover)",
-    fontWeight: "bold",
-    textAlign: "left",
-  },
+export const protectedRangesField = createProtectedRangesField(expandedFuncField, rebuildVisualDecorations);
 
-  // ── Editable cell ──
-  ".cm-typst-table-cell": {
-    minHeight: "1.6em",
-    padding: "4px 8px",
-    outline: "none",
-    lineHeight: "1.5",
-    cursor: "default",
-    "-webkit-user-select": "text",
-    userSelect: "text",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  },
-  ".cm-typst-table-cell:focus, .cm-typst-table-cell.cm-typst-table-cell--editing": {
-    boxShadow: "inset 0 0 0 2px var(--accent)",
-    cursor: "text",
-  },
-  ".cm-typst-table-cell::selection, .cm-typst-table-cell *::selection": {
-    background: "var(--bg-selection, Highlight) !important",
-    color: "inherit",
-  },
-  ".cm-typst-table-cell--selected": {
-    backgroundColor: "var(--bg-search-match, rgba(59, 130, 246, 0.15))",
-  },
-
-  // ── Column/row selection highlight ──
-  ".cm-table-col--selected": {
-    backgroundColor: "rgba(59, 130, 246, 0.08)",
-    boxShadow: "inset 0 0 0 1.5px var(--accent)",
-  },
-  ".cm-table-row--selected": {
-    backgroundColor: "rgba(59, 130, 246, 0.08)",
-  },
-  ".cm-table-row--selected td, .cm-table-row--selected th": {
-    boxShadow: "inset 0 0 0 1.5px var(--accent)",
-  },
-
-  // ── Drop indicators during drag reorder ──
-  ".cm-table-drop-before": {
-    borderLeft: "2.5px solid var(--accent) !important",
-  },
-  ".cm-table-drop-after": {
-    borderRight: "2.5px solid var(--accent) !important",
-  },
-  "tr.cm-table-drop-before": {
-    borderLeft: "none !important",
-    borderTop: "2.5px solid var(--accent) !important",
-  },
-  "tr.cm-table-drop-after": {
-    borderRight: "none !important",
-    borderBottom: "2.5px solid var(--accent) !important",
-  },
-
-  // ── Control row (column handles above data) ──
-  ".cm-table-control-row": {
-    opacity: "0",
-    transition: "opacity 0.15s",
-  },
-  ".cm-typst-table-wrap:hover .cm-table-control-row, .cm-typst-table-wrap:focus-within .cm-table-control-row": {
-    opacity: "1",
-  },
-  ".cm-table-control-row td": {
-    border: "none !important",
-    padding: "0 !important",
-    height: "16px",
-    position: "relative",
-  },
-  ".cm-table-corner-cell": {
-    width: "18px",
-    minWidth: "18px",
-    maxWidth: "18px",
-    border: "none !important",
-  },
-  ".cm-table-col-header-cell": {
-    textAlign: "center",
-    position: "relative",
-  },
-  ".cm-table-col-handle": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    height: "100%",
-    fontSize: "var(--text-xs)",
-    color: "var(--fg-dim)",
-    cursor: "grab",
-    userSelect: "none",
-    borderRadius: "2px",
-  },
-  ".cm-table-row-handle": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    height: "100%",
-    fontSize: "var(--text-xs)",
-    color: "var(--fg-dim)",
-    cursor: "grab",
-    userSelect: "none",
-    borderRadius: "2px",
-  },
-  ".cm-table-col-handle:hover, .cm-table-row-handle:hover": {
-    backgroundColor: "var(--bg-hover)",
-    color: "var(--fg-primary)",
-  },
-  ".cm-table-col-handle.cm-table-handle--dragging, .cm-table-row-handle.cm-table-handle--dragging": {
-    opacity: "0.4",
-    cursor: "grabbing",
-  },
-
-  ".cm-table-handle-grip": {
-    pointerEvents: "none",
-    lineHeight: "1",
-    letterSpacing: "0px",
-  },
-
-  // ── Row handle cells (left column) ──
-  ".cm-table-row-handle-cell": {
-    width: "18px",
-    minWidth: "18px",
-    maxWidth: "18px",
-    border: "none !important",
-    padding: "0 !important",
-    position: "relative",
-    verticalAlign: "middle",
-    opacity: "0",
-    transition: "opacity 0.15s",
-  },
-  ".cm-typst-table-wrap:hover .cm-table-row-handle-cell, .cm-typst-table-wrap:focus-within .cm-table-row-handle-cell": {
-    opacity: "1",
-  },
-
-  // ── Add (+) buttons at edges ──
-  ".cm-table-add-btn": {
-    position: "absolute",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    opacity: "0",
-    transition: "opacity 0.1s",
-    userSelect: "none",
-    zIndex: "3",
-  },
-  ".cm-table-add-btn:hover": {
-    opacity: "1 !important",
-  },
-  ".cm-table-add-btn span": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "16px",
-    height: "16px",
-    borderRadius: "50%",
-    backgroundColor: "var(--accent)",
-    color: "var(--pill-fg, #fff)",
-    fontSize: "var(--text-base)",
-    fontWeight: "bold",
-    lineHeight: "1",
-  },
-  ".cm-table-add-btn--col": {
-    top: "0",
-    bottom: "0",
-    width: "16px",
-    marginLeft: "-8px",
-  },
-  ".cm-table-col-header-cell .cm-table-add-btn--col:first-child": {
-    left: "-1px",
-  },
-  ".cm-table-col-header-cell .cm-table-add-btn--col:last-child": {
-    right: "-9px",
-  },
-  ".cm-table-add-btn--row": {
-    left: "0",
-    right: "0",
-    height: "16px",
-    marginTop: "-8px",
-  },
-  ".cm-table-row-handle-cell .cm-table-add-btn--row:first-child": {
-    top: "-1px",
-  },
-  ".cm-table-row-handle-cell .cm-table-add-btn--row:last-child": {
-    bottom: "-9px",
-    top: "auto",
-    marginTop: "0",
-  },
-
-  // ── Angle bracket warning ──
-  ".cm-typst-angle-bracket-warning": {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "1.1em",
-    height: "1.1em",
-    fontSize: "0.8em",
-    color: "var(--warn-fg, #d97706)",
-    cursor: "pointer",
-    verticalAlign: "middle",
-    marginRight: "2px",
-    userSelect: "none",
-    borderRadius: "3px",
-    backgroundColor: "var(--warn-bg-alpha, color-mix(in srgb, #d97706 12%, transparent))",
-  },
-
-  // Context menu styles are inline — the menu is appended to document.body
-  // which is outside the CM6 editor, so theme-scoped CSS doesn't apply.
-});
-
-function findLinkAtPos(state: EditorState, pos: number): { url: string } | null {
-  let cur = syntaxTree(state).resolveInner(pos, 0);
-  while (cur) {
-    if (cur.name === "Link") {
-      const text = state.doc.sliceString(cur.from, cur.to);
-      if (/^https?:\/\//.test(text)) return { url: text };
-    }
-    if (cur.name === "FuncCall") {
-      const funcFrom = (cur.from > 0 && state.doc.sliceString(cur.from - 1, cur.from) === "#")
-        ? cur.from - 1 : cur.from;
-      const text = state.doc.sliceString(funcFrom, cur.to);
-      const hashOffset = text.startsWith("#") ? 1 : 0;
-      const nameEnd = text.indexOf("(", hashOffset);
-      if (nameEnd >= 0) {
-        const funcName = text.substring(hashOffset, nameEnd).trim();
-        if (funcName === "link") {
-          const url = extractFirstStringArg(text);
-          if (url) return { url };
-        }
-      }
-    }
-    if (!cur.parent) break;
-    cur = cur.parent;
-  }
-  return null;
-}
-
-const linkClickHandler = EditorView.domEventHandlers({
-  click(event: MouseEvent, view: EditorView) {
-    if (!event.ctrlKey && !event.metaKey) return false;
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    if (pos == null) return false;
-    const link = findLinkAtPos(view.state, pos);
-    if (!link) return false;
-    shellOpen(link.url);
-    event.preventDefault();
-    return true;
-  },
-  mousemove(event: MouseEvent, view: EditorView) {
-    const hasModifier = event.ctrlKey || event.metaKey;
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    if (pos == null) {
-      view.contentDOM.classList.remove("cm-link-hover");
-      return false;
-    }
-    const link = hasModifier ? findLinkAtPos(view.state, pos) : null;
-    if (link) {
-      view.contentDOM.classList.add("cm-link-hover");
-      const el = event.target as HTMLElement;
-      const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-      el.title = `${isMac ? "⌘" : "Ctrl"}+Click to follow link`;
-    } else {
-      view.contentDOM.classList.remove("cm-link-hover");
-    }
-    return false;
-  },
-  keyup(event: KeyboardEvent, view: EditorView) {
-    if (event.key === "Control" || event.key === "Meta") {
-      view.contentDOM.classList.remove("cm-link-hover");
-    }
-    return false;
-  },
-});
-
-const tableClipboardHandler = EditorView.domEventHandlers({
-  copy(event: ClipboardEvent, view: EditorView) {
-    const selected = view.dom.querySelectorAll(".cm-typst-table-cell--selected");
-    if (selected.length === 0) return false;
-
-    const wrap = selected[0].closest<HTMLElement>(".cm-typst-table-wrap");
-    if (!wrap) return false;
-
-    event.preventDefault();
-    const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
-    const lines: string[] = [];
-    for (const row of allRows) {
-      const cells = Array.from(row.querySelectorAll<HTMLElement>(".cm-typst-table-cell--selected"));
-      if (cells.length > 0) {
-        lines.push(cells.map(c => c.textContent ?? "").join("\t"));
-      }
-    }
-    event.clipboardData!.setData("text/plain", lines.join("\n"));
-    return true;
-  },
-});
-
-const tablePasteHandler = EditorView.domEventHandlers({
-  paste(event: ClipboardEvent, view: EditorView) {
-    const target = event.target as HTMLElement;
-    if (target.closest?.(".cm-typst-table-wrap")) return false;
-
-    const grid = parseClipboardAsGrid(event);
-    if (!grid || grid.length === 0) return false;
-
-    const colCount = Math.max(...grid.map(r => r.length));
-    if (colCount <= 1) return false;
-
-    event.preventDefault();
-
-    const data: TableData = {
-      columns: Array(colCount).fill("auto"),
-      align: null,
-      header: null,
-      rows: grid.map(r => {
-        const cells: TableCell[] = [];
-        for (let i = 0; i < colCount; i++) {
-          cells.push({ content: r[i] ?? "", relFrom: 0, relTo: 0 });
-        }
-        return cells;
-      }),
-      sourceText: "",
-    };
-
-    const pos = view.state.selection.main.head;
-    const line = view.state.doc.lineAt(pos);
-    view.dispatch({
-      changes: { from: line.to, insert: "\n" + serializeTable(data) + "\n" },
-    });
-
-    return true;
-  },
-});
-
-
-export { protectedRangesField };
-
-function findTableWrapNear(view: EditorView, pos: number, direction: "up" | "down"): HTMLElement | null {
-  const decos = view.state.field(visualField, false);
-  if (!decos) return null;
-  let tableFrom = -1;
-  let tableTo = -1;
-  decos.between(0, view.state.doc.length, (f, t, deco) => {
-    if (!(deco.spec?.widget instanceof TableWidget)) return;
-    if (direction === "up" && t <= pos && t > tableTo) {
-      tableFrom = f;
-      tableTo = t;
-    }
-    if (direction === "down" && f >= pos && (tableFrom < 0 || f < tableFrom)) {
-      tableFrom = f;
-      tableTo = t;
-    }
-  });
-  if (tableFrom < 0) return null;
-  const line = view.state.doc.lineAt(pos);
-  const adjacentLine = direction === "up"
-    ? (line.number > 1 ? view.state.doc.line(line.number - 1) : null)
-    : (line.number < view.state.doc.lines ? view.state.doc.line(line.number + 1) : null);
-  if (!adjacentLine) return null;
-  if (direction === "up" && !(tableTo > adjacentLine.from && tableFrom <= adjacentLine.to)) return null;
-  if (direction === "down" && !(tableFrom <= adjacentLine.to && tableTo >= adjacentLine.from)) return null;
-
-  const allWraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-table-wrap");
-  for (const w of allWraps) {
-    try {
-      const p = view.posAtDOM(w);
-      if (p >= tableFrom && p <= tableTo) return w;
-    } catch { /* posAtDOM can throw for unmounted nodes */ }
-  }
-  return null;
-}
-
-const tableEntryKeymap = keymap.of([
-  {
-    key: "ArrowUp",
-    run(view) {
-      const head = view.state.selection.main.head;
-      const line = view.state.doc.lineAt(head);
-      // On a wrapped line, only enter the table when the cursor is on
-      // the first visual line — otherwise let normal cursor movement
-      // navigate within the wrapped line first.
-      const headCoords = view.coordsAtPos(head);
-      const lineStartCoords = view.coordsAtPos(line.from);
-      if (headCoords && lineStartCoords && headCoords.top > lineStartCoords.top + 2) {
-        return false;
-      }
-      const wrap = findTableWrapNear(view, head, "up");
-      if (!wrap) return false;
-      wrap.focus();
-      const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
-      if (cells.length > 0) {
-        cells[cells.length - 1].classList.add("cm-typst-table-cell--selected");
-      }
-      return true;
-    },
-  },
-  {
-    key: "ArrowDown",
-    run(view) {
-      const head = view.state.selection.main.head;
-      const line = view.state.doc.lineAt(head);
-      // On a wrapped line, only enter the table when the cursor is on
-      // the last visual line.
-      const headCoords = view.coordsAtPos(head);
-      const lineEndCoords = view.coordsAtPos(line.to);
-      if (headCoords && lineEndCoords && headCoords.top < lineEndCoords.top - 2) {
-        return false;
-      }
-      const wrap = findTableWrapNear(view, head, "down");
-      if (!wrap) return false;
-      wrap.focus();
-      const cells = wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell");
-      if (cells.length > 0) {
-        cells[0].classList.add("cm-typst-table-cell--selected");
-      }
-      return true;
-    },
-  },
-]);
-
-// Click-anchored scroll preservation.
-//
-// Many visual-editor interactions reshape the document around the user's
-// click: clicking an image collapses it to a pill, clicking a pill expands
-// it to raw source. Each changes line heights and shifts every line below
-// — and at the bottom of a document the browser also clamps scrollTop.
-//
-// To keep the click target visually stable, this plugin captures the doc
-// position under each mousedown along with that position's pre-click
-// `coordsAtPos.top`. After CM applies an update that changes the visual
-// decoration set, we measure the same position again and nudge scrollTop
-// by the difference so the position stays at the same y. We compare the
-// SAME quantity on both sides so plain-text clicks (where the line
-// doesn't actually move) yield delta ≈ 0 and don't introduce drift —
-// using mouse clientY here would bias every click by the offset between
-// the line top and the pointer position.
-//
-// If the desired scrollTop would be clamped (e.g. an at-bottom widget
-// collapsed and the doc shrank below where we'd want to land), we bail
-// rather than partially compensate. The user sees a one-time jump on
-// that click instead of accumulating residue across subsequent clicks.
-const clickAnchorPlugin = ViewPlugin.fromClass(class {
-  pending: { pos: number; oldTop: number; deadline: number } | null = null;
-
-  constructor(view: EditorView) {
-    view.scrollDOM.addEventListener("mousedown", (e) => {
-      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-      if (pos == null) return;
-      const coords = view.coordsAtPos(pos);
-      if (!coords) return;
-      this.pending = { pos, oldTop: coords.top, deadline: performance.now() + 250 };
-    }, true);
-  }
-
-  update(update: ViewUpdate) {
-    if (!this.pending) return;
-    if (performance.now() > this.pending.deadline) {
-      this.pending = null;
-      return;
-    }
-    const hasExpandEffect = update.transactions.some(tr =>
-      tr.effects.some((e: any) => e.is(expandFunc)),
-    );
-    if (hasExpandEffect) {
-      this.pending = null;
-      return;
-    }
-    const oldDecos = update.startState.field(visualField, false);
-    const newDecos = update.state.field(visualField, false);
-    if (oldDecos === newDecos) return;
-
-    const { pos, oldTop } = this.pending;
-    this.pending = null;
-    const view = update.view;
-    // Layout reads (coordsAtPos) are forbidden during the update phase.
-    // Defer to CM6's measure cycle so the read happens after the DOM
-    // catches up — calling coordsAtPos directly here throws "Reading
-    // the editor layout isn't allowed during an update", which CM
-    // surfaces as a plugin crash and disables the plugin for the
-    // remainder of the session, breaking decoration refresh on
-    // subsequent edits.
-    const clamped = Math.min(pos, view.state.doc.length);
-    view.requestMeasure({
-      read(v) { return v.coordsAtPos(clamped); },
-      write(coords, v) {
-        if (!coords) return;
-        const delta = coords.top - oldTop;
-        if (Math.abs(delta) < 0.5) return;
-        const scroller = v.scrollDOM;
-        const target = scroller.scrollTop + delta;
-        const max = scroller.scrollHeight - scroller.clientHeight;
-        if (target < -0.5 || target > max + 0.5) return;
-        scroller.scrollTop = target;
-      },
-    });
-  }
-});
+const protectedCursorFilter = createProtectedCursorFilter(
+  protectedRangesField, expandedFuncField, autoExpandFacet,
+  BLOCK_WIDGET_FUNCS, extractFirstStringArgRange,
+);
+const protectedChangeFilter = createProtectedChangeFilter(protectedRangesField);
+const tableEntryKeymap = createTableEntryKeymap(visualField);
+const clickAnchorPlugin = createClickAnchorPlugin(visualField);
 
 export function typstVisualMode() {
   return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, commandPalette, selectionToolbar, clickAnchorPlugin];
 }
+

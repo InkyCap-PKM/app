@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 use crate::typst_pipeline::bibliography::{self, BibEntry};
 
@@ -60,7 +61,7 @@ pub async fn get_file_citations(
     state: State<'_, AppState>,
 ) -> Result<Vec<FileCitation>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let source = storage.read_file(&PathBuf::from(&path)).await?;
+    let source = storage.read_file(&sanitize_vault_arg(&path)?).await?;
 
     let keys = bibliography::extract_citations(&source);
     if keys.is_empty() {

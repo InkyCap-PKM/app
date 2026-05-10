@@ -42,6 +42,10 @@
 // it must live directly on the function (not behind a nested `body => ...`
 // closure) so that `apply-vault-defaults.with(...)` returns a function that
 // still accepts the document body positionally.
+//
+// NOTE: `set page(...)` inside a show-rule wrapper is a no-op for
+// document-level layout. The Rust side emits `#set page(...)` as a
+// separate direct rule; `page-paper` here is kept for direct-call use.
 #let apply-vault-defaults(
   text-font: none,
   text-size: none,
