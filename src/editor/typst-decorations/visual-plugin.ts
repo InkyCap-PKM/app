@@ -48,6 +48,8 @@ const mathInline = Decoration.mark({ class: "cm-typst-math-inline" });
 const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
+// Inline #quote[…] body — adds smart-quote brackets via ::before/::after.
+const quoteInlineMark = Decoration.mark({ class: "cm-typst-quote-inline" });
 
 const headingMarks = [
   Decoration.mark({ class: "cm-typst-h1" }),
@@ -894,14 +896,38 @@ function handleFuncCall(
       return false;
     }
     case "quote": {
-      const content = extractBracketContent(text);
-      const attribution = extractNamedStringArg(text, "attribution")
-        ?? extractNamedBracketArg(text, "attribution");
-      if (content === null) return false;
-      pushBlockElement((withPill) =>
-        new BlockquoteBlockWidget(content, attribution ?? "", from, withPill),
-      );
-      return false;
+      // Branch on `block:` so the visual editor matches what Typst
+      // actually renders. Block form → display blockquote widget with
+      // attribution. Inline form → mid-paragraph live-edit pill with
+      // CSS smart-quote brackets (the inline form is essentially HTML
+      // `<q>` — Typst doesn't render attribution inline either).
+      const isBlock = /\bblock\s*:\s*true\b/.test(text);
+      if (isBlock) {
+        const content = extractBracketContent(text);
+        const attribution = extractAttributionDisplay(text);
+        if (content === null) return false;
+        pushBlockElement((withPill) =>
+          new BlockquoteBlockWidget(content, attribution, from, withPill),
+        );
+        return false;
+      }
+      // Inline: same content-bracket pill pattern as #strike, #emph, etc.
+      // The body stays live-editable Typst source; `quoteInlineMark`
+      // wraps it in smart quotes via ::before / ::after so the visual
+      // representation tracks Typst's `<q>`-like rendering. We span the
+      // whole body with a single mark (rather than addSplitMarks) so the
+      // smart quotes appear once around the entire content, not per
+      // segment broken up by inner function-call replace widgets.
+      const content = extractContentBracket(text, from);
+      if (content && content.from < content.to) {
+        decos.push((showPill
+          ? Decoration.replace({ widget: new FuncPillWidget(from, "quote") })
+          : hide
+        ).range(from, content.from));
+        decos.push(hide.range(content.to, to));
+        decos.push(quoteInlineMark.range(content.from, content.to));
+      }
+      return true;
     }
     case "note": {
       let hideEnd = to;
@@ -1093,6 +1119,29 @@ function extractNamedBracketArg(text: string, name: string): string | null {
   const re = new RegExp(`${name}\\s*:\\s*\\[([^\\]]*)\\]`);
   const m = text.match(re);
   return m ? m[1] : null;
+}
+
+/** Return a display string for `attribution: …` covering the four shapes
+ *  the pill emits: string, label, `link("…")[…]`, raw bracket content.
+ *  Returns "" if no attribution arg is present. */
+function extractAttributionDisplay(text: string): string {
+  const str = extractNamedStringArg(text, "attribution");
+  if (str !== null) return str;
+  // link("url")[Text] — show the inner Text, drop the URL (the visual
+  // preview doesn't render the link styling either way).
+  const linkMatch = text.match(
+    /attribution\s*:\s*link\(\s*"(?:\\.|[^"\\])*"\s*\)\s*\[([\s\S]*?)\]/,
+  );
+  if (linkMatch) return linkMatch[1];
+  // Label literal: attribution: <bibkey>. Show the literal so the author
+  // can confirm which key they referenced; the rendered output is a
+  // citation in the bibliography style.
+  const labelMatch = text.match(/attribution\s*:\s*(<[^\s<>]+>)/);
+  if (labelMatch) return labelMatch[1];
+  // Bracket content: attribution: [free content].
+  const bracket = extractNamedBracketArg(text, "attribution");
+  if (bracket !== null) return bracket;
+  return "";
 }
 
 function extractBracketContent(text: string): string | null {
@@ -1635,6 +1684,12 @@ export const visualTheme = EditorView.theme({
     verticalAlign: "super",
     lineHeight: "0",
   },
+  // Inline #quote[…] body — wrap in smart quotes so the visual editor
+  // tracks Typst's inline-quote rendering (effectively HTML `<q>`). The
+  // ::before / ::after pseudo-elements are non-editable presentation
+  // only; the body content between them remains live source.
+  ".cm-typst-quote-inline::before": { content: '"\\201C"' },
+  ".cm-typst-quote-inline::after": { content: '"\\201D"' },
   ".cm-typst-raw-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
     backgroundColor: "var(--syntax-mono-bg)",
