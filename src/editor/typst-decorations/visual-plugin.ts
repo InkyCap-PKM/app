@@ -1217,10 +1217,18 @@ const expandedFuncField = StateField.define<number | null>({
       }
     }
     if (tr.selection && next !== null && next <= tr.state.doc.length) {
-      const expandedLine = tr.state.doc.lineAt(next).number;
+      // The call may span multiple lines (a multi-paragraph callout, a
+      // long quote). Treat any cursor on any line of the call as
+      // "nearby" so editing the body doesn't auto-collapse the
+      // expansion. findCallEnd walks the doc directly here — we don't
+      // have a view in this StateField update fn.
+      const callEnd = findCallEnd({ doc: tr.state.doc }, next);
+      const startLine = tr.state.doc.lineAt(next).number;
+      const endLine = tr.state.doc.lineAt(Math.min(callEnd, tr.state.doc.length)).number;
       let cursorNearby = false;
       for (const r of tr.state.selection.ranges) {
-        if (tr.state.doc.lineAt(r.head).number === expandedLine) {
+        const headLine = tr.state.doc.lineAt(r.head).number;
+        if (headLine >= startLine && headLine <= endLine) {
           cursorNearby = true;
           break;
         }
