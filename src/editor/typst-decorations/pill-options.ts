@@ -217,7 +217,7 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
   const src = readCallSource(view, from, to);
   const fill = readNamedArg(src, "fill");
   return [{
-    heading: "Color",
+    heading: "Colour",
     items: HIGHLIGHT_COLORS.map((c, idx) => {
       // Active when the current `fill:` matches this preset's literal,
       // OR when there's no fill arg AND this is the default (yellow).

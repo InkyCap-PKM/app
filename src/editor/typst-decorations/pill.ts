@@ -110,10 +110,24 @@ export function buildPillButton(
     e.stopPropagation();
     openPillMenu(btn, view, modelFor());
   });
+  // R5 click model:
+  //   simple pill  → enter inline source-edit directly (low-friction primary).
+  //   complex pill → open the super-menu (inline edit isn't safe).
+  //   embedded pill (allowEditSource === false) → open the super-menu
+  //     (verse / bibliography have no inline-source mode — their canvas
+  //     is the editor).
+  // Right-click always opens the menu (handler above) so every pill keeps
+  // the universal escape hatch regardless of complexity.
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openPillMenu(btn, view, modelFor());
+    const model = modelFor();
+    const allowEdit = model.allowEditSource !== false;
+    if (allowEdit && isSimpleCall(view, model.callFrom, model.callTo)) {
+      runEditSource(view, model);
+    } else {
+      openPillMenu(btn, view, model);
+    }
   });
   // Enter / Space already trigger click on a <button>, so keyboard
   // accessibility (R3) falls out of using the right element.
@@ -269,17 +283,20 @@ function buildMenuItem(item: PillMenuItem, close: () => void): HTMLElement {
   if (item.title) el.title = item.title;
   if (item.disabled) el.setAttribute("aria-disabled", "true");
 
+  const label = document.createElement("span");
+  label.className = "cm-typst-pill-menu-label";
+  label.textContent = item.label;
+  el.appendChild(label);
+
+  // The checkmark sits on the right side of the row so the eye scans
+  // labels left-to-right without the indentation jitter that a
+  // left-side check would introduce on inactive items.
   if (item.isActive) {
     const check = document.createElement("span");
     check.className = "cm-typst-pill-menu-check";
     check.textContent = "✓";
     el.appendChild(check);
   }
-
-  const label = document.createElement("span");
-  label.className = "cm-typst-pill-menu-label";
-  label.textContent = item.label;
-  el.appendChild(label);
 
   if (!item.disabled && item.onSelect) {
     el.addEventListener("click", (e) => {
@@ -341,6 +358,21 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
 
 // ── Source section (R8: simple vs complex) ──────────────────────────
 
+/** Run the "Edit source" action for a pill. Used both by the menu item
+ *  and by the simple-pill left-click shortcut (R5), so the destination
+ *  is identical whichever path the user takes. */
+export function runEditSource(view: EditorView, model: PillModel): void {
+  if (model.onEditSource) {
+    model.onEditSource(view);
+  } else {
+    view.dispatch({
+      effects: expandFunc.of(model.callFrom),
+      selection: { anchor: model.callFrom + 1 },
+    });
+    view.focus();
+  }
+}
+
 function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection {
   const items: PillMenuItem[] = [];
   const allowEdit = model.allowEditSource !== false;
@@ -350,17 +382,7 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
       items.push({
         label: "Edit source",
         title: "Reveal raw Typst source for inline editing",
-        onSelect: () => {
-          if (model.onEditSource) {
-            model.onEditSource(view);
-          } else {
-            view.dispatch({
-              effects: expandFunc.of(model.callFrom),
-              selection: { anchor: model.callFrom + 1 },
-            });
-            view.focus();
-          }
-        },
+        onSelect: () => runEditSource(view, model),
       });
     }
   }
