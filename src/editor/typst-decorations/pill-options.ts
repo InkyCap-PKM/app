@@ -66,6 +66,8 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   image:     imageOptions,
   line:      lineOptions,
   highlight: highlightOptions,
+  align:     alignOptions,
+  figure:    figureOptions,
 };
 
 /** Returns option sections for the named pill, or an empty array if the
@@ -104,6 +106,71 @@ function unquote(literal: string | null): string | null {
 /** Wrap a string in double-quotes for Typst source. Escapes `"` and `\`. */
 function quote(value: string): string {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+}
+
+/** Return the inner text of the call's `(...)` arg list, or null if the
+ *  call has no parens. Used by option builders that read positional
+ *  non-string values (e.g. `#align(center)`). */
+function findArgListInSource(callSource: string): string | null {
+  const open = callSource.indexOf("(");
+  if (open < 0) return null;
+  const firstBracket = callSource.indexOf("[");
+  if (firstBracket >= 0 && firstBracket < open) return null;
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < callSource.length; i++) {
+    const ch = callSource[i];
+    if (ch === '"' && callSource[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) return callSource.substring(open + 1, i);
+    }
+  }
+  return null;
+}
+
+/** Replace the first positional keyword (unquoted identifier) inside a
+ *  call's arg list. If the call has no arg list, inserts `(keyword)`
+ *  before the body bracket. Used for `#align(center)`-style calls. */
+function replaceFirstPositionalKeyword(callSource: string, keyword: string): string {
+  const openIdx = callSource.indexOf("(");
+  const firstBracket = callSource.indexOf("[");
+  if (openIdx < 0 || (firstBracket >= 0 && firstBracket < openIdx)) {
+    // No arg list yet — insert one before the body bracket if any,
+    // otherwise append at the end of the call.
+    const insertAt = firstBracket >= 0 ? firstBracket : callSource.length;
+    return callSource.slice(0, insertAt) + `(${keyword})` + callSource.slice(insertAt);
+  }
+  // Find matching close, then check if the first arg is a bare keyword.
+  let depth = 0;
+  let inStr = false;
+  let close = -1;
+  for (let i = openIdx; i < callSource.length; i++) {
+    const ch = callSource[i];
+    if (ch === '"' && callSource[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) { close = i; break; }
+    }
+  }
+  if (close < 0) return callSource;
+  const argsText = callSource.substring(openIdx + 1, close);
+  // Match leading whitespace + bare identifier (alignment keywords are
+  // simple lowercase ids). Falls through if first arg is e.g. `center +
+  // horizon` or a named arg — in those cases we replace just the leading
+  // bare ident, preserving the rest.
+  const m = argsText.match(/^(\s*)([a-z][a-z0-9_-]*)/);
+  if (m) {
+    const newArgs = m[1] + keyword + argsText.substring(m[0].length);
+    return callSource.substring(0, openIdx + 1) + newArgs + callSource.substring(close);
+  }
+  // No leading positional — prepend.
+  const newArgs = argsText.trimStart().length === 0 ? keyword : `${keyword}, ${argsText.trimStart()}`;
+  return callSource.substring(0, openIdx + 1) + newArgs + callSource.substring(close);
 }
 
 // ── Option builders ─────────────────────────────────────────────────
@@ -227,6 +294,60 @@ function lineOptions(view: EditorView, from: number, to: number): PillMenuSectio
       onSelect: () => applyCallTransform(view, from, (s) =>
         upsertNamedArg(s, "stroke", opt.literal, { defaultValue: "1pt" })),
     })),
+  }];
+}
+
+// Typst's #align() takes horizontal or 2-axis alignment keywords.
+// Justification isn't an alignment value — that's `#set par(justify: true)`
+// and the spec's "Justify" entry was mistaken. The radio covers the
+// three horizontal options; vertical / combined alignments (e.g.
+// `center + horizon`) fall back to "Edit source" via the simple/complex
+// classifier.
+const ALIGNMENTS = [
+  { label: "Left",   keyword: "left"   },
+  { label: "Center", keyword: "center" },
+  { label: "Right",  keyword: "right"  },
+];
+
+function alignOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  // Read the first positional alignment keyword from the arg list.
+  // align() accepts alignments like `left`, `center`, `right`, `top`,
+  // `horizon`, `bottom`, plus `+`-combinations. Matching just the
+  // leading bare keyword is sufficient for the radio UI; anything more
+  // complex falls back to "Edit source" via R5.
+  const argList = findArgListInSource(src);
+  const current = argList ? (argList.match(/^\s*([a-z]+)/)?.[1] ?? null) : null;
+  return [{
+    heading: "Alignment",
+    items: ALIGNMENTS.map((a) => ({
+      label: a.label,
+      isActive: current === a.keyword,
+      onSelect: () => applyCallTransform(view, from, (s) => replaceFirstPositionalKeyword(s, a.keyword)),
+    })),
+  }];
+}
+
+function figureOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const captionRaw = readNamedArg(src, "caption");
+  // caption: [Hello] — strip surrounding brackets, then unescape \] and \\.
+  const caption = captionRaw && captionRaw.startsWith("[") && captionRaw.endsWith("]")
+    ? captionRaw.slice(1, -1).replace(/\\\]/g, "]").replace(/\\\\/g, "\\")
+    : "";
+  return [{
+    items: [{
+      label: "Caption",
+      input: {
+        value: caption,
+        placeholder: "Figure caption",
+        onCommit: (v) => {
+          const t = v.trim();
+          const literal = t === "" ? null : "[" + t.replace(/\\/g, "\\\\").replace(/\]/g, "\\]") + "]";
+          applyCallTransform(view, from, (s) => upsertNamedArg(s, "caption", literal));
+        },
+      },
+    }],
   }];
 }
 
