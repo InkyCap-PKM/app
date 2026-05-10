@@ -19,16 +19,16 @@ pub async fn paste_markdown_as_typst(
     app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
     let text = read_clipboard_text(&app).await.map_err(|e| {
-        eprintln!("[paste-as-markdown] clipboard read error: {e}");
+        log::warn!("[paste-as-markdown] clipboard read error: {e}");
         e.to_string()
     })?;
     let text = match text {
         Some(t) if !t.is_empty() => {
-            eprintln!("[paste-as-markdown] got {} bytes from clipboard", t.len());
+            log::debug!("[paste-as-markdown] got {} bytes from clipboard", t.len());
             t
         }
         _ => {
-            eprintln!("[paste-as-markdown] clipboard returned empty/None");
+            log::debug!("[paste-as-markdown] clipboard returned empty/None");
             return Ok(None);
         }
     };
@@ -173,7 +173,8 @@ pub async fn export_note_markdown_to_file(
     };
     let markdown = typst_to_markdown(&content, &options);
 
-    std::fs::write(&output_path, markdown)
+    tokio::fs::write(&output_path, markdown)
+        .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write {}: {}", output_path, e)))?;
 
     Ok(())
@@ -196,7 +197,8 @@ pub async fn export_collection_batch_markdown(
         crate::commands::collections::get_collection_data_internal(&collection_path, &view_name, &state)
             .await?;
 
-    std::fs::create_dir_all(&output_dir_buf)
+    tokio::fs::create_dir_all(&output_dir_buf)
+        .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create output dir: {}", e)))?;
 
     let options = TypstToMarkdownOptions {
@@ -210,7 +212,7 @@ pub async fn export_collection_batch_markdown(
         let content = match storage.read_file(&file_path).await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Skipping {}: {}", row.file_path, e);
+                log::warn!("Skipping {}: {}", row.file_path, e);
                 continue;
             }
         };
@@ -222,9 +224,9 @@ pub async fn export_collection_batch_markdown(
             .unwrap_or(&row.file_name);
         let output_file = output_dir_buf.join(format!("{}.md", md_name));
 
-        match std::fs::write(&output_file, &markdown) {
+        match tokio::fs::write(&output_file, &markdown).await {
             Ok(()) => exported.push(output_file.display().to_string()),
-            Err(e) => eprintln!("Failed to write {}: {}", output_file.display(), e),
+            Err(e) => log::error!("Failed to write {}: {}", output_file.display(), e),
         }
     }
 

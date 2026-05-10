@@ -15,6 +15,7 @@ pub struct LinkInfo {
     pub name: String,
 }
 
+/// Read the UTF-8 content of a file in the vault. Requires an open vault.
 #[tauri::command]
 pub async fn read_file_content(
     path: String,
@@ -25,6 +26,7 @@ pub async fn read_file_content(
     storage.read_file(&path_buf).await
 }
 
+/// Return the vault's directory tree as a flat list of nodes. Requires an open vault.
 #[tauri::command]
 pub async fn get_file_tree(
     state: State<'_, AppState>,
@@ -33,6 +35,7 @@ pub async fn get_file_tree(
     storage.get_file_tree().await
 }
 
+/// Return parsed `#note(...)` metadata for a file, falling back to on-demand reindex if not yet cached.
 #[tauri::command]
 pub async fn get_file_metadata(
     path: String,
@@ -63,6 +66,7 @@ pub async fn get_file_metadata(
         .ok_or_else(|| InkyCapError::FileNotFound(path))
 }
 
+/// Return all notes that link to the given file path via wikilinks.
 #[tauri::command]
 pub async fn get_backlinks(
     path: String,
@@ -87,6 +91,7 @@ pub async fn get_backlinks(
         .collect())
 }
 
+/// Return all notes that the given file links to via wikilinks.
 #[tauri::command]
 pub async fn get_forward_links(
     path: String,
@@ -172,8 +177,23 @@ pub async fn resolve_embed_path(
     // Strip any size suffix (e.g. "image.png|400" -> "image.png")
     let clean_target = target.split('|').next().unwrap_or(&target).trim();
 
-    // Search for the file by walking the vault
-    // Use list_files with the file extension
+    // If the target contains a path separator, treat it as a vault-root-
+    // relative path (with or without a leading slash, matching Typst's own
+    // `#image("/assets/foo.png")` semantics). Resolve directly and skip
+    // the filename search. Defends against `..` traversal via
+    // validate_vault_path.
+    if clean_target.contains('/') || clean_target.contains('\\') {
+        let stripped = clean_target.trim_start_matches('/').trim_start_matches('\\');
+        let candidate = root.join(stripped);
+        if let Ok(resolved) = crate::storage::path::validate_vault_path(root, &candidate) {
+            if resolved.is_file() {
+                return Ok(Some(resolved.display().to_string()));
+            }
+        }
+        return Ok(None);
+    }
+
+    // Bare filename — search the whole vault by name.
     let ext = std::path::Path::new(clean_target)
         .extension()
         .map(|e| e.to_string_lossy().into_owned())

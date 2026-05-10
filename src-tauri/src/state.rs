@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use notify::RecommendedWatcher;
 use tokio::sync::{Mutex, RwLock};
 
@@ -73,7 +73,21 @@ pub struct AppState {
     /// persistence — the index is only written to disk if at least
     /// `SEARCH_SAVE_INTERVAL_SECS` have elapsed since the last save.
     last_search_save: AtomicI64,
+    /// Allowlist of absolute paths that the user has just dropped onto the
+    /// window via the OS drag-drop event. Populated by the Rust-side
+    /// `on_drag_drop_event` listener (see `lib.rs`) and consumed once by
+    /// `copy_path_to_attachments`. This is the only authority for "did the
+    /// user really drop this file?" — it prevents a compromised renderer or
+    /// future plugin from invoking the command with arbitrary paths.
+    /// Entries auto-expire after `DROP_ALLOWLIST_TTL`.
+    drop_allowlist: StdMutex<HashMap<PathBuf, Instant>>,
 }
+
+/// How long a dropped-path entry remains valid before it's pruned. Long
+/// enough to cover the round-trip through the JS event listener and the
+/// async `copy_path_to_attachments` invocation, short enough that a stale
+/// entry can't be reused later in the session.
+const DROP_ALLOWLIST_TTL: Duration = Duration::from_secs(60);
 
 impl AppState {
     pub fn new() -> Self {
@@ -99,7 +113,33 @@ impl AppState {
             property_types: RwLock::new(PropertyTypeRegistry::new()),
             typst_compiler: Mutex::new(None),
             last_search_save: AtomicI64::new(0),
+            drop_allowlist: StdMutex::new(HashMap::new()),
         }
+    }
+
+    /// Record that the OS drag-drop event delivered these absolute paths to
+    /// our window. Called from the Rust-side `on_drag_drop_event` listener
+    /// in `lib.rs`. Synchronous (no `await`) so it can populate the allowlist
+    /// before the parallel JS event handler races to call
+    /// `copy_path_to_attachments`.
+    pub fn register_drop_paths<I: IntoIterator<Item = PathBuf>>(&self, paths: I) {
+        let mut allow = self.drop_allowlist.lock().expect("drop_allowlist poisoned");
+        let now = Instant::now();
+        // Prune expired entries opportunistically while we hold the lock.
+        allow.retain(|_, t| now.duration_since(*t) < DROP_ALLOWLIST_TTL);
+        for p in paths {
+            allow.insert(p, now);
+        }
+    }
+
+    /// Atomically check whether `path` was registered by a recent OS drop and
+    /// remove it (single-use). Returns `true` if the path was on the
+    /// allowlist and not expired.
+    pub fn consume_drop_path(&self, path: &Path) -> bool {
+        let mut allow = self.drop_allowlist.lock().expect("drop_allowlist poisoned");
+        let now = Instant::now();
+        allow.retain(|_, t| now.duration_since(*t) < DROP_ALLOWLIST_TTL);
+        allow.remove(path).is_some()
     }
 
     /// Resolve the cache database path under the user's data directory and
@@ -111,7 +151,7 @@ impl AppState {
         match MetadataCache::open(&db_path) {
             Ok(cache) => Some(Arc::new(cache)),
             Err(err) => {
-                eprintln!(
+                log::warn!(
                     "metadata cache: failed to open at {}: {err}",
                     db_path.display()
                 );
@@ -155,9 +195,6 @@ impl AppState {
         // notes can `#import` it. Must happen before the compiler is
         // constructed so that the file is on disk for any compile.
         crate::vault_package::scaffold(&canonical_path);
-        // One-time migration: rewrite legacy versioned import paths to the
-        // canonical `/.inkycap/vault.typ` form. Idempotent on later opens.
-        crate::vault_package::migrate_vault_imports(&canonical_path);
 
         // Pre-warm the Typst compiler at vault-open time so the first
         // reading-mode render doesn't pay the ~340ms font-discovery cost
@@ -221,7 +258,7 @@ impl AppState {
                 compiler,
             )
             .await?;
-            eprintln!(
+            log::info!(
                 "metadata cache: {} files, {} hits, {} misses, {} pruned",
                 stats.total_files, stats.cache_hits, stats.cache_misses, stats.pruned
             );
@@ -287,7 +324,7 @@ impl AppState {
                 }
             }
 
-            eprintln!(
+            log::info!(
                 "search index: loaded persisted, {} updated, {} pruned",
                 updated, stale_engine_paths.len() + cache_stats.as_ref().map_or(0, |s| s.pruned_paths.len())
             );
@@ -308,7 +345,7 @@ impl AppState {
                     (path, content, tags, title, keys, values)
                 })
                 .collect();
-            eprintln!("search index: built from scratch ({} files)", search_files.len());
+            log::info!("search index: built from scratch ({} files)", search_files.len());
             SearchEngine::build(search_files)
         };
         // Save the search engine for next launch.
@@ -365,7 +402,7 @@ impl AppState {
         let stat = match crate::scanner::walker::stat_file(abs_path).await {
             Ok(s) => s,
             Err(err) => {
-                eprintln!(
+                log::warn!(
                     "metadata cache: stat failed for {}: {err}",
                     abs_path.display()
                 );
@@ -376,7 +413,7 @@ impl AppState {
         let cached =
             crate::scanner::walker::note_to_cached_file(note, relpath, stat.mtime, stat.size, content);
         if let Err(err) = cache.upsert_file(&vault_root, &cached) {
-            eprintln!("metadata cache: upsert_file failed: {err}");
+            log::warn!("metadata cache: upsert_file failed: {err}");
         }
     }
 
@@ -397,7 +434,7 @@ impl AppState {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| abs_path.to_path_buf());
         if let Err(err) = cache.delete_file(&vault_root, &relpath) {
-            eprintln!("metadata cache: delete_file failed: {err}");
+            log::warn!("metadata cache: delete_file failed: {err}");
         }
     }
 
@@ -639,13 +676,13 @@ pub fn configure_bibliography(
                     match crate::typst_pipeline::bibliography::write_zotero_export(vault_root, &entries) {
                         Ok(rel_path) => Some(rel_path),
                         Err(e) => {
-                            eprintln!("Failed to write Zotero export: {e}");
+                            log::error!("Failed to write Zotero export: {e}");
                             None
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to read Zotero entries: {e}");
+                    log::error!("Failed to read Zotero entries: {e}");
                     None
                 }
             }

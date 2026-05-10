@@ -6,6 +6,18 @@ import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
 
+/** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
+ *  Typst percentages and common units map directly; unknown units pass through. */
+function typstLengthToCss(value: string): string {
+  const v = value.trim();
+  if (v.endsWith("%") || v.endsWith("px") || v.endsWith("em") || v.endsWith("rem")) return v;
+  if (v.endsWith("pt")) return v;
+  if (v.endsWith("cm") || v.endsWith("mm") || v.endsWith("in")) return v;
+  // Bare number → treat as pt
+  if (/^\d+(\.\d+)?$/.test(v)) return `${v}pt`;
+  return v;
+}
+
 // Build the small pill row that block elements (image, embed, callout,
 // blockquote) show at their top edge when the cursor is on the line.
 // The pill is rendered INSIDE the element's widget DOM, not as a
@@ -200,8 +212,7 @@ export class CodeBlockWidget extends WidgetType {
     copyBtn.className = "cm-typst-codeblock-copy";
     copyBtn.title = "Copy code";
     copyBtn.setAttribute("aria-label", "Copy code");
-    copyBtn.innerHTML =
-      // Single-glyph clipboard icon; swapped for a check on success.
+    copyBtn.innerHTML = // static-only
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     copyBtn.addEventListener("mousedown", (e) => {
       // Stop CodeMirror from moving the selection into the widget on click.
@@ -257,12 +268,17 @@ export class ImageWidget extends WidgetType {
   constructor(
     readonly path: string,
     readonly pos: number,
+    readonly alt: string | null = null,
+    readonly width: string | null = null,
+    readonly height: string | null = null,
   ) {
     super();
   }
 
   eq(other: ImageWidget) {
-    return this.path === other.path && this.pos === other.pos;
+    return this.path === other.path && this.pos === other.pos
+      && this.alt === other.alt && this.width === other.width
+      && this.height === other.height;
   }
 
   toDOM() {
@@ -279,8 +295,10 @@ export class ImageWidget extends WidgetType {
       if (!absPath) return;
       const img = document.createElement("img");
       img.className = "cm-typst-image-img";
-      img.alt = imgPath;
+      img.alt = this.alt ?? imgPath;
       img.src = convertFileSrc(absPath);
+      if (this.width) img.style.width = typstLengthToCss(this.width);
+      if (this.height) img.style.height = typstLengthToCss(this.height);
       img.addEventListener("load", () => {
         label.style.display = "none";
       });
@@ -301,12 +319,17 @@ export class ImageBlockWidget extends WidgetType {
     readonly path: string,
     readonly pos: number,
     readonly withPill: boolean,
+    readonly alt: string | null = null,
+    readonly width: string | null = null,
+    readonly height: string | null = null,
   ) {
     super();
   }
 
   eq(other: ImageBlockWidget) {
-    return this.path === other.path && this.pos === other.pos && this.withPill === other.withPill;
+    return this.path === other.path && this.pos === other.pos
+      && this.withPill === other.withPill && this.alt === other.alt
+      && this.width === other.width && this.height === other.height;
   }
 
   get estimatedHeight(): number { return this.withPill ? 224 : 200; }
@@ -341,8 +364,10 @@ export class ImageBlockWidget extends WidgetType {
       if (!absPath) return;
       const img = document.createElement("img");
       img.className = "cm-typst-image-img";
-      img.alt = imgPath;
+      img.alt = this.alt ?? imgPath;
       img.src = convertFileSrc(absPath);
+      if (this.width) img.style.width = typstLengthToCss(this.width);
+      if (this.height) img.style.height = typstLengthToCss(this.height);
       img.addEventListener("load", () => { label.style.display = "none"; });
       img.addEventListener("error", () => { img.style.display = "none"; });
       inner.insertBefore(img, label);
@@ -410,7 +435,7 @@ export class EmbedBlockWidget extends WidgetType {
     navIcon.setAttribute("stroke-width", "2");
     navIcon.setAttribute("stroke-linecap", "round");
     navIcon.setAttribute("stroke-linejoin", "round");
-    navIcon.innerHTML =
+    navIcon.innerHTML = // static-only
       '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
       '<polyline points="15 3 21 3 21 9"/>' +
       '<line x1="10" y1="14" x2="21" y2="3"/>';
@@ -544,7 +569,7 @@ export class EmbedWidget extends WidgetType {
     navIcon.setAttribute("stroke-width", "2");
     navIcon.setAttribute("stroke-linecap", "round");
     navIcon.setAttribute("stroke-linejoin", "round");
-    navIcon.innerHTML =
+    navIcon.innerHTML = // static-only
       '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
       '<polyline points="15 3 21 3 21 9"/>' +
       '<line x1="10" y1="14" x2="21" y2="3"/>';
@@ -1617,7 +1642,7 @@ export class LinkWidget extends WidgetType {
     icon.setAttribute("stroke-linecap", "round");
     icon.setAttribute("stroke-linejoin", "round");
     icon.classList.add("cm-typst-link-external-icon");
-    icon.innerHTML =
+    icon.innerHTML = // static-only
       '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
       '<polyline points="15 3 21 3 21 9"/>' +
       '<line x1="10" y1="14" x2="21" y2="3"/>';

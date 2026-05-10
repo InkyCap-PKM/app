@@ -28,9 +28,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-dialog = "2.7.0"
 dirs = "6.0.0"
 rayon = "1"
-unicase = "2"
 trash = "5"
-uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 flate2 = "1"
 sha2 = "0.10"
@@ -39,6 +37,8 @@ bincode = "1"
 tempfile = "3"
 which = "7"
 zip = "2"
+log = "0.4"
+env_logger = "0.11"
 
 # Typst compile pipeline. Pinned to 0.14.x to match the toolchain validated
 # in the Phase 0 spike (typst-cli v0.14.2). Bumping the minor requires

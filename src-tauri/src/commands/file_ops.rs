@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
@@ -16,6 +16,7 @@ use crate::storage::validate_vault_path;
 pub async fn copy_to_attachments(
     filename: String,
     data_base64: String,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     use base64::Engine;
@@ -24,7 +25,7 @@ pub async fn copy_to_attachments(
         .decode(&data_base64)
         .map_err(|e| InkyCapError::InvalidPath(format!("Invalid base64: {}", e)))?;
 
-    write_to_attachments(&filename, &data, &state).await
+    write_to_attachments(&filename, &data, &app, &state).await
 }
 
 /// Read file paths from the system clipboard. Used by the paste
@@ -103,7 +104,7 @@ mod linux {
         let display = match gtk::gdk::Display::default() {
             Some(d) => d,
             None => {
-                eprintln!("[clipboard] no default GDK display");
+                log::debug!("[clipboard] no default GDK display");
                 return Vec::new();
             }
         };
@@ -113,7 +114,7 @@ mod linux {
         // file:// URL; we convert to absolute paths via the same
         // helper used by drag-drop.
         let uris = clipboard.wait_for_uris();
-        eprintln!("[clipboard] wait_for_uris returned {} URIs", uris.len());
+        log::debug!("[clipboard] wait_for_uris returned {} URIs", uris.len());
         uris.into_iter()
             .filter_map(|u: gtk::glib::GString| super::parse_file_uri_line(u.as_str()))
             .collect()
@@ -152,7 +153,7 @@ mod macos {
                 return Vec::new();
             }
             let count: usize = msg_send![urls, count];
-            eprintln!("[clipboard] NSPasteboard returned {} NSURLs", count);
+            log::debug!("[clipboard] NSPasteboard returned {} NSURLs", count);
             let mut out = Vec::with_capacity(count);
             for i in 0..count {
                 let url: id = msg_send![urls, objectAtIndex: i];
@@ -213,7 +214,7 @@ mod win32 {
             // zero means failure.
             let null_hwnd: HWND = std::ptr::null_mut();
             if OpenClipboard(null_hwnd) == 0 {
-                eprintln!("[clipboard] OpenClipboard failed");
+                log::debug!("[clipboard] OpenClipboard failed");
                 return Vec::new();
             }
             // Wrap the body in a closure so we can guarantee
@@ -233,7 +234,7 @@ mod win32 {
                 let hdrop: HDROP = locked as HDROP;
                 let null_pwstr: *mut u16 = std::ptr::null_mut();
                 let count = DragQueryFileW(hdrop, u32::MAX, null_pwstr, 0);
-                eprintln!("[clipboard] CF_HDROP contains {} files", count);
+                log::debug!("[clipboard] CF_HDROP contains {} files", count);
                 let mut out = Vec::with_capacity(count as usize);
                 for i in 0..count {
                     // First pass: ask for the path length in chars
@@ -320,12 +321,32 @@ fn hex_val(c: u8) -> Option<u8> {
 /// user drags from the native file manager). The file is read on
 /// the Rust side — the webview cannot load `file://` resources on
 /// its own due to its local-resource CSP.
+///
+/// **Security.** The frontend cannot pass an arbitrary path here: the
+/// path must be on `AppState.drop_allowlist`, which is populated only
+/// by the Rust-side `on_drag_drop_event` listener (see `lib.rs`). The
+/// allowlist entry is consumed on success, so each OS drop authorizes
+/// exactly one copy. A compromised renderer or future plugin that
+/// calls this command with a path the user did not actually drop will
+/// see `InvalidPath`.
 #[tauri::command]
 pub async fn copy_path_to_attachments(
     source_path: String,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let src = PathBuf::from(&source_path);
+    // SEC-1 gate (audit 2026-05-10): the path must come from a recent OS
+    // drop event registered by the run-loop listener in `lib.rs` (which
+    // subscribes to `RunEvent::WindowEvent::DragDrop`). Frontend-supplied
+    // paths that bypass this (e.g. via XSS or a malicious plugin) are
+    // rejected here even if they exist on disk.
+    if !state.consume_drop_path(&src) {
+        return Err(InkyCapError::InvalidPath(format!(
+            "path was not part of a recent drag-drop and cannot be copied: {}",
+            source_path
+        )));
+    }
     if !src.exists() {
         return Err(InkyCapError::InvalidPath(format!(
             "Source file does not exist: {}",
@@ -339,7 +360,7 @@ pub async fn copy_path_to_attachments(
             InkyCapError::InvalidPath(format!("Source has no filename: {}", source_path))
         })?;
     let data = std::fs::read(&src)?;
-    write_to_attachments(&filename, &data, &state).await
+    write_to_attachments(&filename, &data, &app, &state).await
 }
 
 /// Write `data` into the vault's attachment folder under `filename`.
@@ -347,6 +368,7 @@ pub async fn copy_path_to_attachments(
 async fn write_to_attachments(
     filename: &str,
     data: &[u8],
+    app: &tauri::AppHandle,
     state: &State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let vault_root = state.vault_root.read().await;
@@ -396,12 +418,31 @@ async fn write_to_attachments(
     let target = validate_vault_path(&root, &target)?;
     tokio::fs::write(&target, data).await?;
 
-    let saved_name = target
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| filename.to_string());
+    // The file watcher only tracks .typ/.collection files, so attachment
+    // writes (images, PDFs, etc.) won't trigger a tree refresh on their
+    // own. Emit the event directly so the frontend file tree updates.
+    let _ = app.emit(
+        "vault:file-created",
+        serde_json::json!({ "path": target.display().to_string() }),
+    );
 
-    Ok(saved_name)
+    // Return the vault-root-relative path (e.g. `assets/Screenshot.png`)
+    // rather than just the basename, so callers can build a Typst markup
+    // string that resolves in the compiler — `#image("/assets/foo.png")`
+    // works in both the visual editor (via the updated resolve_embed_path)
+    // and the reading-view / export pipeline (via Typst's own
+    // project-root-relative path semantics).
+    let saved_relative = target
+        .strip_prefix(&root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| {
+            target
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| filename.to_string())
+        });
+
+    Ok(saved_relative)
 }
 
 /// Create a new `.typ` file with the inkycap-vault import.
@@ -761,6 +802,7 @@ async fn reindex_directory(
     }
 }
 
+/// Open the containing directory of a path in the OS file manager.
 #[tauri::command]
 pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     let p = PathBuf::from(&path);
@@ -787,6 +829,32 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     {
         std::process::Command::new("explorer")
             .arg(&dir)
+            .spawn()?;
+    }
+    Ok(())
+}
+
+/// Open a file with the OS default application (image viewer, PDF reader, etc.).
+#[tauri::command]
+pub async fn open_file_externally(path: String) -> Result<(), InkyCapError> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "File does not exist: {path}"
+        )));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(&p).spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(&p).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &p.to_string_lossy()])
             .spawn()?;
     }
     Ok(())

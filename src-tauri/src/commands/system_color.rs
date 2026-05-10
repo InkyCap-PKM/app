@@ -16,6 +16,7 @@
 //!   `org.gnome.desktop.interface accent-color`; KDE writes the hex into
 //!   `~/.config/kdeglobals`. Other DEs return `None`.
 
+/// Return the OS accent color as `#rrggbb`, or `None` if unavailable on this platform.
 #[tauri::command]
 pub fn get_os_accent_color() -> Option<String> {
     #[cfg(target_os = "windows")]

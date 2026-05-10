@@ -68,7 +68,7 @@ pub fn library_path(vault_root: &Path) -> PathBuf {
 pub fn scaffold(vault_root: &Path) {
     let inkycap_dir = vault_root.join(".inkycap");
     if let Err(err) = std::fs::create_dir_all(&inkycap_dir) {
-        eprintln!(
+        log::warn!(
             "vault library: failed to create {}: {err}",
             inkycap_dir.display()
         );
@@ -80,7 +80,7 @@ pub fn scaffold(vault_root: &Path) {
     // Ensure the scaffolds directory exists for user-authored note templates.
     let scaffolds_dir = inkycap_dir.join("scaffolds");
     if let Err(err) = std::fs::create_dir_all(&scaffolds_dir) {
-        eprintln!(
+        log::warn!(
             "vault library: failed to create {}: {err}",
             scaffolds_dir.display()
         );
@@ -99,89 +99,6 @@ pub fn scaffold(vault_root: &Path) {
                 if entries.next().is_none() {
                     let _ = std::fs::remove_dir(&parent);
                 }
-            }
-        }
-    }
-}
-
-/// Walk the vault and rewrite legacy versioned `#import` lines to the
-/// canonical, version-less form. Idempotent. Files under `.inkycap/` are
-/// skipped — they are not user notes.
-pub fn migrate_vault_imports(vault_root: &Path) {
-    let canonical = import_line();
-    walk_typ_files(vault_root, &mut |path| {
-        let Ok(original) = std::fs::read_to_string(path) else {
-            return;
-        };
-        let mut changed = false;
-        let mut out = String::with_capacity(original.len());
-        let mut first_canonical_seen = false;
-        for line in original.split_inclusive('\n') {
-            // Strip trailing newline for matching, preserve it on output.
-            let (body, nl) = if let Some(stripped) = line.strip_suffix('\n') {
-                (stripped, "\n")
-            } else {
-                (line, "")
-            };
-            if is_vault_import_line(body) {
-                // Replace the line with the canonical form. If the file had
-                // multiple import lines (rare, but possible after manual
-                // edits), keep only the first to avoid double imports.
-                if first_canonical_seen {
-                    changed = true;
-                    continue;
-                }
-                first_canonical_seen = true;
-                if body == canonical {
-                    out.push_str(body);
-                    out.push_str(nl);
-                } else {
-                    out.push_str(&canonical);
-                    out.push_str(nl);
-                    changed = true;
-                }
-            } else {
-                out.push_str(body);
-                out.push_str(nl);
-            }
-        }
-        if changed {
-            if let Err(err) = std::fs::write(path, out) {
-                eprintln!(
-                    "vault migration: failed to rewrite {}: {err}",
-                    path.display()
-                );
-            }
-        }
-    });
-}
-
-fn walk_typ_files(root: &Path, visit: &mut dyn FnMut(&Path)) {
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            // Skip the vault's internal storage tree.
-            if path.file_name().map_or(false, |n| n == ".inkycap") {
-                continue;
-            }
-            // Skip dotfiles in general; users keep .git etc. there.
-            if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map_or(false, |n| n.starts_with('.'))
-            {
-                continue;
-            }
-            walk_typ_files(&path, visit);
-        } else if file_type.is_file() {
-            if path.extension().map_or(false, |e| e == "typ") {
-                visit(&path);
             }
         }
     }
@@ -249,7 +166,7 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
     };
     if needs_write {
         if let Err(err) = std::fs::write(path, expected) {
-            eprintln!(
+            log::warn!(
                 "vault library: failed to write {}: {err}",
                 path.display()
             );
@@ -305,41 +222,4 @@ mod tests {
         assert!(!is_vault_import_line("= heading"));
     }
 
-    #[test]
-    fn migrate_rewrites_legacy_imports() {
-        let dir = tempdir().expect("tempdir");
-        let note = dir.path().join("a.typ");
-        std::fs::write(
-            &note,
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note()\n= Body\n",
-        )
-        .unwrap();
-        migrate_vault_imports(dir.path());
-        let after = std::fs::read_to_string(&note).unwrap();
-        assert!(after.starts_with("#import \"/.inkycap/vault.typ\": *\n"));
-        assert!(after.contains("= Body"));
-    }
-
-    #[test]
-    fn migrate_skips_inkycap_dir() {
-        let dir = tempdir().expect("tempdir");
-        let internal = dir.path().join(".inkycap").join("scaffolds").join("x.typ");
-        std::fs::create_dir_all(internal.parent().unwrap()).unwrap();
-        let original =
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n= scaffold\n";
-        std::fs::write(&internal, original).unwrap();
-        migrate_vault_imports(dir.path());
-        // .inkycap/ contents must not be rewritten by the user-content migration.
-        assert_eq!(std::fs::read_to_string(&internal).unwrap(), original);
-    }
-
-    #[test]
-    fn migrate_idempotent_on_canonical() {
-        let dir = tempdir().expect("tempdir");
-        let note = dir.path().join("a.typ");
-        let content = "#import \"/.inkycap/vault.typ\": *\n= Body\n";
-        std::fs::write(&note, content).unwrap();
-        migrate_vault_imports(dir.path());
-        assert_eq!(std::fs::read_to_string(&note).unwrap(), content);
-    }
 }

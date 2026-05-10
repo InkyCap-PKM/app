@@ -11,6 +11,7 @@ use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::traits::VaultStorage;
 
+/// List all `.collection` files in the vault with their view counts and icons. Requires an open vault.
 #[tauri::command]
 pub async fn list_collections(
     state: State<'_, AppState>,
@@ -33,7 +34,7 @@ pub async fn list_collections(
             Ok(content) => match parse_collection_file(&content) {
                 Ok(base) => (base.views.len(), base.icon),
                 Err(err) => {
-                    eprintln!(
+                    log::warn!(
                         "list_collections: failed to parse {}: {err}",
                         path.display()
                     );
@@ -41,7 +42,7 @@ pub async fn list_collections(
                 }
             },
             Err(err) => {
-                eprintln!(
+                log::warn!(
                     "list_collections: failed to read {}: {err}",
                     path.display()
                 );
@@ -60,6 +61,7 @@ pub async fn list_collections(
     Ok(collections)
 }
 
+/// Load a collection's data for a specific view, applying its filters and sorts. Requires an open vault.
 #[tauri::command]
 pub async fn get_collection_data(
     collection_path: String,

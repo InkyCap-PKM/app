@@ -125,7 +125,7 @@ impl PropertyTypeRegistry {
         let path = Self::path_for(root);
         if let Some(parent) = path.parent() {
             if let Err(err) = std::fs::create_dir_all(parent) {
-                eprintln!(
+                log::warn!(
                     "property_types: failed to create {}: {err}",
                     parent.display()
                 );
@@ -138,14 +138,14 @@ impl PropertyTypeRegistry {
         match serde_json::to_string_pretty(&file) {
             Ok(json) => {
                 if let Err(err) = std::fs::write(&path, json) {
-                    eprintln!(
+                    log::warn!(
                         "property_types: failed to write {}: {err}",
                         path.display()
                     );
                 }
             }
             Err(err) => {
-                eprintln!("property_types: failed to serialize: {err}");
+                log::warn!("property_types: failed to serialize: {err}");
             }
         }
     }

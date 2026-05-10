@@ -466,6 +466,10 @@ export async function showInExplorer(path: string): Promise<void> {
   return invoke<void>("show_in_explorer", { path });
 }
 
+export async function openFileExternally(path: string): Promise<void> {
+  return invoke<void>("open_file_externally", { path });
+}
+
 // Creation rules
 
 export async function listCreationRules(): Promise<CreationRule[]> {

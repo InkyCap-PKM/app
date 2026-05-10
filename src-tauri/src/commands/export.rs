@@ -32,12 +32,7 @@ pub async fn export_note_pdf(
 
     let source = super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let source = super::typst::maybe_inject_set_vault(&source, &state).await;
-
-    let vault_root = state.vault_root.read().await;
-    let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let bib_style = resolve_user_bib_style(&state).await;
-    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
-    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
+    let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -78,12 +73,7 @@ pub async fn export_note_pdf_to_file(
 
     let source = super::typst::inject_style_cascade(&source, &path_buf, &state).await;
     let source = super::typst::maybe_inject_set_vault(&source, &state).await;
-
-    let vault_root = state.vault_root.read().await;
-    let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let bib_style = resolve_user_bib_style(&state).await;
-    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
-    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
+    let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -106,7 +96,8 @@ pub async fn export_note_pdf_to_file(
 // ── Self-contained .typ export ────────────────────────────────────
 
 /// Export a note as a self-contained `.typ` file with the `inkycap-vault`
-/// package inlined, written directly to the output path.
+/// package inlined and referenced images copied alongside. The output
+/// directory will contain the `.typ` plus any assets it references.
 #[tauri::command]
 pub async fn export_self_contained_typ(
     path: String,
@@ -116,11 +107,58 @@ pub async fn export_self_contained_typ(
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
+    let vault_root = state.vault_root.read().await;
+    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
+    drop(vault_root);
 
-    let inlined = inline_package(&content);
-    tokio::fs::write(&output_path, inlined.as_bytes())
+    let output = PathBuf::from(&output_path);
+    let output_dir = output
+        .parent()
+        .ok_or_else(|| InkyCapError::ExportFailed("Invalid output path".into()))?;
+
+    // Copy referenced images alongside the output and rewrite paths from
+    // vault-root-relative (`/assets/foo.png`) to output-relative (`assets/foo.png`).
+    let image_paths = extract_image_paths(&content);
+    let mut rewritten = content.clone();
+    for img_path in &image_paths {
+        let abs_img = if img_path.starts_with('/') {
+            root.join(&img_path[1..])
+        } else {
+            path_buf.parent().unwrap_or(&root).join(img_path)
+        };
+        if abs_img.exists() {
+            // Preserve the relative directory structure (e.g. `assets/`)
+            let rel = if img_path.starts_with('/') {
+                &img_path[1..]
+            } else {
+                img_path.as_str()
+            };
+            let dest = output_dir.join(rel);
+            if let Some(parent) = dest.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    InkyCapError::ExportFailed(format!("Failed to create asset dir: {e}"))
+                })?;
+            }
+            tokio::fs::copy(&abs_img, &dest).await.map_err(|e| {
+                InkyCapError::ExportFailed(format!(
+                    "Failed to copy asset {}: {e}",
+                    abs_img.display()
+                ))
+            })?;
+            // Rewrite vault-root-relative path to output-relative
+            if img_path.starts_with('/') {
+                rewritten = rewritten.replace(
+                    &format!("#image(\"{img_path}\")"),
+                    &format!("#image(\"{rel}\")"),
+                );
+            }
+        }
+    }
+
+    let inlined = inline_package(&rewritten);
+    tokio::fs::write(&output, inlined.as_bytes())
         .await
-        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write .typ file: {}", e)))
+        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write .typ file: {e}")))
 }
 
 /// Inline the `inkycap-vault` package into a note's source. Replaces the
@@ -192,11 +230,7 @@ pub async fn export_note_html(
     let content = super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let content = super::typst::maybe_inject_set_vault(&content, &state).await;
 
-    let vault_root = state.vault_root.read().await;
-    let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-    let bib_style = resolve_user_bib_style(&state).await;
-    let source = maybe_inject_bibliography(content, effective_bib.as_deref(), bib_style.as_deref());
-    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
+    let source = prepare_bibliography(content, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -270,17 +304,13 @@ pub async fn export_collection_note_pdf(
     let vault_root = state.vault_root.read().await;
     let vault_root_ref = vault_root.as_deref();
 
-    let effective_bib = resolve_effective_bib(
+    let source = prepare_bibliography(
+        source,
         base.bibliography_file.as_deref(),
-        vault_root_ref,
+        base.bibliography_style.as_deref(),
+        include_bibliography.unwrap_or(true),
         &state,
     ).await;
-    let source = maybe_inject_bibliography(
-        source,
-        effective_bib.as_deref(),
-        base.bibliography_style.as_deref(),
-    );
-    let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
@@ -358,11 +388,6 @@ pub async fn export_collection_batch_pdf(
     let vault_root_ref = vault_root.as_deref();
     let resolved_template = base.typst_template.as_deref()
         .map(|t| resolve_template_path_with_root(t, vault_root_ref));
-    let effective_bib = resolve_effective_bib(
-        base.bibliography_file.as_deref(),
-        vault_root_ref,
-        &state,
-    ).await;
     let mut exported = Vec::new();
     let mut errors = Vec::new();
 
@@ -388,12 +413,13 @@ pub async fn export_collection_batch_pdf(
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
         let source = super::typst::maybe_inject_set_vault(&source, &state).await;
-        let source = maybe_inject_bibliography(
+        let source = prepare_bibliography(
             source,
-            effective_bib.as_deref(),
+            base.bibliography_file.as_deref(),
             base.bibliography_style.as_deref(),
-        );
-        let source = apply_bibliography_visibility(source, include_bibliography.unwrap_or(true));
+            include_bibliography.unwrap_or(true),
+            &state,
+        ).await;
 
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
@@ -452,7 +478,7 @@ pub async fn export_collection_batch_pdf(
     }
 
     if !errors.is_empty() {
-        eprintln!("Batch export: {} of {} files failed:\n{}", errors.len(), data.rows.len(), errors.join("\n"));
+        log::error!("Batch export: {} of {} files failed:\n{}", errors.len(), data.rows.len(), errors.join("\n"));
     }
 
     Ok(exported)
@@ -733,9 +759,6 @@ pub async fn export_collection_static_site(
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create output dir: {}", e)))?;
 
-    let vault_root = state.vault_root.read().await;
-    let effective_bib = resolve_effective_bib(None, vault_root.as_deref(), &state).await;
-
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_rules(&app_settings.document, &app_settings.appearance.monospace_font);
     drop(app_settings);
@@ -765,8 +788,7 @@ pub async fn export_collection_static_site(
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
         let content = super::typst::maybe_inject_set_vault(&content, &state).await;
-        let bib_style = resolve_user_bib_style(&state).await;
-        let source = maybe_inject_bibliography(content, effective_bib.as_deref(), bib_style.as_deref());
+        let source = prepare_bibliography(content, None, None, true, &state).await;
 
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
@@ -1033,6 +1055,26 @@ async fn resolve_user_bib_style(state: &State<'_, AppState>) -> Option<String> {
                 .filter(|s| !s.is_empty() && *s != "custom")
                 .map(String::from)
         })
+}
+
+/// Resolve bibliography settings and inject/suppress as needed. Combines
+/// `resolve_effective_bib`, `resolve_user_bib_style`, `maybe_inject_bibliography`,
+/// and `apply_bibliography_visibility` into a single call.
+async fn prepare_bibliography(
+    source: String,
+    collection_bib: Option<&str>,
+    collection_bib_style: Option<&str>,
+    include_bibliography: bool,
+    state: &State<'_, AppState>,
+) -> String {
+    let vault_root = state.vault_root.read().await;
+    let effective_bib = resolve_effective_bib(collection_bib, vault_root.as_deref(), state).await;
+    let bib_style = match collection_bib_style {
+        Some(s) if !s.is_empty() => Some(s.to_string()),
+        _ => resolve_user_bib_style(state).await,
+    };
+    let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
+    apply_bibliography_visibility(source, include_bibliography)
 }
 
 /// Suppress the rendered bibliography from export output without breaking
@@ -1688,7 +1730,7 @@ fn parse_first_string_arg(args: &str) -> Option<String> {
     while i < bytes.len() {
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => {
-                buf.push(bytes[i + 1] as char);
+                buf.push(bytes[i + 1] as char); // utf8-safe: Typst string escapes are ASCII-range
                 i += 2;
             }
             b'"' => return Some(buf),
@@ -1696,7 +1738,7 @@ fn parse_first_string_arg(args: &str) -> Option<String> {
             // multi-byte byte. ASCII bytes never appear inside multi-byte
             // sequences so the simple cases above don't misalign.
             b if b < 0x80 => {
-                buf.push(b as char);
+                buf.push(b as char); // utf8-safe: guarded by b < 0x80 (ASCII only)
                 i += 1;
             }
             _ => {
@@ -1879,9 +1921,14 @@ pub async fn export_via_pandoc(
 
     // Pass normalized metadata to Pandoc. Pandoc maps standard keys (title,
     // author, date, keywords) to document properties in the output format.
+    // Strip control characters that could confuse Pandoc's YAML parser.
     if !normalized.is_empty() {
         for (key, value) in &normalized {
-            cmd.arg("--metadata").arg(format!("{}={}", key, value));
+            let clean: String = value
+                .chars()
+                .filter(|c| !c.is_control() || *c == ' ')
+                .collect();
+            cmd.arg("--metadata").arg(format!("{}={}", key, clean));
         }
     }
 
@@ -2429,6 +2476,7 @@ pub async fn export_collection_csv_to_file(
     Ok(())
 }
 
+/// Export a collection view as CSV and return the content as a string. Requires an open vault.
 #[tauri::command]
 pub async fn export_collection_csv(
     collection_path: String,

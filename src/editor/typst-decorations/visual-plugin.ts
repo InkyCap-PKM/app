@@ -65,6 +65,12 @@ const termSep = Decoration.mark({ class: "cm-typst-term-sep" });
 
 const hide = Decoration.replace({});
 
+/** Push a mark range only when the range is non-empty (from < to).
+ *  CM6 throws "Mark decorations may not be empty" on zero-length marks. */
+function pushMark(decos: Range<Decoration>[], mark: Decoration, from: number, to: number) {
+  if (from < to) decos.push(mark.range(from, to));
+}
+
 // ── Pill system: collapsed func-call affordance ──────────
 
 export { expandFunc } from "./effects";
@@ -263,7 +269,7 @@ function buildDecorations(state: EditorState): DecorationSet {
             activeFormatting.bold = true;
             decos.push(hide.range(node.from, node.from + 1));
             decos.push(hide.range(node.to - 1, node.to));
-            decos.push(bold.range(node.from + 1, node.to - 1));
+            pushMark(decos, bold, node.from + 1, node.to - 1);
             break;
           }
           case "Emph": {
@@ -272,7 +278,7 @@ function buildDecorations(state: EditorState): DecorationSet {
             activeFormatting.italic = true;
             decos.push(hide.range(node.from, node.from + 1));
             decos.push(hide.range(node.to - 1, node.to));
-            decos.push(italic.range(node.from + 1, node.to - 1));
+            pushMark(decos, italic, node.from + 1, node.to - 1);
             break;
           }
           case "Escape": {
@@ -330,7 +336,7 @@ function buildDecorations(state: EditorState): DecorationSet {
               if (autoExpand && onCursor) return false;
               decos.push(hide.range(node.from, node.from + 1));
               decos.push(hide.range(node.to - 1, node.to));
-              decos.push(rawInline.range(node.from + 1, node.to - 1));
+              pushMark(decos, rawInline, node.from + 1, node.to - 1);
             } else {
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) {
                 const startLine = state.doc.lineAt(node.from);
@@ -367,7 +373,7 @@ function buildDecorations(state: EditorState): DecorationSet {
               if (autoExpand && onCursor) return false;
               decos.push(hide.range(node.from, node.from + 1));
               decos.push(hide.range(node.to - 1, node.to));
-              decos.push(mathInline.range(node.from + 1, node.to - 1));
+              pushMark(decos, mathInline, node.from + 1, node.to - 1);
             }
             return false;
           }
@@ -410,11 +416,11 @@ function buildDecorations(state: EditorState): DecorationSet {
             if (colonIdx >= 0) {
               const colonAbs = line.from + colonIdx;
               decos.push(hide.range(node.from, node.to));
-              decos.push(termKey.range(node.to, colonAbs));
+              pushMark(decos, termKey, node.to, colonAbs);
               decos.push(termSep.range(colonAbs, colonAbs + 1));
             } else {
               decos.push(hide.range(node.from, node.to));
-              decos.push(termKey.range(node.to, line.to));
+              pushMark(decos, termKey, node.to, line.to);
             }
             return false;
           }
@@ -577,7 +583,7 @@ function buildDecorations(state: EditorState): DecorationSet {
     for (const esc of escapeDecos) {
       if (!takenPositions.has(esc.from)) {
         decos.push(hide.range(esc.from, esc.backslashEnd));
-        decos.push(escapedChar.range(esc.backslashEnd, esc.charEnd));
+        pushMark(decos, escapedChar, esc.backslashEnd, esc.charEnd);
       }
     }
   }
@@ -793,7 +799,10 @@ function handleFuncCall(
     case "image": {
       const path = extractFirstStringArg(text);
       if (!path) return false;
-      pushBlockElement((withPill) => new ImageBlockWidget(path, from, withPill));
+      const imgAlt = extractNamedStringArg(text, "alt");
+      const imgWidth = extractNamedBareArg(text, "width");
+      const imgHeight = extractNamedBareArg(text, "height");
+      pushBlockElement((withPill) => new ImageBlockWidget(path, from, withPill, imgAlt, imgWidth, imgHeight));
       return false;
     }
     case "embed": {
@@ -925,7 +934,7 @@ function handleFuncCall(
           : hide
         ).range(from, content.from));
         decos.push(hide.range(content.to, to));
-        decos.push(quoteInlineMark.range(content.from, content.to));
+        pushMark(decos, quoteInlineMark, content.from, content.to);
       }
       return true;
     }
@@ -1113,6 +1122,13 @@ function extractNamedStringArg(text: string, name: string): string | null {
   const re = new RegExp(`${name}\\s*:\\s*"([^"]*)"`);
   const m = text.match(re);
   return m ? m[1] : null;
+}
+
+/** Extract a named arg with a bare (non-string) value like `width: 40%`. */
+function extractNamedBareArg(text: string, name: string): string | null {
+  const re = new RegExp(`${name}\\s*:\\s*([^,)\\]]+)`);
+  const m = text.match(re);
+  return m ? m[1].trim() : null;
 }
 
 function extractNamedBracketArg(text: string, name: string): string | null {
@@ -1307,8 +1323,10 @@ function computeProtectedRanges(state: EditorState, expandedPos: number | null):
   const docLen = state.doc.length;
 
   // Import lines and #note()/#bibliography() calls in the first few lines
-  // (text-based, works before the syntax tree is ready)
-  const maxScanLine = Math.min(state.doc.lines, 10);
+  // (text-based, works before the syntax tree is ready).
+  // Tracks paren nesting so that array/dict values inside #note()
+  // arguments (e.g. `collection: ("Foo",),`) don't close the call early.
+  const maxScanLine = Math.min(state.doc.lines, 30);
   for (let i = 1; i <= maxScanLine; i++) {
     const line = state.doc.line(i);
     const trimmed = line.text.trimStart();
@@ -1321,12 +1339,22 @@ function computeProtectedRanges(state: EditorState, expandedPos: number | null):
 
     let hideEnd = line.to;
 
-    // For multi-line #note() calls, scan forward to find the closing paren
-    if (isNote && !trimmed.includes(")")) {
-      for (let j = i + 1; j <= Math.min(state.doc.lines, i + 20); j++) {
-        const nextLine = state.doc.line(j);
-        hideEnd = nextLine.to;
-        if (nextLine.text.includes(")")) break;
+    if (isNote || isBibliography) {
+      let depth = 0;
+      for (const ch of line.text) {
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+      }
+      if (depth > 0) {
+        for (let j = i + 1; j <= Math.min(state.doc.lines, i + 30); j++) {
+          const nextLine = state.doc.line(j);
+          for (const ch of nextLine.text) {
+            if (ch === "(") depth++;
+            else if (ch === ")") depth--;
+          }
+          hideEnd = nextLine.to;
+          if (depth <= 0) break;
+        }
       }
     }
 
@@ -1510,9 +1538,16 @@ const protectedChangeFilter = EditorState.changeFilter.of((tr) => {
 
   let hasOverlap = false;
   let allContained = true;
-  tr.changes.iterChanges((fromA, toA) => {
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
     for (const r of ranges) {
-      if (fromA < r.to && toA > r.from) {
+      // Pure insertions (fromA === toA) at the range boundary r.from
+      // must also be caught — use >= for fromA so we block text
+      // pushed into the start of a protected prelude.
+      const isPureInsert = fromA === toA && inserted.length > 0;
+      const overlaps = isPureInsert
+        ? (fromA >= r.from && fromA < r.to)
+        : (fromA < r.to && toA > r.from);
+      if (overlaps) {
         hasOverlap = true;
         if (fromA >= r.from && toA <= r.to) {
           // Change entirely within a protected range — block it

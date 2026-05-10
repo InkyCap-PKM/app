@@ -49,10 +49,11 @@ impl LinkIndex {
         self.forward.clear();
         self.backward.clear();
 
+        let stems = StemIndex::build(all_paths);
         for (source, raw_links) in &self.forward_raw {
             let mut resolved = Vec::new();
             for link_target in raw_links {
-                if let Some(target_path) = resolve_wikilink(link_target, all_paths) {
+                if let Some(target_path) = stems.resolve(link_target) {
                     resolved.push(target_path.clone());
                     self.backward
                         .entry(target_path)
@@ -110,9 +111,10 @@ impl LinkIndex {
 
         // Resolve new links
         if let Some(raw_links) = self.forward_raw.get(note) {
+            let stems = StemIndex::build(all_paths);
             let mut resolved = Vec::new();
             for link_target in raw_links {
-                if let Some(target_path) = resolve_wikilink(link_target, all_paths) {
+                if let Some(target_path) = stems.resolve(link_target) {
                     resolved.push(target_path.clone());
                     self.backward
                         .entry(target_path)
@@ -125,40 +127,47 @@ impl LinkIndex {
     }
 }
 
-/// Resolve a wikilink target string to a file path.
-/// Matches by filename stem, case-insensitive.
-/// If there are multiple matches, prefer the shortest path.
-fn resolve_wikilink(target: &str, all_paths: &[PathBuf]) -> Option<PathBuf> {
-    // Strip heading/block references: note#heading or note::heading -> note
-    let target_name = target.split("::").next().unwrap_or(target);
-    let target_name = target_name.split('#').next().unwrap_or(target_name).trim();
-    if target_name.is_empty() {
-        return None;
+/// Lowercase-stem → paths map, built once per resolution batch so that
+/// resolving L wikilinks against N vault paths is O(N + L) instead of O(L·N).
+struct StemIndex<'a> {
+    by_stem: HashMap<String, Vec<&'a PathBuf>>,
+}
+
+impl<'a> StemIndex<'a> {
+    fn build(all_paths: &'a [PathBuf]) -> Self {
+        let mut by_stem: HashMap<String, Vec<&'a PathBuf>> = HashMap::new();
+        for p in all_paths {
+            if let Some(stem) = p.file_stem() {
+                let key = stem.to_string_lossy().to_lowercase();
+                by_stem.entry(key).or_default().push(p);
+            }
+        }
+        Self { by_stem }
     }
 
-    let target_lower = target_name.to_lowercase();
-
-    let mut matches: Vec<&PathBuf> = all_paths
-        .iter()
-        .filter(|p| {
-            p.file_stem()
-                .map(|s| s.to_string_lossy().to_lowercase() == target_lower)
-                .unwrap_or(false)
-        })
-        .collect();
-
-    if matches.is_empty() {
-        return None;
+    fn resolve(&self, target: &str) -> Option<PathBuf> {
+        let target_name = target.split("::").next().unwrap_or(target);
+        let target_name = target_name.split('#').next().unwrap_or(target_name).trim();
+        if target_name.is_empty() {
+            return None;
+        }
+        let key = target_name.to_lowercase();
+        let candidates = self.by_stem.get(&key)?;
+        // Shortest path wins (most specific match).
+        candidates
+            .iter()
+            .min_by_key(|p| p.components().count())
+            .map(|p| (*p).clone())
     }
-
-    // Shortest path wins (most specific match)
-    matches.sort_by_key(|p| p.components().count());
-    Some(matches[0].clone())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolve(target: &str, paths: &[PathBuf]) -> Option<PathBuf> {
+        StemIndex::build(paths).resolve(target)
+    }
 
     #[test]
     fn test_resolve_wikilink_basic() {
@@ -168,26 +177,42 @@ mod tests {
             PathBuf::from("/vault/notes/World.typ"),
         ];
 
-        // Should find World.typ
-        let result = resolve_wikilink("World", &paths);
-        assert_eq!(result, Some(PathBuf::from("/vault/notes/World.typ")));
-
-        // Case insensitive
-        let result = resolve_wikilink("hello", &paths);
-        assert!(result.is_some());
+        assert_eq!(
+            resolve("World", &paths),
+            Some(PathBuf::from("/vault/notes/World.typ"))
+        );
+        assert!(resolve("hello", &paths).is_some());
     }
 
     #[test]
     fn test_resolve_wikilink_with_heading() {
         let paths = vec![PathBuf::from("/vault/notes/Note.typ")];
-        let result = resolve_wikilink("Note#heading", &paths);
-        assert_eq!(result, Some(PathBuf::from("/vault/notes/Note.typ")));
+        assert_eq!(
+            resolve("Note#heading", &paths),
+            Some(PathBuf::from("/vault/notes/Note.typ"))
+        );
+        assert_eq!(
+            resolve("Note::heading", &paths),
+            Some(PathBuf::from("/vault/notes/Note.typ"))
+        );
     }
 
     #[test]
     fn test_resolve_wikilink_not_found() {
         let paths = vec![PathBuf::from("/vault/notes/Hello.typ")];
-        let result = resolve_wikilink("Missing", &paths);
-        assert_eq!(result, None);
+        assert_eq!(resolve("Missing", &paths), None);
+    }
+
+    #[test]
+    fn test_resolve_wikilink_shortest_path_wins() {
+        let paths = vec![
+            PathBuf::from("/vault/a/b/c/Note.typ"),
+            PathBuf::from("/vault/Note.typ"),
+            PathBuf::from("/vault/x/Note.typ"),
+        ];
+        assert_eq!(
+            resolve("Note", &paths),
+            Some(PathBuf::from("/vault/Note.typ"))
+        );
     }
 }

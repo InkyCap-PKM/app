@@ -59,7 +59,7 @@ impl MetadataCache {
                 // Corrupt or incompatible — wipe and try once more. If this
                 // also fails, the error propagates and the caller falls back
                 // to a cacheless rebuild.
-                eprintln!(
+                log::warn!(
                     "Metadata cache at {} unusable ({err}); recreating",
                     db_path.display()
                 );
