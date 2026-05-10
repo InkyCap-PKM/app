@@ -2002,12 +2002,16 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-pill-menu-item.is-active": {
     color: "var(--accent)",
   },
-  ".cm-typst-pill-menu-check": {
-    width: "1em",
-    color: "var(--accent)",
-  },
   ".cm-typst-pill-menu-label": {
     flex: "1",
+  },
+  // Sits to the right of the label (the label's flex:1 pushes it there).
+  // Keep a small left margin so it doesn't crowd long labels.
+  ".cm-typst-pill-menu-check": {
+    marginLeft: "8px",
+    color: "var(--accent)",
+    fontSize: "0.95em",
+    lineHeight: "1",
   },
   ".cm-typst-pill-menu-input-row": {
     display: "flex",
