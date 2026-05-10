@@ -298,7 +298,15 @@ export const typstKeymap: KeyBinding[] = [
       if (pos < view.state.doc.length) {
         const charAfter = view.state.doc.sliceString(pos, pos + 1);
         if ("])*`$_".includes(charAfter)) {
-          const STEP_OUT_NODES = ["Strong", "Emph", "Raw", "Equation", "Args", "ContentBlock"];
+          // ContentBlock (the `[…]` body of any FuncCall) used to be in
+          // this list, originally for the wikilink "press Enter to leave
+          // the brackets" flow. With multi-line callouts and quotes now
+          // editable in the visual editor, stepping out of every
+          // ContentBlock on Enter breaks ordinary line breaks inside
+          // those bodies. Wikilinks still work because their Args (the
+          // `("name")` form) handles the step-out for the
+          // closing-paren case.
+          const STEP_OUT_NODES = ["Strong", "Emph", "Raw", "Equation", "Args"];
           const tree = syntaxTree(view.state);
           let cur = tree.resolveInner(pos, -1);
           let canStep = false;
