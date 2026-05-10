@@ -1,14 +1,6 @@
 import { render } from "solid-js/web";
 import "katex/dist/katex.min.css";
-import mermaid from "mermaid";
 import App from "./App";
-
-// Initialize mermaid with dark theme (no auto-start)
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "dark",
-  securityLevel: "loose",
-});
 
 // Native OS file drops are handled by Tauri's own drag-drop event
 // listener (see src/lib/tauri-drag-drop.ts, attached from App.tsx).

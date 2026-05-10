@@ -427,7 +427,7 @@ pub async fn scan_vault_cached(
 
     // Persist new/changed entries and prune deletions in one go.
     if let Err(err) = cache.upsert_many(vault_root, &to_upsert) {
-        eprintln!("metadata cache: upsert_many failed: {err}");
+        log::warn!("metadata cache: upsert_many failed: {err}");
     }
     match cache.prune_collecting(vault_root, &existing_relpaths) {
         Ok((n, pruned_relpaths)) => {
@@ -437,7 +437,7 @@ pub async fn scan_vault_cached(
                 .map(|rp| vault_root.join(rp))
                 .collect();
         }
-        Err(err) => eprintln!("metadata cache: prune failed: {err}"),
+        Err(err) => log::warn!("metadata cache: prune failed: {err}"),
     }
 
     Ok((

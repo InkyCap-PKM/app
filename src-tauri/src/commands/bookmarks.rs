@@ -4,6 +4,7 @@ use crate::bookmarks::{self, Bookmark, BookmarkKind};
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 
+/// Return all bookmarks in their current order.
 #[tauri::command]
 pub async fn list_bookmarks(
     state: State<'_, AppState>,
@@ -12,6 +13,7 @@ pub async fn list_bookmarks(
     Ok(bm.clone())
 }
 
+/// Add a bookmark of the given kind and persist to disk; returns the new bookmark's ID.
 #[tauri::command]
 pub async fn add_bookmark(
     kind: BookmarkKind,
@@ -23,6 +25,7 @@ pub async fn add_bookmark(
     Ok(id)
 }
 
+/// Remove a bookmark by ID and persist; returns whether the bookmark existed.
 #[tauri::command]
 pub async fn remove_bookmark(
     bookmark_id: String,
@@ -36,6 +39,7 @@ pub async fn remove_bookmark(
     Ok(removed)
 }
 
+/// Move a bookmark from one position to another and persist the new order.
 #[tauri::command]
 pub async fn reorder_bookmarks(
     from_index: usize,

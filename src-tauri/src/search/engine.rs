@@ -755,7 +755,7 @@ impl PersistedSearchIndex {
         let encoded = match bincode::serialize(self) {
             Ok(data) => data,
             Err(err) => {
-                eprintln!("search index: serialization failed: {err}");
+                log::warn!("search index: serialization failed: {err}");
                 return;
             }
         };
@@ -763,7 +763,7 @@ impl PersistedSearchIndex {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Err(err) = std::fs::write(path, encoded) {
-            eprintln!("search index: write failed at {}: {err}", path.display());
+            log::warn!("search index: write failed at {}: {err}", path.display());
         }
     }
 
@@ -779,7 +779,7 @@ impl PersistedSearchIndex {
         let encoded = match bincode::serialize(&wrapper) {
             Ok(data) => data,
             Err(err) => {
-                eprintln!("search index: serialization failed: {err}");
+                log::warn!("search index: serialization failed: {err}");
                 return;
             }
         };
@@ -787,7 +787,7 @@ impl PersistedSearchIndex {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Err(err) = std::fs::write(path, encoded) {
-            eprintln!("search index: write failed at {}: {err}", path.display());
+            log::warn!("search index: write failed at {}: {err}", path.display());
         }
     }
 

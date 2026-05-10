@@ -314,6 +314,18 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     });
   }
 
+  const BINARY_EXTENSIONS = new Set([
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",
+    "pdf", "zip", "tar", "gz", "7z", "rar",
+    "mp3", "wav", "ogg", "flac", "mp4", "webm", "mkv", "avi",
+    "woff", "woff2", "ttf", "otf", "eot",
+  ]);
+
+  function isBinaryFile(name: string): boolean {
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    return BINARY_EXTENSIONS.has(ext);
+  }
+
   function openFile(node: FileTreeNode, e?: MouseEvent) {
     if (node.is_dir) return;
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
@@ -326,6 +338,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         },
         { forceNewTab },
       );
+      return;
+    }
+    if (isBinaryFile(node.name)) {
+      ipc.openFileExternally(node.path);
       return;
     }
     openTab(
@@ -698,6 +714,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   onRenameCancel={() => setFileRenamingPath(null)}
                   activePath={getActiveTab()?.path ?? null}
                   revealPath={revealPath()}
+                  vaultRoot={vaultInfo()?.path ?? ""}
                 />
               )}
             </For>
@@ -1048,6 +1065,7 @@ const TreeNode: Component<{
   onRenameCancel: () => void;
   activePath: string | null;
   revealPath: string | null;
+  vaultRoot: string;
   depth?: number;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
@@ -1088,6 +1106,15 @@ const TreeNode: Component<{
             ref={itemRef}
             class={`sidebar-item ${props.node.is_dir ? "sidebar-item--dir" : ""}${isActive() ? " sidebar-item--active" : ""}`}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
+            draggable={!props.node.is_dir}
+            onDragStart={(e) => {
+              if (props.node.is_dir) return;
+              const rel = props.node.path.startsWith(props.vaultRoot + "/")
+                ? props.node.path.slice(props.vaultRoot.length + 1)
+                : props.node.name;
+              e.dataTransfer!.setData("application/x-inkycap-vault-path", rel);
+              e.dataTransfer!.effectAllowed = "copy";
+            }}
             onClick={(e) => {
               if (props.node.is_dir) {
                 setExpanded(!expanded());
@@ -1144,6 +1171,7 @@ const TreeNode: Component<{
               onRenameCancel={props.onRenameCancel}
               activePath={props.activePath}
               revealPath={props.revealPath}
+              vaultRoot={props.vaultRoot}
               depth={depth + 1}
             />
           )}

@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import * as ipc from "../../lib/ipc";
 import { pasteUrlHandler } from "./paste-url";
+import { protectedRangesField } from "./visual-plugin";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
 
@@ -9,16 +10,53 @@ function getExtension(filename: string): string {
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : "";
 }
 
-function insertAttachment(view: EditorView, savedName: string, pos: number) {
-  const ext = getExtension(savedName);
-  const isImage = IMAGE_EXTS.has(ext);
-  const insert = isImage
-    ? `#image("attachments/${savedName}")`
-    : `#embed("${savedName}")`;
+function clampPastProtected(view: EditorView, pos: number): number {
+  const ranges = view.state.field(protectedRangesField, false);
+  if (!ranges || ranges.length === 0) return pos;
+  let p = pos;
+  let prev = -1;
+  while (p !== prev) {
+    prev = p;
+    for (const r of ranges) {
+      if (p >= r.from && p < r.to) p = r.to;
+    }
+  }
+  return p;
+}
+
+const NOTE_EXTS = new Set(["typ"]);
+
+function attachmentMarkup(relativePath: string): string | null {
+  const ext = getExtension(relativePath);
+  if (IMAGE_EXTS.has(ext)) {
+    return `#image("/${relativePath}")`;
+  }
+  if (NOTE_EXTS.has(ext)) {
+    const basename = relativePath.split("/").pop() ?? relativePath;
+    const stem = basename.replace(/\.typ$/, "");
+    return `#wikilink("${stem}")`;
+  }
+  return null;
+}
+
+function insertAttachment(view: EditorView, relativePath: string, pos: number) {
+  const body = attachmentMarkup(relativePath);
+  if (body === null) {
+    console.warn("[drag-drop] unsupported file type, no markup inserted:", relativePath);
+    return;
+  }
+
+  // Pin past any prelude (#import / #note / #bibliography) and normalize
+  // to its own line — block-level markup can't share a line with prose.
+  const clamped = clampPastProtected(view, pos);
+  const line = view.state.doc.lineAt(clamped);
+  const onLineStart = clamped === line.from;
+  const insertPos = onLineStart ? clamped : line.to;
+  const insert = onLineStart ? `${body}\n` : `\n${body}`;
 
   view.dispatch({
-    changes: { from: pos, insert },
-    selection: { anchor: pos + insert.length },
+    changes: { from: insertPos, insert },
+    selection: { anchor: insertPos + insert.length },
   });
 }
 
@@ -76,6 +114,19 @@ async function handlePastedImage(view: EditorView, file: File) {
   }
 }
 
+/** Last drag-over position tracked from DOM events. On Linux/webkit2gtk,
+ *  external drags block dataTransfer but still fire dragover with correct
+ *  clientX/clientY. The Tauri-level drop handler reads this to get an
+ *  accurate drop position instead of relying on Tauri's physical-pixel
+ *  coordinates (which are in a different coordinate space). */
+let lastDragPos: { x: number; y: number; time: number } | null = null;
+export function getLastDragPos(): { x: number; y: number } | null {
+  if (!lastDragPos) return null;
+  // Only use if recent (within 2 seconds of the drop)
+  if (Date.now() - lastDragPos.time > 2000) return null;
+  return { x: lastDragPos.x, y: lastDragPos.y };
+}
+
 export const dragDropHandler = ViewPlugin.fromClass(
   class {
     constructor(_view: EditorView) {}
@@ -84,9 +135,14 @@ export const dragDropHandler = ViewPlugin.fromClass(
   {
     eventHandlers: {
       dragover(_event: DragEvent) {
+        // Track position for the Tauri handler — DOM events have correct
+        // client coordinates even when dataTransfer is blocked.
+        lastDragPos = { x: _event.clientX, y: _event.clientY, time: Date.now() };
+
         const types = _event.dataTransfer?.types;
         if (!types) return false;
         if (
+          types.includes("application/x-inkycap-vault-path") ||
           types.includes("Files") ||
           types.includes("text/uri-list") ||
           types.includes("text/plain")
@@ -107,6 +163,15 @@ export const dragDropHandler = ViewPlugin.fromClass(
           y: event.clientY,
         });
         const pos = coords ?? view.state.selection.main.from;
+
+        // Internal drag from the file tree — file is already in the vault,
+        // no copy needed. The vault-relative path is set directly.
+        const vaultPath = cd.getData("application/x-inkycap-vault-path");
+        if (vaultPath) {
+          event.preventDefault();
+          insertAttachment(view, vaultPath, pos);
+          return true;
+        }
 
         if (cd.files && cd.files.length > 0) {
           event.preventDefault();

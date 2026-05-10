@@ -46,34 +46,6 @@ pub struct CreationRule {
     #[serde(default)]
     pub typst_template: String,
 
-    // Legacy field aliases for migration from pre-scaffold naming.
-    // serde(alias) lets old JSON files load without data loss.
-    #[serde(alias = "template_path", default, skip_serializing)]
-    _legacy_template_path: Option<String>,
-    #[serde(alias = "filename_template", default, skip_serializing)]
-    _legacy_filename_template: Option<String>,
-}
-
-impl CreationRule {
-    /// After deserialization, migrate legacy field names to current ones.
-    pub fn migrate_legacy(&mut self) {
-        if self.scaffold_path.is_empty() {
-            if let Some(ref legacy) = self._legacy_template_path {
-                if !legacy.is_empty() {
-                    self.scaffold_path = legacy.clone();
-                }
-            }
-        }
-        if self.filename_pattern.is_empty() {
-            if let Some(ref legacy) = self._legacy_filename_template {
-                if !legacy.is_empty() {
-                    self.filename_pattern = legacy.clone();
-                }
-            }
-        }
-        self._legacy_template_path = None;
-        self._legacy_filename_template = None;
-    }
 }
 
 /// Default built-in rules.
@@ -92,8 +64,6 @@ pub fn default_rules() -> Vec<CreationRule> {
             description: "Create a new Zettelkasten note with a timestamp ID".to_string(),
             builtin: true,
             typst_template: String::new(),
-            _legacy_template_path: None,
-            _legacy_filename_template: None,
         },
         CreationRule {
             id: "daily-note".to_string(),
@@ -108,8 +78,6 @@ pub fn default_rules() -> Vec<CreationRule> {
             description: "Create or open today's daily note".to_string(),
             builtin: true,
             typst_template: String::new(),
-            _legacy_template_path: None,
-            _legacy_filename_template: None,
         },
     ]
 }
@@ -128,11 +96,6 @@ pub fn load_rules() -> Vec<CreationRule> {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-
-    // Migrate legacy field names
-    for rule in &mut user_rules {
-        rule.migrate_legacy();
-    }
 
     // Ensure built-in rules are always present
     let defaults = default_rules();
@@ -228,24 +191,4 @@ mod tests {
         assert!(rules.iter().any(|r| r.id == "daily-note"));
     }
 
-    #[test]
-    fn test_legacy_migration() {
-        let json = r#"{
-            "id": "old-rule",
-            "name": "Old Rule",
-            "icon_emoji": "",
-            "template_path": "my-scaffold.typ",
-            "target_folder": "",
-            "filename_template": "{{date:YYYY-MM-DD}}",
-            "creation_mode": "create_and_open",
-            "hotkey": null,
-            "show_in_toolbar": false,
-            "description": "",
-            "builtin": false
-        }"#;
-        let mut rule: CreationRule = serde_json::from_str(json).unwrap();
-        rule.migrate_legacy();
-        assert_eq!(rule.scaffold_path, "my-scaffold.typ");
-        assert_eq!(rule.filename_pattern, "{{date:YYYY-MM-DD}}");
-    }
 }

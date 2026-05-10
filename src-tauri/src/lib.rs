@@ -136,6 +136,10 @@ fn install_gtk_headerbar(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .format_timestamp_millis()
+        .init();
+
     use tauri::Manager;
 
     tauri::Builder::default()
@@ -245,6 +249,7 @@ pub fn run() {
             commands::file_ops::copy_path_to_attachments,
             commands::file_ops::read_clipboard_file_paths,
             commands::file_ops::show_in_explorer,
+            commands::file_ops::open_file_externally,
             commands::creation_rules::list_creation_rules,
             commands::creation_rules::save_creation_rule,
             commands::creation_rules::delete_creation_rule,
@@ -291,6 +296,24 @@ pub fn run() {
             commands::system_color::get_os_accent_color,
             commands::fonts::list_system_fonts,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|handle, event| {
+            // Authoritative drag-drop allowlist source for SEC-1. The
+            // frontend also subscribes to the JS-level drag-drop event in
+            // `tauri-drag-drop.ts` for positioning, but only this run-loop
+            // listener is trusted to admit paths into
+            // `AppState.drop_allowlist`. Empirically (Tauri 2.10 +
+            // webkit2gtk on Linux) drag-drop is dispatched through
+            // `RunEvent::WindowEvent::DragDrop`, not the webview variant —
+            // confirmed by terminal traces during testing.
+            if let tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }),
+                ..
+            } = &event
+            {
+                let state = handle.state::<state::AppState>();
+                state.register_drop_paths(paths.iter().cloned());
+            }
+        });
 }

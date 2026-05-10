@@ -21,6 +21,7 @@ use crate::storage::traits::VaultStorage;
 
 // ── Property type registry ────────────────────────────────────────────
 
+/// Return the vault's property type registry (key to declared type mapping). Requires an open vault.
 #[tauri::command]
 pub async fn get_property_types(
     state: State<'_, AppState>,
@@ -287,6 +288,7 @@ fn push_property_strings(
 
 // ── Tag rename / delete ───────────────────────────────────────────────
 
+/// Rename a tag across all notes and collection files in the vault. Requires an open vault.
 #[tauri::command]
 pub async fn rename_tag(
     old_tag: String,
@@ -330,6 +332,7 @@ pub async fn rename_tag(
     Ok(())
 }
 
+/// Remove a tag from every note in the vault that carries it. Requires an open vault.
 #[tauri::command]
 pub async fn delete_tag(
     tag: String,

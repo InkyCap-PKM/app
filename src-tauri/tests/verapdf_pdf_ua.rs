@@ -141,6 +141,7 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         include_title_page: true,
         include_outline: true,
         page_numbering: BookPageNumbering::RomanThenArabic,
+        include_bibliography: true,
     };
 
     let source = build_book_source(

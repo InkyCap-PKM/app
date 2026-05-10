@@ -90,7 +90,7 @@ export class TableWidget extends WidgetType {
 
       const handle = document.createElement("div");
       handle.className = "cm-table-col-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>';
+      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>'; // static-only
       handle.title = "Right-click for options · drag to reorder";
       const colIdx = c;
 
@@ -133,7 +133,7 @@ export class TableWidget extends WidgetType {
 
       const handle = document.createElement("div");
       handle.className = "cm-table-row-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>';
+      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>'; // static-only
       handle.title = "Right-click for options · drag to reorder";
       const rowIdx = r;
 
@@ -224,7 +224,7 @@ export class TableWidget extends WidgetType {
   private makeAddColBtn(view: EditorView, atCol: number): HTMLElement {
     const btn = document.createElement("div");
     btn.className = "cm-table-add-btn cm-table-add-btn--col";
-    btn.innerHTML = "<span>+</span>";
+    btn.innerHTML = "<span>+</span>"; // static-only
     btn.title = atCol === 0 ? "Add column before" : "Add column after";
     btn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
     btn.addEventListener("click", (e) => {
@@ -237,7 +237,7 @@ export class TableWidget extends WidgetType {
   private makeAddRowBtn(view: EditorView, atRow: number): HTMLElement {
     const btn = document.createElement("div");
     btn.className = "cm-table-add-btn cm-table-add-btn--row";
-    btn.innerHTML = "<span>+</span>";
+    btn.innerHTML = "<span>+</span>"; // static-only
     btn.title = atRow === 0 ? "Add row above" : "Add row below";
     btn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
     btn.addEventListener("click", (e) => {
@@ -1284,10 +1284,11 @@ function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLE
       font-size: inherit;
       font-family: inherit;
     `;
-    const iconHtml = item.danger
-      ? `<span style="width:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${ICON_TRASH}</span>`
-      : `<span style="width:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${item.icon}</span>`;
-    btn.innerHTML = `${iconHtml} ${item.label}`;
+    const iconSpan = document.createElement("span");
+    iconSpan.style.cssText = "width:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0";
+    iconSpan.innerHTML = item.danger ? ICON_TRASH : item.icon; // static-only: internal SVG/emoji constants
+    btn.appendChild(iconSpan);
+    btn.appendChild(document.createTextNode(` ${item.label}`));
     btn.addEventListener("mouseenter", () => { btn.style.background = "var(--bg-hover, #f0f0f0)"; });
     btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; });
     btn.addEventListener("mousedown", (ev) => { ev.preventDefault(); ev.stopPropagation(); });

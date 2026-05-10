@@ -7,12 +7,14 @@ use crate::state::AppState;
 use crate::storage::traits::VaultStorage;
 use crate::watcher::file_watcher;
 
+/// Return the persisted vault path from the app config, if any.
 #[tauri::command]
 pub async fn get_saved_vault_path() -> Result<Option<String>, InkyCapError> {
     let cfg = config::load_config();
     Ok(cfg.vault_path)
 }
 
+/// Open a vault at the given directory path: initialize storage, start the file watcher, and spawn background index build.
 #[tauri::command]
 pub async fn open_vault(
     path: String,
@@ -48,8 +50,8 @@ pub async fn open_vault(
     {
         let scope = app_handle.asset_protocol_scope();
         if let Err(err) = scope.allow_directory(&canonical_root, true) {
-            eprintln!(
-                "warning: could not extend asset protocol scope to {}: {err}",
+            log::warn!(
+                "could not extend asset protocol scope to {}: {err}",
                 canonical_root.display()
             );
         }
@@ -101,7 +103,7 @@ pub async fn open_vault(
             });
         }
         Err(err) => {
-            eprintln!("Warning: could not start file watcher: {err}");
+            log::warn!("could not start file watcher: {err}");
         }
     }
 
@@ -133,7 +135,7 @@ pub async fn open_vault(
                 let _ = bg_handle.emit("vault:index-ready", &stats);
             }
             Err(err) => {
-                eprintln!("Background index build failed: {err}");
+                log::error!("Background index build failed: {err}");
                 let _ = bg_handle.emit(
                     "vault:index-error",
                     serde_json::json!({ "error": err.to_string() }),
@@ -211,7 +213,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
             Err(err) => {
                 // File may have been deleted between the change event and
                 // the re-parse — the next FileDeleted event will clean up.
-                eprintln!(
+                log::warn!(
                     "watcher reindex failed for {}: {err}",
                     path.display()
                 );
@@ -238,6 +240,7 @@ fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, path: std::path::PathB
     });
 }
 
+/// Return summary info (name, file count, property keys) for the currently open vault, or `None` if no vault is open.
 #[tauri::command]
 pub async fn get_vault_info(
     state: State<'_, AppState>,
@@ -266,6 +269,7 @@ pub async fn get_vault_info(
 
 // ── Vault registry commands ──────────────────────────────────────────
 
+/// Return all registered vaults sorted by most recently opened.
 #[tauri::command]
 pub async fn get_vault_registry() -> Result<Vec<config::VaultRegistryEntry>, InkyCapError> {
     let cfg = config::load_config();
@@ -274,6 +278,7 @@ pub async fn get_vault_registry() -> Result<Vec<config::VaultRegistryEntry>, Ink
     Ok(entries)
 }
 
+/// Add or update a vault in the persistent registry. The path must be an existing directory.
 #[tauri::command]
 pub async fn register_vault(
     path: String,
@@ -298,6 +303,7 @@ pub async fn register_vault(
     Ok(())
 }
 
+/// Update the display name of an existing vault registry entry.
 #[tauri::command]
 pub async fn update_vault_entry(
     path: String,
@@ -316,6 +322,7 @@ pub async fn update_vault_entry(
     Ok(())
 }
 
+/// Remove a vault from the persistent registry (does not delete files on disk).
 #[tauri::command]
 pub async fn remove_vault_from_registry(path: String) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
@@ -330,6 +337,7 @@ pub struct VaultMoveResult {
     pub was_active: bool,
 }
 
+/// Rename/move a vault directory on disk and update the registry and active vault path accordingly.
 #[tauri::command]
 pub async fn move_vault(
     old_path: String,

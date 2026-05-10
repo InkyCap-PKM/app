@@ -153,25 +153,72 @@ function lspHoverSource(view: EditorView, pos: number, _side: number): Promise<T
       create() {
         const dom = document.createElement("div");
         dom.className = "cm-lsp-hover";
-        dom.innerHTML = renderMarkdownSimple(text);
+        renderMarkdownSimple(dom, text);
         return { dom };
       },
     };
   });
 }
 
-function renderMarkdownSimple(md: string): string {
-  // Minimal markdown rendering for hover content
-  return md
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="cm-lsp-code"><code>$2</code></pre>')
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\n\n/g, "<br><br>")
-    .replace(/\n/g, "<br>");
+function renderMarkdownSimple(container: HTMLElement, md: string): void {
+  const fencedRe = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  const appendInlineText = (raw: string) => {
+    const parts = raw.split(/\n\n/);
+    parts.forEach((part, i) => {
+      if (i > 0) {
+        container.appendChild(document.createElement("br"));
+        container.appendChild(document.createElement("br"));
+      }
+      const lines = part.split("\n");
+      lines.forEach((line, j) => {
+        if (j > 0) container.appendChild(document.createElement("br"));
+        const inlineRe = /\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
+        let inlineIdx = 0;
+        let inlineMatch: RegExpExecArray | null;
+        while ((inlineMatch = inlineRe.exec(line)) !== null) {
+          if (inlineMatch.index > inlineIdx) {
+            container.appendChild(document.createTextNode(line.slice(inlineIdx, inlineMatch.index)));
+          }
+          if (inlineMatch[1] !== undefined) {
+            const strong = document.createElement("strong");
+            strong.textContent = inlineMatch[1];
+            container.appendChild(strong);
+          } else if (inlineMatch[2] !== undefined) {
+            const em = document.createElement("em");
+            em.textContent = inlineMatch[2];
+            container.appendChild(em);
+          } else if (inlineMatch[3] !== undefined) {
+            const code = document.createElement("code");
+            code.textContent = inlineMatch[3];
+            container.appendChild(code);
+          }
+          inlineIdx = inlineMatch.index + inlineMatch[0].length;
+        }
+        if (inlineIdx < line.length) {
+          container.appendChild(document.createTextNode(line.slice(inlineIdx)));
+        }
+      });
+    });
+  };
+
+  while ((match = fencedRe.exec(md)) !== null) {
+    if (match.index > lastIdx) {
+      appendInlineText(md.slice(lastIdx, match.index));
+    }
+    const pre = document.createElement("pre");
+    pre.className = "cm-lsp-code";
+    const code = document.createElement("code");
+    code.textContent = match[2];
+    pre.appendChild(code);
+    container.appendChild(pre);
+    lastIdx = match.index + match[0].length;
+  }
+  if (lastIdx < md.length) {
+    appendInlineText(md.slice(lastIdx));
+  }
 }
 
 function convertDiagnostics(doc: EditorView["state"]["doc"], diagnostics: LspDiagnostic[]): Diagnostic[] {

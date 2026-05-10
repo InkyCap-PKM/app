@@ -306,11 +306,6 @@ pub fn load_settings() -> UserSettings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    // Migrate legacy template_folder value to new scaffold_folder default
-    if settings.files.scaffold_folder == "templates" {
-        settings.files.scaffold_folder = ".inkycap/scaffolds".to_string();
-    }
-
     // Migrate legacy appearance settings: pre-`accent_source` configs
     // that lack the field entirely land with the serde default ("default")
     // but may carry a non-default `accent_color`. Promote those to

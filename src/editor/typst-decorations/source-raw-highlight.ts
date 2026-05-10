@@ -144,7 +144,7 @@ function buildDecorations(view: EditorView): DecorationSet {
   spans.sort((a, b) => a.from - b.from || a.to - b.to);
   const builder = new RangeSetBuilder<Decoration>();
   for (const s of spans) {
-    builder.add(s.from, s.to, Decoration.mark({ class: s.cls }));
+    if (s.from < s.to) builder.add(s.from, s.to, Decoration.mark({ class: s.cls }));
   }
   return builder.finish();
 }
