@@ -778,6 +778,28 @@ function handleFuncCall(
       const title = extractNamedStringArg(text, "title");
       const bodyText = extractBracketContent(text);
       if (!kind) return false;
+      // R12 live-edit path: when the cursor is on the call's line and
+      // the user hasn't explicitly expanded the source, show the pill +
+      // kind heading above the body, hide the call chrome (`#callout(…)[`
+      // and trailing `]`), and apply per-line CSS marks so the body
+      // stays live-editable Typst with the kind-coloured visual frame.
+      // Off-cursor and expanded states stay on the existing rendered-
+      // widget path so the visual is identical at rest and the pill
+      // click still gives the user raw source.
+      const isExpanded = expandedPos === from || (autoExpand && onCursor);
+      if (onCursor && !isExpanded) {
+        const body = extractContentBracket(text, from);
+        if (body) {
+          pushLiveContentBracket(state, decos, "callout", from, to, body, {
+            contextLabel: (title && title.length > 0)
+              ? title
+              : kind.charAt(0).toUpperCase() + kind.slice(1),
+            accentColor: CALLOUT_COLORS[kind] ?? CALLOUT_COLORS.note,
+            bodyLineClass: "cm-typst-live-callout",
+          });
+          return true;
+        }
+      }
       pushBlockElement((withPill) =>
         new CalloutBlockWidget(kind, title ?? "", bodyText ?? "", from, withPill),
       );
@@ -893,6 +915,21 @@ function handleFuncCall(
       const attribution = extractNamedStringArg(text, "attribution")
         ?? extractNamedBracketArg(text, "attribution");
       if (content === null) return false;
+      // R12 live-edit path mirrors callout above. Attribution shows in
+      // the pill row's context label (unobtrusive) so the user can still
+      // see what the quote is sourced from while editing.
+      const isExpanded = expandedPos === from || (autoExpand && onCursor);
+      if (onCursor && !isExpanded) {
+        const body = extractContentBracket(text, from);
+        if (body) {
+          pushLiveContentBracket(state, decos, "quote", from, to, body, {
+            contextLabel: attribution ?? "",
+            accentColor: null,
+            bodyLineClass: "cm-typst-live-quote",
+          });
+          return true;
+        }
+      }
       pushBlockElement((withPill) =>
         new BlockquoteBlockWidget(content, attribution ?? "", from, withPill),
       );
@@ -972,6 +1009,73 @@ function handleFuncCall(
       }).range(from, to));
       return false;
     }
+  }
+}
+
+/** R12 live-edit decoration for block content-bracket calls (callout,
+ *  quote). Hides the call chrome (`#fn(args)[` prefix + trailing `]`),
+ *  emits a pill-row block widget above the body, and applies a line
+ *  decoration to each body line carrying a CSS class + accent colour
+ *  custom property — leaving the body itself as live-editable Typst
+ *  source.
+ *
+ *  The body line filter (`max(line.from, bodyFrom) < min(line.to, bodyTo)`)
+ *  skips the chrome lines whose only visible content was the now-hidden
+ *  `#fn(args)[` or `]`, so a multi-line callout's frame starts on the
+ *  first real body line and ends on the last. Single-line bodies still
+ *  get one styled line. */
+function pushLiveContentBracket(
+  state: EditorState,
+  decos: Range<Decoration>[],
+  funcName: string,
+  callFrom: number,
+  callTo: number,
+  body: { from: number; to: number },
+  opts: {
+    contextLabel: string;
+    accentColor: string | null;
+    bodyLineClass: string;
+  },
+): void {
+  const { from: bodyFrom, to: bodyTo } = body;
+
+  // Pill row above the call's first line. side: -1 places it before the
+  // line's content; block: true gives it its own row.
+  const callLine = state.doc.lineAt(callFrom);
+  decos.push(
+    Decoration.widget({
+      widget: new LiveBlockPillWidget(funcName, callFrom, opts.contextLabel, opts.accentColor),
+      block: true,
+      side: -1,
+    }).range(callLine.from),
+  );
+
+  // Hide the call's chrome on either side of the body. The `[` is at
+  // bodyFrom - 1; the `]` is at bodyTo. Hide ranges include them.
+  if (callFrom < bodyFrom) decos.push(hide.range(callFrom, bodyFrom));
+  if (bodyTo < callTo) decos.push(hide.range(bodyTo, callTo));
+
+  // Per-line decoration for body lines. Inline style on the `.cm-line`
+  // sets the kind-accent custom property; CSS handles the border-left
+  // and tint. Lines whose visible portion is empty (the chrome lines
+  // the hide ate) are skipped via the strict-less-than intersection.
+  const styleAttr = opts.accentColor ? `--callout-color: ${opts.accentColor}` : "";
+  const docLen = state.doc.length;
+  let pos = bodyFrom;
+  while (pos < bodyTo && pos <= docLen) {
+    const line = state.doc.lineAt(pos);
+    const visibleStart = Math.max(line.from, bodyFrom);
+    const visibleEnd = Math.min(line.to, bodyTo);
+    if (visibleStart < visibleEnd) {
+      decos.push(
+        Decoration.line({
+          class: opts.bodyLineClass,
+          attributes: styleAttr ? { style: styleAttr } : undefined,
+        }).range(line.from),
+      );
+    }
+    if (line.to >= bodyTo) break;
+    pos = line.to + 1;
   }
 }
 
@@ -1589,6 +1693,32 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-search-match)",
     borderRadius: "2px",
     padding: "0 2px",
+  },
+  // R12 live-edit frame for callout / quote: applied per-line to the
+  // body content while the cursor is on the call. The accent colour for
+  // callout flows through the `--callout-color` custom property set by
+  // the inline style attribute (one CSS rule, 15 callout kinds).
+  ".cm-typst-live-callout": {
+    borderLeft: "3px solid var(--callout-color, #888)",
+    paddingLeft: "0.75em",
+    backgroundColor: "color-mix(in srgb, var(--callout-color, #888) 8%, transparent)",
+  },
+  ".cm-typst-live-quote": {
+    borderLeft: "3px solid var(--fg-dim)",
+    paddingLeft: "0.75em",
+    fontStyle: "italic",
+    color: "var(--fg-muted)",
+  },
+  ".cm-typst-live-pill-row": {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginBottom: "2px",
+  },
+  ".cm-typst-live-pill-context": {
+    fontSize: "0.85em",
+    color: "var(--fg-muted)",
+    fontWeight: "500",
   },
   // R12 marks for sub/super/underline/overline: visual representation
   // applied directly to the live Typst source so the body stays editable.
