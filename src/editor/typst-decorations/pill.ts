@@ -461,9 +461,10 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
           view.focus();
         },
       },
+      ...buildUnwrapItem(view, callSource, safeFrom, safeTo),
       {
         label: "Delete",
-        title: "Remove this call from the document",
+        title: "Remove this call and its content from the document",
         onSelect: () => {
           // If the call occupies its own line, also drop the trailing
           // newline so we don't leave a blank line behind.
@@ -485,6 +486,45 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
       },
     ],
   };
+}
+
+/** Extract the content from inside `[...]` brackets at the end of a call.
+ *  Returns the inner text, or null if the call has no content brackets. */
+function extractContentBracket(callSource: string): string | null {
+  // Walk backwards from the end to find the matching `[`.
+  if (!callSource.endsWith("]")) return null;
+  let depth = 0;
+  for (let i = callSource.length - 1; i >= 0; i--) {
+    const ch = callSource[i];
+    if (ch === "]") depth++;
+    else if (ch === "[") {
+      depth--;
+      if (depth === 0) return callSource.slice(i + 1, callSource.length - 1);
+    }
+  }
+  return null;
+}
+
+function buildUnwrapItem(
+  view: EditorView,
+  callSource: string,
+  from: number,
+  to: number,
+): PillMenuItem[] {
+  const content = extractContentBracket(callSource);
+  if (content === null) return [];
+  return [{
+    label: "Remove style",
+    title: "Remove the function wrapper but keep the content",
+    onSelect: () => {
+      view.dispatch({
+        changes: { from, to, insert: content },
+        selection: { anchor: from, head: from + content.length },
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
+  }];
 }
 
 // ── Simple/complex classifier (R8) ──────────────────────────────────

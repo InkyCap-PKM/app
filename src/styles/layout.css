@@ -5459,11 +5459,12 @@
 .selection-toolbar {
   position: fixed;
   display: flex;
+  align-items: center;
   gap: 2px;
   background: var(--bg-active);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   padding: 3px;
   z-index: 200;
 }
@@ -5481,11 +5482,97 @@
   font-size: var(--text-md);
   cursor: pointer;
   font-family: var(--editor-font-mono, monospace);
+  gap: 1px;
 }
 
 .selection-toolbar__btn:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
+}
+
+.selection-toolbar__btn svg {
+  flex-shrink: 0;
+}
+
+.selection-toolbar__dropdown-trigger {
+  gap: 2px;
+  width: auto;
+  padding: 0 6px;
+}
+
+.selection-toolbar__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-primary);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+/* ── Block-type dropdown menu ── */
+.selection-toolbar__menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  z-index: 201;
+}
+
+.selection-toolbar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui, sans-serif);
+}
+
+.selection-toolbar__menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.selection-toolbar__menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.selection-toolbar__menu-label {
+  flex: 1;
+}
+
+.selection-toolbar__menu-sep {
+  height: 1px;
+  background: var(--border-primary);
+  margin: 4px 8px;
+}
+
+/* ── Alignment sub-popup ── */
+.selection-toolbar__align-popup {
+  position: fixed;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 3px;
+  z-index: 201;
 }
 
 /* ── Export dialog ───────────────────────────────────────── */
