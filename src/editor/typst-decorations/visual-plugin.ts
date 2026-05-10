@@ -9,6 +9,8 @@ import {
 } from "@codemirror/view";
 import { Annotation, EditorState, EditorSelection, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
 import { expandFunc } from "./effects";
+import { buildPillButton, findCallEnd } from "./pill";
+import { getPillOptions } from "./pill-options";
 import { syntaxTree } from "@codemirror/language";
 import {
   CalloutBlockWidget,
@@ -65,28 +67,28 @@ export const autoExpandFacet = Facet.define<boolean, boolean>({
   combine: values => values.length > 0 ? values[values.length - 1] : false,
 });
 
+// FuncPillWidget and FuncChipWidget were two near-duplicate pill widgets.
+// They now both build the unified pill button (see pill.ts) which opens
+// the super-context-menu on click. Kept as separate names for the
+// existing call sites; both delegate to buildPillButton.
+// FuncPillWidget and FuncChipWidget were two near-duplicate pill widgets.
+// They now both build the unified pill button (see pill.ts) which opens
+// the super-context-menu on click. Per-pill options are looked up from
+// the pill-options registry so each function gets its widget-specific
+// menu section without per-widget plumbing.
 class FuncPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly funcName: string) { super(); }
   eq(other: FuncPillWidget) { return this.pos === other.pos && this.funcName === other.funcName; }
   toDOM(view: EditorView) {
-    const el = document.createElement("span");
-    el.className = "cm-typst-func-chip";
-    el.title = this.funcName;
-    const hash = document.createElement("span");
-    hash.className = "cm-typst-func-chip-hash";
-    el.appendChild(hash);
-    const label = document.createElement("span");
-    label.textContent = this.funcName;
-    el.appendChild(label);
-    el.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      view.dispatch({
-        effects: expandFunc.of(this.pos),
-        selection: { anchor: this.pos + 1 },
-      });
+    return buildPillButton(this.funcName, view, () => {
+      const callTo = findCallEnd(view, this.pos);
+      return {
+        funcName: this.funcName,
+        callFrom: this.pos,
+        callTo,
+        optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
+      };
     });
-    return el;
   }
   ignoreEvent() { return true; }
 }
@@ -95,23 +97,15 @@ class FuncChipWidget extends WidgetType {
   constructor(readonly pos: number, readonly funcName: string) { super(); }
   eq(other: FuncChipWidget) { return this.pos === other.pos && this.funcName === other.funcName; }
   toDOM(view: EditorView) {
-    const el = document.createElement("span");
-    el.className = "cm-typst-func-chip";
-    const hash = document.createElement("span");
-    hash.className = "cm-typst-func-chip-hash";
-    el.appendChild(hash);
-    const name = document.createElement("span");
-    name.textContent = this.funcName;
-    el.appendChild(name);
-    el.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      view.dispatch({
-        effects: expandFunc.of(this.pos),
-        selection: { anchor: this.pos + 1 },
-      });
+    return buildPillButton(this.funcName, view, () => {
+      const callTo = findCallEnd(view, this.pos);
+      return {
+        funcName: this.funcName,
+        callFrom: this.pos,
+        callTo,
+        optionSections: getPillOptions(this.funcName, view, this.pos, callTo),
+      };
     });
-    return el;
   }
   ignoreEvent() { return true; }
 }
@@ -1104,13 +1098,24 @@ function parseTypstColor(raw: string): string | null {
 function extractHighlightParams(text: string): { fill?: string; stroke?: string; radius?: string } {
   const params: { fill?: string; stroke?: string; radius?: string } = {};
 
-  const fillMatch = text.match(/fill\s*:\s*([^,)\]]+)/);
+  // The value pattern allows either bare tokens (`red`, `#fff`) or a single
+  // function call (`rgb("#fff3a3")`, `luma(80)`). The earlier `[^,)\]]+`
+  // form stopped at the first `)`, so it captured `rgb("#fff3a3"` and
+  // parseTypstColor's rgb regex (which requires a trailing `)`) failed
+  // silently — every non-default colour fell through to the unparameterized
+  // yellow mark. The paren-group alternative must come FIRST so the engine
+  // tries it before the single-char one — otherwise the simple alternative
+  // greedily eats the opening `(` (it's not in the exclusion set) and the
+  // compound alternative never gets a chance to fire.
+  const VALUE = /((?:\([^)]*\)|[^,)\]])+)/;
+
+  const fillMatch = text.match(new RegExp(`fill\\s*:\\s*${VALUE.source}`));
   if (fillMatch) {
     const color = parseTypstColor(fillMatch[1]);
     if (color) params.fill = color;
   }
 
-  const strokeMatch = text.match(/stroke\s*:\s*([^,)\]]+)/);
+  const strokeMatch = text.match(new RegExp(`stroke\\s*:\\s*${VALUE.source}`));
   if (strokeMatch) {
     const color = parseTypstColor(strokeMatch[1]);
     if (color) params.stroke = color;
@@ -1899,7 +1904,13 @@ export const visualTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--fg-dim)",
   },
-  ".cm-typst-func-chip": {
+  // ── Pills (R1–R3) ──
+  // Single visual identity for every pill in the visual editor. Inline,
+  // block-row, and embedded sites all use this class. See
+  // documentation/developer/visual-editor/pill-system.md.
+  // .cm-typst-func-chip is kept as an alias so legacy call sites that
+  // still reference it pick up the same styles during the staged rollout.
+  ".cm-typst-pill, .cm-typst-func-chip": {
     display: "inline-flex",
     alignItems: "center",
     gap: "3px",
@@ -1913,8 +1924,17 @@ export const visualTheme = EditorView.theme({
     cursor: "pointer",
     verticalAlign: "middle",
     userSelect: "none",
+    // Reset native button visuals so a <button> matches a <span>.
+    font: "inherit",
+    lineHeight: "1.4",
+    margin: "0",
   },
-  ".cm-typst-func-chip-hash": {
+  ".cm-typst-pill:hover, .cm-typst-func-chip:hover, .cm-typst-pill:focus-visible, .cm-typst-func-chip:focus-visible": {
+    color: "var(--fg-primary)",
+    borderColor: "var(--accent)",
+    outline: "none",
+  },
+  ".cm-typst-pill-hash, .cm-typst-func-chip-hash": {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1925,12 +1945,97 @@ export const visualTheme = EditorView.theme({
     color: "var(--pill-fg, #fff)",
     fontSize: "inherit",
     lineHeight: "0",
+    transition: "background-color 0.12s ease",
   },
-  ".cm-typst-func-chip-hash::after": {
+  ".cm-typst-pill-hash::after, .cm-typst-func-chip-hash::after": {
     content: "'#'",
     fontSize: "0.76em",
     fontWeight: "bold",
     lineHeight: "1",
+  },
+  // ── Pill super-context-menu (R6) ──
+  ".cm-typst-pill-menu": {
+    backgroundColor: "var(--bg-primary)",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "6px",
+    padding: "4px 0",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
+    zIndex: "1000",
+    minWidth: "200px",
+    fontSize: "0.9em",
+    fontFamily: "var(--editor-font-body, inherit)",
+  },
+  ".cm-typst-pill-menu-heading": {
+    padding: "4px 12px 2px",
+    fontSize: "0.78em",
+    fontWeight: "600",
+    letterSpacing: "0.3px",
+    color: "var(--fg-muted)",
+  },
+  ".cm-typst-pill-menu-sep": {
+    height: "1px",
+    margin: "4px 0",
+    backgroundColor: "var(--border-subtle)",
+  },
+  ".cm-typst-pill-menu-item": {
+    display: "flex",
+    alignItems: "center",
+    width: "100%",
+    padding: "5px 12px",
+    fontSize: "inherit",
+    fontFamily: "inherit",
+    color: "var(--fg-primary)",
+    backgroundColor: "transparent",
+    border: "none",
+    textAlign: "left",
+    cursor: "pointer",
+    gap: "8px",
+  },
+  ".cm-typst-pill-menu-item:hover, .cm-typst-pill-menu-item:focus-visible": {
+    backgroundColor: "var(--bg-hover)",
+    outline: "none",
+  },
+  ".cm-typst-pill-menu-item.is-disabled": {
+    color: "var(--fg-dim)",
+    cursor: "not-allowed",
+  },
+  ".cm-typst-pill-menu-item.is-active": {
+    color: "var(--accent)",
+  },
+  ".cm-typst-pill-menu-check": {
+    width: "1em",
+    color: "var(--accent)",
+  },
+  ".cm-typst-pill-menu-label": {
+    flex: "1",
+  },
+  ".cm-typst-pill-menu-input-row": {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "5px 12px",
+    cursor: "default",
+  },
+  ".cm-typst-pill-menu-input-label": {
+    fontSize: "0.92em",
+    color: "var(--fg-muted)",
+    minWidth: "70px",
+    cursor: "text",
+  },
+  ".cm-typst-pill-menu-input": {
+    flex: "1",
+    minWidth: "0",
+    padding: "3px 6px",
+    fontSize: "inherit",
+    fontFamily: "inherit",
+    color: "var(--fg-primary)",
+    backgroundColor: "var(--bg-input, var(--bg-secondary))",
+    border: "1px solid var(--border-subtle)",
+    borderRadius: "3px",
+  },
+  ".cm-typst-pill-menu-input:focus": {
+    outline: "none",
+    borderColor: "var(--accent)",
   },
   ".cm-typst-citation": {
     display: "inline-block",
@@ -1956,33 +2061,19 @@ export const visualTheme = EditorView.theme({
     borderBottom: "1px dotted var(--border-subtle)",
     "--verse-active-font": "var(--verse-font, var(--editor-font-body, var(--md-body-font, serif)))",
   },
+  // Verse uses the standard .cm-typst-pill class (R1). The verse-specific
+  // rule only sets positioning so the pill anchors to the canvas's
+  // top-left corner; sizing/colors come from the unified pill rule above.
   ".cm-typst-verse-pill": {
     position: "absolute",
     top: "0",
     left: "0",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "2px 8px 2px 4px",
-    fontSize: "0.7em",
-    fontWeight: "500",
-    letterSpacing: "0.3px",
-    color: "var(--fg-muted)",
-    backgroundColor: "var(--bg-hover)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "12px",
-    cursor: "pointer",
-    userSelect: "none",
     zIndex: "2",
-  },
-  ".cm-typst-verse-pill:hover": {
-    color: "var(--fg-primary)",
-    borderColor: "var(--accent)",
   },
   ".cm-typst-verse-canvas": {
     display: "block",
     minHeight: "1.6em",
-    padding: "20px 12px 12px 12px",
+    padding: "32px 12px 12px 12px",
     fontFamily: "var(--verse-active-font)",
     fontSize: "inherit",
     lineHeight: "1.7",
@@ -2003,48 +2094,9 @@ export const visualTheme = EditorView.theme({
     padding: "0 2px",
     borderRadius: "2px",
   },
-  ".cm-typst-verse-popover": {
-    // --bg-elevated isn't defined in InkyCap themes; fall back to the
-    // primary background so the popover has a solid backdrop instead
-    // of the transparent canvas behind it.
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "6px",
-    padding: "8px 10px",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-    zIndex: "1000",
-    minWidth: "180px",
-  },
-  ".cm-typst-verse-popover-heading": {
-    fontSize: "0.7em",
-    fontWeight: "600",
-    letterSpacing: "0.3px",
-    color: "var(--fg-muted)",
-    marginBottom: "6px",
-  },
-  ".cm-typst-verse-popover-row": {
-    display: "flex",
-    gap: "4px",
-  },
-  ".cm-typst-verse-popover-btn": {
-    flex: "1",
-    padding: "4px 8px",
-    fontSize: "0.85em",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "4px",
-    backgroundColor: "transparent",
-    color: "var(--fg-primary)",
-    cursor: "pointer",
-  },
-  ".cm-typst-verse-popover-btn:hover": {
-    backgroundColor: "var(--bg-hover)",
-    borderColor: "var(--accent)",
-  },
-  ".cm-typst-verse-popover-btn.is-active": {
-    backgroundColor: "var(--accent)",
-    color: "var(--accent-fg, #fff)",
-    borderColor: "var(--accent)",
-  },
+  // (Verse alignment popover replaced by the universal pill super-menu.
+  // Verse alignment options now live as a section in that menu — see
+  // VerseWidget.buildOptionSections in widgets.ts.)
   // ── Table widget ──
   ".cm-typst-table-wrap": {
     display: "block",
@@ -2537,16 +2589,27 @@ const clickAnchorPlugin = ViewPlugin.fromClass(class {
     const { pos, oldTop } = this.pending;
     this.pending = null;
     const view = update.view;
+    // Layout reads (coordsAtPos) are forbidden during the update phase.
+    // Defer to CM6's measure cycle so the read happens after the DOM
+    // catches up — calling coordsAtPos directly here throws "Reading
+    // the editor layout isn't allowed during an update", which CM
+    // surfaces as a plugin crash and disables the plugin for the
+    // remainder of the session, breaking decoration refresh on
+    // subsequent edits.
     const clamped = Math.min(pos, view.state.doc.length);
-    const coords = view.coordsAtPos(clamped);
-    if (!coords) return;
-    const delta = coords.top - oldTop;
-    if (Math.abs(delta) < 0.5) return;
-    const scroller = view.scrollDOM;
-    const target = scroller.scrollTop + delta;
-    const max = scroller.scrollHeight - scroller.clientHeight;
-    if (target < -0.5 || target > max + 0.5) return;
-    scroller.scrollTop = target;
+    view.requestMeasure({
+      read(v) { return v.coordsAtPos(clamped); },
+      write(coords, v) {
+        if (!coords) return;
+        const delta = coords.top - oldTop;
+        if (Math.abs(delta) < 0.5) return;
+        const scroller = v.scrollDOM;
+        const target = scroller.scrollTop + delta;
+        const max = scroller.scrollHeight - scroller.clientHeight;
+        if (target < -0.5 || target > max + 0.5) return;
+        scroller.scrollTop = target;
+      },
+    });
   }
 });
 

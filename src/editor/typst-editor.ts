@@ -20,11 +20,18 @@ const typstLanguageFacet = defineLanguageFacet({ commentTokens: { block: { open:
 // `syntaxTree(state)` returns nodes with stale offsets, and the visual
 // decorator falls back to raw source until a mode toggle forces a fresh parse.
 //
+// The same staleness shows up for any transaction that bundles multiple
+// disjoint changes — alt-up/down line move (delete one line, insert another),
+// find-replace-all, multi-cursor edits, and the inverse undo of any of those.
+// In the visual editor, the symptom is bullets / list markers / pills appearing
+// at wrong source positions after the operation.
+//
 // This version keeps WASM in sync (still calls `parser.parser.edit(...)` for
 // every change, in order — that contract is non-negotiable) but discards the
 // incremental tree edits and clears the cached tree whenever the transaction
-// is an undo/redo. The next `parser.tree()` call then re-fetches from the
-// WASM parser, which has tracked the doc correctly via the edit() calls.
+// is an undo/redo OR contains more than one disjoint change region. The next
+// `parser.tree()` call then re-fetches from the WASM parser, which has tracked
+// the doc correctly via the edit() calls.
 //
 // Pairs with the `Prec.high` wrapper below: this state field must run before
 // `@codemirror/language`'s `Language.state` so that, when LanguageState.apply
@@ -48,9 +55,20 @@ function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Ext
       const isHistory = tr.isUserEvent("undo") || tr.isUserEvent("redo");
       let needsFullClear = isHistory;
       const collected: unknown[] = [];
+      let changeCount = 0;
+      let crossesLine = false;
 
       tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-        const result = wasm.parser?.edit(fromA, toA, inserted.toString());
+        changeCount++;
+        const removed = tr.startState.doc.sliceString(fromA, toA);
+        const insertedStr = inserted.toString();
+        // Any change that spans / produces a newline reshuffles line
+        // structure — the incremental parser's edits aren't reliable for
+        // line-granular nodes (ListMarker, Heading, etc.). Clear instead.
+        if (removed.includes("\n") || insertedStr.includes("\n")) {
+          crossesLine = true;
+        }
+        const result = wasm.parser?.edit(fromA, toA, insertedStr);
         if (!result) return;
         if (result.full_update) {
           needsFullClear = true;
@@ -59,8 +77,21 @@ function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Ext
         }
       });
 
+      // Multi-region transactions (alt-up/down move, find-replace-all,
+      // multi-cursor) and any line-spanning edit leave the incremental
+      // tree mismatched against the post-doc — see header comment.
+      if (changeCount > 1 || crossesLine) needsFullClear = true;
+
       if (needsFullClear) {
-        wasm.clearTree();
+        // clearTree() alone is insufficient for multi-region edits:
+        // iterChanges reports each fromA/toA in start-state positions,
+        // but the WASM parser's edit() tracks state sequentially. After
+        // one edit() shifts internal offsets, the next call's start-
+        // state position is wrong from WASM's perspective and corrupts
+        // its internal tracking. clearParser() drops the parser's
+        // internal state entirely so the next tree() call re-parses
+        // from the live doc — slower but always correct.
+        wasm.clearParser();
       } else {
         for (const e of collected) wasm.applyTreeEdit(e);
       }

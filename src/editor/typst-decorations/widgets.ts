@@ -2,8 +2,9 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
-import { expandFunc } from "./effects";
 import { highlightCodeInto } from "./code-highlight";
+import { buildPillButton, findCallEnd, type PillMenuSection } from "./pill";
+import { getPillOptions } from "./pill-options";
 
 // Build the small pill row that block elements (image, embed, callout,
 // blockquote) show at their top edge when the cursor is on the line.
@@ -17,26 +18,15 @@ import { highlightCodeInto } from "./code-highlight";
 function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTMLElement {
   const row = document.createElement("div");
   row.className = "cm-typst-block-pill-row";
-
-  const chip = document.createElement("span");
-  chip.className = "cm-typst-func-chip";
-  chip.title = funcName;
-  const hash = document.createElement("span");
-  hash.className = "cm-typst-func-chip-hash";
-  chip.appendChild(hash);
-  const label = document.createElement("span");
-  label.textContent = funcName;
-  chip.appendChild(label);
-  chip.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    view.dispatch({
-      effects: expandFunc.of(pos),
-      selection: { anchor: pos + 1 },
-    });
-  });
-  row.appendChild(chip);
-
+  row.appendChild(buildPillButton(funcName, view, () => {
+    const callTo = findCallEnd(view, pos);
+    return {
+      funcName,
+      callFrom: pos,
+      callTo,
+      optionSections: getPillOptions(funcName, view, pos, callTo),
+    };
+  }));
   return row;
 }
 
@@ -1169,26 +1159,21 @@ export class VerseWidget extends WidgetType {
     wrap.contentEditable = "false";
 
     // ── Pill (top-left): identifies the block as verse and opens the
-    // alignment popover on click. Hashed-circle to match other pill funcs.
-    const pill = document.createElement("button");
-    pill.type = "button";
-    pill.className = "cm-typst-verse-pill cm-typst-func-chip";
-    pill.title = "Verse — click for options";
-    const hash = document.createElement("span");
-    hash.className = "cm-typst-func-chip-hash";
-    pill.appendChild(hash);
-    const pillLabel = document.createElement("span");
-    pillLabel.textContent = "verse";
-    pill.appendChild(pillLabel);
-    pill.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    pill.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.openVersePopover(pill, view);
-    });
+    // super-menu, which includes the alignment options for verse. The
+    // pill is the unified PillChip (R1) — same visuals as every other
+    // pill in the editor. .cm-typst-verse-pill only positions it.
+    const pill = buildPillButton("verse", view, () => ({
+      funcName: "verse",
+      callFrom: this.opts.callFrom,
+      // Verse covers the whole #verse(...) call; for the universal
+      // Copy/Duplicate/Delete actions we need the closing paren too.
+      callTo: findCallEnd(view, this.opts.callFrom),
+      optionSections: this.buildOptionSections(view),
+      // The verse canvas IS the editor surface; "Edit source" doesn't
+      // apply (the user types directly into the canvas). Suppress it.
+      allowEditSource: false,
+    }));
+    pill.classList.add("cm-typst-verse-pill");
     wrap.appendChild(pill);
 
     // ── Canvas: contentEditable region with inline formatting rendered.
@@ -1309,56 +1294,18 @@ export class VerseWidget extends WidgetType {
     });
   }
 
-  /** Tiny popover for alignment + (future) numbering / leading toggles.
-   *  Closes on outside click or Escape. */
-  private openVersePopover(anchor: HTMLElement, view: EditorView): void {
-    const existing = document.querySelector(".cm-typst-verse-popover");
-    if (existing) { existing.remove(); return; }
-
-    const pop = document.createElement("div");
-    pop.className = "cm-typst-verse-popover";
-
-    const heading = document.createElement("div");
-    heading.className = "cm-typst-verse-popover-heading";
-    heading.textContent = "Alignment";
-    pop.appendChild(heading);
-
-    const row = document.createElement("div");
-    row.className = "cm-typst-verse-popover-row";
-    for (const a of ["left", "center", "right"] as const) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = a;
-      btn.className = "cm-typst-verse-popover-btn";
-      if (a === this.opts.align) btn.classList.add("is-active");
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.setAlign(a, view);
-        pop.remove();
-      });
-      row.appendChild(btn);
-    }
-    pop.appendChild(row);
-
-    const rect = anchor.getBoundingClientRect();
-    pop.style.position = "fixed";
-    pop.style.top = `${rect.bottom + 4}px`;
-    pop.style.left = `${rect.left}px`;
-    // Append inside the editor's DOM so the CM theme styles reach it.
-    // `document.body` would put it outside the theme scope, leaving the
-    // popover with native browser button styling.
-    view.dom.appendChild(pop);
-
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
-      if (e instanceof MouseEvent && pop.contains(e.target as Node)) return;
-      pop.remove();
-      document.removeEventListener("mousedown", close as EventListener, true);
-      document.removeEventListener("keydown", close as EventListener, true);
-    };
-    document.addEventListener("mousedown", close as EventListener, true);
-    document.addEventListener("keydown", close as EventListener, true);
+  /** Build the verse pill's option sections (R7). Currently exposes
+   *  alignment; future verse-specific options (numbering, leading,
+   *  font override) plug in here. */
+  private buildOptionSections(view: EditorView): PillMenuSection[] {
+    return [{
+      heading: "Alignment",
+      items: (["left", "center", "right"] as const).map((a) => ({
+        label: a,
+        isActive: a === this.opts.align,
+        onSelect: () => this.setAlign(a, view),
+      })),
+    }];
   }
 
   /** Rewrite (or insert) the `align-to:` named argument in the source,
@@ -1604,10 +1551,9 @@ export class BlockquoteBlockWidget extends WidgetType {
 // Bibliography is a non-editable region in visual mode by default — it's a
 // declarative directive rather than flowing prose. Rather than hiding the
 // line entirely (which would leave no signal that a bibliography exists),
-// we render a pill placeholder that shows its presence and source path. The
-// pill is clickable: clicking dispatches `expandFunc`, which exposes the
-// raw `#bibliography(...)` source so the user can inspect or change it.
-// When the cursor leaves the line the pill returns.
+// we render a pill placeholder. The pill opens the universal super-menu,
+// from which the user can edit source, switch to source mode, or copy/
+// duplicate/delete the call.
 export class BibliographyBlockWidget extends WidgetType {
   constructor(readonly path: string, readonly pos: number) { super(); }
 
@@ -1618,26 +1564,11 @@ export class BibliographyBlockWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-typst-bibliography-block";
-
-    const chip = document.createElement("span");
-    chip.className = "cm-typst-func-chip";
-    chip.title = "bibliography";
-    const hash = document.createElement("span");
-    hash.className = "cm-typst-func-chip-hash";
-    chip.appendChild(hash);
-    const chipLabel = document.createElement("span");
-    chipLabel.textContent = "bibliography";
-    chip.appendChild(chipLabel);
-    chip.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      view.dispatch({
-        effects: expandFunc.of(this.pos),
-        selection: { anchor: this.pos + 1 },
-      });
-    });
-    wrap.appendChild(chip);
-
+    wrap.appendChild(buildPillButton("bibliography", view, () => ({
+      funcName: "bibliography",
+      callFrom: this.pos,
+      callTo: findCallEnd(view, this.pos),
+    })));
     return wrap;
   }
 
