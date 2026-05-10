@@ -500,7 +500,14 @@ function buildDecorations(state: EditorState): DecorationSet {
                 funcTo = realEnd;
               }
             }
-            const traverseChildren = handleFuncCall(state, funcFrom, funcTo, decos, onCursor, cursors, autoExpand, expandedPos, activeFormatting);
+            // The lezer-typst parser truncates multi-line FuncCalls at the
+            // first inner `)`/`]`, so the outer `node.from..node.to` used
+            // for `onCursor` above misses lines added by the user. Recompute
+            // against the corrected funcFrom..funcTo so the cursor staying
+            // inside a growing callout/quote body keeps the live-edit
+            // decoration stable across Enter presses.
+            const callOnCursor = isOnCursorLine(state, funcFrom, funcTo, focused);
+            const traverseChildren = handleFuncCall(state, funcFrom, funcTo, decos, callOnCursor, cursors, autoExpand, expandedPos, activeFormatting);
             if (!traverseChildren) {
               if (funcTo > node.to) consumedUntil = funcTo;
               return false;
@@ -1284,6 +1291,12 @@ function buildHighlightMark(text: string): Decoration {
   if (params.stroke) parts.push(`outline: 1px solid ${params.stroke}`);
   parts.push(`border-radius: ${params.radius ?? "2px"}`);
   parts.push("padding: 0 2px");
+  // Pin dark text for readability on the light pastel fills (see
+  // .cm-typst-highlight in the theme above). Custom user fills could
+  // theoretically be dark, in which case this reads against the user;
+  // the highlight palette itself is fixed-light so the trade-off is
+  // worth making for the dark-mode common case.
+  parts.push("color: #1a1a1a");
 
   return Decoration.mark({ attributes: { style: parts.join("; ") } });
 }
@@ -1693,6 +1706,13 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-search-match)",
     borderRadius: "2px",
     padding: "0 2px",
+    // The five highlight palette colours are intentionally light pastels,
+    // chosen so the marking reads as a felt-pen highlight rather than a
+    // background tint. In dark mode the editor's default text colour is
+    // near-white, which becomes unreadable on those pastels — pin a near-
+    // black text colour on highlighted spans so the contrast is right
+    // regardless of theme.
+    color: "#1a1a1a",
   },
   // R12 live-edit frame for callout / quote: applied per-line to the
   // body content while the cursor is on the call. The accent colour for
