@@ -5,6 +5,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 
 pub use crate::storage::traits::FileTreeNode;
@@ -22,7 +23,7 @@ pub async fn read_file_content(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     storage.read_file(&path_buf).await
 }
 
@@ -41,7 +42,7 @@ pub async fn get_file_metadata(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<NoteMetadata, InkyCapError> {
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     {
         let index = state.property_index.read().await;
@@ -73,7 +74,7 @@ pub async fn get_backlinks(
     state: State<'_, AppState>,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let link_index = state.link_index.read().await;
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     let backlinks = link_index.get_backlinks(&path_buf);
     Ok(backlinks
@@ -98,7 +99,7 @@ pub async fn get_forward_links(
     state: State<'_, AppState>,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let link_index = state.link_index.read().await;
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     let links = link_index.get_forward_links(&path_buf);
     Ok(links
@@ -124,7 +125,7 @@ pub async fn write_file_content(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     storage.write_file(&path_buf, &content).await?;
 
     // Re-index the note after saving
@@ -143,7 +144,7 @@ pub async fn update_property(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = std::path::PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     let content = storage.read_file(&path_buf).await?;
     // Ensure the inkycap-vault import is present before the rewriter
@@ -334,7 +335,7 @@ pub async fn get_note_preview(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
     let max = max_chars.unwrap_or(200);
@@ -359,7 +360,7 @@ pub async fn get_note_headings(
     state: State<'_, AppState>,
 ) -> Result<Vec<HeadingInfo>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(extract_headings(&content))
 }
@@ -388,7 +389,7 @@ pub async fn ensure_heading_label(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
     let headings = extract_headings(&content);
@@ -477,8 +478,8 @@ pub async fn get_backlink_context(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let source = std::path::PathBuf::from(&source_path);
-    let target = std::path::PathBuf::from(&target_path);
+    let source = sanitize_vault_arg(&source_path)?;
+    let target = sanitize_vault_arg(&target_path)?;
 
     let content = storage.read_file(&source).await?;
 

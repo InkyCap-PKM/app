@@ -1,12 +1,11 @@
 //! Typst-related Tauri commands. Exposes `compile_typst_svg` for paginated
 //! reading mode and `compile_typst_html` for the flowing HTML reading mode.
 
-use std::path::PathBuf;
-
 use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{TypstCompileResult, TypstHtmlResult};
@@ -27,7 +26,7 @@ pub async fn compile_typst_svg(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<TypstCompileResult, InkyCapError> {
-    let path_arg = PathBuf::from(&path);
+    let path_arg = sanitize_vault_arg(&path)?;
     let storage = state.get_storage().await?;
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
@@ -143,7 +142,7 @@ pub async fn compile_typst_html(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<TypstHtmlResult, InkyCapError> {
-    let path_arg = PathBuf::from(&path);
+    let path_arg = sanitize_vault_arg(&path)?;
     let storage = state.get_storage().await?;
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
@@ -168,7 +167,7 @@ pub async fn compile_typst_html(
 /// `#set` rules later in the document win over both.
 pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
     let settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_rules(
+    let defaults_rules = style_injection::build_defaults_show_call(
         &settings.document,
         &settings.appearance.monospace_font,
     );

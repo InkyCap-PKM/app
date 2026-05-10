@@ -63,36 +63,47 @@ from later passes can be appended at the bottom under "Later additions".
   call in `state.rs::open_vault_fast()`, and three migration tests from
   `vault_package.rs`.
 
-- [ ] **MAINT-1 — Split `commands/export.rs` (3089 lines).**
-  Break into `commands/export/{pdf,html,pandoc,site,csv,figures}.rs`.
-  The Pandoc shell-out, PDF/A standard checks, static-site generator,
-  and figure-dump command don't share enough to share a file.
+- [x] **MAINT-1 — Split `commands/export.rs` (3089 lines).**
+  Done 2026-05-10. Split into `commands/export/` directory module with
+  7 submodules: `pdf.rs` (814), `helpers.rs` (553), `pandoc.rs` (547),
+  `mod.rs` (543 — re-exports + tests), `site.rs` (260), `assets.rs`
+  (156), `html.rs` (136), `csv.rs` (96). All 46 tests + external
+  verapdf test pass. `lib.rs` updated to use full submodule paths for
+  Tauri command registration.
 
-- [ ] **PERF-2 / MAINT-2 — Incrementalize `visual-plugin.ts` (2762 lines).**
-  [src/editor/typst-decorations/visual-plugin.ts:1586](../../src/editor/typst-decorations/visual-plugin.ts#L1586):
-  `buildDecorations` rebuilds the entire `RangeSet` on every doc/syntax
-  change. Use `RangeSet.update({filterFrom, filterTo, filter, add})`
-  to localize work to changed ranges. Concurrently split out the
-  protected-range machinery, click anchor plugin, color/highlight
-  parsers, and `handleFuncCall` into siblings.
+- [x] **PERF-2 / MAINT-2 — Incrementalize `visual-plugin.ts` (2762 lines).**
+  Done 2026-05-10. Split into 8 files: visual-plugin.ts (1323, core engine),
+  visual-theme.ts (827), visual-protected.ts (268), visual-tables.ts (187),
+  visual-colors.ts (116), visual-widgets.ts (92), click-anchor.ts (83),
+  visual-links.ts (79). Cursor-only moves now use `rebuildDirtyLines` which
+  constrains `buildDecorations` to dirty line ranges via `onlyRanges` param,
+  merging results with kept decorations from the existing RangeSet. Factory
+  functions break circular deps between extracted modules and `visualField`.
 
 ## Code reuse / duplication
 
-- [ ] **DUP-1 — Finish migrating `style_injection.rs` (360 lines) into
-  `inkycap-vault`'s `apply-vault-defaults`.** Already planned in
-  [.claude/plans/typst-native-opportunities.md](./typst-native-opportunities.md);
-  finish and delete the splicer.
+- [x] **DUP-1 — Finish migrating `style_injection.rs` into
+  `inkycap-vault`'s `apply-vault-defaults`.** Done 2026-05-10. Hybrid
+  approach: text/font/monospace/par/heading delegate to `apply-vault-defaults`
+  / `apply-collection-style` in lib.typ via `#show: fn.with(...)`. Page
+  geometry stays as direct `#set page(...)` — confirmed via end-to-end test
+  that `set page` inside a show-rule wrapper is a no-op for document layout.
+  File shrinks but stays (still houses string builders, font parser, splicer).
 - [x] **DUP-2 — Extract `prepare_bibliography` helper.**
   Done 2026-05-10. Extracted the resolve→inject→visibility bibliography
   chain into `prepare_bibliography()`. Replaced 6 call sites in export.rs.
   Style cascade left inline — too many variants across callers.
 - [x] **DUP-3 — Single source for canonical/legacy `#import` matching.**
   Already resolved: all four sites use `crate::vault_package::is_vault_import_line()`.
-- [~] **DUP-4 — Wrap `PathBuf::from(&path)` in `vault_path_arg(state, &path)`.**
-  Deferred 2026-05-10. ~30 sites across all command modules. Storage
-  layer already validates via `LocalVaultStorage`; adding a command-
-  boundary helper is defense-in-depth but touches every module. Better
-  as a focused session.
+- [x] **DUP-4 — Wrap `PathBuf::from(&path)` in `sanitize_vault_arg(&path)?`.**
+  Done 2026-05-10. Added `sanitize_vault_arg()` to `storage/path.rs` —
+  rejects null bytes, `..` traversal, and absolute paths at the command
+  boundary. Applied across 30 sites in 10 command modules (files,
+  file_ops, typst, collections, properties, composer, bibliography,
+  flow, journal_scroll). Skipped: `copy_path_to_attachments` (absolute
+  OS paths, SEC-1 allowlist), `show_in_explorer`/`open_file_externally`
+  (absolute paths from frontend), export commands (paths from file
+  dialogs or internally constructed).
 - [x] **DUP-5 — Drop or reuse `renderMarkdownSimple`.**
   Resolved by SEC-3: function was rewritten to DOM construction, eliminating
   the innerHTML concern. No separate action needed.
@@ -143,12 +154,24 @@ from later passes can be appended at the bottom under "Later additions".
   `#[tauri::command] fn`, runs on Tauri's worker pool, not the runtime
   — not actually blocking. Low priority remainder; revisit if profiling
   shows runtime stalls during export.
-- [ ] **PERF-4 — Confirm `CollectionTable.tsx` virtualizes large
-  collections.** Audit window didn't verify; pair with MAINT-4.
-- [ ] **PERF-5 — Gate `visual-plugin.ts` rebuilds on a hash of the
-  changed range** instead of `syntaxTree(...) !==` identity. Lower
-  priority than PERF-2; do only after PERF-2 if profiling shows
-  no-op rebuilds.
+- [~] **PERF-4 — Confirm `CollectionTable.tsx` virtualizes large
+  collections.** Audited 2026-05-10. **No virtualization exists.** All
+  rows render via `<For each={d().rows}>` with per-cell `InlineCell`
+  components (signals + event handlers). Data loads all-at-once via
+  `getCollectionData` (no pagination). For 500+ rows × 8 cols =
+  4000+ DOM nodes with interactive state each. Remediation: add
+  `@tanstack/solid-virtual` or equivalent when collection sizes are
+  better understood from real usage. Not blocking v0.1 — early
+  collections will be small.
+- [x] **PERF-5 — Incremental decoration rebuild on doc change.**
+  Done 2026-05-10. Extracted `rebuildRanges()` from `rebuildDirtyLines()`
+  as shared merge-and-rebuild logic. Added `rebuildDocChange()` which
+  maps existing decorations through `tr.changes`, computes dirty line
+  ranges from `iterChangedRanges()` + cursor position, and rebuilds
+  only affected ranges (falls back to full rebuild if >50% dirty).
+  The `docChanged` path in `visualField.update` now uses incremental
+  rebuild instead of full `buildDecorations()`. Tree-identity-only
+  changes (deferred parser completion) still trigger full rebuild.
 
 ## Security / privacy
 
@@ -247,10 +270,12 @@ flow. Tackle as a single session — they share context.
 
 ### Remaining: non-image/non-note attachment references
 
-- [ ] **DD-6 — Design a markup strategy for non-image attachments
-  (PDF, ZIP, etc.).**  Currently these files are copied to `assets/`
-  on drop but no markup is inserted. Need to decide the right Typst
-  primitive: a `#link()` to the relative path? A custom
-  `#attachment()` function in `inkycap-vault`? A file-preview widget?
-  Low priority — the file lands in the vault, the user just can't
-  reference it inline yet.
+- [x] **DD-6 — Markup for non-image attachments (PDF, ZIP, etc.).**
+  Done 2026-05-10. Non-image/non-note files dropped into the editor
+  now insert `#link("/assets/file.pdf")[file.pdf]` — Typst's native
+  link function with vault-root-relative path and filename as display
+  text. Updated both `tauri-drag-drop.ts` and `drag-drop.ts`.
+  `attachmentMarkup()` return type changed from `string | null` to
+  `string` (no longer returns null for unknown types). Per the
+  Typst-first principle, `#link()` is the native answer — no custom
+  `#attachment()` function needed.

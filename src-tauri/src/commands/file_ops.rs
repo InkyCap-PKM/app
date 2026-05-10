@@ -7,6 +7,7 @@ use tauri::{Emitter, State};
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 use crate::storage::validate_vault_path;
 
@@ -522,7 +523,7 @@ pub async fn rename_file(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old = PathBuf::from(&old_path);
+    let old = sanitize_vault_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
     let parent = old.parent().ok_or_else(|| {
         InkyCapError::InvalidPath("No parent directory".to_string())
@@ -567,7 +568,7 @@ pub async fn rename_and_update_links(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old = PathBuf::from(&old_path);
+    let old = sanitize_vault_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
 
     let parent = old.parent().ok_or_else(|| {
@@ -644,7 +645,7 @@ pub async fn move_file(
     let vault_root = state.vault_root.read().await;
     let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
 
-    let old = PathBuf::from(&old_path);
+    let old = sanitize_vault_arg(&old_path)?;
     let filename = old
         .file_name()
         .ok_or_else(|| InkyCapError::InvalidPath("No filename".to_string()))?;
@@ -682,7 +683,7 @@ pub async fn delete_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     storage.move_to_trash(&path_buf).await?;
     remove_from_indices(&path_buf, &state).await;
@@ -697,7 +698,7 @@ pub async fn delete_folder(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = PathBuf::from(&path);
+    let path_buf = sanitize_vault_arg(&path)?;
 
     // Remove all indexed notes within this folder
     let notes_in_folder: Vec<PathBuf> = {

@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
 use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
+use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 
 /// Merge multiple notes into a single target file.
@@ -28,7 +27,7 @@ pub async fn merge_notes(
     let mut source_names = Vec::new();
 
     for (i, path_str) in paths.iter().enumerate() {
-        let path = PathBuf::from(path_str);
+        let path = sanitize_vault_arg(path_str)?;
         let content = storage.read_file(&path).await?;
 
         let body = if i > 0 {
@@ -49,7 +48,7 @@ pub async fn merge_notes(
         );
     }
 
-    let target = PathBuf::from(&target_path);
+    let target = sanitize_vault_arg(&target_path)?;
 
     // storage.write_file validates the path against the vault root and
     // creates any missing parent directories through the same validated
@@ -59,7 +58,7 @@ pub async fn merge_notes(
     // Optionally delete source files (move to trash)
     if delete_sources {
         for path_str in &paths {
-            let path = PathBuf::from(path_str);
+            let path = sanitize_vault_arg(path_str)?;
             if path != target {
                 let _ = trash::delete(&path);
             }
@@ -82,7 +81,7 @@ pub async fn split_note(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let source_path = PathBuf::from(&path);
+    let source_path = sanitize_vault_arg(&path)?;
     let content = storage.read_file(&source_path).await?;
 
     let lines: Vec<&str> = content.lines().collect();

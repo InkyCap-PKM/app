@@ -26,7 +26,7 @@ function clampPastProtected(view: EditorView, pos: number): number {
 
 const NOTE_EXTS = new Set(["typ"]);
 
-function attachmentMarkup(relativePath: string): string | null {
+function attachmentMarkup(relativePath: string): string {
   const ext = getExtension(relativePath);
   if (IMAGE_EXTS.has(ext)) {
     return `#image("/${relativePath}")`;
@@ -36,15 +36,12 @@ function attachmentMarkup(relativePath: string): string | null {
     const stem = basename.replace(/\.typ$/, "");
     return `#wikilink("${stem}")`;
   }
-  return null;
+  const filename = relativePath.split("/").pop() ?? relativePath;
+  return `#link("/${relativePath}")[${filename}]`;
 }
 
 function insertAttachment(view: EditorView, relativePath: string, pos: number) {
   const body = attachmentMarkup(relativePath);
-  if (body === null) {
-    console.warn("[drag-drop] unsupported file type, no markup inserted:", relativePath);
-    return;
-  }
 
   // Pin past any prelude (#import / #note / #bibliography) and normalize
   // to its own line — block-level markup can't share a line with prose.

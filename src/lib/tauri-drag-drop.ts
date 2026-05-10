@@ -95,13 +95,9 @@ function clampPastProtected(state: EditorState, pos: number): number {
 /// We emit it with a leading `/` so Typst's compiler reads it as
 /// project-root-relative (works in reading view + export), while the
 /// visual editor's `resolveEmbedPath` also handles the slash form.
-/// - Images: Typst's built-in `#image()` so ImageWidget renders.
-/// - Other: `#wikilink()` with the bare filename (wikilink resolves by
-///   name). `#embed()` is reserved for note transclusion and renders
-///   "Note not found" for files.
 const NOTE_EXTS = new Set(["typ"]);
 
-function attachmentMarkup(relativePath: string): string | null {
+function attachmentMarkup(relativePath: string): string {
   const ext = getExtension(relativePath);
   if (IMAGE_EXTS.has(ext)) {
     return `#image("/${relativePath}")`;
@@ -111,7 +107,8 @@ function attachmentMarkup(relativePath: string): string | null {
     const stem = basename.replace(/\.typ$/, "");
     return `#wikilink("${stem}")`;
   }
-  return null;
+  const filename = relativePath.split("/").pop() ?? relativePath;
+  return `#link("/${relativePath}")[${filename}]`;
 }
 
 interface PhysicalPosition {
@@ -170,10 +167,6 @@ async function handleDrop(
     try {
       const savedName = await ipc.copyPathToAttachments(absPath);
       const body = attachmentMarkup(savedName);
-      if (body === null) {
-        console.warn("[tauri-drop] unsupported file type, copied to assets but no markup inserted:", absPath);
-        continue;
-      }
 
       // Pin insertion past any prelude (#import / #note / #bibliography) so
       // a drop near the top of the document never tears the protected
