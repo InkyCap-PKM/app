@@ -157,10 +157,27 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
 
 function imageOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
+  const path = readFirstPositionalString(src) ?? "";
   const alt = unquote(readNamedArg(src, "alt")) ?? "";
   const width = readNamedArg(src, "width") ?? "";
+  // R12: image is a call-only form (no body bracket), so every meaningful
+  // argument must surface in the menu — including the positional path,
+  // which would otherwise force the user into "Edit source" for a
+  // routine swap. Path is first so it's the auto-focused input.
   return [{
     items: [{
+      label: "File",
+      title: "Path to the image file, relative to the note",
+      input: {
+        value: path,
+        placeholder: "e.g. images/diagram.png",
+        onCommit: (v) => {
+          const trimmed = v.trim();
+          if (trimmed === "") return;
+          applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, trimmed));
+        },
+      },
+    }, {
       label: "Alt text",
       input: {
         value: alt,

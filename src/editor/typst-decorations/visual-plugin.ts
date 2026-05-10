@@ -38,6 +38,10 @@ const bold = Decoration.mark({ class: "cm-typst-bold" });
 const italic = Decoration.mark({ class: "cm-typst-italic" });
 const strikethrough = Decoration.mark({ class: "cm-typst-strike" });
 const highlight = Decoration.mark({ class: "cm-typst-highlight" });
+const underlineMark = Decoration.mark({ class: "cm-typst-underline-mark" });
+const overlineMark = Decoration.mark({ class: "cm-typst-overline-mark" });
+const subMark = Decoration.mark({ class: "cm-typst-sub" });
+const supMark = Decoration.mark({ class: "cm-typst-sup" });
 const rawInline = Decoration.mark({ class: "cm-typst-raw-inline" });
 const linkMark = Decoration.mark({ class: "cm-typst-link" });
 const mathInline = Decoration.mark({ class: "cm-typst-math-inline" });
@@ -733,6 +737,29 @@ function handleFuncCall(
         ).range(from, content.from));
         decos.push(hide.range(content.to, to));
         addSplitMarks(state, content.from, content.to, bold, decos);
+      }
+      return true;
+    }
+    case "underline":
+    case "overline":
+    case "sub":
+    case "super": {
+      // R12 inline content-bracket pills: hide #fn[ and ] when cursor is
+      // off the line (pill replaces the leading marker), apply a CSS
+      // mark to the body so the visual representation matches the
+      // function while keeping the body live-editable Typst source.
+      const content = extractContentBracket(text, from);
+      if (content) {
+        decos.push((showPill
+          ? Decoration.replace({ widget: new FuncPillWidget(from, funcName) })
+          : hide
+        ).range(from, content.from));
+        decos.push(hide.range(content.to, to));
+        const mark = funcName === "underline" ? underlineMark
+          : funcName === "overline" ? overlineMark
+          : funcName === "sub" ? subMark
+          : supMark;
+        addSplitMarks(state, content.from, content.to, mark, decos);
       }
       return true;
     }
@@ -1549,6 +1576,25 @@ export const visualTheme = EditorView.theme({
     backgroundColor: "var(--bg-search-match)",
     borderRadius: "2px",
     padding: "0 2px",
+  },
+  // R12 marks for sub/super/underline/overline: visual representation
+  // applied directly to the live Typst source so the body stays editable.
+  ".cm-typst-underline-mark": {
+    textDecoration: "underline",
+    textUnderlineOffset: "2px",
+  },
+  ".cm-typst-overline-mark": {
+    textDecoration: "overline",
+  },
+  ".cm-typst-sub": {
+    fontSize: "0.75em",
+    verticalAlign: "sub",
+    lineHeight: "0",
+  },
+  ".cm-typst-sup": {
+    fontSize: "0.75em",
+    verticalAlign: "super",
+    lineHeight: "0",
   },
   ".cm-typst-raw-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
