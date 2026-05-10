@@ -8,7 +8,13 @@ type SuggestMode = "note" | "heading";
 
 interface SuggestState {
   active: boolean;
+  /** Start of the form being edited (the `[[` for bracket form, the `#`
+   *  of `#wikilink(` for func form). Used as the replacement anchor. */
   from: number;
+  /** End of the form being edited. For func form, the offset just after
+   *  the closing `)`; left undefined for bracket form, where acceptItem
+   *  computes the end from cursor + trailing `]]`. */
+  to?: number;
   query: string;
   mode: SuggestMode;
   noteName: string;
@@ -50,35 +56,103 @@ function isPopupVisible(): boolean {
   return !!popup && popup.style.display !== "none";
 }
 
+// Match `#wikilink("name")` or `#wikilink("name", display: "...")` or
+// `#wikilink("name", label: "...")`. Group 1 = note name, group 2 = optional
+// second-arg key (display | label), group 3 = optional second-arg value.
+const WIKILINK_CALL_RE = /#wikilink\("([^"]*)"(?:,\s*(\w+):\s*"([^"]*)")?\)/g;
+
+/** Detect whether the cursor sits inside an editable wikilink quoted arg
+ *  (the `"name"` or the `"label"` value) and, if so, return the picker
+ *  state for that position. Returns EMPTY otherwise.
+ *
+ *  This piggy-backs on the autoExpand-on-cursor behaviour: when the cursor
+ *  is on a wikilink line the visual decorations drop to raw source, so the
+ *  call text we're scanning is actually present in the document. */
+function detectFuncWikilinkContext(text: string, lineFrom: number, cursorInLine: number): SuggestState {
+  WIKILINK_CALL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = WIKILINK_CALL_RE.exec(text)) !== null) {
+    const callStart = m.index;
+    const callEnd = m.index + m[0].length;
+    if (cursorInLine < callStart || cursorInLine > callEnd) continue;
+
+    // Locate the first quoted arg (note name).
+    const firstOpen = text.indexOf('"', callStart);
+    const firstClose = firstOpen >= 0 ? text.indexOf('"', firstOpen + 1) : -1;
+    if (firstOpen < 0 || firstClose < 0) return EMPTY;
+
+    if (cursorInLine > firstOpen && cursorInLine <= firstClose) {
+      return {
+        active: true,
+        from: lineFrom + callStart,
+        to: lineFrom + callEnd,
+        query: text.substring(firstOpen + 1, cursorInLine),
+        mode: "note",
+        noteName: "",
+      };
+    }
+
+    // Optional second arg — only `label:` is editable through the picker
+    // (`display:` is a free-form override the user types directly).
+    if (m[2] === "label") {
+      const secondOpen = text.indexOf('"', firstClose + 1);
+      const secondClose = secondOpen >= 0 ? text.indexOf('"', secondOpen + 1) : -1;
+      if (secondOpen >= 0 && secondClose >= 0
+          && cursorInLine > secondOpen && cursorInLine <= secondClose) {
+        return {
+          active: true,
+          from: lineFrom + callStart,
+          to: lineFrom + callEnd,
+          query: text.substring(secondOpen + 1, cursorInLine),
+          mode: "heading",
+          noteName: m[1],
+        };
+      }
+    }
+
+    // Cursor is inside the call but not inside an editable arg — don't
+    // trigger the picker (avoids it firing when the user clicks on
+    // `display:` keyword text or whitespace).
+    return EMPTY;
+  }
+  return EMPTY;
+}
+
 function detectWikilinkContext(view: EditorView): SuggestState {
   const { from: cursor } = view.state.selection.main;
   const line = view.state.doc.lineAt(cursor);
-  const textBefore = view.state.doc.sliceString(line.from, cursor);
+  const lineText = view.state.doc.sliceString(line.from, line.to);
+  const cursorInLine = cursor - line.from;
 
+  // Bracket form: `[[…|]]` typed by the user (no closing `]` between `[[`
+  // and the cursor).
+  const textBefore = lineText.slice(0, cursorInLine);
   const bracketIdx = textBefore.lastIndexOf("[[");
-  if (bracketIdx < 0) return EMPTY;
-
-  const afterBrackets = textBefore.slice(bracketIdx + 2);
-  if (afterBrackets.includes("]")) return EMPTY;
-
-  const sepIdx = afterBrackets.indexOf("::");
-  if (sepIdx >= 0) {
-    return {
-      active: true,
-      from: line.from + bracketIdx,
-      query: afterBrackets.substring(sepIdx + 2),
-      mode: "heading",
-      noteName: afterBrackets.substring(0, sepIdx),
-    };
+  if (bracketIdx >= 0) {
+    const afterBrackets = textBefore.slice(bracketIdx + 2);
+    if (!afterBrackets.includes("]")) {
+      const sepIdx = afterBrackets.indexOf("::");
+      if (sepIdx >= 0) {
+        return {
+          active: true,
+          from: line.from + bracketIdx,
+          query: afterBrackets.substring(sepIdx + 2),
+          mode: "heading",
+          noteName: afterBrackets.substring(0, sepIdx),
+        };
+      }
+      return {
+        active: true,
+        from: line.from + bracketIdx,
+        query: afterBrackets,
+        mode: "note",
+        noteName: "",
+      };
+    }
   }
 
-  return {
-    active: true,
-    from: line.from + bracketIdx,
-    query: afterBrackets,
-    mode: "note",
-    noteName: "",
-  };
+  // Func form: cursor inside an existing `#wikilink("…")` call's quoted arg.
+  return detectFuncWikilinkContext(lineText, line.from, cursorInLine);
 }
 
 function resolveNotePath(name: string): string | null {
@@ -197,17 +271,16 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
 }
 
 function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {
-  const cursor = view.state.selection.main.from;
-  const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
-  const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
-
-  if (state.mode === "note" && !item.isCreate) {
-    const insertText = item.name + "::";
-    view.dispatch({
-      changes: { from: state.from + 2, to: cursor + trailingBrackets, insert: insertText } as ChangeSpec,
-      selection: { anchor: state.from + 2 + insertText.length },
-    });
-    return;
+  let replaceTo: number;
+  if (state.to !== undefined) {
+    // Func form: replace the entire `#wikilink(...)` call.
+    replaceTo = state.to;
+  } else {
+    // Bracket form: extend through any literal `]]` the user already typed.
+    const cursor = view.state.selection.main.from;
+    const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
+    const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
+    replaceTo = cursor + trailingBrackets;
   }
 
   let insert: string;
@@ -218,7 +291,7 @@ function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {
   }
 
   view.dispatch({
-    changes: { from: state.from, to: cursor + trailingBrackets, insert } as ChangeSpec,
+    changes: { from: state.from, to: replaceTo, insert } as ChangeSpec,
     selection: { anchor: state.from + insert.length },
   });
   hidePopup();
@@ -272,7 +345,28 @@ const suggestKeyHandler = Prec.highest(keymap.of([
     run: (view) => {
       if (!isPopupVisible()) return false;
       const item = filteredItems[selectedIndex];
-      if (item) acceptItem(view, currentSuggestState, item);
+      if (!item) return true;
+      // In bracket form note mode, Tab autocompletes the note name in
+      // place so the user can keep typing (`::heading`) to drill into a
+      // heading without having to spell the whole note name first. For
+      // every other case (heading mode, "create new" item, func form),
+      // fall back to Enter-style commit.
+      const state = currentSuggestState;
+      const isBracketNoteCompletion = state.mode === "note"
+        && state.to === undefined
+        && !item.isCreate;
+      if (!isBracketNoteCompletion) {
+        acceptItem(view, state, item);
+        return true;
+      }
+      const queryFrom = state.from + 2; // skip `[[`
+      const queryTo = queryFrom + state.query.length;
+      view.dispatch({
+        changes: { from: queryFrom, to: queryTo, insert: item.name } as ChangeSpec,
+        selection: { anchor: queryFrom + item.name.length },
+      });
+      // The tracker's selectionSet/docChanged update will re-detect the
+      // bracket context with the now-complete name and refresh the popup.
       return true;
     },
   },
@@ -280,7 +374,10 @@ const suggestKeyHandler = Prec.highest(keymap.of([
     key: "Escape",
     run: (view) => {
       if (!isPopupVisible()) return false;
-      if (currentSuggestState.mode === "heading") {
+      // Bracket-form heading dismissal (typed `Foo::` then escaped):
+      // finalize without a label so we don't leave stray `[[Foo::]]`.
+      // Func-form needs no fixup — the source is already a valid call.
+      if (currentSuggestState.mode === "heading" && currentSuggestState.to === undefined) {
         const state = currentSuggestState;
         const cursor = view.state.selection.main.from;
         const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
