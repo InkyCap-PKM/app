@@ -36,6 +36,7 @@ export class FuncChipWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+
 export class BulletWidget extends WidgetType {
   constructor(readonly marker: string) { super(); }
   eq(other: BulletWidget) { return this.marker === other.marker; }

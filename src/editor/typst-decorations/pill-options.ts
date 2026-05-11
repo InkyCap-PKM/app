@@ -68,6 +68,7 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   highlight: highlightOptions,
   align:     alignOptions,
   figure:    figureOptions,
+  cite:      citeOptions,
 };
 
 /** Returns option sections for the named pill, or an empty array if the
@@ -435,6 +436,39 @@ function figureOptions(view: EditorView, from: number, to: number): PillMenuSect
           const literal = t === "" ? null : "[" + t.replace(/\\/g, "\\\\").replace(/\]/g, "\\]") + "]";
           applyCallTransform(view, from, (s) => upsertNamedArg(s, "caption", literal));
         },
+      },
+    }],
+  }];
+}
+
+function citeOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const isShorthand = src.startsWith("@");
+  if (!isShorthand) {
+    const form = readNamedArg(src, "form");
+    const currentForm = form ?? "normal";
+    return [{
+      heading: "Form",
+      items: (["normal", "prose", "full", "author", "year"] as const).map((f) => ({
+        label: f,
+        isActive: currentForm === f,
+        onSelect: () => applyCallTransform(view, from, (s) =>
+          upsertNamedArg(s, "form", f === "normal" ? null : `"${f}"`)),
+      })),
+    }];
+  }
+  const key = src.slice(1);
+  return [{
+    heading: "Citation",
+    items: [{
+      label: "Convert to #cite()",
+      title: "Convert to function form for supplement, form, and other options",
+      onSelect: () => {
+        view.dispatch({
+          changes: { from, to, insert: `#cite(<${key}>)` },
+          selection: { anchor: from + `#cite(<${key}>)`.length },
+        });
+        view.focus();
       },
     }],
   }];

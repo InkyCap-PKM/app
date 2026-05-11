@@ -378,6 +378,49 @@
   font-style: italic;
 }
 
+.citation-suggest-preview {
+  position: fixed;
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 201;
+  width: 280px;
+  padding: 10px 14px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  line-height: 1.45;
+}
+
+.citation-suggest-preview__authors {
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: 2px;
+}
+
+.citation-suggest-preview__year {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+
+.citation-suggest-preview__title {
+  color: var(--fg-secondary);
+  margin-bottom: 6px;
+}
+
+.citation-suggest-preview__type {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.wikilink-suggest.has-preview {
+  border-radius: 6px 0 0 6px;
+  border-right: 1px solid var(--border-subtle);
+}
+
 [data-theme="dark"] .cm-editor {
   color-scheme: dark;
 }
