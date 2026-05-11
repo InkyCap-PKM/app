@@ -5,14 +5,58 @@ import { settings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
+import { t } from "../lib/i18n";
 
-const MAX_BROWSE_RESULTS = 100;
+const PAGE_SIZE = 50;
+
+type SortKey = "title-asc" | "title-desc" | "author-asc" | "author-desc"
+  | "year-asc" | "year-desc" | "added-asc" | "added-desc";
+
+function nullsLast(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  asc: boolean,
+): number {
+  const aEmpty = !a;
+  const bEmpty = !b;
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;
+  if (bEmpty) return -1;
+  return asc ? a!.localeCompare(b!) : b!.localeCompare(a!);
+}
+
+function sortEntries(entries: BibEntry[], key: SortKey): BibEntry[] {
+  const sorted = [...entries];
+  switch (key) {
+    case "title-asc":
+      return sorted.sort((a, b) => nullsLast(a.title, b.title, true));
+    case "title-desc":
+      return sorted.sort((a, b) => nullsLast(a.title, b.title, false));
+    case "author-asc":
+      return sorted.sort((a, b) => nullsLast(a.authors[0], b.authors[0], true));
+    case "author-desc":
+      return sorted.sort((a, b) => nullsLast(a.authors[0], b.authors[0], false));
+    case "year-asc":
+      return sorted.sort((a, b) => nullsLast(a.year, b.year, true));
+    case "year-desc":
+      return sorted.sort((a, b) => nullsLast(a.year, b.year, false));
+    case "added-asc":
+      return sorted;
+    case "added-desc":
+      return sorted.reverse();
+    default:
+      return sorted;
+  }
+}
 
 const ReferencesPanel: Component = () => {
   const [showAll, setShowAll] = createSignal(false);
   const [browseQuery, setBrowseQuery] = createSignal("");
   const [citationVersion, setCitationVersion] = createSignal(0);
   const [refreshing, setRefreshing] = createSignal(false);
+  const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
+  const [sortKey, setSortKey] = createSignal<SortKey>("added-desc");
+  let scrollSentinelRef: HTMLDivElement | undefined;
 
   const activeFileTab = () => {
     const tab = getActiveTab();
@@ -59,18 +103,62 @@ const ReferencesPanel: Component = () => {
     onCleanup(() => document.removeEventListener("inkycap:insert-citation", handler));
   });
 
-  const filteredEntries = createMemo(() => {
+  const sortedAndFiltered = createMemo(() => {
     const all = allEntries() ?? [];
-    const q = browseQuery().trim().toLowerCase();
-    if (q.length === 0) return all.slice(0, MAX_BROWSE_RESULTS);
+    const q = browseQuery().trim();
+    if (q.length === 0) return sortEntries(all, sortKey());
+
+    const phraseMatch = q.match(/^"(.+)"$/);
+    if (phraseMatch) {
+      const phrase = phraseMatch[1].toLowerCase();
+      const matched = all.filter((entry) => {
+        const text = `${entry.key} ${entry.title} ${entry.authors.join(" ")} ${entry.year ?? ""}`.toLowerCase();
+        return text.includes(phrase);
+      });
+      return sortEntries(matched, sortKey());
+    }
+
     const scored: { entry: BibEntry; score: number }[] = [];
+    const ql = q.toLowerCase();
     for (const entry of all) {
       const text = `${entry.key} ${entry.title} ${entry.authors.join(" ")} ${entry.year ?? ""}`;
-      const m = fuzzyMatch(q, text);
+      const m = fuzzyMatch(ql, text);
       if (m) scored.push({ entry, score: m.score });
     }
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, MAX_BROWSE_RESULTS).map((s) => s.entry);
+    return scored.map((s) => s.entry);
+  });
+
+  const filteredEntries = createMemo(() => {
+    return sortedAndFiltered().slice(0, visibleCount());
+  });
+
+  const hasMore = createMemo(() => visibleCount() < sortedAndFiltered().length);
+
+  const totalCount = createMemo(() => sortedAndFiltered().length);
+
+  onMount(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore()) {
+          setVisibleCount((n) => n + PAGE_SIZE);
+        }
+      },
+      { rootMargin: "100px" },
+    );
+
+    const checkSentinel = () => {
+      if (scrollSentinelRef) observer.observe(scrollSentinelRef);
+    };
+
+    const mutObs = new MutationObserver(checkSentinel);
+    mutObs.observe(document.body, { childList: true, subtree: true });
+    checkSentinel();
+
+    onCleanup(() => {
+      observer.disconnect();
+      mutObs.disconnect();
+    });
   });
 
   function formatAuthors(authors: string[]): string {
@@ -119,6 +207,7 @@ const ReferencesPanel: Component = () => {
             onClick={() => {
               setShowAll(!showAll());
               setBrowseQuery("");
+              setVisibleCount(PAGE_SIZE);
             }}
           >
             {showAll() ? "Hide" : "Browse"} references
@@ -150,13 +239,55 @@ const ReferencesPanel: Component = () => {
                 </p>
               }
             >
-              <input
-                class="references-panel__search"
-                type="text"
-                placeholder="Filter entries…"
-                value={browseQuery()}
-                onInput={(e) => setBrowseQuery(e.currentTarget.value)}
-              />
+              <div class="references-panel__search-wrap">
+                <input
+                  class="references-panel__search"
+                  type="text"
+                  placeholder={t("references.filterPlaceholder")}
+                  value={browseQuery()}
+                  onInput={(e) => {
+                    setBrowseQuery(e.currentTarget.value);
+                    setVisibleCount(PAGE_SIZE);
+                  }}
+                />
+                <Show when={browseQuery().length > 0}>
+                  <button
+                    class="references-panel__search-clear"
+                    onClick={() => {
+                      setBrowseQuery("");
+                      setVisibleCount(PAGE_SIZE);
+                    }}
+                    title={t("references.clearFilter")}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                      <line x1="2" y1="2" x2="8" y2="8" />
+                      <line x1="8" y1="2" x2="2" y2="8" />
+                    </svg>
+                  </button>
+                </Show>
+              </div>
+              <div class="references-panel__toolbar">
+                <span class="references-panel__count">
+                  {totalCount()} {totalCount() === 1 ? t("references.entry") : t("references.entries")}
+                </span>
+                <select
+                  class="references-panel__sort"
+                  value={sortKey()}
+                  onChange={(e) => {
+                    setSortKey(e.currentTarget.value as SortKey);
+                    setVisibleCount(PAGE_SIZE);
+                  }}
+                >
+                  <option value="added-desc">{t("references.sort.addedNewest")}</option>
+                  <option value="added-asc">{t("references.sort.addedOldest")}</option>
+                  <option value="title-asc">{t("references.sort.titleAZ")}</option>
+                  <option value="title-desc">{t("references.sort.titleZA")}</option>
+                  <option value="author-asc">{t("references.sort.authorAZ")}</option>
+                  <option value="author-desc">{t("references.sort.authorZA")}</option>
+                  <option value="year-desc">{t("references.sort.yearNewest")}</option>
+                  <option value="year-asc">{t("references.sort.yearOldest")}</option>
+                </select>
+              </div>
               <For each={filteredEntries()}>
                 {(entry) => (
                   <div
@@ -165,16 +296,16 @@ const ReferencesPanel: Component = () => {
                     title={`Insert @${entry.key}`}
                   >
                     <div class="references-panel__key-row">
-                      <span class="references-panel__key">@{entry.key}</span>
                       <Show when={isZoteroSource() && entry.zotero_item_key}>
                         <button
                           class="references-panel__zotero-link"
                           onClick={(e) => openInZotero(e, entry.zotero_item_key!)}
-                          title="Open in Zotero"
+                          title={t("references.openInZotero")}
                         >
                           <ZoteroIcon />
                         </button>
                       </Show>
+                      <span class="references-panel__key">@{entry.key}</span>
                     </div>
                     <Show when={entry.title}>
                       <div class="references-panel__title">{entry.title}</div>
@@ -190,8 +321,20 @@ const ReferencesPanel: Component = () => {
                   </div>
                 )}
               </For>
+              <Show when={hasMore()}>
+                <div
+                  ref={scrollSentinelRef}
+                  class="references-panel__sentinel"
+                />
+                <button
+                  class="references-panel__show-more"
+                  onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                >
+                  {t("references.showMore")} ({totalCount() - visibleCount()} {t("references.remaining")})
+                </button>
+              </Show>
               <Show when={browseQuery().trim() && filteredEntries().length === 0}>
-                <p class="sidebar-hint">No matching entries</p>
+                <p class="sidebar-hint">{t("references.noMatching")}</p>
               </Show>
             </Show>
           </Show>
@@ -218,16 +361,16 @@ const ReferencesPanel: Component = () => {
               {(cite) => (
                 <div class="references-panel__entry">
                   <div class="references-panel__key-row">
-                    <span class="references-panel__key">@{cite.key}</span>
                     <Show when={isZoteroSource() && cite.zotero_item_key}>
                       <button
                         class="references-panel__zotero-link"
                         onClick={(e) => openInZotero(e, cite.zotero_item_key!)}
-                        title="Open in Zotero"
+                        title={t("references.openInZotero")}
                       >
                         <ZoteroIcon />
                       </button>
                     </Show>
+                    <span class="references-panel__key">@{cite.key}</span>
                   </div>
                   <Show when={cite.title}>
                     <div class="references-panel__title">{cite.title}</div>
