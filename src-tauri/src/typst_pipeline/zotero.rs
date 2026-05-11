@@ -118,6 +118,25 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         .filter_map(|r| r.ok())
         .collect();
 
+    // One-shot lookup: parent IDs that have at least one non-deleted child
+    // note. Folding this into a single set query (rather than per-item) keeps
+    // `has_notes` O(1) per entry below — important because users with large
+    // Zotero libraries can have thousands of items.
+    let items_with_notes: std::collections::HashSet<i64> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT parentItemID FROM itemNotes
+                 WHERE parentItemID IS NOT NULL
+                   AND parentItemID NOT IN (SELECT itemID FROM deletedItems)
+                   AND itemID NOT IN (SELECT itemID FROM deletedItems)",
+            )
+            .map_err(|e| format!("Failed to prepare notes-presence query: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(|e| format!("Failed to query notes presence: {e}"))?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
     for (item_id, type_name, zotero_key) in items {
         let mut title = String::new();
         let mut date = None;
@@ -182,8 +201,17 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
             year: date,
             entry_type: type_name,
             zotero_item_key: Some(zotero_key),
+            has_notes: items_with_notes.contains(&item_id),
         });
     }
+
+    // Dedup by citation key. Better BibTeX assigns keys per-library, so an
+    // item present in both "My Library" and a group library appears twice
+    // here with identical keys but distinct `zotero_item_key`s. Keep the
+    // first occurrence (ORDER BY itemID puts older entries first, which
+    // typically means the canonical/personal copy).
+    let mut seen = std::collections::HashSet::new();
+    entries.retain(|e| seen.insert(e.key.clone()));
 
     Ok(entries)
 }

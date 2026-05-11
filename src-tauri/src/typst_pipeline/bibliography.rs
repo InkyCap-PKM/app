@@ -12,7 +12,8 @@
 //! handles both BibTeX (`.bib`) and Hayagriva YAML (`.yml`) formats.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 use regex::Regex;
 use serde::Serialize;
@@ -147,51 +148,216 @@ pub struct BibEntry {
     /// `zotero://select/library/items/<key>` URIs. `None` for file-based entries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zotero_item_key: Option<String>,
+    /// True if the source has user notes/annotations attached. Used by the
+    /// "import note text" picker to filter out entries with nothing to show.
+    /// Computed once at load time so the picker doesn't pay per-entry SQL
+    /// or parse costs.
+    pub has_notes: bool,
+}
+
+/// A note attached to a bibliography entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct RefNote {
+    pub content: String,
+}
+
+/// Cached parse output: entries for the picker plus per-key notes. Both come
+/// from a single parse pass so the picker and the note importer don't pay
+/// the parse cost twice.
+#[derive(Debug, Clone)]
+struct ParsedBibliography {
+    entries: Vec<BibEntry>,
+    /// Aligned by index with `entries`. Notes are pre-extracted because the
+    /// underlying `biblatex::Bibliography` / `hayagriva::Library` are
+    /// non-`Send`/non-`Clone` and can't live in the cache directly.
+    notes: Vec<Vec<RefNote>>,
+    /// Count of entries skipped because of conversion/type errors. Surfaced
+    /// to the UI so users notice silent data loss.
+    skipped_entries: u32,
+}
+
+#[derive(Debug)]
+struct CacheKey {
+    path: PathBuf,
+    mtime: SystemTime,
+    size: u64,
+}
+
+#[derive(Debug)]
+struct CacheSlot {
+    key: CacheKey,
+    parsed: ParsedBibliography,
+}
+
+fn parse_cache() -> &'static Mutex<Option<CacheSlot>> {
+    static CACHE: OnceLock<Mutex<Option<CacheSlot>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Skip count from the most recent parse. UI polls this to surface a
+/// "loaded N of M" notice when entries were dropped due to type errors.
+pub fn last_parse_skipped_count() -> u32 {
+    parse_cache()
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|s| s.parsed.skipped_entries))
+        .unwrap_or(0)
+}
+
+/// Load the parsed bibliography for `path`, using an mtime+size keyed cache.
+/// The cache holds a single slot — vaults have one active bibliography file
+/// at a time, and an LRU would just add bookkeeping.
+fn load_cached(path: &Path) -> Result<ParsedBibliography, String> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| format!("Failed to stat bibliography file: {e}"))?;
+    let mtime = meta.modified()
+        .map_err(|e| format!("Failed to read bibliography mtime: {e}"))?;
+    let size = meta.len();
+
+    {
+        let guard = parse_cache().lock().map_err(|e| format!("Cache poisoned: {e}"))?;
+        if let Some(slot) = guard.as_ref() {
+            if slot.key.path == path && slot.key.mtime == mtime && slot.key.size == size {
+                return Ok(slot.parsed.clone());
+            }
+        }
+    }
+
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read bibliography file: {e}"))?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let parsed = match ext {
+        "bib" => parse_bibtex(&content)?,
+        "yml" | "yaml" => parse_hayagriva(&content)?,
+        "json" => parse_csl_json(&content)?,
+        _ => return Err(format!("Unsupported bibliography format: .{ext}")),
+    };
+
+    if let Ok(mut guard) = parse_cache().lock() {
+        *guard = Some(CacheSlot {
+            key: CacheKey { path: path.to_path_buf(), mtime, size },
+            parsed: parsed.clone(),
+        });
+    }
+    Ok(parsed)
 }
 
 /// Parse a bibliography file (`.bib`, `.yml`, or CSL JSON `.json`).
 pub fn parse_bibliography(path: &Path) -> Result<Vec<BibEntry>, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read bibliography file: {e}"))?;
+    Ok(load_cached(path)?.entries)
+}
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    match ext {
-        "bib" => parse_bibtex(&content),
-        "yml" | "yaml" => parse_hayagriva(&content),
-        "json" => parse_csl_json(&content),
-        _ => Err(format!("Unsupported bibliography format: .{ext}")),
+/// Extract notes from a parsed bibliography for the given key. Reuses the
+/// cached parse from `parse_bibliography` so a `RefNotePicker` open after
+/// the picker pays nothing.
+pub fn get_entry_notes(path: &Path, key: &str) -> Result<Vec<RefNote>, String> {
+    let parsed = load_cached(path)?;
+    let idx = parsed.entries.iter().position(|e| e.key == key);
+    Ok(idx.map(|i| parsed.notes[i].clone()).unwrap_or_default())
+}
+
+fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
+    let bib = biblatex::Bibliography::parse(content)
+        .map_err(|e| format!("BibTeX parse error: {e}"))?;
+    let mut entries = Vec::new();
+    let mut notes = Vec::new();
+    let mut skipped: u32 = 0;
+    for raw in bib.iter() {
+        // Pull annotation/annote/note as raw fields before the hayagriva
+        // conversion — Zotero's BibTeX export puts user annotations in
+        // `annotation` (not `note`, which carries bibliographic provenance
+        // like "Online resource"), and biblatex+hayagriva's `Entry::note()`
+        // only surfaces `note`.
+        let entry_notes = collect_bibtex_notes(raw);
+
+        let converted: Result<hayagriva::Entry, _> = raw.try_into();
+        match converted {
+            Ok(entry) => {
+                let title = entry.title().map(|t| t.to_string()).unwrap_or_default();
+                let authors = entry
+                    .authors()
+                    .map(|persons| persons.iter().map(|p| p.name_first(false, false)).collect())
+                    .unwrap_or_default();
+                let year = entry.date_any().map(|d| d.year.to_string());
+                let entry_type = format!("{:?}", entry.entry_type());
+                entries.push(BibEntry {
+                    key: entry.key().to_string(),
+                    title,
+                    authors,
+                    year,
+                    entry_type,
+                    zotero_item_key: None,
+                    has_notes: !entry_notes.is_empty(),
+                });
+                notes.push(entry_notes);
+            }
+            Err(e) => {
+                log::warn!("Skipping BibTeX entry {:?}: {e}", raw.key);
+                skipped += 1;
+            }
+        }
     }
+    if skipped > 0 {
+        log::warn!("Skipped {skipped} BibTeX entries with type errors; loaded {} entries", entries.len());
+    }
+    Ok(ParsedBibliography { entries, notes, skipped_entries: skipped })
 }
 
-fn parse_bibtex(content: &str) -> Result<Vec<BibEntry>, String> {
-    let library = hayagriva::io::from_biblatex_str(content)
-        .map_err(|errs| {
-            let msgs: Vec<_> = errs.iter().map(|e| format!("{e}")).collect();
-            format!("BibTeX parse errors: {}", msgs.join("; "))
-        })?;
-    Ok(hayagriva_to_entries(&library))
+/// Pull user-note fields (`annotation`, `annote`, `note`) from a raw biblatex
+/// entry. Zotero exports stash user annotations in `annotation`; classic
+/// BibTeX uses `annote`; `note` is the standard bibliographic-note field.
+/// Returned in priority order so the most-useful note is first.
+fn collect_bibtex_notes(raw: &biblatex::Entry) -> Vec<RefNote> {
+    use biblatex::ChunksExt;
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for field in ["annotation", "annote", "note"] {
+        if let Some(chunks) = raw.fields.get(field) {
+            let text = chunks.format_verbatim();
+            let trimmed = text.trim().to_string();
+            if !trimmed.is_empty() && seen.insert(trimmed.clone()) {
+                out.push(RefNote { content: trimmed });
+            }
+        }
+    }
+    out
 }
 
-fn parse_hayagriva(content: &str) -> Result<Vec<BibEntry>, String> {
+fn parse_hayagriva(content: &str) -> Result<ParsedBibliography, String> {
     let library = hayagriva::io::from_yaml_str(content)
         .map_err(|e| format!("Hayagriva YAML parse error: {e}"))?;
-    Ok(hayagriva_to_entries(&library))
+    let (entries, notes) = hayagriva_to_entries(&library);
+    Ok(ParsedBibliography { entries, notes, skipped_entries: 0 })
 }
 
-fn hayagriva_to_entries(library: &hayagriva::Library) -> Vec<BibEntry> {
-    library
-        .iter()
-        .map(|entry| {
-            let title = entry.title().map(|t| t.to_string()).unwrap_or_default();
-            let authors = entry
-                .authors()
-                .map(|persons| persons.iter().map(|p| p.name_first(false, false)).collect())
-                .unwrap_or_default();
-            let year = entry.date_any().map(|d| d.year.to_string());
-            let entry_type = format!("{:?}", entry.entry_type());
-            BibEntry { key: entry.key().to_string(), title, authors, year, entry_type, zotero_item_key: None }
-        })
-        .collect()
+fn hayagriva_to_entries(library: &hayagriva::Library) -> (Vec<BibEntry>, Vec<Vec<RefNote>>) {
+    let mut entries = Vec::new();
+    let mut notes = Vec::new();
+    for entry in library.iter() {
+        let title = entry.title().map(|t| t.to_string()).unwrap_or_default();
+        let authors = entry
+            .authors()
+            .map(|persons| persons.iter().map(|p| p.name_first(false, false)).collect())
+            .unwrap_or_default();
+        let year = entry.date_any().map(|d| d.year.to_string());
+        let entry_type = format!("{:?}", entry.entry_type());
+        let mut entry_notes = Vec::new();
+        if let Some(note) = entry.note() {
+            let text = note.to_string();
+            if !text.trim().is_empty() {
+                entry_notes.push(RefNote { content: text });
+            }
+        }
+        let has_notes = !entry_notes.is_empty();
+        entries.push(BibEntry {
+            key: entry.key().to_string(),
+            title, authors, year, entry_type,
+            zotero_item_key: None,
+            has_notes,
+        });
+        notes.push(entry_notes);
+    }
+    (entries, notes)
 }
 
 /// CSL JSON deserialization types.
@@ -203,6 +369,8 @@ struct CslJsonEntry {
     issued: Option<CslDate>,
     #[serde(rename = "type")]
     entry_type: Option<String>,
+    note: Option<String>,
+    annotation: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -217,44 +385,58 @@ struct CslDate {
     date_parts: Option<Vec<Vec<serde_json::Value>>>,
 }
 
-fn parse_csl_json(content: &str) -> Result<Vec<BibEntry>, String> {
+fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
     let csl_entries: Vec<CslJsonEntry> = serde_json::from_str(content)
         .map_err(|e| format!("CSL JSON parse error: {e}"))?;
 
-    Ok(csl_entries
-        .into_iter()
-        .map(|e| {
-            let authors = e.author.unwrap_or_default().into_iter().map(|n| {
-                match (n.family, n.given) {
-                    (Some(f), Some(g)) => format!("{f}, {g}"),
-                    (Some(f), None) => f,
-                    (None, Some(g)) => g,
-                    (None, None) => String::new(),
-                }
-            }).filter(|s| !s.is_empty()).collect();
+    let mut entries = Vec::new();
+    let mut notes = Vec::new();
+    for e in csl_entries {
+        let authors = e.author.unwrap_or_default().into_iter().map(|n| {
+            match (n.family, n.given) {
+                (Some(f), Some(g)) => format!("{f}, {g}"),
+                (Some(f), None) => f,
+                (None, Some(g)) => g,
+                (None, None) => String::new(),
+            }
+        }).filter(|s| !s.is_empty()).collect();
 
-            let year = e.issued.and_then(|d| {
-                d.date_parts.and_then(|parts| {
-                    parts.first().and_then(|p| {
-                        p.first().map(|v| match v {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => String::new(),
-                        })
+        let year = e.issued.and_then(|d| {
+            d.date_parts.and_then(|parts| {
+                parts.first().and_then(|p| {
+                    p.first().map(|v| match v {
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => String::new(),
                     })
                 })
-            }).filter(|s| !s.is_empty());
+            })
+        }).filter(|s| !s.is_empty());
 
-            BibEntry {
-                key: e.id,
-                title: e.title.unwrap_or_default(),
-                authors,
-                year,
-                entry_type: e.entry_type.unwrap_or_else(|| "unknown".to_string()),
-                zotero_item_key: None,
+        let mut entry_notes = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for field in [e.annotation, e.note] {
+            if let Some(text) = field {
+                let trimmed = text.trim().to_string();
+                if !trimmed.is_empty() && seen.insert(trimmed.clone()) {
+                    entry_notes.push(RefNote { content: trimmed });
+                }
             }
-        })
-        .collect())
+        }
+
+        let has_notes = !entry_notes.is_empty();
+        entries.push(BibEntry {
+            key: e.id,
+            title: e.title.unwrap_or_default(),
+            authors,
+            year,
+            entry_type: e.entry_type.unwrap_or_else(|| "unknown".to_string()),
+            zotero_item_key: None,
+            has_notes,
+        });
+        notes.push(entry_notes);
+    }
+    Ok(ParsedBibliography { entries, notes, skipped_entries: 0 })
 }
 
 /// Export bibliography entries to BibTeX format for the Typst compile pipeline.

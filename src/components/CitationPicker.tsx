@@ -7,31 +7,47 @@ import { activeEditorView } from "../stores/editor";
 interface CitationPickerProps {
   visible: boolean;
   onClose: () => void;
+  onSelect?: (entry: BibEntry) => void;
+  placeholder?: string;
+  /** Optional pre-filter applied before searching. Used by the
+   * "import note text" picker to restrict the list to entries that
+   * actually have notes attached. */
+  filter?: (entry: BibEntry) => boolean;
 }
 
-const MAX_RESULTS = 50;
+const PAGE_SIZE = 50;
 
 const CitationPicker: Component<CitationPickerProps> = (props) => {
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
+  const [loadError, setLoadError] = createSignal<string | null>(null);
 
   const [entries] = createResource(
     () => props.visible,
     async (visible) => {
       if (!visible) return [];
+      setLoadError(null);
       try {
         return await ipc.getBibliographyEntries();
       } catch (err) {
         console.error("Failed to load bibliography entries:", err);
-        throw err;
+        setLoadError(String(err));
+        return [];
       }
     },
   );
 
-  const results = createMemo(() => {
+  const filteredEntries = createMemo(() => {
     const all = entries() ?? [];
+    const f = props.filter;
+    return f ? all.filter(f) : all;
+  });
+
+  const allResults = createMemo(() => {
+    const all = filteredEntries();
     const q = query().trim().toLowerCase();
-    if (q.length === 0) return all.slice(0, MAX_RESULTS);
+    if (q.length === 0) return all;
 
     const scored: { entry: BibEntry; score: number }[] = [];
     for (const entry of all) {
@@ -42,17 +58,35 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
       }
     }
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, MAX_RESULTS).map((s) => s.entry);
+    return scored.map((s) => s.entry);
   });
 
-  function insertCitation(key: string) {
+  const results = createMemo(() => allResults().slice(0, visibleCount()));
+
+  function handleScroll(e: Event) {
+    const el = e.target as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
+      if (visibleCount() < allResults().length) {
+        setVisibleCount((n) => n + PAGE_SIZE);
+      }
+    }
+  }
+
+  function handleSelect(entry: BibEntry) {
+    if (props.onSelect) {
+      setQuery("");
+      setSelectedIndex(0);
+      setVisibleCount(PAGE_SIZE);
+      props.onSelect(entry);
+      return;
+    }
     const handle = activeEditorView();
     if (!handle) return;
     const view = handle.view;
     const { from, to } = view.state.selection.main;
     view.dispatch({
-      changes: { from, to, insert: `@${key}` },
-      selection: { anchor: from + key.length + 1 },
+      changes: { from, to, insert: `@${entry.key}` },
+      selection: { anchor: from + entry.key.length + 1 },
     });
     view.focus();
     close();
@@ -61,6 +95,7 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
   function close() {
     setQuery("");
     setSelectedIndex(0);
+    setVisibleCount(PAGE_SIZE);
     props.onClose();
   }
 
@@ -75,7 +110,11 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+      const next = Math.min(selectedIndex() + 1, list.length - 1);
+      setSelectedIndex(next);
+      if (next >= visibleCount() - 5 && visibleCount() < allResults().length) {
+        setVisibleCount((n) => n + PAGE_SIZE);
+      }
       return;
     }
 
@@ -88,7 +127,7 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const item = list[selectedIndex()];
-      if (item) insertCitation(item.key);
+      if (item) handleSelect(item);
       return;
     }
   }
@@ -101,9 +140,12 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
 
   function statusMessage(): string {
     if (entries.loading) return "Loading bibliography…";
-    if (entries.error) return `Error: ${entries.error}`;
+    if (loadError()) return `Error: ${loadError()}`;
     const all = entries();
     if (!all || all.length === 0) return "No bibliography configured. Check Settings › Citations.";
+    if (props.filter && filteredEntries().length === 0) {
+      return "No references with notes attached.";
+    }
     if (query().trim() && results().length === 0) return "No matching entries";
     return "";
   }
@@ -115,35 +157,36 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
           <input
             class="cmd-palette__input"
             type="text"
-            placeholder="Search citations by key, title, or author..."
+            placeholder={props.placeholder ?? "Search citations by key, title, or author..."}
             value={query()}
             onInput={(e) => {
               setQuery(e.currentTarget.value);
               setSelectedIndex(0);
+              setVisibleCount(PAGE_SIZE);
             }}
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
-          <div class="cmd-palette__results">
+          <div class="cmd-palette__results" onScroll={handleScroll}>
             <For each={results()}>
               {(entry, index) => (
                 <div
-                  class={`cmd-palette__result ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
-                  onClick={() => insertCitation(entry.key)}
+                  class={`cmd-palette__result citation-picker__entry ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
+                  onClick={() => handleSelect(entry)}
                   onMouseEnter={() => setSelectedIndex(index())}
                 >
-                  <span class="citation-picker__key">@{entry.key}</span>
-                  <span class="citation-picker__info">
-                    <Show when={entry.title}>
-                      <span class="citation-picker__title">{entry.title}</span>
-                    </Show>
+                  <Show when={entry.title}>
+                    <span class="citation-picker__title">{entry.title}</span>
+                  </Show>
+                  <div class="citation-picker__detail">
                     <Show when={entry.authors.length > 0 || entry.year}>
                       <span class="citation-picker__meta">
                         {formatAuthors(entry.authors)}
                         <Show when={entry.year}>{" "}({entry.year})</Show>
                       </span>
                     </Show>
-                  </span>
+                    <span class="citation-picker__key">@{entry.key}</span>
+                  </div>
                 </div>
               )}
             </For>

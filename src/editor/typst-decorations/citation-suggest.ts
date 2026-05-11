@@ -20,6 +20,12 @@ let cachedEntries: BibEntry[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 30_000;
 
+// After accepting a suggestion, suppress the popup until the cursor leaves
+// the just-inserted range. Time-based suppression mis-fires on slow renders
+// (popup re-opens) and fast typists (popup stays gone). Position-based gives
+// the right answer regardless of timing.
+let suppressedRange: { from: number; to: number } | null = null;
+
 let preview: HTMLElement | null = null;
 
 function getPopup(): HTMLElement {
@@ -230,6 +236,7 @@ function acceptItem(view: EditorView, state: SuggestState, entry: BibEntry) {
     changes: { from: state.from, to: cursor, insert },
     selection: { anchor: state.from + insert.length },
   });
+  suppressedRange = { from: state.from, to: state.from + insert.length };
   hidePopup();
 }
 
@@ -294,7 +301,17 @@ const suggestTracker = ViewPlugin.fromClass(
       if (!update.docChanged && !update.selectionSet) return;
       this.state = detectCitationContext(update.view);
 
-      if (this.state.active) {
+      // Clear post-accept suppression once the cursor moves outside the
+      // inserted range — that's the unambiguous signal that the user is
+      // back to free-form editing.
+      if (suppressedRange) {
+        const head = update.view.state.selection.main.head;
+        if (head < suppressedRange.from || head > suppressedRange.to) {
+          suppressedRange = null;
+        }
+      }
+
+      if (this.state.active && !suppressedRange) {
         const view = update.view;
         const state = this.state;
         requestAnimationFrame(() => showPopup(view, state));

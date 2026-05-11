@@ -3455,20 +3455,10 @@ svg.lucide {
 
 /* ── Citation Picker ── */
 
-.citation-picker__key {
-  font-family: var(--editor-font-mono, monospace);
-  font-size: var(--text-base);
-  color: var(--accent);
-  flex-shrink: 0;
-  min-width: 80px;
-}
-
-.citation-picker__info {
-  display: flex;
+.citation-picker__entry {
   flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
-  min-width: 0;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .citation-picker__title {
@@ -3477,6 +3467,23 @@ svg.lucide {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
+}
+
+.citation-picker__detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.citation-picker__key {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .citation-picker__meta {
@@ -3485,6 +3492,60 @@ svg.lucide {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Reference Note Picker ── */
+
+.ref-note-picker__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-primary);
+  min-height: 36px;
+}
+
+.ref-note-picker__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.ref-note-picker__back:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.ref-note-picker__ref-label {
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ref-note-picker__note {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.ref-note-picker__note-preview {
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
 }
 
 /* ── Right Panel Tabs ── */
@@ -3766,6 +3827,34 @@ svg.lucide {
   font-size: var(--text-sm);
   color: var(--fg-dim);
   white-space: nowrap;
+}
+
+.settings__input-with-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings__text-input--path {
+  min-width: 200px;
+}
+
+.references-panel__source-badge {
+  display: inline-block;
+  font-size: var(--text-xs);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.references-panel__skip-warning {
+  font-size: var(--text-xs);
+  color: var(--fg-warning, var(--fg-muted));
+  margin-left: 6px;
+  cursor: help;
 }
 
 .references-panel__sort {

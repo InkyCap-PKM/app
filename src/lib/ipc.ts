@@ -829,6 +829,18 @@ export async function detectZoteroPath(): Promise<string | null> {
   return invoke<string | null>("detect_zotero_path");
 }
 
+export interface RefNote {
+  content: string;
+}
+
+export async function getReferenceNotes(key: string): Promise<RefNote[]> {
+  return invoke<RefNote[]>("get_reference_notes", { key });
+}
+
+export async function getBibliographySkipCount(): Promise<number> {
+  return invoke<number>("get_bibliography_skip_count");
+}
+
 // Font discovery
 
 export async function listSystemFonts(): Promise<string[]> {

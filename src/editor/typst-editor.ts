@@ -300,8 +300,6 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),
     inkycapTheme,
-    wikilinkSuggest,
-    citationSuggest,
     dragDropHandler,
     headingTracker,
     wordCountTracker,
@@ -342,7 +340,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   // when loading new file content — otherwise prior edits' offsets persist
   // against a freshly-replaced doc and Ctrl-Z eventually empties the file.
   const historyCompartment = new Compartment();
-  const visualExts = options.visualMode ? typstVisualMode() : [];
+  const visualExts = options.visualMode ? [typstVisualMode(), wikilinkSuggest, citationSuggest] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)

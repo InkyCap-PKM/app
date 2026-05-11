@@ -51,6 +51,7 @@ typst-pdf = "0.14"
 typst-html = "0.14"
 typst-assets = { version = "0.14", features = ["fonts"] }
 hayagriva = "0.9"
+biblatex = "0.11"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

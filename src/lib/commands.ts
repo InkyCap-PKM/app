@@ -28,6 +28,7 @@ export function registerBuiltinCommands(callbacks: {
   toggleComposer: () => void;
   openFileHistory: () => void;
   openCitationPicker: () => void;
+  openRefNotePicker: () => void;
   openSearch: () => void;
   newNote: () => Promise<void>;
   openTypAudit: () => void;
@@ -228,11 +229,18 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   registerCommand({
-    id: "tools:cite",
+    id: "references:cite",
     title: "Search references & cite",
-    category: "Tools",
+    category: "References",
     keybinding: "Ctrl+Shift+C",
     execute: callbacks.openCitationPicker,
+  });
+
+  registerCommand({
+    id: "references:import-note",
+    title: "Import note text from reference",
+    category: "References",
+    execute: callbacks.openRefNotePicker,
   });
 
   registerCommand({
@@ -306,13 +314,11 @@ function registerMarkupCommands() {
     { id: "math-block", title: "Math Block", insert: "$ ${sel} $", cursorOffset: 2 },
     { id: "horizontal-rule", title: "Horizontal Rule", insert: "#line(length: 100%)", cursorOffset: 19 },
     { id: "footnote", title: "Footnote", insert: "#footnote[${sel}]", cursorOffset: 10 },
-    { id: "citation-at", title: "Cite (@key)", insert: "@", cursorOffset: 1 },
     { id: "wikilink", title: "Wikilink", insert: '#wikilink("")', cursorOffset: 11 },
     { id: "embed", title: "Embed", insert: '#embed("")', cursorOffset: 8 },
     { id: "callout", title: "Callout", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
     { id: "verse", title: "Verse", insert: '#verse("")', cursorOffset: 8 },
     { id: "table", title: "Table", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
-    { id: "bibliography", title: "Bibliography", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
   ];
 
   for (const item of items) {
@@ -320,6 +326,20 @@ function registerMarkupCommands() {
       id: `markup:${item.id}`,
       title: item.title,
       category: "Markup",
+      execute: () => insertMarkup(item.insert, item.cursorOffset),
+    });
+  }
+
+  const refInserts: Array<{ id: string; title: string; insert: string; cursorOffset: number }> = [
+    { id: "citation-at", title: "Cite (@key)", insert: "@", cursorOffset: 1 },
+    { id: "bibliography", title: "Bibliography (insert)", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+  ];
+
+  for (const item of refInserts) {
+    registerCommand({
+      id: `references:${item.id}`,
+      title: item.title,
+      category: "References",
       execute: () => insertMarkup(item.insert, item.cursorOffset),
     });
   }

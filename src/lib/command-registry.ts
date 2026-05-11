@@ -9,6 +9,7 @@ export type CommandCategory =
   | "View"
   | "Navigate"
   | "Tools"
+  | "References"
   | "Markup"
   | "Creation Rules";
 

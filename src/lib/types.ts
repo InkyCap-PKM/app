@@ -386,6 +386,8 @@ export interface BibEntry {
   year: string | null;
   entry_type: string;
   zotero_item_key?: string;
+  /** True if the source has user notes/annotations attached to this entry. */
+  has_notes: boolean;
 }
 
 export interface FileCitation {
