@@ -104,6 +104,8 @@ pub struct AppearanceSettings {
     pub interface_font: String,
     /// Font family for code blocks and monospace content.
     pub monospace_font: String,
+    /// What Ctrl+/Ctrl- adjusts: "content", "interface", or "both".
+    pub zoom_target: String,
 }
 
 impl Default for AppearanceSettings {
@@ -115,6 +117,7 @@ impl Default for AppearanceSettings {
             accent_color: "#1D7874".to_string(),
             interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
             monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace".to_string(),
+            zoom_target: "content".to_string(),
         }
     }
 }

@@ -25,6 +25,7 @@ const TOKEN_BASES: Record<string, number> = {
 export function applyUiScale(fontSize: number) {
   const scale = fontSize / BASE_FONT_SIZE;
   const root = document.documentElement;
+  root.style.setProperty("--ui-scale", String(scale));
   for (const [token, base] of Object.entries(TOKEN_BASES)) {
     root.style.setProperty(token, `${Math.round(base * scale)}px`);
   }

@@ -35,6 +35,7 @@ const DEFAULTS: UserSettings = {
     accent_color: "#1D7874",
     interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
     monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace",
+    zoom_target: "content",
   },
   files: {
     new_note_location: "root",

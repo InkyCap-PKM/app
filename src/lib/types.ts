@@ -213,6 +213,7 @@ export interface EditorSettings {
 
 export type AccentSource = "default" | "custom" | "os";
 export type BgPalette = "default" | "warm";
+export type ZoomTarget = "content" | "interface" | "both";
 
 export interface AppearanceSettings {
   theme: "dark" | "light" | "system";
@@ -233,6 +234,7 @@ export interface AppearanceSettings {
   accent_color: string;
   interface_font: string;
   monospace_font: string;
+  zoom_target: ZoomTarget;
 }
 
 export interface FileSettings {
