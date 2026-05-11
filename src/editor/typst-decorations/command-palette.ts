@@ -59,9 +59,9 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
   { label: "Rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
+  { label: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
+  { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11 },
-  { label: "Embed", category: "InkyCap", insert: '#embed("")', cursorOffset: 8 },
-  { label: "Callout", category: "InkyCap", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
 
   { label: "Page size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
