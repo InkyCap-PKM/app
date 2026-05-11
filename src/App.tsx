@@ -19,6 +19,7 @@ import QuickOpen from "./components/QuickOpen";
 import SettingsPanel from "./components/SettingsPanel";
 import CommandPalette from "./components/CommandPalette";
 import CitationPicker from "./components/CitationPicker";
+import RefNotePicker from "./components/RefNotePicker";
 import NoteComposer from "./components/NoteComposer";
 import ExportDialog from "./components/ExportDialog";
 import ToastHost from "./components/ToastHost";
@@ -92,6 +93,7 @@ const App: Component = () => {
   const [cmdPaletteVisible, setCmdPaletteVisible] = createSignal(false);
   const [composerVisible, setComposerVisible] = createSignal(false);
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
+  const [refNotePickerVisible, setRefNotePickerVisible] = createSignal(false);
   const [snapshotVisible, setSnapshotVisible] = createSignal(false);
   const [snapshotPath, setSnapshotPath] = createSignal("");
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
@@ -188,6 +190,7 @@ const App: Component = () => {
       toggleComposer,
       openFileHistory,
       openCitationPicker: () => setCitationPickerVisible(true),
+      openRefNotePicker: () => setRefNotePickerVisible(true),
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
       newNote,
       openTypAudit: () => setTypAuditVisible(true),
@@ -308,6 +311,10 @@ const App: Component = () => {
         <CitationPicker
           visible={citationPickerVisible()}
           onClose={() => setCitationPickerVisible(false)}
+        />
+        <RefNotePicker
+          visible={refNotePickerVisible()}
+          onClose={() => setRefNotePickerVisible(false)}
         />
         <NoteComposer
           visible={composerVisible()}

@@ -293,6 +293,8 @@ pub fn run() {
             commands::bibliography::get_file_citations,
             commands::bibliography::refresh_bibliography,
             commands::bibliography::detect_zotero_path,
+            commands::bibliography::get_reference_notes,
+            commands::bibliography::get_bibliography_skip_count,
             commands::system_color::get_os_accent_color,
             commands::fonts::list_system_fonts,
         ])

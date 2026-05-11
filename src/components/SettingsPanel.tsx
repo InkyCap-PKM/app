@@ -878,9 +878,6 @@ function CitationsSettingsSection() {
 
   return (
     <div class="settings__section">
-      <p class="settings__section-note">
-        Changes take effect after restarting InkyCap.
-      </p>
       <SettingSelect
         label="Citation source"
         description="Where to load bibliography entries from"
@@ -893,12 +890,45 @@ function CitationsSettingsSection() {
       />
 
       <Show when={settings.citations.source === "file"}>
-        <SettingText
-          label="Bibliography file"
-          description="Vault-relative path (e.g. references.bib). Leave empty for auto-detection."
-          value={settings.citations.bibliography_path ?? ""}
-          onChange={(v) => updateSetting("citations", "bibliography_path", v || null)}
-        />
+        <div class="settings__row">
+          <div class="settings__row-info">
+            <label class="settings__label">Bibliography file</label>
+            <span class="settings__description">
+              Vault-relative path (e.g. references.bib). Leave empty for auto-detection.
+            </span>
+          </div>
+          <div class="settings__input-with-button">
+            <input
+              type="text"
+              class="settings__text-input settings__text-input--path"
+              value={settings.citations.bibliography_path ?? ""}
+              onInput={(e) =>
+                updateSetting("citations", "bibliography_path", e.currentTarget.value || null)
+              }
+            />
+            <button
+              class="settings__detect-btn"
+              onClick={async () => {
+                const selected = await open({
+                  multiple: false,
+                  filters: [{ name: "Bibliography", extensions: ["bib", "yml", "yaml", "json"] }],
+                  defaultPath: vaultInfo()?.path,
+                });
+                if (typeof selected === "string" && selected) {
+                  const root = vaultInfo()?.path;
+                  if (root && selected.startsWith(root)) {
+                    const rel = selected.slice(root.length).replace(/^[/\\]/, "");
+                    updateSetting("citations", "bibliography_path", rel);
+                  } else {
+                    updateSetting("citations", "bibliography_path", selected);
+                  }
+                }
+              }}
+            >
+              Browse
+            </button>
+          </div>
+        </div>
       </Show>
 
       <Show when={settings.citations.source === "zotero"}>
@@ -909,15 +939,14 @@ function CitationsSettingsSection() {
               Absolute path to zotero.sqlite. Click Detect to find it automatically.
             </span>
           </div>
-          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+          <div class="settings__input-with-button">
             <input
               type="text"
-              class="settings__text-input"
+              class="settings__text-input settings__text-input--path"
               value={settings.citations.zotero_database_path ?? ""}
               onInput={(e) =>
                 updateSetting("citations", "zotero_database_path", e.currentTarget.value || null)
               }
-              style={{ "min-width": "200px" }}
             />
             <button
               class="settings__detect-btn"

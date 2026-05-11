@@ -12,6 +12,13 @@ const PAGE_SIZE = 50;
 type SortKey = "title-asc" | "title-desc" | "author-asc" | "author-desc"
   | "year-asc" | "year-desc" | "added-asc" | "added-desc";
 
+const VALID_SORT_KEYS: SortKey[] = [
+  "title-asc", "title-desc", "author-asc", "author-desc",
+  "year-asc", "year-desc", "added-asc", "added-desc",
+];
+
+const SORT_PREF_KEY = "inkycap:references-panel:sort";
+
 function nullsLast(
   a: string | null | undefined,
   b: string | null | undefined,
@@ -55,7 +62,31 @@ const ReferencesPanel: Component = () => {
   const [citationVersion, setCitationVersion] = createSignal(0);
   const [refreshing, setRefreshing] = createSignal(false);
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
-  const [sortKey, setSortKey] = createSignal<SortKey>("added-desc");
+  const [sortKey, setSortKey] = createSignal<SortKey>(loadSortPreference());
+
+  function loadSortPreference(): SortKey {
+    try {
+      const stored = localStorage.getItem(SORT_PREF_KEY);
+      if (stored && VALID_SORT_KEYS.includes(stored as SortKey)) {
+        return stored as SortKey;
+      }
+    } catch {
+      // localStorage may be unavailable in some webview contexts
+    }
+    return "added-desc";
+  }
+
+  function persistSortKey(key: SortKey) {
+    setSortKey(key);
+    try {
+      localStorage.setItem(SORT_PREF_KEY, key);
+    } catch {
+      // ignore
+    }
+  }
+  const [browseError, setBrowseError] = createSignal<string | null>(null);
+  const [citationError, setCitationError] = createSignal<string | null>(null);
+  const [skippedCount, setSkippedCount] = createSignal(0);
   let scrollSentinelRef: HTMLDivElement | undefined;
 
   const activeFileTab = () => {
@@ -67,28 +98,43 @@ const ReferencesPanel: Component = () => {
     () => {
       const path = activeFileTab()?.path;
       const _v = citationVersion();
+      const _source = settings.citations.source;
       return path;
     },
     async (path) => {
       if (!path) return [];
+      setCitationError(null);
       try {
         return await ipc.getFileCitations(path);
       } catch (err) {
         console.error("Failed to load file citations:", err);
-        throw err;
+        setCitationError(String(err));
+        return [];
       }
     },
   );
 
   const [allEntries] = createResource(
-    () => showAll(),
+    () => {
+      const _source = settings.citations.source;
+      const _bibPath = settings.citations.bibliography_path;
+      return showAll();
+    },
     async (all) => {
       if (!all) return [];
+      setBrowseError(null);
       try {
-        return await ipc.getBibliographyEntries();
+        const entries = await ipc.getBibliographyEntries();
+        try {
+          setSkippedCount(await ipc.getBibliographySkipCount());
+        } catch {
+          setSkippedCount(0);
+        }
+        return entries;
       } catch (err) {
         console.error("Failed to load bibliography:", err);
-        throw err;
+        setBrowseError(String(err));
+        return [];
       }
     },
   );
@@ -222,15 +268,15 @@ const ReferencesPanel: Component = () => {
           </button>
         </div>
         <Show when={showAll()}>
-          <Show when={allEntries.error}>
+          <Show when={browseError()}>
             <p class="sidebar-hint sidebar-hint--error">
-              Failed to load bibliography: {String(allEntries.error)}
+              Failed to load bibliography: {browseError()}
             </p>
           </Show>
           <Show when={allEntries.loading}>
             <p class="sidebar-hint">Loading bibliography…</p>
           </Show>
-          <Show when={!allEntries.error && !allEntries.loading}>
+          <Show when={!browseError() && !allEntries.loading}>
             <Show
               when={(allEntries() ?? []).length > 0}
               fallback={
@@ -269,12 +315,23 @@ const ReferencesPanel: Component = () => {
               <div class="references-panel__toolbar">
                 <span class="references-panel__count">
                   {totalCount()} {totalCount() === 1 ? t("references.entry") : t("references.entries")}
+                  <span class="references-panel__source-badge">
+                    {isZoteroSource() ? "Zotero" : "File"}
+                  </span>
+                  <Show when={skippedCount() > 0}>
+                    <span
+                      class="references-panel__skip-warning"
+                      title={`${skippedCount()} entries skipped because of BibTeX type errors. Check settings or the source file.`}
+                    >
+                      ({skippedCount()} skipped)
+                    </span>
+                  </Show>
                 </span>
                 <select
                   class="references-panel__sort"
                   value={sortKey()}
                   onChange={(e) => {
-                    setSortKey(e.currentTarget.value as SortKey);
+                    persistSortKey(e.currentTarget.value as SortKey);
                     setVisibleCount(PAGE_SIZE);
                   }}
                 >
@@ -349,10 +406,10 @@ const ReferencesPanel: Component = () => {
             <span class="right-panel__count"> ({citations()!.length})</span>
           </Show>
         </div>
-        <Show when={citations.error}>
-          <p class="sidebar-hint sidebar-hint--error">Failed to load citations</p>
+        <Show when={citationError()}>
+          <p class="sidebar-hint sidebar-hint--error">Failed to load citations: {citationError()}</p>
         </Show>
-        <Show when={!citations.error}>
+        <Show when={!citationError()}>
           <Show
             when={citations()?.length}
             fallback={<p class="sidebar-hint">No citations in this file</p>}

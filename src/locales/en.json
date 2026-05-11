@@ -20,5 +20,13 @@
   "references.sort.authorAZ": "Author (A–Z)",
   "references.sort.authorZA": "Author (Z–A)",
   "references.sort.yearNewest": "Year (newest)",
-  "references.sort.yearOldest": "Year (oldest)"
+  "references.sort.yearOldest": "Year (oldest)",
+
+  "refNotes.searchPlaceholder": "Search references to import a note…",
+  "refNotes.loading": "Loading bibliography…",
+  "refNotes.noMatching": "No matching entries",
+  "refNotes.noBibliography": "No bibliography configured. Check Settings › Citations.",
+  "refNotes.back": "Back to references",
+  "refNotes.loadingNotes": "Loading notes…",
+  "refNotes.noNotes": "No notes found for this reference."
 }
