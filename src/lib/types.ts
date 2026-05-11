@@ -207,6 +207,7 @@ export interface EditorSettings {
   focus_mode: "none" | "line" | "section";
   focus_dim: boolean;
   verse_font: string | null;
+  auto_expand_markup: boolean;
   apply_verse_font_to_output: boolean;
 }
 

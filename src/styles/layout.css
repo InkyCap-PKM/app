@@ -316,9 +316,6 @@
   background: var(--bg-hover);
 }
 
-.tab__icon {
-  font-size: var(--text-sm);
-}
 
 .tab__title {
   overflow: hidden;
@@ -4258,33 +4255,6 @@
 }
 
 /* Auto-expand toggle (pill system). */
-.editor-header__auto-expand-btn {
-  background: none;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  color: var(--fg-muted);
-  cursor: pointer;
-  font-size: var(--text-base);
-  padding: 4px 8px;
-  display: inline-flex;
-  align-items: center;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.editor-header__auto-expand-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-secondary);
-}
-
-.editor-header__auto-expand-btn.is-active {
-  background: var(--bg-active);
-  color: var(--fg-primary);
-}
-
-.editor-header__auto-expand-btn svg {
-  display: block;
-  flex-shrink: 0;
-}
 
 /* Segmented Source / Live toggle. */
 .editor-header__mode-toggle {

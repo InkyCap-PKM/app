@@ -858,14 +858,19 @@ function handleFuncCall(
       // whole body with a single mark (rather than addSplitMarks) so the
       // smart quotes appear once around the entire content, not per
       // segment broken up by inner function-call replace widgets.
+      // Note: "quote" is in BLOCK_FUNCS (for the block form), so the
+      // generic showPill is always false. Compute it locally for inline.
+      const inlineShowPill = onCursor && hashOffset === 1;
       const content = extractContentBracket(text, from);
-      if (content && content.from < content.to) {
-        decos.push((showPill
+      if (content) {
+        decos.push((inlineShowPill
           ? Decoration.replace({ widget: new FuncPillWidget(from, "quote") })
           : hide
         ).range(from, content.from));
         decos.push(hide.range(content.to, to));
-        pushMark(decos, quoteInlineMark, content.from, content.to);
+        if (content.from < content.to) {
+          pushMark(decos, quoteInlineMark, content.from, content.to);
+        }
       }
       return true;
     }
@@ -1284,6 +1289,8 @@ const visualField = StateField.define<DecorationSet>({
       }
     }
     if (tr.docChanged) {
+      const ep = tr.state.field(expandedFuncField, false) ?? null;
+      if (ep !== null) return buildDecorations(tr.state);
       return rebuildDocChange(decos, tr);
     }
     if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {

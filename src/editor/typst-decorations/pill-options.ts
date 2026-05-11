@@ -209,14 +209,14 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
         label: "Block",
         isActive: isBlock,
         onSelect: () => applyCallTransform(view, from, (s) =>
-          upsertNamedArg(s, "block", "true", { defaultValue: "true" })),
+          upsertNamedArg(s, "block", "true")),
       },
       {
         label: "Inline",
         isActive: !isBlock,
         title: "Attribution renders only in block mode",
         onSelect: () => applyCallTransform(view, from, (s) =>
-          upsertNamedArg(s, "block", "false")),
+          upsertNamedArg(s, "block", null)),
       },
     ],
   }, {

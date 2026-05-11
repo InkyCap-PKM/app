@@ -915,6 +915,7 @@ const RightPanel: Component = () => {
                       class="sidebar-item"
                       onClick={() => openLinkedFile(link)}
                     >
+                      <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
                       <span class="sidebar-item__label">{link.name}</span>
                     </div>
                     <Show when={link.context}>
@@ -945,9 +946,10 @@ const RightPanel: Component = () => {
                       class="sidebar-item"
                       onClick={() => link.resolved ? openLinkedFile(link) : createUnresolvedNote(link.target)}
                     >
-                      <span class="sidebar-item__icon">
-                        {link.resolved ? "\u25AB" : "\u25CB"}
-                      </span>
+                      <span class="sidebar-item__icon" innerHTML={link.resolved
+                        ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
+                        : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
+                      } />
                       <span class="sidebar-item__label">{link.name}</span>
                       <Show when={!link.resolved}>
                         <button
