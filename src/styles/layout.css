@@ -3433,6 +3433,10 @@ svg.lucide {
   overflow: hidden;
 }
 
+.cmd-palette--tall {
+  max-height: 520px;
+}
+
 .cmd-palette__input {
   background: var(--bg-primary);
   border: none;
@@ -4790,15 +4794,47 @@ svg.lucide {
 
 /* ─── Command palette: category headers for default list ─── */
 
-.cmd-palette__category-header {
-  font-size: var(--text-xs);
+.cmd-palette__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: var(--text-lg);
+  color: var(--fg-primary);
   font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--fg-muted);
-  padding: 8px 12px 4px;
-  background: var(--bg-secondary);
-  position: sticky;
-  top: 0;
+  letter-spacing: 0.3px;
+}
+
+.cmd-palette__group-header:hover,
+.cmd-palette__group-header--selected {
+  background: var(--bg-hover);
+}
+
+.cmd-palette__group-header--selected {
+  background: var(--bg-selection);
+}
+
+.cmd-palette__group-chevron {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.cmd-palette__group-name {
+  flex: 1;
+}
+
+.cmd-palette__group-count {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
+.cmd-palette__result--nested {
+  padding-left: 34px;
 }
 
 /* ─── Status bar: panel toggle buttons ─── */

@@ -1,5 +1,6 @@
 // Command palette (Ctrl+P).
 // Fuzzy searches all registered commands, shows keybinding hints.
+// Default (empty-query) view groups commands into collapsible categories.
 
 import { Component, createSignal, createMemo, For, Show } from "solid-js";
 import { searchCommands, type Command } from "../lib/command-registry";
@@ -10,61 +11,172 @@ interface CommandPaletteProps {
   onClose: () => void;
 }
 
-const MAX_RESULTS = 30;
-/** Higher cap for the empty-query default list (every command shown). */
+const MAX_RESULTS = 50;
 const DEFAULT_LIST_LIMIT = 500;
+
+/** Preferred display order for categories in the grouped view. */
+const CATEGORY_ORDER: string[] = [
+  "File",
+  "Edit",
+  "View",
+  "Navigate",
+  "Tools",
+  "References",
+  "Format",
+  "Structure",
+  "Insert",
+  "Style",
+  "InkyCap",
+  "Creation Rules",
+];
+
+function categoryRank(cat: string): number {
+  const idx = CATEGORY_ORDER.indexOf(cat);
+  return idx >= 0 ? idx : CATEGORY_ORDER.length;
+}
+
+interface CategoryGroup {
+  category: string;
+  commands: { command: Command; match: { score: number; ranges: [number, number][] } }[];
+}
 
 const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [expandedCategory, setExpandedCategory] = createSignal<string | null>(null);
 
-  const results = createMemo(() => {
-    const q = query().trim();
-    // Show every command (grouped by category in the render below)
-    // when the input is empty so users see what's available.
-    const limit = q.length === 0 ? DEFAULT_LIST_LIMIT : MAX_RESULTS;
-    const list = searchCommands(q, limit);
-    if (q.length === 0) {
-      // Stable sort by category, then by title, so the grouped headers
-      // render contiguous blocks instead of category-interleaved noise.
-      return [...list].sort((a, b) => {
-        const c = a.command.category.localeCompare(b.command.category);
-        return c !== 0 ? c : a.command.title.localeCompare(b.command.title);
-      });
-    }
-    return list;
-  });
-
-  /** True when no query is entered — render in grouped-list mode. */
+  /** True when no query is entered. */
   const isDefaultList = () => query().trim().length === 0;
 
+  // ── Flat search results (used when query is non-empty) ──
+
+  const searchResults = createMemo(() => {
+    const q = query().trim();
+    if (q.length === 0) return [];
+    return searchCommands(q, MAX_RESULTS);
+  });
+
+  // ── Grouped categories (used when query is empty) ──
+
+  const groupedCategories = createMemo((): CategoryGroup[] => {
+    if (!isDefaultList()) return [];
+    const all = searchCommands("", DEFAULT_LIST_LIMIT);
+    const map = new Map<string, CategoryGroup>();
+    for (const item of all) {
+      let group = map.get(item.command.category);
+      if (!group) {
+        group = { category: item.command.category, commands: [] };
+        map.set(item.command.category, group);
+      }
+      group.commands.push(item);
+    }
+    // Sort commands within each group by title
+    for (const group of map.values()) {
+      group.commands.sort((a, b) => a.command.title.localeCompare(b.command.title));
+    }
+    return [...map.values()].sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
+  });
+
+  /** Build a flat list of selectable rows for keyboard navigation in grouped mode.
+   *  Each entry is either a category header or a command within the expanded category. */
+  type NavRow =
+    | { type: "header"; category: string; count: number }
+    | { type: "command"; command: Command; match: { score: number; ranges: [number, number][] } };
+
+  const navRows = createMemo((): NavRow[] => {
+    if (!isDefaultList()) return [];
+    const rows: NavRow[] = [];
+    const expanded = expandedCategory();
+    for (const group of groupedCategories()) {
+      rows.push({ type: "header", category: group.category, count: group.commands.length });
+      if (group.category === expanded) {
+        for (const item of group.commands) {
+          rows.push({ type: "command", command: item.command, match: item.match });
+        }
+      }
+    }
+    return rows;
+  });
+
   function executeSelected() {
-    const list = results();
-    const idx = selectedIndex();
-    if (list[idx]) {
-      close();
-      list[idx].command.execute();
+    if (isDefaultList()) {
+      const rows = navRows();
+      const row = rows[selectedIndex()];
+      if (!row) return;
+      if (row.type === "header") {
+        toggleCategory(row.category);
+      } else {
+        close();
+        row.command.execute();
+      }
+    } else {
+      const list = searchResults();
+      const item = list[selectedIndex()];
+      if (item) {
+        close();
+        item.command.execute();
+      }
+    }
+  }
+
+  function toggleCategory(category: string) {
+    const rows = navRows();
+    if (expandedCategory() === category) {
+      // Collapse — selection stays on the header
+      setExpandedCategory(null);
+    } else {
+      // Expand — move selection to first item inside
+      setExpandedCategory(category);
+      // Find the header row index for this category, then +1 is first item
+      const headerIdx = rows.findIndex(
+        (r) => r.type === "header" && r.category === category,
+      );
+      if (headerIdx >= 0) {
+        setSelectedIndex(headerIdx + 1);
+      }
     }
   }
 
   function close() {
     setQuery("");
     setSelectedIndex(0);
+    setExpandedCategory(null);
     props.onClose();
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    const list = results();
-
     if (e.key === "Escape") {
       e.preventDefault();
+      // If a category is expanded, collapse it first
+      if (isDefaultList() && expandedCategory() !== null) {
+        const expanded = expandedCategory()!;
+        setExpandedCategory(null);
+        // Move selection to the header of the category that was expanded
+        const rows = navRows();
+        const headerIdx = rows.findIndex(
+          (r) => r.type === "header" && r.category === expanded,
+        );
+        // After collapsing, navRows will recompute — find the header again
+        // We need to recompute: after setting expandedCategory to null,
+        // navRows is all headers. Find this category's header index.
+        const groups = groupedCategories();
+        const catIdx = groups.findIndex((g) => g.category === expanded);
+        if (catIdx >= 0) setSelectedIndex(catIdx);
+        return;
+      }
       close();
       return;
     }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+      if (isDefaultList()) {
+        const rows = navRows();
+        setSelectedIndex((i) => Math.min(i + 1, rows.length - 1));
+      } else {
+        const list = searchResults();
+        setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+      }
       return;
     }
 
@@ -72,6 +184,35 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
       return;
+    }
+
+    if (e.key === "ArrowRight" && isDefaultList()) {
+      const rows = navRows();
+      const row = rows[selectedIndex()];
+      if (row?.type === "header" && expandedCategory() !== row.category) {
+        e.preventDefault();
+        toggleCategory(row.category);
+        return;
+      }
+    }
+
+    if (e.key === "ArrowLeft" && isDefaultList()) {
+      e.preventDefault();
+      const rows = navRows();
+      const row = rows[selectedIndex()];
+      if (row?.type === "command" && expandedCategory()) {
+        // Collapse and move to header
+        const expanded = expandedCategory()!;
+        setExpandedCategory(null);
+        const groups = groupedCategories();
+        const catIdx = groups.findIndex((g) => g.category === expanded);
+        if (catIdx >= 0) setSelectedIndex(catIdx);
+        return;
+      }
+      if (row?.type === "header" && expandedCategory() === row.category) {
+        setExpandedCategory(null);
+        return;
+      }
     }
 
     if (e.key === "Enter") {
@@ -115,10 +256,20 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
     );
   }
 
+  /** Scroll the selected item into view. */
+  let resultsEl: HTMLDivElement | undefined;
+  function scrollSelectedIntoView() {
+    if (!resultsEl) return;
+    const selected = resultsEl.querySelector(".cmd-palette__result--selected, .cmd-palette__group-header--selected");
+    if (selected) {
+      (selected as HTMLElement).scrollIntoView({ block: "nearest" });
+    }
+  }
+
   return (
     <Show when={props.visible}>
       <div class="cmd-palette__overlay" onClick={close}>
-        <div class="cmd-palette" onClick={(e) => e.stopPropagation()}>
+        <div class="cmd-palette cmd-palette--tall" onClick={(e) => e.stopPropagation()}>
           <input
             class="cmd-palette__input"
             type="text"
@@ -127,54 +278,95 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
             onInput={(e) => {
               setQuery(e.currentTarget.value);
               setSelectedIndex(0);
+              setExpandedCategory(null);
             }}
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
-          <div class="cmd-palette__results">
-            <For each={results()}>
-              {(item, index) => {
-                const prev = () => results()[index() - 1];
-                const showHeader = () =>
-                  isDefaultList() &&
-                  (index() === 0 ||
-                    prev()?.command.category !== item.command.category);
-                return (
-                  <>
-                    <Show when={showHeader()}>
-                      <div class="cmd-palette__category-header">
-                        {item.command.category}
+          <div class="cmd-palette__results" ref={resultsEl}>
+            {/* ── Grouped (default) view ── */}
+            <Show when={isDefaultList()}>
+              <For each={navRows()}>
+                {(row, index) => {
+                  if (row.type === "header") {
+                    const isExpanded = () => expandedCategory() === row.category;
+                    const isSelected = () => index() === selectedIndex();
+                    return (
+                      <div
+                        class={`cmd-palette__group-header ${isSelected() ? "cmd-palette__group-header--selected" : ""}`}
+                        onClick={() => {
+                          setSelectedIndex(index());
+                          toggleCategory(row.category);
+                        }}
+                        onMouseEnter={() => setSelectedIndex(index())}
+                        ref={() => queueMicrotask(scrollSelectedIntoView)}
+                      >
+                        <span class="cmd-palette__group-chevron">
+                          {isExpanded() ? "▾" : "▸"}
+                        </span>
+                        <span class="cmd-palette__group-name">{row.category}</span>
+                        <span class="cmd-palette__group-count">{row.count}</span>
                       </div>
-                    </Show>
+                    );
+                  }
+                  // Command row inside expanded group
+                  const isSelected = () => index() === selectedIndex();
+                  return (
                     <div
-                      class={`cmd-palette__result ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
+                      class={`cmd-palette__result cmd-palette__result--nested ${isSelected() ? "cmd-palette__result--selected" : ""}`}
                       onClick={() => {
                         close();
-                        item.command.execute();
+                        row.command.execute();
                       }}
                       onMouseEnter={() => setSelectedIndex(index())}
+                      ref={() => queueMicrotask(scrollSelectedIntoView)}
                     >
-                      <span class="cmd-palette__result-category">
-                        {item.command.category}
-                      </span>
                       <span class="cmd-palette__result-title">
-                        <HighlightedTitle
-                          title={item.command.title}
-                          ranges={item.match.ranges}
-                        />
+                        {row.command.title}
                       </span>
-                      <Show when={item.command.keybinding}>
+                      <Show when={row.command.keybinding}>
                         <span class="cmd-palette__keybinding">
-                          {item.command.keybinding}
+                          {row.command.keybinding}
                         </span>
                       </Show>
                     </div>
-                  </>
-                );
-              }}
-            </For>
-            <Show when={results().length === 0 && query().trim().length > 0}>
-              <div class="cmd-palette__empty">No matching commands</div>
+                  );
+                }}
+              </For>
+            </Show>
+
+            {/* ── Search results view ── */}
+            <Show when={!isDefaultList()}>
+              <For each={searchResults()}>
+                {(item, index) => (
+                  <div
+                    class={`cmd-palette__result ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
+                    onClick={() => {
+                      close();
+                      item.command.execute();
+                    }}
+                    onMouseEnter={() => setSelectedIndex(index())}
+                  >
+                    <span class="cmd-palette__result-category">
+                      {item.command.category}
+                    </span>
+                    <span class="cmd-palette__result-title">
+                      <HighlightedTitle
+                        title={item.command.title}
+                        ranges={item.match.ranges}
+                      />
+                    </span>
+                    <Show when={item.command.keybinding}>
+                      <span class="cmd-palette__keybinding">
+                        {item.command.keybinding}
+                      </span>
+                    </Show>
+                  </div>
+                )}
+              </For>
+              <Show when={searchResults().length === 0 && query().trim().length > 0}>
+                <div class="cmd-palette__empty">No matching commands</div>
+              </Show>
             </Show>
           </div>
         </div>

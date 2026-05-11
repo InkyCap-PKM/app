@@ -557,7 +557,7 @@ function EditorSettingsSection() {
       />
       <SettingToggle
         label="Slash / command shortcut"
-        description="Type / to open the command palette in visual mode"
+        description="Type / to open a quick formatting palette in visual mode"
         value={settings.editor.command_palette}
         onChange={(v) => updateSetting("editor", "command_palette", v)}
       />

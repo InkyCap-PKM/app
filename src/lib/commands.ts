@@ -313,54 +313,78 @@ function insertMarkup(template: string, cursorOffset: number) {
 }
 
 function registerMarkupCommands() {
-  const items: Array<{ id: string; title: string; insert: string; cursorOffset: number }> = [
-    { id: "bold", title: "Bold", insert: "*${sel}*", cursorOffset: 1 },
-    { id: "italic", title: "Italic", insert: "_${sel}_", cursorOffset: 1 },
-    { id: "strikethrough", title: "Strikethrough", insert: "#strike[${sel}]", cursorOffset: 8 },
-    { id: "highlight", title: "Highlight", insert: "#highlight[${sel}]", cursorOffset: 11 },
-    { id: "inline-code", title: "Inline Code", insert: "`${sel}`", cursorOffset: 1 },
-    { id: "inline-math", title: "Inline Math", insert: "$${sel}$", cursorOffset: 1 },
-    { id: "heading-1", title: "Heading 1", insert: "= ", cursorOffset: 2 },
-    { id: "heading-2", title: "Heading 2", insert: "== ", cursorOffset: 3 },
-    { id: "heading-3", title: "Heading 3", insert: "=== ", cursorOffset: 4 },
-    { id: "heading-4", title: "Heading 4", insert: "==== ", cursorOffset: 5 },
-    { id: "heading-5", title: "Heading 5", insert: "===== ", cursorOffset: 6 },
-    { id: "heading-6", title: "Heading 6", insert: "====== ", cursorOffset: 7 },
-    { id: "bullet-list", title: "Bullet List", insert: "- ", cursorOffset: 2 },
-    { id: "ordered-list", title: "Ordered List", insert: "+ ", cursorOffset: 2 },
-    { id: "blockquote", title: "Blockquote", insert: "#quote[${sel}]", cursorOffset: 7 },
-    { id: "link", title: "Link", insert: '#link("")[${sel}]', cursorOffset: 7 },
-    { id: "image", title: "Image", insert: '#image("")', cursorOffset: 8 },
-    { id: "code-block", title: "Code Block", insert: "```\n${sel}\n```", cursorOffset: 4 },
-    { id: "math-block", title: "Math Block", insert: "$ ${sel} $", cursorOffset: 2 },
-    { id: "horizontal-rule", title: "Horizontal Rule", insert: "#line(length: 100%)", cursorOffset: 19 },
-    { id: "footnote", title: "Footnote", insert: "#footnote[${sel}]", cursorOffset: 10 },
-    { id: "wikilink", title: "Wikilink", insert: '#wikilink("")', cursorOffset: 11 },
-    { id: "embed", title: "Embed", insert: '#embed("")', cursorOffset: 8 },
-    { id: "callout", title: "Callout", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
-    { id: "verse", title: "Verse", insert: '#verse("")', cursorOffset: 8 },
-    { id: "table", title: "Table", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
+  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number};
+
+  const items: MarkupItem[] = [
+    // ── Format ──
+    { id: "bold", title: "Bold", category: "Format", insert: "*${sel}*", cursorOffset: 1 },
+    { id: "italic", title: "Italic", category: "Format", insert: "_${sel}_", cursorOffset: 1 },
+    { id: "strikethrough", title: "Strikethrough", category: "Format", insert: "#strike[${sel}]", cursorOffset: 8 },
+    { id: "highlight", title: "Highlight", category: "Format", insert: "#highlight[${sel}]", cursorOffset: 11 },
+    { id: "underline", title: "Underline", category: "Format", insert: "#underline[${sel}]", cursorOffset: 11 },
+    { id: "overline", title: "Overline", category: "Format", insert: "#overline[${sel}]", cursorOffset: 10 },
+    { id: "subscript", title: "Subscript", category: "Format", insert: "#sub[${sel}]", cursorOffset: 5 },
+    { id: "superscript", title: "Superscript", category: "Format", insert: "#super[${sel}]", cursorOffset: 7 },
+    { id: "inline-code", title: "Inline Code", category: "Format", insert: "`${sel}`", cursorOffset: 1 },
+    { id: "inline-math", title: "Inline Math", category: "Format", insert: "$${sel}$", cursorOffset: 1 },
+
+    // ── Structure ──
+    { id: "heading-1", title: "Heading 1", category: "Structure", insert: "= ", cursorOffset: 2 },
+    { id: "heading-2", title: "Heading 2", category: "Structure", insert: "== ", cursorOffset: 3 },
+    { id: "heading-3", title: "Heading 3", category: "Structure", insert: "=== ", cursorOffset: 4 },
+    { id: "heading-4", title: "Heading 4", category: "Structure", insert: "==== ", cursorOffset: 5 },
+    { id: "heading-5", title: "Heading 5", category: "Structure", insert: "===== ", cursorOffset: 6 },
+    { id: "heading-6", title: "Heading 6", category: "Structure", insert: "====== ", cursorOffset: 7 },
+    { id: "bullet-list", title: "Bullet List", category: "Structure", insert: "- ", cursorOffset: 2 },
+    { id: "ordered-list", title: "Ordered List", category: "Structure", insert: "+ ", cursorOffset: 2 },
+    { id: "quote-inline", title: "Quote (inline)", category: "Structure", insert: "#quote[${sel}]", cursorOffset: 7 },
+    { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20 },
+
+    // ── Insert ──
+    { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
+    { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
+    { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4 },
+    { id: "math-block", title: "Math Block", category: "Insert", insert: "$ ${sel} $", cursorOffset: 2 },
+    { id: "horizontal-rule", title: "Horizontal Rule", category: "Insert", insert: "#line(length: 100%)", cursorOffset: 19 },
+    { id: "footnote", title: "Footnote", category: "Insert", insert: "#footnote[${sel}]", cursorOffset: 10 },
+    { id: "table", title: "Table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
+    { id: "page-break", title: "Page Break", category: "Insert", insert: "#pagebreak()", cursorOffset: 12 },
+    { id: "line-break", title: "Line Break", category: "Insert", insert: "#linebreak()", cursorOffset: 12 },
+    { id: "lorem-ipsum", title: "Lorem Ipsum", category: "Insert", insert: "#lorem(50)", cursorOffset: 7 },
+    { id: "figure", title: "Figure", category: "Insert", insert: '#figure(\n  ${sel},\n  caption: [],\n)', cursorOffset: 11 },
+    { id: "align", title: "Align", category: "Insert", insert: "#align(center)[${sel}]", cursorOffset: 15 },
+    { id: "box", title: "Box", category: "Insert", insert: "#box[${sel}]", cursorOffset: 5 },
+    { id: "rect", title: "Rect", category: "Insert", insert: "#rect[${sel}]", cursorOffset: 6 },
+    { id: "hide", title: "Hide", category: "Insert", insert: "#hide[${sel}]", cursorOffset: 6 },
+    { id: "embed", title: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
+    { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
+    { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1 },
+    { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+
+    // ── Style ──
+    { id: "page-size", title: "Page Size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
+    { id: "page-margins", title: "Page Margins", category: "Style", insert: '#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))', cursorOffset: 24 },
+    { id: "page-numbering", title: "Page Numbering", category: "Style", insert: '#set page(numbering: "1")', cursorOffset: 22 },
+    { id: "page-columns", title: "Page Columns", category: "Style", insert: "#set page(columns: 2)", cursorOffset: 20 },
+    { id: "text-font", title: "Text Font", category: "Style", insert: '#set text(font: "")', cursorOffset: 17 },
+    { id: "text-size", title: "Text Size", category: "Style", insert: "#set text(size: 12pt)", cursorOffset: 16 },
+    { id: "text-language", title: "Text Language", category: "Style", insert: '#set text(lang: "en")', cursorOffset: 17 },
+    { id: "justify", title: "Justify", category: "Style", insert: "#set par(justify: true)", cursorOffset: 22 },
+    { id: "line-spacing", title: "Line Spacing", category: "Style", insert: "#set par(leading: 0.65em)", cursorOffset: 19 },
+    { id: "paragraph-spacing", title: "Paragraph Spacing", category: "Style", insert: "#set par(spacing: 1.2em)", cursorOffset: 18 },
+    { id: "first-line-indent", title: "First Line Indent", category: "Style", insert: "#set par(first-line-indent: 1em)", cursorOffset: 27 },
+    { id: "heading-numbering", title: "Heading Numbering", category: "Style", insert: '#set heading(numbering: "1.1")', cursorOffset: 24 },
+
+    // ── InkyCap ──
+    { id: "wikilink", title: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11 },
+    { id: "verse", title: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
   ];
 
   for (const item of items) {
     registerCommand({
       id: `markup:${item.id}`,
       title: item.title,
-      category: "Markup",
-      execute: () => insertMarkup(item.insert, item.cursorOffset),
-    });
-  }
-
-  const refInserts: Array<{ id: string; title: string; insert: string; cursorOffset: number }> = [
-    { id: "citation-at", title: "Cite (@key)", insert: "@", cursorOffset: 1 },
-    { id: "bibliography", title: "Bibliography (insert)", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
-  ];
-
-  for (const item of refInserts) {
-    registerCommand({
-      id: `references:${item.id}`,
-      title: item.title,
-      category: "References",
+      category: item.category,
       execute: () => insertMarkup(item.insert, item.cursorOffset),
     });
   }
@@ -373,7 +397,7 @@ export async function registerCreationRuleCommands(): Promise<void> {
     for (const rule of rules) {
       registerCommand({
         id: `creation-rule:${rule.id}`,
-        title: `${rule.icon_emoji} ${rule.name}`,
+        title: rule.name,
         category: "Creation Rules",
         keybinding: rule.hotkey ?? undefined,
         execute: async () => {

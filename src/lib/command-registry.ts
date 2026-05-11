@@ -1,6 +1,7 @@
 // Command registry: central registry of all user-invocable commands.
 // Used by the command palette (Ctrl+P) and for keybinding display.
 
+import { createSignal } from "solid-js";
 import { fuzzyMatch, type FuzzyMatch } from "./fuzzy";
 
 export type CommandCategory =
@@ -10,7 +11,11 @@ export type CommandCategory =
   | "Navigate"
   | "Tools"
   | "References"
-  | "Markup"
+  | "Format"
+  | "Structure"
+  | "Insert"
+  | "Style"
+  | "InkyCap"
   | "Creation Rules";
 
 export interface Command {
@@ -28,15 +33,18 @@ interface ScoredCommand {
 
 // Internal store
 const commands = new Map<string, Command>();
+const [commandVersion, setCommandVersion] = createSignal(0);
 
 /** Register a command. Overwrites any existing command with the same id. */
 export function registerCommand(cmd: Command): void {
   commands.set(cmd.id, cmd);
+  setCommandVersion((v) => v + 1);
 }
 
 /** Unregister a command by id. */
 export function unregisterCommand(id: string): void {
   commands.delete(id);
+  setCommandVersion((v) => v + 1);
 }
 
 /** Get all registered commands. */
@@ -44,8 +52,10 @@ export function getAllCommands(): Command[] {
   return Array.from(commands.values());
 }
 
-/** Search commands with fuzzy matching. Returns scored results sorted by relevance. */
+/** Search commands with fuzzy matching. Returns scored results sorted by relevance.
+ *  Reads a reactive signal so Solid.js memos/effects re-run when commands change. */
 export function searchCommands(query: string, maxResults = 30): ScoredCommand[] {
+  commandVersion();
   const all = getAllCommands();
 
   if (query.trim().length === 0) {
