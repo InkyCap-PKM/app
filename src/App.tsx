@@ -43,6 +43,9 @@ async function applyStartupBehavior() {
   const { behavior, target, last_active_file } = settings.startup;
 
   switch (behavior) {
+    case "default":
+      break;
+
     case "last-file":
       if (last_active_file) {
         try {
@@ -50,7 +53,6 @@ async function applyStartupBehavior() {
           const name = last_active_file.split("/").pop() ?? last_active_file;
           openTab({ type: "file", title: name, path: last_active_file });
         } catch {
-          // File was deleted or moved since last session — start with empty state
           updateSetting("startup", "last_active_file", null);
         }
       }
@@ -79,6 +81,17 @@ async function applyStartupBehavior() {
           openTab({ type: "file", title: name, path: target });
         } catch {
           // Target no longer exists — start with empty state
+        }
+      }
+      break;
+
+    case "specific-collection":
+      if (target) {
+        try {
+          const name = target.split("/").pop()?.replace(/\.collection$/, "") ?? target;
+          openTab({ type: "collection", title: name, path: target });
+        } catch {
+          // Collection no longer exists — start with empty state
         }
       }
       break;

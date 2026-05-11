@@ -27,6 +27,8 @@ const DEFAULTS: UserSettings = {
     verse_font: null,
     apply_verse_font_to_output: false,
     auto_expand_markup: false,
+    selection_toolbar: true,
+    command_palette: true,
   },
   appearance: {
     theme: "system",

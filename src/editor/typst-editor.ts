@@ -110,6 +110,8 @@ function typstLanguage(): Extension {
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
 import { typstVisualMode, autoExpandFacet, protectedRangesField, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
+import { selectionToolbar } from "./typst-decorations/selection-toolbar";
+import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
 import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
@@ -131,6 +133,8 @@ export interface TypstEditorHandle {
   setAutoExpand(enabled: boolean): void;
   setFocusMode(mode: FocusMode, dim: boolean): void;
   setSmartIndentLists(enabled: boolean): void;
+  setSelectionToolbar(enabled: boolean): void;
+  setCommandPalette(enabled: boolean): void;
   ensureParsed(timeout?: number): void;
   /** Force the visual decoration field to rebuild from a fully-parsed tree.
    *  Call after setText() during external reloads (sidebar property edits)
@@ -151,6 +155,8 @@ export interface TypstEditorOptions {
   readOnly?: boolean;
   visualMode?: boolean;
   smartIndentLists?: boolean;
+  selectionToolbar?: boolean;
+  commandPalette?: boolean;
   lspClient?: LspClient | null;
   documentUri?: string;
   onUpdate?: (text: string) => void;
@@ -340,6 +346,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   // when loading new file content — otherwise prior edits' offsets persist
   // against a freshly-replaced doc and Ctrl-Z eventually empties the file.
   const historyCompartment = new Compartment();
+  const selectionToolbarCompartment = new Compartment();
+  const commandPaletteCompartment = new Compartment();
   const visualExts = options.visualMode ? [typstVisualMode(), wikilinkSuggest, citationSuggest] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
@@ -347,6 +355,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     : [];
 
   let isVisual = !!options.visualMode;
+  let toolbarEnabled = options.selectionToolbar !== false;
+  let paletteEnabled = options.commandPalette !== false;
 
   const stateConfig = {
     doc: options.doc ?? "",
@@ -358,6 +368,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       focusModeCompartment.of([]),
       activeLineCompartment.of(activeLineExts),
       smartIndentCompartment.of(smartIndentListsFacet.of(!!options.smartIndentLists)),
+      selectionToolbarCompartment.of(options.selectionToolbar !== false && options.visualMode ? selectionToolbar : []),
+      commandPaletteCompartment.of(options.commandPalette !== false && options.visualMode ? commandPalette : []),
       historyCompartment.of(history()),
     ],
   };
@@ -450,6 +462,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
         effects: [
           visualCompartment.reconfigure(enabled ? typstVisualMode() : []),
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
+          selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
+          commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
         ],
       });
     },
@@ -469,6 +483,18 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     setSmartIndentLists(enabled: boolean) {
       view.dispatch({
         effects: smartIndentCompartment.reconfigure(smartIndentListsFacet.of(enabled)),
+      });
+    },
+    setSelectionToolbar(enabled: boolean) {
+      toolbarEnabled = enabled;
+      view.dispatch({
+        effects: selectionToolbarCompartment.reconfigure(enabled && isVisual ? selectionToolbar : []),
+      });
+    },
+    setCommandPalette(enabled: boolean) {
+      paletteEnabled = enabled;
+      view.dispatch({
+        effects: commandPaletteCompartment.reconfigure(enabled && isVisual ? commandPalette : []),
       });
     },
     setLsp(client: LspClient | null, documentUri: string) {

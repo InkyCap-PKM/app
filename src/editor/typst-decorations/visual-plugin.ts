@@ -26,8 +26,6 @@ import {
 } from "./widgets";
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
-import { selectionToolbar } from "./selection-toolbar";
-import { commandPalette } from "./command-palette";
 import { fileList } from "../../stores/filelist";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS } from "./visual-widgets";
 import { highlight, buildHighlightMark } from "./visual-colors";
@@ -1375,6 +1373,6 @@ const tableEntryKeymap = createTableEntryKeymap(visualField);
 const clickAnchorPlugin = createClickAnchorPlugin(visualField);
 
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, commandPalette, selectionToolbar, clickAnchorPlugin];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin];
 }
 

@@ -209,6 +209,8 @@ export interface EditorSettings {
   verse_font: string | null;
   auto_expand_markup: boolean;
   apply_verse_font_to_output: boolean;
+  selection_toolbar: boolean;
+  command_palette: boolean;
 }
 
 export type AccentSource = "default" | "custom" | "os";
@@ -257,7 +259,7 @@ export interface CitationSettings {
 }
 
 export interface StartupSettings {
-  behavior: "last-file" | "creation-rule" | "specific-page";
+  behavior: "default" | "last-file" | "creation-rule" | "specific-page" | "specific-collection";
   target: string;
   last_active_file: string | null;
 }
