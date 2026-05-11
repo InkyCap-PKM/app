@@ -48,6 +48,9 @@ const DEFAULTS: UserSettings = {
     scaffold_folder: ".inkycap/scaffolds",
     typst_templates_folder: ".inkycap/templates",
     confirm_before_delete: true,
+    zettelkasten_enabled: true,
+    zid_pattern: "YYYYMMDDHHmmss",
+    auto_title_as_zid: false,
   },
   startup: {
     behavior: "last-file",

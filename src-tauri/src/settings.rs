@@ -150,6 +150,15 @@ pub struct FileSettings {
     pub typst_templates_folder: String,
     /// Show a confirmation dialog before deleting files.
     pub confirm_before_delete: bool,
+    /// Enable Zettelkasten IDs (zid). When enabled, new notes automatically
+    /// receive a `zid` property generated from `zid_pattern`.
+    pub zettelkasten_enabled: bool,
+    /// Moment-style format pattern for generating Zettelkasten IDs.
+    /// E.g. "YYYYMMDDHHmmss" produces "20260511143025".
+    pub zid_pattern: String,
+    /// When true, new notes are automatically titled with the generated ZID
+    /// instead of prompting the user for a title.
+    pub auto_title_as_zid: bool,
 }
 
 fn default_typst_templates_folder() -> String {
@@ -167,6 +176,9 @@ impl Default for FileSettings {
             scaffold_folder: ".inkycap/scaffolds".to_string(),
             typst_templates_folder: ".inkycap/templates".to_string(),
             confirm_before_delete: true,
+            zettelkasten_enabled: true,
+            zid_pattern: "YYYYMMDDHHmmss".to_string(),
+            auto_title_as_zid: false,
         }
     }
 }

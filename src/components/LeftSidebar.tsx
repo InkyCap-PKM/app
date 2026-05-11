@@ -27,6 +27,7 @@ import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
+import { settings } from "../stores/settings";
 import { vaultInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/vault";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
@@ -455,14 +456,23 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function createNewFile(parentFolder: string) {
     setFileContextMenu(null);
-    const name = prompt("New note name:");
-    if (!name?.trim()) return;
+    let name: string | null;
+    if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
+      try {
+        name = await ipc.generateZid();
+      } catch (e) {
+        toastError("Failed to generate Zettelkasten ID", e);
+        return;
+      }
+    } else {
+      name = prompt("New note name:");
+      if (!name?.trim()) return;
+      name = name.trim();
+    }
     try {
-      const newPath = await ipc.createFile(name.trim(), parentFolder);
+      const newPath = await ipc.createFile(name, parentFolder);
       refresh();
-      // Derive the title from the canonical path the backend returns; the
-      // user-typed `name` may not include the extension the backend appends.
-      const title = newPath.split(/[/\\]/).pop() ?? name.trim();
+      const title = newPath.split(/[/\\]/).pop() ?? name;
       openTab(
         {
           type: "file",

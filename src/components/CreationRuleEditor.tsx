@@ -250,7 +250,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">Filename pattern</label>
                 <span class="settings__description">
                   Variables: {"{{title}}"}, {"{{slug}}"}, {"{{date}}"},
-                  {"{{date:FORMAT}}"}, {"{{time}}"}
+                  {"{{date:FORMAT}}"}, {"{{time}}"}, {"{{zid}}"}
                 </span>
               </div>
               <input
@@ -269,7 +269,8 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Target folder</label>
                 <span class="settings__description">
-                  Relative to vault root. Empty = root.
+                  Relative to vault root. Empty = root. Supports{" "}
+                  {"{{date:FORMAT}}"}, {"{{title}}"}, {"{{slug}}"} variables.
                 </span>
               </div>
               <div style={{ position: "relative", flex: "1" }}>
@@ -289,7 +290,7 @@ const CreationRuleEditor: Component = () => {
                   onBlur={() => {
                     setTimeout(() => setFolderDropdownOpen(false), 150);
                   }}
-                  placeholder=""
+                  placeholder="e.g. Daily/{{date:YYYY}}"
                 />
                 <Show when={folderDropdownOpen() && filteredFolders().length > 0}>
                   <div class="creation-rules__folder-dropdown">
@@ -316,7 +317,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">Scaffold file</label>
                 <span class="settings__description">
                   Starting content for new notes. Supports {"{{title}}"},{" "}
-                  {"{{slug}}"}, {"{{date}}"}, {"{{cursor}}"} placeholders.
+                  {"{{slug}}"}, {"{{date}}"}, {"{{cursor}}"}, {"{{zid}}"} placeholders.
                 </span>
               </div>
               <select

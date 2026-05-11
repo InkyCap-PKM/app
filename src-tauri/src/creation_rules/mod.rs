@@ -125,14 +125,16 @@ pub fn execute_rule(
     rule: &CreationRule,
     vault_root: &std::path::Path,
     _title_override: Option<&str>,
+    zid_pattern: &str,
 ) -> (PathBuf, String, Option<usize>) {
-    let expanded = scaffolds::expand_variables(&rule.filename_pattern, "");
+    let expanded = scaffolds::expand_variables_with_zid(&rule.filename_pattern, "", zid_pattern);
     let expanded_name = expanded.content;
 
     let target_dir = if rule.target_folder.is_empty() {
         vault_root.to_path_buf()
     } else {
-        vault_root.join(&rule.target_folder)
+        let expanded_folder = scaffolds::expand_variables(&rule.target_folder, "");
+        vault_root.join(&expanded_folder.content)
     };
     let filename = format!("{}.typ", expanded_name);
     let file_path = target_dir.join(&filename);
@@ -162,7 +164,7 @@ mod tests {
     #[test]
     fn test_execute_new_note_rule() {
         let rules = default_rules();
-        let (path, content, cursor) = execute_rule(&rules[0], Path::new("/vault"), None);
+        let (path, content, cursor) = execute_rule(&rules[0], Path::new("/vault"), None, "YYYYMMDDHHmmss");
         let filename = path.file_name().unwrap().to_string_lossy();
         assert!(filename.ends_with(".typ"));
         let stem = filename.trim_end_matches(".typ");
@@ -175,7 +177,7 @@ mod tests {
     #[test]
     fn test_execute_daily_note_rule() {
         let rules = default_rules();
-        let (path, content, _cursor) = execute_rule(&rules[1], Path::new("/vault"), None);
+        let (path, content, _cursor) = execute_rule(&rules[1], Path::new("/vault"), None, "YYYYMMDDHHmmss");
         assert!(path.to_string_lossy().contains("daily"));
         let filename = path.file_name().unwrap().to_string_lossy();
         assert_eq!(filename.len(), 14); // YYYY-MM-DD.typ
@@ -189,6 +191,21 @@ mod tests {
         assert!(rules.len() >= 2);
         assert!(rules.iter().any(|r| r.id == "new-note"));
         assert!(rules.iter().any(|r| r.id == "daily-note"));
+    }
+
+    #[test]
+    fn test_target_folder_variable_expansion() {
+        let mut rule = default_rules()[0].clone();
+        rule.target_folder = "Daily/{{date:YYYY}}".to_string();
+        let (path, _, _) = execute_rule(&rule, Path::new("/vault"), None, "YYYYMMDDHHmmss");
+        let year = chrono::Local::now().format("%Y").to_string();
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains(&format!("Daily/{}", year)),
+            "Expected path to contain 'Daily/{}', got: {}",
+            year,
+            path_str
+        );
     }
 
 }

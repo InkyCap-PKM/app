@@ -273,6 +273,27 @@ export function registerBuiltinCommands(callbacks: {
     },
   });
 
+  // ── Zettelkasten commands ──
+
+  registerCommand({
+    id: "edit:insert-zid",
+    title: "Insert Zettelkasten ID",
+    category: "Edit",
+    execute: async () => {
+      const handle = activeEditorView();
+      if (!handle) return;
+      if (!settings.files.zettelkasten_enabled) return;
+      try {
+        const zid = await ipc.generateZid();
+        const { from, to } = handle.view.state.selection.main;
+        handle.view.dispatch({ changes: { from, to, insert: zid } });
+        handle.view.focus();
+      } catch (e) {
+        console.error("Failed to insert Zettelkasten ID:", e);
+      }
+    },
+  });
+
   // ── Markup insertion commands ──
   registerMarkupCommands();
 }

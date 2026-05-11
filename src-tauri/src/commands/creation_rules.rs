@@ -5,9 +5,11 @@ use tauri::State;
 
 use crate::creation_rules::{self, CreationRule};
 use crate::errors::InkyCapError;
+use crate::models::note::PropertyValue;
 use crate::scaffolds;
 use crate::state::AppState;
 use crate::storage::traits::VaultStorage;
+use crate::typst_pipeline::note_rewriter;
 
 /// Result of executing a creation rule, including optional cursor offset.
 #[derive(Debug, Serialize)]
@@ -76,8 +78,17 @@ pub async fn execute_creation_rule(
         .find(|r| r.id == rule_id)
         .ok_or_else(|| InkyCapError::InvalidPath(format!("Rule not found: {}", rule_id)))?;
 
+    // Read ZID settings for {{zid}} expansion and auto-property
+    let (zid_enabled, zid_pattern) = {
+        let settings = state.settings.read().await;
+        (
+            settings.files.zettelkasten_enabled,
+            settings.files.zid_pattern.clone(),
+        )
+    };
+
     let (file_path, mut content, mut cursor_offset) =
-        creation_rules::execute_rule(rule, root, None);
+        creation_rules::execute_rule(rule, root, None, &zid_pattern);
 
     // If the rule has a scaffold, read and expand it
     if !rule.scaffold_path.is_empty() {
@@ -92,7 +103,7 @@ pub async fn execute_creation_rule(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
             let expanded =
-                scaffolds::expand_scaffold(storage.as_ref(), &scaffold_file_path, &title).await?;
+                scaffolds::expand_scaffold_with_zid(storage.as_ref(), &scaffold_file_path, &title, &zid_pattern).await?;
             content = expanded.content;
             cursor_offset = expanded.cursor_offset;
         }
@@ -147,6 +158,28 @@ pub async fn execute_creation_rule(
     // Ensure target directory exists
     if let Some(parent) = file_path.parent() {
         storage.create_dir(parent).await?;
+    }
+
+    // Auto-set the zid property when zettelkasten is enabled
+    if zid_enabled && !zid_pattern.is_empty() {
+        let zid_value = scaffolds::generate_zid(&zid_pattern);
+        if let Ok(num) = zid_value.parse::<f64>() {
+            content = note_rewriter::update_note_property(
+                &content,
+                "zid",
+                &PropertyValue::Number(num),
+            );
+        } else {
+            content = note_rewriter::update_note_property(
+                &content,
+                "zid",
+                &PropertyValue::String(zid_value),
+            );
+        }
+        if let Some(ref mut offset) = cursor_offset {
+            // Recalculate — the property insertion shifted content
+            *offset = content.len().min(*offset);
+        }
     }
 
     storage.write_file(&file_path, &content).await?;
