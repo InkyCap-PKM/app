@@ -3,5 +3,22 @@
   "settings.appearance.theme.description": "Light, dark, or follow your operating system automatically.",
   "settings.appearance.theme.option.light": "Light",
   "settings.appearance.theme.option.dark": "Dark",
-  "settings.appearance.theme.option.system": "Follow system"
+  "settings.appearance.theme.option.system": "Follow system",
+
+  "references.filterPlaceholder": "Filter entries…",
+  "references.clearFilter": "Clear filter",
+  "references.entry": "entry",
+  "references.entries": "entries",
+  "references.showMore": "Show more",
+  "references.remaining": "remaining",
+  "references.noMatching": "No matching entries",
+  "references.openInZotero": "Open in Zotero",
+  "references.sort.addedNewest": "Date added (newest)",
+  "references.sort.addedOldest": "Date added (oldest)",
+  "references.sort.titleAZ": "Title (A–Z)",
+  "references.sort.titleZA": "Title (Z–A)",
+  "references.sort.authorAZ": "Author (A–Z)",
+  "references.sort.authorZA": "Author (Z–A)",
+  "references.sort.yearNewest": "Year (newest)",
+  "references.sort.yearOldest": "Year (oldest)"
 }
