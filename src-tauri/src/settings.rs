@@ -58,6 +58,10 @@ pub struct EditorSettings {
     pub apply_verse_font_to_output: bool,
     /// Auto-expand function markup on cursor in visual mode.
     pub auto_expand_markup: bool,
+    /// Show popup toolbar when text is selected in visual mode.
+    pub selection_toolbar: bool,
+    /// Enable slash (/) command shortcut in visual mode.
+    pub command_palette: bool,
 }
 
 impl Default for EditorSettings {
@@ -82,6 +86,8 @@ impl Default for EditorSettings {
             verse_font: None,
             apply_verse_font_to_output: false,
             auto_expand_markup: false,
+            selection_toolbar: true,
+            command_palette: true,
         }
     }
 }
@@ -169,7 +175,7 @@ impl Default for FileSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StartupSettings {
-    /// What to open on launch: "last-file", "creation-rule", or "specific-page".
+    /// What to open on launch: "default", "last-file", "creation-rule", "specific-page", or "specific-collection".
     pub behavior: String,
     /// Target: creation rule ID or file/base path (depends on behavior).
     pub target: String,

@@ -5,7 +5,7 @@ import { Component, Show, createSignal, createEffect, createResource, For, onMou
 import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPalette } from "../stores/theme";
 import { vaultInfo, vaultRegistry, loadVaultRegistry, openVault } from "../stores/vault";
-import type { UserSettings, AccentSource, BgPalette, VaultRegistryEntry } from "../lib/types";
+import type { UserSettings, AccentSource, BgPalette, VaultRegistryEntry, FileTreeNode } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Pencil, Check, X } from "lucide-solid";
@@ -15,6 +15,20 @@ import { FontPicker } from "./FontPicker";
 import { SettingCombobox } from "./SettingCombobox";
 import { showToast } from "../stores/toasts";
 import inkycapLogo from "../assets/inkycap-logo.svg";
+
+function collectPaths(nodes: FileTreeNode[], dirsOnly: boolean, prefix = ""): string[] {
+  const result: string[] = [];
+  for (const node of nodes) {
+    const p = prefix ? `${prefix}/${node.name}` : node.name;
+    if (node.is_dir) {
+      result.push(p);
+      if (node.children) result.push(...collectPaths(node.children, dirsOnly, p));
+    } else if (!dirsOnly) {
+      result.push(p);
+    }
+  }
+  return result;
+}
 
 interface SettingsPanelProps {
   visible: boolean;
@@ -446,15 +460,15 @@ function EditorSettingsSection() {
   return (
     <div class="settings__section">
       <SettingToggle
-        label="Readable line length"
-        description="Limit line width for comfortable reading"
+        label="Comfortable line length"
+        description="Limit line width for a more readable display"
         value={settings.editor.readable_line_length}
         onChange={(v) => updateSetting("editor", "readable_line_length", v)}
       />
       <Show when={settings.editor.readable_line_length}>
         <SettingNumber
-          label="Max line width"
-          description="Maximum characters per line"
+          label="Max line length"
+          description="Maximum characters allowed per line"
           value={settings.editor.max_line_width}
           min={40}
           max={200}
@@ -531,9 +545,31 @@ function EditorSettingsSection() {
         onChange={(v) => updateSetting("editor", "focus_dim", v)}
       />
 
+      {/* Visual editor convenience */}
+      <div class="settings__section-header">
+        <span class="settings__label">Visual editor convenience</span>
+      </div>
+      <SettingToggle
+        label="Popup toolbar on selected text"
+        description="Show a formatting toolbar when text is selected in visual mode"
+        value={settings.editor.selection_toolbar}
+        onChange={(v) => updateSetting("editor", "selection_toolbar", v)}
+      />
+      <SettingToggle
+        label="Slash / command shortcut"
+        description="Type / to open the command palette in visual mode"
+        value={settings.editor.command_palette}
+        onChange={(v) => updateSetting("editor", "command_palette", v)}
+      />
+      <Show when={!settings.editor.selection_toolbar && !settings.editor.command_palette}>
+        <p class="settings__section-note settings__section-note--warn">
+          Some visual editor conveniences are only accessible through these tools.
+        </p>
+      </Show>
+
       {/* Journal Scroll settings */}
       <div class="settings__section-header">
-        <span class="settings__label" >Journal Scroll</span>
+        <span class="settings__label">Journal Scroll</span>
       </div>
       <SettingSelect
         label="Date sort"
@@ -704,7 +740,7 @@ function AppearanceSettingsSection() {
 
       <SettingSelect
         label="Default reading format"
-        description="SVG shows paginated output; HTML shows flowing, copyable text"
+        description="SVG shows paginated output; HTML shows scrolling, copyable text"
         value={settings.editor.default_reading_format}
         options={[
           { value: "svg", label: "SVG (paginated)" },
@@ -765,6 +801,9 @@ function AppearanceSettingsSection() {
 }
 
 function FileSettingsSection() {
+  const [tree] = createResource(() => ipc.getFileTree());
+  const folderSuggestions = () => tree() ? collectPaths(tree()!, true) : [];
+
   return (
     <div class="settings__section">
       <SettingSelect
@@ -785,30 +824,34 @@ function FileSettingsSection() {
         }
       />
       <Show when={settings.files.new_note_location === "specified"}>
-        <SettingText
+        <SettingPathText
           label="New note folder"
           description="Folder path relative to vault root"
           value={settings.files.new_note_folder}
           onChange={(v) => updateSetting("files", "new_note_folder", v)}
+          suggestions={folderSuggestions}
         />
       </Show>
-      <SettingText
+      <SettingPathText
         label="Attachment folder"
         description="Where images and files are stored (relative to vault root)"
         value={settings.files.attachment_folder}
         onChange={(v) => updateSetting("files", "attachment_folder", v)}
+        suggestions={folderSuggestions}
       />
-      <SettingText
+      <SettingPathText
         label="Scaffold folder"
         description="Folder containing scaffold files for new note creation (relative to vault root)"
         value={settings.files.scaffold_folder}
         onChange={(v) => updateSetting("files", "scaffold_folder", v)}
+        suggestions={folderSuggestions}
       />
-      <SettingText
+      <SettingPathText
         label="Typst templates folder"
         description="Folder containing Typst template files (relative to vault root). Used when a collection specifies a template name."
         value={settings.files.typst_templates_folder}
         onChange={(v) => updateSetting("files", "typst_templates_folder", v)}
+        suggestions={folderSuggestions}
       />
       <SettingToggle
         label="Auto-update links on rename"
@@ -1054,7 +1097,7 @@ function ExportSettingsSection() {
     <div class="settings__section">
       <div class="settings__label">Import markdown files</div>
       <span class="settings__description">
-        Create a zip archive of the directory of markdown files that you would like to import then click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
+        Create a zip archive of the directory of markdown files that you would like to import. Click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
       </span>
       <div style={{ "margin-top": "8px" }}>
         <button
@@ -1087,6 +1130,31 @@ function ExportSettingsSection() {
 }
 
 function BehaviourSettingsSection() {
+  const [tree] = createResource(() => ipc.getFileTree());
+  const allFiles = () => tree() ? collectPaths(tree()!, false) : [];
+  const fileSuggestions = () => allFiles().filter((p) => p.endsWith(".typ"));
+  const collectionSuggestions = () => allFiles().filter((p) => p.endsWith(".collection"));
+
+  const targetDescription = () => {
+    switch (settings.startup.behavior) {
+      case "creation-rule": return "Creation Rule ID to execute on startup";
+      case "specific-page": return "File path to open on startup";
+      case "specific-collection": return "Collection to open on startup";
+      default: return "";
+    }
+  };
+
+  const showTarget = () =>
+    settings.startup.behavior === "creation-rule" ||
+    settings.startup.behavior === "specific-page" ||
+    settings.startup.behavior === "specific-collection";
+
+  const targetSuggestions = () => {
+    if (settings.startup.behavior === "specific-page") return fileSuggestions();
+    if (settings.startup.behavior === "specific-collection") return collectionSuggestions();
+    return [];
+  };
+
   return (
     <div class="settings__section">
       <SettingSelect
@@ -1094,33 +1162,27 @@ function BehaviourSettingsSection() {
         description="What to open when InkyCap launches"
         value={settings.startup.behavior}
         options={[
+          { value: "default", label: "Default" },
           { value: "last-file", label: "Last opened file" },
           { value: "creation-rule", label: "Run a Creation Rule" },
           { value: "specific-page", label: "Open a specific page" },
+          { value: "specific-collection", label: "Open a specific collection" },
         ]}
         onChange={(v) =>
           updateSetting(
             "startup",
             "behavior",
-            v as "last-file" | "creation-rule" | "specific-page",
+            v as "default" | "last-file" | "creation-rule" | "specific-page" | "specific-collection",
           )
         }
       />
-      <Show
-        when={
-          settings.startup.behavior === "creation-rule" ||
-          settings.startup.behavior === "specific-page"
-        }
-      >
-        <SettingText
+      <Show when={showTarget()}>
+        <SettingPathText
           label="Target"
-          description={
-            settings.startup.behavior === "creation-rule"
-              ? "Creation Rule ID to execute on startup"
-              : "File or base path to open on startup"
-          }
+          description={targetDescription()}
           value={settings.startup.target}
           onChange={(v) => updateSetting("startup", "target", v)}
+          suggestions={targetSuggestions}
         />
       </Show>
     </div>
@@ -1202,6 +1264,106 @@ function SettingText(props: {
         onInput={(e) => props.onChange(e.currentTarget.value)}
         placeholder={props.placeholder}
       />
+    </div>
+  );
+}
+
+function SettingPathText(props: {
+  label: string;
+  description: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  suggestions: () => string[];
+}) {
+  const [open, setOpen] = createSignal(false);
+  const [flipUp, setFlipUp] = createSignal(false);
+  const [selected, setSelected] = createSignal(-1);
+  let wrapRef: HTMLDivElement | undefined;
+
+  const filtered = () => {
+    const q = props.value.toLowerCase();
+    return props.suggestions().filter((s) => s.toLowerCase().includes(q));
+  };
+
+  function pickItem(item: string) {
+    props.onChange(item);
+    setOpen(false);
+    setSelected(-1);
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    const items = filtered();
+    if (!open() || items.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelected((s) => Math.min(s + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelected((s) => Math.max(s - 1, 0));
+    } else if (e.key === "Enter" && selected() >= 0) {
+      e.preventDefault();
+      pickItem(items[selected()]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div class="settings__row">
+      <div class="settings__row-info">
+        <label class="settings__label">{props.label}</label>
+        <span class="settings__description">{props.description}</span>
+      </div>
+      <div
+        class="settings__path-input"
+        ref={wrapRef}
+        onFocusOut={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setOpen(false);
+            setSelected(-1);
+          }
+        }}
+      >
+        <input
+          type="text"
+          class="settings__text-input"
+          value={props.value}
+          placeholder={props.placeholder}
+          onInput={(e) => {
+            props.onChange(e.currentTarget.value);
+            setSelected(-1);
+            if (!open()) setOpen(true);
+          }}
+          onFocus={() => {
+            if (wrapRef) {
+              const rect = wrapRef.getBoundingClientRect();
+              setFlipUp(window.innerHeight - rect.bottom < 200);
+            }
+            setOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+        />
+        <Show when={open() && filtered().length > 0}>
+          <div class="settings__path-dropdown" classList={{ "is-flipped": flipUp() }}>
+            <For each={filtered()}>
+              {(item, i) => (
+                <button
+                  type="button"
+                  class="settings__path-option"
+                  classList={{ "is-selected": i() === selected() }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pickItem(item);
+                  }}
+                >
+                  {item}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
     </div>
   );
 }

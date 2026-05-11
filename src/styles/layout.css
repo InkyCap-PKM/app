@@ -1908,6 +1908,56 @@ svg.lucide {
   border-color: var(--accent);
 }
 
+.settings__path-input {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.settings__path-input .settings__text-input {
+  width: 200px;
+}
+
+.settings__path-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  min-width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.settings__path-dropdown.is-flipped {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 2px;
+}
+
+.settings__path-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 4px 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings__path-option:hover,
+.settings__path-option.is-selected {
+  background: var(--bg-secondary);
+}
+
 /* Select dropdown */
 .settings__select {
   background: var(--bg-primary);
@@ -2157,6 +2207,7 @@ svg.lucide {
 .color-picker {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
 
@@ -2242,6 +2293,11 @@ svg.lucide {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: 4px;
   line-height: 1.4;
+}
+
+.settings__section-note--warn {
+  background: color-mix(in srgb, #e6a700 12%, transparent);
+  color: var(--fg-secondary);
 }
 
 .settings__detect-btn {
@@ -3924,7 +3980,12 @@ svg.lucide {
 
 .bookmark-item__icon {
   flex-shrink: 0;
-  font-size: var(--text-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--fg-muted);
 }
 
 .bookmark-item__label {

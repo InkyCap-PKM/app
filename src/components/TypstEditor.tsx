@@ -217,6 +217,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       doc: docText(),
       visualMode: currentMode() === "live",
       smartIndentLists: settings.editor.smart_indent_lists,
+      selectionToolbar: settings.editor.selection_toolbar,
+      commandPalette: settings.editor.command_palette,
       lspClient: client,
       documentUri: uri,
       onUpdate: onDocUpdate,
@@ -316,6 +318,18 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   createEffect(
     on(() => settings.editor.smart_indent_lists, (enabled) => {
       editorHandle?.setSmartIndentLists(enabled);
+    }),
+  );
+
+  createEffect(
+    on(() => settings.editor.selection_toolbar, (enabled) => {
+      editorHandle?.setSelectionToolbar(enabled);
+    }),
+  );
+
+  createEffect(
+    on(() => settings.editor.command_palette, (enabled) => {
+      editorHandle?.setCommandPalette(enabled);
     }),
   );
 

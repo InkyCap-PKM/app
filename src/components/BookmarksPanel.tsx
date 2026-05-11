@@ -1,10 +1,12 @@
 // Bookmarks panel: left sidebar mode for quick-access items.
 // Supports Note, Search, Heading, and Collection bookmark types.
 
-import { Component, createResource, For, Show } from "solid-js";
+import { Component, createResource, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import type { Bookmark } from "../lib/types";
+import { FileText, Search } from "lucide-solid";
+import RuleIcon from "./RuleIcon";
 
 interface BookmarksPanelProps {
   /** Trigger a refresh from the parent (e.g. after adding a bookmark). */
@@ -17,18 +19,24 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     async () => ipc.listBookmarks(),
   );
 
-  function getIcon(bm: Bookmark): string {
+  const [collections] = createResource(() => ipc.listCollections());
+
+  function collectionIcon(path: string): string {
+    const col = collections()?.find((c) => c.path === path || c.name === path);
+    return col?.icon ?? "lucide:folder-pen";
+  }
+
+  function renderIcon(bm: Bookmark): JSX.Element {
     switch (bm.type) {
       case "Note":
-        return "\u25AB"; // small square
-      case "Search":
-        return "\u26B2"; // magnifying glass alternative
       case "Heading":
-        return "\u00A7"; // section sign
+        return <FileText size={14} />;
+      case "Search":
+        return <Search size={14} />;
       case "Collection":
-        return "\u25A6"; // collection icon
+        return <RuleIcon iconEmoji={collectionIcon(bm.data.path ?? bm.data.name)} name={bm.data.name ?? "Collection"} size={14} />;
       default:
-        return "\u2605"; // star
+        return <FileText size={14} />;
     }
   }
 
@@ -104,7 +112,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         <For each={bookmarks()}>
           {(bm) => (
             <div class="bookmark-item" onClick={() => handleClick(bm)}>
-              <span class="bookmark-item__icon">{getIcon(bm)}</span>
+              <span class="bookmark-item__icon">{renderIcon(bm)}</span>
               <span class="bookmark-item__label">{getLabel(bm)}</span>
               <button
                 class="bookmark-item__remove"
