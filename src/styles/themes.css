@@ -34,6 +34,9 @@
   --icon-sm: 18px;
   --icon-md: 20px;
   --icon-lg: 24px;
+
+  /* UI scale factor — updated by applyUiScale() */
+  --ui-scale: 1;
 }
 
 :root,

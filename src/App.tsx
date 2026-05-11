@@ -152,18 +152,33 @@ const App: Component = () => {
     onShortcut("command-palette", toggleCommandPalette);
     onShortcut("new-note", newNote);
     onShortcut("citation-picker", () => setCitationPickerVisible(true));
-    // Ctrl +/-/0 adjusts the editor content size (the note text), not the
-    // overall UI scale — the UI scale is configurable in settings but isn't
-    // what users typically want to nudge with zoom shortcuts.
     onShortcut("zoom-in", () => {
-      const newSize = Math.min(32, settings.editor.body_font_size + 1);
-      updateSetting("editor", "body_font_size", newSize);
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting("editor", "body_font_size", Math.min(32, settings.editor.body_font_size + 1));
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", Math.min(24, settings.editor.font_size + 1));
+      }
     });
     onShortcut("zoom-out", () => {
-      const newSize = Math.max(8, settings.editor.body_font_size - 1);
-      updateSetting("editor", "body_font_size", newSize);
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting("editor", "body_font_size", Math.max(8, settings.editor.body_font_size - 1));
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", Math.max(10, settings.editor.font_size - 1));
+      }
     });
-    onShortcut("zoom-reset", () => updateSetting("editor", "body_font_size", 17));
+    onShortcut("zoom-reset", () => {
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting("editor", "body_font_size", 17);
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", 15);
+      }
+    });
 
     // Register all built-in commands with the command palette
     registerBuiltinCommands({

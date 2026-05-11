@@ -675,12 +675,23 @@ function AppearanceSettingsSection() {
       />
       <SettingCombobox
         label="UI scale"
-        description="Scale the entire interface (Ctrl+/Ctrl- to adjust)"
+        description="Scale the entire interface"
         value={settings.editor.font_size}
         presets={[10, 11, 12, 13, 14, 15, 16, 18, 20]}
         min={10}
         max={24}
         onChange={(v) => updateSetting("editor", "font_size", v)}
+      />
+      <SettingSelect
+        label="Zoom shortcut target"
+        description="What Ctrl+/Ctrl- adjusts"
+        value={settings.appearance.zoom_target}
+        options={[
+          { value: "content", label: "Content only" },
+          { value: "interface", label: "Interface only" },
+          { value: "both", label: "Both" },
+        ]}
+        onChange={(v) => updateSetting("appearance", "zoom_target", v as "content" | "interface" | "both")}
       />
 
       {/* Rendering Defaults */}
