@@ -477,7 +477,21 @@ pub async fn create_file(
         )));
     }
 
-    let content = format!("{}\n#note()\n\n", crate::vault_package::import_line());
+    let mut content = format!("{}\n#note()\n\n", crate::vault_package::import_line());
+
+    // Auto-set zid property when zettelkasten is enabled
+    let settings = state.settings.read().await;
+    if settings.files.zettelkasten_enabled && !settings.files.zid_pattern.is_empty() {
+        let zid_value = crate::scaffolds::generate_zid(&settings.files.zid_pattern);
+        let pv = if let Ok(num) = zid_value.parse::<f64>() {
+            crate::models::note::PropertyValue::Number(num)
+        } else {
+            crate::models::note::PropertyValue::String(zid_value)
+        };
+        content = crate::typst_pipeline::note_rewriter::update_note_property(&content, "zid", &pv);
+    }
+    drop(settings);
+
     storage.write_file(&file_path, &content).await?;
 
     // Index the new note

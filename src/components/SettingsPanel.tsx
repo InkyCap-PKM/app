@@ -867,6 +867,40 @@ function FileSettingsSection() {
         value={settings.files.confirm_before_delete}
         onChange={(v) => updateSetting("files", "confirm_before_delete", v)}
       />
+
+      {/* Zettelkasten IDs */}
+      <div class="settings__section-header">
+        <span class="settings__label">Zettelkasten IDs</span>
+      </div>
+      <SettingToggle
+        label="Enable Zettelkasten IDs (zid)"
+        description="Automatically assign a unique ID to new notes based on the pattern below"
+        value={settings.files.zettelkasten_enabled}
+        onChange={(v) => updateSetting("files", "zettelkasten_enabled", v)}
+      />
+      <Show when={settings.files.zettelkasten_enabled}>
+        <div class="settings__row">
+          <div class="settings__row-info">
+            <label class="settings__label">Zettelkasten ID pattern</label>
+            <span class="settings__description">
+              Format for auto-generated IDs. Available tokens: YYYY (4-digit year), YY (2-digit year), MMMM (full month name), MMM (short month name), MM (2-digit month), DD (2-digit day), HH (24-hour), mm (minute), ss (second), dddd (full weekday), ddd (short weekday). Any other characters are kept as-is.
+            </span>
+          </div>
+          <input
+            type="text"
+            class="settings__text-input"
+            value={settings.files.zid_pattern}
+            onInput={(e) => updateSetting("files", "zid_pattern", e.currentTarget.value)}
+            placeholder="YYYYMMDDHHmmss"
+          />
+        </div>
+        <SettingToggle
+          label="Auto-title new notes as ZID"
+          description="Use the generated ZID as the filename for new notes, skipping the title prompt"
+          value={settings.files.auto_title_as_zid}
+          onChange={(v) => updateSetting("files", "auto_title_as_zid", v)}
+        />
+      </Show>
     </div>
   );
 }

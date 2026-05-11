@@ -66,19 +66,19 @@ type FilterHint = {
 };
 
 const FILTER_HINTS: FilterHint[] = [
-  { prefix: "tag:", insert: "tag:", description: "search for tags" },
+  { prefix: "tag:", insert: "tag:", description: "search by tag" },
   {
     prefix: "property:",
     insert: "property:",
-    description: "match a note property — use property:key=value",
+    description: "match a note property. Use property:key=value",
   },
   {
     prefix: "section:",
     insert: "section:",
-    description: "match files with a heading containing the value",
+    description: "match files with a heading based on its <value>",
   },
-  { prefix: "file:", insert: "file:", description: "match file name" },
-  { prefix: "path:", insert: "path:", description: "match path of the file" },
+  { prefix: "file:", insert: "file:", description: "match by file name" },
+  { prefix: "path:", insert: "path:", description: "match by the file path" },
 ];
 
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [

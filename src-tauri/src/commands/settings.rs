@@ -3,6 +3,7 @@
 use tauri::State;
 
 use crate::errors::Result;
+use crate::scaffolds;
 use crate::settings::UserSettings;
 use crate::state::AppState;
 
@@ -42,4 +43,12 @@ pub async fn update_settings(
 
     *state.settings.write().await = settings;
     Ok(())
+}
+
+/// Generate a Zettelkasten ID using the user's configured pattern.
+#[tauri::command]
+pub async fn generate_zid(state: State<'_, AppState>) -> Result<String> {
+    let settings = state.settings.read().await;
+    let pattern = &settings.files.zid_pattern;
+    Ok(scaffolds::generate_zid(pattern))
 }

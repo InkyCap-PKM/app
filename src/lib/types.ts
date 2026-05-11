@@ -248,6 +248,9 @@ export interface FileSettings {
   scaffold_folder: string;
   typst_templates_folder: string;
   confirm_before_delete: boolean;
+  zettelkasten_enabled: boolean;
+  zid_pattern: string;
+  auto_title_as_zid: boolean;
 }
 
 export interface CitationSettings {

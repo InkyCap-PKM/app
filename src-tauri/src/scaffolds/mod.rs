@@ -6,6 +6,7 @@
 //   {{date:FORMAT}}  — today's date in a custom chrono format
 //   {{time}}         — current time as HH:MM
 //   {{time:FORMAT}}  — current time in a custom format
+//   {{zid}}          — Zettelkasten ID from the user's configured pattern
 //   {{cursor}}       — removed from output; its position is returned as cursor_offset
 
 use std::path::Path;
@@ -33,8 +34,33 @@ pub async fn expand_scaffold(
     Ok(expand_variables(&raw, title))
 }
 
+/// Read a scaffold file and expand variables including `{{zid}}`.
+pub async fn expand_scaffold_with_zid(
+    storage: &dyn VaultStorage,
+    scaffold_path: &Path,
+    title: &str,
+    zid_pattern: &str,
+) -> Result<ExpandedScaffold> {
+    let raw = storage.read_file(scaffold_path).await?;
+    Ok(expand_variables_with_zid(&raw, title, zid_pattern))
+}
+
+/// Generate a Zettelkasten ID from a moment-style format pattern.
+/// E.g. pattern "YYYYMMDDHHmmss" → "20260511143025".
+pub fn generate_zid(pattern: &str) -> String {
+    let now = Local::now();
+    let chrono_fmt = moment_to_chrono_format(pattern);
+    now.format(&chrono_fmt).to_string()
+}
+
 /// Expand scaffold variables in a string.
+/// If `zid_pattern` is non-empty, the `{{zid}}` variable is also expanded.
 pub fn expand_variables(input: &str, title: &str) -> ExpandedScaffold {
+    expand_variables_with_zid(input, title, "")
+}
+
+/// Expand scaffold variables in a string, including optional `{{zid}}`.
+pub fn expand_variables_with_zid(input: &str, title: &str, zid_pattern: &str) -> ExpandedScaffold {
     let now = Local::now();
     let mut result = input.to_string();
 
@@ -43,6 +69,12 @@ pub fn expand_variables(input: &str, title: &str) -> ExpandedScaffold {
     result = result.replace("{{slug}}", &slugify(title));
     result = result.replace("{{date}}", &now.format("%Y-%m-%d").to_string());
     result = result.replace("{{time}}", &now.format("%H:%M").to_string());
+
+    // {{zid}} — Zettelkasten ID from the user's configured pattern
+    if !zid_pattern.is_empty() {
+        let zid = generate_zid(zid_pattern);
+        result = result.replace("{{zid}}", &zid);
+    }
 
     // Formatted date: {{date:FORMAT}}
     let date_re = Regex::new(r"\{\{date:([^}]+)\}\}").unwrap();
