@@ -400,27 +400,35 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
       });
     }
   }
-  items.push({
-    label: "Open in source editor",
-    title: "Switch this tab to source mode and select the call",
-    onSelect: () => {
-      const tab = getActiveTab();
-      if (tab) setTabEditingMode(tab.id, "source");
-      // After mode switch, place selection on the call. The mode change
-      // tears down and rebuilds the editor, so dispatch on the next tick
-      // when the new EditorView has mounted.
-      requestAnimationFrame(() => {
-        try {
-          view.dispatch({
-            selection: { anchor: model.callFrom, head: model.callTo },
-            scrollIntoView: true,
-          });
-        } catch {
-          // The view may have been replaced; fall through silently.
-        }
-      });
-    },
-  });
+  const tab = getActiveTab();
+  const isSource = tab?.editingMode === "source";
+  if (isSource) {
+    items.push({
+      label: "Open in visual editor",
+      title: "Switch this tab to visual mode",
+      onSelect: () => {
+        if (tab) setTabEditingMode(tab.id, "live");
+      },
+    });
+  } else {
+    items.push({
+      label: "Open in source editor",
+      title: "Switch this tab to source mode and select the call",
+      onSelect: () => {
+        if (tab) setTabEditingMode(tab.id, "source");
+        requestAnimationFrame(() => {
+          try {
+            view.dispatch({
+              selection: { anchor: model.callFrom, head: model.callTo },
+              scrollIntoView: true,
+            });
+          } catch {
+            // The view may have been replaced; fall through silently.
+          }
+        });
+      },
+    });
+  }
   return { items };
 }
 

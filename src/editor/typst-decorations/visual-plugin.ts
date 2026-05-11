@@ -327,7 +327,11 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             if (refText.startsWith("@")) {
               const key = refText.slice(1);
               decos.push(
-                Decoration.replace({ widget: new CitationWidget(key) }).range(node.from, node.to),
+                Decoration.replace({
+                  widget: new CitationWidget(key, node.from, node.to),
+                  inclusiveStart: false,
+                  inclusiveEnd: false,
+                }).range(node.from, node.to),
               );
             } else {
               decos.push(refMark.range(node.from, node.to));
@@ -786,8 +790,17 @@ function handleFuncCall(
     case "cite": {
       const keyMatch = text.match(/<([^>]+)>/);
       if (keyMatch) {
+        if (showPill) {
+          decos.push(
+            Decoration.widget({ widget: new FuncPillWidget(from, "cite"), side: -1 }).range(from),
+          );
+        }
         decos.push(
-          Decoration.replace({ widget: new CitationWidget(keyMatch[1]) }).range(from, to),
+          Decoration.replace({
+            widget: new CitationWidget(keyMatch[1]),
+            inclusiveStart: false,
+            inclusiveEnd: false,
+          }).range(from, to),
         );
       }
       return false;

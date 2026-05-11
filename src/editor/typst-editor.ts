@@ -114,6 +114,7 @@ import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
 import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
+import { citationSuggest } from "./typst-decorations/citation-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
 import { autoPairTypstInput, autoPairTypstBackspace } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
@@ -300,6 +301,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     sourceRawHighlight(),
     inkycapTheme,
     wikilinkSuggest,
+    citationSuggest,
     dragDropHandler,
     headingTracker,
     wordCountTracker,

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features are:
+InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features include:
 
 1. Reciprocal note-linking with wikilinks and automatic backlinks at the center of the navigation model
 2. Typed, vault-queryable metadata that's portable to any Typst tool (via the `inkycap-vault` Typst package)
@@ -10,6 +10,7 @@ InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, ac
 4. First-class bibliography with a dedicated References sidebar tab
 5. Self-contained vaults that compile in any Typst environment
 6. Academic publishing and research-specific workflows
+7. First-class free-form writing options with a verse mode that respects idiosyncratic spacing.
 
 ## Critical Principles
 
@@ -24,10 +25,7 @@ a helper to `lib.typ` counts as the Typst-native answer.
 
 This isn't a stylistic preference. Typst is the source of truth for the
 document model, and code that reaches for it directly stays in sync as
-Typst evolves; code that reimplements it drifts. The cleanups in
-[.claude/plans/typst-native-opportunities.md](.claude/plans/typst-native-opportunities.md)
-deleted hundreds of lines of hand-rolled Typst-shaped logic by following
-this rule.
+Typst evolves; code that reimplements it drifts. 
 
 The order of preference, strictly:
 
@@ -58,19 +56,19 @@ than what you were about to write.
 
 ### Typst-native syntax, not Markdown-translated
 
-The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` would compile literally — they are NOT supported as aliases. The only "translations" are explicit shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.
+The visual editor recognizes Typst's own syntax (`*bold*`, `_italic_`, `= heading`, `- bullet`, `+ ordered`, `$math$`) without translation. Markdown shortcuts like `**bold**` or `# heading` would compile literally — they are NOT supported as aliases. The only "translations" are explicit InkyCap shortcuts into function calls: `[[Name]]` → `#wikilink("Name")` and the `/` command palette.
 
 ### Visual editor as a user-friendliness tool
 
-The visual editor exists to make flowing writing with Typst markup easier, especially for users who are not well-versed in Typst. It is a tool *for the user*, not a faithful rendering engine. Decorations, pills, widgets, and layout choices should be judged by whether they reduce friction for the writer — not by whether they mirror the compiled output. The source editor and reading view serve different purposes; the visual editor's job is to make authoring feel natural.
+The visual editor exists to make flowing writing with Typst markup easier, especially for users who are not well-versed in Typst. It is a tool *for the user*, not a faithful rendering engine and functionally more similar to a WYSISYM tool. Decorations, pills, widgets, and layout choices should be judged by whether they reduce friction for the writer — not by whether they mirror the compiled output. The source editor and reading view serve different purposes; the visual editor's job is to make authoring feel natural.
 
 ### Tier 1 visual editor (CodeMirror Live Preview)
 
-The visual mode is a CodeMirror 6 decoration layer over Typst source — not a ProseMirror parse/serialize round-trip. The source remains Typst at all times. Tier 2 (ProseMirror-style hybrid) is explicitly out of scope for v0.1.
+The visual mode is a CodeMirror 6 decoration layer over Typst source — not a ProseMirror parse/serialize round-trip. The source remains Typst at all times. A ProseMirror-style hybrid is explicitly out of scope.
 
 ### Visual editor pill system
 
-In the visual editor, all Typst function markup that is **not** in the simple direct-formatting set (bold `*...*`, italic `_..._`, headings `= ...`, lists `- ...`/`+ ...`) is hidden behind a **circled `#` pill** (`FuncPillWidget`). Clicking the pill dispatches the `expandFunc` effect, which reveals the raw Typst source for editing. When the cursor moves away, the pill collapses back.
+In the visual editor, all Typst function markup that is **not** in the simple direct-formatting set (bold `*...*`, italic `_..._`, headings `= ...`, lists `- ...`/`+ ...`) is hidden behind a **circled `#` pill** (`FuncPillWidget`). Except for complex cases, clicking the pill dispatches the `expandFunc` effect, which reveals the raw Typst source for editing. When the cursor moves away, the pill collapses back.
 
 - All pill instances must reuse `FuncPillWidget` and the single `expandFunc` effect / `expandedFuncField` StateField. No duplicating pill logic per function.
 - Content-bracket functions (`strike`, `highlight`, `emph`, `strong`, `callout`, `quote`, `verse`) show pill + visible content when the cursor is on the line, and hide the markup entirely when the cursor is away.
@@ -111,7 +109,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - One file, one responsibility. If a module's purpose can't be summarized in a sentence, split it.
 - Public APIs (Tauri commands, trait methods, exported TS) carry doc comments stating intent and invariants. Internal code stays self-evident through naming.
 - Tests cover load-bearing invariants — source↔visual round-trip, `#note(...)` property preservation, `typst query` label stability — at the unit level. They double as executable documentation.
-- Avoid creating duplications of code, unless there is a justifiable and necessary reason. Reuse existing code when reasonable.
+- Avoid creating duplications of code, unless there is a justifiable and necessary reason. Reuse existing code when reasonable. Avoid duplicating CSS, unless there is a justifiable and necessary reason.
 - Avoid hard-coding values into user interface elements, keep them dynamic and responsive to the user's system's affordances wherever possible.
 
 ### Modularity & extensibility
