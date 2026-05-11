@@ -117,9 +117,6 @@ const MainContent: Component = () => {
                 onDrop={() => handleDrop(index())}
                 onDragEnd={handleDragEnd}
               >
-                <span class="tab__icon">
-                  {tab.type === "collection" ? "\u25A6" : tab.type === "flow" ? "\u25C9" : "\u25AB"}
-                </span>
                 <span class="tab__title">
                   {dirtyTabs().has(tab.id) ? "\u25CF " : ""}
                   {tab.title}

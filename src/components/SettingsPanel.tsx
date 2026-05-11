@@ -480,6 +480,12 @@ function EditorSettingsSection() {
         onChange={(v) => updateSetting("editor", "auto_pair_typst", v)}
       />
       <SettingToggle
+        label="Auto-expand markup"
+        description="Automatically reveal function source when the cursor enters a pill in visual mode"
+        value={settings.editor.auto_expand_markup}
+        onChange={(v) => updateSetting("editor", "auto_expand_markup", v)}
+      />
+      <SettingToggle
         label="Smart list indentation"
         description="When indenting a list item with Tab/Shift-Tab, also move its nested children"
         value={settings.editor.smart_indent_lists}

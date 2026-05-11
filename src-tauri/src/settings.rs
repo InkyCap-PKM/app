@@ -56,6 +56,8 @@ pub struct EditorSettings {
     /// compiled output via `#set-vault(verse-font: ...)`. When false, the
     /// override applies only to the visual editor.
     pub apply_verse_font_to_output: bool,
+    /// Auto-expand function markup on cursor in visual mode.
+    pub auto_expand_markup: bool,
 }
 
 impl Default for EditorSettings {
@@ -79,6 +81,7 @@ impl Default for EditorSettings {
             focus_dim: false,
             verse_font: None,
             apply_verse_font_to_output: false,
+            auto_expand_markup: false,
         }
     }
 }

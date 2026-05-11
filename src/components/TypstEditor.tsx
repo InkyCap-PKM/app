@@ -99,7 +99,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   let suppressChange = false;
 
   const [docText, setDocText] = createSignal("");
-  const [autoExpand, setAutoExpand] = createSignal(false);
+  const autoExpand = () => settings.editor.auto_expand_markup;
 
   function setDirty(next: boolean) {
     if (dirty === next) return;
@@ -674,26 +674,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             </Show>
           </button>
         </Show>
-        <Show when={currentMode() === "live"}>
-          <button
-            type="button"
-            class="editor-header__auto-expand-btn"
-            classList={{ "is-active": autoExpand() }}
-            onClick={() => setAutoExpand(!autoExpand())}
-            title={autoExpand() ? "Auto-expand markup on cursor (on)" : "Auto-expand markup on cursor (off)"}
-            aria-pressed={autoExpand()}
-            aria-label="Toggle auto-expand markup"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 4l-3 16" />
-              <path d="M13 4l-3 16" />
-              <path d="M3 9h12" />
-              <path d="M2 15h12" />
-              <path d="M20 8l3 4-3 4" />
-            </svg>
-          </button>
-        </Show>
-
         <div class="editor-header__mode-toggle" role="group" aria-label="Editing mode">
           <button
             type="button"
