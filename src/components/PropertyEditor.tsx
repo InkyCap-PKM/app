@@ -1,6 +1,7 @@
 import { Component, createSignal, createResource, createEffect, onCleanup, For, Show } from "solid-js";
 import type { PropertyValue } from "../lib/types";
 import { propertyType } from "../stores/propertyTypes";
+import { sanitizeAlias } from "../lib/typst";
 import * as ipc from "../lib/ipc";
 
 export interface PropertyEditorProps {
@@ -30,7 +31,7 @@ function validateValue(value: PropertyValue, declaredType: string): string | nul
       if (!Array.isArray(value)) return "Expected a list";
       break;
     case "text":
-      if (typeof value !== "string") return "Expected text";
+      if (typeof value !== "string" && !Array.isArray(value)) return "Expected text";
       break;
   }
   return null;
@@ -69,7 +70,7 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
           <Show when={effectiveType() === "number"}>
             <NumberEditor {...props} />
           </Show>
-          <Show when={effectiveType() === "text"}>
+          <Show when={effectiveType() === "text" || effectiveType() === "commalist"}>
             <StringEditor {...props} />
           </Show>
           <Show when={effectiveType() === "date"}>
@@ -128,23 +129,46 @@ function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
 
 const StringEditor: Component<PropertyEditorProps> = (props) => {
   const [editing, setEditing] = createSignal(false);
-  const [draft, setDraft] = createSignal(String(props.value ?? ""));
-  const isEmpty = () => !props.value && props.value !== 0 && props.value !== false;
+
+  const displayValue = (): string => {
+    const v = props.value;
+    if (Array.isArray(v)) return v.join(", ");
+    return String(v ?? "");
+  };
+
+  const [draft, setDraft] = createSignal(displayValue());
+  const isEmpty = () => {
+    const v = props.value;
+    if (Array.isArray(v)) return v.length === 0;
+    return !v && v !== 0 && v !== false;
+  };
   const hasWikilinks = () => {
-    const v = String(props.value ?? "");
+    const v = displayValue();
     return v.includes("[[") && v.includes("]]");
   };
 
   function startEdit() {
-    setDraft(String(props.value ?? ""));
+    setDraft(displayValue());
     setEditing(true);
   }
 
   function commit() {
     setEditing(false);
     const newVal = draft();
-    if (newVal !== String(props.value ?? "")) {
-      props.onSave(props.propKey, newVal);
+    if (newVal !== displayValue()) {
+      // CommaList fields look like single-line text in the UI but
+      // serialize as an array so the Typst-side `#note(...)` call gets
+      // the right shape. `aliases` is the only such field today; future
+      // CommaList fields ride the same path automatically.
+      if (propertyType(props.propKey) === "commalist") {
+        const items = newVal
+          .split(",")
+          .map((s) => (props.propKey === "aliases" ? sanitizeAlias(s) : s.trim()))
+          .filter((s) => s.length > 0);
+        props.onSave(props.propKey, items);
+      } else {
+        props.onSave(props.propKey, newVal);
+      }
     }
   }
 
@@ -164,7 +188,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
               class={`property-editor__value${isEmpty() ? " property-editor__value--empty" : ""}`}
               onClick={startEdit}
             >
-              {isEmpty() ? "Empty" : String(props.value)}
+              {isEmpty() ? "Empty" : displayValue()}
             </span>
           }
         >
@@ -172,7 +196,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
             class="property-editor__value"
             ref={(el) => {
               el.innerHTML = "";
-              for (const part of renderStringWithWikilinks(String(props.value))) {
+              for (const part of renderStringWithWikilinks(displayValue())) {
                 if (typeof part === "string") {
                   el.appendChild(document.createTextNode(part));
                 } else {

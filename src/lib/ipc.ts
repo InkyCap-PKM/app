@@ -334,6 +334,18 @@ export async function getBacklinkContext(
   return invoke<string | null>("get_backlink_context", { sourcePath, targetPath });
 }
 
+// Aliases
+
+export interface AliasEntry {
+  alias: string;
+  note_name: string;
+  note_path: string;
+}
+
+export async function getAllAliases(): Promise<AliasEntry[]> {
+  return invoke<AliasEntry[]>("get_all_aliases");
+}
+
 // Settings
 
 export async function getSettings(): Promise<UserSettings> {

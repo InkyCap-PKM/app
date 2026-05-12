@@ -114,6 +114,7 @@ export type PropertyType =
   | "date"
   | "datetime"
   | "list"
+  | "commalist"
   | "number"
   | "text";
 

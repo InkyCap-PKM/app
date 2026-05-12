@@ -6,6 +6,7 @@ import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import { onFileCreated, onFileDeleted } from "../lib/events";
 import { reloadPropertyTypes } from "./propertyTypes";
+import { refreshAliases, bumpAliasGeneration } from "./aliases";
 import { startLsp, stopLsp } from "./lsp";
 
 const [vaultInfo, setVaultInfo] = createSignal<VaultInfo | null>(null);
@@ -36,6 +37,7 @@ const [propertyVersion, setPropertyVersion] = createSignal(0);
 
 function bumpPropertyVersion() {
   setPropertyVersion((v) => v + 1);
+  refreshAliases().catch(console.error);
 }
 
 /** Payload of the `vault:index-ready` event emitted by the Rust backend. */
@@ -49,6 +51,7 @@ let indexReadyUnlisten: UnlistenFn | null = null;
 let indexErrorUnlisten: UnlistenFn | null = null;
 let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
+let noteSavedUnlisten: (() => void) | null = null;
 
 // Debounce file-system-event-driven tree refetches. Bulk operations
 // (copying a folder of notes into the vault) can fire dozens of
@@ -85,6 +88,7 @@ async function ensureIndexEventListeners() {
           });
         }
         setIndexReady(true);
+        refreshAliases().catch(console.error);
       },
     );
   }
@@ -110,6 +114,17 @@ async function ensureIndexEventListeners() {
   if (fileDeletedUnlisten === null) {
     fileDeletedUnlisten = await onFileDeleted(() => scheduleTreeRefresh());
   }
+  // Refresh aliases when a note is saved (inline edits to
+  // #note(aliases: ...)). `refreshAliases` debounces internally so
+  // bursts of saves collapse to one IPC call. The same hook also
+  // catches property-panel edits via `bumpPropertyVersion`.
+  if (noteSavedUnlisten === null) {
+    const handler = () => {
+      refreshAliases().catch(console.error);
+    };
+    document.addEventListener("inkycap:note-saved", handler);
+    noteSavedUnlisten = () => document.removeEventListener("inkycap:note-saved", handler);
+  }
 }
 
 export async function loadVaultRegistry(): Promise<void> {
@@ -124,6 +139,10 @@ export async function loadVaultRegistry(): Promise<void> {
 export async function openVault(path: string) {
   setIsLoading(true);
   setIndexReady(false);
+  // Discard any in-flight alias refresh from a previous vault and
+  // clear the cached list so stale entries can't surface while the
+  // new vault's index is still building.
+  bumpAliasGeneration();
   try {
     await ensureIndexEventListeners();
     const info = await ipc.openVault(path);

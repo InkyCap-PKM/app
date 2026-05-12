@@ -1,7 +1,10 @@
 import { EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirror/view";
 import { type ChangeSpec, type Extension, Prec } from "@codemirror/state";
 import { fileList } from "../../stores/filelist";
+import { aliases } from "../../stores/aliases";
 import { fuzzyMatch } from "../../lib/fuzzy";
+import { typstStringEscape } from "../../lib/typst";
+import { t } from "../../lib/i18n";
 import * as ipc from "../../lib/ipc";
 
 type SuggestMode = "note" | "heading";
@@ -28,9 +31,18 @@ let currentSuggestState: SuggestState = EMPTY;
 
 interface SuggestItem {
   name: string;
+  /** Absolute note path. Carried through so callers can disambiguate
+   *  notes that share a file stem in different folders, and so future
+   *  resolution paths can avoid re-deriving from `name`. */
+  notePath?: string;
   label?: string;
   level?: number;
   isCreate: boolean;
+  /** Display text override (from alias match). When set, acceptItem
+   *  emits `display: "..."` so the link shows the alias text. */
+  displayText?: string;
+  /** Description shown below the name (e.g. "via alias" hint). */
+  subtitle?: string;
 }
 
 let filteredItems: SuggestItem[] = [];
@@ -210,21 +222,70 @@ async function showPopup(view: EditorView, state: SuggestState) {
     const notes = fileList();
     const query = state.query;
 
-    const scored: { name: string; score: number }[] = [];
+    // Score filename matches. `notePath` is carried alongside the stem
+    // so we can dedup against aliases keyed on path (two notes can share
+    // a stem in different folders).
+    const scored: {
+      name: string;
+      notePath: string;
+      score: number;
+      displayText?: string;
+      subtitle?: string;
+    }[] = [];
     for (const entry of notes) {
       if (!entry.name.endsWith(".typ") && !entry.name.endsWith(".md")) continue;
       const name = entry.name.replace(/\.(typ|md)$/, "");
       if (query === "") {
-        scored.push({ name, score: 0 });
+        scored.push({ name, notePath: entry.path, score: 0 });
       } else {
         const m = fuzzyMatch(query, name);
-        if (m) scored.push({ name, score: m.score });
+        if (m) scored.push({ name, notePath: entry.path, score: m.score });
+      }
+    }
+
+    // Score alias matches — dedup against filename matches by note path
+    // so same-stemmed notes in different folders stay distinct.
+    const seenPaths = new Set(scored.map((s) => s.notePath));
+    for (const entry of aliases()) {
+      const aliasSubtitle = t("wikilink.suggest.alias_hint", { alias: entry.alias });
+      if (query === "") {
+        if (seenPaths.has(entry.note_path)) continue;
+        scored.push({
+          name: entry.note_name,
+          notePath: entry.note_path,
+          score: -1,
+          displayText: entry.alias,
+          subtitle: aliasSubtitle,
+        });
+      } else {
+        const m = fuzzyMatch(query, entry.alias);
+        if (m) {
+          // If the same note already matched by filename, skip the alias
+          // unless the alias match scores higher
+          const existingIdx = scored.findIndex(
+            (s) => s.notePath === entry.note_path && !s.displayText,
+          );
+          if (existingIdx >= 0 && scored[existingIdx].score >= m.score) continue;
+          scored.push({
+            name: entry.note_name,
+            notePath: entry.note_path,
+            score: m.score,
+            displayText: entry.alias,
+            subtitle: aliasSubtitle,
+          });
+        }
       }
     }
 
     scored.sort((a, b) => b.score - a.score);
 
-    filteredItems = scored.slice(0, 20).map((s) => ({ name: s.name, isCreate: false }));
+    filteredItems = scored.slice(0, 20).map((s) => ({
+      name: s.name,
+      notePath: s.notePath,
+      isCreate: false,
+      displayText: s.displayText,
+      subtitle: s.subtitle,
+    }));
 
     const hasExactMatch = filteredItems.some(
       (item) => item.name.toLowerCase() === query.toLowerCase(),
@@ -252,8 +313,18 @@ async function showPopup(view: EditorView, state: SuggestState) {
     if (state.mode === "heading") {
       const indent = item.level && item.level > 1 ? " ".repeat(item.level - 1) : "";
       row.textContent = `${indent}${item.name}`;
+    } else if (item.isCreate) {
+      row.textContent = t("wikilink.suggest.create", { name: item.name });
     } else {
-      row.textContent = item.isCreate ? `Create: ${item.name}` : item.name;
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = item.name;
+      row.appendChild(nameSpan);
+      if (item.subtitle) {
+        const hint = document.createElement("span");
+        hint.className = "wikilink-suggest__alias-hint";
+        hint.textContent = item.subtitle;
+        row.appendChild(hint);
+      }
     }
 
     row.addEventListener("mousedown", (e) => {
@@ -298,9 +369,12 @@ async function acceptItem(view: EditorView, state: SuggestState, item: SuggestIt
       }
     }
     const labelVal = label ?? item.name;
-    insert = `#wikilink("${state.noteName}", label: "${labelVal}")`;
+    insert = `#wikilink("${typstStringEscape(state.noteName)}", label: "${typstStringEscape(labelVal)}")`;
   } else {
-    insert = `#wikilink("${item.name}")`;
+    const displayArg = item.displayText
+      ? `, display: "${typstStringEscape(item.displayText)}"`
+      : "";
+    insert = `#wikilink("${typstStringEscape(item.name)}"${displayArg})`;
   }
 
   view.dispatch({
@@ -378,8 +452,7 @@ const suggestKeyHandler = Prec.highest(keymap.of([
         });
       } else {
         // Func form: rewrite call to include label arg with cursor inside
-        const noteName = item.name;
-        const insert = `#wikilink("${noteName}", label: "")`;
+        const insert = `#wikilink("${typstStringEscape(item.name)}", label: "")`;
         view.dispatch({
           changes: { from: state.from, to: state.to, insert } as ChangeSpec,
           selection: { anchor: state.from + insert.length - 2 },
@@ -400,7 +473,7 @@ const suggestKeyHandler = Prec.highest(keymap.of([
         const cursor = view.state.selection.main.from;
         const afterCursor = view.state.doc.sliceString(cursor, Math.min(cursor + 2, view.state.doc.length));
         const trailingBrackets = afterCursor.startsWith("]]") ? 2 : afterCursor.startsWith("]") ? 1 : 0;
-        const insert = `#wikilink("${state.noteName}")`;
+        const insert = `#wikilink("${typstStringEscape(state.noteName)}")`;
         view.dispatch({
           changes: { from: state.from, to: cursor + trailingBrackets, insert } as ChangeSpec,
           selection: { anchor: state.from + insert.length },

@@ -365,6 +365,14 @@
   white-space: nowrap;
 }
 
+.wikilink-suggest__alias-hint {
+  display: block;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+  margin-top: 1px;
+  padding-left: 0.5em;
+}
+
 .wikilink-suggest__item--create {
   font-style: italic;
   color: var(--fg-muted);

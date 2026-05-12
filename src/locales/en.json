@@ -28,5 +28,7 @@
   "refNotes.noBibliography": "No bibliography configured. Check Settings › Citations.",
   "refNotes.back": "Back to references",
   "refNotes.loadingNotes": "Loading notes…",
-  "refNotes.noNotes": "No notes found for this reference."
+  "refNotes.noNotes": "No notes found for this reference.",
+  "wikilink.suggest.create": "Create: {name}",
+  "wikilink.suggest.alias_hint": "via alias \"{alias}\""
 }
