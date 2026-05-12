@@ -87,25 +87,42 @@ pub fn start_watching(
                         .collect(),
                     RenameMode::Both => {
                         // `Both` arrives with exactly two paths — (from, to)
-                        // per notify's docs. Emit a delete for the source
-                        // and a create for the destination, but only when
-                        // each side passes the watchable filter. If one
-                        // side is filtered out (e.g. renaming a `.typ`
-                        // file to `.txt`), the other side still fires so
-                        // the tree mirrors what's on disk.
-                        let mut out: Vec<AppEvent> = Vec::with_capacity(2);
+                        // per notify's docs. When both sides are watchable
+                        // we emit a single `FileRenamed` carrying the pair,
+                        // so the index layer can rewrite wikilinks in
+                        // referencing notes (a split delete+create would
+                        // orphan them — there's no way to tell from two
+                        // independent events that they belong together).
+                        //
+                        // Asymmetric cases (one side filtered out, e.g.
+                        // renaming a `.typ` to `.txt`) fall back to the
+                        // single-sided event so the file tree still
+                        // mirrors what's on disk.
                         let mut iter = event.paths.iter();
-                        if let Some(from) = iter.next() {
-                            if is_watchable(from) {
-                                out.push(AppEvent::FileDeleted { path: from.clone() });
+                        let from = iter.next();
+                        let to = iter.next();
+                        match (from, to) {
+                            (Some(f), Some(t)) if is_watchable(f) && is_watchable(t) => {
+                                vec![AppEvent::FileRenamed {
+                                    from: f.clone(),
+                                    to: t.clone(),
+                                }]
                             }
-                        }
-                        if let Some(to) = iter.next() {
-                            if is_watchable(to) {
-                                out.push(AppEvent::FileCreated { path: to.clone() });
+                            (Some(f), Some(t)) => {
+                                let mut out: Vec<AppEvent> = Vec::with_capacity(2);
+                                if is_watchable(f) {
+                                    out.push(AppEvent::FileDeleted { path: f.clone() });
+                                }
+                                if is_watchable(t) {
+                                    out.push(AppEvent::FileCreated { path: t.clone() });
+                                }
+                                out
                             }
+                            (Some(f), None) if is_watchable(f) => {
+                                vec![AppEvent::FileDeleted { path: f.clone() }]
+                            }
+                            _ => Vec::new(),
                         }
-                        out
                     }
                     // `Any`/`Other` — backend can't tell us which side
                     // this path refers to. Treating it as a structural

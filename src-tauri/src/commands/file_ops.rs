@@ -607,32 +607,12 @@ pub async fn rename_and_update_links(
         )));
     }
 
-    // For files, update wikilinks in referencing files before rename
+    // For files, update wikilinks in referencing notes before the rename.
+    // (Doing it before — versus after, as the watcher path does — is
+    // arbitrary; the rewrite only touches files other than `old`/`new`,
+    // so either ordering converges.)
     if !is_dir {
-        let old_stem = old
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        let backlinks = {
-            let link_index = state.link_index.read().await;
-            link_index.get_backlinks(&old)
-        };
-
-        let new_stem = PathBuf::from(&new_name_with_ext)
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| new_name.clone());
-
-        for referencing_path in &backlinks {
-            if let Ok(content) = storage.read_file(referencing_path).await {
-                let updated = update_wikilinks_in_content(&content, &old_stem, &new_stem);
-                if updated != content {
-                    storage.write_file(referencing_path, &updated).await?;
-                    reindex_note(referencing_path, &updated, &state).await;
-                }
-            }
-        }
+        rewrite_backlinks_for_rename(&old, &new_path, &storage, &*state).await?;
     }
 
     storage.rename_file(&old, &new_path).await?;
@@ -733,9 +713,35 @@ pub async fn delete_folder(
 
 // ── Helpers ──
 
-/// Replace wikilinks in content: [[old_stem]] → [[new_stem]], [[old_stem#heading]] → [[new_stem#heading]],
-/// [[old_stem|alias]] → [[new_stem|alias]].
-fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) -> String {
+/// Replace wikilinks in content so they continue to resolve after a note
+/// has been renamed from `old_stem` to `new_stem`. Handles both forms that
+/// appear in vault sources:
+///
+///   - `[[old_stem]]`, `[[old_stem#heading]]`, `[[old_stem|alias]]` —
+///     the inline shortcut.
+///   - `#wikilink("old_stem")`, `#wikilink("old_stem", display: "...")`,
+///     `#wikilink("old_stem", label: "...")` — the Typst function form
+///     emitted by markdown import and the drag-drop / palette handlers.
+///
+/// Per CLAUDE.md's Typst-first principle, the ideal rewrite would walk
+/// the `typst::syntax` AST and splice the call site by source range.
+/// We keep this string-based for two reasons: (1) the existing helper
+/// was already string-based and shipped under `rename_and_update_links`,
+/// so callers expect identical behaviour; (2) reparsing every backlinked
+/// note through Typst on each rename is meaningfully heavier than scanning
+/// for two well-known prefixes. The function-form regex below mirrors
+/// `WIKILINK_CALL_RE` in `src/editor/typst-decorations/wikilink-suggest.ts`
+/// so the two stay in lockstep.
+pub(crate) fn update_wikilinks_in_content(
+    content: &str,
+    old_stem: &str,
+    new_stem: &str,
+) -> String {
+    let after_brackets = rewrite_bracket_wikilinks(content, old_stem, new_stem);
+    rewrite_func_wikilinks(&after_brackets, old_stem, new_stem)
+}
+
+fn rewrite_bracket_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> String {
     let old_lower = old_stem.to_lowercase();
     let mut result = String::with_capacity(content.len());
     let mut remaining = content;
@@ -747,7 +753,6 @@ fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) ->
         if let Some(end) = remaining.find("]]") {
             let link_content = &remaining[..end];
 
-            // Parse the link: target#heading|alias
             let (target, suffix) = if let Some(hash_pos) = link_content.find('#') {
                 (&link_content[..hash_pos], &link_content[hash_pos..])
             } else if let Some(pipe_pos) = link_content.find('|') {
@@ -766,13 +771,141 @@ fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) ->
             result.push_str("]]");
             remaining = &remaining[end + 2..];
         } else {
-            // No closing ]] found, just append the rest
             break;
         }
     }
 
     result.push_str(remaining);
     result
+}
+
+/// Rewrite the first string argument of `#wikilink("...")` when it matches
+/// `old_stem` (case-insensitive). Other arguments (`display:`, `label:`)
+/// are preserved untouched. Names are matched on the literal quoted text;
+/// callers escape `new_stem` with `typst_string_escape` before passing it
+/// here.
+fn rewrite_func_wikilinks(content: &str, old_stem: &str, new_stem: &str) -> String {
+    const PREFIX: &str = "#wikilink(\"";
+    let old_lower = old_stem.to_lowercase();
+    let escaped_new = typst_string_escape(new_stem);
+
+    let mut result = String::with_capacity(content.len());
+    let mut remaining = content;
+
+    while let Some(start) = remaining.find(PREFIX) {
+        result.push_str(&remaining[..start + PREFIX.len()]);
+        remaining = &remaining[start + PREFIX.len()..];
+
+        // Find the closing quote of the first argument, honouring `\"`
+        // and `\\` escapes the same way Typst's parser does.
+        let mut end_quote: Option<usize> = None;
+        let bytes = remaining.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'\\' if i + 1 < bytes.len() => i += 2,
+                b'"' => {
+                    end_quote = Some(i);
+                    break;
+                }
+                b'\n' => break, // unterminated string — bail out conservatively
+                _ => i += 1,
+            }
+        }
+
+        let Some(eq) = end_quote else {
+            result.push_str(remaining);
+            return result;
+        };
+
+        let raw_name = &remaining[..eq];
+        let decoded = typst_string_unescape(raw_name);
+        if decoded.to_lowercase() == old_lower {
+            result.push_str(&escaped_new);
+        } else {
+            result.push_str(raw_name);
+        }
+        result.push('"');
+        remaining = &remaining[eq + 1..];
+    }
+
+    result.push_str(remaining);
+    result
+}
+
+/// Escape a string for inclusion inside a Typst double-quoted literal.
+/// Mirrors `typstStringEscape` in [src/lib/typst.ts] — only `\\` and `"`
+/// need escaping inside a `"..."` literal.
+fn typst_string_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Inverse of [`typst_string_escape`]. Used only to compare the first
+/// argument of an existing `#wikilink("...")` against `old_stem`.
+fn typst_string_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Walk every note that links to `old_path`, rewrite its wikilinks so they
+/// point at `new_path`, and reindex it. Shared between the in-app rename
+/// command (which calls this *before* moving the file on disk) and the
+/// external-rename watcher path (which calls this *after* the move has
+/// already happened — order doesn't matter to this function because it
+/// only touches the *referencing* files, never the renamed one).
+pub(crate) async fn rewrite_backlinks_for_rename(
+    old_path: &std::path::Path,
+    new_path: &std::path::Path,
+    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+    state: &AppState,
+) -> Result<(), InkyCapError> {
+    let old_stem = match old_path.file_stem() {
+        Some(s) => s.to_string_lossy().into_owned(),
+        None => return Ok(()),
+    };
+    let new_stem = match new_path.file_stem() {
+        Some(s) => s.to_string_lossy().into_owned(),
+        None => return Ok(()),
+    };
+    if old_stem.eq_ignore_ascii_case(&new_stem) {
+        return Ok(());
+    }
+
+    let backlinks = {
+        let link_index = state.link_index.read().await;
+        link_index.get_backlinks(&old_path.to_path_buf())
+    };
+
+    for referencing_path in &backlinks {
+        let Ok(content) = storage.read_file(referencing_path).await else {
+            continue;
+        };
+        let updated = update_wikilinks_in_content(&content, &old_stem, &new_stem);
+        if updated != content {
+            storage.write_file(referencing_path, &updated).await?;
+            state.reindex_note(referencing_path, &updated).await;
+        }
+    }
+
+    Ok(())
 }
 
 /// Local alias for the unified indexing helper on [`AppState`]. All note
@@ -919,5 +1052,80 @@ mod tests {
         let content = "Start [[Old Note]] middle [[Old Note#heading]] end.";
         let result = update_wikilinks_in_content(content, "Old Note", "New Note");
         assert_eq!(result, "Start [[New Note]] middle [[New Note#heading]] end.");
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_simple() {
+        let content = r#"See #wikilink("Old Note") for details."#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(result, r#"See #wikilink("New Note") for details."#);
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_with_display() {
+        let content = r#"See #wikilink("Old Note", display: "see this") for details."#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(
+            result,
+            r#"See #wikilink("New Note", display: "see this") for details."#
+        );
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_with_label() {
+        let content = r#"See #wikilink("Old Note", label: "old-anchor") here."#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(
+            result,
+            r#"See #wikilink("New Note", label: "old-anchor") here."#
+        );
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_case_insensitive() {
+        let content = r#"#wikilink("old note")"#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(result, r#"#wikilink("New Note")"#);
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_no_match() {
+        let content = r#"#wikilink("Other Note")"#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(result, r#"#wikilink("Other Note")"#);
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_escapes_quote_in_new_name() {
+        let content = r#"#wikilink("Old")"#;
+        let result = update_wikilinks_in_content(content, "Old", r#"Has "quote""#);
+        assert_eq!(result, r#"#wikilink("Has \"quote\"")"#);
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_handles_escaped_quote_in_old_name() {
+        // The on-disk name contains a literal quote → Typst source has `\"`.
+        let content = r#"#wikilink("Has \"quote\"")"#;
+        let result = update_wikilinks_in_content(content, r#"Has "quote""#, "Clean");
+        assert_eq!(result, r#"#wikilink("Clean")"#);
+    }
+
+    #[test]
+    fn test_update_wikilinks_mixed_forms_in_same_file() {
+        let content = r#"Inline [[Old Note]] and call #wikilink("Old Note", display: "x")."#;
+        let result = update_wikilinks_in_content(content, "Old Note", "New Note");
+        assert_eq!(
+            result,
+            r#"Inline [[New Note]] and call #wikilink("New Note", display: "x")."#
+        );
+    }
+
+    #[test]
+    fn test_update_wikilinks_func_form_multibyte_safe() {
+        // Em-dash and accented chars in surrounding context — byte-index
+        // bookkeeping must land on char boundaries.
+        let content = r#"Préambule — voir #wikilink("Old") — fin."#;
+        let result = update_wikilinks_in_content(content, "Old", "Nouveau");
+        assert_eq!(result, r#"Préambule — voir #wikilink("Nouveau") — fin."#);
     }
 }
