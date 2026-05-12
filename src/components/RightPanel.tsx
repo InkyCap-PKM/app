@@ -20,8 +20,7 @@ import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
-
-type RightPanelTab = "properties" | "outline" | "links" | "references";
+import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
 
 const KNOWN_FIELDS_ORDERED = [
   "title", "aliases", "description", "tags", "date", "date-due",
@@ -75,7 +74,8 @@ interface ForwardLinkResolved extends LinkInfo {
 }
 
 const RightPanel: Component = () => {
-  const [activePanel, setActivePanel] = createSignal<RightPanelTab>("properties");
+  const activePanel = rightPanelTab;
+  const setActivePanel = (tab: RightPanelTab) => setRightPanelTab(tab);
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
   const [newPropType, setNewPropType] = createSignal<PropertyType>("text");
