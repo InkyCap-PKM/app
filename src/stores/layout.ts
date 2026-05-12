@@ -7,11 +7,16 @@ import { createSignal } from "solid-js";
 
 const STORAGE_KEY = "inkycap.layout";
 
+export type RightPanelTab = "properties" | "outline" | "links" | "references";
+
+const RIGHT_PANEL_TABS: readonly RightPanelTab[] = ["properties", "outline", "links", "references"];
+
 interface LayoutState {
   leftWidth: number;
   rightWidth: number;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
+  rightPanelTab: RightPanelTab;
 }
 
 const DEFAULTS: LayoutState = {
@@ -19,6 +24,7 @@ const DEFAULTS: LayoutState = {
   rightWidth: 280,
   leftCollapsed: false,
   rightCollapsed: false,
+  rightPanelTab: "outline",
 };
 
 const MIN_WIDTH = 160;
@@ -29,7 +35,11 @@ function load(): LayoutState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    if (!RIGHT_PANEL_TABS.includes(merged.rightPanelTab)) {
+      merged.rightPanelTab = DEFAULTS.rightPanelTab;
+    }
+    return merged;
   } catch {
     return { ...DEFAULTS };
   }
@@ -53,6 +63,9 @@ const [leftCollapsed, setLeftCollapsedInternal] = createSignal(
 const [rightCollapsed, setRightCollapsedInternal] = createSignal(
   initial.rightCollapsed,
 );
+const [rightPanelTab, setRightPanelTabInternal] = createSignal<RightPanelTab>(
+  initial.rightPanelTab,
+);
 
 function persist() {
   save({
@@ -60,6 +73,7 @@ function persist() {
     rightWidth: rightWidth(),
     leftCollapsed: leftCollapsed(),
     rightCollapsed: rightCollapsed(),
+    rightPanelTab: rightPanelTab(),
   });
 }
 
@@ -83,4 +97,9 @@ export function toggleRightCollapsed() {
   persist();
 }
 
-export { leftWidth, rightWidth, leftCollapsed, rightCollapsed };
+export function setRightPanelTab(tab: RightPanelTab) {
+  setRightPanelTabInternal(tab);
+  persist();
+}
+
+export { leftWidth, rightWidth, leftCollapsed, rightCollapsed, rightPanelTab };
