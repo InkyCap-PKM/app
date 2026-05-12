@@ -1,4 +1,4 @@
-import { type EditorView, WidgetType } from "@codemirror/view";
+import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
@@ -1192,6 +1192,14 @@ export class VerseWidget extends WidgetType {
     // CM6's MutationObserver. The inner canvas overrides hierarchically
     // with contentEditable="true" so typing works inside.
     wrap.contentEditable = "false";
+    // Body range stamped on the wrap so verseFocusRouter (below) can
+    // detect when CM's selection moves into this widget's body — e.g.
+    // backspacing from below into existing verse content — and forward
+    // focus to the canvas. Without this, the widget DOM is reused
+    // (eq() returns true while body bounds are unchanged) so toDOM's
+    // focus-routing branch doesn't re-run, and keystrokes go to CM.
+    wrap.dataset.bodyFrom = String(this.opts.bodyFrom);
+    wrap.dataset.bodyTo = String(this.opts.bodyTo);
 
     // ── Pill (top-left): identifies the block as verse and opens the
     // super-menu, which includes the alignment options for verse. The
@@ -1753,3 +1761,56 @@ function showCiteContextMenu(
   document.addEventListener("mousedown", close, true);
   document.addEventListener("keydown", closeOnEscape, true);
 }
+
+/** Route focus into a verse canvas whenever CM's logical cursor moves
+ *  into a verse body range. Complements VerseWidget.toDOM's mount-time
+ *  focus routing: that branch only fires on widget construction, but
+ *  if the user backspaces from below into an existing verse, the
+ *  widget DOM is reused (eq() returns true while bodyFrom/bodyTo
+ *  haven't shifted), so toDOM doesn't re-run — yet CM's selection has
+ *  entered the body range. Without this plugin, keystrokes go to CM's
+ *  contentDOM instead of the canvas, producing reverse-typing /
+ *  caret-at-edge symptoms documented in CLAUDE.md (CM6 widget recipe). */
+export const verseFocusRouter = ViewPlugin.fromClass(
+  class {
+    update(update: ViewUpdate) {
+      if (!update.selectionSet && !update.docChanged) return;
+      const sel = update.state.selection.main;
+      const lo = Math.min(sel.anchor, sel.head);
+      const hi = Math.max(sel.anchor, sel.head);
+      const view = update.view;
+      // Defer the DOM scan: when a verse is just inserted, ViewPlugin
+      // `update` fires before CM flushes the new widget DOM, so an
+      // immediate querySelector wouldn't find it. queueMicrotask runs
+      // after the current task finishes (including CM's DOM write) but
+      // before paint.
+      queueMicrotask(() => {
+        const wraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse");
+        for (const wrap of wraps) {
+          const from = Number(wrap.dataset.bodyFrom);
+          const to = Number(wrap.dataset.bodyTo);
+          if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+          // Selection (point or range) must lie entirely within this
+          // verse's body. Toolbar-wrap-around-selection produces a range;
+          // backspace-into-verse and slash-insert produce a point — both
+          // flow here.
+          if (lo < from || hi > to) continue;
+          const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
+          if (!canvas) return;
+          if (document.activeElement === canvas) return;
+          canvas.focus({ preventScroll: true });
+          const range = document.createRange();
+          range.selectNodeContents(canvas);
+          // Empty source selection → caret at end; non-empty (wrap-around)
+          // → select the canvas contents so the user can immediately
+          // continue typing/formatting over their original text.
+          if (lo === hi) range.collapse(false);
+          const docSel = window.getSelection();
+          docSel?.removeAllRanges();
+          docSel?.addRange(range);
+          return;
+        }
+      });
+    }
+  },
+);
