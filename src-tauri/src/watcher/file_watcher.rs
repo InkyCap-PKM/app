@@ -20,15 +20,39 @@ fn should_ignore(path: &Path) -> bool {
     })
 }
 
-fn is_relevant_file(path: &Path) -> bool {
+/// Editor / OS scratch-file patterns that should never bubble up as
+/// vault events. The list is intentionally narrow: anything outside it
+/// is forwarded to the frontend so the file tree refreshes. Downstream
+/// cache/index sync (see `sync_cache_for_*` in `commands/vault.rs`)
+/// re-filters to the file kinds those subsystems actually care about,
+/// so letting an asset rename through here is free in terms of work
+/// done — it just makes the tree update.
+fn is_editor_scratch_file(path: &Path) -> bool {
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+
+    // vim swap (.foo.swp), emacs lock (#foo# / .#foo), backup (foo~),
+    // LibreOffice (.~lock.foo#), macOS metadata (.DS_Store), generic
+    // dotfiles authored by other apps.
+    if name == ".DS_Store" {
+        return true;
+    }
+    if name.ends_with('~') {
+        return true;
+    }
+    if name.starts_with(".~lock.") || (name.starts_with('#') && name.ends_with('#')) {
+        return true;
+    }
     matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("typ") | Some("collection")
+        Some("swp") | Some("swo") | Some("swn") | Some("tmp") | Some("part") | Some("crdownload")
     )
 }
 
 fn is_watchable(path: &Path) -> bool {
-    !should_ignore(path) && is_relevant_file(path)
+    !should_ignore(path) && !is_editor_scratch_file(path)
 }
 
 /// Upper bound on queued watcher events. The notify callback's `send` will
@@ -198,4 +222,43 @@ pub fn start_watching(
     watcher.watch(vault_root, RecursiveMode::Recursive)?;
 
     Ok((watcher, rx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn assets_are_watchable() {
+        // Regression: PNG / image renames in the attachment folder must
+        // reach the frontend so the file tree refreshes. The previous
+        // `.typ`-only whitelist silently dropped them.
+        assert!(is_watchable(&PathBuf::from("/vault/assets/photo.png")));
+        assert!(is_watchable(&PathBuf::from("/vault/assets/scan.jpg")));
+        assert!(is_watchable(&PathBuf::from("/vault/attachments/file.pdf")));
+    }
+
+    #[test]
+    fn notes_and_collections_still_watchable() {
+        assert!(is_watchable(&PathBuf::from("/vault/note.typ")));
+        assert!(is_watchable(&PathBuf::from("/vault/Daily.collection")));
+    }
+
+    #[test]
+    fn ignored_dirs_still_skipped() {
+        assert!(!is_watchable(&PathBuf::from("/vault/.git/HEAD")));
+        assert!(!is_watchable(&PathBuf::from("/vault/.inkycap/vault.typ")));
+        assert!(!is_watchable(&PathBuf::from("/vault/.obsidian/config.json")));
+    }
+
+    #[test]
+    fn editor_scratch_files_filtered() {
+        assert!(!is_watchable(&PathBuf::from("/vault/.note.typ.swp")));
+        assert!(!is_watchable(&PathBuf::from("/vault/note.typ~")));
+        assert!(!is_watchable(&PathBuf::from("/vault/#note.typ#")));
+        assert!(!is_watchable(&PathBuf::from("/vault/.~lock.doc.odt#")));
+        assert!(!is_watchable(&PathBuf::from("/vault/.DS_Store")));
+        assert!(!is_watchable(&PathBuf::from("/vault/photo.png.part")));
+    }
 }

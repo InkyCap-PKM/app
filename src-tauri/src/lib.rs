@@ -292,6 +292,7 @@ pub fn run() {
             commands::markdown::paste_markdown_as_typst,
             commands::markdown::convert_markdown_to_typst,
             commands::markdown::import_markdown_vault,
+            commands::markdown::detect_markdown_dialect,
             commands::markdown::export_note_markdown_to_file,
             commands::markdown::export_collection_batch_markdown,
             commands::bibliography::get_bibliography_entries,

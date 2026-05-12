@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,9 @@ use zip::ZipArchive;
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 use crate::vault_package;
 
-use super::md_to_typst::{markdown_to_typst, MarkdownToTypstOptions};
+use super::md_to_typst::{
+    extract_embed_filenames, markdown_to_typst, MarkdownDialect, MarkdownToTypstOptions,
+};
 
 /// Rewrite relative path arguments in `image`/`read`/`embed`/`bibliography`
 /// calls to vault-root-absolute paths anchored at the note's location.
@@ -33,8 +36,29 @@ pub struct ImportResult {
 /// Import a markdown vault from a directory into the target vault location.
 /// Converts .md files to .typ, copies other files as-is, and scaffolds the
 /// inkycap-vault package.
-pub fn import_from_directory(source: &Path, target: &Path) -> ImportResult {
-    let options = MarkdownToTypstOptions::default();
+///
+/// Obsidian-style image embeds `![[name.png]]` carry no path — the file
+/// could live anywhere in the source vault. To resolve them faithfully
+/// the importer makes a first pre-pass to scan every markdown file for
+/// embed references, then routes the matching source files into the
+/// user's configured `attachment_folder` (instead of preserving their
+/// original relative paths) so the emitted
+/// `#image("/<attachment_folder>/name.png")` calls land on the actual
+/// file. Files referenced by embeds but absent from the source vault
+/// produce broken paths — surfaced to the user instead of silently
+/// rewritten — so they can be hand-fixed post-import.
+pub fn import_from_directory(
+    source: &Path,
+    target: &Path,
+    dialect: MarkdownDialect,
+) -> ImportResult {
+    let settings = crate::settings::load_settings();
+    let attachment_folder = settings.files.attachment_folder.clone();
+    let options = MarkdownToTypstOptions {
+        attachment_folder: attachment_folder.clone(),
+        dialect,
+        ..MarkdownToTypstOptions::default()
+    };
     let mut result = ImportResult {
         notes_converted: 0,
         files_copied: 0,
@@ -43,6 +67,12 @@ pub fn import_from_directory(source: &Path, target: &Path) -> ImportResult {
 
     // Scaffold the inkycap-vault package in the target.
     vault_package::scaffold(target);
+
+    // Pre-pass: scan every .md file for `![[filename]]` embed references.
+    // The resulting set drives file-routing in the main pass: anything
+    // referenced this way goes into `attachment_folder`, anything else
+    // keeps its original relative path.
+    let embed_targets = scan_directory_embed_targets(source);
 
     for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -81,16 +111,107 @@ pub fn import_from_directory(source: &Path, target: &Path) -> ImportResult {
         if extension == "md" {
             convert_markdown_file(path, relative, target, &options, &mut result);
         } else {
-            copy_asset_file(path, relative, target, &mut result);
+            let filename = relative
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            if !filename.is_empty() && embed_targets.contains(filename) {
+                copy_asset_to_attachment_folder(
+                    path,
+                    filename,
+                    target,
+                    &attachment_folder,
+                    &mut result,
+                );
+            } else {
+                copy_asset_file(path, relative, target, &mut result);
+            }
         }
     }
 
     result
 }
 
+/// Walk every `.md` file under `source` and collect the filenames
+/// (e.g. `"Pasted image 20240412113956.png"`) referenced by Obsidian-
+/// style embed syntax `![[…]]`. Filenames are intentionally bare —
+/// the same name in different folders collapses to one entry, matching
+/// Obsidian's vault-wide-by-name lookup semantics.
+fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
+    let mut targets = HashSet::new();
+    for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        if let Ok(content) = fs::read_to_string(path) {
+            for name in extract_embed_filenames(&content) {
+                targets.insert(name);
+            }
+        }
+    }
+    targets
+}
+
+/// Copy an asset file into `<target>/<attachment_folder>/<filename>`,
+/// creating the attachment directory as needed. Used for files
+/// referenced by `![[name]]` embed syntax so the emitted Typst
+/// `#image("/<attachment_folder>/<name>")` paths resolve.
+fn copy_asset_to_attachment_folder(
+    source_path: &Path,
+    filename: &str,
+    target_root: &Path,
+    attachment_folder: &str,
+    result: &mut ImportResult,
+) {
+    let folder = attachment_folder.trim_matches('/');
+    let attach_dir = if folder.is_empty() {
+        target_root.to_path_buf()
+    } else {
+        target_root.join(folder)
+    };
+    if let Err(e) = fs::create_dir_all(&attach_dir) {
+        result.errors.push(format!(
+            "Failed to create attachment folder {}: {}",
+            attach_dir.display(),
+            e
+        ));
+        return;
+    }
+    let target_path = attach_dir.join(filename);
+    match fs::copy(source_path, &target_path) {
+        Ok(_) => result.files_copied += 1,
+        Err(e) => result.errors.push(format!(
+            "Failed to copy {} → {}: {}",
+            source_path.display(),
+            target_path.display(),
+            e
+        )),
+    }
+}
+
 /// Import a markdown vault from a zip archive into the target vault location.
-pub fn import_from_zip(zip_path: &Path, target: &Path) -> ImportResult {
-    let options = MarkdownToTypstOptions::default();
+///
+/// Mirrors [`import_from_directory`]'s pre-scan-then-route strategy for
+/// `![[name]]` image embeds: a first pass collects embed-referenced
+/// filenames from every `.md` entry in the archive, then the main pass
+/// routes those files into the configured `attachment_folder` instead
+/// of preserving their original paths.
+pub fn import_from_zip(
+    zip_path: &Path,
+    target: &Path,
+    dialect: MarkdownDialect,
+) -> ImportResult {
+    let settings = crate::settings::load_settings();
+    let attachment_folder = settings.files.attachment_folder.clone();
+    let options = MarkdownToTypstOptions {
+        attachment_folder: attachment_folder.clone(),
+        dialect,
+        ..MarkdownToTypstOptions::default()
+    };
     let mut result = ImportResult {
         notes_converted: 0,
         files_copied: 0,
@@ -122,6 +243,12 @@ pub fn import_from_zip(zip_path: &Path, target: &Path) -> ImportResult {
 
     // Detect if the zip has a single root directory wrapping everything.
     let root_prefix = detect_zip_root_prefix(&mut archive);
+
+    // Pre-pass over the archive: collect every filename referenced by
+    // `![[…]]` embed syntax across all .md entries. Reading entries
+    // here advances each entry's read state, so the main pass below
+    // re-opens by index to start fresh.
+    let embed_targets = scan_zip_embed_targets(&mut archive);
 
     for i in 0..archive.len() {
         let mut entry = match archive.by_index(i) {
@@ -182,11 +309,91 @@ pub fn import_from_zip(zip_path: &Path, target: &Path) -> ImportResult {
         if extension == "md" {
             convert_markdown_bytes(&content, &relative, target, &options, &mut result);
         } else {
-            copy_asset_bytes(&content, &relative, target, &mut result);
+            let filename = relative
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            if !filename.is_empty() && embed_targets.contains(filename) {
+                copy_asset_bytes_to_attachment_folder(
+                    &content,
+                    filename,
+                    target,
+                    &attachment_folder,
+                    &mut result,
+                );
+            } else {
+                copy_asset_bytes(&content, &relative, target, &mut result);
+            }
         }
     }
 
     result
+}
+
+/// Pre-pass over a zip archive: collect filenames referenced by
+/// `![[…]]` embed syntax across every `.md` entry. Each call to
+/// `archive.by_index(i)` returns a fresh read handle on the entry,
+/// so this is independent of the main pass below.
+fn scan_zip_embed_targets(archive: &mut ZipArchive<fs::File>) -> HashSet<String> {
+    let mut targets = HashSet::new();
+    for i in 0..archive.len() {
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = match entry.enclosed_name() {
+            Some(n) => n,
+            None => continue,
+        };
+        if name.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let mut buf = Vec::new();
+        if entry.read_to_end(&mut buf).is_err() {
+            continue;
+        }
+        if let Ok(text) = std::str::from_utf8(&buf) {
+            for name in extract_embed_filenames(text) {
+                targets.insert(name);
+            }
+        }
+    }
+    targets
+}
+
+/// Bytes variant of [`copy_asset_to_attachment_folder`] for the zip
+/// import path. Writes a file already read into memory into
+/// `<target_root>/<attachment_folder>/<filename>`.
+fn copy_asset_bytes_to_attachment_folder(
+    content: &[u8],
+    filename: &str,
+    target_root: &Path,
+    attachment_folder: &str,
+    result: &mut ImportResult,
+) {
+    let folder = attachment_folder.trim_matches('/');
+    let attach_dir = if folder.is_empty() {
+        target_root.to_path_buf()
+    } else {
+        target_root.join(folder)
+    };
+    if let Err(e) = fs::create_dir_all(&attach_dir) {
+        result.errors.push(format!(
+            "Failed to create attachment folder {}: {}",
+            attach_dir.display(),
+            e
+        ));
+        return;
+    }
+    let target_path = attach_dir.join(filename);
+    match fs::write(&target_path, content) {
+        Ok(()) => result.files_copied += 1,
+        Err(e) => result.errors.push(format!(
+            "Failed to write {}: {}",
+            target_path.display(),
+            e
+        )),
+    }
 }
 
 fn convert_markdown_file(
@@ -303,6 +510,54 @@ fn copy_asset_bytes(
     }
 }
 
+/// Auto-detect the markdown dialect of a source vault.
+///
+/// Heuristic: presence of an `.obsidian/` directory anywhere in the
+/// source means the vault was authored in Obsidian. Otherwise default
+/// to Standard markdown — the safe choice for arbitrary `.md` sources
+/// (literal `#` survives, no Obsidian-only preprocessing applied).
+///
+/// Works for both directory sources and zip archives.
+pub fn detect_dialect_for_directory(source: &Path) -> MarkdownDialect {
+    if source.join(".obsidian").is_dir() {
+        return MarkdownDialect::Obsidian;
+    }
+    // Also check one level down in case the user pointed at a parent
+    // directory containing the vault (`source/vault/.obsidian`).
+    if let Ok(entries) = fs::read_dir(source) {
+        for entry in entries.flatten() {
+            if entry.path().join(".obsidian").is_dir() {
+                return MarkdownDialect::Obsidian;
+            }
+        }
+    }
+    MarkdownDialect::Standard
+}
+
+/// Same heuristic for zip archives: scan entry names for an
+/// `.obsidian/` component.
+pub fn detect_dialect_for_zip(zip_path: &Path) -> MarkdownDialect {
+    let Ok(file) = fs::File::open(zip_path) else {
+        return MarkdownDialect::Standard;
+    };
+    let Ok(mut archive) = ZipArchive::new(file) else {
+        return MarkdownDialect::Standard;
+    };
+    for i in 0..archive.len() {
+        let Ok(entry) = archive.by_index_raw(i) else {
+            continue;
+        };
+        let name = entry.name();
+        if name
+            .split('/')
+            .any(|component| component == ".obsidian")
+        {
+            return MarkdownDialect::Obsidian;
+        }
+    }
+    MarkdownDialect::Standard
+}
+
 /// Detect if all entries in a zip share a single root directory prefix
 /// (common when zipping a folder).
 fn detect_zip_root_prefix(archive: &mut ZipArchive<fs::File>) -> Option<PathBuf> {
@@ -366,7 +621,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = import_from_directory(source.path(), target.path());
+        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
 
         assert_eq!(result.notes_converted, 2);
         assert_eq!(result.files_copied, 1);
@@ -410,7 +665,7 @@ mod tests {
         .unwrap();
         fs::write(source.path().join("notes/images/pic.png"), b"fake").unwrap();
 
-        let result = import_from_directory(source.path(), target.path());
+        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
         let typ = fs::read_to_string(target.path().join("notes/foo.typ")).unwrap();
@@ -421,6 +676,69 @@ mod tests {
         assert!(
             !typ.contains("#image(\"images/pic.png\")"),
             "relative image path must be rewritten, got:\n{typ}"
+        );
+    }
+
+    #[test]
+    fn import_routes_embed_referenced_image_to_attachment_folder() {
+        // An Obsidian-style `![[Pasted image.png]]` embed in a note
+        // should:
+        //   1. Emit `#image("/<attachment_folder>/Pasted image.png")`.
+        //   2. Route the source file (wherever it lives in the source
+        //      vault) into `<target>/<attachment_folder>/`, NOT preserve
+        //      its original relative path.
+        // The default attachment folder is "assets" (FileSettings::
+        // default), which is what load_settings() returns absent a
+        // saved user setting.
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        fs::write(
+            source.path().join("note.md"),
+            "# Note\n\nSee ![[Pasted image 20240412113956.png]] please.",
+        )
+        .unwrap();
+        // Put the referenced file in a subfolder of the source vault to
+        // prove that path-preservation is overridden by the embed-routing.
+        fs::create_dir_all(source.path().join("Obsidian Attachments")).unwrap();
+        fs::write(
+            source
+                .path()
+                .join("Obsidian Attachments/Pasted image 20240412113956.png"),
+            b"fake png bytes",
+        )
+        .unwrap();
+
+        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        // Emitted call points at the attachment folder, not the
+        // source's "Obsidian Attachments/…" location.
+        let note = fs::read_to_string(target.path().join("note.typ")).unwrap();
+        assert!(
+            note.contains("#image(\"/assets/Pasted image 20240412113956.png\")"),
+            "expected #image() at attachment folder, got:\n{note}"
+        );
+        assert!(
+            !note.contains("!#wikilink"),
+            "regression: image embed must not fall through to wikilink"
+        );
+
+        // The file lives at the attachment-folder target, not the
+        // original subfolder.
+        assert!(
+            target
+                .path()
+                .join("assets/Pasted image 20240412113956.png")
+                .exists(),
+            "file should have been routed into the attachment folder"
+        );
+        assert!(
+            !target
+                .path()
+                .join("Obsidian Attachments/Pasted image 20240412113956.png")
+                .exists(),
+            "file should NOT also be copied to the original location"
         );
     }
 
@@ -449,7 +767,7 @@ mod tests {
         }
 
         let import_target = TempDir::new().unwrap();
-        let result = import_from_zip(&zip_path, import_target.path());
+        let result = import_from_zip(&zip_path, import_target.path(), MarkdownDialect::Obsidian);
 
         assert_eq!(result.notes_converted, 1);
         assert_eq!(result.files_copied, 1);

@@ -935,14 +935,28 @@ export interface ImportResult {
   errors: string[];
 }
 
+export type MarkdownDialect = "standard" | "obsidian";
+
 export async function importMarkdownVault(
   sourcePath: string,
   targetPath: string,
+  dialect: MarkdownDialect | null = null,
 ): Promise<ImportResult> {
   return invoke<ImportResult>("import_markdown_vault", {
     sourcePath,
     targetPath,
+    dialect,
   });
+}
+
+/// Probe a source vault and return the dialect the importer would use
+/// by default ("obsidian" if an `.obsidian/` folder is present in the
+/// source, otherwise "standard"). Used by the import dialog to
+/// preselect its dialect toggle.
+export async function detectMarkdownDialect(
+  sourcePath: string,
+): Promise<MarkdownDialect> {
+  return invoke<MarkdownDialect>("detect_markdown_dialect", { sourcePath });
 }
 
 export type UnconvertibleMode = "preserve" | "omit";
