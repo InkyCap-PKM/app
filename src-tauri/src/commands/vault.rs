@@ -97,6 +97,26 @@ pub async fn open_vault(
                             }));
                             sync_cache_for_deleted_file(&handle, path.clone());
                         }
+                        crate::events::AppEvent::FileRenamed { from, to } => {
+                            // Fire the existing delete+create events first so
+                            // the frontend file tree refreshes the same way
+                            // it always has — components that only care about
+                            // tree state don't need to know about renames.
+                            // The dedicated `vault:file-renamed` event is for
+                            // listeners that want to follow the move (e.g.
+                            // an open editor tab transferring to the new path).
+                            let _ = handle.emit("vault:file-deleted", serde_json::json!({
+                                "path": from.display().to_string()
+                            }));
+                            let _ = handle.emit("vault:file-created", serde_json::json!({
+                                "path": to.display().to_string()
+                            }));
+                            let _ = handle.emit("vault:file-renamed", serde_json::json!({
+                                "from": from.display().to_string(),
+                                "to": to.display().to_string()
+                            }));
+                            sync_cache_for_renamed_file(&handle, from.clone(), to.clone());
+                        }
                         _ => {}
                     }
                 }
@@ -219,6 +239,92 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
                 );
             }
         }
+    });
+}
+
+/// Handle an externally-observed rename: rewrite wikilinks in every note
+/// that referenced `from` so they point at `to`, then update the indices
+/// (drop `from`, index `to`). Without this, external `mv`s would leave
+/// orphan `[[Old Name]]` / `#wikilink("Old Name")` references behind,
+/// since the watcher's split delete+create events provide no way to
+/// correlate the two sides.
+fn sync_cache_for_renamed_file(
+    handle: &tauri::AppHandle,
+    from: std::path::PathBuf,
+    to: std::path::PathBuf,
+) {
+    // Only `.typ` notes participate in the link index. A rename whose
+    // *new* side isn't a note (e.g. `note.typ` → `note.bak`) is handled
+    // upstream by the watcher emitting the asymmetric delete/create
+    // pair, so we won't see a `FileRenamed` for it.
+    if to.extension().and_then(|e| e.to_str()) != Some("typ") {
+        return;
+    }
+
+    let handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = handle.state::<AppState>();
+
+        let vault_root = match state.vault_root.read().await.clone() {
+            Some(r) => r,
+            None => return,
+        };
+        let storage = match state.storage.read().await.clone() {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Symlink-escape defence: both endpoints must live under the
+        // canonical vault root. Watcher events for symlinked paths
+        // resolve to their real targets, so an out-of-root path here
+        // is an escape attempt.
+        if from.strip_prefix(&vault_root).is_err()
+            || to.strip_prefix(&vault_root).is_err()
+        {
+            return;
+        }
+
+        // Rewrite wikilinks in every backlink of the old path. Errors
+        // are logged but non-fatal — a partial rewrite is still better
+        // than no rewrite, and the user can re-save manually if needed.
+        if let Err(err) = crate::commands::file_ops::rewrite_backlinks_for_rename(
+            &from, &to, &storage, &*state,
+        )
+        .await
+        {
+            log::warn!(
+                "wikilink rewrite failed during external rename {} → {}: {err}",
+                from.display(),
+                to.display()
+            );
+        }
+
+        // Drop the old path from every index, then index the new path.
+        state.remove_from_indices(&from).await;
+
+        let rel = to
+            .strip_prefix(&vault_root)
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|_| to.clone());
+        match storage.read_file(&rel).await {
+            Ok(content) => {
+                state.reindex_note(&to, &content).await;
+            }
+            Err(err) => {
+                log::warn!(
+                    "watcher reindex failed for renamed file {}: {err}",
+                    to.display()
+                );
+            }
+        }
+
+        let _ = handle.emit(
+            "vault:index-updated",
+            serde_json::json!({
+                "from": from.display().to_string(),
+                "to": to.display().to_string(),
+            }),
+        );
     });
 }
 
