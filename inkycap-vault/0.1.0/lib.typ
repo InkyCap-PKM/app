@@ -263,12 +263,28 @@
   // Known list-typed fields are coerced from a bare string to a 1-element
   // array so a user typing `tags: "draft"` still works. Datetime values are
   // stringified for stable downstream consumption.
+  // `list_fields`: bare-string → 1-element array coercion (e.g. typing
+  //   `tags: "draft"` becomes `("draft",)`).
+  // `comma_list_fields`: subset that *also* splits commas — for fields
+  //   where users author free-form strings and the comma is the natural
+  //   separator (currently just `aliases`). Tag-style fields are kept
+  //   off this list so tag values containing commas aren't silently
+  //   shredded.
   let list_fields = ("tags", "status", "collection", "aliases")
+  let comma_list_fields = ("aliases",)
   let data = (:)
   for (k, v) in args.named() {
     let coerced = if k in list_fields {
       if type(v) == array { v }
-      else if type(v) == str and v != "" { (v,) }
+      else if type(v) == str and v != "" {
+        if k in comma_list_fields {
+          let parts = v.split(",").map(s => s.trim()).filter(s => s != "")
+          if parts.len() > 0 { parts }
+          else { (v,) }
+        } else {
+          (v,)
+        }
+      }
       else if type(v) == str { () }
       else { v }
     } else if type(v) == datetime {

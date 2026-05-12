@@ -469,6 +469,37 @@ fn heading_to_label(text: &str, existing_headings: &[HeadingInfo]) -> String {
     base
 }
 
+/// Alias entry returned to the frontend for autocomplete.
+#[derive(serde::Serialize)]
+pub struct AliasEntry {
+    pub alias: String,
+    pub note_name: String,
+    pub note_path: String,
+}
+
+/// Get all note aliases for wikilink autocomplete.
+#[tauri::command]
+pub async fn get_all_aliases(
+    state: State<'_, AppState>,
+) -> Result<Vec<AliasEntry>, InkyCapError> {
+    let index = state.property_index.read().await;
+    let mut entries = Vec::new();
+    for (alias, ids) in index.aliases_iter() {
+        for id in ids {
+            let name = id
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            entries.push(AliasEntry {
+                alias: alias.to_string(),
+                note_name: name,
+                note_path: id.display().to_string(),
+            });
+        }
+    }
+    Ok(entries)
+}
+
 /// Get the context line(s) where `source_path` links to `target_path`.
 /// Returns the first line containing a wikilink to the target file.
 #[tauri::command]

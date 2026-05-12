@@ -223,6 +223,7 @@ pub fn run() {
             commands::files::get_note_headings,
             commands::files::ensure_heading_label,
             commands::files::get_backlink_context,
+            commands::files::get_all_aliases,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::generate_zid,

@@ -1,13 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use crate::models::note::{NoteId, NoteMetadata};
+use crate::models::note::{NoteId, NoteMetadata, PropertyValue};
 
 /// In-memory index of all note metadata, property keys, and tags.
 pub struct PropertyIndex {
     pub notes: HashMap<NoteId, NoteMetadata>,
     pub property_keys: HashSet<String>,
     pub tags: HashMap<String, Vec<NoteId>>,
+    /// Alias string → note paths that define it. Multiple notes may share
+    /// an alias; the frontend disambiguates in the autocomplete UI.
+    pub aliases: HashMap<String, Vec<NoteId>>,
 }
 
 impl PropertyIndex {
@@ -16,6 +19,7 @@ impl PropertyIndex {
             notes: HashMap::new(),
             property_keys: HashSet::new(),
             tags: HashMap::new(),
+            aliases: HashMap::new(),
         }
     }
 
@@ -42,6 +46,11 @@ impl PropertyIndex {
                     .push(id.clone());
             }
 
+            // Index aliases
+            for alias in Self::extract_aliases(&note) {
+                index.aliases.entry(alias).or_default().push(id.clone());
+            }
+
             index.notes.insert(id, note);
         }
 
@@ -58,6 +67,12 @@ impl PropertyIndex {
         if let Some(old_note) = self.notes.get(&id) {
             for tag in &old_note.tags {
                 if let Some(ids) = self.tags.get_mut(tag) {
+                    ids.retain(|i| i != &id);
+                }
+            }
+            // Remove old aliases
+            for alias in Self::extract_aliases(old_note) {
+                if let Some(ids) = self.aliases.get_mut(&alias) {
                     ids.retain(|i| i != &id);
                 }
             }
@@ -80,9 +95,15 @@ impl PropertyIndex {
             self.tags.entry(tag.clone()).or_default().push(id.clone());
         }
 
+        // Re-index aliases
+        for alias in Self::extract_aliases(&note) {
+            self.aliases.entry(alias).or_default().push(id.clone());
+        }
+
         self.notes.insert(id, note);
 
         self.tags.retain(|_, ids| !ids.is_empty());
+        self.aliases.retain(|_, ids| !ids.is_empty());
 
         // Remove lost keys only if no other note still uses them
         for key in lost_keys {
@@ -101,7 +122,13 @@ impl PropertyIndex {
                     ids.retain(|i| i != path);
                 }
             }
+            for alias in Self::extract_aliases(&note) {
+                if let Some(ids) = self.aliases.get_mut(&alias) {
+                    ids.retain(|i| i != path);
+                }
+            }
             self.tags.retain(|_, ids| !ids.is_empty());
+            self.aliases.retain(|_, ids| !ids.is_empty());
 
             for key in note.properties.keys() {
                 if !key.starts_with("file.") {
@@ -112,6 +139,33 @@ impl PropertyIndex {
                 }
             }
         }
+    }
+
+    /// Extract alias strings from a note's `aliases` property.
+    fn extract_aliases(note: &NoteMetadata) -> Vec<String> {
+        let Some(val) = note.properties.get("aliases") else {
+            return Vec::new();
+        };
+        match val {
+            PropertyValue::List(items) => items
+                .iter()
+                .filter_map(|item| {
+                    if let PropertyValue::String(s) = item {
+                        if !s.is_empty() { Some(s.clone()) } else { None }
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            PropertyValue::String(s) if !s.is_empty() => vec![s.clone()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// Iterate aliases by reference so callers can serialize without
+    /// first materializing a clone of the whole index.
+    pub fn aliases_iter(&self) -> impl Iterator<Item = (&str, &[NoteId])> {
+        self.aliases.iter().map(|(k, v)| (k.as_str(), v.as_slice()))
     }
 
     pub fn note_count(&self) -> usize {

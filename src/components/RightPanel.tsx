@@ -833,7 +833,7 @@ const RightPanel: Component = () => {
                   <input
                     class="property-editor__input"
                     type="text"
-                    placeholder="Property name..."
+                    placeholder="Create new or select existing property..."
                     value={newPropKey()}
                     onInput={(e) => onNewPropKeyInput(e.currentTarget.value)}
                     onKeyDown={handleAddKeyDown}

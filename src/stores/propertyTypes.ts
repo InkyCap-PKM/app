@@ -14,6 +14,7 @@ import {
   CircleDot,
   Hash,
   List,
+  ListPlus,
   SquareCheck,
   type LucideProps,
 } from "lucide-solid";
@@ -46,6 +47,7 @@ export const PROPERTY_TYPE_OPTIONS: PropertyType[] = [
   "date",
   "datetime",
   "list",
+  "commalist",
   "number",
   "text",
 ];
@@ -62,6 +64,8 @@ export function propertyTypeLabel(ty: PropertyType): string {
       return "Date & time";
     case "list":
       return "List";
+    case "commalist":
+      return "Text (comma-separated)";
     case "number":
       return "Number";
     case "text":
@@ -81,6 +85,8 @@ export function propertyTypeIcon(ty: PropertyType): Component<LucideProps> {
       return CalendarClock;
     case "list":
       return List;
+    case "commalist":
+      return ListPlus;
     case "number":
       return Hash;
     case "text":

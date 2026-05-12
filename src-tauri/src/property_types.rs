@@ -26,8 +26,34 @@ pub enum PropertyType {
     #[serde(rename = "datetime")]
     DateTime,
     List,
+    /// Like List on disk, but the editor presents a comma-separated
+    /// single-line text input instead of a value-picker chip UI — used
+    /// for fields where users author free-form strings rather than
+    /// reusing a controlled vocabulary (e.g. note `aliases`).
+    #[serde(rename = "commalist")]
+    CommaList,
     Number,
     Text,
+}
+
+/// Built-in property keys whose declared type is fixed by the system.
+/// Users may not reassign these — they have specific semantics elsewhere
+/// in the app (rendering, indexing, the `inkycap-vault` Typst package).
+pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
+    "title",
+    "date",
+    "tags",
+    "status",
+    "source",
+    "collection",
+    "description",
+    "task",
+    "aliases",
+    "zid",
+];
+
+pub fn is_system_property(key: &str) -> bool {
+    SYSTEM_PROPERTY_KEYS.contains(&key)
 }
 
 impl Default for PropertyType {
@@ -49,7 +75,7 @@ fn builtin_property_type(key: &str) -> PropertyType {
         "collection" => PropertyType::List,
         "description" => PropertyType::Text,
         "task" => PropertyType::Checkbox,
-        "aliases" => PropertyType::List,
+        "aliases" => PropertyType::CommaList,
         "zid" => PropertyType::Number,
         _ => PropertyType::Auto,
     }
@@ -58,7 +84,7 @@ fn builtin_property_type(key: &str) -> PropertyType {
 fn builtin_property_types() -> HashMap<String, PropertyType> {
     [
         ("title", PropertyType::Text),
-        ("aliases", PropertyType::List),
+        ("aliases", PropertyType::CommaList),
         ("description", PropertyType::Text),
         ("tags", PropertyType::List),
         ("task", PropertyType::Checkbox),
@@ -103,12 +129,17 @@ impl PropertyTypeRegistry {
     /// vault, not an error.
     pub fn load(vault_root: &Path) -> Self {
         let path = Self::path_for(vault_root);
-        let types = match std::fs::read_to_string(&path) {
+        let mut types = match std::fs::read_to_string(&path) {
             Ok(s) => serde_json::from_str::<RegistryFile>(&s)
                 .map(|r| r.types)
                 .unwrap_or_default(),
             Err(_) => HashMap::new(),
         };
+        // System property keys have fixed types — discard any saved
+        // override so an older registry can't pin a system key to the
+        // wrong type. `get()` falls back to `builtin_property_type()`
+        // for missing entries.
+        types.retain(|k, _| !is_system_property(k));
         Self {
             types,
             vault_root: Some(vault_root.to_path_buf()),
@@ -236,7 +267,7 @@ pub fn coerce_value(value: &PropertyValue, ty: PropertyType) -> PropertyValue {
             PropertyValue::Null => PropertyValue::Bool(false),
             PropertyValue::List(items) => PropertyValue::Bool(!items.is_empty()),
         },
-        PropertyType::List => match value {
+        PropertyType::List | PropertyType::CommaList => match value {
             PropertyValue::List(items) => PropertyValue::List(items.clone()),
             PropertyValue::String(s) => {
                 if s.trim().is_empty() {

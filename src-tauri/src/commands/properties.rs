@@ -14,7 +14,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
-use crate::property_types::{coerce_value, PropertyType};
+use crate::property_types::{coerce_value, is_system_property, PropertyType};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
 use crate::storage::sanitize_vault_arg;
@@ -42,6 +42,14 @@ pub async fn set_property_type(
     ty: PropertyType,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
+    // System properties have fixed types — the UI shouldn't let users
+    // change them, but enforce it at the boundary too.
+    if is_system_property(&key) {
+        return Err(InkyCapError::BadRequest(format!(
+            "Cannot change type of system property '{}'",
+            key
+        )));
+    }
     {
         let mut reg = state.property_types.write().await;
         reg.set(key.clone(), ty);

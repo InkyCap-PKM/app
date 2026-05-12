@@ -31,6 +31,9 @@ pub enum InkyCapError {
 
     #[error("Export failed: {0}")]
     ExportFailed(String),
+
+    #[error("{0}")]
+    BadRequest(String),
 }
 
 impl From<rusqlite::Error> for InkyCapError {

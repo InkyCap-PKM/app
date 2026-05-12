@@ -1,5 +1,6 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import * as ipc from "../../lib/ipc";
+import { typstStringEscape } from "../../lib/typst";
 import { pasteUrlHandler } from "./paste-url";
 import { protectedRangesField } from "./visual-plugin";
 
@@ -29,15 +30,15 @@ const NOTE_EXTS = new Set(["typ"]);
 function attachmentMarkup(relativePath: string): string {
   const ext = getExtension(relativePath);
   if (IMAGE_EXTS.has(ext)) {
-    return `#image("/${relativePath}")`;
+    return `#image("/${typstStringEscape(relativePath)}")`;
   }
   if (NOTE_EXTS.has(ext)) {
     const basename = relativePath.split("/").pop() ?? relativePath;
     const stem = basename.replace(/\.typ$/, "");
-    return `#wikilink("${stem}")`;
+    return `#wikilink("${typstStringEscape(stem)}")`;
   }
   const filename = relativePath.split("/").pop() ?? relativePath;
-  return `#link("/${relativePath}")[${filename}]`;
+  return `#link("/${typstStringEscape(relativePath)}")[${filename}]`;
 }
 
 function insertAttachment(view: EditorView, relativePath: string, pos: number) {
