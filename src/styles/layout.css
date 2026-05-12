@@ -230,6 +230,46 @@
   padding: 0 4px;
 }
 
+/* Centered vault-relative path of the active file. The two flex spacers
+   on either side of this span do the centering; the inner text is
+   allowed to ellipsize when the path doesn't fit. */
+.status-bar__path {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 50%;
+  color: var(--fg-muted);
+  font-size: var(--text-base);
+}
+
+.status-bar__path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.status-bar__path-rename {
+  /* No fixed dimensions — sizes to the icon (matches the .status-bar__vault-name
+     button's approach so both status-bar glyphs render at the same scale). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 1px;
+  flex-shrink: 0;
+}
+
+.status-bar__path-rename:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
 /* Sidebar items */
 .sidebar-item {
   display: flex;
@@ -303,7 +343,9 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  /* Slightly tighter right padding so the close × sits nearer the tab's
+     right edge — improves target alignment without crowding the title. */
+  padding: 4px 6px 4px 12px;
   margin: 4px 2px;
   cursor: pointer;
   border: 1px solid transparent;
@@ -336,15 +378,23 @@ svg.lucide {
 .tab__close {
   background: none;
   border: none;
+  border-radius: 3px;
   color: var(--fg-dim);
   cursor: pointer;
-  font-size: var(--text-lg);
-  padding: 0 2px;
+  /* Slightly larger hit target (and glyph) so the × is easier to click. */
+  font-size: var(--text-xl);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   line-height: 1;
 }
 
 .tab__close:hover {
   color: var(--fg-primary);
+  background: var(--bg-hover);
 }
 
 /* Empty state */
@@ -1080,6 +1130,68 @@ svg.lucide {
   background: color-mix(in srgb, var(--accent, #1D7874) 10%, transparent);
 }
 
+/* Generic header icon button used by the Sort, Expand/Collapse, and
+   Filter (search) toggles across file-tree / tags / properties panes.
+   Visually equivalent to .left-sidebar__filter-btn but kept separate so
+   the existing typst-only toggle keeps its dedicated --active rule. */
+.left-sidebar__icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-sidebar__icon-btn:hover {
+  color: var(--fg-muted);
+  border-color: var(--border-input);
+}
+
+.left-sidebar__icon-btn--active {
+  color: var(--accent, #1D7874);
+  border-color: var(--accent, #1D7874);
+  background: color-mix(in srgb, var(--accent, #1D7874) 10%, transparent);
+}
+
+/* The sort dropdown anchors to its trigger button. The wrap is
+   position: relative so the absolute .context-menu lands directly
+   below the icon. */
+.left-sidebar__sort-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.left-sidebar__sort-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  z-index: 20;
+  min-width: 180px;
+}
+
+/* Inline search box revealed below the Tags / Properties header when
+   the search icon is toggled on. */
+.left-sidebar__filter-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 5px 8px;
+  margin: 0 4px 6px;
+  outline: none;
+}
+
+.left-sidebar__filter-input:focus {
+  border-color: var(--accent);
+}
+
 .sidebar-item__rename-input {
   background: var(--bg-primary);
   border: 1px solid var(--accent);
@@ -1171,12 +1283,20 @@ svg.lucide {
 }
 
 .property-editor__type-select {
+  /* See .references-panel__sort — appearance:none is required so
+     WebKitGTK honors our dark-theme colors on a native <select>. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: var(--bg-input);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   border: 1px solid var(--border-input);
   border-radius: 3px;
   color: var(--fg-primary);
   font-size: var(--text-base);
-  padding: 2px 6px;
+  padding: 2px 24px 2px 6px;
   width: 100%;
   box-sizing: border-box;
   outline: none;
@@ -2724,29 +2844,28 @@ svg.lucide {
   font-size: var(--text-sm);
 }
 
-/* Search-display settings panel (collapse, more context). */
-.search-panel__settings {
-  background: var(--bg-input);
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  padding: 4px 8px;
+/* Search-display options row: icon-button toggles for collapse/expand,
+   more-context, and regex. Lives below the search input when the user
+   has opened the Search Options pane. */
+.search-panel__options-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 
-.search-panel__setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-base);
-  color: var(--fg-primary);
-  cursor: pointer;
-  padding: 2px 0;
+.search-panel__hints-divider {
+  height: 1px;
+  background: var(--border-input);
+  margin: 4px 8px;
 }
 
-.search-panel__setting input[type="checkbox"] {
-  cursor: pointer;
+.search-panel__hint--static {
+  cursor: default;
+}
+
+.search-panel__hint--static:hover {
+  background: transparent;
 }
 
 /* Status row: result count + overflow menu + sort dropdown. */
@@ -3501,6 +3620,16 @@ svg.lucide {
   font-family: inherit;
 }
 
+.cmd-palette__shortcut {
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  font-family: var(--editor-font-mono, monospace);
+}
+
 .cmd-palette__highlight {
   color: var(--accent-text);
   font-weight: 600;
@@ -3918,12 +4047,21 @@ svg.lucide {
 }
 
 .references-panel__sort {
+  /* WebKitGTK ignores background/color on native <select> unless
+     appearance is reset; without this the closed widget renders with
+     the GTK system theme (white in our dark mode). */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: var(--bg-secondary);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
   border: 1px solid var(--border-primary);
   border-radius: 4px;
   color: var(--fg-primary);
   font-size: var(--text-sm);
-  padding: 2px 4px;
+  padding: 2px 20px 2px 4px;
   min-width: 0;
 }
 
@@ -3977,6 +4115,20 @@ svg.lucide {
   color: var(--fg-secondary);
 }
 
+/* Drag-and-drop visual states. Same recipe as .property-row in the
+   right panel: dim the row being dragged, paint an inset border on the
+   row a drop would land above/below. */
+.bookmark-item--dragging {
+  opacity: 0.4;
+}
+.bookmark-item--drop-above {
+  box-shadow: inset 0 2px 0 0 var(--accent-purple, var(--accent));
+}
+.bookmark-item--drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent-purple, var(--accent));
+}
+
+
 .bookmark-item:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
@@ -3990,6 +4142,12 @@ svg.lucide {
   width: var(--icon-sm);
   height: var(--icon-sm);
   color: var(--fg-muted);
+  /* Doubles as the drag handle — see BookmarksPanel.tsx. */
+  cursor: grab;
+  user-select: none;
+}
+.bookmark-item__icon:active {
+  cursor: grabbing;
 }
 
 .bookmark-item__label {
@@ -4193,11 +4351,19 @@ svg.lucide {
 }
 
 .flow-view__controls select {
+  /* See .references-panel__sort — WebKitGTK needs appearance:none to
+     honor our dark-theme background/color on a native <select>. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: var(--bg-input);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
   color: var(--fg-primary);
   border: 1px solid var(--border-input);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 4px 24px 4px 8px;
   font-size: var(--text-md);
   margin-left: 4px;
   cursor: pointer;
@@ -5661,6 +5827,9 @@ svg.lucide {
 }
 
 .command-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 5px 12px;
   cursor: pointer;
   font-size: var(--text-md);
@@ -5670,6 +5839,23 @@ svg.lucide {
 .command-palette__item.is-selected {
   background: var(--bg-selection);
   color: var(--fg-primary);
+}
+
+.command-palette__item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette__shortcut {
+  flex: 0 0 auto;
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
 }
 
 /* Paste-as-URL popup menu */

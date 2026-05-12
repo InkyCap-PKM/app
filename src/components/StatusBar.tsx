@@ -1,8 +1,10 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
-import { ArchiveRestore, Archive, Check } from "lucide-solid";
+import { ArchiveRestore, Archive, Check, Signpost } from "lucide-solid";
 import { vaultInfo, vaultRegistry, openVault } from "../stores/vault";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
-import { getActiveTab } from "../stores/tabs";
+import { getActiveTab, closeTab, openTab } from "../stores/tabs";
+import * as ipc from "../lib/ipc";
+import { toastError } from "../stores/toasts";
 
 const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
@@ -41,6 +43,38 @@ const StatusBar: Component = () => {
     }, 0);
   }
 
+  /// Vault-relative path of the current file tab, e.g.
+  /// "notes/journal/2026.typ". Returns null if the file lives outside the
+  /// vault root (which shouldn't happen for tabs opened normally) so the
+  /// status bar doesn't leak the user's full filesystem layout.
+  const activeFilePath = createMemo(() => {
+    const tab = getActiveTab();
+    if (!tab || tab.type !== "file" || !tab.path) return null;
+    const root = vaultInfo()?.path;
+    if (root && tab.path.startsWith(root + "/")) {
+      return tab.path.slice(root.length + 1);
+    }
+    return null;
+  });
+
+  async function renameActiveFile() {
+    const tab = getActiveTab();
+    if (!tab || tab.type !== "file") return;
+    const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
+    const newName = prompt("Rename note:", oldName);
+    if (!newName || newName === oldName) return;
+    try {
+      const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
+      closeTab(tab.id);
+      openTab(
+        { type: "file", title: newName, path: newPath },
+        { forceNewTab: true },
+      );
+    } catch (err) {
+      toastError("Rename failed", err);
+    }
+  }
+
   async function switchToVault(path: string) {
     setSwitcherMenu(null);
     try {
@@ -71,8 +105,24 @@ const StatusBar: Component = () => {
               <ArchiveRestore size={14} />
             </button>
             <span>{info().file_count} files</span>
-            <span>{info().collection_count} collections</span>
           </>
+        )}
+      </Show>
+      <div class="status-bar__spacer" />
+
+      <Show when={activeFilePath()}>
+        {(path) => (
+          <span class="status-bar__path" title={path()}>
+            <span class="status-bar__path-text">{path()}</span>
+            <button
+              class="status-bar__path-rename"
+              onClick={renameActiveFile}
+              title="Rename file"
+              aria-label="Rename file"
+            >
+              <Signpost size={14} />
+            </button>
+          </span>
         )}
       </Show>
       <div class="status-bar__spacer" />
@@ -83,9 +133,6 @@ const StatusBar: Component = () => {
         </span>
         <span class="status-bar__stat">
           {stats().chars} chars
-        </span>
-        <span class="status-bar__stat">
-          ~{stats().readingTime} min read
         </span>
       </Show>
 

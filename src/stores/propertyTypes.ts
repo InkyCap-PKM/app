@@ -9,10 +9,10 @@
 import { createSignal } from "solid-js";
 import {
   AlignLeft,
+  Binary,
   CalendarClock,
   CalendarDays,
   CircleDot,
-  Hash,
   List,
   ListPlus,
   SquareCheck,
@@ -88,7 +88,7 @@ export function propertyTypeIcon(ty: PropertyType): Component<LucideProps> {
     case "commalist":
       return ListPlus;
     case "number":
-      return Hash;
+      return Binary;
     case "text":
       return AlignLeft;
     case "auto":

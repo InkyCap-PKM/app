@@ -107,6 +107,17 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   registerCommand({
+    id: "view:search-replace",
+    title: "Search and Replace (vault-wide)",
+    category: "View",
+    execute: () => {
+      document.dispatchEvent(
+        new CustomEvent("inkycap:open-search", { detail: { showReplace: true } }),
+      );
+    },
+  });
+
+  registerCommand({
     id: "view:toggle-theme",
     title: "Toggle Theme (Dark/Light)",
     category: "View",
@@ -162,7 +173,7 @@ export function registerBuiltinCommands(callbacks: {
 
   registerCommand({
     id: "edit:paste-as-markdown",
-    title: "Paste as Markdown",
+    title: "Paste from Markdown",
     category: "Edit",
     execute: async () => {
       const handle = activeEditorView();
@@ -313,40 +324,40 @@ function insertMarkup(template: string, cursorOffset: number) {
 }
 
 function registerMarkupCommands() {
-  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number};
+  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string };
 
   const items: MarkupItem[] = [
     // ── Format ──
-    { id: "bold", title: "Bold", category: "Format", insert: "*${sel}*", cursorOffset: 1 },
-    { id: "italic", title: "Italic", category: "Format", insert: "_${sel}_", cursorOffset: 1 },
+    { id: "bold", title: "Bold", category: "Format", insert: "*${sel}*", cursorOffset: 1, shortcut: "*…*" },
+    { id: "italic", title: "Italic", category: "Format", insert: "_${sel}_", cursorOffset: 1, shortcut: "_…_" },
     { id: "strikethrough", title: "Strikethrough", category: "Format", insert: "#strike[${sel}]", cursorOffset: 8 },
     { id: "highlight", title: "Highlight", category: "Format", insert: "#highlight[${sel}]", cursorOffset: 11 },
     { id: "underline", title: "Underline", category: "Format", insert: "#underline[${sel}]", cursorOffset: 11 },
     { id: "overline", title: "Overline", category: "Format", insert: "#overline[${sel}]", cursorOffset: 10 },
     { id: "subscript", title: "Subscript", category: "Format", insert: "#sub[${sel}]", cursorOffset: 5 },
     { id: "superscript", title: "Superscript", category: "Format", insert: "#super[${sel}]", cursorOffset: 7 },
-    { id: "inline-code", title: "Inline Code", category: "Format", insert: "`${sel}`", cursorOffset: 1 },
-    { id: "inline-math", title: "Inline Math", category: "Format", insert: "$${sel}$", cursorOffset: 1 },
+    { id: "inline-code", title: "Inline Code", category: "Format", insert: "`${sel}`", cursorOffset: 1, shortcut: "`…`" },
+    { id: "inline-math", title: "Inline Math", category: "Format", insert: "$${sel}$", cursorOffset: 1, shortcut: "$…$" },
 
     // ── Structure ──
-    { id: "heading-1", title: "Heading 1", category: "Structure", insert: "= ", cursorOffset: 2 },
-    { id: "heading-2", title: "Heading 2", category: "Structure", insert: "== ", cursorOffset: 3 },
-    { id: "heading-3", title: "Heading 3", category: "Structure", insert: "=== ", cursorOffset: 4 },
-    { id: "heading-4", title: "Heading 4", category: "Structure", insert: "==== ", cursorOffset: 5 },
-    { id: "heading-5", title: "Heading 5", category: "Structure", insert: "===== ", cursorOffset: 6 },
-    { id: "heading-6", title: "Heading 6", category: "Structure", insert: "====== ", cursorOffset: 7 },
-    { id: "bullet-list", title: "Bullet List", category: "Structure", insert: "- ", cursorOffset: 2 },
-    { id: "ordered-list", title: "Ordered List", category: "Structure", insert: "+ ", cursorOffset: 2 },
+    { id: "heading-1", title: "Heading 1", category: "Structure", insert: "= ", cursorOffset: 2, shortcut: "= " },
+    { id: "heading-2", title: "Heading 2", category: "Structure", insert: "== ", cursorOffset: 3, shortcut: "== " },
+    { id: "heading-3", title: "Heading 3", category: "Structure", insert: "=== ", cursorOffset: 4, shortcut: "=== " },
+    { id: "heading-4", title: "Heading 4", category: "Structure", insert: "==== ", cursorOffset: 5, shortcut: "==== " },
+    { id: "heading-5", title: "Heading 5", category: "Structure", insert: "===== ", cursorOffset: 6, shortcut: "===== " },
+    { id: "heading-6", title: "Heading 6", category: "Structure", insert: "====== ", cursorOffset: 7, shortcut: "====== " },
+    { id: "bullet-list", title: "Bullet List", category: "Structure", insert: "- ", cursorOffset: 2, shortcut: "- " },
+    { id: "ordered-list", title: "Ordered List", category: "Structure", insert: "+ ", cursorOffset: 2, shortcut: "+ " },
     { id: "quote-inline", title: "Quote (inline)", category: "Structure", insert: "#quote[${sel}]", cursorOffset: 7 },
-    { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20 },
+    { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20, shortcut: "> " },
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
-    { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4 },
+    { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4, shortcut: "```" },
     { id: "math-block", title: "Math Block", category: "Insert", insert: "$ ${sel} $", cursorOffset: 2 },
-    { id: "horizontal-rule", title: "Horizontal Rule", category: "Insert", insert: "#line(length: 100%)", cursorOffset: 19 },
-    { id: "footnote", title: "Footnote", category: "Insert", insert: "#footnote[${sel}]", cursorOffset: 10 },
+    { id: "horizontal-rule", title: "Horizontal Rule", category: "Insert", insert: "#line(length: 100%)", cursorOffset: 19, shortcut: "+++" },
+    { id: "footnote", title: "Footnote", category: "Insert", insert: "#footnote[${sel}]", cursorOffset: 10, shortcut: "++…++" },
     { id: "table", title: "Table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
     { id: "page-break", title: "Page Break", category: "Insert", insert: "#pagebreak()", cursorOffset: 12 },
     { id: "line-break", title: "Line Break", category: "Insert", insert: "#linebreak()", cursorOffset: 12 },
@@ -358,7 +369,7 @@ function registerMarkupCommands() {
     { id: "hide", title: "Hide", category: "Insert", insert: "#hide[${sel}]", cursorOffset: 6 },
     { id: "embed", title: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
     { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
-    { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1 },
+    { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1, shortcut: "@" },
     { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
 
     // ── Style ──
@@ -376,7 +387,7 @@ function registerMarkupCommands() {
     { id: "heading-numbering", title: "Heading Numbering", category: "Style", insert: '#set heading(numbering: "1.1")', cursorOffset: 24 },
 
     // ── InkyCap ──
-    { id: "wikilink", title: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11 },
+    { id: "wikilink", title: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
     { id: "verse", title: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
   ];
 
@@ -385,6 +396,7 @@ function registerMarkupCommands() {
       id: `markup:${item.id}`,
       title: item.title,
       category: item.category,
+      shortcut: item.shortcut,
       execute: () => insertMarkup(item.insert, item.cursorOffset),
     });
   }

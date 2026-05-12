@@ -12,6 +12,10 @@ pub struct FileTreeNode {
     pub path: String,
     pub is_dir: bool,
     pub children: Option<Vec<FileTreeNode>>,
+    /// Unix epoch seconds. Zero when the platform doesn't expose the
+    /// stat field (rare) — frontend treats zero as "unknown" for sort.
+    pub modified_time: u64,
+    pub created_time: u64,
 }
 
 /// The sole interface for all file I/O in InkyCap.

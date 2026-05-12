@@ -28,7 +28,7 @@ export const [caseSensitive, setCaseSensitive] = createSignal<boolean>(false);
 export const [useRegex, setUseRegex] = createSignal<boolean>(false);
 
 // Display options.
-export const [collapseResults, setCollapseResults] = createSignal<boolean>(false);
+export const [collapseResults, setCollapseResults] = createSignal<boolean>(true);
 export const [showMoreContext, setShowMoreContext] = createSignal<boolean>(false);
 export const [sortMode, setSortMode] = createSignal<SortMode>("relevance");
 

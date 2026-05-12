@@ -71,6 +71,10 @@ export interface FileTreeNode {
   path: string;
   is_dir: boolean;
   children?: FileTreeNode[];
+  /** Unix epoch seconds. Zero means "unknown" (backend couldn't read
+   *  the stat field). Used by the file-tree sort. */
+  modified_time: number;
+  created_time: number;
 }
 
 export interface LinkInfo {
