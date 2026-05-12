@@ -98,6 +98,10 @@ struct DocEntry {
     /// path: word index, regex match scan, "best line" pick, filter
     /// representative line, and context windows.
     import_line_indices: Vec<usize>,
+    /// `tag name (lowercased)` → source line indices of `#tag("…")` call
+    /// sites, populated from the AST projection so `tag:` filter clicks
+    /// land on the actual tag call instead of a heuristic line.
+    tag_locations: HashMap<String, Vec<usize>>,
     /// Filesystem modification time, Unix seconds. Defaulted to 0 if the
     /// file's metadata could not be read.
     modified_time: i64,
@@ -580,30 +584,58 @@ impl SearchEngine {
             };
 
             if matches {
-                // Pick the first non-empty, non-import line as a
-                // representative for filter-only matches. The import line
-                // is filtered later, but if every line in `lines` is
-                // either empty or the import line we still want a placeholder
-                // so the file shows up.
-                let representative = doc
-                    .lines
-                    .iter()
-                    .enumerate()
-                    .find(|(idx, line)| {
-                        !doc.import_line_indices.contains(idx) && !line.trim().is_empty()
-                    })
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(0);
-                let mut lines = HashMap::new();
-                lines.insert(
-                    representative,
-                    vec![WordPosition {
-                        line: representative,
-                        word_index: 0,
-                        char_start: 0,
-                        char_end: 0,
-                    }],
-                );
+                // For `tag:` filters, jump to the actual `#tag("…")`
+                // call site (recorded by the AST projection) rather
+                // than picking a representative line — otherwise the
+                // result would land on whichever non-empty line came
+                // first, typically inside the `#note(...)` properties
+                // block.
+                let mut lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
+                if let FilterKind::Tag = kind {
+                    for (tag_name, tag_lines) in &doc.tag_locations {
+                        if tag_name.contains(&value_lower) {
+                            for &line_idx in tag_lines {
+                                if doc.import_line_indices.contains(&line_idx) {
+                                    continue;
+                                }
+                                lines.entry(line_idx).or_default().push(WordPosition {
+                                    line: line_idx,
+                                    word_index: 0,
+                                    char_start: 0,
+                                    char_end: 0,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Fallback (and the only path for non-tag filters):
+                // pick the first non-empty, non-import line as a
+                // representative. Also covers the rare case where a
+                // tag was set in `#note(tags: (...))` syntax but the
+                // body contains no `#tag(...)` call — the doc still
+                // matches the filter, just lacks a precise location.
+                if lines.is_empty() {
+                    let representative = doc
+                        .lines
+                        .iter()
+                        .enumerate()
+                        .find(|(idx, line)| {
+                            !doc.import_line_indices.contains(idx)
+                                && !line.trim().is_empty()
+                        })
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(0);
+                    lines.insert(
+                        representative,
+                        vec![WordPosition {
+                            line: representative,
+                            word_index: 0,
+                            char_start: 0,
+                            char_end: 0,
+                        }],
+                    );
+                }
                 result.insert(doc_id, lines);
             }
         }
@@ -805,9 +837,22 @@ struct DocBuild {
 }
 
 /// Tokenize a single document into the structures the engine consumes.
-/// Lines that match the auto-injected vault library import are excluded
-/// from the inverted index — users searching for `vault` or `import`
-/// shouldn't get every note in the vault back.
+///
+/// Indexing is driven by [`text_projection::project`] — a Typst-AST walk
+/// that emits one token per *rendered word*, with markup wrappers
+/// (`_…_`, `*…*`, `#strong[…]`, `#highlight[…]`, headings, list items,
+/// nested content-bracket calls, …) automatically stripped because they
+/// are structural nodes around the text leaves rather than part of
+/// them. This is what makes a search for `italicize` find content
+/// authored as `_italicize_`, and a search for the body of a
+/// `#highlight[yellow]` find `yellow`.
+///
+/// `doc.lines` still holds the raw source so result snippets show what
+/// the user wrote, and `match_ranges` from the index continue to point
+/// at byte offsets inside the raw line. The auto-injected vault import
+/// line is skipped from indexing (so users searching for `vault` or
+/// `import` don't get every note back) but kept in `lines` so result
+/// line numbers stay aligned with the source.
 fn build_doc(
     path: PathBuf,
     content: &str,
@@ -824,39 +869,36 @@ fn build_doc(
         .unwrap_or_default();
     let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
 
-    let mut word_count = 0usize;
-    let mut local_index: HashMap<String, Vec<WordPosition>> = HashMap::new();
-    let mut headings: Vec<String> = Vec::new();
     let mut import_line_indices: Vec<usize> = Vec::new();
-
     for (line_idx, line) in lines.iter().enumerate() {
         if crate::vault_package::is_vault_import_line(line) {
-            // Don't index the auto-injected import line, but keep it in
-            // `lines` so result line numbers still align with the source.
             import_line_indices.push(line_idx);
+        }
+    }
+
+    let projection = crate::search::text_projection::project(content);
+
+    // Build the inverted-index entries, assigning per-line word indices
+    // in source order so phrase search ("a b c") keeps working: words
+    // 0, 1, 2 must be consecutive on the same line.
+    let mut local_index: HashMap<String, Vec<WordPosition>> = HashMap::new();
+    let mut word_count = 0usize;
+    let mut per_line_word_idx: HashMap<usize, usize> = HashMap::new();
+
+    for token in &projection.tokens {
+        if import_line_indices.contains(&token.line) {
             continue;
         }
-
-        if let Some(text) = heading_text(line) {
-            headings.push(text.to_lowercase());
-        }
-
-        let mut word_idx = 0usize;
-        for (char_start, word) in word_boundaries(line) {
-            let lower = word.to_lowercase();
-            if lower.is_empty() {
-                continue;
-            }
-            word_count += 1;
-            let pos = WordPosition {
-                line: line_idx,
-                word_index: word_idx,
-                char_start,
-                char_end: char_start + word.len(),
-            };
-            local_index.entry(lower).or_default().push(pos);
-            word_idx += 1;
-        }
+        let word_idx = per_line_word_idx.entry(token.line).or_insert(0);
+        let pos = WordPosition {
+            line: token.line,
+            word_index: *word_idx,
+            char_start: token.char_start,
+            char_end: token.char_end,
+        };
+        *word_idx += 1;
+        word_count += 1;
+        local_index.entry(token.word.clone()).or_default().push(pos);
     }
 
     let property_keys_lower: Vec<String> =
@@ -872,29 +914,14 @@ fn build_doc(
             property_values,
             lines,
             word_count,
-            headings,
+            headings: projection.headings,
             import_line_indices,
+            tag_locations: projection.tag_locations,
             modified_time,
             created_time,
         },
         word_positions: local_index.into_iter().collect(),
     }
-}
-
-/// Extract the visible text of a `=`-prefix Typst heading. Returns `None`
-/// for non-heading lines. We intentionally do NOT recognize `#` as a
-/// heading marker because `#` is a Typst function-call sigil, not a
-/// heading prefix.
-fn heading_text(line: &str) -> Option<&str> {
-    let trimmed = line.trim_start();
-    if !trimmed.starts_with('=') {
-        return None;
-    }
-    let rest = trimmed.trim_start_matches('=');
-    if rest.is_empty() || !rest.starts_with(|c: char| c == ' ' || c == '\t') {
-        return None;
-    }
-    Some(rest.trim())
 }
 
 /// Collect up to `window` lines of context before and after `line_idx`,
@@ -955,31 +982,6 @@ fn file_timestamps(path: &Path) -> (i64, i64) {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(mtime);
     (mtime, ctime)
-}
-
-/// Extract words and their byte positions from a line of text.
-/// Words are split on whitespace and punctuation, keeping alphanumeric runs.
-fn word_boundaries(line: &str) -> Vec<(usize, &str)> {
-    let mut words = Vec::new();
-    let mut start = None;
-
-    for (i, ch) in line.char_indices() {
-        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-            if start.is_none() {
-                start = Some(i);
-            }
-        } else if let Some(s) = start {
-            words.push((s, &line[s..i]));
-            start = None;
-        }
-    }
-
-    // Handle word at end of line
-    if let Some(s) = start {
-        words.push((s, &line[s..]));
-    }
-
-    words
 }
 
 #[cfg(test)]
@@ -1187,10 +1189,4 @@ mod tests {
         assert!(results2.is_empty() || !results2.iter().any(|r| r.path.contains("note1")));
     }
 
-    #[test]
-    fn test_word_boundaries() {
-        let words = word_boundaries("Hello, world! This is a test.");
-        let texts: Vec<&str> = words.iter().map(|(_, w)| *w).collect();
-        assert_eq!(texts, vec!["Hello", "world", "This", "is", "a", "test"]);
-    }
 }
