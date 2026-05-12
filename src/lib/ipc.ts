@@ -124,9 +124,8 @@ export async function updateProperty(
 
 export async function createCollectionFile(
   name: string,
-  folder: string,
 ): Promise<CollectionInfo> {
-  return invoke<CollectionInfo>("create_collection_file", { name, folder });
+  return invoke<CollectionInfo>("create_collection_file", { name });
 }
 
 export async function saveCollectionFile(
@@ -465,6 +464,57 @@ export async function copyPathToAttachments(
   sourcePath: string,
 ): Promise<string> {
   return invoke<string>("copy_path_to_attachments", { sourcePath });
+}
+
+/**
+ * Open a native file-picker and copy the selected files into the vault's
+ * configured attachments folder. Returns the vault-root-relative saved
+ * paths (empty array if the user cancelled).
+ */
+export async function pickAndUploadToAttachments(): Promise<string[]> {
+  return invoke<string[]>("pick_and_upload_to_attachments");
+}
+
+export interface AttachmentMigrationPreview {
+  current_folder: string;
+  files_to_move: number;
+  notes_to_update: number;
+  target_exists: boolean;
+  target_is_nonempty: boolean;
+}
+
+export interface AttachmentMigrationResult {
+  files_moved: number;
+  notes_updated: number;
+  errors: string[];
+}
+
+/**
+ * Phase C of the portable-paths plan: preview the impact of renaming
+ * the attachment folder. Read-only — counts files in the old folder
+ * and notes whose source references `/<old>/...`.
+ */
+export async function previewAttachmentFolderMigration(
+  newFolder: string,
+): Promise<AttachmentMigrationPreview> {
+  return invoke<AttachmentMigrationPreview>(
+    "preview_attachment_folder_migration",
+    { newFolder },
+  );
+}
+
+/**
+ * Phase C of the portable-paths plan: rename the attachment folder.
+ * Moves the on-disk folder, rewrites every path-bearing call across
+ * the vault whose argument starts with `/<old>/`, and persists the
+ * updated setting. Confirm before calling — this is destructive.
+ */
+export async function migrateAttachmentFolder(
+  newFolder: string,
+): Promise<AttachmentMigrationResult> {
+  return invoke<AttachmentMigrationResult>("migrate_attachment_folder", {
+    newFolder,
+  });
 }
 
 /**

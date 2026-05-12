@@ -11,6 +11,7 @@ use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
+use crate::vault_package;
 
 /// List all `.collection` files in the vault with their view counts and icons. Requires an open vault.
 #[tauri::command]
@@ -170,24 +171,34 @@ pub async fn get_collection_data(
     })
 }
 
-/// Create a new .collection file with a default table view.
+/// Create a new .collection file with a default table view. Collections
+/// always land in the reserved `.inkycap/collections/` directory — the
+/// location is not user-configurable.
 #[tauri::command]
 pub async fn create_collection_file(
     name: String,
-    folder: String,
     state: State<'_, AppState>,
 ) -> Result<CollectionInfo, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&folder)?.join(format!("{}.collection", name));
+    let trimmed = name.trim();
+    if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Invalid collection name: '{}'",
+            name
+        )));
+    }
+    let rel = std::path::PathBuf::from(vault_package::collections_relpath())
+        .join(format!("{}.collection", trimmed));
+    let path = sanitize_vault_arg(&rel.display().to_string())?;
 
     if storage.exists(&path).await {
         return Err(InkyCapError::InvalidPath(format!(
             "Collection '{}' already exists",
-            name
+            trimmed
         )));
     }
 
-    let base = default_collection_file_for(&name);
+    let base = default_collection_file_for(trimmed);
     let content = serialize_collection_file(&base)?;
     storage.write_file(&path, &content).await?;
 
@@ -195,7 +206,7 @@ pub async fn create_collection_file(
     state.collection_files.write().await.push(path.clone());
 
     Ok(CollectionInfo {
-        name,
+        name: trimmed.to_string(),
         path: path.display().to_string(),
         view_count: base.views.len(),
         icon: base.icon,

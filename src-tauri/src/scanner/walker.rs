@@ -258,6 +258,21 @@ pub(crate) async fn stat_file(path: &Path) -> Result<FileStat> {
     })
 }
 
+/// List `.collection` files from the reserved `.inkycap/collections/`
+/// directory. Returns an empty list if the directory is missing (callers
+/// like the scanner must not fail just because a freshly imported vault
+/// hasn't been scaffolded yet).
+async fn list_collection_files(
+    storage: &dyn VaultStorage,
+    vault_root: &Path,
+) -> Result<Vec<PathBuf>> {
+    let dir = crate::vault_package::collections_dir(vault_root);
+    if !storage.exists(&dir).await {
+        return Ok(Vec::new());
+    }
+    storage.list_files(&dir, "*.collection").await
+}
+
 /// Scan all `.typ` files in a vault directory. This is the no-cache cold
 /// path: every file is read, compiled, and queried for metadata. Used as
 /// a fallback when no cache is available.
@@ -267,7 +282,7 @@ pub async fn scan_vault(
     compiler: &mut TypstCompiler,
 ) -> Result<ScanResult> {
     let note_files = storage.list_files(vault_root, "*.typ").await?;
-    let collection_files = storage.list_files(vault_root, "*.collection").await?;
+    let collection_files = list_collection_files(storage, vault_root).await?;
 
     let mut notes = Vec::with_capacity(note_files.len());
     let mut contents = Vec::with_capacity(note_files.len());
@@ -337,7 +352,7 @@ pub async fn scan_vault_cached(
     compiler: &mut TypstCompiler,
 ) -> Result<(ScanResult, CacheScanStats)> {
     let note_files = storage.list_files(vault_root, "*.typ").await?;
-    let collection_files = storage.list_files(vault_root, "*.collection").await?;
+    let collection_files = list_collection_files(storage, vault_root).await?;
 
     let cached_by_relpath = cache.load_vault(vault_root)?;
 

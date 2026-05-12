@@ -76,12 +76,17 @@
   min-height: 38px;
   border-bottom: 1px solid var(--border-primary);
   box-sizing: border-box;
+  /* flex-shrink: 0 keeps the bar at exactly 38px even when the scrollable
+     content below tries to claim space. The right panel's tab bar uses the
+     same lock; without it, sub-pixel shrinking pulls the section-header
+     below up by ~1px and breaks cross-panel header alignment. */
+  flex-shrink: 0;
 }
 
 .left-sidebar__mode-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -270,6 +275,27 @@
   background: var(--bg-hover);
 }
 
+/* Inline rename input that swaps in for the path text when the user clicks
+   the rename icon. Kept visually unobtrusive — only a subtle bottom border
+   so it reads as in-place edit rather than a separate field. */
+.status-bar__rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--fg-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  outline: none;
+  line-height: 1.4;
+}
+
+.status-bar__rename-input:focus {
+  border-color: var(--accent, #1D7874);
+}
+
 /* Sidebar items */
 .sidebar-item {
   display: flex;
@@ -349,7 +375,7 @@ svg.lucide {
   margin: 4px 2px;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   font-size: var(--text-md);
   white-space: nowrap;
@@ -798,6 +824,21 @@ svg.lucide {
   background: var(--bg-selection);
 }
 
+/* Icon + label menu items (e.g. the New-note dropdown's
+   "Folder" / "Upload into vault" entries). Uses flex so the icon
+   sits inline with the label rather than inheriting the default
+   block layout. */
+.context-menu__item--icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.context-menu__item--icon > svg {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
 .context-menu__item--danger {
   color: var(--accent-danger);
 }
@@ -1070,8 +1111,25 @@ svg.lucide {
   color: var(--fg-secondary);
 }
 
-/* Sidebar section header (for collections mode) */
-.left-sidebar__section-header {
+/* ── Shared panel header pattern ──────────────────────────────────────────
+   The left sidebar and right panel use the same three-class pattern at the
+   top of each pane:
+     .{side}__section-header   — the bar itself (label left, actions right)
+     .{side}__header-actions   — the right-aligned action cluster
+     .{side}__icon-btn         — the individual square icon buttons inside
+   The two sides are kept as separate class names (so JSX stays semantic and
+   side-scoped), but they share CSS rules below via grouped selectors. That
+   means a future change to padding, font, color, border, or hit area is
+   made in ONE place and automatically applies to both panels — preserving
+   the cross-panel alignment the design depends on.
+
+   Vertical alignment between the two sides is load-bearing: the section
+   header sits directly inside `.left-sidebar__content` / `.right-panel__
+   tab-content`, both of which use the same 8px padding. Do not add
+   intermediate wrappers with extra top-padding on either side — that will
+   push one column's headers below the other's. */
+.left-sidebar__section-header,
+.right-panel__section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1085,7 +1143,7 @@ svg.lucide {
 .left-sidebar__add-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--text-lg);
@@ -1101,7 +1159,62 @@ svg.lucide {
   color: var(--fg-secondary);
 }
 
-.left-sidebar__header-actions {
+/* Split button: pill that pairs a primary action (New Note) with a
+   caret that opens a menu of related actions. Visually one element
+   at rest; on hover each half shows its own border so the user sees
+   they're independently clickable (AnyType-style). */
+.left-sidebar__split-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  background: none;
+}
+
+.left-sidebar__split-btn__main,
+.left-sidebar__split-btn__caret {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-sidebar__split-btn__main {
+  border-top-left-radius: var(--radius-control);
+  border-bottom-left-radius: var(--radius-control);
+}
+
+.left-sidebar__split-btn__caret {
+  border-top-right-radius: var(--radius-control);
+  border-bottom-right-radius: var(--radius-control);
+}
+
+.left-sidebar__split-btn:hover {
+  border-color: transparent;
+}
+
+.left-sidebar__split-btn:hover .left-sidebar__split-btn__main,
+.left-sidebar__split-btn:hover .left-sidebar__split-btn__caret {
+  border-color: var(--border-input);
+  color: var(--fg-secondary);
+}
+
+.left-sidebar__split-btn__main:hover {
+  border-color: var(--fg-muted) !important;
+}
+
+.left-sidebar__split-btn__caret:hover {
+  border-color: var(--fg-muted) !important;
+}
+
+.left-sidebar__header-actions,
+.right-panel__header-actions {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -1110,7 +1223,7 @@ svg.lucide {
 .left-sidebar__filter-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-dim);
   cursor: pointer;
   padding: 2px 4px;
@@ -1131,13 +1244,15 @@ svg.lucide {
 }
 
 /* Generic header icon button used by the Sort, Expand/Collapse, and
-   Filter (search) toggles across file-tree / tags / properties panes.
+   Filter (search) toggles across file-tree / tags / properties panes, and
+   mirrored on the right panel (Outline toggle, future per-pane actions).
    Visually equivalent to .left-sidebar__filter-btn but kept separate so
    the existing typst-only toggle keeps its dedicated --active rule. */
-.left-sidebar__icon-btn {
+.left-sidebar__icon-btn,
+.right-panel__icon-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-dim);
   cursor: pointer;
   padding: 2px 4px;
@@ -1147,15 +1262,30 @@ svg.lucide {
   justify-content: center;
 }
 
-.left-sidebar__icon-btn:hover {
+.left-sidebar__icon-btn:hover,
+.right-panel__icon-btn:hover {
   color: var(--fg-muted);
   border-color: var(--border-input);
 }
 
-.left-sidebar__icon-btn--active {
+.left-sidebar__icon-btn--active,
+.right-panel__icon-btn--active {
   color: var(--accent, #1D7874);
   border-color: var(--accent, #1D7874);
   background: color-mix(in srgb, var(--accent, #1D7874) 10%, transparent);
+}
+
+/* Inline SVGs sit on the text baseline, leaving ~1px of extra space
+   above the icon and visually thinning the bottom border. Block-level
+   icons remove the baseline gap so all four borders read evenly. */
+.left-sidebar__filter-btn > svg,
+.left-sidebar__icon-btn > svg,
+.right-panel__icon-btn > svg,
+.left-sidebar__add-btn > svg,
+.left-sidebar__split-btn__main > svg,
+.left-sidebar__split-btn__caret > svg,
+.ui-icon-btn > svg {
+  display: block;
 }
 
 /* The sort dropdown anchors to its trigger button. The wrap is
@@ -1166,30 +1296,53 @@ svg.lucide {
   display: inline-flex;
 }
 
-.left-sidebar__sort-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 2px;
-  z-index: 20;
-  min-width: 180px;
-}
-
 /* Inline search box revealed below the Tags / Properties header when
    the search icon is toggled on. */
+.left-sidebar__filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 4px 6px;
+}
+
 .left-sidebar__filter-input {
+  flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
   border-radius: 4px;
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 5px 8px;
-  margin: 0 4px 6px;
+  padding-right: 26px;
   outline: none;
+  min-width: 0;
 }
 
 .left-sidebar__filter-input:focus {
   border-color: var(--accent);
+}
+
+.left-sidebar__filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.left-sidebar__filter-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 .sidebar-item__rename-input {
@@ -1260,7 +1413,7 @@ svg.lucide {
 .right-panel__add-btn {
   background: none;
   border: 1px dashed var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -2614,7 +2767,7 @@ svg.lucide {
   height: 28px;
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 0;
@@ -2633,6 +2786,44 @@ svg.lucide {
 }
 
 .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Shared control-surface utility. Use for any new panel header /
+   heading-row icon button so it picks up the unified --radius-control,
+   border, and hover treatment. Existing class-specific buttons
+   (.left-sidebar__icon-btn, .right-panel__icon-btn, .icon-btn,
+   .left-sidebar__filter-btn, .left-sidebar__add-btn) are visually
+   equivalent — prefer this class for new code so future radius /
+   color retuning happens in one place. Add an `is-active` modifier
+   for toggled states. */
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.ui-icon-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+.ui-icon-btn.is-active {
+  color: var(--accent, #1D7874);
+  border-color: var(--accent, #1D7874);
+  background: color-mix(in srgb, var(--accent, #1D7874) 10%, transparent);
+}
+
+.ui-icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -3746,6 +3937,9 @@ svg.lucide {
   min-height: 38px;
   gap: 2px;
   padding: 0 40px 0 8px;
+  /* Must match .left-sidebar__mode-bar exactly so the section-headers below
+     each bar land on the same horizontal line. flex-shrink: 0 here is
+     load-bearing — see the comment on .left-sidebar__mode-bar. */
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -3753,7 +3947,7 @@ svg.lucide {
 .right-panel__tab {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -3777,27 +3971,71 @@ svg.lucide {
 .right-panel__tab-content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  /* Matches .left-sidebar__content so section-headers on both sides align
+     horizontally — the section-header itself adds its own 4px inset. */
+  padding: 8px;
 }
 
 /* ── Outline Panel ── */
 
+/* No extra padding on the pane wrapper: the right panel's tab-content
+   already provides the 8px gutter, and the shared section-header adds its
+   own 4px inset. Any additional top-padding here would push the "Outline"
+   label below the left sidebar's "Files" label and break the cross-panel
+   header alignment. */
 .outline-panel {
-  padding: 4px 0;
+  padding: 0;
 }
 
 .outline-panel__item {
   display: flex;
   align-items: center;
-  padding: 4px 12px;
-  cursor: pointer;
+  padding: 3px 12px;
   font-size: var(--text-md);
   color: var(--fg-secondary);
   border-radius: 3px;
   margin: 1px 4px;
 }
 
-.outline-panel__item:hover {
+.outline-panel__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  border-radius: 50%;
+  margin-right: 2px;
+}
+
+.outline-panel__caret:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.outline-panel__caret--leaf {
+  cursor: default;
+}
+
+.outline-panel__caret--leaf:hover {
+  color: var(--fg-muted);
+  background: none;
+}
+
+.outline-panel__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.outline-panel__label:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
 }
@@ -3851,7 +4089,11 @@ svg.lucide {
 /* ── References Panel ── */
 
 .references-panel {
-  padding: 4px 0;
+  /* No top padding here for the same reason as .outline-panel: the
+     tab-content already provides the 8px gutter, and the References pane's
+     own header bar adds its inset. Extra padding here would push the
+     References header below the matching header rows on the left side. */
+  padding: 0;
 }
 
 .references-panel__entry {
@@ -3972,13 +4214,18 @@ svg.lucide {
 .references-panel__search {
   display: block;
   width: 100%;
-  padding: 4px 26px 4px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  padding: 5px 26px 5px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
   border-radius: 4px;
   color: var(--fg-primary);
   font-size: var(--text-md);
+  outline: none;
   box-sizing: border-box;
+}
+
+.references-panel__search:focus {
+  border-color: var(--accent);
 }
 
 .references-panel__search-clear {
@@ -4615,7 +4862,7 @@ svg.lucide {
 .editor-header__nav {
   display: inline-flex;
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   background: var(--bg-secondary);
 }
@@ -4668,7 +4915,7 @@ svg.lucide {
 .editor-header__mode-toggle {
   display: inline-flex;
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   background: var(--bg-secondary);
 }
@@ -4937,8 +5184,8 @@ svg.lucide {
 
 .tab-bar__new {
   background: none;
-  border: none;
-  border-radius: 50%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   font-size: var(--text-lg);
   line-height: 1;
@@ -5058,7 +5305,7 @@ svg.lucide {
 .vertical-toolbar__btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -5097,7 +5344,7 @@ svg.lucide {
 .main-content__panel-toggle {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -5776,7 +6023,7 @@ svg.lucide {
 .editor-header__reading-format-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--text-base);
@@ -6217,6 +6464,158 @@ svg.lucide {
   font-size: var(--text-sm);
   color: var(--fg-tertiary, #888);
   line-height: 1.4;
+}
+
+/* ── App modal (.app-modal) ──────────────────────────────────────────────
+   Generic centered dialog used by the in-app prompt component (see
+   stores/prompt.ts + components/PromptHost.tsx) and intended as the shared
+   base for any future modal in the app. New modals should reuse these
+   classes rather than inventing their own backdrop/box styles so dialogs
+   stay visually consistent.
+   The older .export-dialog__* rules are functionally equivalent and could
+   be migrated to share these selectors when that file is next touched. */
+
+.app-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.app-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-modal__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-modal__header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.app-modal__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-modal__label {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.app-modal__input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  font-family: inherit;
+  outline: none;
+}
+
+.app-modal__input:focus {
+  border-color: var(--accent, #1D7874);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #1D7874) 25%, transparent);
+}
+
+.app-modal__hint {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.app-modal__error {
+  font-size: var(--text-sm);
+  color: var(--error-fg, #e55);
+}
+
+.app-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.app-modal__btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: var(--text-md);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.app-modal__btn--secondary {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+}
+
+.app-modal__btn--secondary:hover {
+  background: var(--bg-hover);
+}
+
+.app-modal__btn--primary {
+  border: 1px solid transparent;
+  background: var(--accent, #1D7874);
+  color: #fff;
+  font-weight: 500;
+}
+
+.app-modal__btn--primary:hover {
+  opacity: 0.9;
+}
+
+.app-modal__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Attachment-folder rename row & preview (Phase C of portable-paths) ── */
+
+.attachment-folder-field__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attachment-folder-field__current {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+}
+
+.attachment-folder-field__preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg);
+  font-size: 0.92em;
 }
 
 /* ── Toast notifications ── */

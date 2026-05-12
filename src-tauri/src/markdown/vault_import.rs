@@ -5,9 +5,22 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 use crate::vault_package;
 
 use super::md_to_typst::{markdown_to_typst, MarkdownToTypstOptions};
+
+/// Rewrite relative path arguments in `image`/`read`/`embed`/`bibliography`
+/// calls to vault-root-absolute paths anchored at the note's location.
+/// Markdown commonly emits `![](images/foo.png)` which `markdown_to_typst`
+/// turns into `#image("images/foo.png")`. Left alone, that path is fragile
+/// (breaks on note move, breaks under merged export). Rebasing at import
+/// time produces stable `#image("/notes/images/foo.png")`-style calls.
+/// Per CLAUDE.md's portable-paths principle.
+fn rebase_for_note(typst_content: &str, relative_note_path: &Path) -> String {
+    let note_dir = relative_note_path.parent().unwrap_or_else(|| Path::new(""));
+    rebase_relative_paths(typst_content, note_dir)
+}
 
 /// Result of a vault import operation.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -194,6 +207,7 @@ fn convert_markdown_file(
     };
 
     let typst_content = markdown_to_typst(&content, options);
+    let typst_content = rebase_for_note(&typst_content, relative);
     let target_path = target.join(relative).with_extension("typ");
 
     if let Some(parent) = target_path.parent() {
@@ -228,6 +242,7 @@ fn convert_markdown_bytes(
     };
 
     let typst_content = markdown_to_typst(text, options);
+    let typst_content = rebase_for_note(&typst_content, relative);
     let target_path = target.join(relative).with_extension("typ");
 
     if let Some(parent) = target_path.parent() {
@@ -375,6 +390,38 @@ mod tests {
 
         // Vault library scaffolded.
         assert!(target.path().join(".inkycap/vault.typ").exists());
+    }
+
+    #[test]
+    fn import_rebases_relative_image_paths_to_vault_root_absolute() {
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // Note at notes/foo.md references images/pic.png alongside it.
+        // After import: note at notes/foo.typ, asset at notes/images/pic.png.
+        // The emitted #image() call must be /notes/images/pic.png so it
+        // survives note moves and merged export — see Phase A/D of the
+        // portable-paths plan.
+        fs::create_dir_all(source.path().join("notes/images")).unwrap();
+        fs::write(
+            source.path().join("notes/foo.md"),
+            "# Foo\n\n![alt](images/pic.png)\n",
+        )
+        .unwrap();
+        fs::write(source.path().join("notes/images/pic.png"), b"fake").unwrap();
+
+        let result = import_from_directory(source.path(), target.path());
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        let typ = fs::read_to_string(target.path().join("notes/foo.typ")).unwrap();
+        assert!(
+            typ.contains("#image(\"/notes/images/pic.png\")"),
+            "expected rebased absolute image path, got:\n{typ}"
+        );
+        assert!(
+            !typ.contains("#image(\"images/pic.png\")"),
+            "relative image path must be rewritten, got:\n{typ}"
+        );
     }
 
     #[test]

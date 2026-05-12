@@ -82,6 +82,22 @@ All vault primitives (`note`, `tag`, `wikilink`, `link-ref`, `embed`, `callout`,
 
 Document properties are the typed arguments to a `#note(...)` call at the top of the file, optionally materialized via the inline property panel.
 
+### Path arguments in note source are vault-root-absolute
+
+Any InkyCap code path that emits an `image`, `read`, `embed`, or
+`bibliography` call into a note's source writes a path that starts with
+`/` (the Typst "project root", which we configure to the vault root).
+Relative paths are tolerated when a user hand-authors them, but never
+emitted by InkyCap itself — they are fragile under note moves and break
+under merged collection export. Drag-and-drop, paste-image, the `/`
+command palette's image/embed entries, and markdown vault import all
+funnel attachments into `settings.files.attachment_folder` and emit
+`#image("/<folder>/<file>")`-shaped calls. When inlining a note's
+content into a synthetic document (merged export today, more later), or
+when moving a note (Phase B), any remaining relative path is rebased
+via `src-tauri/src/typst_pipeline/path_rebase.rs` — the single
+AST-based rewriter that all such call sites share.
+
 ### Architectural extensibility
 
 - All file I/O goes through a `VaultStorage` trait (prepares for sync backends)
@@ -109,7 +125,8 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - One file, one responsibility. If a module's purpose can't be summarized in a sentence, split it.
 - Public APIs (Tauri commands, trait methods, exported TS) carry doc comments stating intent and invariants. Internal code stays self-evident through naming.
 - Tests cover load-bearing invariants — source↔visual round-trip, `#note(...)` property preservation, `typst query` label stability — at the unit level. They double as executable documentation.
-- Avoid creating duplications of code, unless there is a justifiable and necessary reason. Reuse existing code when reasonable. Avoid duplicating CSS, unless there is a justifiable and necessary reason.
+- Avoid creating duplications of code, unless there is a justifiable and necessary reason. Reuse existing code when reasonable. 
+- Do not create new CSS where styles exist that should be used repeatedly for the same and consistent UI elements. There should be a valid, justifiable, and necessary reason otherwise.
 - Avoid hard-coding values into user interface elements, keep them dynamic and responsive to the user's system's affordances wherever possible.
 
 ### Modularity & extensibility

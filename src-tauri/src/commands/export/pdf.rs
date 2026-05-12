@@ -400,6 +400,11 @@ pub async fn export_collection_book_pdf(
         if let Some(v) = ov.include_bibliography { options.include_bibliography = v; }
     }
 
+    // Acquire vault root up front: per-note path rebasing needs it to
+    // compute each note's vault-relative directory. The same guard is
+    // read again further down for template / bibliography resolution.
+    let vault_root_for_rebase = state.vault_root.read().await.clone();
+
     let mut notes: Vec<BookNote> = Vec::with_capacity(data.rows.len());
     for row in &data.rows {
         let note_path_buf = PathBuf::from(&row.file_path);
@@ -409,10 +414,28 @@ pub async fn export_collection_book_pdf(
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| row.file_name.clone());
         let title = extract_note_title(&content);
+
+        // Rebase relative path arguments in the note's source so calls
+        // like `image("daisy.png")` resolve against the note's own
+        // folder once inlined into the merged document's synthetic main
+        // (which lives at the vault root, not next to the note). Absolute
+        // paths and non-literal arguments are left untouched. See
+        // typst_pipeline::path_rebase.
+        let rebased = if let Some(ref vroot) = vault_root_for_rebase {
+            let note_dir = note_path_buf
+                .parent()
+                .and_then(|p| p.strip_prefix(vroot).ok())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default();
+            crate::typst_pipeline::path_rebase::rebase_relative_paths(&content, &note_dir)
+        } else {
+            content.clone()
+        };
+
         notes.push(BookNote {
             stem,
             abs_path: note_path_buf,
-            content: content.into(),
+            content: rebased.into(),
             title,
         });
     }
@@ -469,11 +492,14 @@ pub async fn export_collection_book_pdf(
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "book".to_string());
-        let parent = collection_path_buf
-            .parent()
+        // Anchor at the vault root so relative paths in inlined notes
+        // (e.g. `image("daisy.png")`) resolve against the vault — not the
+        // reserved `.inkycap/collections/` location of the .collection file.
+        let parent = vault_root_ref
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| {
-                vault_root_ref
+                collection_path_buf
+                    .parent()
                     .map(|p| p.to_path_buf())
                     .unwrap_or_default()
             });

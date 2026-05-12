@@ -23,6 +23,7 @@ import RefNotePicker from "./components/RefNotePicker";
 import NoteComposer from "./components/NoteComposer";
 import ExportDialog from "./components/ExportDialog";
 import ToastHost from "./components/ToastHost";
+import PromptHost from "./components/PromptHost";
 import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initVault } from "./stores/vault";
@@ -353,6 +354,7 @@ const App: Component = () => {
           }}
         />
         <ToastHost />
+        <PromptHost />
       </div>
     </ErrorBoundary>
   );

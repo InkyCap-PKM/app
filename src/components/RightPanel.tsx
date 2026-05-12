@@ -20,6 +20,7 @@ import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
+import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
 
 const KNOWN_FIELDS_ORDERED = [
@@ -565,8 +566,12 @@ const RightPanel: Component = () => {
     const tab = activeFileTab();
     if (!tab) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
-    const el = document.createElement("input");
-    const newName = prompt("Rename note:", oldName);
+    const newName = await promptText({
+      title: "Rename note",
+      label: "New name",
+      initialValue: oldName,
+      confirmLabel: "Rename",
+    });
     if (!newName || newName === oldName) return;
     try {
       const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
@@ -609,7 +614,12 @@ const RightPanel: Component = () => {
     setFileMenu(null);
     const tab = activeFileTab();
     if (!tab) return;
-    const targetName = prompt("Merge entire file with (note name):");
+    const targetName = await promptText({
+      title: "Merge file",
+      label: "Merge entire file into note",
+      placeholder: "Note name",
+      confirmLabel: "Merge",
+    });
     if (!targetName) return;
     try {
       const targetPath = await ipc.resolveWikilink(targetName);
@@ -755,6 +765,12 @@ const RightPanel: Component = () => {
           {/* Properties tab */}
           <Show when={activePanel() === "properties"}>
             <div class="right-panel__section">
+              <div class="right-panel__section-header">
+                <span>Properties</span>
+                {/* Reserved for future per-pane actions to keep the header
+                    bar visually aligned with the left sidebar's pattern. */}
+                <div class="right-panel__header-actions" />
+              </div>
               <Show when={metadata()}>
                 {(meta) => (
                   <div class="properties-list">
@@ -902,11 +918,14 @@ const RightPanel: Component = () => {
             </Show>
             {/* Backlinks section */}
             <div class="right-panel__section">
-              <div class="right-panel__heading">
-                Backlinks
-                <Show when={backlinks()?.length}>
-                  <span class="right-panel__count"> ({backlinks()!.length})</span>
-                </Show>
+              <div class="right-panel__section-header">
+                <span>
+                  Backlinks
+                  <Show when={backlinks()?.length}>
+                    <span class="right-panel__count"> ({backlinks()!.length})</span>
+                  </Show>
+                </span>
+                <div class="right-panel__header-actions" />
               </div>
               <For each={backlinks()}>
                 {(link) => (
@@ -931,13 +950,16 @@ const RightPanel: Component = () => {
 
             {/* Forward links section */}
             <div class="right-panel__section">
-              <div class="right-panel__heading">
-                Forward Links
-                <Show when={forwardLinks()?.length}>
-                  <span class="right-panel__count">
-                    {" "}({forwardLinks()!.length})
-                  </span>
-                </Show>
+              <div class="right-panel__section-header">
+                <span>
+                  Forward links
+                  <Show when={forwardLinks()?.length}>
+                    <span class="right-panel__count">
+                      {" "}({forwardLinks()!.length})
+                    </span>
+                  </Show>
+                </span>
+                <div class="right-panel__header-actions" />
               </div>
               <For each={forwardLinks()}>
                 {(link) => (

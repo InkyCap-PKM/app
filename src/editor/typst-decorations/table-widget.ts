@@ -90,7 +90,7 @@ export class TableWidget extends WidgetType {
 
       const handle = document.createElement("div");
       handle.className = "cm-table-col-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>'; // static-only
+      handle.innerHTML = '<span class="cm-table-handle-grip cm-table-handle-grip--col"><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span></span>';
       handle.title = "Right-click for options · drag to reorder";
       const colIdx = c;
 
@@ -133,7 +133,7 @@ export class TableWidget extends WidgetType {
 
       const handle = document.createElement("div");
       handle.className = "cm-table-row-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip">⠿</span>'; // static-only
+      handle.innerHTML = '<span class="cm-table-handle-grip cm-table-handle-grip--row"><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span></span>';
       handle.title = "Right-click for options · drag to reorder";
       const rowIdx = r;
 

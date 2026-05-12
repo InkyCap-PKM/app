@@ -29,6 +29,19 @@ pub fn library_relpath() -> &'static str {
     ".inkycap/vault.typ"
 }
 
+/// Reserved directory for `.collection` files. Collections are an InkyCap
+/// architectural concept (not user-arrangeable like notes), so they live
+/// under `.inkycap/` alongside the vault library and scaffolds. No user
+/// setting; the path is fixed by design.
+pub fn collections_relpath() -> &'static str {
+    ".inkycap/collections"
+}
+
+/// Absolute path of the reserved collections directory inside a vault.
+pub fn collections_dir(vault_root: &Path) -> PathBuf {
+    vault_root.join(collections_relpath())
+}
+
 /// Match any line that imports the inkycap-vault library, including legacy
 /// versioned paths from earlier releases. Used by detection and migration
 /// code so we keep working with notes from older vaults.
@@ -83,6 +96,17 @@ pub fn scaffold(vault_root: &Path) {
         log::warn!(
             "vault library: failed to create {}: {err}",
             scaffolds_dir.display()
+        );
+    }
+
+    // Reserved location for `.collection` files. Created on every vault open
+    // so the directory exists before the scanner runs; collections never
+    // live anywhere else.
+    let collections_dir = collections_dir(vault_root);
+    if let Err(err) = std::fs::create_dir_all(&collections_dir) {
+        log::warn!(
+            "vault library: failed to create {}: {err}",
+            collections_dir.display()
         );
     }
 

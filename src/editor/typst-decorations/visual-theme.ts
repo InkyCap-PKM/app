@@ -557,8 +557,8 @@ export const visualTheme = EditorView.theme({
     padding: "0",
     // Subtle dotted top/bottom rules demark the verse region without
     // making it feel boxed-in. Pill at top-left identifies it.
-    borderTop: "1px dotted var(--border-subtle)",
-    borderBottom: "1px dotted var(--border-subtle)",
+    borderTop: "2px dotted var(--border-subtle)",
+    borderBottom: "2px dotted var(--border-subtle)",
     "--verse-active-font": "var(--verse-font, var(--editor-font-body, var(--md-body-font, serif)))",
   },
   // Verse uses the standard .cm-typst-pill class (R1). The verse-specific
@@ -730,8 +730,17 @@ export const visualTheme = EditorView.theme({
 
   ".cm-table-handle-grip": {
     pointerEvents: "none",
-    lineHeight: "1",
-    letterSpacing: "0px",
+    display: "grid",
+    gap: "1px",
+    fontSize: "6px",
+    lineHeight: "0.5",
+    justifyContent: "center",
+  },
+  ".cm-table-handle-grip--col": {
+    gridTemplateColumns: "repeat(3, auto)",
+  },
+  ".cm-table-handle-grip--row": {
+    gridTemplateColumns: "repeat(2, auto)",
   },
 
   // ── Row handle cells (left column) ──
@@ -742,9 +751,12 @@ export const visualTheme = EditorView.theme({
     border: "none !important",
     padding: "0 !important",
     position: "relative",
-    verticalAlign: "middle",
     opacity: "0",
     transition: "opacity 0.15s",
+  },
+  ".cm-table-row-handle-cell .cm-table-row-handle": {
+    position: "absolute",
+    inset: "0",
   },
   ".cm-typst-table-wrap:hover .cm-table-row-handle-cell, .cm-typst-table-wrap:focus-within .cm-table-row-handle-cell": {
     opacity: "1",

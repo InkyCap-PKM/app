@@ -13,6 +13,7 @@ import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
 import { SettingCombobox } from "./SettingCombobox";
+import AttachmentFolderField from "./AttachmentFolderField";
 import { showToast } from "../stores/toasts";
 import inkycapLogo from "../assets/inkycap-logo.svg";
 
@@ -720,8 +721,8 @@ function AppearanceSettingsSection() {
         onChange={(v) => updateSetting("editor", "apply_verse_font_to_output", v)}
       />
       <SettingCombobox
-        label="UI scale"
-        description="Scale the entire interface"
+        label="User interface scale"
+        description="Scale InkyCap's interface"
         value={settings.editor.font_size}
         presets={[10, 11, 12, 13, 14, 15, 16, 18, 20]}
         min={10}
@@ -739,6 +740,17 @@ function AppearanceSettingsSection() {
         ]}
         onChange={(v) => updateSetting("appearance", "zoom_target", v as "content" | "interface" | "both")}
       />
+      <SettingSelect
+        label="File tree folder grouping"
+        description="How folders are placed relative to files when the sidebar's sort mode is applied"
+        value={settings.appearance.folder_grouping}
+        options={[
+          { value: "before", label: "Folders before files" },
+          { value: "after", label: "Folders after files" },
+          { value: "inline", label: "Inline (mixed with files)" },
+        ]}
+        onChange={(v) => updateSetting("appearance", "folder_grouping", v as "before" | "after" | "inline")}
+      />
 
       {/* Rendering Defaults */}
       <div class="settings__section-header" style={{ "margin-top": "24px" }}>
@@ -749,7 +761,7 @@ function AppearanceSettingsSection() {
       </p>
 
       <SettingSelect
-        label="Default reading format"
+        label="Default reading view format"
         description="SVG shows paginated output; HTML shows scrolling, copyable text"
         value={settings.editor.default_reading_format}
         options={[
@@ -842,13 +854,7 @@ function FileSettingsSection() {
           suggestions={folderSuggestions}
         />
       </Show>
-      <SettingPathText
-        label="Attachment folder"
-        description="Where images and files are stored (relative to vault root)"
-        value={settings.files.attachment_folder}
-        onChange={(v) => updateSetting("files", "attachment_folder", v)}
-        suggestions={folderSuggestions}
-      />
+      <AttachmentFolderField value={settings.files.attachment_folder} />
       <SettingPathText
         label="Scaffold folder"
         description="Folder containing scaffold files for new note creation (relative to vault root)"

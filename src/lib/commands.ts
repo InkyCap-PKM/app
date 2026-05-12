@@ -14,6 +14,7 @@ import { toggleTheme } from "../stores/theme";
 import { updateSetting, settings } from "../stores/settings";
 import { activeEditorView } from "../stores/editor";
 import * as ipc from "./ipc";
+import { pickAndInsertAttachments } from "./attachment-insert";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
 // mutate Solid.js signals; the editor picks up changes automatically
@@ -353,6 +354,13 @@ function registerMarkupCommands() {
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
+    // Image and Embed are special-cased below: rather than inserting a
+    // template with an empty path the user must hand-type (which would
+    // produce a fragile relative reference), they drive the attachment
+    // picker, copy the chosen file(s) into `settings.files.attachment_folder`,
+    // and emit a vault-root-absolute `#image("/...")` call.
+    // The `insert` field here is unused for these two ids — `pickInsert: true`
+    // diverts the execute path.
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
     { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4, shortcut: "```" },
     { id: "math-block", title: "Math Block", category: "Insert", insert: "$ ${sel} $", cursorOffset: 2 },
@@ -392,14 +400,27 @@ function registerMarkupCommands() {
   ];
 
   for (const item of items) {
+    const execute =
+      item.id === "image" || item.id === "embed"
+        ? () => insertAttachmentViaPicker(item.id as "image" | "embed")
+        : () => insertMarkup(item.insert, item.cursorOffset);
+
     registerCommand({
       id: `markup:${item.id}`,
       title: item.title,
       category: item.category,
       shortcut: item.shortcut,
-      execute: () => insertMarkup(item.insert, item.cursorOffset),
+      execute,
     });
   }
+}
+
+async function insertAttachmentViaPicker(func: "image" | "embed") {
+  const handle = activeEditorView();
+  if (!handle) return;
+  const view = handle.view;
+  const sel = view.state.selection.main;
+  await pickAndInsertAttachments(view, sel.from, sel.to, func);
 }
 
 /** Register creation rules as commands. Call after rules are loaded. */

@@ -57,11 +57,47 @@ const StatusBar: Component = () => {
     return null;
   });
 
-  async function renameActiveFile() {
+  // ── Inline rename ──────────────────────────────────────────────────
+  // The path display swaps to an <input> in place, so renaming feels
+  // continuous with the status-bar instead of popping a modal. The
+  // rename icon stays visible as the affordance the user clicks to enter
+  // edit mode, and clicking it again (or pressing Enter / blurring)
+  // commits the change. Escape cancels without writing anything.
+  const [renaming, setRenaming] = createSignal(false);
+  const [renameDraft, setRenameDraft] = createSignal("");
+  let renameInputRef: HTMLInputElement | undefined;
+  // The same blur and click handlers can both try to commit; this guard
+  // makes commitRename idempotent so a click-to-confirm followed by the
+  // implicit blur doesn't double-fire (which would attempt a second
+  // rename against a path that no longer exists).
+  let renameSettled = false;
+
+  function startRename() {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file") return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
-    const newName = prompt("Rename note:", oldName);
+    renameSettled = false;
+    setRenameDraft(oldName);
+    setRenaming(true);
+    queueMicrotask(() => {
+      renameInputRef?.focus();
+      renameInputRef?.select();
+    });
+  }
+
+  function cancelRename() {
+    renameSettled = true;
+    setRenaming(false);
+  }
+
+  async function commitRename() {
+    if (renameSettled) return;
+    renameSettled = true;
+    const tab = getActiveTab();
+    setRenaming(false);
+    if (!tab || tab.type !== "file") return;
+    const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
+    const newName = renameDraft().trim();
     if (!newName || newName === oldName) return;
     try {
       const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
@@ -113,15 +149,55 @@ const StatusBar: Component = () => {
       <Show when={activeFilePath()}>
         {(path) => (
           <span class="status-bar__path" title={path()}>
-            <span class="status-bar__path-text">{path()}</span>
-            <button
-              class="status-bar__path-rename"
-              onClick={renameActiveFile}
-              title="Rename file"
-              aria-label="Rename file"
+            <Show
+              when={renaming()}
+              fallback={
+                <>
+                  <span class="status-bar__path-text">{path()}</span>
+                  <button
+                    class="status-bar__path-rename"
+                    onClick={startRename}
+                    title="Rename file"
+                    aria-label="Rename file"
+                  >
+                    <Signpost size={14} />
+                  </button>
+                </>
+              }
             >
-              <Signpost size={14} />
-            </button>
+              <input
+                ref={renameInputRef}
+                class="status-bar__rename-input"
+                type="text"
+                value={renameDraft()}
+                onInput={(e) => setRenameDraft(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitRename();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                onBlur={commitRename}
+                aria-label="New file name"
+              />
+              <button
+                class="status-bar__path-rename"
+                /* mousedown so the click registers before the input's blur
+                   handler fires its own commit — without this, the blur
+                   commits first and the button click hits a stale state. */
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commitRename();
+                }}
+                title="Confirm rename"
+                aria-label="Confirm rename"
+              >
+                <Signpost size={14} />
+              </button>
+            </Show>
           </span>
         )}
       </Show>
