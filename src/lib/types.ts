@@ -221,11 +221,17 @@ export type ZoomTarget = "content" | "interface" | "both";
 export interface AppearanceSettings {
   theme: "dark" | "light" | "system";
   /**
-   * Background palette:
-   * - "default" — cool gray (light) / teal-ink (dark).
-   * - "warm"    — coffee beige (light) / warm charcoal (dark).
+   * Background palette for the light theme:
+   * - "default" — cool gray.
+   * - "warm"    — coffee beige.
    */
-  bg_palette: BgPalette;
+  bg_palette_light: BgPalette;
+  /**
+   * Background palette for the dark theme:
+   * - "default" — teal-ink.
+   * - "warm"    — warm charcoal.
+   */
+  bg_palette_dark: BgPalette;
   /**
    * Where the accent color comes from:
    * - "default" — InkyCap's built-in accent (#1D7874). `accent_color` is ignored.
