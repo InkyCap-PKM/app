@@ -235,6 +235,64 @@ export function switchToTabByIndex(index: number) {
   }
 }
 
+/**
+ * Migrate any tab, cached editor state, or history entry that points at
+ * `from` to point at `to` instead. Invoked when the file watcher reports
+ * an external rename (a `mv` in the terminal, a rename in the file
+ * manager, etc.) so that an open tab follows the file rather than
+ * becoming a phantom that errors on the next save.
+ *
+ * The new title is derived from the destination filename, matching how
+ * `openTab` callers (App.tsx, FlowView.tsx, NoteComposer.tsx) compute
+ * the title from a path. We don't try to detect "user-customized
+ * titles" because the app doesn't currently support them — every tab
+ * title is the basename of its path.
+ */
+export function renameTabPath(from: string, to: string) {
+  if (from === to) return;
+
+  const newTitle = to.split("/").pop() ?? to;
+
+  setTabs(
+    (t) => t.path === from,
+    produce((t) => {
+      t.path = to;
+      t.title = newTitle;
+    }),
+  );
+
+  // Editor state cache is keyed by tab ID but stores the path alongside
+  // the serialized state so cache entries can be invalidated when a tab
+  // navigates to a different file. Migrate matching entries so the
+  // cached undo history isn't thrown away on rename.
+  for (const [tabId, entry] of editorStateCache.entries()) {
+    if (entry.path === from) {
+      editorStateCache.set(tabId, { path: to, json: entry.json });
+    }
+  }
+
+  // History stacks also store paths — rewrite them so back/forward
+  // navigation lands on the renamed file instead of erroring.
+  let historyChanged = false;
+  for (const h of historyMap.values()) {
+    for (const entry of h.back) {
+      if (entry.path === from) {
+        entry.path = to;
+        entry.title = newTitle;
+        historyChanged = true;
+      }
+    }
+    for (const entry of h.forward) {
+      if (entry.path === from) {
+        entry.path = to;
+        entry.title = newTitle;
+        historyChanged = true;
+      }
+    }
+  }
+  if (historyChanged) bumpHistory();
+}
+
 /** Update the editing mode (source vs live) for a tab. */
 export function setTabEditingMode(id: string, mode: EditingMode) {
   setTabs(
