@@ -23,6 +23,11 @@ export interface Command {
   title: string;
   category: CommandCategory;
   keybinding?: string;
+  /** Inline typing shortcut (e.g. `*…*`, `+++`, `[[…]]`) shown at the
+   *  right edge of the row in the command palette. Purely informational
+   *  — the trigger is implemented in the editor's input handlers, not
+   *  in the command registry. */
+  shortcut?: string;
   execute: () => void | Promise<void>;
 }
 

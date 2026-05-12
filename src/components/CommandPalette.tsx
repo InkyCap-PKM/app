@@ -324,6 +324,11 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                       <span class="cmd-palette__result-title">
                         {row.command.title}
                       </span>
+                      <Show when={row.command.shortcut}>
+                        <span class="cmd-palette__shortcut">
+                          {row.command.shortcut}
+                        </span>
+                      </Show>
                       <Show when={row.command.keybinding}>
                         <span class="cmd-palette__keybinding">
                           {row.command.keybinding}
@@ -356,6 +361,11 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         ranges={item.match.ranges}
                       />
                     </span>
+                    <Show when={item.command.shortcut}>
+                      <span class="cmd-palette__shortcut">
+                        {item.command.shortcut}
+                      </span>
+                    </Show>
                     <Show when={item.command.keybinding}>
                       <span class="cmd-palette__keybinding">
                         {item.command.keybinding}

@@ -7,6 +7,11 @@ interface PaletteItem {
   category: string;
   insert: string;
   cursorOffset?: number;
+  /** Inline typing shortcut shown at the right edge of the row, when
+   *  one exists. Purely informational — the actual trigger lives in
+   *  auto-pair-typst.ts, markdown-shortcuts.ts, wikilink-suggest.ts,
+   *  or is direct Typst syntax. */
+  shortcut?: string;
   /** When true, dispatch `expandFunc` for the inserted call so the
    *  visual editor leaves its source brackets exposed for editing
    *  rather than collapsing into a block widget. Required for any
@@ -18,35 +23,35 @@ interface PaletteItem {
 }
 
 const PALETTE_ITEMS: PaletteItem[] = [
-  { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1 },
-  { label: "Italic", category: "Format", insert: '_${sel}_', cursorOffset: 1 },
+  { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
+  { label: "Italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
   { label: "Strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8 },
   { label: "Highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11 },
   { label: "Underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11 },
   { label: "Overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10 },
   { label: "Subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5 },
   { label: "Superscript", category: "Format", insert: '#super[${sel}]', cursorOffset: 7 },
-  { label: "Inline code", category: "Format", insert: '`${sel}`', cursorOffset: 1 },
-  { label: "Inline math", category: "Format", insert: '$${sel}$', cursorOffset: 1 },
+  { label: "Inline code", category: "Format", insert: '`${sel}`', cursorOffset: 1, shortcut: "`…`" },
+  { label: "Inline math", category: "Format", insert: '$${sel}$', cursorOffset: 1, shortcut: "$…$" },
 
-  { label: "Heading 1", category: "Structure", insert: '= ', cursorOffset: 2 },
-  { label: "Heading 2", category: "Structure", insert: '== ', cursorOffset: 3 },
-  { label: "Heading 3", category: "Structure", insert: '=== ', cursorOffset: 4 },
-  { label: "Heading 4", category: "Structure", insert: '==== ', cursorOffset: 5 },
-  { label: "Heading 5", category: "Structure", insert: '===== ', cursorOffset: 6 },
-  { label: "Heading 6", category: "Structure", insert: '====== ', cursorOffset: 7 },
-  { label: "Bullet list", category: "Structure", insert: '- ', cursorOffset: 2 },
-  { label: "Ordered list", category: "Structure", insert: '+ ', cursorOffset: 2 },
+  { label: "Heading 1", category: "Structure", insert: '= ', cursorOffset: 2, shortcut: "= " },
+  { label: "Heading 2", category: "Structure", insert: '== ', cursorOffset: 3, shortcut: "== " },
+  { label: "Heading 3", category: "Structure", insert: '=== ', cursorOffset: 4, shortcut: "=== " },
+  { label: "Heading 4", category: "Structure", insert: '==== ', cursorOffset: 5, shortcut: "==== " },
+  { label: "Heading 5", category: "Structure", insert: '===== ', cursorOffset: 6, shortcut: "===== " },
+  { label: "Heading 6", category: "Structure", insert: '====== ', cursorOffset: 7, shortcut: "====== " },
+  { label: "Bullet list", category: "Structure", insert: '- ', cursorOffset: 2, shortcut: "- " },
+  { label: "Ordered list", category: "Structure", insert: '+ ', cursorOffset: 2, shortcut: "+ " },
   { label: "Quote (inline)", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7, expandOnInsert: true },
-  { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true },
+  { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true, shortcut: "> " },
 
   { label: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
   { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
-  { label: "Code block", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4 },
+  { label: "Code block", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4, shortcut: "```" },
   { label: "Math block", category: "Insert", insert: '$ ${sel} $', cursorOffset: 2 },
-  { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19 },
-  { label: "Footnote", category: "Insert", insert: '#footnote[${sel}]', cursorOffset: 10 },
-  { label: "Citation", category: "Insert", insert: '@', cursorOffset: 1 },
+  { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
+  { label: "Footnote", category: "Insert", insert: '#footnote[${sel}]', cursorOffset: 10, shortcut: "++…++" },
+  { label: "Citation", category: "Insert", insert: '@', cursorOffset: 1, shortcut: "@" },
 
   { label: "Table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
 
@@ -61,7 +66,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
   { label: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
-  { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11 },
+  { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
 
   { label: "Page size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
@@ -180,7 +185,19 @@ function showPopup(view: EditorView, state: PaletteState) {
     const row = document.createElement("div");
     row.className = "command-palette__item";
     if (i === 0) row.classList.add("is-selected");
-    row.textContent = item.label;
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "command-palette__item-label";
+    labelEl.textContent = item.label;
+    row.appendChild(labelEl);
+
+    if (item.shortcut) {
+      const shortcutEl = document.createElement("span");
+      shortcutEl.className = "command-palette__shortcut";
+      shortcutEl.textContent = item.shortcut;
+      row.appendChild(shortcutEl);
+    }
+
     row.addEventListener("mousedown", (e) => {
       e.preventDefault();
       acceptItem(view, state, item);

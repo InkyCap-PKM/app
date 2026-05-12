@@ -997,7 +997,7 @@ const RightPanel: Component = () => {
               Bookmark...
             </button>
             <button class="context-menu__item" onClick={menuMerge}>
-              Merge entire file with...
+              Merge file with...
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuExport}>
@@ -1015,7 +1015,7 @@ const RightPanel: Component = () => {
               Show in file tree
             </button>
             <button class="context-menu__item" onClick={menuShowInExplorer}>
-              Show in system explorer
+              Show in system file manager
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>

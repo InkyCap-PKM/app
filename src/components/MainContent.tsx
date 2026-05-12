@@ -15,6 +15,15 @@ import FlowView from "./FlowView";
 import { executeCommand } from "../lib/command-registry";
 import { ChevronLeft, ChevronRight } from "lucide-solid";
 
+/// Render the title for a tab. File tabs show the basename without the
+/// extension; other tab types keep their title verbatim (e.g. "Flow:
+/// foo", "References", search results). The dot must follow at least one
+/// character so a leading-dot file like ".gitignore" doesn't render blank.
+function displayTabTitle(tab: { type: string; title: string }): string {
+  if (tab.type !== "file") return tab.title;
+  return tab.title.replace(/^(.+)\.[^.]+$/, "$1");
+}
+
 const MainContent: Component = () => {
   // Track dirty state per tab
   const [dirtyTabs, setDirtyTabs] = createSignal<Set<string>>(new Set());
@@ -119,7 +128,7 @@ const MainContent: Component = () => {
               >
                 <span class="tab__title">
                   {dirtyTabs().has(tab.id) ? "\u25CF " : ""}
-                  {tab.title}
+                  {displayTabTitle(tab)}
                 </span>
                 <button
                   class="tab__close"

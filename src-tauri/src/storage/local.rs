@@ -262,6 +262,26 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         let parent = entry.path().parent().unwrap_or(root).to_path_buf();
         let is_dir = entry.file_type().is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();
+        // Read stat times before consuming `entry`. WalkDir caches the
+        // metadata so this doesn't trigger an extra syscall. Either time
+        // is allowed to fail (some platforms / filesystems don't track
+        // creation time); fall back to zero so the frontend can treat it
+        // as unknown.
+        let (modified_time, created_time) = match entry.metadata() {
+            Ok(m) => (
+                m.modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                m.created()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+            ),
+            Err(_) => (0, 0),
+        };
         let path = entry.into_path();
 
         if is_dir {
@@ -274,6 +294,8 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
             path: path.display().to_string(),
             is_dir,
             children: if is_dir { Some(Vec::new()) } else { None },
+            modified_time,
+            created_time,
         };
 
         children_map.entry(parent).or_default().push(node);

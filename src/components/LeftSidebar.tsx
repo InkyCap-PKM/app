@@ -21,6 +21,9 @@ import {
   FileText,
   NotebookTabs,
   Filter,
+  ArrowDownNarrowWide,
+  ListChevronsUpDown,
+  ListChevronsDownUp,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
@@ -64,11 +67,93 @@ function filterTypstFiles(nodes: FileTreeNode[]): FileTreeNode[] {
     .filter((n): n is FileTreeNode => n !== null);
 }
 
+type FileSortMode =
+  | "name-asc"
+  | "name-desc"
+  | "modified-desc"
+  | "modified-asc"
+  | "created-desc"
+  | "created-asc";
+
+type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
+
+const FILE_SORT_OPTIONS: { value: FileSortMode; label: string }[] = [
+  { value: "name-asc", label: "Name (A to Z)" },
+  { value: "name-desc", label: "Name (Z to A)" },
+  { value: "modified-desc", label: "Modified (new to old)" },
+  { value: "modified-asc", label: "Modified (old to new)" },
+  { value: "created-desc", label: "Created (new to old)" },
+  { value: "created-asc", label: "Created (old to new)" },
+];
+
+const LIST_SORT_OPTIONS: { value: ListSortMode; label: string }[] = [
+  { value: "name-asc", label: "Alphabetical (A to Z)" },
+  { value: "name-desc", label: "Alphabetical (Z to A)" },
+  { value: "count-desc", label: "Quantity (high to low)" },
+  { value: "count-asc", label: "Quantity (low to high)" },
+];
+
+/// Sort one level of a file tree, keeping directories above files (the
+/// backend already sorts dirs-first; we preserve that grouping). Recurses
+/// into children so the entire subtree honors the chosen mode.
+function sortFileTree(nodes: FileTreeNode[], mode: FileSortMode): FileTreeNode[] {
+  const cmp = (a: FileTreeNode, b: FileTreeNode): number => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    switch (mode) {
+      case "name-asc":
+        return a.name.localeCompare(b.name);
+      case "name-desc":
+        return b.name.localeCompare(a.name);
+      case "modified-desc":
+        return b.modified_time - a.modified_time;
+      case "modified-asc":
+        return a.modified_time - b.modified_time;
+      case "created-desc":
+        return b.created_time - a.created_time;
+      case "created-asc":
+        return a.created_time - b.created_time;
+    }
+  };
+  return nodes
+    .map((n) => (n.children ? { ...n, children: sortFileTree(n.children, mode) } : n))
+    .sort(cmp);
+}
+
+/// Walk a tree and collect the paths of every directory node.
+function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): Set<string> {
+  for (const n of nodes) {
+    if (n.is_dir) {
+      acc.add(n.path);
+      if (n.children) collectDirPaths(n.children, acc);
+    }
+  }
+  return acc;
+}
+
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const mode = props.mode;
   const setMode = props.setMode;
   const [refreshTick, setRefreshTick] = createSignal(0);
   const [typstOnly, setTypstOnly] = createSignal(true);
+
+  // File tree: sort mode + per-folder expansion state hoisted from the
+  // TreeNode component so the Expand All / Collapse All button can flip
+  // every folder in one click. Default to all-collapsed (empty set).
+  const [fileSortMode, setFileSortMode] = createSignal<FileSortMode>("name-asc");
+  const [showFileSortMenu, setShowFileSortMenu] = createSignal(false);
+  const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
+
+  // Tags / Properties: sort mode + inline search filter. Each pane gets
+  // its own state so switching modes doesn't lose the user's filter.
+  const [tagSortMode, setTagSortMode] = createSignal<ListSortMode>("name-asc");
+  const [showTagSortMenu, setShowTagSortMenu] = createSignal(false);
+  const [showTagSearch, setShowTagSearch] = createSignal(false);
+  const [tagFilter, setTagFilter] = createSignal("");
+
+  const [propSortMode, setPropSortMode] = createSignal<ListSortMode>("name-asc");
+  const [showPropSortMenu, setShowPropSortMenu] = createSignal(false);
+  const [showPropSearch, setShowPropSearch] = createSignal(false);
+  const [propFilter, setPropFilter] = createSignal("");
 
   // Context menu state
   const [contextMenu, setContextMenu] = createSignal<{
@@ -100,8 +185,63 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const filteredFileTree = createMemo(() => {
     const tree = fileTree();
     if (!tree) return [];
-    return typstOnly() ? filterTypstFiles(tree) : tree;
+    const filtered = typstOnly() ? filterTypstFiles(tree) : tree;
+    return sortFileTree(filtered, fileSortMode());
   });
+
+  function toggleDir(path: string) {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function expandAllDirs() {
+    setExpandedDirs(collectDirPaths(filteredFileTree()));
+  }
+
+  function collapseAllDirs() {
+    setExpandedDirs(new Set<string>());
+  }
+
+  /// True when there is at least one directory in the tree and every
+  /// directory is currently expanded. Used to flip the toolbar button
+  /// between "Expand all" and "Collapse all".
+  const allDirsExpanded = createMemo(() => {
+    const all = collectDirPaths(filteredFileTree());
+    if (all.size === 0) return false;
+    const cur = expandedDirs();
+    for (const p of all) if (!cur.has(p)) return false;
+    return true;
+  });
+
+  /// Sort + filter helper shared by Tags and Properties. Both panes use
+  /// the same `[name, count]` data shape.
+  function sortAndFilterList(
+    items: [string, number][],
+    mode: ListSortMode,
+    filter: string,
+  ): [string, number][] {
+    const q = filter.trim().toLowerCase();
+    const filtered = q
+      ? items.filter(([k]) => k.toLowerCase().includes(q))
+      : items.slice();
+    const cmp = (a: [string, number], b: [string, number]) => {
+      switch (mode) {
+        case "name-asc":
+          return a[0].localeCompare(b[0]);
+        case "name-desc":
+          return b[0].localeCompare(a[0]);
+        case "count-desc":
+          return b[1] - a[1] || a[0].localeCompare(b[0]);
+        case "count-asc":
+          return a[1] - b[1] || a[0].localeCompare(b[0]);
+      }
+    };
+    return filtered.sort(cmp);
+  }
 
   const [vaultIndex, { refetch: refetchVaultIndex }] = createResource(
     () => ({ info: vaultInfo(), tick: refreshTick(), pv: propertyVersion() }),
@@ -689,6 +829,57 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           <div class="left-sidebar__section-header">
             <span>Files</span>
             <div class="left-sidebar__header-actions">
+              <div class="left-sidebar__sort-wrap">
+                <button
+                  class="left-sidebar__icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowFileSortMenu((v) => !v);
+                  }}
+                  title="Sort files"
+                  aria-label="Sort files"
+                >
+                  <ArrowDownNarrowWide size={14} />
+                </button>
+                <Show when={showFileSortMenu()}>
+                  <div
+                    class="context-menu left-sidebar__sort-menu"
+                    onMouseLeave={() => setShowFileSortMenu(false)}
+                  >
+                    <For each={FILE_SORT_OPTIONS}>
+                      {(opt) => (
+                        <button
+                          classList={{
+                            "context-menu__item": true,
+                            "context-menu__item--active": fileSortMode() === opt.value,
+                          }}
+                          onClick={() => {
+                            setFileSortMode(opt.value);
+                            setShowFileSortMenu(false);
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+              <button
+                class="left-sidebar__icon-btn"
+                onClick={() =>
+                  allDirsExpanded() ? collapseAllDirs() : expandAllDirs()
+                }
+                title={allDirsExpanded() ? "Collapse all folders" : "Expand all folders"}
+                aria-label={allDirsExpanded() ? "Collapse all folders" : "Expand all folders"}
+              >
+                <Show
+                  when={allDirsExpanded()}
+                  fallback={<ListChevronsUpDown size={14} />}
+                >
+                  <ListChevronsDownUp size={14} />
+                </Show>
+              </button>
               <button
                 class={`left-sidebar__filter-btn${typstOnly() ? " left-sidebar__filter-btn--active" : ""}`}
                 onClick={() => setTypstOnly((v) => !v)}
@@ -725,6 +916,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   activePath={getActiveTab()?.path ?? null}
                   revealPath={revealPath()}
                   vaultRoot={vaultInfo()?.path ?? ""}
+                  expandedDirs={expandedDirs}
+                  onToggleDir={toggleDir}
                 />
               )}
             </For>
@@ -738,11 +931,72 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         <Show when={mode() === "tags"}>
           <div class="left-sidebar__section-header">
             <span>Tags</span>
+            <div class="left-sidebar__header-actions">
+              <div class="left-sidebar__sort-wrap">
+                <button
+                  class="left-sidebar__icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowTagSortMenu((v) => !v);
+                  }}
+                  title="Sort tags"
+                  aria-label="Sort tags"
+                >
+                  <ArrowDownNarrowWide size={14} />
+                </button>
+                <Show when={showTagSortMenu()}>
+                  <div
+                    class="context-menu left-sidebar__sort-menu"
+                    onMouseLeave={() => setShowTagSortMenu(false)}
+                  >
+                    <For each={LIST_SORT_OPTIONS}>
+                      {(opt) => (
+                        <button
+                          classList={{
+                            "context-menu__item": true,
+                            "context-menu__item--active": tagSortMode() === opt.value,
+                          }}
+                          onClick={() => {
+                            setTagSortMode(opt.value);
+                            setShowTagSortMenu(false);
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+              <button
+                class={`left-sidebar__icon-btn${showTagSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                onClick={() => {
+                  const next = !showTagSearch();
+                  setShowTagSearch(next);
+                  if (!next) setTagFilter("");
+                }}
+                title="Filter tags"
+                aria-label="Filter tags"
+                aria-pressed={showTagSearch()}
+              >
+                <Search size={14} />
+              </button>
+            </div>
           </div>
+          <Show when={showTagSearch()}>
+            <input
+              class="left-sidebar__filter-input"
+              type="text"
+              placeholder="Filter tags..."
+              value={tagFilter()}
+              onInput={(e) => setTagFilter(e.currentTarget.value)}
+              autofocus
+            />
+          </Show>
           <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (
               <For
-                each={idx().tags}
+                each={sortAndFilterList(idx().tags, tagSortMode(), tagFilter())}
                 fallback={<p class="sidebar-hint">No tags found</p>}
               >
                 {([tag, count]) => (
@@ -786,11 +1040,72 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         <Show when={mode() === "properties"}>
           <div class="left-sidebar__section-header">
             <span>Properties</span>
+            <div class="left-sidebar__header-actions">
+              <div class="left-sidebar__sort-wrap">
+                <button
+                  class="left-sidebar__icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPropSortMenu((v) => !v);
+                  }}
+                  title="Sort properties"
+                  aria-label="Sort properties"
+                >
+                  <ArrowDownNarrowWide size={14} />
+                </button>
+                <Show when={showPropSortMenu()}>
+                  <div
+                    class="context-menu left-sidebar__sort-menu"
+                    onMouseLeave={() => setShowPropSortMenu(false)}
+                  >
+                    <For each={LIST_SORT_OPTIONS}>
+                      {(opt) => (
+                        <button
+                          classList={{
+                            "context-menu__item": true,
+                            "context-menu__item--active": propSortMode() === opt.value,
+                          }}
+                          onClick={() => {
+                            setPropSortMode(opt.value);
+                            setShowPropSortMenu(false);
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+              <button
+                class={`left-sidebar__icon-btn${showPropSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                onClick={() => {
+                  const next = !showPropSearch();
+                  setShowPropSearch(next);
+                  if (!next) setPropFilter("");
+                }}
+                title="Filter properties"
+                aria-label="Filter properties"
+                aria-pressed={showPropSearch()}
+              >
+                <Search size={14} />
+              </button>
+            </div>
           </div>
+          <Show when={showPropSearch()}>
+            <input
+              class="left-sidebar__filter-input"
+              type="text"
+              placeholder="Filter properties..."
+              value={propFilter()}
+              onInput={(e) => setPropFilter(e.currentTarget.value)}
+              autofocus
+            />
+          </Show>
           <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (
               <For
-                each={idx().property_keys}
+                each={sortAndFilterList(idx().property_keys, propSortMode(), propFilter())}
                 fallback={<p class="sidebar-hint">No properties found</p>}
               >
                 {([key, count]) => (
@@ -1076,10 +1391,16 @@ const TreeNode: Component<{
   activePath: string | null;
   revealPath: string | null;
   vaultRoot: string;
+  /// Hoisted expansion state so the Expand All / Collapse All toolbar
+  /// button can flip every folder at once. Each TreeNode reads its own
+  /// directory's expanded flag from this set and toggles via the
+  /// `onToggleDir` callback.
+  expandedDirs: () => Set<string>;
+  onToggleDir: (path: string) => void;
   depth?: number;
 }> = (props) => {
-  const [expanded, setExpanded] = createSignal(false);
   const depth = props.depth ?? 0;
+  const expanded = () => props.expandedDirs().has(props.node.path);
 
   const isRenaming = () => props.renamingPath === props.node.path;
   const isActive = () =>
@@ -1091,10 +1412,11 @@ const TreeNode: Component<{
     return props.node.is_dir && rp != null && rp.startsWith(props.node.path + "/");
   };
 
-  // When revealPath changes and this dir is an ancestor, expand it
+  // When revealPath changes and this dir is an ancestor, expand it.
+  // Toggles through the hoisted setter so the parent's set stays in sync.
   createEffect(() => {
-    if (isAncestorOfReveal()) {
-      setExpanded(true);
+    if (isAncestorOfReveal() && !expanded()) {
+      props.onToggleDir(props.node.path);
     }
   });
 
@@ -1127,7 +1449,7 @@ const TreeNode: Component<{
             }}
             onClick={(e) => {
               if (props.node.is_dir) {
-                setExpanded(!expanded());
+                props.onToggleDir(props.node.path);
               } else {
                 props.onOpen(props.node, e);
               }
@@ -1182,6 +1504,8 @@ const TreeNode: Component<{
               activePath={props.activePath}
               revealPath={props.revealPath}
               vaultRoot={props.vaultRoot}
+              expandedDirs={props.expandedDirs}
+              onToggleDir={props.onToggleDir}
               depth={depth + 1}
             />
           )}

@@ -17,12 +17,16 @@ import {
   onMount,
 } from "solid-js";
 import {
-  Replace,
   CaseSensitive,
   X,
   Settings2,
   ChevronDown,
   ChevronRight,
+  ListChevronsUpDown,
+  ListChevronsDownUp,
+  LayersPlus,
+  Regex,
+  Info,
 } from "lucide-solid";
 import type { SearchResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
@@ -81,6 +85,35 @@ const FILTER_HINTS: FilterHint[] = [
   { prefix: "path:", insert: "path:", description: "match by the file path" },
 ];
 
+/// Informational tips (non-insertable) describing query syntax beyond
+/// the filter prefixes. Rendered below FILTER_HINTS in the tips panel.
+const SYNTAX_TIPS: { label: string; description: string }[] = [
+  {
+    label: '"…"',
+    description: "phrase: find an exact phrase by enclosing it in double quotes",
+  },
+  {
+    label: "AND OR NOT",
+    description: "boolean operators (uppercase). Use ( ) to group",
+  },
+  {
+    label: "-term",
+    description: "exclude term (shorthand for NOT)",
+  },
+  {
+    label: "word*",
+    description: "truncation: match any suffix after the stem",
+  },
+  {
+    label: "a W/5 b",
+    description: "proximity: a within 5 words of b (W=ordered, N=any order)",
+  },
+  {
+    label: "/regex/",
+    description: "treat the query as a regular expression",
+  },
+];
+
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "relevance", label: "Relevance" },
   { value: "name-asc", label: "File name (A to Z)" },
@@ -98,7 +131,7 @@ const SearchPanel: Component = () => {
   // a user would expect.
   const [loading, setLoading] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
-  const [showHints, setShowHints] = createSignal(false);
+  const [showTips, setShowTips] = createSignal(false);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
   const [showOverflowMenu, setShowOverflowMenu] = createSignal(false);
   const [resultContextMenu, setResultContextMenu] = createSignal<
@@ -114,7 +147,9 @@ const SearchPanel: Component = () => {
 
   onMount(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ query?: string }>).detail;
+      const detail = (e as CustomEvent<{ query?: string; showReplace?: boolean }>)
+        .detail;
+      if (detail?.showReplace) setShowReplace(true);
       if (!detail?.query) return;
       setSearchQuery(detail.query);
       if (searchTimeout) clearTimeout(searchTimeout);
@@ -184,7 +219,6 @@ const SearchPanel: Component = () => {
 
   function handleInput(value: string) {
     setSearchQuery(value);
-    setShowHints(false);
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       executeSearch();
@@ -196,7 +230,7 @@ const SearchPanel: Component = () => {
       if (searchTimeout) clearTimeout(searchTimeout);
       executeSearch();
     } else if (e.key === "Escape") {
-      setShowHints(false);
+      setShowTips(false);
     }
   }
 
@@ -213,7 +247,7 @@ const SearchPanel: Component = () => {
     const prefix = (needsSpace ? " " : "") + hint.insert;
     const next = cur + prefix;
     setSearchQuery(next);
-    setShowHints(false);
+    setShowTips(false);
     setTimeout(() => {
       inputRef?.focus();
       inputRef?.setSelectionRange(next.length, next.length);
@@ -453,12 +487,6 @@ const SearchPanel: Component = () => {
             value={searchQuery()}
             onInput={(e) => handleInput(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => {
-              if (!searchQuery().trim()) setShowHints(true);
-            }}
-            onBlur={() => {
-              setTimeout(() => setShowHints(false), 150);
-            }}
             autofocus
           />
           <Show when={searchQuery().length > 0}>
@@ -495,18 +523,62 @@ const SearchPanel: Component = () => {
           <Settings2 size={16} />
         </button>
         <button
-          class={`icon-btn ${showReplace() ? "icon-btn--active" : ""}`}
-          onClick={() => setShowReplace(!showReplace())}
-          title="Toggle replace"
-          aria-pressed={showReplace()}
+          class={`icon-btn ${showTips() ? "icon-btn--active" : ""}`}
+          onClick={() => setShowTips(!showTips())}
+          title="Search tips"
+          aria-pressed={showTips()}
         >
-          <Replace size={16} />
+          <Info size={16} />
         </button>
       </div>
 
-      <Show when={showHints()}>
-        <div class="search-panel__hints" onMouseDown={(e) => e.preventDefault()}>
-          <div class="search-panel__hints-title">Search options</div>
+      <Show when={showSettings()}>
+        <div class="search-panel__options-row">
+          <button
+            class="icon-btn"
+            onClick={() => {
+              // Per-file overrides invert their meaning when the global
+              // flag flips. Clearing them ensures Expand/Collapse acts
+              // uniformly: every file lands in the target state, and
+              // files already in that state stay put.
+              setExpandOverrides(new Set<string>());
+              setCollapseResults(!collapseResults());
+            }}
+            title={collapseResults() ? "Expand results" : "Collapse results"}
+            aria-label={collapseResults() ? "Expand results" : "Collapse results"}
+          >
+            <Show
+              when={collapseResults()}
+              fallback={<ListChevronsDownUp size={16} />}
+            >
+              <ListChevronsUpDown size={16} />
+            </Show>
+          </button>
+          <button
+            class={`icon-btn ${showMoreContext() ? "icon-btn--active" : ""}`}
+            onClick={() => setShowMoreContext(!showMoreContext())}
+            title="Show more context"
+            aria-pressed={showMoreContext()}
+          >
+            <LayersPlus size={16} />
+          </button>
+          <button
+            class={`icon-btn ${useRegex() ? "icon-btn--active" : ""}`}
+            onClick={() => {
+              setUseRegex(!useRegex());
+              executeSearch();
+            }}
+            title="Use regex"
+            aria-pressed={useRegex()}
+          >
+            <Regex size={16} />
+          </button>
+        </div>
+      </Show>
+
+      <Show when={showTips()}>
+        <div class="search-panel__hints">
+          <div class="search-panel__hints-title">Search Tips</div>
           <For each={FILTER_HINTS}>
             {(hint) => (
               <button
@@ -519,38 +591,15 @@ const SearchPanel: Component = () => {
               </button>
             )}
           </For>
-        </div>
-      </Show>
-
-      <Show when={showSettings()}>
-        <div class="search-panel__settings">
-          <label class="search-panel__setting">
-            <span>Collapse results</span>
-            <input
-              type="checkbox"
-              checked={collapseResults()}
-              onChange={(e) => setCollapseResults(e.currentTarget.checked)}
-            />
-          </label>
-          <label class="search-panel__setting">
-            <span>Show more context</span>
-            <input
-              type="checkbox"
-              checked={showMoreContext()}
-              onChange={(e) => setShowMoreContext(e.currentTarget.checked)}
-            />
-          </label>
-          <label class="search-panel__setting">
-            <span>Use regex</span>
-            <input
-              type="checkbox"
-              checked={useRegex()}
-              onChange={(e) => {
-                setUseRegex(e.currentTarget.checked);
-                executeSearch();
-              }}
-            />
-          </label>
+          <div class="search-panel__hints-divider" />
+          <For each={SYNTAX_TIPS}>
+            {(tip) => (
+              <div class="search-panel__hint search-panel__hint--static">
+                <span class="search-panel__hint-prefix">{tip.label}</span>
+                <span class="search-panel__hint-desc">{tip.description}</span>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
 
@@ -616,7 +665,7 @@ const SearchPanel: Component = () => {
                 class="context-menu__item"
                 onClick={bookmarkCurrentSearch}
               >
-                Bookmark&hellip;
+                Bookmark search expression&hellip;
               </button>
             </div>
           </Show>
