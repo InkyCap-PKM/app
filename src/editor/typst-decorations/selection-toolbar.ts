@@ -18,8 +18,8 @@ interface InlineAction {
 const INLINE_ACTIONS: InlineAction[] = [
   { icon: "B", title: "Bold (Ctrl+B)", wrap: ["*", "*"], styleBold: true },
   { icon: "I", title: "Italic (Ctrl+I)", wrap: ["_", "_"], styleItalic: true },
-  { icon: "S", title: "Strikethrough (Ctrl+Shift+X)", wrap: ["#strike[", "]"], styleStrike: true },
   { icon: "U", title: "Underline (Ctrl+U)", wrap: ["#underline[", "]"], styleUnderline: true },
+  { icon: "S", title: "Strikethrough (Ctrl+Shift+X)", wrap: ["#strike[", "]"], styleStrike: true },
 ];
 
 /* ── SVG icons ──────────────────────────────────────────── */
@@ -228,6 +228,36 @@ function getToolbar(): HTMLElement {
     });
     toolbar.appendChild(linkBtn);
 
+    /* ── Alignment button ── */
+    const alignBtn = createSvgButton(ICON_ALIGN_LEFT, "Text alignment");
+    alignBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeDropdown();
+      toggleAlignPopup(alignBtn);
+    });
+    toolbar.appendChild(alignBtn);
+
+    /* ── Separator ── */
+    toolbar.appendChild(createSeparator());
+
+    /* ── Verse button ── */
+    const verseBtn = createSvgButton(ICON_VERSE, "Insert verse");
+    verseBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      closeAllPopups();
+      if (!activeView) return;
+      const { from, to } = activeView.state.selection.main;
+      const selected = activeView.state.doc.sliceString(from, to);
+      const insert = `#verse("${selected}")`;
+      activeView.dispatch({
+        changes: { from, to, insert } as ChangeSpec,
+        selection: { anchor: from + 8, head: from + 8 + selected.length },
+      });
+      activeView.focus();
+    });
+    toolbar.appendChild(verseBtn);
+
     /* ── Code button ── */
     const codeBtn = createSvgButton(ICON_CODE, "Inline code (Ctrl+E)");
     codeBtn.addEventListener("mousedown", (e) => {
@@ -250,36 +280,6 @@ function getToolbar(): HTMLElement {
       applyWrap(activeView, "$", "$");
     });
     toolbar.appendChild(mathBtn);
-
-    /* ── Separator ── */
-    toolbar.appendChild(createSeparator());
-
-    /* ── Verse button ── */
-    const verseBtn = createSvgButton(ICON_VERSE, "Insert verse");
-    verseBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      closeAllPopups();
-      if (!activeView) return;
-      const { from, to } = activeView.state.selection.main;
-      const selected = activeView.state.doc.sliceString(from, to);
-      const insert = `#verse("${selected}")`;
-      activeView.dispatch({
-        changes: { from, to, insert } as ChangeSpec,
-        selection: { anchor: from + 8, head: from + 8 + selected.length },
-      });
-      activeView.focus();
-    });
-    toolbar.appendChild(verseBtn);
-
-    /* ── Alignment button ── */
-    const alignBtn = createSvgButton(ICON_ALIGN_LEFT, "Text alignment");
-    alignBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      closeDropdown();
-      toggleAlignPopup(alignBtn);
-    });
-    toolbar.appendChild(alignBtn);
 
     document.body.appendChild(toolbar);
 

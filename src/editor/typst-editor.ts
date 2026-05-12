@@ -110,6 +110,7 @@ function typstLanguage(): Extension {
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
 import { typstVisualMode, autoExpandFacet, protectedRangesField, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
+import { verseFocusRouter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
 import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
@@ -348,7 +349,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  const visualExts = options.visualMode ? [typstVisualMode(), wikilinkSuggest, citationSuggest] : [];
+  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)
@@ -460,7 +461,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       }
       view.dispatch({
         effects: [
-          visualCompartment.reconfigure(enabled ? typstVisualMode() : []),
+          visualCompartment.reconfigure(enabled ? [typstVisualMode(), verseFocusRouter] : []),
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
           selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
