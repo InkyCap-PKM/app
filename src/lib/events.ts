@@ -13,6 +13,11 @@ export interface FileDeletedPayload {
   path: string;
 }
 
+export interface FileRenamedPayload {
+  from: string;
+  to: string;
+}
+
 export function onFileChanged(
   callback: (payload: FileChangedPayload) => void,
 ): Promise<() => void> {
@@ -33,6 +38,14 @@ export function onFileDeleted(
   callback: (payload: FileDeletedPayload) => void,
 ): Promise<() => void> {
   return listen<FileDeletedPayload>("vault:file-deleted", (event) => {
+    callback(event.payload);
+  }).then((unlisten) => unlisten);
+}
+
+export function onFileRenamed(
+  callback: (payload: FileRenamedPayload) => void,
+): Promise<() => void> {
+  return listen<FileRenamedPayload>("vault:file-renamed", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }

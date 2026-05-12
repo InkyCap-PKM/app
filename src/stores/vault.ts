@@ -4,7 +4,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { VaultInfo, VaultRegistryEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
-import { onFileCreated, onFileDeleted } from "../lib/events";
+import { onFileCreated, onFileDeleted, onFileRenamed } from "../lib/events";
+import { renameTabPath } from "./tabs";
 import { reloadPropertyTypes } from "./propertyTypes";
 import { refreshAliases, bumpAliasGeneration } from "./aliases";
 import { startLsp, stopLsp } from "./lsp";
@@ -51,6 +52,7 @@ let indexReadyUnlisten: UnlistenFn | null = null;
 let indexErrorUnlisten: UnlistenFn | null = null;
 let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
+let fileRenamedUnlisten: (() => void) | null = null;
 let noteSavedUnlisten: (() => void) | null = null;
 
 // Debounce file-system-event-driven tree refetches. Bulk operations
@@ -113,6 +115,15 @@ async function ensureIndexEventListeners() {
   }
   if (fileDeletedUnlisten === null) {
     fileDeletedUnlisten = await onFileDeleted(() => scheduleTreeRefresh());
+  }
+  // External renames (mv / file-manager rename) — follow the file in
+  // any open tab so it doesn't become a phantom that errors on save.
+  // The tree refresh is already handled by the watcher emitting the
+  // corresponding delete+create pair alongside this event.
+  if (fileRenamedUnlisten === null) {
+    fileRenamedUnlisten = await onFileRenamed((payload) => {
+      renameTabPath(payload.from, payload.to);
+    });
   }
   // Refresh aliases when a note is saved (inline edits to
   // #note(aliases: ...)). `refreshAliases` debounces internally so
