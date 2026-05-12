@@ -15,7 +15,11 @@ import {
   Search,
   BookMarked,
   Plus,
-  Hash,
+  FilePlus2,
+  Folder,
+  Upload,
+  Tag,
+  X,
   ChevronRight,
   ChevronDown,
   FileText,
@@ -43,6 +47,7 @@ import SearchPanel from "./SearchPanel";
 import BookmarksPanel from "./BookmarksPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
+import { promptText } from "../stores/prompt";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -93,12 +98,19 @@ const LIST_SORT_OPTIONS: { value: ListSortMode; label: string }[] = [
   { value: "count-asc", label: "Quantity (low to high)" },
 ];
 
-/// Sort one level of a file tree, keeping directories above files (the
-/// backend already sorts dirs-first; we preserve that grouping). Recurses
-/// into children so the entire subtree honors the chosen mode.
-function sortFileTree(nodes: FileTreeNode[], mode: FileSortMode): FileTreeNode[] {
+/// Sort one level of a file tree. The `grouping` parameter controls
+/// whether directories cluster before files ("before"), after files
+/// ("after"), or interleave with them under the chosen sort ("inline").
+/// Recurses into children so the entire subtree honors both settings.
+function sortFileTree(
+  nodes: FileTreeNode[],
+  mode: FileSortMode,
+  grouping: "before" | "after" | "inline",
+): FileTreeNode[] {
   const cmp = (a: FileTreeNode, b: FileTreeNode): number => {
-    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    if (grouping !== "inline" && a.is_dir !== b.is_dir) {
+      return grouping === "before" ? (a.is_dir ? -1 : 1) : (a.is_dir ? 1 : -1);
+    }
     switch (mode) {
       case "name-asc":
         return a.name.localeCompare(b.name);
@@ -115,7 +127,7 @@ function sortFileTree(nodes: FileTreeNode[], mode: FileSortMode): FileTreeNode[]
     }
   };
   return nodes
-    .map((n) => (n.children ? { ...n, children: sortFileTree(n.children, mode) } : n))
+    .map((n) => (n.children ? { ...n, children: sortFileTree(n.children, mode, grouping) } : n))
     .sort(cmp);
 }
 
@@ -130,6 +142,36 @@ function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): S
   return acc;
 }
 
+/// Anchor a `.context-menu` to its trigger button using fixed coords.
+/// Default placement matches the File Actions menu pattern: directly below
+/// the trigger with its left edge aligned to the trigger's left edge. Only
+/// adjusts when the natural placement would clip the viewport.
+function anchorPanelMenu(triggerEl: HTMLElement | undefined, menuEl: HTMLElement) {
+  if (!triggerEl) return;
+  const tr = triggerEl.getBoundingClientRect();
+  const mw = menuEl.offsetWidth;
+  const mh = menuEl.offsetHeight;
+  const margin = 4;
+  // Default: open below, left-aligned to trigger.
+  let left = tr.left;
+  // If the menu would overflow the right edge, try right-aligning to trigger.
+  if (left + mw > window.innerWidth - margin) {
+    left = tr.right - mw;
+  }
+  // Final clamp so the menu is always fully on-screen.
+  if (left < margin) left = margin;
+  if (left + mw > window.innerWidth - margin) {
+    left = window.innerWidth - mw - margin;
+  }
+  // Below by default; flip above only if it would overflow vertically.
+  let top = tr.bottom + 4;
+  if (top + mh > window.innerHeight - margin) {
+    top = tr.top - mh - 4;
+  }
+  menuEl.style.left = `${left}px`;
+  menuEl.style.top = `${top}px`;
+}
+
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const mode = props.mode;
   const setMode = props.setMode;
@@ -142,6 +184,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [fileSortMode, setFileSortMode] = createSignal<FileSortMode>("name-asc");
   const [showFileSortMenu, setShowFileSortMenu] = createSignal(false);
   const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
+  const [showNewMenu, setShowNewMenu] = createSignal(false);
+
+  // Refs for panel-menu trigger buttons, used by anchorPanelMenu to place
+  // each dropdown at fixed viewport coords (escapes left-sidebar's
+  // overflow:hidden and flips off-screen positions).
+  let fileSortBtnRef: HTMLButtonElement | undefined;
+  let tagSortBtnRef: HTMLButtonElement | undefined;
+  let propSortBtnRef: HTMLButtonElement | undefined;
+  let newMenuBtnRef: HTMLButtonElement | undefined;
 
   // Tags / Properties: sort mode + inline search filter. Each pane gets
   // its own state so switching modes doesn't lose the user's filter.
@@ -186,7 +237,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const tree = fileTree();
     if (!tree) return [];
     const filtered = typstOnly() ? filterTypstFiles(tree) : tree;
-    return sortFileTree(filtered, fileSortMode());
+    return sortFileTree(filtered, fileSortMode(), settings.appearance.folder_grouping);
   });
 
   function toggleDir(path: string) {
@@ -517,12 +568,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // ── Collection CRUD ──
 
   async function createCollection() {
-    const info = vaultInfo();
-    if (!info) return;
-    const name = prompt("New collection name:");
+    if (!vaultInfo()) return;
+    const name = await promptText({
+      title: "New collection",
+      label: "Collection name",
+      confirmLabel: "Create",
+    });
     if (!name?.trim()) return;
     try {
-      const col = await ipc.createCollectionFile(name.trim(), info.path);
+      const col = await ipc.createCollectionFile(name.trim());
       refresh();
       openCollection(col);
     } catch (e) {
@@ -605,7 +659,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         return;
       }
     } else {
-      name = prompt("New note name:");
+      name = await promptText({
+        title: "New note",
+        label: "Note name",
+        confirmLabel: "Create",
+      });
       if (!name?.trim()) return;
       name = name.trim();
     }
@@ -628,7 +686,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function createNewFolder(parentFolder: string) {
     setFileContextMenu(null);
-    const name = prompt("New folder name:");
+    const name = await promptText({
+      title: "New folder",
+      label: "Folder name",
+      confirmLabel: "Create",
+    });
     if (!name?.trim()) return;
     try {
       await ipc.createFolder(name.trim(), parentFolder);
@@ -700,12 +762,42 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     await createNewFile(info.path);
   }
 
+  async function createNewFolderAtRoot() {
+    setShowNewMenu(false);
+    const info = vaultInfo();
+    if (!info) return;
+    await createNewFolder(info.path);
+  }
+
+  async function uploadIntoVault() {
+    setShowNewMenu(false);
+    try {
+      const saved = await ipc.pickAndUploadToAttachments();
+      if (saved.length > 0) {
+        refresh();
+        toastSuccess(
+          saved.length === 1
+            ? `Uploaded ${saved[0]}`
+            : `Uploaded ${saved.length} files`,
+        );
+      }
+    } catch (e) {
+      toastError("Failed to upload", e);
+    }
+  }
+
   // Close context menus on click outside
-  function handleDocClick() {
+  function handleDocClick(e: MouseEvent) {
     setContextMenu(null);
     setFileContextMenu(null);
     setTagMenu(null);
     setPropMenu(null);
+    // Solid's delegated stopPropagation doesn't block this sibling
+    // document listener, so check the target ourselves.
+    const target = e.target as Element | null;
+    if (!target?.closest(".left-sidebar__split-btn")) {
+      setShowNewMenu(false);
+    }
   }
 
   if (typeof document !== "undefined") {
@@ -831,6 +923,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
+                  ref={fileSortBtnRef}
                   class="left-sidebar__icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -843,7 +936,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </button>
                 <Show when={showFileSortMenu()}>
                   <div
-                    class="context-menu left-sidebar__sort-menu"
+                    class="context-menu"
+                    ref={(el) => anchorPanelMenu(fileSortBtnRef, el)}
                     onMouseLeave={() => setShowFileSortMenu(false)}
                   >
                     <For each={FILE_SORT_OPTIONS}>
@@ -888,14 +982,57 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               >
                 <Filter size={14} />
               </button>
-              <button
-                class="left-sidebar__add-btn"
-                onClick={createNewNoteAtRoot}
-                title="New note"
-                aria-label="New note"
+              <div
+                class="left-sidebar__split-btn"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Plus size={14} />
-              </button>
+                <button
+                  class="left-sidebar__split-btn__main"
+                  onClick={createNewNoteAtRoot}
+                  title="New note"
+                  aria-label="New note"
+                >
+                  <FilePlus2 size={14} />
+                </button>
+                <button
+                  ref={newMenuBtnRef}
+                  class="left-sidebar__split-btn__caret"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowNewMenu((v) => !v);
+                  }}
+                  title="More options"
+                  aria-label="More create options"
+                  aria-haspopup="menu"
+                  aria-expanded={showNewMenu()}
+                >
+                  <ChevronDown size={12} />
+                </button>
+                <Show when={showNewMenu()}>
+                  <div
+                    class="context-menu"
+                    role="menu"
+                    ref={(el) => anchorPanelMenu(newMenuBtnRef, el)}
+                  >
+                    <button
+                      class="context-menu__item context-menu__item--icon"
+                      role="menuitem"
+                      onClick={createNewFolderAtRoot}
+                    >
+                      <Folder size={14} />
+                      <span>Folder</span>
+                    </button>
+                    <button
+                      class="context-menu__item context-menu__item--icon"
+                      role="menuitem"
+                      onClick={uploadIntoVault}
+                    >
+                      <Upload size={14} />
+                      <span>Upload into vault</span>
+                    </button>
+                  </div>
+                </Show>
+              </div>
             </div>
           </div>
           <Show
@@ -934,6 +1071,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
+                  ref={tagSortBtnRef}
                   class="left-sidebar__icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -946,7 +1084,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </button>
                 <Show when={showTagSortMenu()}>
                   <div
-                    class="context-menu left-sidebar__sort-menu"
+                    class="context-menu"
+                    ref={(el) => anchorPanelMenu(tagSortBtnRef, el)}
                     onMouseLeave={() => setShowTagSortMenu(false)}
                   >
                     <For each={LIST_SORT_OPTIONS}>
@@ -984,14 +1123,26 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             </div>
           </div>
           <Show when={showTagSearch()}>
-            <input
-              class="left-sidebar__filter-input"
-              type="text"
-              placeholder="Filter tags..."
-              value={tagFilter()}
-              onInput={(e) => setTagFilter(e.currentTarget.value)}
-              autofocus
-            />
+            <div class="left-sidebar__filter-wrap">
+              <input
+                class="left-sidebar__filter-input"
+                type="text"
+                placeholder="Filter tags..."
+                value={tagFilter()}
+                onInput={(e) => setTagFilter(e.currentTarget.value)}
+                autofocus
+              />
+              <Show when={tagFilter().length > 0}>
+                <button
+                  class="left-sidebar__filter-clear"
+                  onMouseDown={(e) => { e.preventDefault(); setTagFilter(""); }}
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                >
+                  <X size={12} />
+                </button>
+              </Show>
+            </div>
           </Show>
           <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (
@@ -1009,7 +1160,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                         onContextMenu={(e) => handleTagContext(e, tag)}
                       >
                         <span class="sidebar-item__icon">
-                          <Hash size={14} />
+                          <Tag size={14} />
                         </span>
                         <span class="sidebar-item__label">{tag}</span>
                         <span class="vault-index__count">{count}</span>
@@ -1043,6 +1194,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
+                  ref={propSortBtnRef}
                   class="left-sidebar__icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1055,7 +1207,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </button>
                 <Show when={showPropSortMenu()}>
                   <div
-                    class="context-menu left-sidebar__sort-menu"
+                    class="context-menu"
+                    ref={(el) => anchorPanelMenu(propSortBtnRef, el)}
                     onMouseLeave={() => setShowPropSortMenu(false)}
                   >
                     <For each={LIST_SORT_OPTIONS}>
@@ -1093,14 +1246,26 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             </div>
           </div>
           <Show when={showPropSearch()}>
-            <input
-              class="left-sidebar__filter-input"
-              type="text"
-              placeholder="Filter properties..."
-              value={propFilter()}
-              onInput={(e) => setPropFilter(e.currentTarget.value)}
-              autofocus
-            />
+            <div class="left-sidebar__filter-wrap">
+              <input
+                class="left-sidebar__filter-input"
+                type="text"
+                placeholder="Filter properties..."
+                value={propFilter()}
+                onInput={(e) => setPropFilter(e.currentTarget.value)}
+                autofocus
+              />
+              <Show when={propFilter().length > 0}>
+                <button
+                  class="left-sidebar__filter-clear"
+                  onMouseDown={(e) => { e.preventDefault(); setPropFilter(""); }}
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                >
+                  <X size={12} />
+                </button>
+              </Show>
+            </div>
           </Show>
           <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (

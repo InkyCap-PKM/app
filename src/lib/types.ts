@@ -221,6 +221,7 @@ export interface EditorSettings {
 export type AccentSource = "default" | "custom" | "os";
 export type BgPalette = "default" | "warm";
 export type ZoomTarget = "content" | "interface" | "both";
+export type FolderGrouping = "before" | "after" | "inline";
 
 export interface AppearanceSettings {
   theme: "dark" | "light" | "system";
@@ -248,6 +249,13 @@ export interface AppearanceSettings {
   interface_font: string;
   monospace_font: string;
   zoom_target: ZoomTarget;
+  /**
+   * How the file tree groups folders relative to files when sorting:
+   * - "before" — all folders first, then files (both sorted by the chosen mode).
+   * - "after"  — all files first, then folders.
+   * - "inline" — folders and files are interleaved together under the chosen sort.
+   */
+  folder_grouping: FolderGrouping;
 }
 
 export interface FileSettings {

@@ -37,6 +37,13 @@
 
   /* UI scale factor — updated by applyUiScale() */
   --ui-scale: 1;
+
+  /* Control-surface radius. Used by panel header buttons, filter
+     pills, split buttons, segmented toggles, and the shared
+     .ui-icon-btn utility — anything that reads as a clickable
+     "control" in a panel or heading row. Update here to retune the
+     whole UI's roundedness in one place. */
+  --radius-control: 6px;
 }
 
 :root,
@@ -252,17 +259,17 @@
 [data-palette="warm"][data-theme="light"],
 [data-palette="warm"]:not([data-theme="dark"]) {
   --bg-primary: #ffffff;
-  --bg-editor-toolbar: #efebe4;
-  --bg-secondary: #e9e5e0;
-  --bg-active: #ded9d2;
-  --bg-highlight: #d3cdc4;
-  --bg-input: #faf6f0;
-  --bg-matching-bracket: #d3cdc4;
-  --bg-search-match: #ecdfc6;
+  --bg-editor-toolbar: #f1efec;
+  --bg-secondary: #ebe9e6;
+  --bg-active: #e0deda;
+  --bg-highlight: #d5d2cc;
+  --bg-input: #faf8f5;
+  --bg-matching-bracket: #d5d2cc;
+  --bg-search-match: #e8e3d4;
 
-  --border-primary: #ccc6bb;
-  --border-subtle: #ded9d2;
-  --border-input: #beb7ab;
+  --border-primary: #cdcac3;
+  --border-subtle: #e0deda;
+  --border-input: #bfbcb5;
 
   --fg-primary: #1d1915;
   --fg-secondary: #3b3630;
@@ -271,11 +278,11 @@
   --fg-gutter: #968f84;
   --fg-separator: #ccc6bb;
 
-  --status-bg: #e9e5e0;
+  --status-bg: #ebe9e6;
   --status-fg: #1d1915;
 
-  --code-block-bg: #efebe4;
-  --code-block-border: #ccc6bb;
+  --code-block-bg: #f1efec;
+  --code-block-border: #cdcac3;
 
   --scrollbar-thumb: #beb7ab;
 }

@@ -114,6 +114,9 @@ pub struct AppearanceSettings {
     pub monospace_font: String,
     /// What Ctrl+/Ctrl- adjusts: "content", "interface", or "both".
     pub zoom_target: String,
+    /// How the file tree groups folders relative to files when sorting:
+    /// "before" (folders first), "after" (files first), or "inline" (interleaved).
+    pub folder_grouping: String,
 }
 
 impl Default for AppearanceSettings {
@@ -127,6 +130,7 @@ impl Default for AppearanceSettings {
             interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
             monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace".to_string(),
             zoom_target: "content".to_string(),
+            folder_grouping: "before".to_string(),
         }
     }
 }

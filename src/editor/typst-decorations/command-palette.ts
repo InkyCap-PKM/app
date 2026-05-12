@@ -1,12 +1,19 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type ChangeSpec, type Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
+import { pickAndInsertAttachments } from "../../lib/attachment-insert";
 
 interface PaletteItem {
   label: string;
   category: string;
   insert: string;
   cursorOffset?: number;
+  /** When set, accepting the item runs the attachment picker instead of
+   *  inserting the `insert` template. The picker copies the selected
+   *  file(s) into `settings.files.attachment_folder` and emits
+   *  `#image("/...")` / `#embed("/...")` with a vault-root-absolute path.
+   *  See CLAUDE.md's portable-paths principle. */
+  pickAttachment?: "image" | "embed";
   /** Inline typing shortcut shown at the right edge of the row, when
    *  one exists. Purely informational — the actual trigger lives in
    *  auto-pair-typst.ts, markdown-shortcuts.ts, wikilink-suggest.ts,
@@ -46,7 +53,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true, shortcut: "> " },
 
   { label: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
-  { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
+  { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8, pickAttachment: "image" },
   { label: "Code block", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4, shortcut: "```" },
   { label: "Math block", category: "Insert", insert: '$ ${sel} $', cursorOffset: 2 },
   { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
@@ -64,7 +71,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
   { label: "Rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
-  { label: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
+  { label: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8, pickAttachment: "embed" },
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
@@ -227,6 +234,15 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const insert = item.insert.replace("${sel}", selectedText);
   const deleteFrom = state.from;
   const deleteTo = view.state.selection.main.from;
+
+  // Image / Embed: open the attachment picker and replace the slash trigger
+  // with a vault-root-absolute call. The picker is async; hide the popup
+  // first so the dialog can take focus cleanly.
+  if (item.pickAttachment) {
+    hidePopup();
+    void pickAndInsertAttachments(view, deleteFrom, deleteTo, item.pickAttachment);
+    return;
+  }
 
   hidePopup();
   view.dispatch({

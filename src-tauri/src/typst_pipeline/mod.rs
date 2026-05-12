@@ -14,6 +14,7 @@ pub mod compiler;
 pub mod diagnostic;
 pub mod fonts;
 pub mod note_rewriter;
+pub mod path_rebase;
 pub mod query;
 pub mod style_injection;
 pub mod world;

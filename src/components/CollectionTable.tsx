@@ -22,6 +22,7 @@ import type {
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { propertyVersion } from "../stores/vault";
+import { promptText } from "../stores/prompt";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import LucideIconPicker from "./LucideIconPicker";
@@ -1204,7 +1205,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   // ── View management ──
 
   async function addNewView() {
-    const name = prompt("New view name:");
+    const name = await promptText({
+      title: "New view",
+      label: "View name",
+      confirmLabel: "Create",
+    });
     if (!name?.trim()) return;
     await ipc.addView(props.path, name.trim());
     refresh();

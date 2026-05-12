@@ -122,6 +122,7 @@ import { dragDropHandler } from "./typst-decorations/drag-drop";
 import { autoPairTypstInput, autoPairTypstBackspace } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
 import { headingTracker } from "./typst-decorations/heading-tracker";
+import { headingFold } from "./typst-decorations/heading-fold";
 import { wordCountTracker } from "./typst-decorations/word-count";
 import { lspExtension } from "./lsp";
 import type { LspClient } from "./lsp";
@@ -349,7 +350,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest] : [];
+  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest, headingFold()] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)

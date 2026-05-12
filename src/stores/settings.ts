@@ -39,6 +39,7 @@ const DEFAULTS: UserSettings = {
     interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
     monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace",
     zoom_target: "content",
+    folder_grouping: "before",
   },
   files: {
     new_note_location: "root",

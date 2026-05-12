@@ -10,6 +10,7 @@ use crate::state::AppState;
 use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 use crate::storage::validate_vault_path;
+use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 
 /// Copy a file (given as base64 data) to the attachment folder.
 /// Returns the saved filename (may be renamed to avoid collisions).
@@ -364,6 +365,59 @@ pub async fn copy_path_to_attachments(
     write_to_attachments(&filename, &data, &app, &state).await
 }
 
+/// Open a native file-picker and copy each selected file into the vault's
+/// configured attachments folder. Returns the vault-root-relative paths of
+/// each saved file.
+///
+/// **Security.** Unlike `copy_path_to_attachments`, the source paths here
+/// are not on `AppState.drop_allowlist`: they come from a Rust-mediated
+/// `tauri_plugin_dialog` picker that the user explicitly drove. The threat
+/// model the drop allowlist defends against — a compromised renderer
+/// calling the copy command with a path the user never authorized — is
+/// also defeated here because the renderer cannot forge the dialog: the
+/// path set is produced inside this command, not passed in.
+#[tauri::command]
+pub async fn pick_and_upload_to_attachments(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, InkyCapError> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let app_for_picker = app.clone();
+    let picked = tokio::task::spawn_blocking(move || {
+        app_for_picker.dialog().file().blocking_pick_files()
+    })
+    .await
+    .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("dialog join error: {e}"))))?;
+
+    let Some(picked) = picked else {
+        return Ok(Vec::new()); // user cancelled
+    };
+
+    let mut saved = Vec::with_capacity(picked.len());
+    for fp in picked {
+        let pb: PathBuf = fp
+            .into_path()
+            .map_err(|e| InkyCapError::InvalidPath(format!("invalid file path: {e}")))?;
+        if !pb.is_file() {
+            return Err(InkyCapError::InvalidPath(format!(
+                "selection is not a regular file: {}",
+                pb.display()
+            )));
+        }
+        let filename = pb
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .ok_or_else(|| {
+                InkyCapError::InvalidPath(format!("source has no filename: {}", pb.display()))
+            })?;
+        let data = tokio::fs::read(&pb).await?;
+        let rel = write_to_attachments(&filename, &data, &app, &state).await?;
+        saved.push(rel);
+    }
+    Ok(saved)
+}
+
 /// Write `data` into the vault's attachment folder under `filename`.
 /// Finds a collision-free name and returns the saved name.
 async fn write_to_attachments(
@@ -613,6 +667,12 @@ pub async fn rename_and_update_links(
     // so either ordering converges.)
     if !is_dir {
         rewrite_backlinks_for_rename(&old, &new_path, &storage, &*state).await?;
+        // Phase B: rebase relative path arguments in this note's own
+        // source to vault-root-absolute, anchored at the pre-rename
+        // parent. For a same-folder rename the anchor is unchanged so
+        // this is just canonicalization; for a follow-up move it makes
+        // the references survive.
+        rebase_paths_for_note_move(&old, &storage).await?;
     }
 
     storage.rename_file(&old, &new_path).await?;
@@ -660,6 +720,15 @@ pub async fn move_file(
 
     // Ensure target directory exists
     storage.create_dir(&new_dir).await?;
+
+    // Phase B: rebase relative path arguments in the moved note's
+    // source to vault-root-absolute paths anchored at the OLD parent,
+    // so `image("daisy.png")` etc. keep resolving after the folder
+    // change. Runs unconditionally on move — this is a correctness
+    // fix for the bug that prompted Phases A–D, not a discretionary
+    // link update gated by `auto_update_links_on_rename`.
+    rebase_paths_for_note_move(&old, &storage).await?;
+
     storage.rename_file(&old, &new_path).await?;
 
     // Update indices
@@ -865,6 +934,79 @@ fn typst_string_unescape(s: &str) -> String {
     out
 }
 
+/// Read the note at `old_vault_path` and rewrite any relative path
+/// arguments in `image`/`read`/`embed`/`bibliography` calls to vault-
+/// root-absolute paths anchored at the note's CURRENT (pre-move) parent
+/// directory. After this pass, the note's path references are stable
+/// across subsequent moves — see CLAUDE.md's portable-paths principle
+/// and Phase B of `.claude/plans/portable-paths-2026-05-12.md`.
+///
+/// Called *before* the filesystem move so the on-disk write happens
+/// once with the already-rewritten content. The asset targets stay
+/// where they are when only the single note moves; the rebased
+/// absolute path correctly points at them in their unchanged location.
+///
+/// A no-op if the note has no relative path arguments. Errors writing
+/// back are propagated; read errors are logged and the move continues
+/// (a missing source on a rename target is a pre-existing problem and
+/// not Phase B's to escalate).
+pub(crate) async fn rebase_paths_for_note_move(
+    old_path: &std::path::Path,
+    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+) -> Result<(), InkyCapError> {
+    let content = match storage.read_file(old_path).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "rebase_paths_for_note_move: cannot read {}: {} — skipping rebase",
+                old_path.display(),
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    // The frontend sends both absolute and vault-relative paths through
+    // the various rename/move commands (see `sanitize_vault_arg`'s
+    // docstring). `rebase_relative_paths` needs a vault-RELATIVE parent
+    // — passing an absolute path makes the rewriter short-circuit on
+    // the `RootDir` component and produce no edits at all. Normalize
+    // here, defensively, against whichever shape the caller passed.
+    let vault_relative = vault_relative_path(old_path, storage);
+    let note_dir = vault_relative
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+
+    let rewritten = rebase_relative_paths(&content, &note_dir);
+    if rewritten == content {
+        return Ok(());
+    }
+
+    storage.write_file(old_path, &rewritten).await?;
+    Ok(())
+}
+
+/// Best-effort conversion of an absolute-or-relative caller path to
+/// the vault-relative form. Strips the storage root (canonical or
+/// declared) when the path is absolute; passes the input through when
+/// it's already relative.
+fn vault_relative_path(
+    path: &std::path::Path,
+    storage: &crate::storage::local::LocalVaultStorage,
+) -> std::path::PathBuf {
+    if path.is_relative() {
+        return path.to_path_buf();
+    }
+    if let Ok(rel) = path.strip_prefix(storage.canonical_root()) {
+        return rel.to_path_buf();
+    }
+    if let Ok(rel) = path.strip_prefix(storage.root()) {
+        return rel.to_path_buf();
+    }
+    path.to_path_buf()
+}
+
 /// Walk every note that links to `old_path`, rewrite its wikilinks so they
 /// point at `new_path`, and reindex it. Shared between the in-app rename
 /// command (which calls this *before* moving the file on disk) and the
@@ -1011,6 +1153,100 @@ pub async fn open_file_externally(path: String) -> Result<(), InkyCapError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    /// Integration check for the Phase B helper: a note that lives in a
+    /// subfolder and references a sibling asset with a relative path
+    /// gets rewritten to a vault-root-absolute reference anchored at
+    /// the note's pre-move parent. The on-disk file content is updated;
+    /// the asset is not touched.
+    #[tokio::test]
+    async fn rebase_paths_for_note_move_rewrites_relative_image() {
+        let vault = TempDir::new().unwrap();
+        std::fs::create_dir_all(vault.path().join("notes")).unwrap();
+        let note_rel = std::path::Path::new("notes/foo.typ");
+        let note_abs = vault.path().join(note_rel);
+        std::fs::write(
+            &note_abs,
+            "= Foo\n\n#image(\"daisy.png\")\n#read(\"data.csv\")\n",
+        )
+        .unwrap();
+
+        let storage = Arc::new(
+            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+        );
+
+        rebase_paths_for_note_move(note_rel, &storage)
+            .await
+            .expect("rebase should succeed");
+
+        let after = std::fs::read_to_string(&note_abs).unwrap();
+        assert!(
+            after.contains("#image(\"/notes/daisy.png\")"),
+            "expected absolute image path, got:\n{after}"
+        );
+        assert!(
+            after.contains("#read(\"/notes/data.csv\")"),
+            "expected absolute read path, got:\n{after}"
+        );
+    }
+
+    /// Regression: the frontend sends absolute paths through `move_file`
+    /// (via `FileTreeNode.path`); the helper used to pass the absolute
+    /// parent dir straight into `rebase_relative_paths`, which short-
+    /// circuits on the `RootDir` component and produced no edits. The
+    /// fix normalizes to vault-relative before rebasing.
+    #[tokio::test]
+    async fn rebase_paths_for_note_move_handles_absolute_path_input() {
+        let vault = TempDir::new().unwrap();
+        std::fs::create_dir_all(vault.path().join("journal")).unwrap();
+        let note_abs_pb = vault.path().join("journal/jan.typ");
+        std::fs::write(
+            &note_abs_pb,
+            "= Jan\n\n#image(\"daisy.png\")\n",
+        )
+        .unwrap();
+
+        let storage = Arc::new(
+            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+        );
+
+        rebase_paths_for_note_move(&note_abs_pb, &storage)
+            .await
+            .expect("rebase should succeed");
+
+        let after = std::fs::read_to_string(&note_abs_pb).unwrap();
+        assert!(
+            after.contains("#image(\"/journal/daisy.png\")"),
+            "expected absolute image path after rebase, got:\n{after}"
+        );
+    }
+
+    /// A note whose paths are already absolute (or where no path-bearing
+    /// call exists) must not be touched — the helper should be a no-op
+    /// to avoid churning the on-disk file's mtime/contents.
+    #[tokio::test]
+    async fn rebase_paths_for_note_move_no_op_when_already_absolute() {
+        let vault = TempDir::new().unwrap();
+        std::fs::create_dir_all(vault.path().join("notes")).unwrap();
+        let note_rel = std::path::Path::new("notes/foo.typ");
+        let note_abs = vault.path().join(note_rel);
+        let original = "= Foo\n\n#image(\"/assets/daisy.png\")\n";
+        std::fs::write(&note_abs, original).unwrap();
+
+        let storage = Arc::new(
+            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+        );
+
+        rebase_paths_for_note_move(note_rel, &storage)
+            .await
+            .expect("rebase should succeed");
+
+        let after = std::fs::read_to_string(&note_abs).unwrap();
+        assert_eq!(after, original);
+    }
 
     #[test]
     fn test_update_wikilinks_simple() {

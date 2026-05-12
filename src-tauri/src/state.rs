@@ -176,9 +176,20 @@ impl AppState {
         // symlink or trailing separators.
         let canonical_path = storage.canonical_root().to_path_buf();
 
+        // Scaffold reserved `.inkycap/` directories before the scanner runs so
+        // the collections folder exists by the time we list it. The scaffold
+        // also writes the vault library; the original placement (later in
+        // this function) is preserved by being idempotent.
+        crate::vault_package::scaffold(&canonical_path);
+
         // Cheap directory walks — no file reads, no parsing.
         let note_files = storage.list_files(&canonical_path, "*.typ").await?;
-        let collection_files = storage.list_files(&canonical_path, "*.collection").await?;
+        let collections_dir = crate::vault_package::collections_dir(&canonical_path);
+        let collection_files = if storage.exists(&collections_dir).await {
+            storage.list_files(&collections_dir, "*.collection").await?
+        } else {
+            Vec::new()
+        };
         let note_count = note_files.len();
 
         // Reset stale state from any previously open vault before swapping in
@@ -191,10 +202,8 @@ impl AppState {
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
 
-        // Scaffold the inkycap-vault library into .inkycap/vault.typ so
-        // notes can `#import` it. Must happen before the compiler is
-        // constructed so that the file is on disk for any compile.
-        crate::vault_package::scaffold(&canonical_path);
+        // (Scaffold already ran above so the vault library is on disk
+        // before the compiler is constructed.)
 
         // Pre-warm the Typst compiler at vault-open time so the first
         // reading-mode render doesn't pay the ~340ms font-discovery cost
