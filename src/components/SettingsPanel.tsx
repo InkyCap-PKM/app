@@ -1101,6 +1101,12 @@ function ExportSettingsSection() {
   const [pandocStatus, setPandocStatus] = createSignal<string>("Checking...");
   const [importStatus, setImportStatus] = createSignal<string | null>(null);
   const [importing, setImporting] = createSignal(false);
+  // Selected source file path and the dialect preselected from
+  // autodetect. When `pickedFile` is non-null, the dialect-confirm
+  // panel is shown; the user can flip the toggle before clicking Run.
+  const [pickedFile, setPickedFile] = createSignal<string | null>(null);
+  const [dialect, setDialect] = createSignal<ipc.MarkdownDialect>("standard");
+  const [autoDetected, setAutoDetected] = createSignal<ipc.MarkdownDialect | null>(null);
 
   onMount(async () => {
     try {
@@ -1112,13 +1118,32 @@ function ExportSettingsSection() {
     }
   });
 
-  async function handleImport() {
+  async function pickFile() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const zipPath = await open({
       title: "Select markdown vault archive",
       filters: [{ name: "Zip archive", extensions: ["zip"] }],
     });
     if (!zipPath) return;
+
+    setImportStatus(null);
+    setPickedFile(zipPath as string);
+
+    // Autodetect dialect from the archive contents — looks for an
+    // `.obsidian/` folder anywhere in the zip.
+    try {
+      const detected = await ipc.detectMarkdownDialect(zipPath as string);
+      setAutoDetected(detected);
+      setDialect(detected);
+    } catch {
+      setAutoDetected(null);
+      setDialect("standard");
+    }
+  }
+
+  async function runImport() {
+    const source = pickedFile();
+    if (!source) return;
 
     const vaultRoot = (await import("../lib/ipc")).getVaultInfo;
     const info = await vaultRoot();
@@ -1130,17 +1155,25 @@ function ExportSettingsSection() {
     setImporting(true);
     setImportStatus("Importing...");
     try {
-      const result = await ipc.importMarkdownVault(zipPath as string, info.path);
+      const result = await ipc.importMarkdownVault(source, info.path, dialect());
       let msg = `Imported ${result.notes_converted} note(s) and ${result.files_copied} file(s).`;
       if (result.errors.length > 0) {
         msg += ` ${result.errors.length} error(s): ${result.errors.slice(0, 3).join("; ")}`;
       }
       setImportStatus(msg);
+      setPickedFile(null);
+      setAutoDetected(null);
     } catch (e: any) {
       setImportStatus(`Import failed: ${e}`);
     } finally {
       setImporting(false);
     }
+  }
+
+  function cancelPick() {
+    setPickedFile(null);
+    setAutoDetected(null);
+    setImportStatus(null);
   }
 
   return (
@@ -1149,15 +1182,81 @@ function ExportSettingsSection() {
       <span class="settings__description">
         Create a zip archive of the directory of markdown files that you would like to import. Click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
       </span>
-      <div style={{ "margin-top": "8px" }}>
-        <button
-          class="settings__detect-btn"
-          onClick={handleImport}
-          disabled={importing()}
+      <Show when={!pickedFile()}>
+        <div style={{ "margin-top": "8px" }}>
+          <button
+            class="settings__detect-btn"
+            onClick={pickFile}
+            disabled={importing()}
+          >
+            Choose archive…
+          </button>
+        </div>
+      </Show>
+      <Show when={pickedFile()}>
+        <div
+          style={{
+            "margin-top": "8px",
+            "padding": "10px 12px",
+            "border": "1px solid var(--border)",
+            "border-radius": "6px",
+            "background": "var(--bg-panel)",
+          }}
         >
-          {importing() ? "Importing..." : "Import"}
-        </button>
-      </div>
+          <div class="settings__description" style={{ "margin-bottom": "8px" }}>
+            <strong>Source:</strong> {pickedFile()}
+          </div>
+          <div class="settings__label" style={{ "margin-bottom": "4px" }}>
+            Source dialect
+            <Show when={autoDetected()}>
+              <span class="settings__description" style={{ "margin-left": "8px", "font-weight": "normal" }}>
+                (auto-detected: {autoDetected()})
+              </span>
+            </Show>
+          </div>
+          <span class="settings__description">
+            Obsidian dialect recognizes <code>#tag</code> syntax, <code>$math$</code>, and <code>%%comments%%</code>; literal <code>#</code> in source is expected to be <code>\#</code>-escaped. Standard treats every <code>#</code> as a literal character (preserved as <code>\#</code> in the imported file) — pick this for non-Obsidian markdown so prices like <code>$3000</code> and refs like <code>#42</code> survive.
+          </span>
+          <div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+              <input
+                type="radio"
+                name="md-dialect"
+                checked={dialect() === "standard"}
+                onChange={() => setDialect("standard")}
+                disabled={importing()}
+              />
+              Standard
+            </label>
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+              <input
+                type="radio"
+                name="md-dialect"
+                checked={dialect() === "obsidian"}
+                onChange={() => setDialect("obsidian")}
+                disabled={importing()}
+              />
+              Obsidian
+            </label>
+          </div>
+          <div style={{ "margin-top": "10px", display: "flex", gap: "8px" }}>
+            <button
+              class="settings__detect-btn"
+              onClick={runImport}
+              disabled={importing()}
+            >
+              {importing() ? "Importing..." : "Run import"}
+            </button>
+            <button
+              class="settings__detect-btn"
+              onClick={cancelPick}
+              disabled={importing()}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
       <Show when={importStatus()}>
         <div class="settings__description" style={{ "margin-top": "8px" }}>
           {importStatus()}

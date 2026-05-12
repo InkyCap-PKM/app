@@ -33,8 +33,14 @@ pub async fn paste_markdown_as_typst(
         }
     };
 
+    let attachment_folder = crate::settings::load_settings().files.attachment_folder;
+    // Paste-from-clipboard has no source vault to inspect for dialect;
+    // default to Standard so prices like `$3000`, version refs like
+    // `#42`, and other literal hashes survive intact.
     let options = MarkdownToTypstOptions {
         convert_frontmatter: true,
+        attachment_folder,
+        dialect: crate::markdown::md_to_typst::MarkdownDialect::Standard,
     };
 
     let full = markdown_to_typst(&text, &options);
@@ -108,8 +114,13 @@ pub async fn convert_markdown_to_typst(
     markdown: String,
     include_preamble: bool,
 ) -> Result<String, String> {
+    let attachment_folder = crate::settings::load_settings().files.attachment_folder;
+    // Same reasoning as `paste_markdown_as_typst`: Standard dialect by
+    // default for clipboard / programmatic conversion.
     let options = MarkdownToTypstOptions {
         convert_frontmatter: true,
+        attachment_folder,
+        dialect: crate::markdown::md_to_typst::MarkdownDialect::Standard,
     };
 
     let full = markdown_to_typst(&markdown, &options);
@@ -129,11 +140,15 @@ pub async fn convert_markdown_to_typst(
     }
 }
 
-/// Import a markdown vault from a zip file or directory into the target vault.
+/// Import a markdown vault from a zip file or directory into the target
+/// vault. `dialect` selects the source-markdown flavor ("standard" or
+/// "obsidian"); pass `None` to let the importer auto-detect by looking
+/// for an `.obsidian/` folder in the source.
 #[tauri::command]
 pub async fn import_markdown_vault(
     source_path: String,
     target_path: String,
+    dialect: Option<String>,
 ) -> Result<ImportResult, String> {
     let source = PathBuf::from(&source_path);
     let target = PathBuf::from(&target_path);
@@ -142,18 +157,54 @@ pub async fn import_markdown_vault(
         return Err(format!("Source path does not exist: {}", source_path));
     }
 
-    let result = if source.is_dir() {
-        vault_import::import_from_directory(&source, &target)
-    } else {
-        let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if ext == "zip" {
-            vault_import::import_from_zip(&source, &target)
-        } else {
-            return Err("Source must be a directory or .zip file".to_string());
+    let is_zip =
+        source.is_file() && source.extension().and_then(|e| e.to_str()) == Some("zip");
+    if !source.is_dir() && !is_zip {
+        return Err("Source must be a directory or .zip file".to_string());
+    }
+
+    let resolved_dialect = match dialect.as_deref() {
+        Some("obsidian") => crate::markdown::md_to_typst::MarkdownDialect::Obsidian,
+        Some("standard") => crate::markdown::md_to_typst::MarkdownDialect::Standard,
+        _ => {
+            if is_zip {
+                vault_import::detect_dialect_for_zip(&source)
+            } else {
+                vault_import::detect_dialect_for_directory(&source)
+            }
         }
     };
 
+    let result = if is_zip {
+        vault_import::import_from_zip(&source, &target, resolved_dialect)
+    } else {
+        vault_import::import_from_directory(&source, &target, resolved_dialect)
+    };
+
     Ok(result)
+}
+
+/// Probe a source vault (directory or .zip) and report which markdown
+/// dialect the importer would use by default. The frontend calls this
+/// after the user picks a file so the import dialog can preselect the
+/// toggle without committing the user to anything.
+#[tauri::command]
+pub async fn detect_markdown_dialect(source_path: String) -> Result<String, String> {
+    let source = PathBuf::from(&source_path);
+    if !source.exists() {
+        return Err(format!("Source path does not exist: {}", source_path));
+    }
+    let detected = if source.is_dir() {
+        vault_import::detect_dialect_for_directory(&source)
+    } else if source.extension().and_then(|e| e.to_str()) == Some("zip") {
+        vault_import::detect_dialect_for_zip(&source)
+    } else {
+        return Err("Source must be a directory or .zip file".to_string());
+    };
+    Ok(match detected {
+        crate::markdown::md_to_typst::MarkdownDialect::Obsidian => "obsidian".to_string(),
+        crate::markdown::md_to_typst::MarkdownDialect::Standard => "standard".to_string(),
+    })
 }
 
 /// Export a Typst note to markdown format, writing to a file.
