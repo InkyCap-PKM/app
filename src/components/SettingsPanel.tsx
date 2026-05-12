@@ -3,7 +3,7 @@
 
 import { Component, Show, createSignal, createEffect, createResource, For, onMount } from "solid-js";
 import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
-import { setThemePreference, setAccentColor, setAccentSource, setBgPalette } from "../stores/theme";
+import { setThemePreference, setAccentColor, setAccentSource, setBgPaletteLight, setBgPaletteDark } from "../stores/theme";
 import { vaultInfo, vaultRegistry, loadVaultRegistry, openVault } from "../stores/vault";
 import type { UserSettings, AccentSource, BgPalette, VaultRegistryEntry, FileTreeNode } from "../lib/types";
 import * as ipc from "../lib/ipc";
@@ -642,14 +642,24 @@ function AppearanceSettingsSection() {
         onChange={(v) => setThemePreference(v as "dark" | "light" | "system")}
       />
       <SettingSelect
-        label="Background"
-        description="Default (cool gray) or Warm (coffee light / charcoal dark)."
-        value={settings.appearance.bg_palette}
+        label="Background (light theme)"
+        description="Default (cool gray) or Warm (coffee beige)."
+        value={settings.appearance.bg_palette_light}
         options={[
           { value: "default", label: "Default" },
           { value: "warm", label: "Warm" },
         ]}
-        onChange={(v) => setBgPalette(v as BgPalette)}
+        onChange={(v) => setBgPaletteLight(v as BgPalette)}
+      />
+      <SettingSelect
+        label="Background (dark theme)"
+        description="Default (teal-ink) or Warm (charcoal)."
+        value={settings.appearance.bg_palette_dark}
+        options={[
+          { value: "default", label: "Default" },
+          { value: "warm", label: "Warm" },
+        ]}
+        onChange={(v) => setBgPaletteDark(v as BgPalette)}
       />
       <AccentSettingRow />
 
@@ -770,7 +780,7 @@ function AppearanceSettingsSection() {
       <div class="settings__row">
         <div class="settings__row-info">
           <label class="settings__label">Text font</label>
-          <span class="settings__description">Font for compiled documents. Leave empty for Typst default (Linux Libertine).</span>
+          <span class="settings__description">Font for compiled documents. Leave empty for Typst default.</span>
         </div>
         <FontPicker
           value={settings.document.text_font ?? ""}

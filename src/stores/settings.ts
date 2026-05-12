@@ -32,7 +32,8 @@ const DEFAULTS: UserSettings = {
   },
   appearance: {
     theme: "system",
-    bg_palette: "default",
+    bg_palette_light: "default",
+    bg_palette_dark: "default",
     accent_source: "default",
     accent_color: "#1D7874",
     interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",

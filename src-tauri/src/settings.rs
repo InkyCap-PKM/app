@@ -98,8 +98,10 @@ impl Default for EditorSettings {
 pub struct AppearanceSettings {
     /// Theme: "dark", "light", or "system".
     pub theme: String,
-    /// Background palette: "default" or "warm".
-    pub bg_palette: String,
+    /// Background palette for the light theme: "default" or "warm".
+    pub bg_palette_light: String,
+    /// Background palette for the dark theme: "default" or "warm".
+    pub bg_palette_dark: String,
     /// Accent source: "default", "custom", or "os".
     /// Determines how the frontend resolves the working accent color.
     pub accent_source: String,
@@ -118,7 +120,8 @@ impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme: "system".to_string(),
-            bg_palette: "default".to_string(),
+            bg_palette_light: "default".to_string(),
+            bg_palette_dark: "default".to_string(),
             accent_source: "default".to_string(),
             accent_color: "#1D7874".to_string(),
             interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
@@ -320,11 +323,20 @@ pub fn load_settings() -> UserSettings {
     // deserializing — we need this to distinguish legacy files (which
     // predate the field) from files where the user explicitly chose
     // "default".
-    let has_accent_source = raw
+    let parsed_raw = raw
         .as_deref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+
+    let has_accent_source = parsed_raw
+        .as_ref()
         .and_then(|v| v.get("appearance")?.get("accent_source").cloned())
         .is_some();
+
+    // Legacy single `bg_palette` field — present on configs written before
+    // the light/dark split. Copy it into both new fields below.
+    let legacy_bg_palette: Option<String> = parsed_raw
+        .as_ref()
+        .and_then(|v| v.get("appearance")?.get("bg_palette")?.as_str().map(str::to_string));
 
     let mut settings: UserSettings = raw
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -341,6 +353,18 @@ pub fn load_settings() -> UserSettings {
         && !settings.appearance.accent_color.eq_ignore_ascii_case("#1D7874")
     {
         settings.appearance.accent_source = "custom".to_string();
+    }
+
+    // Migrate legacy `bg_palette` into both per-theme fields. Only run when
+    // the new fields are still at their defaults — otherwise the user has
+    // already chosen per-theme values and we must respect those.
+    if let Some(legacy) = legacy_bg_palette {
+        if settings.appearance.bg_palette_light == "default"
+            && settings.appearance.bg_palette_dark == "default"
+        {
+            settings.appearance.bg_palette_light = legacy.clone();
+            settings.appearance.bg_palette_dark = legacy;
+        }
     }
 
     settings

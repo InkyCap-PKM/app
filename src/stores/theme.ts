@@ -35,10 +35,16 @@ function resolveTheme(pref: ThemePreference): ResolvedTheme {
 function applyTheme(resolved: ResolvedTheme) {
   document.documentElement.setAttribute("data-theme", resolved);
   setResolvedTheme(resolved);
+  // Re-apply the palette: the active value depends on which theme is
+  // currently resolved, so flipping light↔dark may swap the palette too.
+  applyPalette();
 }
 
-/** Apply the background palette to the DOM. */
-function applyPalette(palette: BgPalette) {
+/** Apply the background palette appropriate to the currently resolved theme. */
+function applyPalette() {
+  const palette = resolvedTheme() === "dark"
+    ? settings.appearance.bg_palette_dark
+    : settings.appearance.bg_palette_light;
   if (palette === "default") {
     document.documentElement.removeAttribute("data-palette");
   } else {
@@ -146,7 +152,6 @@ export function initTheme() {
   const pref = settings.appearance.theme;
   setupSystemListener(pref);
   applyTheme(resolveTheme(pref));
-  applyPalette(settings.appearance.bg_palette);
   applyAccent();
   applyInterfaceFont(settings.appearance.interface_font);
   applyMonospaceFont(settings.appearance.monospace_font);
@@ -220,10 +225,16 @@ export function setAccentSource(source: AccentSource) {
   }
 }
 
-/** Set the background palette and persist to settings. */
-export function setBgPalette(palette: BgPalette) {
-  updateSetting("appearance", "bg_palette", palette);
-  applyPalette(palette);
+/** Set the light-theme background palette and persist to settings. */
+export function setBgPaletteLight(palette: BgPalette) {
+  updateSetting("appearance", "bg_palette_light", palette);
+  applyPalette();
+}
+
+/** Set the dark-theme background palette and persist to settings. */
+export function setBgPaletteDark(palette: BgPalette) {
+  updateSetting("appearance", "bg_palette_dark", palette);
+  applyPalette();
 }
 
 /** Get the current resolved theme (always "dark" or "light"). */
