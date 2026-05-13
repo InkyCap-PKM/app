@@ -9,12 +9,14 @@ import {
   switchToNextTab,
   switchToPrevTab,
   setTabEditingMode,
+  createEmptyTab,
 } from "../stores/tabs";
 import { toggleTheme } from "../stores/theme";
 import { updateSetting, settings } from "../stores/settings";
 import { activeEditorView } from "../stores/editor";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
+import { triggerCreationRule } from "../stores/creation-rules";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
 // mutate Solid.js signals; the editor picks up changes automatically
@@ -31,8 +33,8 @@ export function registerBuiltinCommands(callbacks: {
   openCitationPicker: () => void;
   openRefNotePicker: () => void;
   openSearch: () => void;
-  newNote: () => Promise<void>;
   openTypAudit: () => void;
+  openScaffoldPicker: () => void;
 }): void {
   // ── File commands ──
 
@@ -44,13 +46,11 @@ export function registerBuiltinCommands(callbacks: {
     execute: callbacks.toggleQuickOpen,
   });
 
-  registerCommand({
-    id: "file:new-note",
-    title: "New Note",
-    category: "File",
-    keybinding: "Ctrl+N",
-    execute: callbacks.newNote,
-  });
+  // Note: "New Simple File" (Ctrl+N) is registered by LeftSidebar so it
+  // can share the file-tree refresh signal with the button that triggers
+  // the same action. "New Note" (the creation rule) is registered by
+  // `registerCreationRuleCommands` with whatever hotkey the user has on
+  // the rule — default Ctrl+Shift+N.
 
   registerCommand({
     id: "file:close-tab",
@@ -60,6 +60,16 @@ export function registerBuiltinCommands(callbacks: {
     execute: () => {
       const tab = getActiveTab();
       if (tab) closeTab(tab.id);
+    },
+  });
+
+  registerCommand({
+    id: "file:new-empty-tab",
+    title: "New Empty Tab",
+    category: "File",
+    keybinding: "Ctrl+T",
+    execute: () => {
+      createEmptyTab();
     },
   });
 
@@ -140,14 +150,28 @@ export function registerBuiltinCommands(callbacks: {
 
   // ── Edit commands ──
 
+  // Zoom commands honour `settings.appearance.zoom_target`, which lets
+  // the user pick whether Ctrl+= / Ctrl+- adjusts the editor body font,
+  // the interface chrome, or both. Keeping that branching here (rather
+  // than only in the keyboard handler) means the same behaviour applies
+  // when zoom is triggered from the command palette.
   registerCommand({
     id: "edit:zoom-in",
     title: "Zoom In",
     category: "Edit",
     keybinding: "Ctrl++",
     execute: () => {
-      const newSize = Math.min(24, settings.editor.font_size + 1);
-      updateSetting("editor", "font_size", newSize);
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting(
+          "editor",
+          "body_font_size",
+          Math.min(32, settings.editor.body_font_size + 1),
+        );
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", Math.min(24, settings.editor.font_size + 1));
+      }
     },
   });
 
@@ -157,8 +181,17 @@ export function registerBuiltinCommands(callbacks: {
     category: "Edit",
     keybinding: "Ctrl+-",
     execute: () => {
-      const newSize = Math.max(10, settings.editor.font_size - 1);
-      updateSetting("editor", "font_size", newSize);
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting(
+          "editor",
+          "body_font_size",
+          Math.max(8, settings.editor.body_font_size - 1),
+        );
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", Math.max(10, settings.editor.font_size - 1));
+      }
     },
   });
 
@@ -168,7 +201,13 @@ export function registerBuiltinCommands(callbacks: {
     category: "Edit",
     keybinding: "Ctrl+0",
     execute: () => {
-      updateSetting("editor", "font_size", 15);
+      const target = settings.appearance.zoom_target;
+      if (target === "content" || target === "both") {
+        updateSetting("editor", "body_font_size", 17);
+      }
+      if (target === "interface" || target === "both") {
+        updateSetting("editor", "font_size", 15);
+      }
     },
   });
 
@@ -218,6 +257,14 @@ export function registerBuiltinCommands(callbacks: {
     title: "Audit .typ files for InkyCap compatibility",
     category: "Tools",
     execute: callbacks.openTypAudit,
+  });
+
+  registerCommand({
+    id: "tools:insert-scaffold",
+    title: "Insert Scaffold",
+    category: "Tools",
+    keybinding: "Ctrl+\\",
+    execute: callbacks.openScaffoldPicker,
   });
 
   registerCommand({
@@ -423,11 +470,14 @@ async function insertAttachmentViaPicker(func: "image" | "embed") {
   await pickAndInsertAttachments(view, sel.from, sel.to, func);
 }
 
-/** Register creation rules as commands. Call after rules are loaded. */
+/** Register creation rules as commands. Call after rules are loaded.
+ *  Disabled rules are skipped — they shouldn't surface in the palette or
+ *  bind a global hotkey. */
 export async function registerCreationRuleCommands(): Promise<void> {
   try {
     const rules = await ipc.listCreationRules();
     for (const rule of rules) {
+      if (rule.disabled) continue;
       registerCommand({
         id: `creation-rule:${rule.id}`,
         title: rule.name,
@@ -435,7 +485,8 @@ export async function registerCreationRuleCommands(): Promise<void> {
         keybinding: rule.hotkey ?? undefined,
         execute: async () => {
           try {
-            const result = await ipc.executeCreationRule(rule.id);
+            const result = await triggerCreationRule(rule.id);
+            if (!result) return;
             if (rule.creation_mode === "create_and_open") {
               const name = result.path.split("/").pop() ?? "New Note";
               openTab(

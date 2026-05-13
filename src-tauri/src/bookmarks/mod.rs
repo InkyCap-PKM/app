@@ -104,6 +104,5 @@ fn rand_u16() -> u16 {
 }
 
 fn bookmarks_path() -> PathBuf {
-    let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    config_dir.join("inkycap").join("bookmarks.json")
+    crate::app_paths::config_dir().join("bookmarks.json")
 }

@@ -52,6 +52,10 @@ pub struct AppState {
     pub collection_files: RwLock<Vec<PathBuf>>,
     /// File watcher handle — kept alive as long as a vault is open.
     pub watcher: RwLock<Option<RecommendedWatcher>>,
+    /// Vault health monitor abort handle. See [`crate::vault_health`].
+    /// Owned here so opening a new vault can cancel the previous monitor
+    /// before spawning its replacement.
+    pub health_monitor: RwLock<Option<tokio::task::AbortHandle>>,
     /// User-configurable settings, persisted to disk.
     pub settings: RwLock<UserSettings>,
     /// Full-text search engine with inverted index.
@@ -92,10 +96,15 @@ const DROP_ALLOWLIST_TTL: Duration = Duration::from_secs(60);
 impl AppState {
     pub fn new() -> Self {
         let settings = crate::settings::load_settings();
+        // Move regenerable indexes from the legacy data_dir location to the
+        // cache_dir layout. Safe to run on every launch — it's a no-op once
+        // migrated, and losing a cache file at worst forces a single cold
+        // rebuild.
+        crate::app_paths::migrate_legacy_cache_paths();
         // Open the persistent metadata cache. We can't use the Tauri AppHandle
-        // here (this is called inside the builder), so we resolve the data
-        // directory via `dirs` — same approach the rest of the codebase uses
-        // for config / bookmarks. A cache failure is logged and the app
+        // here (this is called inside the builder), so we resolve the cache
+        // directory via `app_paths` — same approach the rest of the codebase
+        // uses for config / bookmarks. A cache failure is logged and the app
         // continues with no cache (slow path).
         let metadata_cache = Self::open_metadata_cache();
         Self {
@@ -105,6 +114,7 @@ impl AppState {
             link_index: RwLock::new(LinkIndex::new()),
             collection_files: RwLock::new(Vec::new()),
             watcher: RwLock::new(None),
+            health_monitor: RwLock::new(None),
             settings: RwLock::new(settings),
             search_engine: RwLock::new(SearchEngine::new()),
             bookmarks: RwLock::new(bookmarks::load_bookmarks().unwrap_or_default()),
@@ -142,12 +152,12 @@ impl AppState {
         allow.remove(path).is_some()
     }
 
-    /// Resolve the cache database path under the user's data directory and
+    /// Resolve the cache database path under the user's cache directory and
     /// open it. Errors are logged and surfaced as `None` so callers fall back
     /// to the cacheless cold path.
     fn open_metadata_cache() -> Option<Arc<MetadataCache>> {
-        let data_dir = dirs::data_dir()?.join("inkycap");
-        let db_path = data_dir.join("metadata-cache.sqlite");
+        let cache_dir = crate::app_paths::cache_dir();
+        let db_path = cache_dir.join("metadata-cache.sqlite");
         match MetadataCache::open(&db_path) {
             Ok(cache) => Some(Arc::new(cache)),
             Err(err) => {
@@ -608,10 +618,7 @@ fn search_index_path(vault_root: &Path) -> PathBuf {
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(vault_root.to_string_lossy().as_bytes());
     let short = &hex::encode(&hash)[..16];
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("inkycap")
-        .join(format!("search-index-{short}.bin"))
+    crate::app_paths::cache_dir().join(format!("search-index-{short}.bin"))
 }
 
 /// Tiny hex encoder (avoids pulling in the `hex` crate).

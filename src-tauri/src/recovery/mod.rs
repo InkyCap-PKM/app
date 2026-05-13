@@ -42,10 +42,7 @@ pub struct SnapshotManager {
 
 impl SnapshotManager {
     pub fn new() -> Self {
-        let base_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("inkycap")
-            .join("snapshots");
+        let base_dir = crate::app_paths::data_dir().join("snapshots");
 
         // Ensure the snapshots directory exists
         let _ = std::fs::create_dir_all(&base_dir);

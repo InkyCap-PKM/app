@@ -57,6 +57,21 @@ pub async fn open_vault(
         }
     }
 
+    // Replace the per-vault health monitor: abort any previous one (from
+    // a vault that's just been closed/reopened) and spawn a fresh monitor
+    // for this vault's canonical root. The monitor handles both
+    // "vault root vanished" detection and `.inkycap/` auto-healing.
+    if let Some(canonical_root) = state.vault_root.read().await.clone() {
+        let mut slot = state.health_monitor.write().await;
+        if let Some(prev) = slot.take() {
+            prev.abort();
+        }
+        *slot = Some(crate::vault_health::spawn(
+            app_handle.clone(),
+            canonical_root,
+        ));
+    }
+
     // Start file watcher and bridge events to the frontend
     match file_watcher::start_watching(&vault_path) {
         Ok((watcher, rx)) => {

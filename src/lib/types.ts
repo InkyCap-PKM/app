@@ -350,6 +350,9 @@ export interface CreationRule {
   description: string;
   builtin: boolean;
   typst_template: string;
+  /** Soft-disabled: hidden from toolbar, palette, and hotkey wiring, but
+   *  remains in the settings list so the user can re-enable it. */
+  disabled: boolean;
 }
 
 export interface CreationResult {

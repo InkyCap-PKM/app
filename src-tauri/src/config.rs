@@ -47,16 +47,43 @@ impl AppConfig {
 }
 
 fn config_path() -> PathBuf {
-    let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    config_dir.join("inkycap").join("config.json")
+    crate::app_paths::config_dir().join("config.json")
 }
 
+/// Load the app config, pruning any registry entries whose vault path no
+/// longer exists on disk. If anything was pruned (or the `vault_path`
+/// pointer was dangling), the cleaned config is persisted back so the
+/// migration runs at most once.
+///
+/// Edge case: vaults on removable drives that are temporarily unmounted
+/// will be pruned and have to be re-picked once the drive is back. That's
+/// preferred over keeping forever-broken entries in the recent list.
 pub fn load_config() -> AppConfig {
     let path = config_path();
-    std::fs::read_to_string(&path)
+    let mut cfg: AppConfig = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    let registry_before = cfg.vault_registry.len();
+    cfg.vault_registry
+        .retain(|e| std::path::Path::new(&e.path).is_dir());
+    let pruned_any = cfg.vault_registry.len() != registry_before;
+
+    let active_invalid = cfg
+        .vault_path
+        .as_ref()
+        .is_some_and(|p| !std::path::Path::new(p).is_dir());
+    if active_invalid {
+        cfg.vault_path = None;
+    }
+
+    if pruned_any || active_invalid {
+        if let Err(err) = save_config(&cfg) {
+            log::warn!("config: failed to persist pruned registry: {err}");
+        }
+    }
+    cfg
 }
 
 pub fn save_config(config: &AppConfig) -> Result<()> {

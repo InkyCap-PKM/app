@@ -13,48 +13,23 @@ import {
 import type { CreationRule } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fileList } from "../stores/filelist";
-import { getAllCommands } from "../lib/command-registry";
+import { findCommandByKeybinding } from "../lib/command-registry";
+import { formatKeyCombo } from "../lib/keybindings";
 import { loadCreationRules } from "../stores/creation-rules";
+import { settings } from "../stores/settings";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
-import { toastError } from "../stores/toasts";
+import { toastError, toastWarning } from "../stores/toasts";
 
-// ── Hotkey formatting ──────────────────────────────────
-
-function formatKeyCombo(e: KeyboardEvent): string | null {
-  if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return null;
-
-  const parts: string[] = [];
-  if (e.ctrlKey || e.metaKey) parts.push("Ctrl");
-  if (e.shiftKey) parts.push("Shift");
-  if (e.altKey) parts.push("Alt");
-
-  if (parts.length === 0) return null;
-
-  let key = e.key;
-  if (key.length === 1) key = key.toUpperCase();
-  else if (key === "ArrowUp") key = "Up";
-  else if (key === "ArrowDown") key = "Down";
-  else if (key === "ArrowLeft") key = "Left";
-  else if (key === "ArrowRight") key = "Right";
-
-  parts.push(key);
-  return parts.join("+");
-}
+// ── Hotkey conflict detection ──────────────────────────────────
 
 function findHotkeyConflict(
   hotkey: string,
   currentRuleId: string,
 ): string | null {
-  const commands = getAllCommands();
-  for (const cmd of commands) {
-    if (!cmd.keybinding) continue;
-    if (cmd.keybinding.toLowerCase() === hotkey.toLowerCase()) {
-      if (cmd.id === `creation-rule:${currentRuleId}`) continue;
-      return `${cmd.title} (${cmd.category})`;
-    }
-  }
-  return null;
+  const cmd = findCommandByKeybinding(hotkey, `creation-rule:${currentRuleId}`);
+  if (!cmd) return null;
+  return `${cmd.title} (${cmd.category})`;
 }
 
 const CreationRuleEditor: Component = () => {
@@ -99,19 +74,27 @@ const CreationRuleEditor: Component = () => {
     setRefreshTick((t) => t + 1);
   }
 
-  function startEdit(rule: CreationRule) {
-    setEditingRule({ ...rule });
-    setHotkeyConflict(null);
-    setRecordingHotkey(false);
+  /** User's preferred folder for new notes, used as the default `target_folder`
+   *  for newly-created rules. When the user has chosen "Vault root" or
+   *  "Current folder" this resolves to an empty string, which the executor
+   *  treats as "use the vault root". */
+  function defaultTargetFolder(): string {
+    if (settings.files.new_note_location === "specified") {
+      return settings.files.new_note_folder;
+    }
+    return "";
   }
 
-  function startNew() {
-    setEditingRule({
-      id: crypto.randomUUID(),
+  /** Shape of a fresh user-created rule. Centralized so the "+ New Rule"
+   *  button and the "Restore Defaults" button for non-builtin rules stay
+   *  in sync. */
+  function freshUserRule(id: string): CreationRule {
+    return {
+      id,
       name: "",
       icon_emoji: "",
       scaffold_path: "",
-      target_folder: "",
+      target_folder: defaultTargetFolder(),
       filename_pattern: "{{title}}",
       creation_mode: "create_and_open",
       hotkey: null,
@@ -119,14 +102,74 @@ const CreationRuleEditor: Component = () => {
       description: "",
       builtin: false,
       typst_template: "",
-    });
+      disabled: false,
+    };
+  }
+
+  function startEdit(rule: CreationRule) {
+    setEditingRule({ ...rule });
     setHotkeyConflict(null);
     setRecordingHotkey(false);
+  }
+
+  function startNew() {
+    setEditingRule(freshUserRule(crypto.randomUUID()));
+    setHotkeyConflict(null);
+    setRecordingHotkey(false);
+  }
+
+  /** Restore the form to the rule's defaults. For built-in rules this is
+   *  the seeded definition from the backend (so the Daily Note rule resets
+   *  to `daily/{{date:YYYY}}` etc.). For user-created rules, "defaults"
+   *  means the fresh-rule template — there's no separate canonical state
+   *  to restore to. The rule's `id` is preserved either way. */
+  async function restoreDefaults() {
+    const current = editingRule();
+    if (!current) return;
+    if (current.builtin) {
+      try {
+        const fresh = await ipc.getDefaultCreationRule(current.id);
+        if (fresh) {
+          setEditingRule(fresh);
+          setHotkeyConflict(null);
+          return;
+        }
+      } catch (e) {
+        toastError("Failed to fetch default rule", e);
+        return;
+      }
+    }
+    setEditingRule(freshUserRule(current.id));
+    setHotkeyConflict(null);
+  }
+
+  async function toggleDisabled(rule: CreationRule) {
+    try {
+      await ipc.saveCreationRule({ ...rule, disabled: !rule.disabled });
+      refresh();
+      void loadCreationRules();
+    } catch (e) {
+      toastError("Failed to update rule", e);
+    }
   }
 
   async function saveRule() {
     const rule = editingRule();
     if (!rule || !rule.name.trim()) return;
+    // Belt-and-braces: handleHotkeyKeyDown refuses to assign a conflicting
+    // combo, but a rule loaded from disk (or imported) could already carry
+    // one. Block save here so the registry can't end up with two commands
+    // bound to the same key.
+    if (rule.hotkey) {
+      const conflict = findHotkeyConflict(rule.hotkey, rule.id);
+      if (conflict) {
+        setHotkeyConflict(conflict);
+        toastWarning(
+          `Cannot save: ${rule.hotkey} is already bound to "${conflict}". Clear the hotkey or pick another.`,
+        );
+        return;
+      }
+    }
     try {
       await ipc.saveCreationRule(rule);
       setEditingRule(null);
@@ -180,7 +223,20 @@ const CreationRuleEditor: Component = () => {
     const rule = editingRule();
     if (rule) {
       const conflict = findHotkeyConflict(combo, rule.id);
-      setHotkeyConflict(conflict);
+      if (conflict) {
+        // Every hotkey must map to exactly one action, so refuse the
+        // assignment rather than allowing two commands to fight for the
+        // same combo. The inline label shows the existing binding;
+        // a warning toast confirms the keypress was registered (recording
+        // closes silently otherwise, which reads as "did it take?").
+        setHotkeyConflict(conflict);
+        toastWarning(
+          `${combo} is already bound to "${conflict}". Pick another combination or clear that binding first.`,
+        );
+        setRecordingHotkey(false);
+        return;
+      }
+      setHotkeyConflict(null);
     }
     updateField("hotkey", combo);
     setRecordingHotkey(false);
@@ -196,7 +252,16 @@ const CreationRuleEditor: Component = () => {
     <div class="settings__section">
       <div class="creation-rules__header">
         <span class="settings__label">Creation Rules</span>
-        <button class="creation-rules__add-btn" onClick={startNew}>
+        <button
+          class="creation-rules__add-btn"
+          onClick={startNew}
+          disabled={editingRule() !== null}
+          title={
+            editingRule() !== null
+              ? "Save or cancel the current rule before creating another"
+              : undefined
+          }
+        >
           + New Rule
         </button>
       </div>
@@ -225,7 +290,7 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Icon</label>
                 <span class="settings__description">
-                  Default: first 2 characters of name. Override with text/emoji or pick an SVG icon.
+                  Default: first 2 characters of name. Override with text or pick an SVG icon.
                 </span>
               </div>
               <div class="creation-rules__icon-field">
@@ -250,7 +315,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">Filename pattern</label>
                 <span class="settings__description">
                   Variables: {"{{title}}"}, {"{{slug}}"}, {"{{date}}"},
-                  {"{{date:FORMAT}}"}, {"{{time}}"}, {"{{zid}}"}
+                  {"{{date:FORMAT}}"}, {"{{time}}"}, {"{{zid}}"} or leave blank to be prompted on creation.
                 </span>
               </div>
               <input
@@ -269,7 +334,8 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Target folder</label>
                 <span class="settings__description">
-                  Relative to vault root. Empty = root. Supports{" "}
+                  Relative to vault root. Empty falls back to{" "}
+                  <em>New note location</em> from Files & Links. Supports{" "}
                   {"{{date:FORMAT}}"}, {"{{title}}"}, {"{{slug}}"} variables.
                 </span>
               </div>
@@ -378,10 +444,24 @@ const CreationRuleEditor: Component = () => {
                   Click to record. Backspace to clear. Esc to cancel.
                 </span>
               </div>
-              <div style={{ flex: "1" }}>
+              <div style={{ width: "200px", "flex-shrink": 0 }}>
                 <button
                   class={`creation-rules__hotkey-btn${recordingHotkey() ? " recording" : ""}`}
-                  onClick={() => setRecordingHotkey(true)}
+                  // While recording is true, the global dispatcher in
+                  // keyboard.ts checks for this attribute on the focused
+                  // element and suppresses command firing — otherwise
+                  // Ctrl+N would both record the combo here AND fire the
+                  // "New Simple File" command. Explicit focus() on click
+                  // is needed because WebKit (which Tauri uses) does not
+                  // auto-focus <button> on click on all platforms.
+                  data-hotkey-recording={recordingHotkey() ? "true" : undefined}
+                  onClick={(e) => {
+                    setRecordingHotkey(true);
+                    e.currentTarget.focus();
+                  }}
+                  onBlur={() => {
+                    if (recordingHotkey()) setRecordingHotkey(false);
+                  }}
                   onKeyDown={(e) => {
                     if (recordingHotkey()) handleHotkeyKeyDown(e);
                   }}
@@ -400,7 +480,7 @@ const CreationRuleEditor: Component = () => {
 
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Show in toolbar</label>
+                <label class="settings__label">Show button in toolbar</label>
               </div>
               <label class="settings__toggle">
                 <input
@@ -417,9 +497,9 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Description</label>
               </div>
-              <input
-                type="text"
-                class="settings__text-input"
+              <textarea
+                class="settings__text-input creation-rules__description"
+                rows={3}
                 value={rule().description}
                 onInput={(e) =>
                   updateField("description", e.currentTarget.value)
@@ -442,6 +522,17 @@ const CreationRuleEditor: Component = () => {
               >
                 Cancel
               </button>
+              <button
+                class="creation-rules__restore-btn"
+                onClick={restoreDefaults}
+                title={
+                  rule().builtin
+                    ? "Restore this built-in rule's seeded values"
+                    : "Reset all fields to a fresh rule template"
+                }
+              >
+                Restore Defaults
+              </button>
             </div>
           </div>
         )}
@@ -452,32 +543,57 @@ const CreationRuleEditor: Component = () => {
         <div class="creation-rules__list">
           <For each={rules() ?? []}>
             {(rule) => (
-              <div class="creation-rules__item">
+              <div
+                class={`creation-rules__item${rule.disabled ? " creation-rules__item--disabled" : ""}`}
+              >
                 <span class="creation-rules__icon">
                   <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={16} />
                 </span>
                 <div class="creation-rules__info">
-                  <span class="creation-rules__name">{rule.name}</span>
+                  <span class="creation-rules__name">
+                    {rule.name}
+                    <Show when={rule.disabled}>
+                      <span class="creation-rules__disabled-tag"> (disabled)</span>
+                    </Show>
+                  </span>
                   <span class="creation-rules__desc">
                     {rule.description || rule.filename_pattern}
                   </span>
                 </div>
-                <Show when={rule.hotkey}>
+                <Show when={rule.hotkey && !rule.disabled}>
                   <span class="creation-rules__hotkey">{rule.hotkey}</span>
                 </Show>
                 <div class="creation-rules__actions">
                   <button
                     class="creation-rules__edit-btn"
                     onClick={() => startEdit(rule)}
+                    disabled={editingRule() !== null}
                   >
                     Edit
                   </button>
-                  <Show when={!rule.builtin}>
+                  <Show
+                    when={rule.builtin}
+                    fallback={
+                      <button
+                        class="creation-rules__delete-btn"
+                        onClick={() => deleteRule(rule.id)}
+                        disabled={editingRule() !== null}
+                      >
+                        Delete
+                      </button>
+                    }
+                  >
                     <button
-                      class="creation-rules__delete-btn"
-                      onClick={() => deleteRule(rule.id)}
+                      class="creation-rules__disable-btn"
+                      onClick={() => toggleDisabled(rule)}
+                      disabled={editingRule() !== null}
+                      title={
+                        rule.disabled
+                          ? "Re-enable this built-in rule"
+                          : "Hide this built-in rule from the toolbar, command palette, and hotkeys"
+                      }
                     >
-                      Delete
+                      {rule.disabled ? "Enable" : "Disable"}
                     </button>
                   </Show>
                 </div>

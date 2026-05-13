@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { assertVaultWritable } from "../stores/vault";
 import type {
   VaultInfo,
   VaultRegistryEntry,
@@ -109,6 +110,11 @@ export async function writeFileContent(
   path: string,
   content: string,
 ): Promise<void> {
+  // Block writes after the health monitor has reported the vault gone —
+  // the IPC would fail anyway (target path doesn't resolve), but throwing
+  // here surfaces a meaningful error before the round-trip and prevents
+  // auto-save loops from hammering the backend.
+  assertVaultWritable();
   return invoke<void>("write_file_content", { path, content });
 }
 
@@ -132,6 +138,7 @@ export async function saveCollectionFile(
   collectionPath: string,
   collectionFile: CollectionFile,
 ): Promise<void> {
+  assertVaultWritable();
   return invoke<void>("save_collection_file", { collectionPath, collectionFile });
 }
 
@@ -542,6 +549,13 @@ export async function listCreationRules(): Promise<CreationRule[]> {
   return invoke<CreationRule[]>("list_creation_rules");
 }
 
+/** Fetch the seeded default for a built-in rule, or null for user rules. */
+export async function getDefaultCreationRule(
+  ruleId: string,
+): Promise<CreationRule | null> {
+  return invoke<CreationRule | null>("get_default_creation_rule", { ruleId });
+}
+
 export async function saveCreationRule(rule: CreationRule): Promise<void> {
   return invoke<void>("save_creation_rule", { rule });
 }
@@ -550,8 +564,23 @@ export async function deleteCreationRule(ruleId: string): Promise<void> {
   return invoke<void>("delete_creation_rule", { ruleId });
 }
 
-export async function executeCreationRule(ruleId: string): Promise<CreationResult> {
-  return invoke<CreationResult>("execute_creation_rule", { ruleId });
+/**
+ * Execute a creation rule.
+ *
+ * Pass `titleOverride` when the rule's filename_pattern is empty — the
+ * backend uses it as the filename in that case. When the pattern is
+ * non-empty, the override is ignored. Calling without a `titleOverride`
+ * for a blank-pattern rule produces a BadRequest("filename-required")
+ * error so the UI can prompt the user and retry.
+ */
+export async function executeCreationRule(
+  ruleId: string,
+  titleOverride?: string,
+): Promise<CreationResult> {
+  return invoke<CreationResult>("execute_creation_rule", {
+    ruleId,
+    titleOverride: titleOverride ?? null,
+  });
 }
 
 export async function listScaffolds(): Promise<string[]> {

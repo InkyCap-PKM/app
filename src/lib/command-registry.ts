@@ -57,6 +57,25 @@ export function getAllCommands(): Command[] {
   return Array.from(commands.values());
 }
 
+/** Find a command whose `keybinding` matches `combo` (case-insensitive),
+ *  optionally excluding a single command by id. Used by:
+ *   - the global keyboard dispatcher (no exclude) to fire the bound action
+ *   - the rule editor's conflict UI (excludes the rule being edited) to
+ *     warn against assigning a combo that's already taken
+ *  Centralized so both call sites agree on what counts as a conflict. */
+export function findCommandByKeybinding(
+  combo: string,
+  excludeId?: string,
+): Command | null {
+  const target = combo.toLowerCase();
+  for (const cmd of commands.values()) {
+    if (!cmd.keybinding) continue;
+    if (excludeId && cmd.id === excludeId) continue;
+    if (cmd.keybinding.toLowerCase() === target) return cmd;
+  }
+  return null;
+}
+
 /** Search commands with fuzzy matching. Returns scored results sorted by relevance.
  *  Reads a reactive signal so Solid.js memos/effects re-run when commands change. */
 export function searchCommands(query: string, maxResults = 30): ScoredCommand[] {

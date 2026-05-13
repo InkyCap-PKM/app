@@ -3,8 +3,9 @@
 // (save, delete, toggle show_in_toolbar) reflect immediately without restart.
 
 import { createSignal } from "solid-js";
-import type { CreationRule } from "../lib/types";
+import type { CreationRule, CreationResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import { promptText } from "./prompt";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -17,8 +18,46 @@ export async function loadCreationRules(): Promise<void> {
   }
 }
 
+/** Rules eligible to render as toolbar buttons. */
 export function toolbarRules(): CreationRule[] {
-  return creationRules().filter((r) => r.show_in_toolbar);
+  return creationRules().filter((r) => r.show_in_toolbar && !r.disabled);
+}
+
+/** Rules eligible to register hotkeys and command-palette entries. */
+export function activeRules(): CreationRule[] {
+  return creationRules().filter((r) => !r.disabled);
+}
+
+/**
+ * Trigger a creation rule from anywhere in the app (toolbar, command
+ * palette, hotkey, deep link). Handles the "blank filename pattern"
+ * affordance: if the rule has no pattern, the user is prompted for a
+ * filename before the backend creates the file.
+ *
+ * Returns the backend result on success, or `null` if the user cancelled
+ * the filename prompt. Other errors propagate.
+ */
+export async function triggerCreationRule(
+  ruleId: string,
+): Promise<CreationResult | null> {
+  const rule = creationRules().find((r) => r.id === ruleId);
+  // If we don't have the rule cached (rare; the store may be empty before
+  // first load), just call through — the backend will resolve it.
+  const pattern = rule?.filename_pattern.trim() ?? "?";
+  if (pattern === "") {
+    const name = await promptText({
+      title: `New note from "${rule?.name ?? "rule"}"`,
+      label: "Filename",
+      placeholder: "untitled",
+      hint: "No extension needed — `.typ` is added automatically.",
+      confirmLabel: "Create",
+      validate: (v) =>
+        v.trim() === "" ? "Filename cannot be empty" : null,
+    });
+    if (name === null) return null;
+    return ipc.executeCreationRule(ruleId, name.trim());
+  }
+  return ipc.executeCreationRule(ruleId);
 }
 
 export { creationRules };
