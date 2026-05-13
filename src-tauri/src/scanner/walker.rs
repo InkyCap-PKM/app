@@ -406,7 +406,21 @@ pub async fn scan_vault_cached(
                         .any(|k| !k.starts_with("file."));
                     let cached_empty = !non_file_props && cached.tags.is_empty();
                     let looks_like_note = content.contains("#note(");
-                    if cached_empty && looks_like_note {
+                    // Same idea but specifically for wikilinks: a cached
+                    // `links = []` for a file that visibly contains a
+                    // `#wikilink("…")` (or the `[[…]]` shortcut) means the
+                    // earlier parse missed them. Without this the right-
+                    // panel Links pane silently shows "No outbound links"
+                    // even after the user adds wikilinks, because the
+                    // cache lookup short-circuits the reparse path. Cheap
+                    // substring check — false positives just trigger an
+                    // unnecessary reparse, which is harmless.
+                    let cached_no_links = cached.links.is_empty();
+                    let content_has_wikilinks = content.contains("#wikilink(")
+                        || content.contains("[[");
+                    if (cached_empty && looks_like_note)
+                        || (cached_no_links && content_has_wikilinks)
+                    {
                         // fall through to reparse
                     } else {
                         let note = cached_to_note(cached, path, vault_root, &stat);

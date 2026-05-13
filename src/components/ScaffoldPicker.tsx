@@ -10,8 +10,9 @@
 // editor's whole document in one CodeMirror transaction so the operation
 // collapses into a single undo step.
 
-import { Component, For, Show, createResource, createSignal, createEffect } from "solid-js";
+import { Component, For, Show, createResource, createSignal, createEffect, createMemo } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { fuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
 import { toastError, showToast } from "../stores/toasts";
@@ -22,17 +23,35 @@ interface ScaffoldPickerProps {
 }
 
 const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
+  const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [entries] = createResource(
     () => props.visible,
     async (visible) => (visible ? await ipc.listScaffoldEntries() : []),
   );
 
+  const filtered = createMemo(() => {
+    const all = entries() ?? [];
+    const q = query().trim();
+    if (q.length === 0) return all;
+    const scored: { entry: ipc.TemplateEntry; score: number }[] = [];
+    for (const entry of all) {
+      const m = fuzzyMatch(q, entry.name);
+      if (m) scored.push({ entry, score: m.score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.entry);
+  });
+
   createEffect(() => {
-    if (props.visible) setSelectedIndex(0);
+    if (props.visible) {
+      setQuery("");
+      setSelectedIndex(0);
+    }
   });
 
   function close() {
+    setQuery("");
     setSelectedIndex(0);
     props.onClose();
   }
@@ -76,7 +95,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    const list = entries() ?? [];
+    const list = filtered();
 
     if (e.key === "Escape") {
       e.preventDefault();
@@ -119,26 +138,40 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
         >
           <div class="scaffold-picker__header">
             <span class="scaffold-picker__title">Insert scaffold</span>
-            <span class="scaffold-picker__hint">↑↓ to choose, Enter to insert, Esc to cancel</span>
+            <span class="scaffold-picker__hint">Type to filter, ↑↓ to choose, Enter to insert, Esc to cancel</span>
           </div>
-          <div
-            class="quick-open__results scaffold-picker__results"
-            tabIndex={0}
+          <input
+            class="quick-open__input"
+            type="text"
+            placeholder="Filter scaffolds..."
+            value={query()}
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              setSelectedIndex(0);
+            }}
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
-          >
+          />
+          <div class="quick-open__results scaffold-picker__results">
             <Show
-              when={!entries.loading && (entries() ?? []).length > 0}
+              when={!entries.loading && filtered().length > 0}
               fallback={
                 <Show when={!entries.loading}>
-                  <div class="quick-open__empty">
-                    No scaffolds in <code>.inkycap/scaffolds/</code>. Create one
-                    from the Templates panel.
-                  </div>
+                  <Show
+                    when={query().trim().length > 0}
+                    fallback={
+                      <div class="quick-open__empty">
+                        No scaffolds in <code>.inkycap/scaffolds/</code>. Create one
+                        from the Templates panel.
+                      </div>
+                    }
+                  >
+                    <div class="quick-open__empty">No matching scaffolds</div>
+                  </Show>
                 </Show>
               }
             >
-              <For each={entries()}>
+              <For each={filtered()}>
                 {(entry, index) => (
                   <div
                     class={`quick-open__result ${index() === selectedIndex() ? "quick-open__result--selected" : ""}`}

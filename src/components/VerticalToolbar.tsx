@@ -55,7 +55,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           title={leftCollapsed() ? "Show left sidebar" : "Hide left sidebar"}
           aria-label={leftCollapsed() ? "Show left sidebar" : "Hide left sidebar"}
         >
-          <PanelLeftDashed size={16} />
+          <PanelLeftDashed size={18} />
         </button>
 
         <Show when={toolbarRules().length > 0}>
@@ -68,7 +68,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
                 title={`${rule.name}${rule.hotkey ? ` (${rule.hotkey})` : ""}`}
                 aria-label={rule.name}
               >
-                <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={16} />
+                <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={18} />
               </button>
             )}
           </For>
@@ -84,7 +84,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           title="Scaffolds, Templates, &amp; Packages"
           aria-label="Open Scaffolds, Templates, &amp; Packages"
         >
-          <LayoutTemplate size={16} />
+          <LayoutTemplate size={18} />
         </button>
         <button
           class="vertical-toolbar__btn"
@@ -92,7 +92,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           aria-label="Toggle theme"
         >
-          {theme() === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
         <button
           class="vertical-toolbar__btn"
@@ -100,7 +100,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           title="Settings (Ctrl+,)"
           aria-label="Settings"
         >
-          <Settings size={16} />
+          <Settings size={18} />
         </button>
       </div>
     </div>

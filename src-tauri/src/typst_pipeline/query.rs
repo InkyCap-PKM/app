@@ -11,6 +11,7 @@ use std::path::Path;
 use typst::foundations::{Dict, Label, Selector, Value};
 use typst::introspection::{Introspector, MetadataElem};
 use typst::layout::PagedDocument;
+use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 use typst::utils::PicoStr;
 
 use crate::models::note::PropertyValue;
@@ -71,13 +72,117 @@ pub fn compile_and_query(
     if let Some(document) = compiler.compile_document(abs_path, source.clone()) {
         return query_document(&document);
     }
+    let mut result = QueryResult::default();
     let preamble = extract_note_preamble(&source);
     if preamble.len() < source.len() {
         if let Some(document) = compiler.compile_document(abs_path, preamble) {
-            return query_document(&document);
+            result = query_document(&document);
         }
     }
-    QueryResult::default()
+    // The preamble compile recovers properties from `#note(...)` but
+    // throws away body-derived metadata — wikilinks and body tags. For a
+    // user with a vault full of notes where one body has a typst error
+    // (an unresolved citation, a broken embed path, etc.), the result
+    // is a Links pane that silently shows nothing for every note that
+    // hit this path. Use `typst::syntax` to walk the parsed AST and
+    // pick out the `wikilink(...)` / `tag(...)` call sites directly —
+    // they have a stable surface syntax we can read without depending
+    // on evaluation, and CLAUDE.md's Typst-first principle steers us
+    // here (typst::syntax is the supported parsing surface).
+    let (ast_links, ast_tags) = extract_body_metadata_via_syntax(&source);
+    for link in ast_links {
+        if !result.links.contains(&link) {
+            result.links.push(link);
+        }
+    }
+    for tag in ast_tags {
+        if !result.tags.contains(&tag) {
+            result.tags.push(tag);
+        }
+    }
+    result
+}
+
+/// Walk the parsed AST and collect raw wikilink targets and tag names.
+/// Used as a fallback for files that fail to compile but still need to
+/// surface their outgoing links in the Links pane. Restricted to the
+/// `wikilink(...)` and `tag(...)` call shapes the `inkycap-vault`
+/// package exports — anything else would require evaluation to be
+/// trusted.
+fn extract_body_metadata_via_syntax(source: &str) -> (Vec<String>, Vec<String>) {
+    let root = parse(source);
+    let node = LinkedNode::new(&root);
+    let mut links = Vec::new();
+    let mut tags = Vec::new();
+    walk_for_body_calls(&node, &mut links, &mut tags);
+    (links, tags)
+}
+
+fn walk_for_body_calls(
+    node: &LinkedNode<'_>,
+    links: &mut Vec<String>,
+    tags: &mut Vec<String>,
+) {
+    if node.kind() == SyntaxKind::FuncCall {
+        if let Some(call) = node.cast::<ast::FuncCall>() {
+            if let ast::Expr::Ident(ident) = call.callee() {
+                match ident.as_str() {
+                    "wikilink" => {
+                        if let Some(s) = first_string_positional_arg(node) {
+                            links.push(s);
+                        }
+                    }
+                    "tag" => {
+                        if let Some(s) = first_string_positional_arg(node) {
+                            tags.push(s);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    for child in node.children() {
+        walk_for_body_calls(&child, links, tags);
+    }
+}
+
+/// Return the value of the first positional argument when it's a string
+/// literal; `None` otherwise (named arg first, non-string positional,
+/// empty args, etc.). Mirrors the first-positional-string scanning
+/// pattern in `path_rebase::rebase_first_string_arg`.
+fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<String> {
+    let args_node = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
+    for child in args_node.children() {
+        match child.kind() {
+            SyntaxKind::LeftParen
+            | SyntaxKind::RightParen
+            | SyntaxKind::Comma
+            | SyntaxKind::Space
+            | SyntaxKind::Parbreak
+            | SyntaxKind::LineComment
+            | SyntaxKind::BlockComment => continue,
+
+            SyntaxKind::Str => {
+                let str_ast = child.cast::<ast::Str>()?;
+                let value = str_ast.get();
+                let s: &str = &value;
+                if s.is_empty() {
+                    return None;
+                }
+                return Some(s.to_string());
+            }
+
+            // Anything else in the first positional slot — variable,
+            // function call, named arg — means we can't statically
+            // recover a target. Stop walking; one positional slot per
+            // call.
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// Return just the import preamble + `#note(...)` call as a standalone source.
@@ -308,6 +413,61 @@ mod tests {
 
         assert!(result.links.contains(&"Other Note".to_string()));
         assert!(result.links.contains(&"Another".to_string()));
+    }
+
+    #[test]
+    fn extracts_wikilinks_from_ast_when_body_compile_fails() {
+        // File compiles up to `#note(...)` properties but the body
+        // references an undefined function — full compile dies, preamble
+        // fallback succeeds. The AST walk must recover the wikilink so
+        // the Links pane still shows it.
+        let (_dir, root) = setup_vault_with_package(
+            r#"#note(title: "Has Broken Body")
+
+= Heading
+
+Reference to #wikilink("Target Note") here.
+
+#unresolved_function_that_breaks_compile()
+"#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        // Title survives because the preamble compile works.
+        assert_eq!(
+            result.properties.get("title"),
+            Some(&PropertyValue::String("Has Broken Body".to_string())),
+        );
+        // Wikilink survives via the AST fallback.
+        assert!(
+            result.links.contains(&"Target Note".to_string()),
+            "expected wikilink in result.links, got {:?}",
+            result.links,
+        );
+    }
+
+    #[test]
+    fn ast_fallback_extracts_body_tags_when_compile_fails() {
+        let (_dir, root) = setup_vault_with_package(
+            r#"#note(title: "Tagged But Broken")
+
+#tag("research") and #tag("draft").
+
+#unresolved_function()
+"#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        assert!(result.tags.contains(&"research".to_string()));
+        assert!(result.tags.contains(&"draft".to_string()));
     }
 
     #[test]

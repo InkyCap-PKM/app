@@ -517,7 +517,21 @@ impl AppState {
             }
         }
 
-        // 1. Link index: forget the old links, record the new ones, resolve.
+        // 1. Link index: forget the old links, record the new ones, and do a
+        // full re-resolution against the entire vault.
+        //
+        // A targeted `resolve_note_links(path)` was tempting (cheaper per
+        // call) but it only updates the *current* note's outgoing links and
+        // the backlinks of its targets. It does not fix two real cases:
+        //   • A newly-arrived note B that other pre-existing notes A already
+        //     wikilinked by name — those forward_raw["B"] entries were
+        //     resolved before B existed and so still produce an empty
+        //     forward[A], and never populate backward[B] either.
+        //   • A renamed/deleted note that leaves stale forward[A] entries on
+        //     other notes pointing at a path that no longer exists.
+        // `resolve_and_build_backlinks` is O(N + L_total) over the StemIndex
+        // — sub-millisecond per save at vault sizes we care about — and
+        // produces a coherent index unconditionally.
         let mut link_index = self.link_index.write().await;
         link_index.remove_note(&path.to_path_buf());
         for link_target in &note.links {
@@ -525,9 +539,18 @@ impl AppState {
         }
         let all_paths: Vec<std::path::PathBuf> = {
             let prop_index = self.property_index.read().await;
-            prop_index.notes.keys().cloned().collect()
+            let mut paths: Vec<std::path::PathBuf> =
+                prop_index.notes.keys().cloned().collect();
+            // prop_index is updated *after* link_index (lock-ordering rules),
+            // so for a brand-new note the current path is not yet present
+            // here — add it explicitly so self-referential wikilinks resolve
+            // on the very first index.
+            if !paths.iter().any(|p| p == &path.to_path_buf()) {
+                paths.push(path.to_path_buf());
+            }
+            paths
         };
-        link_index.resolve_note_links(&path.to_path_buf(), &all_paths);
+        link_index.resolve_and_build_backlinks(&all_paths);
         drop(link_index);
 
         // 2. Search engine.
@@ -572,6 +595,21 @@ impl AppState {
         {
             let mut link_index = self.link_index.write().await;
             link_index.remove_note(&path_buf);
+            // Other notes may still carry the removed path in their resolved
+            // forward[] list (or have raw wikilinks that previously resolved
+            // to it). A full re-resolution drops the stale entries and lets
+            // the resolver re-target any duplicates by stem if another note
+            // with the same name still exists.
+            let all_paths: Vec<std::path::PathBuf> = {
+                let prop_index = self.property_index.read().await;
+                prop_index
+                    .notes
+                    .keys()
+                    .filter(|p| *p != &path_buf)
+                    .cloned()
+                    .collect()
+            };
+            link_index.resolve_and_build_backlinks(&all_paths);
         }
         {
             let mut prop_index = self.property_index.write().await;

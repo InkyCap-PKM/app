@@ -34,6 +34,7 @@ import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
+import { anchorPanelMenu } from "../lib/uiMenu";
 import { settings } from "../stores/settings";
 import { vaultInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/vault";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
@@ -142,36 +143,6 @@ function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): S
     }
   }
   return acc;
-}
-
-/// Anchor a `.context-menu` to its trigger button using fixed coords.
-/// Default placement matches the File Actions menu pattern: directly below
-/// the trigger with its left edge aligned to the trigger's left edge. Only
-/// adjusts when the natural placement would clip the viewport.
-function anchorPanelMenu(triggerEl: HTMLElement | undefined, menuEl: HTMLElement) {
-  if (!triggerEl) return;
-  const tr = triggerEl.getBoundingClientRect();
-  const mw = menuEl.offsetWidth;
-  const mh = menuEl.offsetHeight;
-  const margin = 4;
-  // Default: open below, left-aligned to trigger.
-  let left = tr.left;
-  // If the menu would overflow the right edge, try right-aligning to trigger.
-  if (left + mw > window.innerWidth - margin) {
-    left = tr.right - mw;
-  }
-  // Final clamp so the menu is always fully on-screen.
-  if (left < margin) left = margin;
-  if (left + mw > window.innerWidth - margin) {
-    left = window.innerWidth - mw - margin;
-  }
-  // Below by default; flip above only if it would overflow vertically.
-  let top = tr.bottom + 4;
-  if (top + mh > window.innerHeight - margin) {
-    top = tr.top - mh - 4;
-  }
-  menuEl.style.left = `${left}px`;
-  menuEl.style.top = `${top}px`;
 }
 
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {
@@ -829,7 +800,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="File Tree"
           aria-label="File Tree"
         >
-          <FolderTree size={16} />
+          <FolderTree size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "collections" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -837,7 +808,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Collections"
           aria-label="Collections"
         >
-          <LibraryBig size={16} />
+          <LibraryBig size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "tags" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -845,7 +816,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Tags"
           aria-label="Tags"
         >
-          <Tags size={16} />
+          <Tags size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "properties" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -853,7 +824,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Properties"
           aria-label="Properties"
         >
-          <NotebookTabs size={16} />
+          <NotebookTabs size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "bookmarks" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -861,7 +832,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Bookmarks"
           aria-label="Bookmarks"
         >
-          <BookMarked size={16} />
+          <BookMarked size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "search" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -869,7 +840,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title="Search (Ctrl+Shift+F)"
           aria-label="Search"
         >
-          <Search size={16} />
+          <Search size={18} />
         </button>
       </div>
       <div class="left-sidebar__content">
@@ -882,7 +853,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               title="New collection"
               aria-label="New collection"
             >
-              <Plus size={14} />
+              <Plus size={18} />
             </button>
           </div>
           <Show
@@ -947,7 +918,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   title="Sort files"
                   aria-label="Sort files"
                 >
-                  <ArrowDownNarrowWide size={14} />
+                  <ArrowDownNarrowWide size={18} />
                 </button>
                 <Show when={showFileSortMenu()}>
                   <div
@@ -984,9 +955,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               >
                 <Show
                   when={allDirsExpanded()}
-                  fallback={<ListChevronsUpDown size={14} />}
+                  fallback={<ListChevronsUpDown size={18} />}
                 >
-                  <ListChevronsDownUp size={14} />
+                  <ListChevronsDownUp size={18} />
                 </Show>
               </button>
               <button
@@ -995,7 +966,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 title={typstOnly() ? "Showing .typ files only — click to show all" : "Showing all files — click to filter to .typ only"}
                 aria-label="Toggle file filter"
               >
-                <Filter size={14} />
+                <Filter size={18} />
               </button>
               <div
                 class="left-sidebar__split-btn"
@@ -1095,7 +1066,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   title="Sort tags"
                   aria-label="Sort tags"
                 >
-                  <ArrowDownNarrowWide size={14} />
+                  <ArrowDownNarrowWide size={18} />
                 </button>
                 <Show when={showTagSortMenu()}>
                   <div
@@ -1218,7 +1189,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   title="Sort properties"
                   aria-label="Sort properties"
                 >
-                  <ArrowDownNarrowWide size={14} />
+                  <ArrowDownNarrowWide size={18} />
                 </button>
                 <Show when={showPropSortMenu()}>
                   <div

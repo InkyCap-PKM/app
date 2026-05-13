@@ -333,11 +333,52 @@ export async function getNotePreview(
   });
 }
 
+export interface BacklinkContext {
+  line: string;
+  context_before: string[];
+  context_after: string[];
+}
+
 export async function getBacklinkContext(
   sourcePath: string,
   targetPath: string,
-): Promise<string | null> {
-  return invoke<string | null>("get_backlink_context", { sourcePath, targetPath });
+): Promise<BacklinkContext | null> {
+  return invoke<BacklinkContext | null>("get_backlink_context", {
+    sourcePath,
+    targetPath,
+  });
+}
+
+export interface OutboundLink {
+  target: string;
+  path: string;
+  name: string;
+  resolved: boolean;
+  modified_time: number;
+  created_time: number;
+}
+
+export async function getOutboundLinks(path: string): Promise<OutboundLink[]> {
+  return invoke<OutboundLink[]>("get_outbound_links", { path });
+}
+
+export interface PotentialLink {
+  path: string;
+  name: string;
+  line: string;
+  context_before: string[];
+  context_after: string[];
+  modified_time: number;
+  created_time: number;
+}
+
+/// Find notes that mention the current note's name in plain text but
+/// don't yet wikilink to it. Mirrors the backend `get_potential_links`
+/// command — see `commands::files::get_potential_links` for the matching
+/// rules (phrase match on stem, excludes current note + resolved
+/// backlinks + lines whose only match is inside a wikilink call).
+export async function getPotentialLinks(path: string): Promise<PotentialLink[]> {
+  return invoke<PotentialLink[]>("get_potential_links", { path });
 }
 
 // Aliases

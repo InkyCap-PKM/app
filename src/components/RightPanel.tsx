@@ -1,10 +1,12 @@
 // Right panel: tabbed view with Properties, Outline, and Links
 // for the active file.
 
-import { Component, createEffect, createResource, createSignal, For, Show, onCleanup } from "solid-js";
+import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { getActiveTab, openTab, closeTab } from "../stores/tabs";
 import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
 import * as ipc from "../lib/ipc";
+import type { OutboundLink, PotentialLink } from "../lib/ipc";
+import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/vault";
 import {
   PROPERTY_TYPE_OPTIONS,
@@ -15,13 +17,49 @@ import {
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
-import { EllipsisVertical, NotebookTabs, TableOfContents, Link, BrainCircuit, Quote } from "lucide-solid";
+import {
+  EllipsisVertical,
+  NotebookTabs,
+  TableOfContents,
+  Link,
+  BrainCircuit,
+  Quote,
+  ArrowDownNarrowWide,
+  ListChevronsUpDown,
+  ListChevronsDownUp,
+  LayersPlus,
+  Search,
+  X,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { anchorPanelMenu } from "../lib/uiMenu";
+import {
+  LINKS_SORT_OPTIONS,
+  linksSortMode,
+  setLinksSortMode,
+  linksCollapsePreviews,
+  setLinksCollapsePreviews,
+  linksExpandOverrides,
+  toggleLinksPreviewOverride,
+  linksShowMoreContext,
+  setLinksShowMoreContext,
+  linksShowFilter,
+  setLinksShowFilter,
+  linksFilterQuery,
+  setLinksFilterQuery,
+  linksSectionExpanded,
+  setLinksSectionExpanded,
+  type LinksSortMode,
+  type LinksSection,
+} from "../stores/linksPanel";
 
 const KNOWN_FIELDS_ORDERED = [
   "title", "aliases", "description", "tags", "date", "date-due",
@@ -63,15 +101,11 @@ function defaultForKey(key: string): PropertyValue {
   return "";
 }
 
-/** Extended link info with context snippet and resolved state. */
+/** Extended link info with multi-line context for the Links pane. */
 interface BacklinkWithContext extends LinkInfo {
-  context?: string;
-}
-
-interface ForwardLinkResolved extends LinkInfo {
-  resolved: boolean;
-  /** The raw wikilink target text. */
-  target: string;
+  line?: string;
+  context_before?: string[];
+  context_after?: string[];
 }
 
 const RightPanel: Component = () => {
@@ -230,16 +264,51 @@ const RightPanel: Component = () => {
     commitReorder(next);
   }
 
-  // Refetch metadata when the note is saved by the editor.
-  // The event fires after writeFileContent completes (reindex already done).
+  // Refetch metadata and link data when the active note (or any other
+  // note in the vault) gets reindexed. The two events distinguish where
+  // the change originated:
+  //   • `inkycap:note-saved` — the editor in this window finished auto-
+  //     saving the active note. writeFileContent waits for the backend
+  //     reindex before resolving, so by the time this fires the indices
+  //     are up to date.
+  //   • `vault:index-updated` (Tauri event) — the file watcher detected
+  //     an external change (drag-drop, external editor, sync) and
+  //     reindexed in the background. The payload's `path` is the file
+  //     that changed; we refresh links unconditionally because:
+  //       – inbound: another note's edit may have added/removed a link
+  //         pointing at this one
+  //       – outbound: a newly-appeared note may now satisfy one of our
+  //         previously unresolved wikilink targets
+  //       – potential: a new note may have appeared whose body mentions
+  //         this note's name
+  //
+  // The earlier bug — Links pane wouldn't refresh after dropping .typ
+  // files into the vault, or after typing a new wikilink — was a missing
+  // `refetchBacklinks/refetchForwardLinks` here plus no listener for
+  // `vault:index-updated` at all.
+  const refreshAllLinks = () => {
+    refetchBacklinks();
+    refetchForwardLinks();
+    refetchPotentialLinks();
+  };
   const onNoteSaved = () => {
     setTimeout(() => {
       refetchMetadata();
       refetchPropertyOrder();
+      refreshAllLinks();
     }, 150);
   };
   document.addEventListener("inkycap:note-saved", onNoteSaved);
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
+
+  let indexUpdatedUnlisten: UnlistenFn | null = null;
+  onMount(async () => {
+    indexUpdatedUnlisten = await listen("vault:index-updated", () => {
+      refetchMetadata();
+      refreshAllLinks();
+    });
+  });
+  onCleanup(() => indexUpdatedUnlisten?.());
 
   const [backlinks, { refetch: refetchBacklinks }] = createResource(
     () => activeFileTab()?.path,
@@ -258,7 +327,15 @@ const RightPanel: Component = () => {
           unique.map(async (link) => {
             try {
               const ctx = await ipc.getBacklinkContext(link.path, path);
-              return { ...link, context: ctx ?? undefined };
+              if (ctx) {
+                return {
+                  ...link,
+                  line: ctx.line,
+                  context_before: ctx.context_before,
+                  context_after: ctx.context_after,
+                };
+              }
+              return { ...link };
             } catch {
               return { ...link };
             }
@@ -272,37 +349,22 @@ const RightPanel: Component = () => {
 
   const [forwardLinks, { refetch: refetchForwardLinks }] = createResource(
     () => activeFileTab()?.path,
-    async (path): Promise<ForwardLinkResolved[]> => {
+    async (path): Promise<OutboundLink[]> => {
       if (!path) return [];
       try {
-        const meta = await ipc.getFileMetadata(path);
-        if (!meta) return [];
+        return await ipc.getOutboundLinks(path);
+      } catch {
+        return [];
+      }
+    },
+  );
 
-        // Deduplicate targets before resolving
-        const uniqueTargets = [...new Set(meta.links)];
-        return await Promise.all(
-          uniqueTargets.map(async (target) => {
-            const resolvedPath = await ipc.resolveWikilink(target);
-            if (resolvedPath) {
-              const name = resolvedPath
-                .split("/")
-                .pop()
-                ?.replace(/\.[^.]+$/, "") ?? target;
-              return {
-                path: resolvedPath,
-                name,
-                resolved: true,
-                target,
-              } as ForwardLinkResolved;
-            }
-            return {
-              path: "",
-              name: target,
-              resolved: false,
-              target,
-            } as ForwardLinkResolved;
-          }),
-        );
+  const [potentialLinks, { refetch: refetchPotentialLinks }] = createResource(
+    () => activeFileTab()?.path,
+    async (path): Promise<PotentialLink[]> => {
+      if (!path) return [];
+      try {
+        return await ipc.getPotentialLinks(path);
       } catch {
         return [];
       }
@@ -315,12 +377,273 @@ const RightPanel: Component = () => {
     if (indexReady() && activeFileTab()) {
       refetchBacklinks();
       refetchForwardLinks();
+      refetchPotentialLinks();
     }
   });
 
-  function openLinkedFile(link: LinkInfo) {
+  // ── Links pane: sort + filter helpers ────────────────────────────────
+  /// Sort comparator parameterized over the Links pane's sort mode.
+  /// Mirrors the file tree's behaviour so name / modified / created sort
+  /// directions feel identical between the two surfaces. Unresolved
+  /// outbound entries (path = "", mtime/ctime = 0) sort to the end of
+  /// time-based orderings instead of pretending to be ancient.
+  function compareByMode<
+    T extends { name: string; modified_time: number; created_time: number },
+  >(a: T, b: T, mode: LinksSortMode): number {
+    switch (mode) {
+      case "name-asc":
+        return a.name.localeCompare(b.name);
+      case "name-desc":
+        return b.name.localeCompare(a.name);
+      case "modified-desc":
+        return cmpEpoch(b.modified_time, a.modified_time) || a.name.localeCompare(b.name);
+      case "modified-asc":
+        return cmpEpoch(a.modified_time, b.modified_time) || a.name.localeCompare(b.name);
+      case "created-desc":
+        return cmpEpoch(b.created_time, a.created_time) || a.name.localeCompare(b.name);
+      case "created-asc":
+        return cmpEpoch(a.created_time, b.created_time) || a.name.localeCompare(b.name);
+    }
+  }
+
+  /// Compare two epoch seconds with 0 always sorting last, regardless of
+  /// direction. 0 means "stat unavailable" (unresolved wikilink or
+  /// freshly-deleted file) and should not pile up at the top of a
+  /// descending sort or the bottom of an ascending one.
+  function cmpEpoch(a: number, b: number): number {
+    if (a === 0 && b === 0) return 0;
+    if (a === 0) return 1;
+    if (b === 0) return -1;
+    return a - b;
+  }
+
+  // Debounce the filter input so each keystroke doesn't fire a vault_search
+  // IPC. 250ms feels responsive and matches the SearchPanel's cadence.
+  const [debouncedFilterQuery, setDebouncedFilterQuery] = createSignal(
+    linksFilterQuery(),
+  );
+  let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const q = linksFilterQuery();
+    if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = setTimeout(() => setDebouncedFilterQuery(q), 250);
+  });
+  onCleanup(() => {
+    if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+  });
+
+  /// Run the same vault search the left-panel uses (boolean operators,
+  /// phrase quotes, tag:/file:/path:/section:/property: filters, /regex/
+  /// literals) and surface the result rows so the Links pane can filter
+  /// its sections to "links whose target file matches this query". The
+  /// search itself isn't scoped — the search engine has one inverted
+  /// index — but the *filter* is, because we only intersect hits with
+  /// the link lists we already have. Empty query short-circuits with no
+  /// IPC. A failure (parse error, index not ready) returns `[]` so the
+  /// pane falls back to showing no matches rather than blowing up.
+  const [filterMatches] = createResource(
+    () => ({ q: debouncedFilterQuery().trim(), ready: indexReady() }),
+    async ({ q, ready }): Promise<SearchResult[] | null> => {
+      if (!q || !ready) return null;
+      try {
+        return await ipc.vaultSearch(q, 1000, false);
+      } catch {
+        return [];
+      }
+    },
+  );
+
+  /// Map link path → matching SearchResult, scoped to current sections.
+  /// Built once per query so the three sort memos don't each iterate the
+  /// full match list. Returns `null` when no filter is active, which
+  /// short-circuits to "show everything" in filterByQuery.
+  const filterMatchMap = createMemo<Map<string, SearchResult> | null>(() => {
+    const matches = filterMatches();
+    if (matches === null || matches === undefined) return null;
+    const map = new Map<string, SearchResult>();
+    for (const m of matches) {
+      // Keep the first hit per file — line_number / line_text already
+      // identifies the most relevant occurrence (search engine ranks
+      // matches before returning).
+      if (!map.has(m.path)) map.set(m.path, m);
+    }
+    return map;
+  });
+
+  function filterByQuery<T extends { path: string }>(items: T[]): T[] {
+    const map = filterMatchMap();
+    if (map === null) return items;
+    return items.filter((it) => it.path && map.has(it.path));
+  }
+
+  /// Match line + surrounding context for a given link path under the
+  /// current filter. Returns undefined when no filter is active so the
+  /// caller falls back to the section's native preview line
+  /// (backlink context, potential-link match).
+  function searchMatchFor(path: string): SearchResult | undefined {
+    const map = filterMatchMap();
+    if (!map) return undefined;
+    return map.get(path);
+  }
+
+  /// True when a filter query is active. Used to swap the section's
+  /// native preview line for the search-match line on rows that matched
+  /// the query, so the user sees *where* the file matched their search.
+  const filterActive = createMemo(() => filterMatchMap() !== null);
+
+  const sortedBacklinks = createMemo(() => {
+    const list = backlinks() ?? [];
+    return filterByQuery([...list]).sort((a, b) => compareByMode(a, b, linksSortMode()));
+  });
+
+  const sortedForwardLinks = createMemo(() => {
+    const list = forwardLinks() ?? [];
+    return filterByQuery([...list]).sort((a, b) => compareByMode(a, b, linksSortMode()));
+  });
+
+  // Potential Links are deliberately left outside the search filter's
+  // scope — the section's job is to surface notes the user *hasn't* yet
+  // linked to, and search-filtering it down to the active query would
+  // hide exactly the candidates the user might want to discover. The
+  // sort still applies (it's a display setting, not a scoping filter).
+  const sortedPotentialLinks = createMemo(() => {
+    const list = potentialLinks() ?? [];
+    return [...list].sort((a, b) => compareByMode(a, b, linksSortMode()));
+  });
+
+  function toggleLinksSection(section: LinksSection) {
+    setLinksSectionExpanded(section, !linksSectionExpanded()[section]);
+  }
+
+  /// Per-row preview visibility — the global `collapsePreviews` flag is
+  /// the default and `linksExpandOverrides` carries the user's
+  /// "I want to peek at this one" exceptions. Mirrors SearchPanel's
+  /// `isFileExpanded` so the two panes behave identically.
+  function isPreviewExpanded(section: LinksSection, path: string): boolean {
+    const overridden = linksExpandOverrides().has(`${section}::${path}`);
+    return linksCollapsePreviews() ? overridden : !overridden;
+  }
+
+  /// Preview lines for sections covered by the search filter
+  /// (Inbound, Outbound). When a search filter is active and matched
+  /// this row, the search hit wins so the user sees *where* their query
+  /// matched. Otherwise we fall back to the section's native preview
+  /// (the backlink context line for Inbound; nothing for Outbound since
+  /// it has no stored preview).
+  function rowPreview(
+    link: {
+      path: string;
+      line?: string;
+      context_before?: string[];
+      context_after?: string[];
+    },
+  ): { line: string; before: string[]; after: string[] } | undefined {
+    if (filterActive()) {
+      const m = searchMatchFor(link.path);
+      if (m) {
+        return {
+          line: m.line_text,
+          before: m.context_before ?? [],
+          after: m.context_after ?? [],
+        };
+      }
+      return undefined;
+    }
+    return nativePreview(link);
+  }
+
+  /// Preview lines for sections that are *not* in scope of the search
+  /// filter (Potential Links). Always shows the section's own preview,
+  /// regardless of filter state — search-substituting the line here
+  /// would be misleading since the row itself was chosen by potential-
+  /// link logic, not by the user's query.
+  function nativePreview(link: {
+    line?: string;
+    context_before?: string[];
+    context_after?: string[];
+  }): { line: string; before: string[]; after: string[] } | undefined {
+    if (!link.line) return undefined;
+    return {
+      line: link.line,
+      before: link.context_before ?? [],
+      after: link.context_after ?? [],
+    };
+  }
+
+  // Sort menu anchor and visibility (mirrors the SearchPanel pattern).
+  const [showLinksSortMenu, setShowLinksSortMenu] = createSignal(false);
+  let linksSortBtnRef: HTMLButtonElement | undefined;
+  let linksFilterInputRef: HTMLInputElement | undefined;
+
+  function activeLinksSortLabel(): string {
+    return (
+      LINKS_SORT_OPTIONS.find((o) => o.value === linksSortMode())?.label ?? "Sort"
+    );
+  }
+
+  function openLinkedFile(link: { path: string; name: string }, e?: MouseEvent) {
     if (!link.path) return;
-    openTab({ type: "file", title: link.name, path: link.path });
+    const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
+    openTab(
+      { type: "file", title: link.name, path: link.path },
+      { forceNewTab },
+    );
+  }
+
+  // Per-row context menu state for the Links pane. Mirrors the file
+  // tree's "Open in new tab / Open in new window" affordance. We don't
+  // currently surface vault-mutation actions on links (no rename, no
+  // delete) because deleting from a navigation list is too easy to do
+  // by accident — those belong on the file tree where the source of
+  // truth lives.
+  const [linkRowMenu, setLinkRowMenu] = createSignal<
+    { x: number; y: number; path: string; name: string } | null
+  >(null);
+  let cleanupLinkRowMenu: (() => void) | undefined;
+
+  function openLinkRowMenu(e: MouseEvent, path: string, name: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!path) return;
+    if (cleanupLinkRowMenu) {
+      cleanupLinkRowMenu();
+      cleanupLinkRowMenu = undefined;
+    }
+    const MENU_W = 200;
+    const MENU_H = 80;
+    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
+    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
+    setLinkRowMenu({ x, y, path, name });
+    setTimeout(() => {
+      const onDocClick = () => {
+        setLinkRowMenu(null);
+        document.removeEventListener("click", onDocClick);
+        cleanupLinkRowMenu = undefined;
+      };
+      document.addEventListener("click", onDocClick);
+      cleanupLinkRowMenu = () => {
+        document.removeEventListener("click", onDocClick);
+      };
+    }, 0);
+  }
+
+  function openLinkRowInNewWindow(path: string, name: string) {
+    setLinkRowMenu(null);
+    // Lazy import keeps the WebviewWindow API out of the initial bundle.
+    import("@tauri-apps/api/webviewWindow")
+      .then(({ WebviewWindow }) => {
+        const label = `note-${Date.now()}`;
+        const win = new WebviewWindow(label, {
+          url: `index.html?path=${encodeURIComponent(path)}`,
+          title: name,
+          width: 900,
+          height: 700,
+        });
+        win.once("tauri://error", (err) => {
+          console.error("Failed to open new window:", err);
+        });
+      })
+      .catch((err) => console.error("Failed to load WebviewWindow:", err));
   }
 
   async function createUnresolvedNote(target: string) {
@@ -702,7 +1025,7 @@ const RightPanel: Component = () => {
             title="File actions"
             aria-label="File actions"
           >
-            <EllipsisVertical size={16} />
+            <EllipsisVertical size={18} />
           </button>
           <button
             class={`right-panel__tab${activePanel() === "outline" ? " right-panel__tab--active" : ""}`}
@@ -710,7 +1033,7 @@ const RightPanel: Component = () => {
             title="Outline"
             aria-label="Outline"
           >
-            <TableOfContents size={16} />
+            <TableOfContents size={18} />
           </button>
           <button
             class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
@@ -718,7 +1041,7 @@ const RightPanel: Component = () => {
             title="Properties"
             aria-label="Properties"
           >
-            <NotebookTabs size={16} />
+            <NotebookTabs size={18} />
           </button>
           <button
             class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
@@ -726,7 +1049,7 @@ const RightPanel: Component = () => {
             title="Links"
             aria-label="Links"
           >
-            <Link size={16} />
+            <Link size={18} />
           </button>
           <button
             class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
@@ -734,7 +1057,7 @@ const RightPanel: Component = () => {
             title="References"
             aria-label="References"
           >
-            <Quote size={16} />
+            <Quote size={18} />
           </button>
           <button
             class="right-panel__tab"
@@ -751,7 +1074,7 @@ const RightPanel: Component = () => {
             title="Flow view"
             aria-label="Flow view"
           >
-            <BrainCircuit size={16} />
+            <BrainCircuit size={18} />
           </button>
         </Show>
       </div>
@@ -916,80 +1239,417 @@ const RightPanel: Component = () => {
             <Show when={!indexReady()}>
               <p class="sidebar-hint">{"Indexing vault\u2026"}</p>
             </Show>
-            {/* Backlinks section */}
-            <div class="right-panel__section">
-              <div class="right-panel__section-header">
-                <span>
-                  Backlinks
-                  <Show when={backlinks()?.length}>
-                    <span class="right-panel__count"> ({backlinks()!.length})</span>
-                  </Show>
-                </span>
-                <div class="right-panel__header-actions" />
-              </div>
-              <For each={backlinks()}>
-                {(link) => (
-                  <div>
-                    <div
-                      class="sidebar-item"
-                      onClick={() => openLinkedFile(link)}
-                    >
-                      <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
-                      <span class="sidebar-item__label">{link.name}</span>
-                    </div>
-                    <Show when={link.context}>
-                      <div class="link-context">{link.context}</div>
-                    </Show>
-                  </div>
-                )}
-              </For>
-              <Show when={backlinks()?.length === 0}>
-                <p class="sidebar-hint">No backlinks</p>
+
+            {/* Toolbar: Sort, Expand/Collapse, More Context, Filter.
+                Mirrors the Search panel's button cluster so users coming
+                from the left sidebar see the same icons doing the same
+                things. Sort is the file-tree sort (filetree-style options),
+                Expand/Collapse and More Context act on per-link previews,
+                Filter is a name substring filter applied to all sections. */}
+            <div class="right-panel__links-toolbar">
+              <button
+                ref={linksSortBtnRef}
+                class="right-panel__icon-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowLinksSortMenu((v) => !v);
+                }}
+                title={`Sort links \u2014 ${activeLinksSortLabel()}`}
+                aria-label="Sort links"
+                aria-haspopup="menu"
+                aria-expanded={showLinksSortMenu()}
+              >
+                <ArrowDownNarrowWide size={18} />
+              </button>
+              <Show when={showLinksSortMenu()}>
+                {/* Same .context-menu + anchorPanelMenu pattern as the
+                    file-tree sort dropdown so the menu sizes to its
+                    content (instead of inheriting the narrow right-panel
+                    column) and floats above the panel chrome. Wrapper
+                    classes / extra positioning rules would only fork the
+                    behaviour from the left-side equivalent. */}
+                <div
+                  class="context-menu"
+                  ref={(el) => anchorPanelMenu(linksSortBtnRef, el)}
+                  onMouseLeave={() => setShowLinksSortMenu(false)}
+                >
+                  <For each={LINKS_SORT_OPTIONS}>
+                    {(opt) => (
+                      <button
+                        classList={{
+                          "context-menu__item": true,
+                          "context-menu__item--active":
+                            linksSortMode() === opt.value,
+                        }}
+                        onClick={() => {
+                          setLinksSortMode(opt.value);
+                          setShowLinksSortMenu(false);
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </Show>
+              <button
+                class="right-panel__icon-btn"
+                onClick={() => setLinksCollapsePreviews(!linksCollapsePreviews())}
+                title={
+                  linksCollapsePreviews()
+                    ? "Expand previews"
+                    : "Collapse previews"
+                }
+                aria-label={
+                  linksCollapsePreviews()
+                    ? "Expand previews"
+                    : "Collapse previews"
+                }
+              >
+                <Show
+                  when={linksCollapsePreviews()}
+                  fallback={<ListChevronsDownUp size={18} />}
+                >
+                  <ListChevronsUpDown size={18} />
+                </Show>
+              </button>
+              <button
+                class={`right-panel__icon-btn${linksShowMoreContext() ? " right-panel__icon-btn--active" : ""}`}
+                onClick={() => setLinksShowMoreContext(!linksShowMoreContext())}
+                title="Show more context"
+                aria-pressed={linksShowMoreContext()}
+              >
+                <LayersPlus size={18} />
+              </button>
+              <button
+                class={`right-panel__icon-btn${linksShowFilter() ? " right-panel__icon-btn--active" : ""}`}
+                onClick={() => {
+                  const next = !linksShowFilter();
+                  setLinksShowFilter(next);
+                  if (next) {
+                    setTimeout(() => linksFilterInputRef?.focus(), 0);
+                  }
+                }}
+                title="Filter links by name"
+                aria-pressed={linksShowFilter()}
+              >
+                <Search size={18} />
+              </button>
             </div>
 
-            {/* Forward links section */}
+            <Show when={linksShowFilter()}>
+              <div class="right-panel__links-filter-wrap">
+                <input
+                  ref={(el) => (linksFilterInputRef = el)}
+                  class="right-panel__links-filter-input"
+                  type="text"
+                  placeholder="Search within links..."
+                  title="Same query syntax as the left search panel (phrase quotes, AND/OR/NOT, tag:, file:, path:, property:, section:, /regex/); results are filtered to this note's links."
+                  value={linksFilterQuery()}
+                  onInput={(e) => setLinksFilterQuery(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      if (linksFilterQuery()) {
+                        setLinksFilterQuery("");
+                      } else {
+                        setLinksShowFilter(false);
+                      }
+                    }
+                  }}
+                />
+                <Show when={linksFilterQuery().length > 0}>
+                  <button
+                    class="right-panel__links-filter-clear"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setLinksFilterQuery("");
+                      linksFilterInputRef?.focus();
+                    }}
+                    title="Clear filter"
+                    aria-label="Clear filter"
+                  >
+                    <X size={12} />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+
+            {/* Inbound Links section (formerly "Backlinks") */}
             <div class="right-panel__section">
-              <div class="right-panel__section-header">
+              <div
+                class="right-panel__section-header right-panel__section-header--clickable"
+                onClick={() => toggleLinksSection("inbound")}
+                role="button"
+                tabindex="0"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleLinksSection("inbound");
+                  }
+                }}
+                aria-expanded={linksSectionExpanded().inbound}
+              >
                 <span>
-                  Forward links
-                  <Show when={forwardLinks()?.length}>
+                  Inbound Links
+                  <Show when={sortedBacklinks().length}>
                     <span class="right-panel__count">
-                      {" "}({forwardLinks()!.length})
+                      {" "}({sortedBacklinks().length})
                     </span>
                   </Show>
                 </span>
-                <div class="right-panel__header-actions" />
+                <div class="right-panel__header-actions">
+                  <Show
+                    when={linksSectionExpanded().inbound}
+                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                  >
+                    <ChevronDown size={14} class="right-panel__section-chevron" />
+                  </Show>
+                </div>
               </div>
-              <For each={forwardLinks()}>
-                {(link) => (
-                  <div class={link.resolved ? "" : "link--unresolved"}>
-                    <div
-                      class="sidebar-item"
-                      onClick={() => link.resolved ? openLinkedFile(link) : createUnresolvedNote(link.target)}
-                    >
-                      <span class="sidebar-item__icon" innerHTML={link.resolved
-                        ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
-                        : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
-                      } />
-                      <span class="sidebar-item__label">{link.name}</span>
-                      <Show when={!link.resolved}>
-                        <button
-                          class="link__create-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            createUnresolvedNote(link.target);
-                          }}
+              <Show when={linksSectionExpanded().inbound}>
+                <For each={sortedBacklinks()}>
+                  {(link) => {
+                    const expanded = () => isPreviewExpanded("inbound", link.path);
+                    const preview = () => rowPreview(link);
+                    return (
+                      <div>
+                        <div
+                          class="sidebar-item"
+                          onClick={(e) => openLinkedFile(link, e)}
+                          onContextMenu={(e) =>
+                            openLinkRowMenu(e, link.path, link.name)
+                          }
+                          onDblClick={() =>
+                            toggleLinksPreviewOverride(`inbound::${link.path}`)
+                          }
+                          title="Click to open, Ctrl/Cmd+click for new tab, right-click for more, double-click to toggle preview"
                         >
-                          create
-                        </button>
-                      </Show>
-                    </div>
-                  </div>
-                )}
-              </For>
-              <Show when={forwardLinks()?.length === 0}>
-                <p class="sidebar-hint">No forward links</p>
+                          <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                          <span class="sidebar-item__label">{link.name}</span>
+                        </div>
+                        <Show when={expanded() && preview()}>
+                          {(p) => (
+                            <>
+                              <Show when={linksShowMoreContext() && p().before.length}>
+                                <For each={p().before}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                              <div class="link-context link-context--match">{p().line}</div>
+                              <Show when={linksShowMoreContext() && p().after.length}>
+                                <For each={p().after}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
+                      </div>
+                    );
+                  }}
+                </For>
+                <Show when={sortedBacklinks().length === 0}>
+                  <p class="sidebar-hint">
+                    {linksFilterQuery().trim()
+                      ? "No matching inbound links"
+                      : "No inbound links"}
+                  </p>
+                </Show>
+              </Show>
+            </div>
+
+            {/* Outbound Links section (formerly "Forward links") */}
+            <div class="right-panel__section">
+              <div
+                class="right-panel__section-header right-panel__section-header--clickable"
+                onClick={() => toggleLinksSection("outbound")}
+                role="button"
+                tabindex="0"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleLinksSection("outbound");
+                  }
+                }}
+                aria-expanded={linksSectionExpanded().outbound}
+              >
+                <span>
+                  Outbound Links
+                  <Show when={sortedForwardLinks().length}>
+                    <span class="right-panel__count">
+                      {" "}({sortedForwardLinks().length})
+                    </span>
+                  </Show>
+                </span>
+                <div class="right-panel__header-actions">
+                  <Show
+                    when={linksSectionExpanded().outbound}
+                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                  >
+                    <ChevronDown size={14} class="right-panel__section-chevron" />
+                  </Show>
+                </div>
+              </div>
+              <Show when={linksSectionExpanded().outbound}>
+                <For each={sortedForwardLinks()}>
+                  {(link) => {
+                    // Outbound rows have no native preview line, so this
+                    // only shows anything when a search filter matched.
+                    // The cm-typst-search-match-line styling makes the
+                    // line read as a search hit, not as a stored
+                    // backlink quote.
+                    const expanded = () => isPreviewExpanded("outbound", link.path);
+                    const preview = () => rowPreview(link);
+                    return (
+                      <div class={link.resolved ? "" : "link--unresolved"}>
+                        <div
+                          class="sidebar-item"
+                          onClick={(e) =>
+                            link.resolved
+                              ? openLinkedFile(link, e)
+                              : createUnresolvedNote(link.target)
+                          }
+                          onContextMenu={(e) => {
+                            if (link.resolved) openLinkRowMenu(e, link.path, link.name);
+                          }}
+                          onDblClick={() => {
+                            if (link.resolved && filterActive()) {
+                              toggleLinksPreviewOverride(`outbound::${link.path}`);
+                            }
+                          }}
+                          title={
+                            link.resolved
+                              ? "Click to open, Ctrl/Cmd+click for new tab, right-click for more"
+                              : "Click to create this note"
+                          }
+                        >
+                          <span class="sidebar-item__icon" innerHTML={link.resolved
+                            ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
+                            : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
+                          } />
+                          <span class="sidebar-item__label">{link.name}</span>
+                          <Show when={!link.resolved}>
+                            <button
+                              class="link__create-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                createUnresolvedNote(link.target);
+                              }}
+                            >
+                              create
+                            </button>
+                          </Show>
+                        </div>
+                        <Show when={expanded() && preview()}>
+                          {(p) => (
+                            <>
+                              <Show when={linksShowMoreContext() && p().before.length}>
+                                <For each={p().before}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                              <div class="link-context link-context--match">{p().line}</div>
+                              <Show when={linksShowMoreContext() && p().after.length}>
+                                <For each={p().after}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
+                      </div>
+                    );
+                  }}
+                </For>
+                <Show when={sortedForwardLinks().length === 0}>
+                  <p class="sidebar-hint">
+                    {linksFilterQuery().trim()
+                      ? "No matching outbound links"
+                      : "No outbound links"}
+                  </p>
+                </Show>
+              </Show>
+            </div>
+
+            {/* Potential Links \u2014 files mentioning this note's name without
+                an actual wikilink, surfaced so the user can spot missed
+                link opportunities. */}
+            <div class="right-panel__section">
+              <div
+                class="right-panel__section-header right-panel__section-header--clickable"
+                onClick={() => toggleLinksSection("potential")}
+                role="button"
+                tabindex="0"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleLinksSection("potential");
+                  }
+                }}
+                aria-expanded={linksSectionExpanded().potential}
+              >
+                <span>
+                  Potential Links
+                  <Show when={sortedPotentialLinks().length}>
+                    <span class="right-panel__count">
+                      {" "}({sortedPotentialLinks().length})
+                    </span>
+                  </Show>
+                </span>
+                <div class="right-panel__header-actions">
+                  <Show
+                    when={linksSectionExpanded().potential}
+                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                  >
+                    <ChevronDown size={14} class="right-panel__section-chevron" />
+                  </Show>
+                </div>
+              </div>
+              <Show when={linksSectionExpanded().potential}>
+                <For each={sortedPotentialLinks()}>
+                  {(link) => {
+                    const expanded = () => isPreviewExpanded("potential", link.path);
+                    const preview = () => nativePreview(link);
+                    return (
+                      <div>
+                        <div
+                          class="sidebar-item"
+                          onClick={(e) => openLinkedFile(link, e)}
+                          onContextMenu={(e) =>
+                            openLinkRowMenu(e, link.path, link.name)
+                          }
+                          onDblClick={() =>
+                            toggleLinksPreviewOverride(`potential::${link.path}`)
+                          }
+                          title="Click to open, Ctrl/Cmd+click for new tab, right-click for more, double-click to toggle preview"
+                        >
+                          <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                          <span class="sidebar-item__label">{link.name}</span>
+                        </div>
+                        <Show when={expanded() && preview()}>
+                          {(p) => (
+                            <>
+                              <Show when={linksShowMoreContext() && p().before.length}>
+                                <For each={p().before}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                              <div class="link-context link-context--match">{p().line}</div>
+                              <Show when={linksShowMoreContext() && p().after.length}>
+                                <For each={p().after}>
+                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                </For>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
+                      </div>
+                    );
+                  }}
+                </For>
+                <Show when={sortedPotentialLinks().length === 0}>
+                  <p class="sidebar-hint">No potential links</p>
+                </Show>
               </Show>
             </div>
           </Show>
@@ -1042,6 +1702,36 @@ const RightPanel: Component = () => {
             <div class="context-menu__separator" />
             <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
               Delete file
+            </button>
+          </div>
+        )}
+      </Show>
+
+      <Show when={linkRowMenu()}>
+        {(menu) => (
+          <div
+            class="context-menu"
+            style={{ left: `${menu().x}px`, top: `${menu().y}px`, position: "fixed" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                const m = menu();
+                setLinkRowMenu(null);
+                openTab(
+                  { type: "file", title: m.name, path: m.path },
+                  { forceNewTab: true },
+                );
+              }}
+            >
+              Open in new tab
+            </button>
+            <button
+              class="context-menu__item"
+              onClick={() => openLinkRowInNewWindow(menu().path, menu().name)}
+            >
+              Open in new window
             </button>
           </div>
         )}
