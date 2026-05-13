@@ -45,6 +45,7 @@ import {
 } from "../stores/propertyTypes";
 import SearchPanel from "./SearchPanel";
 import BookmarksPanel from "./BookmarksPanel";
+import TemplatesPanel from "./TemplatesPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -1313,6 +1314,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             <span>Bookmarks</span>
           </div>
           <BookmarksPanel refreshTick={refreshTick()} />
+        </Show>
+
+        <Show when={mode() === "templates"}>
+          <TemplatesPanel />
         </Show>
       </div>
 

@@ -273,7 +273,7 @@ const CreationRuleEditor: Component = () => {
                   {"{{date:FORMAT}}"}, {"{{title}}"}, {"{{slug}}"} variables.
                 </span>
               </div>
-              <div style={{ position: "relative", flex: "1" }}>
+              <div style={{ position: "relative", width: "200px", "flex-shrink": 0 }}>
                 <input
                   type="text"
                   class="settings__text-input"

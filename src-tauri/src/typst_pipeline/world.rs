@@ -231,8 +231,10 @@ impl VaultWorld {
     ///
     /// Layout: `<vault>/.inkycap/packages/<namespace>/<name>/<version>/<vpath>`
     ///
-    /// Also checks the templates folder as a fallback for convenience:
-    /// `<vault>/<templates_folder>/<name>-<version>/<vpath>`
+    /// This matches the Typst-canonical layout used by `typst-cli`, Tinymist,
+    /// and `typst.ts`. All user-authored content (templates and libraries)
+    /// lives under `@local/`; Universe content under `@preview/`; custom
+    /// namespaces resolve identically.
     fn resolve_package_path(
         &self,
         spec: &typst::syntax::package::PackageSpec,
@@ -240,7 +242,6 @@ impl VaultWorld {
     ) -> FileResult<PathBuf> {
         let rel_file = vpath.as_rootless_path();
 
-        // Primary: .inkycap/packages/<namespace>/<name>/<version>/
         let pkg_dir = self.canonical_vault_root
             .join(".inkycap/packages")
             .join(spec.namespace.as_str())
@@ -249,20 +250,6 @@ impl VaultWorld {
 
         if pkg_dir.is_dir() {
             let joined = pkg_dir.join(rel_file);
-            return validate_vault_path(&self.canonical_vault_root, &joined)
-                .map_err(|_| FileError::AccessDenied);
-        }
-
-        // Fallback: <templates_folder>/<name>-<version>/
-        let settings = crate::settings::load_settings();
-        let templates_folder = settings.files.typst_templates_folder.trim_matches('/');
-        let versioned_name = format!("{}-{}", spec.name, spec.version);
-        let template_dir = self.canonical_vault_root
-            .join(templates_folder)
-            .join(&versioned_name);
-
-        if template_dir.is_dir() {
-            let joined = template_dir.join(rel_file);
             return validate_vault_path(&self.canonical_vault_root, &joined)
                 .map_err(|_| FileError::AccessDenied);
         }

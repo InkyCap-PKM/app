@@ -17,6 +17,7 @@ pub mod settings;
 pub mod state;
 pub mod storage;
 pub mod scaffolds;
+pub mod typst_packages;
 pub mod typst_pipeline;
 pub mod vault_package;
 pub mod watcher;
@@ -260,6 +261,14 @@ pub fn run() {
             commands::creation_rules::delete_creation_rule,
             commands::creation_rules::execute_creation_rule,
             commands::creation_rules::list_scaffolds,
+            commands::creation_rules::list_scaffold_entries,
+            commands::creation_rules::create_scaffold,
+            commands::creation_rules::prepare_scaffold_insert,
+            commands::typst_packages::install_typst_package_by_spec,
+            commands::typst_packages::install_typst_package_from_file,
+            commands::typst_packages::list_installed_packages,
+            commands::typst_packages::uninstall_typst_package,
+            commands::typst_packages::create_local_package,
             commands::bookmarks::list_bookmarks,
             commands::bookmarks::add_bookmark,
             commands::bookmarks::remove_bookmark,

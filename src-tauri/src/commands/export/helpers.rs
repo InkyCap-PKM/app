@@ -482,72 +482,28 @@ pub(super) fn extract_image_paths(source: &str) -> Vec<String> {
 /// Resolve a template reference to a Typst import path.
 ///
 /// - Paths starting with `/` are vault-root-relative, passed through.
-/// - Paths starting with `@` are package references, passed through.
-/// - Bare names (e.g. `bananote`) are resolved by:
-///   1. Scanning the templates folder for a package directory matching
-///      `<name>-*` with a `typst.toml` → returns `@<namespace>/<name>:<version>`
-///   2. Falling back to a simple file: `/<templates_folder>/<name>.typ`
+/// Resolve a creation-rule's Typst-template reference into something we can
+/// inject as `#import "<resolved>": *`.
 ///
-/// When `vault_root` is provided, package-style directories are checked.
-/// Without it, only simple file paths are resolved.
+/// - Paths starting with `/` or `@` are passed through (vault-root-absolute
+///   or package spec — already canonical).
+/// - Bare names are interpreted as an `@local/<name>:0.1.0` spec by default.
+///   Users authoring custom-namespace local packages can write the full
+///   `@<namespace>/<name>:<version>` form in the rule field.
+///
+/// `vault_root` is accepted for API symmetry with earlier code paths that
+/// resolved against the filesystem; it's currently unused but kept so call
+/// sites don't need to change if we later add manifest-aware resolution
+/// (e.g. picking the latest available version for a bare name).
 pub fn resolve_template_path(template: &str) -> String {
     resolve_template_path_with_root(template, None)
 }
 
-pub fn resolve_template_path_with_root(template: &str, vault_root: Option<&Path>) -> String {
+pub fn resolve_template_path_with_root(template: &str, _vault_root: Option<&Path>) -> String {
     if template.starts_with('/') || template.starts_with('@') {
         return template.to_string();
     }
-
-    let settings = crate::settings::load_settings();
-    let folder = settings.files.typst_templates_folder.trim_matches('/');
-
-    if let Some(root) = vault_root {
-        let templates_dir = root.join(folder);
-        if let Ok(entries) = std::fs::read_dir(&templates_dir) {
-            let prefix = format!("{}-", template);
-            for entry in entries.flatten() {
-                let dir_name = entry.file_name().to_string_lossy().to_string();
-                if dir_name.starts_with(&prefix) && entry.path().is_dir() {
-                    let toml_path = entry.path().join("typst.toml");
-                    if toml_path.exists() {
-                        if let Some(spec) = read_package_spec_from_toml(&toml_path) {
-                            return spec;
-                        }
-                    }
-                }
-            }
-            let exact_dir = templates_dir.join(template);
-            if exact_dir.is_dir() {
-                let toml_path = exact_dir.join("typst.toml");
-                if toml_path.exists() {
-                    if let Some(spec) = read_package_spec_from_toml(&toml_path) {
-                        return spec;
-                    }
-                }
-            }
-        }
-    }
-
-    let name = if template.ends_with(".typ") {
-        template.to_string()
-    } else {
-        format!("{}.typ", template)
-    };
-
-    format!("/{}/{}", folder, name)
-}
-
-fn read_package_spec_from_toml(toml_path: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(toml_path).ok()?;
-    let name = extract_toml_string_field(&content, "name")?;
-    let version = extract_toml_string_field(&content, "version")?;
-    Some(format!("@preview/{}:{}", name, version))
-}
-
-fn extract_toml_string_field(content: &str, key: &str) -> Option<String> {
-    let pattern = format!("{} = \"", key);
-    let start = content.find(&pattern)? + pattern.len();
-    let end = content[start..].find('"')? + start;
-    Some(content[start..end].to_string())
+    // Bare name → default to the local namespace and version 0.1.0. Users
+    // who need a different version or namespace write the full spec.
+    format!("@local/{}:0.1.0", template)
 }

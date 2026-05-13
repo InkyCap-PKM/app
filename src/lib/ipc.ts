@@ -558,6 +558,96 @@ export async function listScaffolds(): Promise<string[]> {
   return invoke<string[]>("list_scaffolds");
 }
 
+export interface TemplateEntry {
+  name: string;
+  path: string;
+  kind: "scaffold" | "template-file" | "template-package";
+}
+
+export async function listScaffoldEntries(): Promise<TemplateEntry[]> {
+  return invoke<TemplateEntry[]>("list_scaffold_entries");
+}
+
+export async function createScaffold(name: string): Promise<string> {
+  return invoke<string>("create_scaffold", { name });
+}
+
+export interface ScaffoldInsertResult {
+  new_source: string;
+  new_cursor_offset: number;
+}
+
+export interface InstalledPackage {
+  spec: string;
+  install_dir: string;
+  files_written: number;
+}
+
+export async function installTypstPackageBySpec(
+  spec: string,
+): Promise<InstalledPackage> {
+  return invoke<InstalledPackage>("install_typst_package_by_spec", { spec });
+}
+
+export async function installTypstPackageFromFile(
+  archivePath: string,
+  overrideSpec?: string,
+): Promise<InstalledPackage> {
+  return invoke<InstalledPackage>("install_typst_package_from_file", {
+    archivePath,
+    overrideSpec: overrideSpec ?? null,
+  });
+}
+
+export interface InstalledPackageEntry {
+  namespace: string;
+  name: string;
+  version: string;
+  spec: string;
+  install_dir: string;
+  kind: "template" | "library";
+  description: string | null;
+}
+
+export async function listInstalledPackages(): Promise<InstalledPackageEntry[]> {
+  return invoke<InstalledPackageEntry[]>("list_installed_packages");
+}
+
+export async function uninstallTypstPackage(spec: string): Promise<void> {
+  return invoke<void>("uninstall_typst_package", { spec });
+}
+
+export interface CreatedPackage {
+  spec: string;
+  install_dir: string;
+  entrypoint_path: string;
+}
+
+export async function createLocalPackage(
+  spec: string,
+  asTemplate: boolean,
+): Promise<CreatedPackage> {
+  return invoke<CreatedPackage>("create_local_package", { spec, asTemplate });
+}
+
+export async function prepareScaffoldInsert(args: {
+  scaffoldName: string;
+  currentSource: string;
+  title: string;
+  cursorOffset: number;
+  selectionFrom?: number;
+  selectionTo?: number;
+}): Promise<ScaffoldInsertResult> {
+  return invoke<ScaffoldInsertResult>("prepare_scaffold_insert", {
+    scaffoldName: args.scaffoldName,
+    currentSource: args.currentSource,
+    title: args.title,
+    cursorOffset: args.cursorOffset,
+    selectionFrom: args.selectionFrom ?? null,
+    selectionTo: args.selectionTo ?? null,
+  });
+}
+
 // Bookmarks
 
 export async function listBookmarks(): Promise<Bookmark[]> {

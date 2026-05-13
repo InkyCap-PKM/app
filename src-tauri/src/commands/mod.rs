@@ -18,4 +18,5 @@ pub mod settings;
 pub mod system_color;
 pub mod typ_audit;
 pub mod typst;
+pub mod typst_packages;
 pub mod vault;

@@ -47,8 +47,6 @@ const DEFAULTS: UserSettings = {
     attachment_folder: "assets",
     excluded_files_regex: [],
     auto_update_links_on_rename: true,
-    scaffold_folder: ".inkycap/scaffolds",
-    typst_templates_folder: ".inkycap/templates",
     confirm_before_delete: true,
     zettelkasten_enabled: true,
     zid_pattern: "YYYYMMDDHHmmss",

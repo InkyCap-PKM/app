@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::State;
 
@@ -157,31 +157,53 @@ pub async fn import_markdown_vault(
         return Err(format!("Source path does not exist: {}", source_path));
     }
 
-    let is_zip =
-        source.is_file() && source.extension().and_then(|e| e.to_str()) == Some("zip");
-    if !source.is_dir() && !is_zip {
-        return Err("Source must be a directory or .zip file".to_string());
+    let archive_kind = archive_kind_for(&source);
+    if !source.is_dir() && archive_kind.is_none() {
+        return Err("Source must be a directory, .zip, or .tar.gz file".to_string());
     }
 
     let resolved_dialect = match dialect.as_deref() {
         Some("obsidian") => crate::markdown::md_to_typst::MarkdownDialect::Obsidian,
         Some("standard") => crate::markdown::md_to_typst::MarkdownDialect::Standard,
-        _ => {
-            if is_zip {
-                vault_import::detect_dialect_for_zip(&source)
-            } else {
-                vault_import::detect_dialect_for_directory(&source)
-            }
-        }
+        _ => match archive_kind {
+            Some(ArchiveKind::Zip) => vault_import::detect_dialect_for_zip(&source),
+            Some(ArchiveKind::TarGz) => vault_import::detect_dialect_for_tarball(&source),
+            None => vault_import::detect_dialect_for_directory(&source),
+        },
     };
 
-    let result = if is_zip {
-        vault_import::import_from_zip(&source, &target, resolved_dialect)
-    } else {
-        vault_import::import_from_directory(&source, &target, resolved_dialect)
+    let result = match archive_kind {
+        Some(ArchiveKind::Zip) => vault_import::import_from_zip(&source, &target, resolved_dialect),
+        Some(ArchiveKind::TarGz) => {
+            vault_import::import_from_tarball(&source, &target, resolved_dialect)
+        }
+        None => vault_import::import_from_directory(&source, &target, resolved_dialect),
     };
 
     Ok(result)
+}
+
+#[derive(Clone, Copy)]
+enum ArchiveKind {
+    Zip,
+    TarGz,
+}
+
+/// Classify a source path as zip, tarball, or neither. Falls back to
+/// double-extension sniffing for `.tar.gz` since `Path::extension` only
+/// returns the trailing component.
+fn archive_kind_for(path: &Path) -> Option<ArchiveKind> {
+    if !path.is_file() {
+        return None;
+    }
+    let lower = path.file_name()?.to_string_lossy().to_lowercase();
+    if lower.ends_with(".zip") {
+        Some(ArchiveKind::Zip)
+    } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        Some(ArchiveKind::TarGz)
+    } else {
+        None
+    }
 }
 
 /// Probe a source vault (directory or .zip) and report which markdown
@@ -196,10 +218,14 @@ pub async fn detect_markdown_dialect(source_path: String) -> Result<String, Stri
     }
     let detected = if source.is_dir() {
         vault_import::detect_dialect_for_directory(&source)
-    } else if source.extension().and_then(|e| e.to_str()) == Some("zip") {
-        vault_import::detect_dialect_for_zip(&source)
     } else {
-        return Err("Source must be a directory or .zip file".to_string());
+        match archive_kind_for(&source) {
+            Some(ArchiveKind::Zip) => vault_import::detect_dialect_for_zip(&source),
+            Some(ArchiveKind::TarGz) => vault_import::detect_dialect_for_tarball(&source),
+            None => {
+                return Err("Source must be a directory, .zip, or .tar.gz file".to_string());
+            }
+        }
     };
     Ok(match detected {
         crate::markdown::md_to_typst::MarkdownDialect::Obsidian => "obsidian".to_string(),

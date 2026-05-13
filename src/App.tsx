@@ -17,6 +17,7 @@ import {
 import { PanelRightDashed } from "lucide-solid";
 import QuickOpen from "./components/QuickOpen";
 import SettingsPanel from "./components/SettingsPanel";
+import ScaffoldPicker from "./components/ScaffoldPicker";
 import CommandPalette from "./components/CommandPalette";
 import CitationPicker from "./components/CitationPicker";
 import RefNotePicker from "./components/RefNotePicker";
@@ -111,6 +112,7 @@ const App: Component = () => {
   const [snapshotVisible, setSnapshotVisible] = createSignal(false);
   const [snapshotPath, setSnapshotPath] = createSignal("");
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
+  const [scaffoldPickerVisible, setScaffoldPickerVisible] = createSignal(false);
 
   // Persist the active file path so "last-file" startup behavior can restore it.
   createEffect(() => {
@@ -168,6 +170,7 @@ const App: Component = () => {
     onShortcut("command-palette", toggleCommandPalette);
     onShortcut("new-note", newNote);
     onShortcut("citation-picker", () => setCitationPickerVisible(true));
+    onShortcut("insert-scaffold", () => setScaffoldPickerVisible(true));
     onShortcut("zoom-in", () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {
@@ -317,6 +320,10 @@ const App: Component = () => {
           visible={settingsVisible()}
           onClose={() => setSettingsVisible(false)}
           initialTab={settingsInitialTab()}
+        />
+        <ScaffoldPicker
+          visible={scaffoldPickerVisible()}
+          onClose={() => setScaffoldPickerVisible(false)}
         />
         <CommandPalette
           visible={cmdPaletteVisible()}

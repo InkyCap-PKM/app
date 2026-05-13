@@ -440,18 +440,11 @@ Some text.
     }
 
     #[test]
-    fn resolve_template_bare_name() {
-        let result = resolve_template_path("ieee");
-        assert!(result.starts_with('/'));
-        assert!(result.ends_with("/ieee.typ"));
-    }
-
-    #[test]
-    fn resolve_template_bare_name_with_extension() {
-        let result = resolve_template_path("ieee.typ");
-        assert!(result.starts_with('/'));
-        assert!(result.ends_with("/ieee.typ"));
-        assert!(!result.ends_with(".typ.typ"));
+    fn resolve_template_bare_name_defaults_to_local_namespace() {
+        // After dropping .inkycap/templates/, bare names resolve to
+        // `@local/<name>:0.1.0` so users can refer to their own packages
+        // from a creation rule without typing the full spec.
+        assert_eq!(resolve_template_path("ieee"), "@local/ieee:0.1.0");
     }
 
     #[test]

@@ -92,11 +92,8 @@ pub async fn execute_creation_rule(
 
     // If the rule has a scaffold, read and expand it
     if !rule.scaffold_path.is_empty() {
-        let scaffold_folder = {
-            let settings = state.settings.read().await;
-            settings.files.scaffold_folder.clone()
-        };
-        let scaffold_file_path = root.join(&scaffold_folder).join(&rule.scaffold_path);
+        let scaffold_file_path =
+            crate::vault_package::scaffolds_dir(root).join(&rule.scaffold_path);
         if storage.exists(&scaffold_file_path).await {
             let title = file_path
                 .file_stem()
@@ -201,12 +198,7 @@ pub async fn list_scaffolds(
     let vault_root = state.vault_root.read().await;
     let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
 
-    let scaffold_folder = {
-        let settings = state.settings.read().await;
-        settings.files.scaffold_folder.clone()
-    };
-
-    let scaffold_dir = root.join(&scaffold_folder);
+    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
     if !storage.exists(&scaffold_dir).await {
         return Ok(Vec::new());
     }
@@ -223,3 +215,314 @@ pub async fn list_scaffolds(
 
     Ok(names)
 }
+
+/// An entry shown in the Templates panel.
+#[derive(Debug, Serialize)]
+pub struct TemplateEntry {
+    /// Display name (the file/folder basename without the `.typ` suffix for
+    /// bare files; the directory name for package-style templates).
+    pub name: String,
+    /// Absolute filesystem path the editor opens. For package templates this
+    /// is the `typst.toml`. For bare scaffolds and templates it's the `.typ`.
+    pub path: String,
+    /// "scaffold" | "template-file" | "template-package".
+    pub kind: String,
+}
+
+/// List scaffold entries with full path info for the Templates panel.
+///
+/// Distinct from [`list_scaffolds`], which only returns names — that one
+/// stays for the creation-rule editor's dropdown. This one gives the panel
+/// what it needs to open the file in a tab.
+#[tauri::command]
+pub async fn list_scaffold_entries(
+    state: State<'_, AppState>,
+) -> Result<Vec<TemplateEntry>, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let vault_root = state.vault_root.read().await;
+    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+
+    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
+    if !storage.exists(&scaffold_dir).await {
+        return Ok(Vec::new());
+    }
+
+    let files = storage.list_files(&scaffold_dir, "*.typ").await?;
+    let mut entries: Vec<TemplateEntry> = files
+        .iter()
+        .filter_map(|p| {
+            let name = p.file_stem()?.to_string_lossy().to_string();
+            Some(TemplateEntry {
+                name,
+                path: p.display().to_string(),
+                kind: "scaffold".to_string(),
+            })
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(entries)
+}
+
+/// Result of preparing a scaffold-insert into an existing note.
+#[derive(Debug, Serialize)]
+pub struct ScaffoldInsertResult {
+    /// New full source for the editor to replace its document with.
+    pub new_source: String,
+    /// New cursor offset within `new_source` (where the inserted body ends).
+    pub new_cursor_offset: usize,
+}
+
+/// Prepare a Ctrl+\\ "Insert Scaffold" operation.
+///
+/// Order of operations (matches the plan):
+///
+/// 1. Read & expand the scaffold's `{{var}}` placeholders (fresh `{{zid}}`,
+///    `{{date}}` etc. at insert time, not at note-creation time).
+/// 2. If the expanded scaffold begins with a `#note(...)` call, peel it off
+///    and merge its kwargs into the target note's existing `#note(...)`.
+///    Merge rule: **existing values win on conflict; new keys appended.**
+///    Reuses `note_rewriter::update_note_property`, which preserves
+///    whitespace and untouched fields byte-for-byte (the same invariant the
+///    property panel relies on).
+/// 3. Insert the remaining (post-`#note`, post-imports) scaffold body at
+///    the cursor — replacing the selection if `selection_from`/`selection_to`
+///    are provided.
+///
+/// The frontend replaces the editor's whole document with `new_source` and
+/// moves the cursor to `new_cursor_offset`. Whole-doc replace is a single
+/// CodeMirror transaction, so undo collapses the whole insert into one step.
+#[tauri::command]
+pub async fn prepare_scaffold_insert(
+    state: State<'_, AppState>,
+    scaffold_name: String,
+    current_source: String,
+    title: String,
+    cursor_offset: usize,
+    selection_from: Option<usize>,
+    selection_to: Option<usize>,
+) -> Result<ScaffoldInsertResult, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let vault_root = state.vault_root.read().await;
+    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+
+    let zid_pattern = {
+        let settings = state.settings.read().await;
+        settings.files.zid_pattern.clone()
+    };
+
+    // Resolve scaffold path. Accept either the bare name (with or without
+    // .typ) or a path relative to the scaffolds dir.
+    let filename = if scaffold_name.ends_with(".typ") {
+        scaffold_name.clone()
+    } else {
+        format!("{}.typ", scaffold_name)
+    };
+    let scaffold_path = crate::vault_package::scaffolds_dir(root).join(&filename);
+    if !storage.exists(&scaffold_path).await {
+        return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string()));
+    }
+
+    let expanded =
+        scaffolds::expand_scaffold_with_zid(storage.as_ref(), &scaffold_path, &title, &zid_pattern)
+            .await?;
+
+    // Split the expanded scaffold into (note_args, body_text). The body is
+    // what gets inserted at the cursor; the args drive the merge into the
+    // current note's `#note(...)`.
+    let (scaffold_note_args, scaffold_body) =
+        split_scaffold_note_and_body(&expanded.content);
+
+    // Merge step. Walk scaffold args; for each key not already present in
+    // the current source's `#note(...)`, append it. Existing keys win.
+    let existing_keys: std::collections::HashSet<String> =
+        note_rewriter::extract_note_properties(&current_source)
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+
+    let merge_keys: Vec<(String, String)> = scaffold_note_args
+        .into_iter()
+        .filter(|(k, _)| !existing_keys.contains(k))
+        .collect();
+
+    // Apply merges sequentially. Each call may shift downstream bytes, but
+    // since we always operate on the result of the previous call this is
+    // correct — and we never assume a stable byte position for downstream
+    // edits while merging.
+    let mut working = current_source.clone();
+    let pre_merge_len = working.len();
+    for (key, raw_value) in &merge_keys {
+        working = note_rewriter::set_note_property_raw(&working, key, raw_value);
+    }
+    let merge_delta: isize = working.len() as isize - pre_merge_len as isize;
+
+    // Compute the post-merge cursor and selection by shifting positions that
+    // sit after the `#note(...)` call. If the cursor is inside or before
+    // the note, leave it as-is (clamp to bounds at the end).
+    let note_span_before = note_rewriter::note_call_span(&current_source);
+    let shift_threshold = note_span_before.as_ref().map(|s| s.end).unwrap_or(0);
+
+    let shift = |pos: usize| -> usize {
+        if pos >= shift_threshold {
+            ((pos as isize) + merge_delta).max(0) as usize
+        } else {
+            pos
+        }
+    };
+
+    let target_cursor = shift(cursor_offset);
+    let sel_from = selection_from.map(shift);
+    let sel_to = selection_to.map(shift);
+
+    // Insert the scaffold body. If a selection is provided, replace it;
+    // otherwise insert at cursor. Trim leading whitespace from the body so
+    // it doesn't introduce a stray blank line, but preserve internal shape.
+    let body_to_insert = scaffold_body.trim_start_matches('\n').to_string();
+
+    let (insert_from, insert_to) = match (sel_from, sel_to) {
+        (Some(a), Some(b)) if a != b => {
+            let lo = a.min(b).min(working.len());
+            let hi = a.max(b).min(working.len());
+            (lo, hi)
+        }
+        _ => {
+            let c = target_cursor.min(working.len());
+            (c, c)
+        }
+    };
+
+    let mut new_source = String::with_capacity(working.len() + body_to_insert.len());
+    new_source.push_str(&working[..insert_from]);
+    new_source.push_str(&body_to_insert);
+    new_source.push_str(&working[insert_to..]);
+
+    // Cursor lands at the end of the inserted body, unless the scaffold had
+    // a `{{cursor}}` placeholder (cursor_offset in ExpandedScaffold was
+    // relative to the *expanded* scaffold including its #note() block; we
+    // need the offset relative to body_to_insert). If the scaffold had no
+    // {{cursor}}, the end-of-insert is the natural caret position.
+    let body_cursor_in_inserted = expanded
+        .cursor_offset
+        .and_then(|c| {
+            // Translate the scaffold-relative cursor into a body-relative
+            // offset. Bytes before scaffold_body_start in expanded.content
+            // are everything we stripped (imports + note call + leading
+            // whitespace). If the cursor was inside the stripped prefix,
+            // fall back to end-of-body.
+            let stripped_prefix = expanded.content.len() - body_to_insert.len();
+            if c >= stripped_prefix {
+                Some(c - stripped_prefix)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(body_to_insert.len());
+
+    let new_cursor_offset = insert_from + body_cursor_in_inserted;
+    let new_cursor_offset = new_cursor_offset.min(new_source.len());
+
+    Ok(ScaffoldInsertResult {
+        new_source,
+        new_cursor_offset,
+    })
+}
+
+/// Split an expanded scaffold into (note-call kwargs, body-after-note).
+///
+/// - If there's a `#note(...)` call near the top, returns its named-arg
+///   pairs and the text *after* the call (skipping imports and the call
+///   itself).
+/// - If there's no `#note(...)`, returns ([], the whole scaffold body
+///   minus leading import lines).
+fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, String) {
+    let args = note_rewriter::extract_note_properties(content);
+    let span = note_rewriter::note_call_span(content);
+
+    // Skip leading `#import` lines regardless of #note presence — when the
+    // scaffold author wrote imports at the top, they should be effective
+    // for the new note's content, not re-imported into the target note.
+    // (The target already has the canonical vault import.)
+    let body_start = if let Some(ref s) = span {
+        s.end
+    } else {
+        skip_leading_imports(content)
+    };
+
+    let body = content[body_start..].to_string();
+    (args, body)
+}
+
+fn skip_leading_imports(content: &str) -> usize {
+    let mut pos = 0;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("#import") || trimmed.is_empty() {
+            pos += line.len() + 1; // +1 for the newline
+        } else {
+            break;
+        }
+    }
+    pos.min(content.len())
+}
+
+/// Sanitize a user-supplied filename: keep alphanumerics, dash, underscore,
+/// dot, and space; collapse whitespace; reject anything that would escape the
+/// target directory.
+fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(InkyCapError::BadRequest("Template name cannot be empty".into()));
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        return Err(InkyCapError::BadRequest(
+            "Template name cannot contain path separators or '..'".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Create a new scaffold file with starter content. Returns the absolute path.
+#[tauri::command]
+pub async fn create_scaffold(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<String, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let vault_root = state.vault_root.read().await;
+    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+
+    let safe = sanitize_template_name(&name)?;
+    let filename = if safe.ends_with(".typ") {
+        safe
+    } else {
+        format!("{}.typ", safe)
+    };
+
+    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
+    storage.create_dir(&scaffold_dir).await?;
+
+    let file_path = scaffold_dir.join(&filename);
+    if storage.exists(&file_path).await {
+        return Err(InkyCapError::BadRequest(format!(
+            "Scaffold '{}' already exists",
+            filename
+        )));
+    }
+
+    // Starter content — demonstrates the `{{var}}` substitution surface and
+    // the `#note(...)` properties pattern. User can replace freely.
+    let starter = "// Scaffold: see https://typst.app/docs for Typst syntax.\n\
+        // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
+        //            {{time}} {{zid}} {{cursor}}\n\
+        #note(\n  \
+            // Properties go here. Any user-defined key is preserved.\n  \
+            // tags: (\"draft\",),\n\
+        )\n\n\
+        = {{title}}\n\n\
+        {{cursor}}\n";
+    storage.write_file(&file_path, starter).await?;
+
+    Ok(file_path.display().to_string())
+}
+
