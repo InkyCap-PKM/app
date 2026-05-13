@@ -48,22 +48,24 @@
 
 :root,
 [data-theme="light"] {
-  /* Backgrounds — cool gray palette (Adwaita-aligned) */
+  /* Backgrounds — neutral gray palette. --bg-primary is the bright
+     main-content surface; --bg-secondary is the chrome (sidebars, tab
+     bar, right panel, status bar, vertical toolbar). */
   --bg-primary: #fafafa;
-  --bg-editor-toolbar: #f2f2f4;
-  --bg-secondary: #ebebed;
-  --bg-active: #dcdce0;
+  --bg-editor-toolbar: #f5f5f5;
+  --bg-secondary: #f0f0f0;
+  --bg-active: #e1e1e1;
   --bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 12%, transparent);
-  --bg-highlight: #d4d4d8;
+  --bg-highlight: #d9d9d9;
   --bg-input: #ffffff;
   --bg-selection: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
-  --bg-matching-bracket: #d4d4d8;
+  --bg-matching-bracket: #d9d9d9;
   --bg-search-match: #f4dfc0;
 
   /* Borders */
-  --border-primary: #d1d1d6;
-  --border-subtle: #e0e0e3;
-  --border-input: #c5c5ca;
+  --border-primary: #d6d6d6;
+  --border-subtle: #e6e6e6;
+  --border-input: #c8c8c8;
   --border-input-focus: var(--accent-color, #1D7874);
 
   /* Foreground — Ink Black as base text */
@@ -72,7 +74,7 @@
   --fg-muted: #4d706a;
   --fg-dim: #8a9e9a;
   --fg-gutter: #8a9e9a;
-  --fg-separator: #d1d1d6;
+  --fg-separator: #d6d6d6;
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);
@@ -98,7 +100,7 @@
   --syntax-strike: #8a9e9a;
   --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
   --syntax-mono: #a86430;
-  --syntax-mono-bg: #ebebed;
+  --syntax-mono-bg: #f0f0f0;
   --syntax-quote: #2a6a50;
   --syntax-keyword: var(--accent-color, #1D7874);
   --syntax-string: #a86430;
@@ -124,8 +126,8 @@
   --footnote-def: #4d706a;
 
   /* Code blocks */
-  --code-block-bg: #ebebed;
-  --code-block-border: #d1d1d6;
+  --code-block-bg: #f0f0f0;
+  --code-block-border: #d6d6d6;
 
   /* Callout types */
   --callout-note: var(--accent-color, #1D7874);
@@ -142,13 +144,13 @@
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
 
   /* Status bar — blends with secondary background */
-  --status-bg: #ebebed;
+  --status-bg: #f0f0f0;
   --status-fg: #071E22;
   --status-btn-bg: color-mix(in srgb, var(--accent-color, #1D7874) 10%, transparent);
   --status-btn-bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
 
   /* Scrollbar */
-  --scrollbar-thumb: #c5c5ca;
+  --scrollbar-thumb: #c8c8c8;
 }
 
 [data-theme="dark"] {

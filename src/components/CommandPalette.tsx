@@ -3,7 +3,7 @@
 // Default (empty-query) view groups commands into collapsible categories.
 
 import { Component, createSignal, createMemo, For, Show } from "solid-js";
-import { searchCommands, type Command } from "../lib/command-registry";
+import { searchCommands, primaryKeybinding, type Command } from "../lib/command-registry";
 import { fuzzyMatch } from "../lib/fuzzy";
 
 interface CommandPaletteProps {
@@ -329,9 +329,9 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                           {row.command.shortcut}
                         </span>
                       </Show>
-                      <Show when={row.command.keybinding}>
+                      <Show when={primaryKeybinding(row.command.keybinding)}>
                         <span class="cmd-palette__keybinding">
-                          {row.command.keybinding}
+                          {primaryKeybinding(row.command.keybinding)}
                         </span>
                       </Show>
                     </div>
@@ -366,9 +366,9 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         {item.command.shortcut}
                       </span>
                     </Show>
-                    <Show when={item.command.keybinding}>
+                    <Show when={primaryKeybinding(item.command.keybinding)}>
                       <span class="cmd-palette__keybinding">
-                        {item.command.keybinding}
+                        {primaryKeybinding(item.command.keybinding)}
                       </span>
                     </Show>
                   </div>

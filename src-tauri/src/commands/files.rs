@@ -14,6 +14,31 @@ pub use crate::storage::traits::FileTreeNode;
 pub struct LinkInfo {
     pub path: String,
     pub name: String,
+    /// Unix epoch seconds. Zero when stat is unavailable (file deleted
+    /// between index time and IPC call) — the Links pane's mtime/ctime
+    /// sort treats 0 as "unknown" and pushes the entry to the bottom.
+    pub modified_time: u64,
+    pub created_time: u64,
+}
+
+fn file_times(path: &std::path::Path) -> (u64, u64) {
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return (0, 0),
+    };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let ctime = meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    (mtime, ctime)
 }
 
 /// Read the UTF-8 content of a file in the vault. Requires an open vault.
@@ -84,9 +109,12 @@ pub async fn get_backlinks(
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let (mtime, ctime) = file_times(&p);
             LinkInfo {
                 path: p.display().to_string(),
                 name,
+                modified_time: mtime,
+                created_time: ctime,
             }
         })
         .collect())
@@ -109,12 +137,130 @@ pub async fn get_forward_links(
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let (mtime, ctime) = file_times(&p);
             LinkInfo {
                 path: p.display().to_string(),
                 name,
+                modified_time: mtime,
+                created_time: ctime,
             }
         })
         .collect())
+}
+
+/// One entry in the Outbound Links section of the right-panel Links tab.
+/// Combines wikilink-target resolution with file stat in one IPC so the
+/// frontend doesn't have to fan out per-target requests just to sort by
+/// modified/created time.
+///
+/// `path` / `modified_time` / `created_time` / `name` are populated only
+/// when the target resolves to a real note. For unresolved targets,
+/// `name` holds the raw wikilink text (for "Create" affordance) and
+/// `path` is empty.
+#[derive(serde::Serialize)]
+pub struct OutboundLink {
+    /// Raw wikilink target as authored in the source note.
+    pub target: String,
+    /// Absolute path of the resolved note, or empty string when unresolved.
+    pub path: String,
+    pub name: String,
+    pub resolved: bool,
+    pub modified_time: u64,
+    pub created_time: u64,
+}
+
+/// Return every wikilink target from the note's `#note(...)` metadata,
+/// resolved to a file when possible. Replaces the previous frontend
+/// loop of `getFileMetadata` → `resolveWikilink` per target so the
+/// Links pane can sort by mtime/ctime without N extra round-trips.
+#[tauri::command]
+pub async fn get_outbound_links(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<OutboundLink>, InkyCapError> {
+    let path_buf = sanitize_vault_arg(&path)?;
+
+    // Read raw wikilink targets from the note's metadata, falling back to
+    // an on-demand reindex if the property index hasn't seen this file
+    // yet (matches `get_file_metadata`'s behaviour).
+    let raw_targets: Vec<String> = {
+        let prop_index = state.property_index.read().await;
+        if let Some(meta) = prop_index.notes.get(&path_buf) {
+            meta.links.clone()
+        } else {
+            drop(prop_index);
+            let storage = state.get_storage().await?;
+            let content = storage.read_file(&path_buf).await?;
+            state.reindex_note(&path_buf, &content).await;
+            let prop_index = state.property_index.read().await;
+            prop_index
+                .notes
+                .get(&path_buf)
+                .map(|m| m.links.clone())
+                .unwrap_or_default()
+        }
+    };
+
+    // Snapshot all known note paths once to feed the stem resolver in a
+    // single allocation rather than re-snapping per-target.
+    let all_paths: Vec<PathBuf> = {
+        let prop_index = state.property_index.read().await;
+        prop_index.notes.keys().cloned().collect()
+    };
+
+    // Dedup raw targets — a note may wikilink to the same target several
+    // times but we only want one row in the panel.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out: Vec<OutboundLink> = Vec::new();
+    for raw in raw_targets {
+        if !seen.insert(raw.clone()) {
+            continue;
+        }
+        let target_name = raw.split("::").next().unwrap_or(&raw);
+        let target_name = target_name.split('#').next().unwrap_or(target_name).trim();
+        if target_name.is_empty() {
+            continue;
+        }
+        let target_lower = target_name.to_lowercase();
+
+        let mut matches: Vec<&PathBuf> = all_paths
+            .iter()
+            .filter(|p| {
+                p.file_stem()
+                    .map(|s| s.to_string_lossy().to_lowercase() == target_lower)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if matches.is_empty() {
+            out.push(OutboundLink {
+                target: raw.clone(),
+                path: String::new(),
+                name: raw,
+                resolved: false,
+                modified_time: 0,
+                created_time: 0,
+            });
+            continue;
+        }
+
+        matches.sort_by_key(|p| p.components().count());
+        let resolved_path = matches[0].clone();
+        let name = resolved_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (mtime, ctime) = file_times(&resolved_path);
+        out.push(OutboundLink {
+            target: raw,
+            path: resolved_path.display().to_string(),
+            name,
+            resolved: true,
+            modified_time: mtime,
+            created_time: ctime,
+        });
+    }
+    Ok(out)
 }
 
 /// Write file content to disk. Used by the frontend auto-save.
@@ -500,43 +646,204 @@ pub async fn get_all_aliases(
     Ok(entries)
 }
 
-/// Get the context line(s) where `source_path` links to `target_path`.
-/// Returns the first line containing a wikilink to the target file.
+/// Multi-line excerpt of a backlink. `line` is the line that mentions the
+/// target; `context_before` / `context_after` carry up to 2 surrounding
+/// lines each so the Links pane can show extra context when the user
+/// toggles "more context" on. All strings are trimmed of trailing
+/// whitespace but left-padding (indentation) is preserved.
+#[derive(serde::Serialize)]
+pub struct BacklinkContext {
+    pub line: String,
+    pub context_before: Vec<String>,
+    pub context_after: Vec<String>,
+}
+
+/// Get the context lines where `source_path` links to `target_path`.
+/// Returns the first wikilink-bearing line plus up to two lines of
+/// surrounding context on each side. Matches both the `[[target]]`
+/// markdown shortcut and the canonical `#wikilink("target")` call.
 #[tauri::command]
 pub async fn get_backlink_context(
     source_path: String,
     target_path: String,
     state: State<'_, AppState>,
-) -> Result<Option<String>, InkyCapError> {
+) -> Result<Option<BacklinkContext>, InkyCapError> {
+    const CONTEXT_LINES: usize = 2;
+    const MAX_SNIPPET_CHARS: usize = 200;
+
     let storage = state.get_storage().await?;
     let source = sanitize_vault_arg(&source_path)?;
     let target = sanitize_vault_arg(&target_path)?;
 
     let content = storage.read_file(&source).await?;
 
-    // Extract the target filename (without extension) for matching wikilinks
     let target_name = target
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
         .unwrap_or_default();
+    if target_name.is_empty() {
+        return Ok(None);
+    }
+    let bracket_marker = format!("[[{}", target_name);
+    let call_marker = format!("#wikilink(\"{}", target_name);
 
-    // Search for wikilinks referencing the target
-    for line in content.lines() {
+    let lines: Vec<&str> = content.lines().collect();
+    for (idx, line) in lines.iter().enumerate() {
         let lower = line.to_lowercase();
-        // Check for [[target_name]] or [[target_name|...]] or [[target_name#...]]
-        if lower.contains(&format!("[[{}", target_name)) {
-            let trimmed = line.trim();
-            // Return a snippet: first 150 chars of the line
-            let snippet = if trimmed.len() > 150 {
-                format!("{}...", &trimmed[..150])
-            } else {
-                trimmed.to_string()
-            };
-            return Ok(Some(snippet));
+        if !(lower.contains(&bracket_marker) || lower.contains(&call_marker)) {
+            continue;
         }
+        let snippet = trim_snippet(line, MAX_SNIPPET_CHARS);
+        let before_start = idx.saturating_sub(CONTEXT_LINES);
+        let context_before: Vec<String> = lines[before_start..idx]
+            .iter()
+            .map(|l| trim_snippet(l, MAX_SNIPPET_CHARS))
+            .collect();
+        let after_end = (idx + 1 + CONTEXT_LINES).min(lines.len());
+        let context_after: Vec<String> = lines[idx + 1..after_end]
+            .iter()
+            .map(|l| trim_snippet(l, MAX_SNIPPET_CHARS))
+            .collect();
+        return Ok(Some(BacklinkContext {
+            line: snippet,
+            context_before,
+            context_after,
+        }));
     }
 
     Ok(None)
+}
+
+/// Trim trailing whitespace and truncate to a printable character budget,
+/// appending an ellipsis when the original was longer. UTF-8 safe: works
+/// on `chars()` so a multi-byte glyph at the boundary isn't sliced.
+fn trim_snippet(line: &str, max_chars: usize) -> String {
+    let trimmed = line.trim_end();
+    let char_count = trimmed.chars().count();
+    if char_count <= max_chars {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(max_chars).collect();
+    out.push('\u{2026}');
+    out
+}
+
+/// One entry in the "Potential Links" list shown beneath Outbound Links
+/// in the right-panel Links tab. Returned by [`get_potential_links`]:
+/// a note that mentions the current note's name but does not have a
+/// resolved wikilink to it.
+#[derive(serde::Serialize)]
+pub struct PotentialLink {
+    pub path: String,
+    pub name: String,
+    /// First matching line (trimmed). Empty string when the search engine
+    /// returned a filter-only hit with no text match — those still satisfy
+    /// the phrase predicate but have nothing useful to render.
+    pub line: String,
+    pub context_before: Vec<String>,
+    pub context_after: Vec<String>,
+    pub modified_time: u64,
+    pub created_time: u64,
+}
+
+/// Find notes that mention the current note's filename stem as a phrase but
+/// don't yet wikilink to it. Useful for surfacing missed link opportunities.
+///
+/// Strategy: phrase-search the vault for the stem via the existing inverted
+/// index, then filter out (a) the current note itself, (b) any note already
+/// known to link to it (resolved or unresolved targets that match by stem),
+/// and (c) results whose only "match" is the wikilink call we'd otherwise
+/// suggest creating. Result count is capped to keep the panel snappy on
+/// large vaults.
+#[tauri::command]
+pub async fn get_potential_links(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PotentialLink>, InkyCapError> {
+    let path_buf = sanitize_vault_arg(&path)?;
+
+    let stem = path_buf
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if stem.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Resolved backlinks: pre-existing inbound edges we should skip.
+    let already_linking: std::collections::HashSet<PathBuf> = {
+        let link_index = state.link_index.read().await;
+        link_index
+            .get_backlinks(&path_buf)
+            .into_iter()
+            .collect()
+    };
+
+    // Use the existing search engine so we benefit from the inverted index
+    // rather than scanning every file's content on each call.
+    let query = format!("\"{}\"", stem);
+    let parsed = match crate::search::query::parse_query(&query) {
+        Some(p) => p,
+        None => return Ok(Vec::new()),
+    };
+    let results = {
+        let engine = state.search_engine.read().await;
+        engine.search(&parsed, 300)
+    };
+
+    let stem_lower = stem.to_lowercase();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut out: Vec<PotentialLink> = Vec::new();
+    for r in results {
+        let p = PathBuf::from(&r.path);
+        if p == path_buf {
+            continue;
+        }
+        if already_linking.contains(&p) {
+            continue;
+        }
+        // Drop matches that occur *inside* a wikilink call — those represent
+        // the link we'd be suggesting the user create, not a plain mention.
+        let line_lower = r.line_text.to_lowercase();
+        let wikilink_call = format!("#wikilink(\"{}", stem_lower);
+        let wikilink_bracket = format!("[[{}", stem_lower);
+        if line_lower.contains(&wikilink_call) || line_lower.contains(&wikilink_bracket) {
+            continue;
+        }
+        if !seen.insert(p.clone()) {
+            continue;
+        }
+        let name = p
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        const MAX_SNIPPET: usize = 200;
+        let line = trim_snippet(&r.line_text, MAX_SNIPPET);
+        let context_before: Vec<String> = r
+            .context_before
+            .iter()
+            .map(|s| trim_snippet(s, MAX_SNIPPET))
+            .collect();
+        let context_after: Vec<String> = r
+            .context_after
+            .iter()
+            .map(|s| trim_snippet(s, MAX_SNIPPET))
+            .collect();
+        out.push(PotentialLink {
+            path: p.display().to_string(),
+            name,
+            line,
+            context_before,
+            context_after,
+            // SearchResult uses i64 (Tantivy/Hayagriva legacy); clamp to
+            // u64 to match the surrounding LinkInfo / FileTreeNode shape.
+            // Negative timestamps would only appear for pre-1970 ctime
+            // values, which we never see for vault files.
+            modified_time: r.modified_time.max(0) as u64,
+            created_time: r.created_time.max(0) as u64,
+        });
+    }
+    Ok(out)
 }
 
 /// Thin wrapper kept for the benefit of other command modules that

@@ -226,6 +226,8 @@ pub fn run() {
             commands::files::get_note_headings,
             commands::files::ensure_heading_label,
             commands::files::get_backlink_context,
+            commands::files::get_potential_links,
+            commands::files::get_outbound_links,
             commands::files::get_all_aliases,
             commands::settings::get_settings,
             commands::settings::update_settings,

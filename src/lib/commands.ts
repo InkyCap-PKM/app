@@ -155,11 +155,15 @@ export function registerBuiltinCommands(callbacks: {
   // the interface chrome, or both. Keeping that branching here (rather
   // than only in the keyboard handler) means the same behaviour applies
   // when zoom is triggered from the command palette.
+  // "Ctrl+Plus" is ambiguous across keyboards: pressing the `=` key with
+  // Ctrl (no Shift) produces `Ctrl+=`, holding Shift produces `Ctrl+Shift++`,
+  // and the numpad key produces `Ctrl++`. Register all three so the command
+  // fires regardless of which physical keystroke the user makes.
   registerCommand({
     id: "edit:zoom-in",
     title: "Zoom In",
     category: "Edit",
-    keybinding: "Ctrl++",
+    keybinding: ["Ctrl+=", "Ctrl++", "Ctrl+Shift++"],
     execute: () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {

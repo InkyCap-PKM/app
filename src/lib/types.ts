@@ -80,6 +80,9 @@ export interface FileTreeNode {
 export interface LinkInfo {
   path: string;
   name: string;
+  /** Unix epoch seconds. Zero if the backend couldn't stat the file. */
+  modified_time: number;
+  created_time: number;
 }
 
 // .collection file editing types (mirror Rust structs)

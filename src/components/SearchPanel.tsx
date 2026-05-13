@@ -512,7 +512,7 @@ const SearchPanel: Component = () => {
           title="Case sensitive"
           aria-pressed={caseSensitive()}
         >
-          <CaseSensitive size={16} />
+          <CaseSensitive size={18} />
         </button>
         <button
           class={`icon-btn ${showSettings() ? "icon-btn--active" : ""}`}
@@ -520,7 +520,7 @@ const SearchPanel: Component = () => {
           title="Search options"
           aria-pressed={showSettings()}
         >
-          <Settings2 size={16} />
+          <Settings2 size={18} />
         </button>
         <button
           class={`icon-btn ${showTips() ? "icon-btn--active" : ""}`}
@@ -528,7 +528,7 @@ const SearchPanel: Component = () => {
           title="Search tips"
           aria-pressed={showTips()}
         >
-          <Info size={16} />
+          <Info size={18} />
         </button>
       </div>
 
@@ -549,9 +549,9 @@ const SearchPanel: Component = () => {
           >
             <Show
               when={collapseResults()}
-              fallback={<ListChevronsDownUp size={16} />}
+              fallback={<ListChevronsDownUp size={18} />}
             >
-              <ListChevronsUpDown size={16} />
+              <ListChevronsUpDown size={18} />
             </Show>
           </button>
           <button
@@ -560,7 +560,7 @@ const SearchPanel: Component = () => {
             title="Show more context"
             aria-pressed={showMoreContext()}
           >
-            <LayersPlus size={16} />
+            <LayersPlus size={18} />
           </button>
           <button
             class={`icon-btn ${useRegex() ? "icon-btn--active" : ""}`}
@@ -571,7 +571,7 @@ const SearchPanel: Component = () => {
             title="Use regex"
             aria-pressed={useRegex()}
           >
-            <Regex size={16} />
+            <Regex size={18} />
           </button>
         </div>
       </Show>
@@ -619,6 +619,18 @@ const SearchPanel: Component = () => {
             disabled={!searchQuery().trim() || loading()}
           >
             All
+          </button>
+          <button
+            class="icon-btn"
+            onClick={() => {
+              setShowReplace(false);
+              setReplacement("");
+              setReplaceResults(null);
+            }}
+            title="Close replace"
+            aria-label="Close replace"
+          >
+            <X size={18} />
           </button>
         </div>
       </Show>

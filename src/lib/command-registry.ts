@@ -22,13 +22,24 @@ export interface Command {
   id: string;
   title: string;
   category: CommandCategory;
-  keybinding?: string;
+  /** Global hotkey(s) that fire this command. Accept multiple aliases to
+   *  cover combos that produce different `e.key` values across keyboards
+   *  (e.g. `Ctrl+=` vs. `Ctrl+Shift+=` vs. numpad `Ctrl++` all mean
+   *  "zoom in"). The palette displays only the first entry. */
+  keybinding?: string | string[];
   /** Inline typing shortcut (e.g. `*…*`, `+++`, `[[…]]`) shown at the
    *  right edge of the row in the command palette. Purely informational
    *  — the trigger is implemented in the editor's input handlers, not
    *  in the command registry. */
   shortcut?: string;
   execute: () => void | Promise<void>;
+}
+
+/** Display the user-visible form of a keybinding — the primary entry
+ *  when multiple aliases are registered. */
+export function primaryKeybinding(kb: string | string[] | undefined): string | undefined {
+  if (!kb) return undefined;
+  return Array.isArray(kb) ? kb[0] : kb;
 }
 
 interface ScoredCommand {
@@ -71,7 +82,8 @@ export function findCommandByKeybinding(
   for (const cmd of commands.values()) {
     if (!cmd.keybinding) continue;
     if (excludeId && cmd.id === excludeId) continue;
-    if (cmd.keybinding.toLowerCase() === target) return cmd;
+    const aliases = Array.isArray(cmd.keybinding) ? cmd.keybinding : [cmd.keybinding];
+    if (aliases.some((kb) => kb.toLowerCase() === target)) return cmd;
   }
   return null;
 }
