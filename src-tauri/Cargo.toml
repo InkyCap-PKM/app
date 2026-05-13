@@ -37,6 +37,11 @@ bincode = "1"
 tempfile = "3"
 which = "7"
 zip = "2"
+tar = "0.4"
+# Use rustls so the binary doesn't link OS-native TLS — keeps cross-platform
+# behavior identical. Picked over `ureq` because it's already in the
+# dependency graph via tauri.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 log = "0.4"
 env_logger = "0.11"
 

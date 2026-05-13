@@ -42,6 +42,19 @@ pub fn collections_dir(vault_root: &Path) -> PathBuf {
     vault_root.join(collections_relpath())
 }
 
+/// Reserved directory for scaffold (`.typ` note-template) files. Like
+/// collections, scaffolds are an InkyCap architectural concept and live in a
+/// fixed `.inkycap/` subdirectory — naturally excluded from search and the
+/// note browser, editable in-app via the Templates panel.
+pub fn scaffolds_relpath() -> &'static str {
+    ".inkycap/scaffolds"
+}
+
+/// Absolute path of the reserved scaffolds directory inside a vault.
+pub fn scaffolds_dir(vault_root: &Path) -> PathBuf {
+    vault_root.join(scaffolds_relpath())
+}
+
 /// Match any line that imports the inkycap-vault library, including legacy
 /// versioned paths from earlier releases. Used by detection and migration
 /// code so we keep working with notes from older vaults.
@@ -91,11 +104,11 @@ pub fn scaffold(vault_root: &Path) {
     write_if_changed(&library_path(vault_root), LIB_TYP);
 
     // Ensure the scaffolds directory exists for user-authored note templates.
-    let scaffolds_dir = inkycap_dir.join("scaffolds");
-    if let Err(err) = std::fs::create_dir_all(&scaffolds_dir) {
+    let scaffolds = scaffolds_dir(vault_root);
+    if let Err(err) = std::fs::create_dir_all(&scaffolds) {
         log::warn!(
             "vault library: failed to create {}: {err}",
-            scaffolds_dir.display()
+            scaffolds.display()
         );
     }
 

@@ -122,6 +122,13 @@ function handleKeyDown(e: KeyboardEvent) {
     return;
   }
 
+  // Ctrl+\: insert scaffold into current note
+  if (ctrl && !e.shiftKey && e.key === "\\") {
+    e.preventDefault();
+    callbacks["insert-scaffold"]?.();
+    return;
+  }
+
   // Ctrl+1 through Ctrl+9: switch to tab by index
   if (ctrl && e.key >= "1" && e.key <= "9") {
     e.preventDefault();

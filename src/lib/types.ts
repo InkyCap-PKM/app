@@ -264,8 +264,6 @@ export interface FileSettings {
   attachment_folder: string;
   excluded_files_regex: string[];
   auto_update_links_on_rename: boolean;
-  scaffold_folder: string;
-  typst_templates_folder: string;
   confirm_before_delete: boolean;
   zettelkasten_enabled: boolean;
   zid_pattern: string;

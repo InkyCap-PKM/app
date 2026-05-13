@@ -265,7 +265,18 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── Mode handling ──────────────────────────────────────
 
+  // Tooling files (scaffolds, package manifests, package lib.typ) live
+  // under `.inkycap/scaffolds/` and `.inkycap/packages/`. They are author-
+  // facing source artifacts, not user notes — visual/reading modes and the
+  // tab back/forward stack don't apply, so we hide the editor header for
+  // them and lock to source mode.
+  const isToolingFile = createMemo(() => {
+    const p = props.path;
+    return /[/\\]\.inkycap[/\\](scaffolds|packages)[/\\]/.test(p);
+  });
+
   const currentMode = createMemo<TypstMode>(() => {
+    if (isToolingFile()) return "source";
     const t = tabs.find((x) => x.id === props.tabId);
     if (t?.editingMode) return t.editingMode;
     return settings.editor.default_editing_mode === "source" ? "source" : "live";
@@ -630,6 +641,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   return (
     <div class="typst-editor-container" ref={containerRef}>
+      <Show when={!isToolingFile()}>
       <div class="editor-header">
         <div class="editor-header__nav" role="group" aria-label="Navigation">
           <button
@@ -731,6 +743,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
         </div>
       </div>
+      </Show>
 
       <Show when={currentMode() === "source" || currentMode() === "live"}>
         <div

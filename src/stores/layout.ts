@@ -92,6 +92,11 @@ export function toggleLeftCollapsed() {
   persist();
 }
 
+export function setLeftCollapsed(v: boolean) {
+  setLeftCollapsedInternal(v);
+  persist();
+}
+
 export function toggleRightCollapsed() {
   setRightCollapsedInternal((v) => !v);
   persist();

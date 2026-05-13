@@ -149,12 +149,6 @@ pub struct FileSettings {
     pub excluded_files_regex: Vec<String>,
     /// Automatically update wikilinks when a file is renamed or moved.
     pub auto_update_links_on_rename: bool,
-    /// Folder path (relative to vault root) containing scaffold files.
-    #[serde(alias = "template_folder")]
-    pub scaffold_folder: String,
-    /// Folder path (relative to vault root) containing Typst template files.
-    #[serde(default = "default_typst_templates_folder")]
-    pub typst_templates_folder: String,
     /// Show a confirmation dialog before deleting files.
     pub confirm_before_delete: bool,
     /// Enable Zettelkasten IDs (zid). When enabled, new notes automatically
@@ -168,10 +162,6 @@ pub struct FileSettings {
     pub auto_title_as_zid: bool,
 }
 
-fn default_typst_templates_folder() -> String {
-    ".inkycap/templates".to_string()
-}
-
 impl Default for FileSettings {
     fn default() -> Self {
         Self {
@@ -180,8 +170,6 @@ impl Default for FileSettings {
             attachment_folder: "assets".to_string(),
             excluded_files_regex: Vec::new(),
             auto_update_links_on_rename: true,
-            scaffold_folder: ".inkycap/scaffolds".to_string(),
-            typst_templates_folder: ".inkycap/templates".to_string(),
             confirm_before_delete: true,
             zettelkasten_enabled: true,
             zid_pattern: "YYYYMMDDHHmmss".to_string(),

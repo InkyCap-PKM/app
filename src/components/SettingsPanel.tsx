@@ -46,7 +46,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "files", label: "Files & Links" },
   { id: "citations", label: "Citations" },
   { id: "export", label: "Import / Export" },
-  { id: "creation-rules", label: "Rules & Scaffolding" },
+  { id: "creation-rules", label: "Rules" },
   { id: "behaviour", label: "Behaviour" },
 ];
 
@@ -140,7 +140,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 <Show when={activeTab() === "creation-rules"}>
                   <div class="settings__section">
                     <p class="settings__section-note">
-                      Rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties about the note, an optional Typst template, a target folder, and a shortcut.
+                      Rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties or content to insert, an optional Typst template, a target folder, and a shortcut.
                     </p>
                   </div>
                   <CreationRuleEditor />
@@ -855,20 +855,6 @@ function FileSettingsSection() {
         />
       </Show>
       <AttachmentFolderField value={settings.files.attachment_folder} />
-      <SettingPathText
-        label="Scaffold folder"
-        description="Folder containing scaffold files for new note creation (relative to vault root)"
-        value={settings.files.scaffold_folder}
-        onChange={(v) => updateSetting("files", "scaffold_folder", v)}
-        suggestions={folderSuggestions}
-      />
-      <SettingPathText
-        label="Typst templates folder"
-        description="Folder containing Typst template files (relative to vault root). Used when a collection specifies a template name."
-        value={settings.files.typst_templates_folder}
-        onChange={(v) => updateSetting("files", "typst_templates_folder", v)}
-        suggestions={folderSuggestions}
-      />
       <SettingToggle
         label="Auto-update links on rename"
         description="Automatically update wikilinks when a file is renamed"
@@ -1122,7 +1108,13 @@ function ExportSettingsSection() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const zipPath = await open({
       title: "Select markdown vault archive",
-      filters: [{ name: "Zip archive", extensions: ["zip"] }],
+      // Tauri filter extensions match the final dot-segment only — `tar.gz`
+      // wouldn't match `.tar.gz` files. We list `gz` (covers `.tar.gz`) plus
+      // `tgz`; the backend validates the actual archive shape and rejects
+      // bare `.gz` files that aren't tarballs.
+      filters: [
+        { name: "Vault archive", extensions: ["zip", "gz", "tgz"] },
+      ],
     });
     if (!zipPath) return;
 
@@ -1180,7 +1172,7 @@ function ExportSettingsSection() {
     <div class="settings__section">
       <div class="settings__label">Import markdown files</div>
       <span class="settings__description">
-        Create a zip archive of the directory of markdown files that you would like to import. Click the Import button to select the zip archive. InkyCap will convert the files into Typst files in your vault and map YAML properties as best as possible.
+        Create an archive (.tar.gz or .zip) of the markdown files that you would like to import then click the button to select it. InkyCap will convert the files into Typst files in your vault and map YAML frontmatter to InkyCap properties as best as possible.
       </span>
       <Show when={!pickedFile()}>
         <div style={{ "margin-top": "8px" }}>
@@ -1263,7 +1255,9 @@ function ExportSettingsSection() {
         </div>
       </Show>
 
-      <div class="settings__label" style={{ "margin-top": "24px" }}>Export settings</div>
+      <div class="settings__section-header">
+      	<div class="settings__label" style={{ "margin-top": "24px" }}>Export settings</div>
+      </div>
       <SettingText
         label="Pandoc path"
         description="Path to the Pandoc binary. Leave empty to auto-detect from PATH."

@@ -4,9 +4,10 @@ import {
   Sun,
   Moon,
   Settings,
+  LayoutTemplate,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
-import { leftCollapsed, toggleLeftCollapsed } from "../stores/layout";
+import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
 import type { CreationRule } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
@@ -20,7 +21,8 @@ export type SidebarMode =
   | "tags"
   | "properties"
   | "search"
-  | "bookmarks";
+  | "bookmarks"
+  | "templates";
 
 interface VerticalToolbarProps {
   mode: () => SidebarMode;
@@ -73,6 +75,17 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
         </Show>
       </div>
       <div class="vertical-toolbar__bottom">
+        <button
+          class={`vertical-toolbar__btn${props.mode() === "templates" ? " vertical-toolbar__btn--active" : ""}`}
+          onClick={() => {
+            props.setMode("templates");
+            if (leftCollapsed()) setLeftCollapsed(false);
+          }}
+          title="Scaffolds, Templates, &amp; Packages"
+          aria-label="Open Scaffolds, Templates, &amp; Packages"
+        >
+          <LayoutTemplate size={16} />
+        </button>
         <button
           class="vertical-toolbar__btn"
           onClick={toggleTheme}

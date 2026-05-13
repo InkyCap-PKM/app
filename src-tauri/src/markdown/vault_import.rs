@@ -558,6 +558,99 @@ pub fn detect_dialect_for_zip(zip_path: &Path) -> MarkdownDialect {
     MarkdownDialect::Standard
 }
 
+/// Import a markdown vault from a `.tar.gz` archive. Extracts the tarball
+/// to a temp directory and then runs [`import_from_directory`] on that
+/// extraction — mirrors the user-visible behavior of the zip path while
+/// reusing the directory walker. The temp dir is cleaned up on drop.
+pub fn import_from_tarball(
+    tar_path: &Path,
+    target: &Path,
+    dialect: MarkdownDialect,
+) -> ImportResult {
+    let mut result = ImportResult {
+        notes_converted: 0,
+        files_copied: 0,
+        errors: Vec::new(),
+    };
+
+    let file = match fs::File::open(tar_path) {
+        Ok(f) => f,
+        Err(e) => {
+            result.errors.push(format!("Failed to open tarball: {}", e));
+            return result;
+        }
+    };
+
+    let tmp = match tempfile::tempdir() {
+        Ok(t) => t,
+        Err(e) => {
+            result
+                .errors
+                .push(format!("Failed to create temp dir: {}", e));
+            return result;
+        }
+    };
+
+    if let Err(e) = crate::typst_packages::extract_tar_gz(file, tmp.path()) {
+        result.errors.push(format!("Failed to extract tarball: {}", e));
+        return result;
+    }
+
+    // Tarballs sometimes wrap everything in a single top-level dir
+    // (a la GitHub release archives). If the extracted root has exactly
+    // one child directory, use that as the source — same convention as
+    // detect_zip_root_prefix.
+    let source_root = collapse_single_root(tmp.path());
+
+    let inner = import_from_directory(&source_root, target, dialect);
+    result.notes_converted += inner.notes_converted;
+    result.files_copied += inner.files_copied;
+    result.errors.extend(inner.errors);
+    result
+}
+
+/// If `dir` contains exactly one entry which is itself a directory, return
+/// that inner directory; otherwise return `dir`. Mirrors the wrapper-folder
+/// stripping that the zip importer does inline.
+fn collapse_single_root(dir: &Path) -> PathBuf {
+    let entries: Vec<_> = match fs::read_dir(dir) {
+        Ok(r) => r.filter_map(|e| e.ok()).collect(),
+        Err(_) => return dir.to_path_buf(),
+    };
+    if entries.len() == 1 {
+        let only = &entries[0];
+        if only.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            return only.path();
+        }
+    }
+    dir.to_path_buf()
+}
+
+/// Dialect detection for a `.tar.gz` source: peek inside without extracting
+/// the whole archive — look for any path component named `.obsidian`.
+pub fn detect_dialect_for_tarball(tar_path: &Path) -> MarkdownDialect {
+    use flate2::read::GzDecoder;
+
+    let Ok(file) = fs::File::open(tar_path) else {
+        return MarkdownDialect::Standard;
+    };
+    let gz = GzDecoder::new(file);
+    let mut archive = tar::Archive::new(gz);
+    let Ok(entries) = archive.entries() else {
+        return MarkdownDialect::Standard;
+    };
+    for entry in entries.flatten() {
+        let Ok(path) = entry.path() else { continue };
+        if path
+            .components()
+            .any(|c| c.as_os_str() == ".obsidian")
+        {
+            return MarkdownDialect::Obsidian;
+        }
+    }
+    MarkdownDialect::Standard
+}
+
 /// Detect if all entries in a zip share a single root directory prefix
 /// (common when zipping a folder).
 fn detect_zip_root_prefix(archive: &mut ZipArchive<fs::File>) -> Option<PathBuf> {

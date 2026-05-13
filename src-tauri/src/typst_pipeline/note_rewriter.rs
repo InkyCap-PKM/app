@@ -166,7 +166,15 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 /// source bytes — nested datetimes, arrays, comments embedded in
 /// expressions, and Unicode all round-trip cleanly.
 pub fn update_note_property(content: &str, key: &str, value: &PropertyValue) -> String {
-    let serialized = serialize_to_typst(value);
+    set_note_property_raw(content, key, &serialize_to_typst(value))
+}
+
+/// Same as [`update_note_property`] but takes the value as raw Typst source
+/// (e.g. `"draft"`, `("a", "b")`, `datetime(year: 2026, month: 4, day: 29)`).
+/// Used by the scaffold-insert command, which already has merged values
+/// extracted as source bytes from another `#note(...)` call.
+pub fn set_note_property_raw(content: &str, key: &str, raw_value: &str) -> String {
+    let serialized = raw_value.to_string();
     let root = parse(content);
     let link = LinkedNode::new(&root);
 
