@@ -5,6 +5,7 @@ import RightPanel from "./components/RightPanel";
 import StatusBar from "./components/StatusBar";
 import ResizeHandle from "./components/ResizeHandle";
 import VerticalToolbar, { type SidebarMode } from "./components/VerticalToolbar";
+import VaultLostBanner from "./components/VaultLostBanner";
 import {
   leftWidth,
   rightWidth,
@@ -31,15 +32,14 @@ import { initVault } from "./stores/vault";
 import { initTheme, applyMonospaceFont, applyInterfaceFont } from "./stores/theme";
 import { initSettings, onSettingsChange, settings, updateSetting, flushSettingsSave } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
-import { initKeyboard, destroyKeyboard, onShortcut } from "./lib/keyboard";
+import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
-import { loadCreationRules } from "./stores/creation-rules";
+import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
 import * as ipc from "./lib/ipc";
-import { toastError } from "./stores/toasts";
 
 async function applyStartupBehavior() {
   const { behavior, target, last_active_file } = settings.startup;
@@ -63,12 +63,14 @@ async function applyStartupBehavior() {
     case "creation-rule":
       if (target) {
         try {
-          const result = await ipc.executeCreationRule(target);
-          const name = result.path.split("/").pop() ?? "New Note";
-          openTab(
-            { type: "file", title: name, path: result.path },
-            { cursorOffset: result.cursor_offset ?? undefined },
-          );
+          const result = await triggerCreationRule(target);
+          if (result) {
+            const name = result.path.split("/").pop() ?? "New Note";
+            openTab(
+              { type: "file", title: name, path: result.path },
+              { cursorOffset: result.cursor_offset ?? undefined },
+            );
+          }
         } catch (e) {
           console.error("Startup creation rule failed:", e);
         }
@@ -139,19 +141,6 @@ const App: Component = () => {
     }
   };
 
-  const newNote = async () => {
-    try {
-      const result = await ipc.executeCreationRule("new-note");
-      const name = result.path.split("/").pop() ?? "New Note";
-      openTab(
-        { type: "file", title: name, path: result.path },
-        { forceNewTab: true, cursorOffset: result.cursor_offset ?? undefined },
-      );
-    } catch (e) {
-      toastError("Failed to create note", e);
-    }
-  };
-
   onMount(async () => {
     // Load settings first — theme and other init depends on them
     await initSettings();
@@ -162,44 +151,10 @@ const App: Component = () => {
     initTheme();
     await initVault();
     await applyStartupBehavior();
-    initKeyboard();
-
-    // Register shortcut callbacks
-    onShortcut("quick-open", toggleQuickOpen);
-    onShortcut("settings", toggleSettings);
-    onShortcut("command-palette", toggleCommandPalette);
-    onShortcut("new-note", newNote);
-    onShortcut("citation-picker", () => setCitationPickerVisible(true));
-    onShortcut("insert-scaffold", () => setScaffoldPickerVisible(true));
-    onShortcut("zoom-in", () => {
-      const target = settings.appearance.zoom_target;
-      if (target === "content" || target === "both") {
-        updateSetting("editor", "body_font_size", Math.min(32, settings.editor.body_font_size + 1));
-      }
-      if (target === "interface" || target === "both") {
-        updateSetting("editor", "font_size", Math.min(24, settings.editor.font_size + 1));
-      }
-    });
-    onShortcut("zoom-out", () => {
-      const target = settings.appearance.zoom_target;
-      if (target === "content" || target === "both") {
-        updateSetting("editor", "body_font_size", Math.max(8, settings.editor.body_font_size - 1));
-      }
-      if (target === "interface" || target === "both") {
-        updateSetting("editor", "font_size", Math.max(10, settings.editor.font_size - 1));
-      }
-    });
-    onShortcut("zoom-reset", () => {
-      const target = settings.appearance.zoom_target;
-      if (target === "content" || target === "both") {
-        updateSetting("editor", "body_font_size", 17);
-      }
-      if (target === "interface" || target === "both") {
-        updateSetting("editor", "font_size", 15);
-      }
-    });
-
-    // Register all built-in commands with the command palette
+    // Register every built-in command with the registry. The global
+    // keyboard dispatcher (initKeyboard, called below) reads keybindings
+    // straight off the registry, so anything with a `keybinding` field
+    // becomes a working hotkey automatically — no per-key wiring here.
     registerBuiltinCommands({
       toggleQuickOpen,
       toggleSettings,
@@ -209,11 +164,17 @@ const App: Component = () => {
       openCitationPicker: () => setCitationPickerVisible(true),
       openRefNotePicker: () => setRefNotePickerVisible(true),
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
-      newNote,
       openTypAudit: () => setTypAuditVisible(true),
+      openScaffoldPicker: () => setScaffoldPickerVisible(true),
     });
 
-    // Register creation rules as commands (async, non-blocking)
+    initKeyboard();
+
+    // Register the user's creation rules with the registry as well —
+    // this is what gives e.g. "New Note" its Ctrl+Shift+N binding.
+    // Done after `initKeyboard` so newly-added rule hotkeys take effect
+    // without needing a relaunch (the dispatcher reads live from the
+    // registry on every keydown).
     registerCreationRuleCommands();
 
     // Load creation rules into the reactive store (toolbar reads from it)
@@ -285,6 +246,7 @@ const App: Component = () => {
           "--right-width": rightCollapsed() ? "0px" : `${rightWidth()}px`,
         }}
       >
+        <VaultLostBanner />
         <VerticalToolbar
           mode={sidebarMode}
           setMode={setSidebarMode}

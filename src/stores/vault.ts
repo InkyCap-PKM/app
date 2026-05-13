@@ -14,6 +14,18 @@ const [vaultInfo, setVaultInfo] = createSignal<VaultInfo | null>(null);
 const [vaultRegistry, setVaultRegistry] = createSignal<VaultRegistryEntry[]>([]);
 const [isLoading, setIsLoading] = createSignal(false);
 /**
+ * Set when the backend's per-vault health monitor detects that the vault
+ * directory no longer exists on disk (deleted via OS file manager,
+ * unmounted drive, etc.). Holds the path the vault used to live at so the
+ * banner can show it. Cleared automatically the next time a vault opens
+ * successfully.
+ *
+ * UI consumers: render a persistent warning (no save-elsewhere/save-as
+ * recovery is implemented yet) and disable in-vault writes — see
+ * `assertVaultWritable()`.
+ */
+const [vaultLost, setVaultLost] = createSignal<string | null>(null);
+/**
  * `indexReady` is false during the brief window between vault open and the
  * background index build completing. UI features that depend on the property
  * index, link index, or full-text search (search pane, tag pane, backlinks,
@@ -50,6 +62,7 @@ interface IndexReadyPayload {
 
 let indexReadyUnlisten: UnlistenFn | null = null;
 let indexErrorUnlisten: UnlistenFn | null = null;
+let vaultLostUnlisten: UnlistenFn | null = null;
 let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
 let fileRenamedUnlisten: (() => void) | null = null;
@@ -105,6 +118,15 @@ async function ensureIndexEventListeners() {
       },
     );
   }
+  if (vaultLostUnlisten === null) {
+    vaultLostUnlisten = await listen<{ path: string }>(
+      "vault:lost",
+      (event) => {
+        console.warn("Vault root vanished:", event.payload.path);
+        setVaultLost(event.payload.path);
+      },
+    );
+  }
   // File system watcher events → refresh the sidebar tree and the
   // quick-open file list. Subscribed once per process; the Rust
   // watcher is torn down and re-created when the vault path changes,
@@ -150,6 +172,10 @@ export async function loadVaultRegistry(): Promise<void> {
 export async function openVault(path: string) {
   setIsLoading(true);
   setIndexReady(false);
+  // A fresh successful open clears any previous "vault missing" state.
+  // (If the new vault is also missing the health monitor will set it
+  // again within one tick.)
+  setVaultLost(null);
   // Discard any in-flight alias refresh from a previous vault and
   // clear the cached list so stale entries can't surface while the
   // new vault's index is still building.
@@ -209,4 +235,20 @@ export async function refreshVaultInfo() {
   setVaultInfo(info);
 }
 
-export { vaultInfo, vaultRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion };
+/**
+ * Throw a clear error if the active vault has been reported missing.
+ * Call this at the top of any IPC wrapper that writes inside the vault
+ * (notes, collections, attachments) — global config writes (settings,
+ * creation rules, bookmarks) live in `$CONFIG_DIR/inkycap/` and are not
+ * gated, so they keep working even when the vault is gone.
+ */
+export function assertVaultWritable(): void {
+  const missing = vaultLost();
+  if (missing) {
+    throw new Error(
+      `Vault is missing from disk (${missing}). Copy any open content elsewhere — it cannot be saved in this vault.`,
+    );
+  }
+}
+
+export { vaultInfo, vaultRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion, vaultLost };

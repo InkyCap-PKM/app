@@ -1,3 +1,4 @@
+pub mod app_paths;
 pub mod collection_parser;
 pub mod bookmarks;
 pub mod cache;
@@ -19,6 +20,7 @@ pub mod storage;
 pub mod scaffolds;
 pub mod typst_packages;
 pub mod typst_pipeline;
+pub mod vault_health;
 pub mod vault_package;
 pub mod watcher;
 pub mod window_state;
@@ -257,6 +259,7 @@ pub fn run() {
             commands::file_ops::show_in_explorer,
             commands::file_ops::open_file_externally,
             commands::creation_rules::list_creation_rules,
+            commands::creation_rules::get_default_creation_rule,
             commands::creation_rules::save_creation_rule,
             commands::creation_rules::delete_creation_rule,
             commands::creation_rules::execute_creation_rule,

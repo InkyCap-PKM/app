@@ -24,6 +24,17 @@ pub async fn list_creation_rules() -> Result<Vec<CreationRule>, InkyCapError> {
     Ok(creation_rules::load_rules())
 }
 
+/// Look up the built-in default for a rule id. Returns the seeded default
+/// for built-in rules (used by the "Restore defaults" button in the rule
+/// editor) and `None` for user-created rules — those have no canonical
+/// default to restore to.
+#[tauri::command]
+pub async fn get_default_creation_rule(
+    rule_id: String,
+) -> Result<Option<CreationRule>, InkyCapError> {
+    Ok(creation_rules::default_rule_for_id(&rule_id))
+}
+
 /// Save a creation rule (create or update).
 #[tauri::command]
 pub async fn save_creation_rule(
@@ -63,9 +74,15 @@ pub async fn delete_creation_rule(
 
 /// Execute a creation rule: create the file and return its path + cursor offset.
 /// If the file already exists (e.g. daily note), returns existing path.
+///
+/// `title_override` is supplied by the frontend when the rule's
+/// `filename_pattern` is empty — in that case the frontend opens a prompt
+/// dialog first and passes the user-entered name through. When the
+/// pattern is non-empty, this argument is ignored.
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
+    title_override: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<CreationResult, InkyCapError> {
     let storage = state.get_storage().await?;
@@ -78,17 +95,29 @@ pub async fn execute_creation_rule(
         .find(|r| r.id == rule_id)
         .ok_or_else(|| InkyCapError::InvalidPath(format!("Rule not found: {}", rule_id)))?;
 
-    // Read ZID settings for {{zid}} expansion and auto-property
-    let (zid_enabled, zid_pattern) = {
+    // Read ZID settings for {{zid}} expansion and auto-property, plus the
+    // user's "New note location" preference — that's the fallback when the
+    // rule itself has no target folder set (e.g. the built-in New Note).
+    let (zid_enabled, zid_pattern, fallback_folder) = {
         let settings = state.settings.read().await;
+        let fallback = match settings.files.new_note_location.as_str() {
+            "specified" => settings.files.new_note_folder.clone(),
+            _ => String::new(),
+        };
         (
             settings.files.zettelkasten_enabled,
             settings.files.zid_pattern.clone(),
+            fallback,
         )
     };
 
-    let (file_path, mut content, mut cursor_offset) =
-        creation_rules::execute_rule(rule, root, None, &zid_pattern);
+    let (file_path, mut content, mut cursor_offset) = creation_rules::execute_rule(
+        rule,
+        root,
+        title_override.as_deref(),
+        &fallback_folder,
+        &zid_pattern,
+    )?;
 
     // If the rule has a scaffold, read and expand it
     if !rule.scaffold_path.is_empty() {

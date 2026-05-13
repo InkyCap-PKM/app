@@ -9,9 +9,8 @@ import {
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
 import type { CreationRule } from "../lib/types";
-import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import { toolbarRules } from "../stores/creation-rules";
+import { toolbarRules, triggerCreationRule } from "../stores/creation-rules";
 import RuleIcon from "./RuleIcon";
 import { toastError } from "../stores/toasts";
 
@@ -33,7 +32,8 @@ interface VerticalToolbarProps {
 const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
   async function executeRule(rule: CreationRule) {
     try {
-      const result = await ipc.executeCreationRule(rule.id);
+      const result = await triggerCreationRule(rule.id);
+      if (!result) return;
       if (rule.creation_mode === "create_and_open") {
         const name = result.path.split("/").pop() ?? "New Note";
         openTab(

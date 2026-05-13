@@ -49,6 +49,7 @@ import TemplatesPanel from "./TemplatesPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
+import { registerCommand, unregisterCommand } from "../lib/command-registry";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -661,8 +662,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       }
     } else {
       name = await promptText({
-        title: "New note",
-        label: "Note name",
+        title: "New simple file",
+        label: "File name",
         confirmLabel: "Create",
       });
       if (!name?.trim()) return;
@@ -762,6 +763,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (!info) return;
     await createNewFile(info.path);
   }
+
+  // Register the "New Simple File" command in the registry. The global
+  // dispatcher in keyboard.ts reads its `keybinding` ("Ctrl+N") to fire
+  // this same action from a keystroke. Owned here so the local
+  // file-tree refresh signal stays consistent with the trigger.
+  registerCommand({
+    id: "file:new-simple-file",
+    title: "New Simple File",
+    category: "File",
+    keybinding: "Ctrl+N",
+    execute: createNewNoteAtRoot,
+  });
+  onCleanup(() => unregisterCommand("file:new-simple-file"));
 
   async function createNewFolderAtRoot() {
     setShowNewMenu(false);
@@ -990,8 +1004,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 <button
                   class="left-sidebar__split-btn__main"
                   onClick={createNewNoteAtRoot}
-                  title="New note"
-                  aria-label="New note"
+                  title="New simple file (Ctrl+N)"
+                  aria-label="New simple file"
                 >
                   <FilePlus2 size={14} />
                 </button>
@@ -1021,7 +1035,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       onClick={createNewFolderAtRoot}
                     >
                       <Folder size={14} />
-                      <span>Folder</span>
+                      <span>New folder</span>
                     </button>
                     <button
                       class="context-menu__item context-menu__item--icon"

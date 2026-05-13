@@ -302,8 +302,7 @@ pub struct UserSettings {
 // --- Persistence ---
 
 fn settings_path() -> PathBuf {
-    let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    config_dir.join("inkycap").join("settings.json")
+    crate::app_paths::config_dir().join("settings.json")
 }
 
 /// Load settings from disk, returning defaults for any missing fields.

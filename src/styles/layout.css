@@ -1178,7 +1178,6 @@ svg.lucide {
   border: 1px solid transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 2px 4px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -1186,11 +1185,13 @@ svg.lucide {
 }
 
 .left-sidebar__split-btn__main {
+  padding: 2px 6px;
   border-top-left-radius: var(--radius-control);
   border-bottom-left-radius: var(--radius-control);
 }
 
 .left-sidebar__split-btn__caret {
+  padding: 2px 2px;
   border-top-right-radius: var(--radius-control);
   border-bottom-right-radius: var(--radius-control);
 }
@@ -3264,7 +3265,8 @@ svg.lucide {
 }
 
 .creation-rules__edit-btn,
-.creation-rules__delete-btn {
+.creation-rules__delete-btn,
+.creation-rules__disable-btn {
   background: none;
   border: 1px solid var(--border-input);
   border-radius: 3px;
@@ -3274,14 +3276,69 @@ svg.lucide {
   font-size: var(--text-sm);
 }
 
-.creation-rules__edit-btn:hover {
+.creation-rules__edit-btn:disabled,
+.creation-rules__delete-btn:disabled,
+.creation-rules__disable-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.creation-rules__edit-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent-text);
 }
 
-.creation-rules__delete-btn:hover {
+.creation-rules__delete-btn:hover:not(:disabled) {
   border-color: var(--fg-error, #f44336);
   color: var(--fg-error, #f44336);
+}
+
+.creation-rules__disable-btn:hover:not(:disabled) {
+  border-color: var(--fg-primary);
+  color: var(--fg-primary);
+}
+
+.creation-rules__item--disabled .creation-rules__icon,
+.creation-rules__item--disabled .creation-rules__info {
+  opacity: 0.55;
+}
+
+.creation-rules__disabled-tag {
+  color: var(--fg-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.creation-rules__description {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.4;
+  /* Description gets the wide treatment that Hotkey used to have: it fills
+     the row so the user has room to write longer notes. Width on
+     .settings__text-input is 200px otherwise, which we override here. */
+  width: auto;
+  flex: 1;
+}
+
+.creation-rules__restore-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 6px 16px;
+  font-size: var(--text-md);
+}
+
+.creation-rules__restore-btn:hover {
+  border-color: var(--fg-primary);
+  color: var(--fg-primary);
+}
+
+.creation-rules__add-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .creation-rules__form {
@@ -5516,6 +5573,57 @@ svg.lucide {
   flex-shrink: 0;
 }
 
+
+/* ─── Vault-lost banner (top-of-app warning when the vault directory
+       has vanished from disk while the app is still running) ─── */
+
+.vault-lost-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--bg-error, #5a1a1a);
+  color: var(--fg-on-error, #fff5f5);
+  border-bottom: 1px solid var(--border-error, #8b2a2a);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.vault-lost-banner__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.vault-lost-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.vault-lost-banner__title {
+  font-weight: 600;
+}
+
+.vault-lost-banner__detail {
+  opacity: 0.92;
+}
+
+.vault-lost-banner__path {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: 0.9em;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  word-break: break-all;
+}
 
 /* ─── Journal Scroll toggle (centered pill in editor header) ─── */
 

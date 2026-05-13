@@ -79,6 +79,44 @@ pub fn ensure_import(source: &str) -> String {
 
 static LIB_TYP: &[u8] = include_bytes!("../../inkycap-vault/0.1.0/lib.typ");
 
+/// Default scaffold seeded for the built-in "New Note" creation rule.
+/// Written to `<vault>/.inkycap/scaffolds/new-note.typ` on first vault open
+/// and only when the file is absent — never overwritten so user edits stick.
+pub const DEFAULT_NEW_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/vault.typ": *
+
+#note(
+  title: "{{filename}}",
+  date: "{{date:YYYY-MM-DD}}",
+  zid: "{{zid}}",
+  tags: (),
+  aliases: (),
+  description: "",
+)
+
+= {{title}}
+{{cursor}}
+"#;
+
+/// Default scaffold seeded for the built-in "Daily Note" creation rule.
+/// Same write-once semantics as [`DEFAULT_NEW_NOTE_SCAFFOLD`].
+pub const DEFAULT_DAILY_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/vault.typ": *
+
+#note(
+  title: "Notes for {{date:D MMMM YYYY}}",
+  date: "{{date:YYYY-MM-DD}}",
+  zid: "{{zid}}",
+  tags: (),
+)
+
+= {{title}}
+{{cursor}}
+"#;
+
+/// File basename for the seeded New Note scaffold.
+pub const NEW_NOTE_SCAFFOLD_FILE: &str = "new-note.typ";
+/// File basename for the seeded Daily Note scaffold.
+pub const DAILY_NOTE_SCAFFOLD_FILE: &str = "daily-note.typ";
+
 /// Expose the raw library bytes for self-contained export inlining.
 pub const LIB_TYP_BYTES: &[u8] = LIB_TYP;
 
@@ -109,6 +147,17 @@ pub fn scaffold(vault_root: &Path) {
         log::warn!(
             "vault library: failed to create {}: {err}",
             scaffolds.display()
+        );
+    } else {
+        // Seed the default scaffolds for the built-in rules. Write-once:
+        // if a user has edited or deleted these files, leave them alone.
+        write_if_absent(
+            &scaffolds.join(NEW_NOTE_SCAFFOLD_FILE),
+            DEFAULT_NEW_NOTE_SCAFFOLD.as_bytes(),
+        );
+        write_if_absent(
+            &scaffolds.join(DAILY_NOTE_SCAFFOLD_FILE),
+            DEFAULT_DAILY_NOTE_SCAFFOLD.as_bytes(),
         );
     }
 
@@ -196,6 +245,21 @@ pub fn strip_note_preamble(content: &str) -> &str {
     rest.trim_start()
 }
 
+/// Write `bytes` to `path` only if no file exists there. Used to seed
+/// user-editable templates: once a user has touched the file (or
+/// intentionally deleted it), we don't recreate it on the next vault open.
+fn write_if_absent(path: &Path, bytes: &[u8]) {
+    if path.exists() {
+        return;
+    }
+    if let Err(err) = std::fs::write(path, bytes) {
+        log::warn!(
+            "vault library: failed to seed default scaffold {}: {err}",
+            path.display()
+        );
+    }
+}
+
 fn write_if_changed(path: &Path, expected: &[u8]) {
     let needs_write = match std::fs::read(path) {
         Ok(existing) => existing != expected,
@@ -223,6 +287,40 @@ mod tests {
         let lib = dir.path().join(".inkycap/vault.typ");
         assert!(lib.exists());
         assert_eq!(std::fs::read(&lib).unwrap(), LIB_TYP);
+    }
+
+    #[test]
+    fn scaffold_seeds_default_scaffolds() {
+        let dir = tempdir().expect("tempdir");
+        scaffold(dir.path());
+        let new_note = scaffolds_dir(dir.path()).join(NEW_NOTE_SCAFFOLD_FILE);
+        let daily = scaffolds_dir(dir.path()).join(DAILY_NOTE_SCAFFOLD_FILE);
+        assert!(new_note.exists());
+        assert!(daily.exists());
+        assert_eq!(
+            std::fs::read_to_string(&new_note).unwrap(),
+            DEFAULT_NEW_NOTE_SCAFFOLD
+        );
+        assert_eq!(
+            std::fs::read_to_string(&daily).unwrap(),
+            DEFAULT_DAILY_NOTE_SCAFFOLD
+        );
+    }
+
+    #[test]
+    fn scaffold_seeding_preserves_user_edits() {
+        let dir = tempdir().expect("tempdir");
+        scaffold(dir.path());
+        let user_path = scaffolds_dir(dir.path()).join(NEW_NOTE_SCAFFOLD_FILE);
+        // Simulate the user editing the scaffold after first open.
+        let user_content = "// my edit\n#note()\n\n= Hello\n";
+        std::fs::write(&user_path, user_content).unwrap();
+        // Re-running scaffold() must NOT overwrite the user's version.
+        scaffold(dir.path());
+        assert_eq!(
+            std::fs::read_to_string(&user_path).unwrap(),
+            user_content
+        );
     }
 
     #[test]
