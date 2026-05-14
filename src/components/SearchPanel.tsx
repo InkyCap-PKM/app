@@ -652,15 +652,12 @@ const SearchPanel: Component = () => {
           <span>Searching...</span>
         </Show>
         <Show when={indexReady() && !loading() && searchQuery().trim()}>
-          <span class="search-panel__status-count">
-            {searchResultCount()} match{searchResultCount() !== 1 ? "es" : ""}
-          </span>
           <button
             class="search-panel__overflow-btn"
             title="More actions"
             onClick={() => setShowOverflowMenu(!showOverflowMenu())}
           >
-            {"…"}
+            {searchResultCount()} result{searchResultCount() !== 1 ? "s" : ""} {"⌄"}
           </button>
           <Show when={showOverflowMenu()}>
             <div

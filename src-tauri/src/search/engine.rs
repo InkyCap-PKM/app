@@ -73,6 +73,10 @@ struct DocEntry {
     file_name: String,
     /// Title from the `#note(title: ...)` property, if any.
     title: Option<String>,
+    /// Lowercased text of the document's first level-1 heading (`= …`),
+    /// if any. Used as a fallback for the title-match relevance bonus
+    /// when `title` is not set.
+    first_h1: Option<String>,
     /// Tags extracted from the document.
     tags: Vec<String>,
     /// Property keys (lowercased) present on the document. Populated so
@@ -260,10 +264,21 @@ impl SearchEngine {
                 let fname_lower = doc.file_name.to_lowercase();
                 self.query_matches_text(query, &fname_lower)
             };
-            let match_in_title = doc.title.as_ref().map_or(false, |t| {
-                let t_lower = t.to_lowercase();
-                self.query_matches_text(query, &t_lower)
-            });
+            // Title-match bonus fires if the query matches *either* the
+            // explicit `#note(title: …)` property or the document's first
+            // level-1 heading. The bonus is awarded once — matching both
+            // doesn't stack.
+            let match_in_title = {
+                let in_property = doc.title.as_ref().map_or(false, |t| {
+                    let t_lower = t.to_lowercase();
+                    self.query_matches_text(query, &t_lower)
+                });
+                in_property
+                    || doc
+                        .first_h1
+                        .as_ref()
+                        .map_or(false, |t| self.query_matches_text(query, t))
+            };
             let doc_score = compute_score(
                 match_in_filename,
                 match_in_title,
@@ -909,6 +924,7 @@ fn build_doc(
             path,
             file_name,
             title,
+            first_h1: projection.first_h1,
             tags,
             property_keys: property_keys_lower,
             property_values,
