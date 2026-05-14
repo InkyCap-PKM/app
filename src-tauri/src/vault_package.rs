@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 /// Library version. Used for diagnostics and as a hint for future migrations
 /// of vault content. Not part of the import path.
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.2.0";
 
 /// The canonical import line auto-prepended to new `.typ` notes.
 pub fn import_line() -> String {
@@ -77,7 +77,7 @@ pub fn ensure_import(source: &str) -> String {
     format!("{}\n{}", import_line(), source)
 }
 
-static LIB_TYP: &[u8] = include_bytes!("../../inkycap-vault/0.1.0/lib.typ");
+static LIB_TYP: &[u8] = include_bytes!("../../inkycap-vault/0.2.0/lib.typ");
 
 /// Default scaffold seeded for the built-in "New Note" creation rule.
 /// Written to `<vault>/.inkycap/scaffolds/new-note.typ` on first vault open

@@ -17,6 +17,8 @@ import {
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
+import ScrollContextPanel from "./ScrollContextPanel";
+import { isEnabled as isScrollEnabled } from "../stores/journal-scroll";
 import {
   EllipsisVertical,
   NotebookTabs,
@@ -24,6 +26,7 @@ import {
   Link,
   BrainCircuit,
   Quote,
+  Scroll,
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
@@ -1059,6 +1062,16 @@ const RightPanel: Component = () => {
           >
             <Quote size={18} />
           </button>
+          <Show when={(() => { const t = activeFileTab(); return t && isScrollEnabled(t.id); })()}>
+            <button
+              class={`right-panel__tab${activePanel() === "scroll-context" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("scroll-context")}
+              title="Scroll context"
+              aria-label="Scroll context"
+            >
+              <Scroll size={18} />
+            </button>
+          </Show>
           <button
             class="right-panel__tab"
             onClick={() => {
@@ -1657,6 +1670,15 @@ const RightPanel: Component = () => {
           {/* References tab */}
           <Show when={activePanel() === "references"}>
             <ReferencesPanel />
+          </Show>
+
+          {/* Scroll Context tab — only meaningful when Journal Scroll is on
+              in the active tab; gated by the tab button visibility above. */}
+          <Show when={activePanel() === "scroll-context"}>
+            {(() => {
+              const tab = activeFileTab();
+              return tab ? <ScrollContextPanel tabId={tab.id} /> : null;
+            })()}
           </Show>
         </div>
       </Show>

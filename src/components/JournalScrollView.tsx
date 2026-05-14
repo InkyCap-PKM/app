@@ -1,22 +1,194 @@
+// ---------------------------------------------------------------------------
+// JournalScrollView — continuous, infinite-scrolling list of related notes.
+//
+// Render pipeline: each entry is compiled to HTML via the same Typst path
+// reading mode's continuous-HTML view uses (`compileTypstHtml`). A
+// bounded-concurrency render queue caps how many compiles run at once, and
+// a module-level LRU cache by path keeps recently-rendered output around so
+// that scrolling back to an earlier entry is instant. The cache invalidates
+// on `vault:file-changed`.
+//
+// Pagination: top + bottom IntersectionObserver sentinels drive
+// `loadMoreBefore` / `loadMoreAfter`. Prepend preserves scroll position by
+// measuring the previously-first entry's position before and after the DOM
+// update and adjusting `scrollTop` by the delta.
+// ---------------------------------------------------------------------------
+
 import {
   Component,
   For,
   Show,
   createEffect,
-  createResource,
   createSignal,
   on,
   onCleanup,
+  onMount,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { onFileChanged } from "../lib/events";
 import {
   getEntries,
+  getSavedScrollPosition,
+  getShowConnections,
+  hasMoreAfter,
+  hasMoreBefore,
   isLoading,
-  loadMore,
-  getState,
+  loadMoreAfter,
+  loadMoreBefore,
+  saveScrollPosition,
+  setVisibleEntries,
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
-import type { JournalScrollEntry } from "../lib/types";
+import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
+
+// === Module-level render cache + bounded-concurrency queue ===
+
+const MAX_CONCURRENT = 3;
+const CACHE_CAP = 50;
+
+/** Path → compiled HTML result. */
+const htmlCache = new Map<string, TypstHtmlResult>();
+
+/** Path → set of subscriber callbacks called once when the path's
+ *  compilation completes (or fails). Used to coalesce multiple in-flight
+ *  requests for the same path. */
+const pendingSubscribers = new Map<string, Set<(r: TypstHtmlResult) => void>>();
+
+/** Paths currently queued for rendering but not yet started. */
+const renderQueue: string[] = [];
+let activeWorkers = 0;
+
+function cacheTouch(path: string, result: TypstHtmlResult) {
+  if (htmlCache.has(path)) htmlCache.delete(path); // move-to-front
+  htmlCache.set(path, result);
+  while (htmlCache.size > CACHE_CAP) {
+    // Map iteration order is insertion order; first key is oldest.
+    const oldest = htmlCache.keys().next().value;
+    if (oldest === undefined) break;
+    htmlCache.delete(oldest);
+  }
+}
+
+function notifySubscribers(path: string, result: TypstHtmlResult) {
+  const subs = pendingSubscribers.get(path);
+  if (!subs) return;
+  pendingSubscribers.delete(path);
+  for (const cb of subs) {
+    try {
+      cb(result);
+    } catch (err) {
+      console.error("journal-scroll subscriber error:", err);
+    }
+  }
+}
+
+async function runOneWorker() {
+  while (renderQueue.length > 0) {
+    const path = renderQueue.shift()!;
+    if (htmlCache.has(path)) {
+      // Already rendered while waiting in queue.
+      notifySubscribers(path, htmlCache.get(path)!);
+      continue;
+    }
+    try {
+      const result = await ipc.compileTypstHtml(path);
+      cacheTouch(path, result);
+      notifySubscribers(path, result);
+    } catch (err) {
+      const failResult: TypstHtmlResult = {
+        ok: false,
+        html: "",
+        diagnostics: [
+          {
+            severity: "error",
+            message: err instanceof Error ? err.message : String(err),
+            primary: null,
+            trace: [],
+            hints: [],
+          },
+        ],
+      };
+      cacheTouch(path, failResult);
+      notifySubscribers(path, failResult);
+    }
+  }
+  activeWorkers--;
+}
+
+function requestRender(
+  path: string,
+  onResult: (r: TypstHtmlResult) => void,
+): () => void {
+  // Cache hit: short-circuit.
+  const cached = htmlCache.get(path);
+  if (cached) {
+    // Refresh recency.
+    cacheTouch(path, cached);
+    queueMicrotask(() => onResult(cached));
+    return () => {};
+  }
+  // Subscribe and (if needed) enqueue.
+  let subs = pendingSubscribers.get(path);
+  if (!subs) {
+    subs = new Set();
+    pendingSubscribers.set(path, subs);
+    renderQueue.push(path);
+  }
+  subs.add(onResult);
+
+  // Spawn workers up to the cap.
+  while (activeWorkers < MAX_CONCURRENT && renderQueue.length > 0) {
+    activeWorkers++;
+    void runOneWorker();
+  }
+
+  return () => {
+    const s = pendingSubscribers.get(path);
+    if (s) s.delete(onResult);
+  };
+}
+
+/** Drop a path from the cache and any in-flight subscriptions so the next
+ *  view of that entry re-compiles. Called on file-changed events. */
+function invalidatePath(path: string) {
+  htmlCache.delete(path);
+  // Pending compiles will still run; their result populates the cache and
+  // any newly-subscribed listeners pick up the latest version. Subscribers
+  // already attached get the in-flight result, then a fresh subscription
+  // (driven by the file-change effect on the entry) replaces it.
+}
+
+// One global file-change listener for the whole app session. Set up lazily
+// on first JournalScrollView mount and kept alive — there is no good
+// teardown point for a per-tab listener since other tabs may still need it.
+let fileChangeListenerInstalled = false;
+function ensureFileChangeListener() {
+  if (fileChangeListenerInstalled) return;
+  fileChangeListenerInstalled = true;
+  void onFileChanged((payload) => {
+    if (payload.change === "Content") {
+      invalidatePath(payload.path);
+    }
+  });
+}
+
+// Module-local visible-paths table, keyed by tabId. Each per-entry
+// IntersectionObserver mutates its tab's set and the store's
+// `visibleEntries` is published as the union. Local to this module so the
+// hack-y global on `window` is avoided.
+const visibleByTab = new Map<string, Set<string>>();
+function trackVisibility(tabId: string, path: string, isVisible: boolean) {
+  let set = visibleByTab.get(tabId);
+  if (!set) {
+    set = new Set();
+    visibleByTab.set(tabId, set);
+  }
+  if (isVisible) set.add(path);
+  else set.delete(path);
+  setVisibleEntries(tabId, [...set]);
+}
+
+// === View ===
 
 interface JournalScrollViewProps {
   tabId: string;
@@ -25,59 +197,320 @@ interface JournalScrollViewProps {
 
 const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
-  let sentinelRef: HTMLDivElement | undefined;
+  let topSentinelRef: HTMLDivElement | undefined;
+  let bottomSentinelRef: HTMLDivElement | undefined;
+  const [flagsByPath, setFlagsByPath] = createSignal<
+    Map<string, ConnectionFlags>
+  >(new Map());
 
-  // Set up intersection observer for infinite scroll
-  createEffect(() => {
-    if (!sentinelRef) return;
+  onMount(ensureFileChangeListener);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMore(props.tabId);
-        }
-      },
-      { root: containerRef, rootMargin: "200px" },
-    );
-
-    observer.observe(sentinelRef);
-    onCleanup(() => observer.disconnect());
+  // Restore the previously-saved scroll position. Two rAFs: the first
+  // lets the <For> commit its entry frames into the DOM, the second
+  // lets layout settle after the initial near-viewport entries hit the
+  // module-level htmlCache (cached results paint in a microtask).
+  // Without both ticks, the scrollTop assignment can clamp to the
+  // current (smaller) content height and silently land at 0.
+  onMount(() => {
+    if (!containerRef) return;
+    const saved = getSavedScrollPosition(props.tabId);
+    if (saved <= 0) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (containerRef) containerRef.scrollTop = saved;
+      });
+    });
   });
 
+  // Recompute connection flags whenever the loaded entry set or anchor
+  // changes. Flags are computed unconditionally — the pill's Connections
+  // toggle only controls whether the styling is shown, so toggling doesn't
+  // re-issue IPC. One backend call covers all currently-loaded paths.
+  createEffect(() => {
+    const entries = getEntries(props.tabId);
+    const anchor = props.anchorPath;
+    if (entries.length === 0 || !anchor) {
+      setFlagsByPath(new Map());
+      return;
+    }
+    const paths = entries.map((e) => e.path);
+    void (async () => {
+      try {
+        const flags = await ipc.computeConnectionFlags(anchor, paths);
+        const map = new Map<string, ConnectionFlags>();
+        for (const f of flags) map.set(f.path, f);
+        setFlagsByPath(map);
+      } catch (err) {
+        console.error("connection flags failed:", err);
+      }
+    })();
+  });
+
+  // Top + bottom sentinel observers drive bidirectional pagination.
+  createEffect(() => {
+    if (!containerRef || !topSentinelRef || !bottomSentinelRef) return;
+
+    const topObserver = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          !isLoading(props.tabId) &&
+          hasMoreBefore(props.tabId)
+        ) {
+          void handleLoadMoreBefore();
+        }
+      },
+      { root: containerRef, rootMargin: "200px 0px 0px 0px" },
+    );
+    const bottomObserver = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          !isLoading(props.tabId) &&
+          hasMoreAfter(props.tabId)
+        ) {
+          void loadMoreAfter(props.tabId);
+        }
+      },
+      { root: containerRef, rootMargin: "0px 0px 200px 0px" },
+    );
+
+    topObserver.observe(topSentinelRef);
+    bottomObserver.observe(bottomSentinelRef);
+    onCleanup(() => {
+      topObserver.disconnect();
+      bottomObserver.disconnect();
+    });
+  });
+
+  // Wikilink click routing (delegated on the container so it covers every
+  // entry without per-entry handler installation). Smart routing:
+  //   - modifier-click / middle-click / right-click → open in new tab
+  //   - plain click + target is in the currently-loaded entry window →
+  //     smooth-scroll to it
+  //   - plain click + target is unresolved or outside the loaded window →
+  //     fall through to a new tab (Rule A)
+  //
+  // Resolution is one `getForwardLinks(source)` call per click. The source
+  // is the closest `.journal-scroll__entry` ancestor, identified by its
+  // `data-path` attribute. Vault-wide resolution would also work but
+  // forward-links is already cached in the LinkIndex and avoids surfacing a
+  // new IPC for a per-click lookup.
+  async function handleWikilinkClick(e: MouseEvent) {
+    const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+      "a.inkycap-wikilink",
+    );
+    if (!a) return;
+    e.preventDefault();
+    const entryEl = (
+      e.target as HTMLElement | null
+    )?.closest<HTMLElement>(".journal-scroll__entry");
+    const sourcePath = entryEl?.dataset.path;
+    if (!sourcePath) return;
+    const rawName = a.dataset.target ?? "";
+    if (!rawName) return;
+    const baseName = rawName.split("::")[0].split("#")[0].trim();
+    if (!baseName) return;
+    let forwardLinks;
+    try {
+      forwardLinks = await ipc.getForwardLinks(sourcePath);
+    } catch (err) {
+      console.error("wikilink resolve failed:", err);
+      return;
+    }
+    const match = forwardLinks.find(
+      (l) => l.name.toLowerCase() === baseName.toLowerCase(),
+    );
+    if (!match) return;
+    const isModifier =
+      e.ctrlKey || e.metaKey || e.button === 1 || e.button === 2;
+    if (isModifier) {
+      openTab(
+        { type: "file", title: match.name, path: match.path },
+        { forceNewTab: true },
+      );
+      return;
+    }
+    // Plain click: if the target is already loaded in this scroll, scroll
+    // to it; otherwise fall through to a new tab (Rule A). "In result but
+    // unloaded" is deliberately collapsed into Rule A for now — scrolling
+    // an arbitrary distance to land on a far-away entry feels worse than
+    // just opening it in its own tab.
+    const loaded = getEntries(props.tabId).some(
+      (entry) => entry.path === match.path,
+    );
+    if (loaded) {
+      scrollToLoadedEntry(match.path);
+    } else {
+      openTab(
+        { type: "file", title: match.name, path: match.path },
+        { forceNewTab: true },
+      );
+    }
+  }
+
+  function scrollToLoadedEntry(path: string) {
+    if (!containerRef) return;
+    const el = containerRef.querySelector(
+      `[data-path="${CSS.escape(path)}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Scroll-position preservation on prepend. Measure the
+  // previously-first entry's top-relative-to-container before the load,
+  // then restore the same offset after the DOM updates.
+  async function handleLoadMoreBefore() {
+    if (!containerRef) return;
+    const oldFirst = getEntries(props.tabId)[0];
+    let beforeOffset: number | null = null;
+    if (oldFirst) {
+      const el = containerRef.querySelector(
+        `[data-path="${CSS.escape(oldFirst.path)}"]`,
+      ) as HTMLElement | null;
+      if (el) {
+        beforeOffset =
+          el.getBoundingClientRect().top -
+          containerRef.getBoundingClientRect().top;
+      }
+    }
+    await loadMoreBefore(props.tabId);
+    if (beforeOffset === null || !oldFirst) return;
+    requestAnimationFrame(() => {
+      if (!containerRef) return;
+      const el = containerRef.querySelector(
+        `[data-path="${CSS.escape(oldFirst.path)}"]`,
+      ) as HTMLElement | null;
+      if (!el) return;
+      const afterOffset =
+        el.getBoundingClientRect().top -
+        containerRef.getBoundingClientRect().top;
+      containerRef.scrollTop += afterOffset - beforeOffset;
+    });
+  }
+
   return (
-    <div class="journal-scroll" ref={containerRef}>
+    <div
+      class="journal-scroll"
+      classList={{
+        "journal-scroll--connections-on": getShowConnections(props.tabId),
+      }}
+      ref={containerRef}
+      onClick={(e) => void handleWikilinkClick(e)}
+      onAuxClick={(e) => void handleWikilinkClick(e)}
+      onContextMenu={(e) => void handleWikilinkClick(e)}
+      onScroll={(e) =>
+        saveScrollPosition(props.tabId, e.currentTarget.scrollTop)
+      }
+    >
+      <div ref={topSentinelRef} class="journal-scroll__sentinel" />
+      <Show when={isLoading(props.tabId) && getEntries(props.tabId).length === 0}>
+        <div class="journal-scroll__loading">Loading…</div>
+      </Show>
       <For each={getEntries(props.tabId)}>
         {(entry) => (
-          <JournalScrollFile entry={entry} />
+          <JournalScrollEntryView
+            entry={entry}
+            tabId={props.tabId}
+            container={containerRef!}
+            flags={flagsByPath().get(entry.path) ?? null}
+          />
         )}
       </For>
-      <Show when={isLoading(props.tabId)}>
-        <div class="journal-scroll__loading">Loading...</div>
+      <Show
+        when={
+          !isLoading(props.tabId) && getEntries(props.tabId).length === 0
+        }
+      >
+        <div class="journal-scroll__empty">
+          No notes match the current scroll filter.
+        </div>
       </Show>
-      <Show when={!isLoading(props.tabId) && getEntries(props.tabId).length === 0}>
-        <div class="journal-scroll__empty">No files found for this scroll mode.</div>
-      </Show>
-      <div ref={sentinelRef} class="journal-scroll__sentinel" />
+      <div ref={bottomSentinelRef} class="journal-scroll__sentinel" />
     </div>
   );
 };
 
-interface JournalScrollFileProps {
-  entry: JournalScrollEntry;
+// === Per-entry component ===
+
+interface JournalScrollEntryViewProps {
+  entry: ScrollEntry;
+  tabId: string;
+  container: HTMLDivElement;
+  flags: ConnectionFlags | null;
 }
 
-const JournalScrollFile: Component<JournalScrollFileProps> = (props) => {
-  const [content] = createResource(
-    () => props.entry.path,
-    async (path) => ipc.readFileContent(path),
+const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
+  props,
+) => {
+  let frameRef: HTMLDivElement | undefined;
+  let bodyRef: HTMLDivElement | undefined;
+  const [result, setResult] = createSignal<TypstHtmlResult | null>(null);
+  const [near, setNear] = createSignal(false);
+  const [visible, setVisible] = createSignal(false);
+
+  // Pre-compile when within ~2 viewport-heights of the visible area.
+  createEffect(() => {
+    if (!frameRef) return;
+    const nearObserver = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) setNear(true);
+        }
+      },
+      { root: props.container, rootMargin: "200% 0px 200% 0px" },
+    );
+    const visibleObserver = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          setVisible(e.isIntersecting);
+        }
+      },
+      { root: props.container, threshold: 0 },
+    );
+    nearObserver.observe(frameRef);
+    visibleObserver.observe(frameRef);
+    onCleanup(() => {
+      nearObserver.disconnect();
+      visibleObserver.disconnect();
+    });
+  });
+
+  // Publish per-entry visibility to the store. The right-panel
+  // Scroll Context tab (step 14) subscribes via `getVisibleEntries`.
+  createEffect(
+    on([visible, () => props.entry.path], ([isVis, path]) => {
+      trackVisibility(props.tabId, path, isVis);
+    }),
+  );
+  onCleanup(() => {
+    trackVisibility(props.tabId, props.entry.path, false);
+  });
+
+  // Trigger render when the entry approaches view; subscribe to results.
+  createEffect(
+    on([near, () => props.entry.path], ([isNear, path]) => {
+      if (!isNear) return;
+      setResult(null);
+      const unsub = requestRender(path, (r) => setResult(r));
+      onCleanup(unsub);
+    }),
   );
 
-  const [rendered, setRendered] = createSignal("");
-
+  // Mount the compiled HTML into the entry's body, stripping <script> tags.
   createEffect(
-    on(content, (doc) => {
-      if (doc === undefined) return;
-      setRendered(renderMarkdownToHtml(doc));
+    on(result, (r) => {
+      if (!bodyRef) return;
+      if (!r) return;
+      while (bodyRef.firstChild) bodyRef.removeChild(bodyRef.firstChild);
+      if (!r.ok || !r.html) return;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(r.html, "text/html");
+      doc.querySelectorAll("script").forEach((s) => s.remove());
+      const body = doc.body;
+      if (!body) return;
+      while (body.firstChild) bodyRef.appendChild(body.firstChild);
     }),
   );
 
@@ -93,176 +526,53 @@ const JournalScrollFile: Component<JournalScrollFileProps> = (props) => {
   }
 
   return (
-    <div class="journal-scroll__file">
-      <div class="journal-scroll__file-header">
+    <div
+      class="journal-scroll__entry"
+      classList={{
+        "journal-scroll__entry--anchor": !!props.flags?.is_anchor,
+        "journal-scroll__entry--links-to-anchor":
+          !!props.flags?.links_to_anchor,
+        "journal-scroll__entry--linked-from-anchor":
+          !!props.flags?.linked_from_anchor,
+        "journal-scroll__entry--shares-tags": !!props.flags?.shares_tags,
+      }}
+      data-path={props.entry.path}
+      ref={frameRef}
+    >
+      <div class="journal-scroll__entry-accent" aria-hidden="true" />
+      <div class="journal-scroll__entry-header">
         <button
-          class="journal-scroll__file-title"
+          class="journal-scroll__entry-title"
           onClick={handleTitleClick}
           title="Open in new tab"
         >
           {props.entry.title}
         </button>
       </div>
-      <Show
-        when={content() !== undefined}
-        fallback={
-          <div class="journal-scroll__file-loading">Loading content...</div>
-        }
-      >
-        <div
-          class="journal-scroll__file-content"
-          innerHTML={rendered()}
-        />
+      <Show when={result()} fallback={
+        <div class="journal-scroll__entry-loading">Compiling…</div>
+      }>
+        {(r) => (
+          <>
+            <Show when={r().diagnostics.length > 0}>
+              <div class="journal-scroll__entry-diagnostics">
+                {r().diagnostics.map((d) => d.message).join("; ")}
+              </div>
+            </Show>
+            {/* Share `.typst-reading__html-content` with the dedicated
+                Reading view so the same compiled Typst HTML renders
+                identically in both surfaces — headings, lists, code,
+                tables, blockquotes, footnotes all get one set of rules
+                rather than two surfaces drifting apart. */}
+            <div
+              class="journal-scroll__entry-body typst-reading__html-content"
+              ref={bodyRef}
+            />
+          </>
+        )}
       </Show>
     </div>
   );
 };
-
-function renderMarkdownToHtml(markdown: string): string {
-  let body = markdown;
-  if (body.startsWith("---")) {
-    const endIdx = body.indexOf("---", 3);
-    if (endIdx !== -1) {
-      body = body.slice(endIdx + 3).trim();
-    }
-  }
-
-  const lines = body.split("\n");
-  const htmlLines: string[] = [];
-  let inCodeBlock = false;
-  let inList = false;
-  let listTag = "";
-
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Code blocks
-    if (line.trimStart().startsWith("```")) {
-      if (inCodeBlock) {
-        htmlLines.push("</code></pre>");
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-        htmlLines.push("<pre><code>");
-      }
-      continue;
-    }
-    if (inCodeBlock) {
-      htmlLines.push(escapeHtml(line));
-      continue;
-    }
-
-    // Close list if needed
-    if (inList && !line.match(/^(\s*[-*+]|\s*\d+\.)\s/)) {
-      htmlLines.push(`</${listTag}>`);
-      inList = false;
-    }
-
-    // Empty lines
-    if (line.trim() === "") {
-      if (!inList) htmlLines.push("");
-      continue;
-    }
-
-    // Headings
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      htmlLines.push(
-        `<h${level}>${inlineFormat(headingMatch[2])}</h${level}>`,
-      );
-      continue;
-    }
-
-    // Horizontal rule
-    if (line.match(/^---+$|^\*\*\*+$|^___+$/)) {
-      htmlLines.push("<hr />");
-      continue;
-    }
-
-    // Blockquote
-    if (line.startsWith("> ")) {
-      htmlLines.push(
-        `<blockquote><p>${inlineFormat(line.slice(2))}</p></blockquote>`,
-      );
-      continue;
-    }
-
-    // Unordered list
-    const ulMatch = line.match(/^(\s*)[-*+]\s+(.+)/);
-    if (ulMatch) {
-      if (!inList || listTag !== "ul") {
-        if (inList) htmlLines.push(`</${listTag}>`);
-        htmlLines.push("<ul>");
-        inList = true;
-        listTag = "ul";
-      }
-      htmlLines.push(`<li>${inlineFormat(ulMatch[2])}</li>`);
-      continue;
-    }
-
-    // Ordered list
-    const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
-    if (olMatch) {
-      if (!inList || listTag !== "ol") {
-        if (inList) htmlLines.push(`</${listTag}>`);
-        htmlLines.push("<ol>");
-        inList = true;
-        listTag = "ol";
-      }
-      htmlLines.push(`<li>${inlineFormat(olMatch[2])}</li>`);
-      continue;
-    }
-
-    // Paragraph
-    htmlLines.push(`<p>${inlineFormat(line)}</p>`);
-  }
-
-  if (inCodeBlock) htmlLines.push("</code></pre>");
-  if (inList) htmlLines.push(`</${listTag}>`);
-
-  return htmlLines.join("\n");
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function inlineFormat(text: string): string {
-  let result = escapeHtml(text);
-  // Bold
-  result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  result = result.replace(/__(.+?)__/g, "<strong>$1</strong>");
-  // Italic
-  result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  result = result.replace(/_(.+?)_/g, "<em>$1</em>");
-  // Strikethrough
-  result = result.replace(/~~(.+?)~~/g, "<del>$1</del>");
-  // Highlight
-  result = result.replace(/==(.+?)==/g, "<mark>$1</mark>");
-  // Inline code
-  result = result.replace(/`([^`]+)`/g, "<code>$1</code>");
-  // Wikilinks
-  result = result.replace(
-    /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g,
-    (_match, target, alias) =>
-      `<span class="journal-scroll__wikilink">${alias || target}</span>`,
-  );
-  // Markdown links
-  result = result.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" class="journal-scroll__link">$1</a>',
-  );
-  // Tags
-  result = result.replace(
-    /(?:^|\s)(#[a-zA-Z][\w/-]*)/g,
-    ' <span class="journal-scroll__tag">$1</span>',
-  );
-  return result;
-}
 
 export default JournalScrollView;

@@ -7,9 +7,20 @@ import { createSignal } from "solid-js";
 
 const STORAGE_KEY = "inkycap.layout";
 
-export type RightPanelTab = "properties" | "outline" | "links" | "references";
+export type RightPanelTab =
+  | "properties"
+  | "outline"
+  | "links"
+  | "references"
+  | "scroll-context";
 
-const RIGHT_PANEL_TABS: readonly RightPanelTab[] = ["properties", "outline", "links", "references"];
+const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
+  "properties",
+  "outline",
+  "links",
+  "references",
+  "scroll-context",
+];
 
 interface LayoutState {
   leftWidth: number;
