@@ -1073,6 +1073,14 @@ export async function listSystemFonts(): Promise<string[]> {
   return invoke<string[]>("list_system_fonts");
 }
 
+export async function systemFontDefaults(): Promise<{
+  sans: string;
+  serif: string;
+  mono: string;
+}> {
+  return invoke("system_font_defaults");
+}
+
 // Markdown conversion
 
 export async function convertMarkdownToTypst(

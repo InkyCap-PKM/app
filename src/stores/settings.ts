@@ -51,6 +51,7 @@ const DEFAULTS: UserSettings = {
     zettelkasten_enabled: true,
     zid_pattern: "YYYYMMDDHHmmss",
     auto_title_as_zid: false,
+    show_file_extensions: false,
   },
   startup: {
     behavior: "last-file",
@@ -75,6 +76,13 @@ const DEFAULTS: UserSettings = {
     text_font: null,
     text_size: null,
     page_size: null,
+  },
+  fonts: {
+    interface: { mode: "system", custom: "" },
+    editor: { mode: "system", custom: "" },
+    monospace: { mode: "system", custom: "" },
+    text: { mode: "bundled", custom: "" },
+    verse: { mode: "follow", custom: "" },
   },
 };
 

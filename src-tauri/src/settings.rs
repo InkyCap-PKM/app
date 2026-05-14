@@ -160,6 +160,10 @@ pub struct FileSettings {
     /// When true, new notes are automatically titled with the generated ZID
     /// instead of prompting the user for a title.
     pub auto_title_as_zid: bool,
+    /// When true, the file tree shows filename extensions (e.g. "note.typ").
+    /// When false (default), the trailing `.<ext>` is stripped from file
+    /// nodes (directories are unaffected).
+    pub show_file_extensions: bool,
 }
 
 impl Default for FileSettings {
@@ -174,6 +178,7 @@ impl Default for FileSettings {
             zettelkasten_enabled: true,
             zid_pattern: "YYYYMMDDHHmmss".to_string(),
             auto_title_as_zid: false,
+            show_file_extensions: false,
         }
     }
 }
@@ -248,11 +253,15 @@ impl Default for CitationSettings {
 }
 
 /// Document defaults — Typst-facing settings that affect compilation,
-/// reading view, and export. `None` means "use Typst's built-in default".
+/// reading view, and export.
+///
+/// Note: `text_font` is migrated into `UserSettings.fonts.text` at load
+/// time but kept on the struct so older settings.json files still
+/// deserialize. New code should consult `UserSettings.fonts` instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DocumentDefaults {
-    /// Text font family name (e.g. "Linux Libertine"). None = Typst default.
+    /// Legacy text font field. Migrated into `UserSettings.fonts.text`.
     pub text_font: Option<String>,
     /// Text size in points (e.g. 11.0). None = Typst default (11pt).
     pub text_size: Option<f64>,
@@ -266,6 +275,72 @@ impl Default for DocumentDefaults {
             text_font: None,
             text_size: None,
             page_size: None,
+        }
+    }
+}
+
+/// One font role's selection. See module-level docs on `FontSettings`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct FontChoice {
+    /// `"system"` | `"bundled"` | `"typst-default"` | `"follow"` | `"custom"`.
+    pub mode: String,
+    /// Family name used when `mode == "custom"`. Empty otherwise.
+    pub custom: String,
+}
+
+impl FontChoice {
+    pub const SYSTEM: &'static str = "system";
+    pub const BUNDLED: &'static str = "bundled";
+    pub const TYPST_DEFAULT: &'static str = "typst-default";
+    pub const FOLLOW: &'static str = "follow";
+    pub const CUSTOM: &'static str = "custom";
+
+    pub fn system() -> Self {
+        Self { mode: Self::SYSTEM.into(), custom: String::new() }
+    }
+    pub fn bundled() -> Self {
+        Self { mode: Self::BUNDLED.into(), custom: String::new() }
+    }
+    pub fn follow() -> Self {
+        Self { mode: Self::FOLLOW.into(), custom: String::new() }
+    }
+    pub fn custom(name: impl Into<String>) -> Self {
+        Self { mode: Self::CUSTOM.into(), custom: name.into() }
+    }
+}
+
+impl Default for FontChoice {
+    fn default() -> Self {
+        Self::system()
+    }
+}
+
+/// Font configuration. Each role picks one of System / Bundled / Custom
+/// (plus role-specific extras: text adds "typst-default"; editor adds
+/// "follow" interface; verse adds "follow" text). Resolution to a
+/// concrete family name happens at the boundary (CSS for interface/editor;
+/// Typst injection for mono/text/verse).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FontSettings {
+    pub interface: FontChoice,
+    pub editor: FontChoice,
+    pub monospace: FontChoice,
+    /// Compiled output / reading view body.
+    pub text: FontChoice,
+    /// `#verse(...)` body. Default mode "follow" inherits Text.
+    pub verse: FontChoice,
+}
+
+impl Default for FontSettings {
+    fn default() -> Self {
+        Self {
+            interface: FontChoice::system(),
+            editor: FontChoice::system(),
+            monospace: FontChoice::system(),
+            text: FontChoice::bundled(),
+            verse: FontChoice::follow(),
         }
     }
 }
@@ -297,6 +372,7 @@ pub struct UserSettings {
     pub citations: CitationSettings,
     pub export: ExportSettings,
     pub document: DocumentDefaults,
+    pub fonts: FontSettings,
 }
 
 // --- Persistence ---
@@ -355,6 +431,48 @@ pub fn load_settings() -> UserSettings {
         {
             settings.appearance.bg_palette_light = legacy.clone();
             settings.appearance.bg_palette_dark = legacy;
+        }
+    }
+
+    // Drop legacy editor "follow" mode — the option was removed from
+    // the UI. Inherit the interface choice so the user's effective
+    // editor font stays the same across the upgrade.
+    if settings.fonts.editor.mode == FontChoice::FOLLOW {
+        settings.fonts.editor = settings.fonts.interface.clone();
+    }
+
+    // Migrate legacy flat font fields into structured FontSettings. Only
+    // fires when the new `fonts` block was absent from the file (detected
+    // by it landing at exact-default). A user with the new block already
+    // present is respected verbatim.
+    let has_fonts_block = parsed_raw
+        .as_ref()
+        .and_then(|v| v.get("fonts"))
+        .is_some();
+    if !has_fonts_block {
+        let appearance_default = AppearanceSettings::default();
+        let editor_default = EditorSettings::default();
+
+        if settings.appearance.interface_font != appearance_default.interface_font {
+            settings.fonts.interface = FontChoice::custom(&settings.appearance.interface_font);
+        }
+        if settings.editor.body_font_family != editor_default.body_font_family
+            && settings.editor.body_font_family != settings.appearance.interface_font
+        {
+            settings.fonts.editor = FontChoice::custom(&settings.editor.body_font_family);
+        }
+        if settings.appearance.monospace_font != appearance_default.monospace_font {
+            settings.fonts.monospace = FontChoice::custom(&settings.appearance.monospace_font);
+        }
+        if let Some(ref f) = settings.document.text_font {
+            if !f.is_empty() {
+                settings.fonts.text = FontChoice::custom(f);
+            }
+        }
+        if let Some(ref f) = settings.editor.verse_font {
+            if !f.is_empty() {
+                settings.fonts.verse = FontChoice::custom(f);
+            }
         }
     }
 

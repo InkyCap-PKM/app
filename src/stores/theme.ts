@@ -105,6 +105,34 @@ export function applyMonospaceFont(font: string) {
   document.documentElement.style.setProperty("--editor-font-mono", font);
 }
 
+/** Apply editor (body) font as a CSS custom property. */
+export function applyEditorFont(font: string) {
+  document.documentElement.style.setProperty("--md-body-font", font);
+}
+
+/**
+ * Resolve the four CSS-facing roles from `FontSettings` (using cached
+ * OS defaults) and push them into the root CSS variables.
+ */
+export async function applyFontSettings(fonts: import("../lib/types").FontSettings) {
+  const { resolveRole, getSystemFontDefaults } = await import("../lib/fontResolver");
+  const sys = await getSystemFontDefaults();
+  const ui = resolveRole("interface", fonts, sys) ?? sys.sans;
+  const editor = resolveRole("editor", fonts, sys) ?? ui;
+  const mono = resolveRole("monospace", fonts, sys) ?? sys.mono;
+  // Verse: visual editor reads --verse-font; null = inherit body font,
+  // so clear the variable in that case.
+  const verse = resolveRole("verse", fonts, sys);
+  applyInterfaceFont(ui);
+  applyEditorFont(editor);
+  applyMonospaceFont(mono);
+  if (verse) {
+    document.documentElement.style.setProperty("--verse-font", verse);
+  } else {
+    document.documentElement.style.removeProperty("--verse-font");
+  }
+}
+
 /** Set up or tear down the system theme listeners. */
 function setupSystemListener(pref: ThemePreference) {
   // Remove old listeners
@@ -153,8 +181,7 @@ export function initTheme() {
   setupSystemListener(pref);
   applyTheme(resolveTheme(pref));
   applyAccent();
-  applyInterfaceFont(settings.appearance.interface_font);
-  applyMonospaceFont(settings.appearance.monospace_font);
+  applyFontSettings(settings.fonts);
 }
 
 /**

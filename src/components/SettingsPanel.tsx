@@ -12,7 +12,10 @@ import { Pencil, Check, X } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
+import { FontRoleRow, type FontRoleOption } from "./FontRoleRow";
 import { SettingCombobox } from "./SettingCombobox";
+import { BUNDLED_INTERFACE, BUNDLED_TEXT } from "../lib/fontResolver";
+import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
 import { showToast } from "../stores/toasts";
 import inkycapLogo from "../assets/inkycap-logo.svg";
@@ -621,6 +624,49 @@ const PAGE_SIZE_OPTIONS = [
 ];
 
 function AppearanceSettingsSection() {
+  const [sysDefaults] = createResource<SystemFontDefaults>(() => ipc.systemFontDefaults());
+
+  const updateFontChoice = (
+    role: "interface" | "editor" | "monospace" | "text" | "verse",
+    next: FontChoice,
+  ) => {
+    updateSetting("fonts", role, next);
+  };
+
+  const interfaceOptions = (): FontRoleOption[] => {
+    const sys = sysDefaults();
+    return [
+      { value: "system", label: sys ? `System (${sys.sans})` : "System" },
+      { value: "bundled", label: `InkyCap (${BUNDLED_INTERFACE})` },
+      { value: "custom", label: "Custom…" },
+    ];
+  };
+  const editorOptions = (): FontRoleOption[] => {
+    const sys = sysDefaults();
+    return [
+      { value: "system", label: sys ? `System (${sys.sans})` : "System" },
+      { value: "bundled", label: `InkyCap (${BUNDLED_INTERFACE})` },
+      { value: "custom", label: "Custom…" },
+    ];
+  };
+  const monoOptions = (): FontRoleOption[] => {
+    const sys = sysDefaults();
+    return [
+      { value: "system", label: sys ? `System (${sys.mono})` : "System" },
+      { value: "custom", label: "Custom…" },
+    ];
+  };
+  const textOptions = (): FontRoleOption[] => [
+    { value: "bundled", label: `InkyCap (${BUNDLED_TEXT})` },
+    { value: "typst-default", label: "Typst default" },
+    { value: "custom", label: "Custom…" },
+  ];
+  const verseOptions = (): FontRoleOption[] => [
+    { value: "follow", label: "Follow Text font" },
+    { value: "bundled", label: `InkyCap (${BUNDLED_TEXT})` },
+    { value: "custom", label: "Custom…" },
+  ];
+
   return (
     <div class="settings__section">
       {/* InkyCap Appearance */}
@@ -664,26 +710,20 @@ function AppearanceSettingsSection() {
       />
       <AccentSettingRow />
 
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">Interface font</label>
-          <span class="settings__description">Font for sidebars, menus, and UI elements</span>
-        </div>
-        <FontPicker
-          value={settings.appearance.interface_font}
-          onChange={(v) => updateSetting("appearance", "interface_font", v)}
-        />
-      </div>
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">Editor font</label>
-          <span class="settings__description">Font for note content</span>
-        </div>
-        <FontPicker
-          value={settings.editor.body_font_family}
-          onChange={(v) => updateSetting("editor", "body_font_family", v)}
-        />
-      </div>
+      <FontRoleRow
+        label="Interface font"
+        description="Font for sidebars, menus, and UI elements."
+        options={interfaceOptions()}
+        choice={settings.fonts.interface}
+        onChange={(c) => updateFontChoice("interface", c)}
+      />
+      <FontRoleRow
+        label="Editor font"
+        description="Font for the note content area."
+        options={editorOptions()}
+        choice={settings.fonts.editor}
+        onChange={(c) => updateFontChoice("editor", c)}
+      />
       <SettingCombobox
         label="Editor font size"
         description="Font size for note content in pixels"
@@ -693,32 +733,19 @@ function AppearanceSettingsSection() {
         max={32}
         onChange={(v) => updateSetting("editor", "body_font_size", v)}
       />
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">Monospace font</label>
-          <span class="settings__description">Font for code blocks</span>
-        </div>
-        <FontPicker
-          value={settings.appearance.monospace_font}
-          onChange={(v) => updateSetting("appearance", "monospace_font", v)}
-        />
-      </div>
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">Verse font</label>
-          <span class="settings__description">Optional override for #verse blocks. Empty = follow editor / output text font.</span>
-        </div>
-        <FontPicker
-          value={settings.editor.verse_font ?? ""}
-          onChange={(v) => updateSetting("editor", "verse_font", v.trim() === "" ? null : v)}
-          placeholder="(follow editor / output font)"
-        />
-      </div>
-      <SettingToggle
-        label="Apply verse font to reading view and output"
-        description="When off, the verse font is visual-editor-only; reading view and exports use the regular text font."
-        value={settings.editor.apply_verse_font_to_output}
-        onChange={(v) => updateSetting("editor", "apply_verse_font_to_output", v)}
+      <FontRoleRow
+        label="Monospace font"
+        description="Font for code blocks in the editor and compiled output."
+        options={monoOptions()}
+        choice={settings.fonts.monospace}
+        onChange={(c) => updateFontChoice("monospace", c)}
+      />
+      <FontRoleRow
+        label="Verse font"
+        description="Font used inside #verse(…) blocks. Defaults to follow Text."
+        options={verseOptions()}
+        choice={settings.fonts.verse}
+        onChange={(c) => updateFontChoice("verse", c)}
       />
       <SettingCombobox
         label="User interface scale"
@@ -789,17 +816,14 @@ function AppearanceSettingsSection() {
         onChange={(v) => updateSetting("editor", "show_inline_tags", v)}
       />
 
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <label class="settings__label">Text font</label>
-          <span class="settings__description">Font for compiled documents. Leave empty for Typst default.</span>
-        </div>
-        <FontPicker
-          value={settings.document.text_font ?? ""}
-          onChange={(v) => updateSetting("document", "text_font", v || null)}
-          placeholder="Linux Libertine (default)"
-        />
-      </div>
+      <FontRoleRow
+        label="Text font"
+        description="Font for compiled documents (reading view, exports)."
+        options={textOptions()}
+        choice={settings.fonts.text}
+        onChange={(c) => updateFontChoice("text", c)}
+        customPlaceholder="Family name (e.g. EB Garamond)"
+      />
       <SettingCombobox
         label="Text size"
         description="Base text size for compiled documents in points"
@@ -868,6 +892,12 @@ function FileSettingsSection() {
         description="Show a confirmation dialog before deleting files"
         value={settings.files.confirm_before_delete}
         onChange={(v) => updateSetting("files", "confirm_before_delete", v)}
+      />
+      <SettingToggle
+        label="Display filename extensions in file tree"
+        description="When off, file names appear without their trailing extension (e.g. .typ). Folders are always shown verbatim."
+        value={settings.files.show_file_extensions}
+        onChange={(v) => updateSetting("files", "show_file_extensions", v)}
       />
 
       {/* Zettelkasten IDs */}

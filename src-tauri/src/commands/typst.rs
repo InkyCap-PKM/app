@@ -167,9 +167,8 @@ pub async fn compile_typst_html(
 /// `#set` rules later in the document win over both.
 pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
     let settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_show_call(
-        &settings.document,
-        &settings.appearance.monospace_font,
+    let defaults_rules = style_injection::build_defaults_show_call_resolved(
+        &settings,
     );
 
     let collection_rules = resolve_collection_style(note_path, state).await;
@@ -239,16 +238,16 @@ pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> St
     let settings = state.settings.read().await;
     let show_tags = settings.editor.show_inline_tags;
     let show_wikilinks = settings.editor.show_inline_wikilinks;
-    let verse_font = if settings.editor.apply_verse_font_to_output {
-        settings
-            .editor
-            .verse_font
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-    } else {
+    // Verse font is injected only when the user picked something other
+    // than "follow" — "follow" mode lets lib.typ default to the text
+    // font, so omitting the directive is correct.
+    let verse_font = if settings.fonts.verse.mode == crate::settings::FontChoice::FOLLOW {
         None
+    } else {
+        crate::font_resolver::resolve_role(
+            crate::font_resolver::FontRole::Verse,
+            &settings.fonts,
+        )
     };
 
     if show_tags && show_wikilinks && verse_font.is_none() {

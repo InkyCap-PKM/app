@@ -28,6 +28,11 @@ impl FontSlot {
 /// Load every embedded font from `typst-assets` into a `FontBook` plus a
 /// parallel `Vec<FontSlot>` indexed identically. Typst calls
 /// `World::font(index)` against indices into this vec.
+///
+/// Also includes any TTF/OTF files baked into the binary under
+/// `src-tauri/assets/fonts/` via `include_bytes!`. These are the
+/// InkyCap-bundled fonts (Inter, Iosevka Sans, Junicode, Atkinson
+/// Hyperlegible Next) which the resolver references by family name.
 pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
     let mut book = FontBook::new();
     let mut slots = Vec::new();
@@ -42,7 +47,38 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
         }
     }
 
+    for data in inkycap_bundled_fonts() {
+        let buffer = Bytes::new(data);
+        for font in Font::iter(buffer) {
+            book.push(font.info().clone());
+            slots.push(FontSlot {
+                font: OnceLock::from(Some(font)),
+            });
+        }
+    }
+
     (book, slots)
+}
+
+/// Static byte slices for fonts shipped with InkyCap. The files live
+/// under `src-tauri/assets/fonts/` and are `include_bytes!`'d at compile
+/// time. Placeholder zero-byte files are kept in source control until
+/// real font binaries are committed — `Font::iter` on an empty buffer
+/// yields nothing, so the bundling path stays inert until populated.
+/// To add a new face, drop the TTF/OTF under that directory and append
+/// an entry to this list.
+fn inkycap_bundled_fonts() -> &'static [&'static [u8]] {
+    static FONTS: &[&[u8]] = &[
+        include_bytes!("../../assets/fonts/Inter-Regular.ttf"),
+        include_bytes!("../../assets/fonts/Inter-Italic.ttf"),
+        include_bytes!("../../assets/fonts/Inter-Bold.ttf"),
+        include_bytes!("../../assets/fonts/Inter-BoldItalic.ttf"),
+        include_bytes!("../../assets/fonts/Junicode-Regular.ttf"),
+        include_bytes!("../../assets/fonts/Junicode-Italic.ttf"),
+        include_bytes!("../../assets/fonts/Junicode-Bold.ttf"),
+        include_bytes!("../../assets/fonts/Junicode-BoldItalic.ttf"),
+    ];
+    FONTS
 }
 
 /// Load fonts from the operating system's standard font directories.

@@ -37,7 +37,7 @@ pub async fn export_collection_static_site(
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create output dir: {}", e)))?;
 
     let app_settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_show_call(&app_settings.document, &app_settings.appearance.monospace_font);
+    let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 

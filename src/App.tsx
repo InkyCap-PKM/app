@@ -29,7 +29,7 @@ import PromptHost from "./components/PromptHost";
 import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initVault } from "./stores/vault";
-import { initTheme, applyMonospaceFont, applyInterfaceFont } from "./stores/theme";
+import { initTheme, applyFontSettings } from "./stores/theme";
 import { initSettings, onSettingsChange, settings, updateSetting, flushSettingsSave } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
@@ -146,8 +146,7 @@ const App: Component = () => {
     await initSettings();
     applyUiScale(settings.editor.font_size);
     onSettingsChange((s) => applyUiScale(s.editor.font_size));
-    onSettingsChange((s) => applyMonospaceFont(s.appearance.monospace_font));
-    onSettingsChange((s) => applyInterfaceFont(s.appearance.interface_font));
+    onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
     await initVault();
     await applyStartupBehavior();
