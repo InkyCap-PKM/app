@@ -38,6 +38,9 @@ import { setActiveEditorView } from "../stores/editor";
 import { readingFormat, setReadingFormat } from "../stores/reading-format";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
+import { isEnabled as isScrollEnabled } from "../stores/journal-scroll";
+import JournalScrollPill from "./JournalScrollPill";
+import JournalScrollView from "./JournalScrollView";
 
 export interface TypstEditorProps {
   path: string;
@@ -669,8 +672,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           </button>
         </div>
 
+        <div class="editor-header__center">
+          <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+        </div>
+
         <div class="editor-header__right-group">
-        <Show when={currentMode() === "reading"}>
+        <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <button
             type="button"
             class="editor-header__reading-format-btn"
@@ -695,6 +702,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             </Show>
           </button>
         </Show>
+        <Show when={!isScrollEnabled(props.tabId)}>
         <div class="editor-header__mode-toggle" role="group" aria-label="Editing mode">
           <button
             type="button"
@@ -736,11 +744,16 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             </svg>
           </button>
         </div>
+        </Show>
         </div>
       </div>
       </Show>
 
-      <Show when={currentMode() === "source" || currentMode() === "live"}>
+      <Show when={isScrollEnabled(props.tabId)}>
+        <JournalScrollView tabId={props.tabId} anchorPath={props.path} />
+      </Show>
+
+      <Show when={!isScrollEnabled(props.tabId) && (currentMode() === "source" || currentMode() === "live")}>
         <div
           class="typst-editor"
           ref={(el) => {
@@ -752,7 +765,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         />
       </Show>
 
-      <Show when={currentMode() === "reading"}>
+      <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
         <Show when={readingFormat() === "svg"} fallback={
           <TypstHtmlReadingView
             result={htmlResult()}

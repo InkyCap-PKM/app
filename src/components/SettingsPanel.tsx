@@ -576,12 +576,12 @@ function EditorSettingsSection() {
         <span class="settings__label">Journal Scroll</span>
       </div>
       <SettingSelect
-        label="Date sort"
-        description="How dates are determined in Journal Scroll Date mode"
+        label="Sort by"
+        description="Sort axis applied to every Journal Scroll mode (Date, Tree, Properties)"
         value={settings.journal_scroll.date_sort}
         options={[
-          { value: "created", label: "Date Created" },
-          { value: "modified", label: "Date Modified" },
+          { value: "created", label: "Date created" },
+          { value: "modified", label: "Date modified" },
           { value: "zid", label: "ZID (YYYYMMDDHHmmss)" },
         ]}
         onChange={(v) =>
@@ -593,12 +593,12 @@ function EditorSettingsSection() {
         }
       />
       <SettingSelect
-        label="Tree scope"
-        description="How files are selected in Journal Scroll Tree mode"
+        label="Tree mode scope"
+        description="Whether Tree mode includes notes from subfolders of the anchor"
         value={settings.journal_scroll.tree_scope}
         options={[
-          { value: "folder", label: "Folder Only" },
-          { value: "recursive", label: "Recursive Tree" },
+          { value: "folder", label: "Anchor folder only" },
+          { value: "recursive", label: "Anchor folder + subfolders" },
         ]}
         onChange={(v) =>
           updateSetting(

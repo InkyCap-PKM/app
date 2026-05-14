@@ -24,7 +24,9 @@ import type {
   SnapshotInfo,
   FlowData,
   PropertyType,
-  JournalScrollEntry,
+  ConnectionFlags,
+  ScrollEntry,
+  ScrollQuery,
   TypstCompileResult,
   TypstHtmlResult,
   BibEntry,
@@ -1157,18 +1159,18 @@ export async function exportCollectionBatchMarkdown(
 
 // Journal Scroll
 
-export async function getJournalScrollFiles(
-  anchorPath: string,
-  mode: string,
-  config: { date_sort?: string; tree_scope?: string },
-  offset: number,
-  limit: number,
-): Promise<JournalScrollEntry[]> {
-  return invoke<JournalScrollEntry[]>("get_journal_scroll_files", {
-    anchorPath,
-    mode,
-    config,
-    offset,
-    limit,
+export async function runScrollQuery(
+  query: ScrollQuery,
+): Promise<ScrollEntry[]> {
+  return invoke<ScrollEntry[]>("run_scroll_query", { query });
+}
+
+export async function computeConnectionFlags(
+  anchor: string,
+  paths: string[],
+): Promise<ConnectionFlags[]> {
+  return invoke<ConnectionFlags[]>("compute_connection_flags", {
+    anchor,
+    paths,
   });
 }

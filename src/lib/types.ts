@@ -341,9 +341,62 @@ export interface UserSettings {
   fonts: FontSettings;
 }
 
-export interface JournalScrollEntry {
+// ============================================================================
+// Journal Scroll — ScrollQuery primitive.
+//
+// Mirrors `src-tauri/src/commands/journal_scroll.rs`. The pill exposes a
+// curated subset (Date / Tree / Properties); LinkedFrom, LinkedTo, and
+// PropertyAny are used by the right-panel sub-panes and wikilink routing.
+// ============================================================================
+
+export type PropertyValueJson =
+  | string
+  | number
+  | boolean
+  | PropertyValueJson[]
+  | null;
+
+export type SortDir = "asc" | "desc";
+
+export type ScrollFilter =
+  | { kind: "all" }
+  | { kind: "folder"; path: string; recursive: boolean }
+  | { kind: "property_eq"; name: string; value: PropertyValueJson }
+  | { kind: "property_any"; name: string }
+  | { kind: "linked_from"; source: string }
+  | { kind: "linked_to"; target: string };
+
+export type ScrollSort =
+  | { kind: "property"; name: string; direction: SortDir }
+  | { kind: "title"; direction: SortDir }
+  | { kind: "zid" };
+
+export interface ScrollQuery {
+  filter: ScrollFilter;
+  sort: ScrollSort;
+  anchor: string;
+  /** Signed offset relative to the anchor in the sorted result. */
+  offset: number;
+  limit: number;
+}
+
+export interface ScrollEntry {
   path: string;
   title: string;
+}
+
+/** @deprecated use `ScrollEntry` directly. */
+export type JournalScrollEntry = ScrollEntry;
+
+/** Connection of an entry to the scroll's anchor. Drives the
+ *  `journal-scroll__entry--*` accent-strip CSS classes when the pill's
+ *  Connections toggle is on. */
+export interface ConnectionFlags {
+  path: string;
+  is_anchor: boolean;
+  links_to_anchor: boolean;
+  linked_from_anchor: boolean;
+  shares_tags: boolean;
 }
 
 // Search types

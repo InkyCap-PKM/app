@@ -367,7 +367,25 @@
     } else if _show-inline-wikilinks.get() {
       let dest = name + ".typ"
       if label != none { dest = dest + "#" + label }
-      link(dest)[#text(fill: rgb("#3b82f6"), shown)]
+      // In HTML target, emit an explicit `<a>` with `class` and
+      // `data-target` so the Journal Scroll view (and any future HTML
+      // surface) can intercept clicks and route them — Typst's built-in
+      // `link()` produces an `<a href>` but no way to attach our class
+      // or carry the raw wikilink name through. The paged/SVG path keeps
+      // the standard `link()` so PDF export keeps its native behaviour.
+      if target() == "html" {
+        html.elem(
+          "a",
+          attrs: (
+            class: "inkycap-wikilink",
+            href: dest,
+            "data-target": name,
+          ),
+          text(fill: rgb("#3b82f6"), shown),
+        )
+      } else {
+        link(dest)[#text(fill: rgb("#3b82f6"), shown)]
+      }
     } else if display != none {
       [#display]
     }
