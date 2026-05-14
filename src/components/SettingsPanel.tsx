@@ -1335,7 +1335,7 @@ function BehaviourSettingsSection() {
         description="What to open when InkyCap launches"
         value={settings.startup.behavior}
         options={[
-          { value: "default", label: "Default" },
+          { value: "default", label: "Tabula rasa (file tree)" },
           { value: "last-file", label: "Last opened file" },
           { value: "creation-rule", label: "Run a Creation Rule" },
           { value: "specific-page", label: "Open a specific page" },

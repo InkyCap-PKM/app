@@ -1,5 +1,5 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { type ChangeSpec } from "@codemirror/state";
+import { StateField, type ChangeSpec, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 
 /* ── Inline format actions (always-visible buttons) ─────── */
@@ -491,9 +491,29 @@ function applyWrap(view: EditorView, before: string, after: string) {
   view.focus();
 }
 
+/* ── User-gesture gate ───────────────────────────────────── */
+
+// Tracks whether the current non-empty selection was produced by an explicit
+// user gesture (mouse drag, double/triple-click, shift+arrow, etc.) versus a
+// programmatic dispatch (search reveal, "go to line", reveal-by-label, …).
+// CM6 tags pointer- and keyboard-driven selection transactions with a
+// `select.*` userEvent; everything else is treated as programmatic. The flag
+// is preserved across doc edits so that clicking a toolbar button (which
+// dispatches changes + a new selection without a userEvent) does not dismiss
+// the toolbar mid-format.
+const userSelectionField = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    if (tr.newSelection.main.empty) return false;
+    if (tr.isUserEvent("select")) return true;
+    if (tr.selection && !tr.docChanged) return false;
+    return value;
+  },
+});
+
 /* ── CM6 ViewPlugin ─────────────────────────────────────── */
 
-export const selectionToolbar = ViewPlugin.fromClass(
+const selectionToolbarPlugin = ViewPlugin.fromClass(
   class {
     private hideTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -514,7 +534,7 @@ export const selectionToolbar = ViewPlugin.fromClass(
       }
 
       const { from, to } = view.state.selection.main;
-      if (from === to) {
+      if (from === to || !view.state.field(userSelectionField)) {
         this.hideTimeout = setTimeout(() => hideToolbar(), 100);
       } else {
         requestAnimationFrame(() => showToolbar(view));
@@ -527,3 +547,8 @@ export const selectionToolbar = ViewPlugin.fromClass(
     }
   },
 );
+
+export const selectionToolbar: Extension = [
+  userSelectionField,
+  selectionToolbarPlugin,
+];

@@ -347,7 +347,8 @@ svg.lucide {
   height: var(--icon-sm);
 }
 
-.sidebar-item__icon {
+.sidebar-item__icon,
+.search-panel__group-chevron {
   flex-shrink: 0;
   font-size: var(--text-base);
   color: var(--fg-muted);
@@ -2924,23 +2925,10 @@ svg.lucide {
 }
 
 .search-panel__group-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
   background: none;
   border: none;
-  color: var(--fg-muted);
   cursor: pointer;
   padding: 0;
-  border-radius: 3px;
-  flex: 0 0 auto;
-}
-
-.search-panel__group-chevron:hover {
-  color: var(--fg-primary);
-  background: var(--bg-secondary);
 }
 
 .search-panel__file-label {
@@ -3086,10 +3074,6 @@ svg.lucide {
   align-items: center;
   gap: 6px;
   position: relative;
-}
-
-.search-panel__status-count {
-  flex: 0 0 auto;
 }
 
 .search-panel__overflow-btn,

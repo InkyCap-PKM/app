@@ -49,6 +49,10 @@ pub struct TextProjection {
     /// Heading text (lowercased) collected from every `Heading` node,
     /// for the `section:` filter.
     pub headings: Vec<String>,
+    /// Text (lowercased) of the document's first level-1 heading (`= …`),
+    /// if any. Used as a fallback signal for the title-match relevance
+    /// bonus when a note doesn't set `#note(title: …)`.
+    pub first_h1: Option<String>,
 }
 
 /// Walk the parsed AST and produce a [`TextProjection`].
@@ -94,7 +98,18 @@ fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextP
             let heading_text = collect_text_within(node);
             let trimmed = heading_text.trim();
             if !trimmed.is_empty() {
-                out.headings.push(trimmed.to_lowercase());
+                let lowered = trimmed.to_lowercase();
+                // Capture the first level-1 heading as a title-fallback.
+                // `ast::Heading::depth` returns the marker count (`=` = 1,
+                // `==` = 2, …), so we only latch on depth == 1.
+                if out.first_h1.is_none() {
+                    if let Some(heading) = node.cast::<ast::Heading>() {
+                        if heading.depth().get() == 1 {
+                            out.first_h1 = Some(lowered.clone());
+                        }
+                    }
+                }
+                out.headings.push(lowered);
             }
             // Fall through to default descent so the heading's words are
             // still emitted as searchable tokens.

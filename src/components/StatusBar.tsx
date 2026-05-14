@@ -1,5 +1,5 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
-import { ArchiveRestore, Archive, Check, Signpost } from "lucide-solid";
+import { ArchiveRestore, Archive, Check, TextCursorInput } from "lucide-solid";
 import { vaultInfo, vaultRegistry, openVault } from "../stores/vault";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { getActiveTab, closeTab, openTab } from "../stores/tabs";
@@ -160,7 +160,7 @@ const StatusBar: Component = () => {
                     title="Rename file"
                     aria-label="Rename file"
                   >
-                    <Signpost size={14} />
+                    <TextCursorInput size={14} />
                   </button>
                 </>
               }
@@ -195,7 +195,7 @@ const StatusBar: Component = () => {
                 title="Confirm rename"
                 aria-label="Confirm rename"
               >
-                <Signpost size={14} />
+                <TextCursorInput size={14} />
               </button>
             </Show>
           </span>
