@@ -29,7 +29,7 @@ const ICON_LINK = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" s
 const ICON_CODE = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 2 10 6 6"/><polyline points="14 6 18 10 14 14"/></svg>`;
 
 
-const ICON_VERSE = `<svg viewBox="0 0 32 32" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="28" height="3.5" rx="1" fill="currentColor" stroke="none"/><path d="M7.5 5.5H24.5L29 20V24.5C29 26.5 27.5 28 25.5 28H6.5C4.5 28 3 26.5 3 24.5V20Z" fill="currentColor" stroke="none"/><rect x="11" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="18" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="7" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="12" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="17" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="22" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><line x1="10" y1="23.5" x2="22" y2="23.5" stroke="var(--bg-active)" stroke-width="2.5"/></svg>`;
+const ICON_VERSE = `<svg viewBox="0 0 32 32" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="22" height="3.5" rx="1" fill="currentColor" stroke="none"/><path d="M7.5 5.5H24.5L29 20V24.5C29 26.5 27.5 28 25.5 28H6.5C4.5 28 3 26.5 3 24.5V20Z" fill="currentColor" stroke="none"/><rect x="11" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="18" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="7" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="12" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="17" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="22" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><line x1="10" y1="23.5" x2="22" y2="23.5" stroke="var(--bg-active)" stroke-width="2.5"/></svg>`;
 
 const ICON_ALIGN_LEFT = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="4" x2="17" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="17" y2="12"/><line x1="3" y1="16" x2="11" y2="16"/></svg>`;
 
@@ -106,12 +106,12 @@ const DROPDOWN_ITEMS: DropdownItem[] = [
   { label: "", separator: true, action: () => {} },
   {
     label: "Highlight",
-    icon: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none"><rect x="1" y="6" width="14" height="7" rx="1" fill="var(--accent-primary)" opacity="0.3"/><line x1="3" y1="9.5" x2="13" y2="9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+    icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
     action: (v) => wrapSelection(v, "#highlight[", "]"),
   },
   {
     label: "Callout",
-    icon: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/></svg>`,
+    icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg>`,
     action: (v) => wrapSelection(v, '#callout("note")[', "]"),
   },
   { label: "", separator: true, action: () => {} },

@@ -7,6 +7,7 @@ pub mod config;
 pub mod creation_rules;
 pub mod errors;
 pub mod events;
+pub mod font_resolver;
 pub mod link_index;
 pub mod markdown;
 pub mod models;
@@ -317,6 +318,7 @@ pub fn run() {
             commands::bibliography::get_bibliography_skip_count,
             commands::system_color::get_os_accent_color,
             commands::fonts::list_system_fonts,
+            commands::fonts::system_font_defaults,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

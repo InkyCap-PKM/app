@@ -1622,7 +1622,11 @@ const TreeNode: Component<{
                 <FileText size={14} />
               )}
             </span>
-            <span class="sidebar-item__label">{props.node.name}</span>
+            <span class="sidebar-item__label">{
+              props.node.is_dir || settings.files.show_file_extensions
+                ? props.node.name
+                : props.node.name.replace(/\.[^.]+$/, "")
+            }</span>
           </div>
         }
       >

@@ -271,6 +271,7 @@ export interface FileSettings {
   zettelkasten_enabled: boolean;
   zid_pattern: string;
   auto_title_as_zid: boolean;
+  show_file_extensions: boolean;
 }
 
 export interface CitationSettings {
@@ -297,9 +298,35 @@ export interface ExportSettings {
 }
 
 export interface DocumentDefaults {
+  /** Legacy text-font field. Migrated into `UserSettings.fonts.text` on load. */
   text_font: string | null;
   text_size: number | null;
   page_size: string | null;
+}
+
+export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
+
+export interface FontChoice {
+  mode: FontMode;
+  /** Family name when mode === "custom"; empty otherwise. */
+  custom: string;
+}
+
+export interface FontSettings {
+  interface: FontChoice;
+  /** Default mode "follow" inherits Interface. */
+  editor: FontChoice;
+  monospace: FontChoice;
+  /** Compiled output / reading view body. */
+  text: FontChoice;
+  /** `#verse(...)` body. Default mode "follow" inherits Text. */
+  verse: FontChoice;
+}
+
+export interface SystemFontDefaults {
+  sans: string;
+  serif: string;
+  mono: string;
 }
 
 export interface UserSettings {
@@ -311,6 +338,7 @@ export interface UserSettings {
   citations: CitationSettings;
   export: ExportSettings;
   document: DocumentDefaults;
+  fonts: FontSettings;
 }
 
 export interface JournalScrollEntry {

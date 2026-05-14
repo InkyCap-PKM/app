@@ -17,7 +17,8 @@
 //! The user's own `#set` rules in the document body come after all
 //! injections and naturally win via Typst's cascading semantics.
 
-use crate::settings::DocumentDefaults;
+use crate::font_resolver::{self, FontRole};
+use crate::settings::{DocumentDefaults, UserSettings};
 
 /// Sanitize a string value for safe embedding in a Typst quoted string literal.
 pub fn sanitize_typst_string(s: &str) -> String {
@@ -136,6 +137,23 @@ pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) ->
     }
 
     lines.join("\n")
+}
+
+/// Build defaults rules by resolving the user's `FontSettings` to
+/// concrete family names, then delegating to [`build_defaults_show_call`].
+/// This is the entry point new code should use; callers pass the full
+/// `UserSettings` and we resolve text + monospace internally.
+pub fn build_defaults_show_call_resolved(settings: &UserSettings) -> String {
+    let resolved_text = font_resolver::resolve_role(FontRole::Text, &settings.fonts);
+    let resolved_mono = font_resolver::resolve_role(FontRole::Monospace, &settings.fonts);
+
+    let doc = DocumentDefaults {
+        text_font: resolved_text,
+        text_size: settings.document.text_size,
+        page_size: settings.document.page_size.clone(),
+    };
+    let mono_str = resolved_mono.unwrap_or_default();
+    build_defaults_show_call(&doc, &mono_str)
 }
 
 /// Inject style rules into the source after the inkycap-vault import line.
