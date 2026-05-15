@@ -492,6 +492,13 @@ export async function moveFile(
   return invoke<string>("move_file", { oldPath, newFolder });
 }
 
+export async function moveFolder(
+  oldPath: string,
+  newParent: string,
+): Promise<string> {
+  return invoke<string>("move_folder", { oldPath, newParent });
+}
+
 export async function deleteFile(path: string): Promise<void> {
   return invoke<void>("delete_file", { path });
 }

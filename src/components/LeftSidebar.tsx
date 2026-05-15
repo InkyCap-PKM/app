@@ -14,7 +14,6 @@ import {
   Tags,
   Search,
   BookMarked,
-  Plus,
   FilePlus2,
   Folder,
   Upload,
@@ -50,6 +49,7 @@ import TemplatesPanel from "./TemplatesPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
+import { pickFolder } from "../stores/folderPicker";
 import { registerCommand, unregisterCommand } from "../lib/command-registry";
 
 interface LeftSidebarProps {
@@ -145,6 +145,33 @@ function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): S
   return acc;
 }
 
+/// "Library +" glyph for the New Collection button. lucide-solid has no
+/// library-plus icon, so this is a local SVG: the lucide `library-big`
+/// book spine with a plus mark in place of the second volume. Stroke
+/// styling matches lucide (currentColor, width 2, round caps) so it
+/// renders identically to the sibling toolbar icons.
+function LibraryPlusIcon(props: { size?: number }) {
+  return (
+    <svg
+      width={props.size ?? 18}
+      height={props.size ?? 18}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <rect width="8" height="18" x="3" y="3" rx="1" />
+      <path d="M7 3v18" />
+      <g transform="translate(5.2876713,6.0535492)">
+        <path d="m12 7v6" />
+        <path d="m9 10h6" />
+      </g>
+    </svg>
+  );
+}
+
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const mode = props.mode;
   const setMode = props.setMode;
@@ -159,12 +186,25 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
   const [showNewMenu, setShowNewMenu] = createSignal(false);
 
+  // File tree drag-and-drop: path of the directory (or "" for vault
+  // root) currently hovered as a move target, so the row can highlight.
+  const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
+
+  // Collections: sort mode + inline search filter. Sort reuses the File
+  // Tree options (name / modified / created) per product spec — the
+  // Tags/Properties "by quantity" options don't apply to collections.
+  const [collectionSortMode, setCollectionSortMode] = createSignal<FileSortMode>("name-asc");
+  const [showCollectionSortMenu, setShowCollectionSortMenu] = createSignal(false);
+  const [showCollectionSearch, setShowCollectionSearch] = createSignal(false);
+  const [collectionFilter, setCollectionFilter] = createSignal("");
+
   // Refs for panel-menu trigger buttons, used by anchorPanelMenu to place
   // each dropdown at fixed viewport coords (escapes left-sidebar's
   // overflow:hidden and flips off-screen positions).
   let fileSortBtnRef: HTMLButtonElement | undefined;
   let tagSortBtnRef: HTMLButtonElement | undefined;
   let propSortBtnRef: HTMLButtonElement | undefined;
+  let collectionSortBtnRef: HTMLButtonElement | undefined;
   let newMenuBtnRef: HTMLButtonElement | undefined;
 
   // Tags / Properties: sort mode + inline search filter. Each pane gets
@@ -211,6 +251,34 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (!tree) return [];
     const filtered = typstOnly() ? filterTypstFiles(tree) : tree;
     return sortFileTree(filtered, fileSortMode(), settings.appearance.folder_grouping);
+  });
+
+  /// Collections, filtered by the inline search box and ordered by the
+  /// chosen File-Tree-style sort mode. Date modes fall back gracefully
+  /// when a `.collection` file reports a zero (unknown) timestamp.
+  const sortedFilteredCollections = createMemo(() => {
+    const list = collections() ?? [];
+    const q = collectionFilter().trim().toLowerCase();
+    const filtered = q
+      ? list.filter((c) => c.name.toLowerCase().includes(q))
+      : list.slice();
+    const mode = collectionSortMode();
+    return filtered.sort((a, b) => {
+      switch (mode) {
+        case "name-asc":
+          return a.name.localeCompare(b.name);
+        case "name-desc":
+          return b.name.localeCompare(a.name);
+        case "modified-desc":
+          return b.modified_time - a.modified_time;
+        case "modified-asc":
+          return a.modified_time - b.modified_time;
+        case "created-desc":
+          return b.created_time - a.created_time;
+        case "created-asc":
+          return a.created_time - b.created_time;
+      }
+    });
   });
 
   function toggleDir(path: string) {
@@ -538,6 +606,69 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRefreshTick((t) => t + 1);
   }
 
+  /// MIME type carrying a file-tree node during an intra-sidebar move
+  /// drag. Distinct from `application/x-inkycap-vault-path` (which the
+  /// editor consumes to embed a file) so a tree move never registers as
+  /// an embed and vice versa.
+  const TREE_MOVE_MIME = "application/x-inkycap-tree-move";
+
+  /// Context-menu entry point: open the folder picker, then move the
+  /// node into the chosen folder. The picker is vault-scoped and hides
+  /// the node's own subtree (for folders) and current parent, so every
+  /// returned destination is a valid, non-trivial move.
+  async function moveNodeViaDialog(node: FileTreeNode) {
+    setFileContextMenu(null);
+    const root = vaultInfo()?.path ?? "";
+    const slash = node.path.lastIndexOf("/");
+    const currentParent = slash >= 0 ? node.path.slice(0, slash) : root;
+    const dest = await pickFolder({
+      title: node.is_dir ? "Move folder to..." : "Move file to...",
+      disallowPrefix: node.is_dir ? node.path : undefined,
+      currentParent,
+    });
+    if (dest == null) return;
+    const destDir = dest === "" ? root : `${root}/${dest}`;
+    moveNode({ path: node.path, is_dir: node.is_dir }, destDir);
+  }
+
+  /// Move a dragged file or folder into `destDir` (an absolute path, or
+  /// the vault root). Rejects no-op moves and folder-into-self up front;
+  /// the backend rebases relative asset paths and reindexes, and the
+  /// file watcher refreshes the tree — `refresh()` is belt-and-braces so
+  /// the move shows immediately even if the watcher event is debounced.
+  async function moveNode(
+    src: { path: string; is_dir: boolean },
+    destDir: string,
+  ) {
+    const root = vaultInfo()?.path ?? "";
+    const slash = src.path.lastIndexOf("/");
+    const srcParent = slash >= 0 ? src.path.slice(0, slash) : root;
+    if (srcParent === destDir) return; // already in that folder
+    if (
+      src.is_dir &&
+      (destDir === src.path || destDir.startsWith(src.path + "/"))
+    ) {
+      toastError("Cannot move a folder into itself");
+      return;
+    }
+    const destRel =
+      destDir === root || destDir === ""
+        ? ""
+        : destDir.startsWith(root + "/")
+          ? destDir.slice(root.length + 1)
+          : destDir;
+    try {
+      if (src.is_dir) {
+        await ipc.moveFolder(src.path, destRel);
+      } else {
+        await ipc.moveFile(src.path, destRel);
+      }
+      refresh();
+    } catch (e) {
+      toastError("Failed to move item", e);
+    }
+  }
+
   // ── Collection CRUD ──
 
   async function createCollection() {
@@ -847,21 +978,97 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         <Show when={mode() === "collections"}>
           <div class="left-sidebar__section-header">
             <span>Collections</span>
-            <button
-              class="left-sidebar__add-btn"
-              onClick={createCollection}
-              title="New collection"
-              aria-label="New collection"
-            >
-              <Plus size={18} />
-            </button>
+            <div class="left-sidebar__header-actions">
+              <div class="left-sidebar__sort-wrap">
+                <button
+                  ref={collectionSortBtnRef}
+                  class="left-sidebar__icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowCollectionSortMenu((v) => !v);
+                  }}
+                  title="Sort collections"
+                  aria-label="Sort collections"
+                >
+                  <ArrowDownNarrowWide size={18} />
+                </button>
+                <Show when={showCollectionSortMenu()}>
+                  <div
+                    class="context-menu"
+                    ref={(el) => anchorPanelMenu(collectionSortBtnRef, el)}
+                    onMouseLeave={() => setShowCollectionSortMenu(false)}
+                  >
+                    <For each={FILE_SORT_OPTIONS}>
+                      {(opt) => (
+                        <button
+                          classList={{
+                            "context-menu__item": true,
+                            "context-menu__item--active":
+                              collectionSortMode() === opt.value,
+                          }}
+                          onClick={() => {
+                            setCollectionSortMode(opt.value);
+                            setShowCollectionSortMenu(false);
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+              <button
+                class={`left-sidebar__icon-btn${showCollectionSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                onClick={() => {
+                  const next = !showCollectionSearch();
+                  setShowCollectionSearch(next);
+                  if (!next) setCollectionFilter("");
+                }}
+                title="Filter collections"
+                aria-label="Filter collections"
+                aria-pressed={showCollectionSearch()}
+              >
+                <Search size={14} />
+              </button>
+              <button
+                class="left-sidebar__add-btn"
+                onClick={createCollection}
+                title="New collection"
+                aria-label="New collection"
+              >
+                <LibraryPlusIcon size={18} />
+              </button>
+            </div>
           </div>
+          <Show when={showCollectionSearch()}>
+            <div class="left-sidebar__filter-wrap">
+              <input
+                class="left-sidebar__filter-input"
+                type="text"
+                placeholder="Filter collections..."
+                value={collectionFilter()}
+                onInput={(e) => setCollectionFilter(e.currentTarget.value)}
+                autofocus
+              />
+              <Show when={collectionFilter().length > 0}>
+                <button
+                  class="left-sidebar__filter-clear"
+                  onMouseDown={(e) => { e.preventDefault(); setCollectionFilter(""); }}
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                >
+                  <X size={12} />
+                </button>
+              </Show>
+            </div>
+          </Show>
           <Show
             when={!collections.loading}
             fallback={<p class="sidebar-hint">Loading...</p>}
           >
             <For
-              each={collections()}
+              each={sortedFilteredCollections()}
               fallback={<p class="sidebar-hint">No collections found</p>}
             >
               {(col) => (
@@ -1025,25 +1232,61 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             when={!fileTree.loading}
             fallback={<p class="sidebar-hint">Loading...</p>}
           >
-            <For each={filteredFileTree()}>
-              {(node) => (
-                <TreeNode
-                  node={node}
-                  onOpen={openFile}
-                  onContext={handleFileContext}
-                  renamingPath={fileRenamingPath()}
-                  renameValue={fileRenameValue()}
-                  onRenameInput={setFileRenameValue}
-                  onRenameCommit={commitFileRename}
-                  onRenameCancel={() => setFileRenamingPath(null)}
-                  activePath={getActiveTab()?.path ?? null}
-                  revealPath={revealPath()}
-                  vaultRoot={vaultInfo()?.path ?? ""}
-                  expandedDirs={expandedDirs}
-                  onToggleDir={toggleDir}
-                />
-              )}
-            </For>
+            {/* Root drop zone: a drag released outside any folder row
+                lands here and moves the item to the vault root. Rows
+                stop propagation on their own drag events, so this only
+                fires for the empty space / top-level area. */}
+            <div
+              classList={{
+                "left-sidebar__tree-root": true,
+                "left-sidebar__tree-root--drop-target":
+                  dragOverDir() === (vaultInfo()?.path ?? ""),
+              }}
+              onDragOver={(e) => {
+                if (!e.dataTransfer?.types.includes(TREE_MOVE_MIME)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDragOverDir(vaultInfo()?.path ?? "");
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget === e.target) setDragOverDir(null);
+              }}
+              onDrop={(e) => {
+                const raw = e.dataTransfer?.getData(TREE_MOVE_MIME);
+                setDragOverDir(null);
+                if (!raw) return;
+                e.preventDefault();
+                try {
+                  moveNode(JSON.parse(raw), vaultInfo()?.path ?? "");
+                } catch {
+                  /* malformed payload — ignore */
+                }
+              }}
+            >
+              <For each={filteredFileTree()}>
+                {(node) => (
+                  <TreeNode
+                    node={node}
+                    onOpen={openFile}
+                    onContext={handleFileContext}
+                    renamingPath={fileRenamingPath()}
+                    renameValue={fileRenameValue()}
+                    onRenameInput={setFileRenameValue}
+                    onRenameCommit={commitFileRename}
+                    onRenameCancel={() => setFileRenamingPath(null)}
+                    activePath={getActiveTab()?.path ?? null}
+                    revealPath={revealPath()}
+                    vaultRoot={vaultInfo()?.path ?? ""}
+                    expandedDirs={expandedDirs}
+                    onToggleDir={toggleDir}
+                    treeMoveMime={TREE_MOVE_MIME}
+                    dragOverDir={dragOverDir}
+                    setDragOverDir={setDragOverDir}
+                    onMoveNode={moveNode}
+                  />
+                )}
+              </For>
+            </div>
           </Show>
         </Show>
 
@@ -1516,6 +1759,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <div class="context-menu__separator" />
               <button
                 class="context-menu__item"
+                onClick={() => moveNodeViaDialog(node)}
+              >
+                {node.is_dir ? "Move folder to..." : "Move file to..."}
+              </button>
+              <button
+                class="context-menu__item"
                 onClick={() => startFileRename(node)}
               >
                 Rename
@@ -1552,6 +1801,17 @@ const TreeNode: Component<{
   /// `onToggleDir` callback.
   expandedDirs: () => Set<string>;
   onToggleDir: (path: string) => void;
+  /// Drag-to-move plumbing. `treeMoveMime` is the dataTransfer type that
+  /// carries the dragged node; `dragOverDir` / `setDragOverDir` track
+  /// which row is the current drop target so it can highlight; and
+  /// `onMoveNode` performs the move once a drop lands.
+  treeMoveMime: string;
+  dragOverDir: () => string | null;
+  setDragOverDir: (path: string | null) => void;
+  onMoveNode: (
+    src: { path: string; is_dir: boolean },
+    destDir: string,
+  ) => void;
   depth?: number;
 }> = (props) => {
   const depth = props.depth ?? 0;
@@ -1560,6 +1820,15 @@ const TreeNode: Component<{
   const isRenaming = () => props.renamingPath === props.node.path;
   const isActive = () =>
     !props.node.is_dir && props.activePath === props.node.path;
+
+  /// Folder a drop on this row moves the item into: the folder itself
+  /// for a directory row, or the containing folder for a file row.
+  const dropDest = () => {
+    if (props.node.is_dir) return props.node.path;
+    const slash = props.node.path.lastIndexOf("/");
+    return slash >= 0 ? props.node.path.slice(0, slash) : props.vaultRoot;
+  };
+  const isDropTarget = () => props.dragOverDir() === props.node.path;
 
   // Auto-expand directory if it's an ancestor of the reveal target
   const isAncestorOfReveal = () => {
@@ -1591,16 +1860,64 @@ const TreeNode: Component<{
         fallback={
           <div
             ref={itemRef}
-            class={`sidebar-item ${props.node.is_dir ? "sidebar-item--dir" : ""}${isActive() ? " sidebar-item--active" : ""}`}
+            classList={{
+              "sidebar-item": true,
+              "sidebar-item--dir": props.node.is_dir,
+              "sidebar-item--active": isActive(),
+              "sidebar-item--drop-target": isDropTarget(),
+            }}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
-            draggable={!props.node.is_dir}
+            draggable={true}
             onDragStart={(e) => {
-              if (props.node.is_dir) return;
-              const rel = props.node.path.startsWith(props.vaultRoot + "/")
-                ? props.node.path.slice(props.vaultRoot.length + 1)
-                : props.node.name;
-              e.dataTransfer!.setData("application/x-inkycap-vault-path", rel);
-              e.dataTransfer!.effectAllowed = "copy";
+              // Intra-sidebar move payload — files and folders alike.
+              e.dataTransfer!.setData(
+                props.treeMoveMime,
+                JSON.stringify({
+                  path: props.node.path,
+                  is_dir: props.node.is_dir,
+                }),
+              );
+              if (props.node.is_dir) {
+                e.dataTransfer!.effectAllowed = "move";
+              } else {
+                // Files can also be dropped into the editor to embed
+                // them, which reads this vault-relative-path payload.
+                const rel = props.node.path.startsWith(props.vaultRoot + "/")
+                  ? props.node.path.slice(props.vaultRoot.length + 1)
+                  : props.node.name;
+                e.dataTransfer!.setData("application/x-inkycap-vault-path", rel);
+                e.dataTransfer!.effectAllowed = "copyMove";
+              }
+            }}
+            onDragOver={(e) => {
+              if (!e.dataTransfer?.types.includes(props.treeMoveMime)) return;
+              // Claim this drag: preventDefault enables the drop, and
+              // stopPropagation keeps the root drop zone from also
+              // registering as the target.
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "move";
+              props.setDragOverDir(props.node.path);
+            }}
+            onDragLeave={(e) => {
+              if (
+                e.currentTarget === e.target &&
+                props.dragOverDir() === props.node.path
+              ) {
+                props.setDragOverDir(null);
+              }
+            }}
+            onDrop={(e) => {
+              const raw = e.dataTransfer?.getData(props.treeMoveMime);
+              props.setDragOverDir(null);
+              if (!raw) return;
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                props.onMoveNode(JSON.parse(raw), dropDest());
+              } catch {
+                /* malformed payload — ignore */
+              }
             }}
             onClick={(e) => {
               if (props.node.is_dir) {
@@ -1665,6 +1982,10 @@ const TreeNode: Component<{
               vaultRoot={props.vaultRoot}
               expandedDirs={props.expandedDirs}
               onToggleDir={props.onToggleDir}
+              treeMoveMime={props.treeMoveMime}
+              dragOverDir={props.dragOverDir}
+              setDragOverDir={props.setDragOverDir}
+              onMoveNode={props.onMoveNode}
               depth={depth + 1}
             />
           )}
