@@ -1,11 +1,12 @@
 import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import CitationRow from "./CitationRow";
 import { getActiveTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { t } from "../lib/i18n";
+import { anchorPanelMenu } from "../lib/uiMenu";
 
 const PAGE_SIZE = 50;
 
@@ -18,6 +19,21 @@ const VALID_SORT_KEYS: SortKey[] = [
 ];
 
 const SORT_PREF_KEY = "inkycap:references-panel:sort";
+
+/// Sort options for the Browse References menu, in display order. Rendered
+/// as an app-drawn `.context-menu` (see `anchorPanelMenu`) to match the
+/// left sidebar's File/Tag/Property sort menus — a native <select> popup
+/// is OS-themed and can't follow the InkyCap theme on WebKitGTK.
+const SORT_OPTIONS: { value: SortKey; i18nKey: string }[] = [
+  { value: "added-desc", i18nKey: "references.sort.addedNewest" },
+  { value: "added-asc", i18nKey: "references.sort.addedOldest" },
+  { value: "title-asc", i18nKey: "references.sort.titleAZ" },
+  { value: "title-desc", i18nKey: "references.sort.titleZA" },
+  { value: "author-asc", i18nKey: "references.sort.authorAZ" },
+  { value: "author-desc", i18nKey: "references.sort.authorZA" },
+  { value: "year-desc", i18nKey: "references.sort.yearNewest" },
+  { value: "year-asc", i18nKey: "references.sort.yearOldest" },
+];
 
 function nullsLast(
   a: string | null | undefined,
@@ -63,6 +79,14 @@ const ReferencesPanel: Component = () => {
   const [refreshing, setRefreshing] = createSignal(false);
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   const [sortKey, setSortKey] = createSignal<SortKey>(loadSortPreference());
+  const [showSortMenu, setShowSortMenu] = createSignal(false);
+  let sortBtnRef: HTMLButtonElement | undefined;
+
+  const sortLabel = createMemo(() => {
+    const key = sortKey();
+    const opt = SORT_OPTIONS.find((o) => o.value === key);
+    return opt ? t(opt.i18nKey) : "";
+  });
 
   function loadSortPreference(): SortKey {
     try {
@@ -207,22 +231,10 @@ const ReferencesPanel: Component = () => {
     });
   });
 
-  function formatAuthors(authors: string[]): string {
-    if (authors.length === 0) return "";
-    if (authors.length <= 2) return authors.join(" & ");
-    return `${authors[0]} et al.`;
-  }
-
   function insertCitation(key: string) {
     document.dispatchEvent(
       new CustomEvent("inkycap:insert-citation", { detail: { key } }),
     );
-  }
-
-  function openInZotero(e: MouseEvent, itemKey: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    shellOpen(`zotero://select/library/items/${itemKey}`);
   }
 
   const isZoteroSource = () => settings.citations.source === "zotero";
@@ -327,55 +339,63 @@ const ReferencesPanel: Component = () => {
                     </span>
                   </Show>
                 </span>
-                <select
-                  class="references-panel__sort"
-                  value={sortKey()}
-                  onChange={(e) => {
-                    persistSortKey(e.currentTarget.value as SortKey);
-                    setVisibleCount(PAGE_SIZE);
-                  }}
-                >
-                  <option value="added-desc">{t("references.sort.addedNewest")}</option>
-                  <option value="added-asc">{t("references.sort.addedOldest")}</option>
-                  <option value="title-asc">{t("references.sort.titleAZ")}</option>
-                  <option value="title-desc">{t("references.sort.titleZA")}</option>
-                  <option value="author-asc">{t("references.sort.authorAZ")}</option>
-                  <option value="author-desc">{t("references.sort.authorZA")}</option>
-                  <option value="year-desc">{t("references.sort.yearNewest")}</option>
-                  <option value="year-asc">{t("references.sort.yearOldest")}</option>
-                </select>
+                <div class="references-panel__sort-wrap">
+                  <button
+                    ref={sortBtnRef}
+                    class="references-panel__sort"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowSortMenu((v) => !v);
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={showSortMenu()}
+                    title={t("references.sort.label")}
+                  >
+                    <span class="references-panel__sort-label">{sortLabel()}</span>
+                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                      <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                  <Show when={showSortMenu()}>
+                    <div
+                      class="context-menu"
+                      ref={(el) => anchorPanelMenu(sortBtnRef, el)}
+                      onMouseLeave={() => setShowSortMenu(false)}
+                    >
+                      <For each={SORT_OPTIONS}>
+                        {(opt) => (
+                          <button
+                            classList={{
+                              "context-menu__item": true,
+                              "context-menu__item--active": sortKey() === opt.value,
+                            }}
+                            onClick={() => {
+                              persistSortKey(opt.value);
+                              setVisibleCount(PAGE_SIZE);
+                              setShowSortMenu(false);
+                            }}
+                          >
+                            {t(opt.i18nKey)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
               </div>
               <For each={filteredEntries()}>
                 {(entry) => (
-                  <div
-                    class="references-panel__entry references-panel__entry--clickable"
-                    onClick={() => insertCitation(entry.key)}
+                  <CitationRow
+                    cite={{
+                      key: entry.key,
+                      title: entry.title,
+                      authors: entry.authors,
+                      year: entry.year,
+                      zoteroItemKey: entry.zotero_item_key,
+                    }}
+                    onActivate={() => insertCitation(entry.key)}
                     title={`Insert @${entry.key}`}
-                  >
-                    <div class="references-panel__key-row">
-                      <Show when={isZoteroSource() && entry.zotero_item_key}>
-                        <button
-                          class="references-panel__zotero-link"
-                          onClick={(e) => openInZotero(e, entry.zotero_item_key!)}
-                          title={t("references.openInZotero")}
-                        >
-                          <ZoteroIcon />
-                        </button>
-                      </Show>
-                      <span class="references-panel__key">@{entry.key}</span>
-                    </div>
-                    <Show when={entry.title}>
-                      <div class="references-panel__title">{entry.title}</div>
-                    </Show>
-                    <Show when={entry.authors.length > 0}>
-                      <div class="references-panel__meta">
-                        {formatAuthors(entry.authors)}
-                        <Show when={entry.year}>
-                          {" "}({entry.year})
-                        </Show>
-                      </div>
-                    </Show>
-                  </div>
+                  />
                 )}
               </For>
               <Show when={hasMore()}>
@@ -416,31 +436,15 @@ const ReferencesPanel: Component = () => {
           >
             <For each={citations()}>
               {(cite) => (
-                <div class="references-panel__entry">
-                  <div class="references-panel__key-row">
-                    <Show when={isZoteroSource() && cite.zotero_item_key}>
-                      <button
-                        class="references-panel__zotero-link"
-                        onClick={(e) => openInZotero(e, cite.zotero_item_key!)}
-                        title={t("references.openInZotero")}
-                      >
-                        <ZoteroIcon />
-                      </button>
-                    </Show>
-                    <span class="references-panel__key">@{cite.key}</span>
-                  </div>
-                  <Show when={cite.title}>
-                    <div class="references-panel__title">{cite.title}</div>
-                  </Show>
-                  <Show when={cite.authors.length > 0}>
-                    <div class="references-panel__meta">
-                      {formatAuthors(cite.authors)}
-                      <Show when={cite.year}>
-                        {" "}({cite.year})
-                      </Show>
-                    </div>
-                  </Show>
-                </div>
+                <CitationRow
+                  cite={{
+                    key: cite.key,
+                    title: cite.title,
+                    authors: cite.authors,
+                    year: cite.year,
+                    zoteroItemKey: cite.zotero_item_key,
+                  }}
+                />
               )}
             </For>
           </Show>
@@ -467,21 +471,6 @@ function RefreshIcon(props: { spinning?: boolean }) {
       <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
       <path d="M3 22v-6h6" />
       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-    </svg>
-  );
-}
-
-function ZoteroIcon() {
-  return (
-    <svg
-      class="zotero-icon"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      stroke="none"
-    >
-      <path d="M21 3H3v3.6h11.4L3 18.4V21h18v-3.6H9.6L21 5.6z" />
     </svg>
   );
 }

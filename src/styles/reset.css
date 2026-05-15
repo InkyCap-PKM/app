@@ -23,8 +23,8 @@ body,
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -33,5 +33,84 @@ body,
 
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border-radius: 5px;
+  /* A 2px transparent inset each side trims the visible thumb to ~8px
+     so it isn't visually fatter than the stepper-button arrow glyphs
+     (also 8px), while the track stays 12px to host the buttons. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* End-cap stepper buttons — one arrow at each end of the scrollbar, like
+   classic desktop scrollbars. `::-webkit-scrollbar-button` is a
+   non-standard pseudo-element, but the engine renders these as fully
+   functional steppers: a click scrolls one line, click-and-hold
+   auto-repeats. We only provide the appearance; no JS is involved.
+   `:single-button` gives exactly one button per end (vs `:double-button`,
+   two stacked at one end).
+
+   The arrow is a `background-image` SVG, NOT a mask: WebKitGTK's
+   scrollbar-part renderers support `background-image` but ignore
+   `-webkit-mask-*`, which left a solid square. A `background-image`
+   can't read a CSS var, so the arrow colour is baked per light/dark
+   theme group below. The `#` in the data URI is `%23`-encoded so it
+   isn't parsed as a URL fragment. */
+::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 12px;
+  height: 12px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+}
+
+/* Extend each button along the scroll axis (taller for vertical bars,
+   wider for horizontal) for an easier click target. The cross-axis size
+   stays 12px to match the track width; the 8px arrow glyph stays
+   centred. */
+::-webkit-scrollbar-button:single-button:vertical {
+  height: 17px;
+}
+
+::-webkit-scrollbar-button:single-button:horizontal {
+  width: 17px;
+}
+
+::-webkit-scrollbar-button:single-button:hover {
+  background-color: var(--bg-hover, transparent);
+}
+
+/* Light theme group: dark-grey arrow on a light track. */
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.5%205L4%202.5%206.5%205'%20fill='none'%20stroke='%23777777'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.5%203L4%205.5%206.5%203'%20fill='none'%20stroke='%23777777'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M5%201.5L2.5%204%205%206.5'%20fill='none'%20stroke='%23777777'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M3%201.5L5.5%204%203%206.5'%20fill='none'%20stroke='%23777777'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Dark theme group: light-grey arrow on a dark track. */
+[data-theme="dark"] ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.5%205L4%202.5%206.5%205'%20fill='none'%20stroke='%23aab2af'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.5%203L4%205.5%206.5%203'%20fill='none'%20stroke='%23aab2af'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M5%201.5L2.5%204%205%206.5'%20fill='none'%20stroke='%23aab2af'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M3%201.5L5.5%204%203%206.5'%20fill='none'%20stroke='%23aab2af'%20stroke-width='1.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* The "wrong direction" parts only exist in double-button mode; hide them
+   defensively so no dead clickable zone appears in single-button mode. */
+::-webkit-scrollbar-button:start:increment,
+::-webkit-scrollbar-button:end:decrement {
+  display: none;
 }

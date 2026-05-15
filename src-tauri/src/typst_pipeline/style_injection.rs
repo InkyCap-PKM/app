@@ -201,6 +201,42 @@ pub fn inject_style_rules(
     out
 }
 
+/// Inject a `show cite` rule that tags every citation with a
+/// `data-cite-key` attribute in the compiled HTML, so HTML surfaces (the
+/// Journal Scroll's Scroll Context panel) can locate a given citation's
+/// occurrences and highlight them.
+///
+/// This is injected in-memory on the HTML render path only. The on-disk
+/// note, the `inkycap-vault` package, and the PDF/SVG export path are all
+/// untouched — a user's documents and their own exports never carry this
+/// wrapper. The rule is placed right after the inkycap-vault import line
+/// (so `html` is in scope and it precedes document content); if there is no
+/// import line it is prepended.
+pub fn inject_cite_tagging(source: &str) -> String {
+    // `it.key` is a label; `repr` renders it as `<key>`, so the slice strips
+    // the angle brackets to leave the bare citation key.
+    const RULE: &str = r#"#show cite: it => html.elem("span", attrs: ("data-cite-key": repr(it.key).slice(1, -1)), it)"#;
+
+    let mut out = String::with_capacity(source.len() + RULE.len() + 2);
+    let mut injected = false;
+    for line in source.lines() {
+        out.push_str(line);
+        out.push('\n');
+        if !injected && crate::vault_package::is_vault_import_line(line) {
+            out.push_str(RULE);
+            out.push('\n');
+            injected = true;
+        }
+    }
+    if !injected {
+        let mut prepended = String::from(RULE);
+        prepended.push('\n');
+        prepended.push_str(&out);
+        return prepended;
+    }
+    out
+}
+
 fn build_injection_block(
     defaults_rules: Option<&str>,
     collection_rules: Option<&str>,

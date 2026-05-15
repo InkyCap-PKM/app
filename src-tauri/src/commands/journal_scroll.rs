@@ -253,12 +253,18 @@ pub async fn compute_connection_flags(
             .unwrap_or_default();
         let shares_tags =
             !anchor_tags.is_empty() && anchor_tags.iter().any(|t| entry_tags.contains(*t));
+        // The anchor is related to itself on every axis (it shares all its
+        // own tags, may link to itself, etc.), but surfacing that as a
+        // links/linked/shares decoration is noise — the `is_anchor` flag
+        // already says everything. Zero the relational flags for the anchor
+        // so it shows only the anchor badge.
+        let is_anchor = path == anchor_path;
         out.push(ConnectionFlags {
             path: p.clone(),
-            is_anchor: path == anchor_path,
-            links_to_anchor: incoming.contains(&path),
-            linked_from_anchor: outgoing.contains(&path),
-            shares_tags,
+            is_anchor,
+            links_to_anchor: !is_anchor && incoming.contains(&path),
+            linked_from_anchor: !is_anchor && outgoing.contains(&path),
+            shares_tags: !is_anchor && shares_tags,
         });
     }
     Ok(out)

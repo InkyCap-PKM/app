@@ -1,13 +1,20 @@
 // ---------------------------------------------------------------------------
-// Journal Scroll pill — three-mode toggle (Date / Tree / Properties) plus
-// a Connections toggle and an optional active-filter chip. Lives in the
-// center slot of `.editor-header` (the grid-restructured header).
+// Journal Scroll pill — the on/off toggle plus, when scroll is on, the three
+// mode buttons (Date / Tree / Properties). Lives in the right group of
+// `.editor-header`, immediately before the source/visual/read mode toggle:
+//   * Scroll off → only the on/off toggle is shown; the source/visual/read
+//     toggle sits to its right.
+//   * Scroll on  → the scroll controls (off toggle + modes) take the place
+//     of the source/visual/read toggle, which is hidden.
+//
+// Anchor-connection decoration (accent strips + per-entry header icons) is a
+// built-in, always-on feature of the scroll feed — there is no toggle for it.
+//
+// The active-filter chip is NOT rendered here — it lives in the header's
+// center slot as plain text (see JournalScrollFilterChip).
 //
 // Interaction model:
-//   * Scroll off → only the on/off toggle button is shown. Clicking it
-//     turns scroll on in Date mode.
-//   * Scroll on  → three mode buttons + Connections toggle + (when in
-//     Properties mode with a filter) a filter chip with ×-to-clear.
+//   * Scroll off → clicking the toggle turns scroll on in Date mode.
 //   * Clicking the active mode button while scroll is on turns scroll off.
 //   * Clicking "Properties" opens the PropertiesDropdown; picking a filter
 //     commits to Properties mode with that filter, dismissing the dropdown
@@ -15,16 +22,14 @@
 // ---------------------------------------------------------------------------
 
 import { Component, Show, createSignal } from "solid-js";
-import { Flag, Scroll, ScrollText } from "lucide-solid";
+import { Scroll, ScrollText } from "lucide-solid";
 import {
   clearPropertyFilter,
-  getPropertyFilter,
-  getShowConnections,
   getMode,
+  getPropertyFilter,
   isEnabled,
   setMode,
   setPropertyFilter,
-  toggleConnections,
   toggleScroll,
   type PropertyFilter,
   type ScrollMode,
@@ -42,8 +47,6 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
 
   const enabled = () => isEnabled(props.tabId);
   const mode = () => getMode(props.tabId);
-  const filter = () => getPropertyFilter(props.tabId);
-  const showConnections = () => getShowConnections(props.tabId);
 
   function onModeClick(target: ScrollMode) {
     if (!enabled()) {
@@ -78,18 +81,9 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
   }
 
   function onPickFilter(f: PropertyFilter) {
-    setDropdownOpen(false);
+    // Keep the dropdown open so the user can refine the filter; they
+    // dismiss it explicitly via outside-click or Escape.
     void setPropertyFilter(props.tabId, f);
-  }
-
-  function filterChipLabel(f: PropertyFilter): string {
-    if (f.kind === "any") return `${f.name}: any`;
-    const v = f.value;
-    if (typeof v === "string") return `${f.name} = ${v}`;
-    if (typeof v === "number" || typeof v === "boolean") {
-      return `${f.name} = ${String(v)}`;
-    }
-    return `${f.name} = …`;
   }
 
   return (
@@ -137,43 +131,13 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
           </button>
         </div>
 
-        <button
-          type="button"
-          class="journal-scroll-pill__connections"
-          classList={{ "is-active": showConnections() }}
-          onClick={() => toggleConnections(props.tabId)}
-          title={
-            showConnections()
-              ? "Hide connection decoration"
-              : "Highlight notes linked to / from / sharing tags with the anchor"
-          }
-          aria-pressed={showConnections()}
-        >
-          <Flag size={14} />
-        </button>
-
-        <Show when={mode() === "properties" && filter()}>
-          <div class="journal-scroll-pill__filter-chip">
-            <span class="journal-scroll-pill__filter-chip-label">
-              {filterChipLabel(filter()!)}
-            </span>
-            <button
-              type="button"
-              class="journal-scroll-pill__filter-chip-clear"
-              onClick={() => void clearPropertyFilter(props.tabId)}
-              title="Clear filter"
-              aria-label="Clear filter"
-            >
-              ×
-            </button>
-          </div>
-        </Show>
-
         <Show when={dropdownOpen() && propertiesBtnRef}>
           <PropertiesDropdown
             anchorPath={props.anchorPath}
             triggerEl={propertiesBtnRef!}
+            currentFilter={getPropertyFilter(props.tabId)}
             onPick={onPickFilter}
+            onClear={() => void clearPropertyFilter(props.tabId)}
             onDismiss={() => setDropdownOpen(false)}
           />
         </Show>

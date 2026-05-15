@@ -47,7 +47,13 @@ function load(): LayoutState {
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
     const merged = { ...DEFAULTS, ...parsed };
-    if (!RIGHT_PANEL_TABS.includes(merged.rightPanelTab)) {
+    // "scroll-context" is a runtime-only tab — it exists only while Journal
+    // Scroll is on. Never restore it on startup, or its pane shows with no
+    // owning scroll session (and no tab button to leave it).
+    if (
+      !RIGHT_PANEL_TABS.includes(merged.rightPanelTab) ||
+      merged.rightPanelTab === "scroll-context"
+    ) {
       merged.rightPanelTab = DEFAULTS.rightPanelTab;
     }
     return merged;

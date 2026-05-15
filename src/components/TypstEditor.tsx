@@ -38,8 +38,15 @@ import { setActiveEditorView } from "../stores/editor";
 import { readingFormat, setReadingFormat } from "../stores/reading-format";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
-import { isEnabled as isScrollEnabled } from "../stores/journal-scroll";
+import {
+  isEnabled as isScrollEnabled,
+  canScrollNavBack,
+  canScrollNavForward,
+  scrollNavBack,
+  scrollNavForward,
+} from "../stores/journal-scroll";
 import JournalScrollPill from "./JournalScrollPill";
+import JournalScrollFilterChip from "./JournalScrollFilterChip";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
 
@@ -638,6 +645,27 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
   });
 
+  // The header back/forward arrows mean different things depending on
+  // whether Journal Scroll is on. With scroll off they walk the tab's file
+  // history; with scroll on they walk the within-scroll wikilink history
+  // (and are disabled until the user has actually jumped via a wikilink).
+  const navCanBack = () =>
+    isScrollEnabled(props.tabId)
+      ? canScrollNavBack(props.tabId)
+      : canGoBack(props.tabId);
+  const navCanForward = () =>
+    isScrollEnabled(props.tabId)
+      ? canScrollNavForward(props.tabId)
+      : canGoForward(props.tabId);
+  const doNavBack = () =>
+    isScrollEnabled(props.tabId)
+      ? scrollNavBack(props.tabId)
+      : goBack(props.tabId);
+  const doNavForward = () =>
+    isScrollEnabled(props.tabId)
+      ? scrollNavForward(props.tabId)
+      : goForward(props.tabId);
+
   return (
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
@@ -646,9 +674,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           <button
             type="button"
             class="editor-header__nav-btn"
-            classList={{ "is-disabled": !canGoBack(props.tabId) }}
-            disabled={!canGoBack(props.tabId)}
-            onClick={() => goBack(props.tabId)}
+            classList={{ "is-disabled": !navCanBack() }}
+            disabled={!navCanBack()}
+            onClick={() => doNavBack()}
             title="Go back"
             aria-label="Go back"
           >
@@ -660,9 +688,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           <button
             type="button"
             class="editor-header__nav-btn"
-            classList={{ "is-disabled": !canGoForward(props.tabId) }}
-            disabled={!canGoForward(props.tabId)}
-            onClick={() => goForward(props.tabId)}
+            classList={{ "is-disabled": !navCanForward() }}
+            disabled={!navCanForward()}
+            onClick={() => doNavForward()}
             title="Go forward"
             aria-label="Go forward"
           >
@@ -674,10 +702,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__center">
-          <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+          <JournalScrollFilterChip tabId={props.tabId} />
         </div>
 
         <div class="editor-header__right-group">
+        <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <button
             type="button"
@@ -751,7 +780,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       </Show>
 
       <Show when={isScrollEnabled(props.tabId)}>
-        <JournalScrollView tabId={props.tabId} anchorPath={props.path} />
+        <JournalScrollView tabId={props.tabId} />
       </Show>
 
       <Show when={!isScrollEnabled(props.tabId) && (currentMode() === "source" || currentMode() === "live")}>

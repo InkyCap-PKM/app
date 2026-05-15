@@ -38,6 +38,11 @@ import { settings } from "../stores/settings";
 import { vaultInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/vault";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
+  isEnabled as isScrollEnabled,
+  getMode as getScrollMode,
+  updateAnchor as updateScrollAnchor,
+} from "../stores/journal-scroll";
+import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
   reloadPropertyTypes,
@@ -562,7 +567,25 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   function openFile(node: FileTreeNode, e?: MouseEvent) {
     if (node.is_dir) return;
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
-    if (node.name.toLowerCase().endsWith(".collection")) {
+    const isCollection = node.name.toLowerCase().endsWith(".collection");
+
+    // When the active tab is a Journal Scroll in Tree mode, a plain click on
+    // a note in the file tree re-anchors the scroll on that note (Tree mode
+    // is meant to be steered from the tree) rather than opening it as its
+    // own tab. Ctrl/Cmd-click still opens it in a new tab as usual.
+    if (!forceNewTab && !isCollection && !isBinaryFile(node.name)) {
+      const active = getActiveTab();
+      if (
+        active &&
+        isScrollEnabled(active.id) &&
+        getScrollMode(active.id) === "tree"
+      ) {
+        void updateScrollAnchor(active.id, node.path);
+        return;
+      }
+    }
+
+    if (isCollection) {
       openTab(
         {
           type: "collection",
