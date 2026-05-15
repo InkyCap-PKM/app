@@ -26,11 +26,14 @@ import type {
   PropertyType,
   ConnectionFlags,
   ScrollEntry,
+  ScrollFilter,
   ScrollQuery,
+  ScrollSort,
   TypstCompileResult,
   TypstHtmlResult,
   BibEntry,
   FileCitation,
+  AggregatedCitation,
 } from "./types";
 
 export async function getSavedVaultPath(): Promise<string | null> {
@@ -1049,6 +1052,12 @@ export async function getFileCitations(path: string): Promise<FileCitation[]> {
   return invoke<FileCitation[]>("get_file_citations", { path });
 }
 
+export async function aggregateCitations(
+  paths: string[],
+): Promise<AggregatedCitation[]> {
+  return invoke<AggregatedCitation[]>("aggregate_citations", { paths });
+}
+
 export async function refreshBibliography(): Promise<string | null> {
   return invoke<string | null>("refresh_bibliography");
 }
@@ -1173,4 +1182,13 @@ export async function computeConnectionFlags(
     anchor,
     paths,
   });
+}
+
+export async function findOffsetInScrollQuery(query: {
+  filter: ScrollFilter;
+  sort: ScrollSort;
+  anchor: string;
+  target: string;
+}): Promise<number | null> {
+  return invoke<number | null>("find_offset_in_scroll_query", { query });
 }

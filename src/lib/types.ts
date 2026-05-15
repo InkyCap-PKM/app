@@ -508,6 +508,16 @@ export interface FileCitation {
   zotero_item_key?: string;
 }
 
+export interface AggregatedCitation {
+  key: string;
+  title: string | null;
+  authors: string[];
+  year: string | null;
+  entry_type: string | null;
+  count: number;
+  paths: string[];
+}
+
 // Typst compile pipeline (Phase 1 — reading mode)
 
 export interface TypstFrame {

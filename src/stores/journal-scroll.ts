@@ -201,6 +201,41 @@ function buildQuery(
   };
 }
 
+/** Look up a target path's offset in the same sorted result the scroll
+ *  uses, without mutating any state. Returns `null` when the target is
+ *  not in the current query. The wikilink-click handler uses this to
+ *  decide whether to extend the loaded window toward the target or fall
+ *  through to a new tab. */
+export async function findOffsetForTarget(
+  tabId: string,
+  targetPath: string,
+): Promise<number | null> {
+  const state = scrollStates[tabId];
+  if (!state) return null;
+  try {
+    return await ipc.findOffsetInScrollQuery({
+      filter: buildFilter(state),
+      sort: buildSort(),
+      anchor: state.anchorPath,
+      target: targetPath,
+    });
+  } catch (err) {
+    console.error("findOffsetForTarget failed:", err);
+    return null;
+  }
+}
+
+/** Read-only accessors for the pagination cursors. The wikilink-click
+ *  loader needs these to decide which direction to page in. */
+export function getFirstOffset(tabId: string): number {
+  scrollVersion();
+  return scrollStates[tabId]?.firstOffset ?? 0;
+}
+export function getLastOffset(tabId: string): number {
+  scrollVersion();
+  return scrollStates[tabId]?.lastOffset ?? 0;
+}
+
 // === Loading ===
 
 async function loadInitial(tabId: string) {

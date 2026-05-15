@@ -488,6 +488,90 @@ pub struct FileCitation {
     pub zotero_item_key: Option<String>,
 }
 
+/// A citation key aggregated across many notes, enriched with
+/// bibliography metadata. Used by the Journal Scroll's "Scroll context"
+/// panel to summarise the citation footprint of the visible window.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AggregatedCitation {
+    pub key: String,
+    pub title: Option<String>,
+    pub authors: Vec<String>,
+    pub year: Option<String>,
+    pub entry_type: Option<String>,
+    /// Total occurrence count across all input paths (a single note
+    /// citing the same key twice counts twice).
+    pub count: usize,
+    /// Distinct vault-relative paths of notes that cite this key,
+    /// preserved in input order.
+    pub paths: Vec<String>,
+}
+
+/// Aggregate citation keys across a batch of notes. Returns one row per
+/// distinct key, ordered by descending occurrence count then by key. The
+/// bibliography is loaded once for the whole batch — calling
+/// `get_file_citations` per note and joining client-side would re-load
+/// it N times.
+#[tauri::command]
+pub async fn aggregate_citations(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AggregatedCitation>, InkyCapError> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let storage = state.get_storage().await?;
+    let entries = load_entries_inner(&state).await.unwrap_or_default();
+
+    use std::collections::HashMap;
+    // key -> (count, ordered list of citing paths, set for dedup)
+    let mut totals: HashMap<String, (usize, Vec<String>, std::collections::HashSet<String>)> =
+        HashMap::new();
+
+    for raw_path in &paths {
+        let vault_path = match sanitize_vault_arg(raw_path) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let source = match storage.read_file(&vault_path).await {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        // `extract_citations` already de-duplicates within a single note,
+        // so the per-note contribution is +1 per distinct key. The
+        // resulting count is "how many visible notes cite this key",
+        // which is the value the panel surfaces.
+        for key in bibliography::extract_citations(&source) {
+            let row = totals
+                .entry(key.clone())
+                .or_insert_with(|| (0, Vec::new(), std::collections::HashSet::new()));
+            row.0 += 1;
+            if row.2.insert(raw_path.clone()) {
+                row.1.push(raw_path.clone());
+            }
+        }
+    }
+
+    let mut out: Vec<AggregatedCitation> = totals
+        .into_iter()
+        .map(|(key, (count, paths, _))| {
+            let entry = entries.iter().find(|e| e.key == key);
+            AggregatedCitation {
+                key,
+                title: entry.map(|e| e.title.clone()),
+                authors: entry.map(|e| e.authors.clone()).unwrap_or_default(),
+                year: entry.and_then(|e| e.year.clone()),
+                entry_type: entry.map(|e| e.entry_type.clone()),
+                count,
+                paths,
+            }
+        })
+        .collect();
+
+    out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
