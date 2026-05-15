@@ -114,6 +114,7 @@ import { verseFocusRouter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
 import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
+import { importLineGuard } from "./typst-decorations/import-line-guard";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
 import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
@@ -307,6 +308,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     drawSelection(),
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),
+    importLineGuard(),
     inkycapTheme,
     dragDropHandler,
     headingTracker,

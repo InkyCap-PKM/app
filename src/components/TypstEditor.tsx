@@ -803,6 +803,12 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
           <>
             <Show when={r().diagnostics.length > 0}>
               <div class="typst-reading__diagnostics">
+                <Show when={r().recovered}>
+                  <div class="typst-reading__recovered-note">
+                    Showing a partial render — the errored content below was
+                    skipped so the rest of the document stays visible.
+                  </div>
+                </Show>
                 <For each={r().diagnostics}>
                   {(d) => <DiagnosticRow d={d} />}
                 </For>
@@ -871,12 +877,18 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
           <>
             <Show when={r().diagnostics.length > 0}>
               <div class="typst-reading__diagnostics">
+                <Show when={r().recovered}>
+                  <div class="typst-reading__recovered-note">
+                    Showing a partial render — the errored content below was
+                    skipped so the rest of the document stays visible.
+                  </div>
+                </Show>
                 <For each={r().diagnostics}>
                   {(d) => <DiagnosticRow d={d} />}
                 </For>
               </div>
             </Show>
-            <Show when={r().ok && r().html}>
+            <Show when={r().html}>
               <div
                 class="typst-reading__html-content"
                 style={contentStyle()}
@@ -907,6 +919,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
 function ipcErrorToResult(err: unknown): TypstCompileResult {
   return {
     ok: false,
+    recovered: false,
     frames: [],
     diagnostics: [
       {
@@ -923,6 +936,7 @@ function ipcErrorToResult(err: unknown): TypstCompileResult {
 function ipcErrorToHtmlResult(err: unknown): TypstHtmlResult {
   return {
     ok: false,
+    recovered: false,
     html: "",
     diagnostics: [
       {

@@ -31,6 +31,20 @@ pub struct TypstSpan {
     /// Byte offsets into the file's UTF-8 source.
     pub start: usize,
     pub end: usize,
+    /// 1-based line and column of `start`, resolved via the file's `Source`.
+    /// Far more actionable for a writer than the raw byte offset; `None` when
+    /// the offset couldn't be mapped (e.g. a synthesized source).
+    ///
+    /// NOTE: these are positions in the source as *compiled*. InkyCap injects
+    /// style/vault lines into the main note before compiling, so for the main
+    /// file the command layer shifts `line` back to the user's on-disk file —
+    /// see `remap_diagnostic_lines` in `commands/typst.rs`. `is_main` tells it
+    /// which spans need that shift.
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    /// True when this span points into the note being compiled (as opposed to
+    /// an imported file). Only main-file line numbers need injection remapping.
+    pub is_main: bool,
 }
 
 pub fn from_source(diag: &SourceDiagnostic, world: &dyn World) -> TypstDiagnostic {
@@ -54,9 +68,17 @@ fn resolve_span(span: typst::syntax::Span, world: &dyn World) -> Option<TypstSpa
     let id: FileId = span.id()?;
     let source = world.source(id).ok()?;
     let range = source.range(span)?;
+    // `byte_to_line` / `byte_to_column` are 0-based; surface 1-based to match
+    // how editors and the rest of the UI count.
+    let lines = source.lines();
+    let line = lines.byte_to_line(range.start).map(|l| l + 1);
+    let column = lines.byte_to_column(range.start).map(|c| c + 1);
     Some(TypstSpan {
         path: Some(id.vpath().as_rootless_path().to_string_lossy().into_owned()),
         start: range.start,
         end: range.end,
+        line,
+        column,
+        is_main: id == world.main(),
     })
 }

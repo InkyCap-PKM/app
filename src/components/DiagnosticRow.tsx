@@ -19,7 +19,10 @@ export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => (
       <Show when={props.d.primary?.path}>
         <span class="typst-reading__diagnostic-loc">
           {" — "}
-          {props.d.primary!.path} @ {props.d.primary!.start}
+          {props.d.primary!.path}
+          {props.d.primary!.line != null
+            ? `:${props.d.primary!.line}:${props.d.primary!.column ?? 1}`
+            : ` @ ${props.d.primary!.start}`}
         </span>
       </Show>
     </div>

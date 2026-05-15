@@ -535,6 +535,14 @@ export interface TypstSpan {
   /** Byte offsets into the file's UTF-8 source. */
   start: number;
   end: number;
+  /** 1-based line and column of `start`. `null` when the offset couldn't be
+   *  mapped to a source position. For the main note these are shifted back
+   *  from compiled-source space to the user's on-disk file by the backend. */
+  line: number | null;
+  column: number | null;
+  /** True when the span points into the note being compiled rather than an
+   *  imported file. */
+  is_main: boolean;
 }
 
 export interface TypstDiagnostic {
@@ -546,15 +554,21 @@ export interface TypstDiagnostic {
 }
 
 export interface TypstCompileResult {
-  /** True if a paged document was produced. Warnings may be present even
-   *  on success; on failure, `frames` is empty. */
+  /** True only on a fully clean compile. Warnings may still be present.
+   *  When false, check `recovered`. */
   ok: boolean;
+  /** True when the compile failed but error recovery salvaged a degraded
+   *  render: `frames` is populated and `diagnostics` lists the real errors. */
+  recovered: boolean;
   frames: TypstFrame[];
   diagnostics: TypstDiagnostic[];
 }
 
 export interface TypstHtmlResult {
   ok: boolean;
+  /** See {@link TypstCompileResult.recovered}: true when `html` was salvaged
+   *  by error recovery after a failed compile. */
+  recovered: boolean;
   html: string;
   diagnostics: TypstDiagnostic[];
 }
