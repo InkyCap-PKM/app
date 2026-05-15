@@ -10,13 +10,15 @@
  *   Racing Red  #EE2E31 */
 
 :root {
-  /* Editor font stacks (theme-independent). GNOME-friendly defaults:
-   * Adwaita first so the platform font is preferred when present, then
-   * a modern sans/mono fallback chain. */
-  --editor-font-body: "Adwaita Sans", Inter, "Fira Sans", "Ubuntu Sans",
-    system-ui, -apple-system, sans-serif;
-  --editor-font-mono: "Adwaita Mono", "Ubuntu Mono", "Fira Mono",
-    "IBM Plex Mono", "JetBrains Mono", Consolas, monospace;
+  /* Pre-JS fallback font stacks. These render only for the brief window
+   * before applyFontSettings() (theme.ts) resolves the user's font
+   * settings into the runtime variables (--md-body-font, --interface-
+   * font, --editor-font-mono). They lead with InkyCap's own bundled
+   * families (see bundled-fonts.css) — guaranteed present because the
+   * app ships them — then a generic keyword. Keep in sync with
+   * SANS_FALLBACK / MONO_FALLBACK in theme.ts. */
+  --editor-font-body: "Inter", system-ui, sans-serif;
+  --editor-font-mono: "JuliaMono", ui-monospace, monospace;
 
   /* Type scale — all UI font sizes reference these tokens.
    * Adjust these values to scale the entire interface. */

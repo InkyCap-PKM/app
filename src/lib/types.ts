@@ -202,7 +202,6 @@ export interface BookExportConfig {
 
 export interface EditorSettings {
   font_size: number;
-  body_font_family: string;
   body_font_size: number;
   readable_line_length: boolean;
   max_line_width: number;
@@ -250,8 +249,6 @@ export interface AppearanceSettings {
    */
   accent_source: AccentSource;
   accent_color: string;
-  interface_font: string;
-  monospace_font: string;
   zoom_target: ZoomTarget;
   /**
    * How the file tree groups folders relative to files when sorting:

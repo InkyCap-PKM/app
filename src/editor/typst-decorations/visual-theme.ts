@@ -459,7 +459,8 @@ export const visualTheme = EditorView.theme({
     zIndex: "1000",
     minWidth: "200px",
     fontSize: "0.9em",
-    fontFamily: "var(--editor-font-body, inherit)",
+    // UI chrome (a menu popup), so it follows the interface font.
+    fontFamily: "var(--interface-font, inherit)",
   },
   ".cm-typst-pill-menu-heading": {
     padding: "4px 12px 2px",
@@ -559,7 +560,11 @@ export const visualTheme = EditorView.theme({
     // making it feel boxed-in. Pill at top-left identifies it.
     borderTop: "2px dotted var(--border-subtle)",
     borderBottom: "2px dotted var(--border-subtle)",
-    "--verse-active-font": "var(--verse-font, var(--editor-font-body, var(--md-body-font, serif)))",
+    // Precedence: explicit verse font → user's editor font (runtime) →
+    // static editor-body default. `--md-body-font` must come before the
+    // static `--editor-font-body` so verse honors the editor-font
+    // setting when no verse-specific font is chosen.
+    "--verse-active-font": "var(--verse-font, var(--md-body-font, var(--editor-font-body, serif)))",
   },
   // Verse uses the standard .cm-typst-pill class (R1). The verse-specific
   // rule only sets positioning so the pill anchors to the canvas's
