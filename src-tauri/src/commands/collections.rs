@@ -52,15 +52,43 @@ pub async fn list_collections(
             }
         };
 
+        let (modified_time, created_time) = collection_file_times(&storage, path);
+
         collections.push(CollectionInfo {
             name,
             path: path.display().to_string(),
             view_count,
             icon,
+            modified_time,
+            created_time,
         });
     }
 
     Ok(collections)
+}
+
+/// Read (modified, created) Unix-epoch seconds for a `.collection` file.
+/// The path is resolved against the vault root first so it works whether
+/// the caller passes a vault-relative or absolute path. Either field
+/// falls back to zero when the filesystem doesn't track it, matching the
+/// convention used for [`crate::storage::traits::FileTreeNode`].
+fn collection_file_times(
+    storage: &crate::storage::local::LocalVaultStorage,
+    path: &std::path::Path,
+) -> (u64, u64) {
+    let to_secs = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    };
+    let resolved = storage
+        .resolve_path(path)
+        .unwrap_or_else(|_| path.to_path_buf());
+    match std::fs::metadata(&resolved) {
+        Ok(m) => (to_secs(m.modified()), to_secs(m.created())),
+        Err(_) => (0, 0),
+    }
 }
 
 /// Load a collection's data for a specific view, applying its filters and sorts. Requires an open vault.
@@ -205,11 +233,15 @@ pub async fn create_collection_file(
     // Add to tracked collection files
     state.collection_files.write().await.push(path.clone());
 
+    let (modified_time, created_time) = collection_file_times(&storage, &path);
+
     Ok(CollectionInfo {
         name: trimmed.to_string(),
         path: path.display().to_string(),
         view_count: base.views.len(),
         icon: base.icon,
+        modified_time,
+        created_time,
     })
 }
 
@@ -278,11 +310,15 @@ pub async fn rename_collection_file(
     let content = storage.read_file(&new_path).await?;
     let base = parse_collection_file(&content)?;
 
+    let (modified_time, created_time) = collection_file_times(&storage, &new_path);
+
     Ok(CollectionInfo {
         name: new_name,
         path: new_path.display().to_string(),
         view_count: base.views.len(),
         icon: base.icon,
+        modified_time,
+        created_time,
     })
 }
 

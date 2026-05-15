@@ -8,6 +8,7 @@ import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/vault";
+import { pickFolder } from "../stores/folderPicker";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
@@ -38,7 +39,7 @@ import {
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
-import { ask, open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
@@ -913,9 +914,16 @@ const RightPanel: Component = () => {
     const tab = activeFileTab();
     if (!tab) return;
     try {
-      const dest = await dialogOpen({ directory: true, title: "Move file to..." });
-      if (!dest) return;
-      const newPath = await ipc.moveFile(tab.path, dest as string);
+      // Vault-scoped folder picker — `dest` is a vault-relative path
+      // ("" for the root), exactly the shape `move_file` expects.
+      const slash = tab.path.lastIndexOf("/");
+      const currentParent = slash >= 0 ? tab.path.slice(0, slash) : undefined;
+      const dest = await pickFolder({
+        title: "Move file to...",
+        currentParent,
+      });
+      if (dest == null) return;
+      const newPath = await ipc.moveFile(tab.path, dest);
       const name = newPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? tab.title;
       closeTab(tab.id);
       openTab({ type: "file", title: name, path: newPath }, { forceNewTab: true });

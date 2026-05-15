@@ -8,6 +8,12 @@ pub struct CollectionInfo {
     pub path: String,
     pub view_count: usize,
     pub icon: Option<String>,
+    /// Unix epoch seconds for the `.collection` file, mirroring
+    /// [`crate::storage::traits::FileTreeNode`]. Zero when the platform
+    /// doesn't expose the stat field — the frontend treats zero as
+    /// "unknown" when sorting by date.
+    pub modified_time: u64,
+    pub created_time: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

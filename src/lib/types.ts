@@ -47,6 +47,9 @@ export interface CollectionInfo {
   path: string;
   view_count: number;
   icon: string | null;
+  /// Unix epoch seconds for the `.collection` file; zero when unknown.
+  modified_time: number;
+  created_time: number;
 }
 
 export interface CollectionData {

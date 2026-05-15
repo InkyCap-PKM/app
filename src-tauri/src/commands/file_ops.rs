@@ -739,6 +739,80 @@ pub async fn move_file(
     Ok(new_path.display().to_string())
 }
 
+/// Move a folder (and everything inside it) to a different parent folder.
+///
+/// Wikilinks survive untouched: they resolve by note *stem*, which a
+/// folder move never changes. What does need fixing is each contained
+/// note's own relative `image()`/`read()`/`embed()`/`bibliography()`
+/// arguments — those are anchored at the note's parent directory, so
+/// every `.typ` file under the folder is rebased to vault-root-absolute
+/// paths (Phase B) before the move, exactly as `move_file` does for a
+/// single note.
+#[tauri::command]
+pub async fn move_folder(
+    old_path: String,
+    new_parent: String,
+    state: State<'_, AppState>,
+) -> Result<String, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let vault_root = state.vault_root.read().await;
+    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+
+    let old = sanitize_vault_arg(&old_path)?;
+    let old_abs = storage.resolve_path(&old)?;
+    if !old_abs.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Not a folder: {}",
+            old.display()
+        )));
+    }
+
+    let folder_name = old
+        .file_name()
+        .ok_or_else(|| InkyCapError::InvalidPath("No folder name".to_string()))?;
+
+    let new_dir = if new_parent.is_empty() {
+        root.clone()
+    } else {
+        root.join(&new_parent)
+    };
+    let new_path = new_dir.join(folder_name);
+
+    // Reject moving a folder into itself or one of its own descendants —
+    // that would relocate the destination out from under the operation
+    // and corrupt the tree. `starts_with` covers the equal-path case too.
+    if new_dir.starts_with(&old_abs) {
+        return Err(InkyCapError::InvalidPath(
+            "Cannot move a folder into itself".to_string(),
+        ));
+    }
+
+    if storage.exists(&new_path).await {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Folder already exists: {}",
+            new_path.display()
+        )));
+    }
+
+    // Ensure the destination parent exists before the rename.
+    storage.create_dir(&new_dir).await?;
+
+    // Phase B: rebase relative path arguments in every contained note
+    // while the notes are still at their old location (the anchor for
+    // resolution). Done before the move so each note's parent directory
+    // is still the pre-move one.
+    let notes = storage.list_files(&old, "*.typ").await.unwrap_or_default();
+    for note in &notes {
+        rebase_paths_for_note_move(note, &storage).await?;
+    }
+
+    storage.rename_file(&old, &new_path).await?;
+
+    reindex_directory(&old, &new_path, &storage, &state).await;
+
+    Ok(new_path.display().to_string())
+}
+
 /// Delete a file by moving it to the system trash.
 #[tauri::command]
 pub async fn delete_file(

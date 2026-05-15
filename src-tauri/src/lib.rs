@@ -251,6 +251,7 @@ pub fn run() {
             commands::file_ops::rename_file,
             commands::file_ops::rename_and_update_links,
             commands::file_ops::move_file,
+            commands::file_ops::move_folder,
             commands::file_ops::delete_file,
             commands::file_ops::delete_folder,
             commands::file_ops::copy_to_attachments,
