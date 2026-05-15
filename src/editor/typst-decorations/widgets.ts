@@ -1153,6 +1153,19 @@ function renderVerseBody(canvas: HTMLElement, decoded: string): void {
 
 export type VerseAlign = "left" | "center" | "right";
 
+/** Discrete weight steps offered by the verse pill. Mirrors common
+ *  Typst integer weights; matches the wght axis of any variable verse
+ *  font and works fine on static fonts that ship Light/Bold faces. */
+export type VerseWeight = 300 | 400 | 500 | 600 | 700;
+export const VERSE_WEIGHT_DEFAULT: VerseWeight = 400;
+export const VERSE_WEIGHT_OPTIONS: ReadonlyArray<{ value: VerseWeight; label: string }> = [
+  { value: 300, label: "Light" },
+  { value: 400, label: "Regular" },
+  { value: 500, label: "Medium" },
+  { value: 600, label: "Semibold" },
+  { value: 700, label: "Bold" },
+];
+
 export interface VerseWidgetOptions {
   /** Raw between-quotes Typst string literal contents (the current source). */
   source: string;
@@ -1166,6 +1179,11 @@ export interface VerseWidgetOptions {
   /** Explicit `font:` argument from source, or null to fall back to the
    *  user's editor preference (resolved via CSS var --verse-font). */
   font: string | null;
+  /** Explicit `weight:` argument from source, or null to inherit. Only the
+   *  five discrete steps in `VERSE_WEIGHT_OPTIONS` are surfaced via the pill,
+   *  but a hand-authored value outside that set is preserved as-is in source
+   *  (the pill just shows no chip as active). */
+  weight: number | null;
 }
 
 export class VerseWidget extends WidgetType {
@@ -1177,6 +1195,7 @@ export class VerseWidget extends WidgetType {
     return this.opts.source === other.opts.source
       && this.opts.align === other.opts.align
       && this.opts.font === other.opts.font
+      && this.opts.weight === other.opts.weight
       && this.opts.bodyFrom === other.opts.bodyFrom
       && this.opts.bodyTo === other.opts.bodyTo;
   }
@@ -1187,6 +1206,9 @@ export class VerseWidget extends WidgetType {
     wrap.style.textAlign = this.opts.align;
     if (this.opts.font) {
       wrap.style.setProperty("--verse-active-font", this.opts.font);
+    }
+    if (this.opts.weight !== null) {
+      wrap.style.fontWeight = String(this.opts.weight);
     }
     // contentEditable="false" on the wrap marks the widget atomic for
     // CM6's MutationObserver. The inner canvas overrides hierarchically
@@ -1337,27 +1359,56 @@ export class VerseWidget extends WidgetType {
     });
   }
 
-  /** Build the verse pill's option sections (R7). Currently exposes
-   *  alignment; future verse-specific options (numbering, leading,
-   *  font override) plug in here. */
+  /** Build the verse pill's option sections (R7). Exposes alignment and
+   *  weight; future verse-specific options (numbering, leading, font
+   *  override) plug in here. */
   private buildOptionSections(view: EditorView): PillMenuSection[] {
-    return [{
-      heading: "Alignment",
-      items: (["left", "center", "right"] as const).map((a) => ({
-        label: a,
-        isActive: a === this.opts.align,
-        onSelect: () => this.setAlign(a, view),
-      })),
-    }];
+    const activeWeight: number = this.opts.weight ?? VERSE_WEIGHT_DEFAULT;
+    return [
+      {
+        heading: "Alignment",
+        items: (["left", "center", "right"] as const).map((a) => ({
+          label: a,
+          isActive: a === this.opts.align,
+          onSelect: () => this.setAlign(a, view),
+        })),
+      },
+      {
+        heading: "Weight",
+        items: VERSE_WEIGHT_OPTIONS.map((w) => ({
+          label: w.label,
+          isActive: w.value === activeWeight,
+          onSelect: () => this.setWeight(w.value, view),
+        })),
+      },
+    ];
   }
 
   /** Rewrite (or insert) the `align-to:` named argument in the source,
    *  preserving the body string and any other arguments. */
   private setAlign(next: VerseAlign, view: EditorView): void {
     if (next === this.opts.align) return;
+    this.rewriteCallArgs(view, (args) => upsertAlignArg(args, next));
+  }
+
+  /** Rewrite (or insert) the `weight:` named argument. Setting Regular
+   *  (400) drops the arg entirely so the source stays clean — same
+   *  policy as alignment's "left" default. */
+  private setWeight(next: VerseWeight, view: EditorView): void {
+    const current = this.opts.weight ?? VERSE_WEIGHT_DEFAULT;
+    if (next === current) return;
+    this.rewriteCallArgs(view, (args) => upsertWeightArg(args, next));
+  }
+
+  /** Slice out the verse call's argument list, hand it to a rewriter,
+   *  and dispatch a CM change with the result. Quote-aware paren matching
+   *  avoids treating a `)` inside the body literal as the call's close. */
+  private rewriteCallArgs(view: EditorView, rewrite: (args: string) => string): void {
     const callFrom = this.opts.callFrom;
-    // Find the call's closing paren by scanning forward from callFrom.
-    const docText = view.state.doc.sliceString(callFrom, Math.min(callFrom + 100000, view.state.doc.length));
+    const docText = view.state.doc.sliceString(
+      callFrom,
+      Math.min(callFrom + 100000, view.state.doc.length),
+    );
     const openParen = docText.indexOf("(");
     if (openParen < 0) return;
     let depth = 0;
@@ -1375,7 +1426,7 @@ export class VerseWidget extends WidgetType {
     }
     if (close < 0) return;
     const argsText = docText.substring(openParen + 1, close);
-    const newArgsText = upsertAlignArg(argsText, next);
+    const newArgsText = rewrite(argsText);
     if (newArgsText === argsText) return;
     view.dispatch({
       changes: {
@@ -1408,6 +1459,22 @@ function upsertAlignArg(argsText: string, align: VerseAlign): string {
   // Append after the existing arguments. Trim trailing whitespace so the
   // separator lands cleanly.
   return `${argsText.replace(/\s+$/, "")}, align-to: ${align}`;
+}
+
+/** Add or replace the `weight:` named arg in a verse argument list.
+ *  Matches integer values (set by the pill) and named strings like
+ *  `"bold"` (hand-authored) so an existing literal isn't duplicated.
+ *  Setting Regular (400) drops the arg entirely. */
+function upsertWeightArg(argsText: string, weight: VerseWeight): string {
+  const existing = /,\s*weight\s*:\s*(?:\d+|"[^"]*")/;
+  if (existing.test(argsText)) {
+    if (weight === VERSE_WEIGHT_DEFAULT) {
+      return argsText.replace(existing, "");
+    }
+    return argsText.replace(existing, `, weight: ${weight}`);
+  }
+  if (weight === VERSE_WEIGHT_DEFAULT) return argsText;
+  return `${argsText.replace(/\s+$/, "")}, weight: ${weight}`;
 }
 
 export class FootnoteWidget extends WidgetType {

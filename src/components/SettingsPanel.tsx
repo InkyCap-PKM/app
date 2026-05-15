@@ -14,7 +14,7 @@ import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
 import { FontRoleRow, type FontRoleOption } from "./FontRoleRow";
 import { SettingCombobox } from "./SettingCombobox";
-import { BUNDLED_INTERFACE, BUNDLED_TEXT } from "../lib/fontResolver";
+import { BUNDLED_INTERFACE, BUNDLED_TEXT, BUNDLED_MONO, BUNDLED_VERSE } from "../lib/fontResolver";
 import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
 import { showToast } from "../stores/toasts";
@@ -653,6 +653,7 @@ function AppearanceSettingsSection() {
     const sys = sysDefaults();
     return [
       { value: "system", label: sys ? `System (${sys.mono})` : "System" },
+      { value: "bundled", label: `InkyCap (${BUNDLED_MONO})` },
       { value: "custom", label: "Custom…" },
     ];
   };
@@ -663,7 +664,7 @@ function AppearanceSettingsSection() {
   ];
   const verseOptions = (): FontRoleOption[] => [
     { value: "follow", label: "Follow Text font" },
-    { value: "bundled", label: `InkyCap (${BUNDLED_TEXT})` },
+    { value: "bundled", label: `InkyCap (${BUNDLED_VERSE})` },
     { value: "custom", label: "Custom…" },
   ];
 
@@ -742,7 +743,7 @@ function AppearanceSettingsSection() {
       />
       <FontRoleRow
         label="Verse font"
-        description="Font used inside #verse(…) blocks. Defaults to follow Text."
+        description="Font used inside #verse(…) blocks. Defaults to follow the Text font output choice."
         options={verseOptions()}
         choice={settings.fonts.verse}
         onChange={(c) => updateFontChoice("verse", c)}
@@ -789,7 +790,7 @@ function AppearanceSettingsSection() {
 
       <SettingSelect
         label="Default reading view format"
-        description="SVG shows paginated output; HTML shows scrolling, copyable text"
+        description="SVG shows paginated output; HTML shows copyable text"
         value={settings.editor.default_reading_format}
         options={[
           { value: "svg", label: "SVG (paginated)" },
@@ -818,7 +819,7 @@ function AppearanceSettingsSection() {
 
       <FontRoleRow
         label="Text font"
-        description="Font for compiled documents (reading view, exports)."
+        description="Font for compiled documents (reading view, exports). This setting is for convenience, you can set other fonts for output within the document using standard Typst functions and markup"
         options={textOptions()}
         choice={settings.fonts.text}
         onChange={(c) => updateFontChoice("text", c)}

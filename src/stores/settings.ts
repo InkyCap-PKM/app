@@ -24,8 +24,6 @@ const DEFAULTS: UserSettings = {
     show_inline_tags: true,
     focus_mode: "none",
     focus_dim: false,
-    verse_font: null,
-    apply_verse_font_to_output: false,
     auto_expand_markup: false,
     selection_toolbar: true,
     command_palette: true,

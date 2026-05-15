@@ -524,6 +524,8 @@
 //   font:       explicit font family (string). Overrides set-vault's
 //               verse-font. When `none`, falls back to the verse-font
 //               state, then to document body font.
+//   weight:     text weight (integer 100–900 or named string like "bold").
+//               When `none`, inherits the document/verse-font default.
 //   align-to:   left | center | right (alignment values, not strings).
 //   numbered:   show line numbers.
 //   numbering-pattern: pattern for numbered lines (default "1").
@@ -536,6 +538,7 @@
 #let verse(
   body,
   font: none,
+  weight: none,
   align-to: left,
   numbered: false,
   numbering-pattern: "1",
@@ -565,6 +568,7 @@
     // actually specified. Omitted args inherit document defaults.
     let text-args = (:)
     if resolved-font != none { text-args.insert("font", resolved-font) }
+    if weight != none { text-args.insert("weight", weight) }
     if tracking != none { text-args.insert("tracking", tracking) }
     if lang != none { text-args.insert("lang", lang) }
     if dir != auto { text-args.insert("dir", dir) }

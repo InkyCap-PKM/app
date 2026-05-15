@@ -1,0 +1,125 @@
+/* Loads the font binaries shipped under src-tauri/assets/fonts/ into the
+   visual editor's DOM. Same files the Typst compile pipeline picks up via
+   include_bytes!. Vite resolves these relative paths at build time and
+   fingerprints the binaries into the bundle. font-display: block keeps
+   the editor from briefly painting in a fallback face on first load. */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Inter-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Inter-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Inter-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Inter-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Junicode";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Junicode-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Junicode";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Junicode-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Junicode";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Junicode-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Junicode";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/Junicode-BoldItalic.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "JuliaMono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/JuliaMono-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JuliaMono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/JuliaMono-RegularItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JuliaMono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/JuliaMono-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "JuliaMono";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/JuliaMono-BoldItalic.ttf") format("truetype");
+}
+
+/* iA Writer Duo S — four static cuts. Matches what the Typst pipeline
+   loads (see inkycap_bundled_fonts in fonts.rs); kept on statics rather
+   than the variable file because typst 0.14 doesn't interpolate variable
+   axes in compiled output. */
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/iAWriterDuoS-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/iAWriterDuoS-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/iAWriterDuoS-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "iA Writer Duo S";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../src-tauri/assets/fonts/iAWriterDuoS-BoldItalic.ttf") format("truetype");
+}

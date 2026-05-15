@@ -95,14 +95,35 @@ function applyAccent() {
   }
 }
 
+// Bundled InkyCap families (loaded via @font-face in styles/bundled-fonts.css)
+// are appended as last-resort fallbacks before the generic keyword. Guards
+// against fontconfig/gsettings returning a non-installed name on the host.
+const SANS_FALLBACK = '"Inter", system-ui, sans-serif';
+const MONO_FALLBACK = '"JuliaMono", ui-monospace, monospace';
+
+function quoteIfNeeded(family: string): string {
+  const f = family.trim();
+  if (!f) return f;
+  if (/^["'].*["']$/.test(f)) return f;
+  // Quote anything containing whitespace or commas; leaves bare
+  // single-token names like `monospace` alone.
+  return /[\s,]/.test(f) ? `"${f}"` : f;
+}
+
 /** Apply interface font as a CSS custom property. */
 export function applyInterfaceFont(font: string) {
-  document.documentElement.style.setProperty("--interface-font", font);
+  document.documentElement.style.setProperty(
+    "--interface-font",
+    `${quoteIfNeeded(font)}, ${SANS_FALLBACK}`,
+  );
 }
 
 /** Apply monospace font as a CSS custom property. */
 export function applyMonospaceFont(font: string) {
-  document.documentElement.style.setProperty("--editor-font-mono", font);
+  document.documentElement.style.setProperty(
+    "--editor-font-mono",
+    `${quoteIfNeeded(font)}, ${MONO_FALLBACK}`,
+  );
 }
 
 /** Apply editor (body) font as a CSS custom property. */
