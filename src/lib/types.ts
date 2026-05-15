@@ -386,9 +386,9 @@ export interface ScrollEntry {
 /** @deprecated use `ScrollEntry` directly. */
 export type JournalScrollEntry = ScrollEntry;
 
-/** Connection of an entry to the scroll's anchor. Drives the
- *  `journal-scroll__entry--*` accent-strip CSS classes when the pill's
- *  Connections toggle is on. */
+/** Connection of an entry to the scroll's anchor. Drives the always-on
+ *  `journal-scroll__entry--*` accent-strip CSS classes and the per-entry
+ *  header connection icons. */
 export interface ConnectionFlags {
   path: string;
   is_anchor: boolean;
@@ -514,6 +514,9 @@ export interface AggregatedCitation {
   entry_type: string | null;
   count: number;
   paths: string[];
+  /** Zotero library item key — present only with a Zotero-backed
+   *  bibliography; absent (field omitted) otherwise. */
+  zotero_item_key?: string | null;
 }
 
 // Typst compile pipeline (Phase 1 — reading mode)

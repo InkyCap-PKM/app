@@ -504,6 +504,11 @@ pub struct AggregatedCitation {
     /// Distinct vault-relative paths of notes that cite this key,
     /// preserved in input order.
     pub paths: Vec<String>,
+    /// Zotero library item key, when the bibliography is Zotero-backed —
+    /// lets the panel surface an "open in Zotero" link, as the References
+    /// sidebar does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zotero_item_key: Option<String>,
 }
 
 /// Aggregate citation keys across a batch of notes. Returns one row per
@@ -564,6 +569,7 @@ pub async fn aggregate_citations(
                 entry_type: entry.map(|e| e.entry_type.clone()),
                 count,
                 paths,
+                zotero_item_key: entry.and_then(|e| e.zotero_item_key.clone()),
             }
         })
         .collect();

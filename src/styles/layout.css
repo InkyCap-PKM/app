@@ -859,6 +859,9 @@ svg.lucide {
   padding: 6px 16px;
   font-size: var(--text-md);
   cursor: pointer;
+  /* Menu items are short labels — keep each on one line so the menu
+     sizes its width to the longest item instead of wrapping. */
+  white-space: nowrap;
 }
 
 .context-menu__item:hover {
@@ -1478,8 +1481,11 @@ svg.lucide {
 }
 
 .property-editor__type-select {
-  /* See .references-panel__sort — appearance:none is required so
-     WebKitGTK honors our dark-theme colors on a native <select>. */
+  /* appearance:none is required so WebKitGTK honors our dark-theme
+     colors on a native <select>. Note this only themes the *closed*
+     control — the open popup is OS-drawn. Where a fully themed popup
+     matters, use a button + `.context-menu` instead (see the Browse
+     References sort control in ReferencesPanel). */
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -4291,35 +4297,65 @@ svg.lucide {
   padding: 0;
 }
 
-.references-panel__entry {
-  padding: 6px 12px;
+/* ─── Citation row — shared by the References sidebar and the Journal
+   Scroll's Scroll Context pane so a cited work looks and behaves the same
+   in both. Markup: CitationRow.tsx. ─── */
+.citation-row {
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border-faint);
 }
 
-.references-panel__entry--clickable {
+.citation-row--clickable {
   cursor: pointer;
 }
 
-.references-panel__entry--clickable:hover {
+.citation-row--clickable:hover {
   background: var(--bg-hover);
 }
 
-.references-panel__key-row {
+.citation-row__key-line {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 2px;
 }
 
-.references-panel__key {
-  font-family: var(--editor-font-mono, monospace);
-  font-size: var(--text-base);
-  color: var(--accent);
+/* Left group: optional Zotero link + the citation key. `min-width: 0` lets
+   it shrink below its content width so a long, space-free key wraps within
+   the panel rather than overflowing it. */
+.citation-row__key-left {
+  display: flex;
+  /* Align to the top so the Zotero link tracks the first line of a
+     wrapped key rather than the key block's vertical centre. */
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
 }
 
-.references-panel__zotero-link {
+.citation-row__key {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--accent);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.citation-row__count {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+.citation-row__zotero-link {
   display: inline-flex;
   align-items: center;
+  /* Box one key-line tall, so the centred icon lines up with the vertical
+     centre of the key's first line (key-left is top-aligned). */
+  font-size: var(--text-base);
+  height: 1.5em;
+  flex-shrink: 0;
   background: none;
   border: none;
   padding: 0;
@@ -4329,21 +4365,47 @@ svg.lucide {
   transition: opacity 0.15s, color 0.15s;
 }
 
-.references-panel__zotero-link:hover {
+.citation-row__zotero-link:hover {
   opacity: 1;
   color: rgb(204, 41, 54);
 }
 
-.references-panel__title {
+.citation-row__title {
   font-size: var(--text-md);
   color: var(--fg-primary);
   line-height: 1.3;
 }
 
-.references-panel__meta {
+.citation-row__meta {
+  margin-top: 2px;
   font-size: var(--text-base);
   color: var(--fg-dim);
-  margin-top: 2px;
+}
+
+/* Citation highlight — applied to a citation's occurrences in the Journal
+   Scroll when its Scroll Context card is clicked. `outline` (not `border`)
+   so the citation text doesn't reflow. Cleared once the occurrence has been
+   seen and scrolled out of view (see ScrollContextPanel). */
+.citation-highlight {
+  border-radius: 4px;
+  outline: 1px dotted var(--accent-error, #c0392b);
+  outline-offset: 2px;
+  /* Outline + outward glow only — the inner area stays transparent so the
+     citation text reads normally. */
+  box-shadow: 0 0 6px 2px
+    color-mix(in srgb, var(--accent-error, #c0392b) 55%, transparent);
+  /* Honored by `scrollIntoView` when a citation is scrolled into view:
+     keeps clearance above/below so the outline and glow aren't clipped at
+     the viewport edge (lands the highlight a row down from the edge). */
+  scroll-margin: 2rem;
+  animation: citation-highlight-in 0.25s ease-out;
+}
+
+@keyframes citation-highlight-in {
+  from {
+    outline-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 .references-panel__header-row {
@@ -4488,23 +4550,42 @@ svg.lucide {
   cursor: help;
 }
 
+/* Sort control: an app-drawn button + `.context-menu`, not a native
+   <select>. A native select hands its popup to the OS, which on
+   WebKitGTK ignores the InkyCap theme. This matches the left sidebar's
+   File/Tag/Property sort menus (see `anchorPanelMenu`). */
+.references-panel__sort-wrap {
+  position: relative;
+  min-width: 0;
+}
+
 .references-panel__sort {
-  /* WebKitGTK ignores background/color on native <select> unless
-     appearance is reset; without this the closed widget renders with
-     the GTK system theme (white in our dark mode). */
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   background: var(--bg-secondary);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
   border: 1px solid var(--border-primary);
   border-radius: 4px;
   color: var(--fg-primary);
   font-size: var(--text-sm);
-  padding: 2px 20px 2px 4px;
-  min-width: 0;
+  padding: 2px 6px 2px 4px;
+  cursor: pointer;
+}
+
+.references-panel__sort:hover {
+  background: var(--bg-hover);
+}
+
+.references-panel__sort-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.references-panel__sort > svg {
+  flex: none;
+  color: var(--fg-dim);
 }
 
 .references-panel__sentinel {
@@ -4793,8 +4874,9 @@ svg.lucide {
 }
 
 .flow-view__controls select {
-  /* See .references-panel__sort — WebKitGTK needs appearance:none to
-     honor our dark-theme background/color on a native <select>. */
+  /* WebKitGTK needs appearance:none to honor our dark-theme
+     background/color on a native <select>. This themes only the closed
+     control; the open popup stays OS-drawn. */
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -5847,66 +5929,49 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
-.journal-scroll-pill__connections {
-  background: none;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-control);
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 4px 8px;
-  display: inline-flex;
-  align-items: center;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
+/* Anchor-connection decoration has no pill control — it is always on.
+   See `.journal-scroll__entry--*` accent strips and
+   `.journal-scroll__entry-connection` header icons below. */
 
-.journal-scroll-pill__connections:hover {
-  background: var(--bg-hover);
-  color: var(--fg-secondary);
-}
-
-.journal-scroll-pill__connections.is-active {
-  background: var(--bg-active);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-.journal-scroll-pill__connections svg {
-  display: block;
-  width: 1.15em;
-  height: 1.15em;
-}
-
-.journal-scroll-pill__filter-chip {
+/* Active-filter label — center slot of the editor header. Deliberately
+   plain text (no border/background) so it reads as a status label rather
+   than another toolbar button; the × matches the label's text size. */
+.journal-scroll-filter-text {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-control);
-  padding: 2px 4px 2px 8px;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--fg-secondary);
   white-space: nowrap;
 }
 
-.journal-scroll-pill__filter-chip-label {
+.journal-scroll-filter-text__label {
   font-weight: 500;
 }
 
-.journal-scroll-pill__filter-chip-clear {
+.journal-scroll-filter-text__clear {
   background: none;
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 0 4px;
-  font-size: 1.1em;
+  /* A comfortable click target — the bare × glyph alone is a 1–2px-wide
+     hit area. A fixed square box with centered glyph makes it easy to
+     hit without enlarging the visible mark. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  padding: 0;
+  font-size: 1.05em;
   line-height: 1;
-  border-radius: 3px;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.journal-scroll-pill__filter-chip-clear:hover {
-  background: var(--bg-hover);
+.journal-scroll-filter-text__clear:hover {
   color: var(--fg-primary);
+  background: var(--bg-hover);
 }
 
 /* ─── Properties dropdown (filter picker, opens from Properties pill) ─── */
@@ -5993,7 +6058,8 @@ svg.lucide {
   background: var(--bg-hover);
 }
 
-.properties-dropdown__key.is-selected {
+.properties-dropdown__key.is-selected,
+.properties-dropdown__value.is-selected {
   background: var(--bg-active);
   color: var(--fg-primary);
 }
@@ -6008,6 +6074,85 @@ svg.lucide {
   color: var(--fg-dim);
   font-style: italic;
   padding: 4px 8px;
+}
+
+.properties-dropdown__chip.is-selected {
+  background: var(--bg-active);
+  border-color: var(--accent);
+}
+
+/* Text filter input — narrows the property / value list. */
+.properties-dropdown__filter {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+  padding: 4px 8px;
+  width: 100%;
+}
+
+.properties-dropdown__filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Value-view header: back arrow + "Value of <key>" label. */
+.properties-dropdown__view-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.properties-dropdown__back {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.properties-dropdown__back:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Currently-selected value, shown as a removable chip above the list. */
+.properties-dropdown__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.properties-dropdown__selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-active);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  padding: 2px 4px 2px 8px;
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+}
+
+.properties-dropdown__selected-clear {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1.1em;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.properties-dropdown__selected-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 /* ─── Journal Scroll view (continuous file scroll) ─── */
@@ -6049,24 +6194,25 @@ svg.lucide {
   transition: background 0.15s ease;
 }
 
-/* Connection decoration: the accent strip + a subtle border emphasis only
-   activate when the pill's Connections toggle is on. Multiple flags may
-   apply to the same entry; specificity goes anchor > linksTo > linkedFrom
-   > sharesTags (cascade order below). */
-.journal-scroll--connections-on .journal-scroll__entry--shares-tags > .journal-scroll__entry-accent {
+/* Connection decoration: an always-on accent strip + a subtle border
+   emphasis. Multiple flags may apply to the same entry; the strip can only
+   show one color, so specificity goes anchor > linksTo > linkedFrom >
+   sharesTags (cascade order below). The per-entry header icons
+   (`.journal-scroll__entry-connection`) show *every* applicable relation. */
+.journal-scroll__entry--shares-tags > .journal-scroll__entry-accent {
   background: var(--accent-amber, #d97706);
 }
-.journal-scroll--connections-on .journal-scroll__entry--linked-from-anchor > .journal-scroll__entry-accent {
+.journal-scroll__entry--linked-from-anchor > .journal-scroll__entry-accent {
   background: var(--accent-green, #16a34a);
 }
-.journal-scroll--connections-on .journal-scroll__entry--links-to-anchor > .journal-scroll__entry-accent {
+.journal-scroll__entry--links-to-anchor > .journal-scroll__entry-accent {
   background: var(--accent-blue, #2563eb);
 }
-.journal-scroll--connections-on .journal-scroll__entry--anchor > .journal-scroll__entry-accent {
+.journal-scroll__entry--anchor > .journal-scroll__entry-accent {
   background: var(--accent, #2563eb);
   width: 4px;
 }
-.journal-scroll--connections-on .journal-scroll__entry--anchor {
+.journal-scroll__entry--anchor {
   border-color: var(--accent, #2563eb);
 }
 
@@ -6093,6 +6239,84 @@ svg.lucide {
 .journal-scroll__entry-title:hover {
   text-decoration: underline;
   color: var(--syntax-link, var(--accent));
+}
+
+/* Trailing cluster of the entry header — the compile-warning button
+   (when present) followed by the connection icons, pushed to the right
+   edge as a group so the warning button always sits just left of the
+   icons. */
+.journal-scroll__entry-header-end {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Compile-warning button — toggles the (otherwise hidden) diagnostics
+   block. Borderless like the other header buttons: warnings are secondary,
+   nice-to-know info in Journal Scroll, so the icon colour alone carries the
+   signal. Warning amber by default, error red when any diagnostic is an
+   error. */
+.journal-scroll__entry-warning {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: #d68910;
+  cursor: pointer;
+  padding: 3px 5px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.journal-scroll__entry-warning:hover {
+  background: rgba(214, 137, 16, 0.12);
+}
+
+.journal-scroll__entry-warning.is-error {
+  color: #c0392b;
+}
+
+.journal-scroll__entry-warning.is-error:hover {
+  background: rgba(192, 57, 43, 0.12);
+}
+
+.journal-scroll__entry-warning svg {
+  display: block;
+}
+
+/* Connection icons — one per relation an entry has to the scroll's anchor.
+   Each icon is colored to match its accent-strip color so the strip's
+   meaning stays self-documenting. Decorative + tooltip only (no click
+   action); the native `title` carries the explanation on hover, and
+   `aria-label` exposes it to assistive tech. */
+.journal-scroll__entry-connection {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  cursor: help;
+}
+
+.journal-scroll__entry-connection svg {
+  display: block;
+}
+
+.journal-scroll__entry-connection--anchor {
+  color: var(--accent, #2563eb);
+}
+.journal-scroll__entry-connection--links-to-anchor {
+  color: var(--accent-blue, #2563eb);
+}
+.journal-scroll__entry-connection--linked-from-anchor {
+  color: var(--accent-green, #16a34a);
+}
+.journal-scroll__entry-connection--shares-tags {
+  color: var(--accent-amber, #d97706);
 }
 
 .journal-scroll__entry-body {
@@ -6159,40 +6383,18 @@ svg.lucide {
   text-align: center;
 }
 
-.scroll-context__section {
-  border-bottom: 1px solid var(--border-subtle);
-  padding-bottom: 6px;
-}
-
-.scroll-context__section-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.scroll-context__section-header:hover {
-  color: var(--fg-primary);
-}
-
-.scroll-context__section-count {
-  font-weight: 500;
-  color: var(--fg-dim);
-}
-
+/* Section body — a light card on the panel's darker (--bg-secondary)
+   background so content reads as distinct from the section headings
+   above it. */
 .scroll-context__section-body {
-  padding: 4px 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  margin: 2px 4px 0;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
 }
 
 .scroll-context__outline-note {
@@ -6298,45 +6500,8 @@ svg.lucide {
   padding: 4px 0;
 }
 
-.scroll-context__citation {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 6px;
-  border-radius: 3px;
-}
-
-.scroll-context__citation:hover {
-  background: var(--bg-hover);
-}
-
-.scroll-context__citation-key {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.scroll-context__citation-keyname {
-  color: var(--fg-primary);
-  font-family: var(--editor-font-mono, monospace);
-  font-size: var(--text-sm);
-}
-
-.scroll-context__citation-count {
-  color: var(--fg-dim);
-  font-size: 0.85em;
-}
-
-.scroll-context__citation-meta {
-  color: var(--fg-muted);
-  font-size: var(--text-sm);
-  line-height: 1.3;
-}
-
-.scroll-context__citation-title {
-  color: var(--fg-primary);
-}
+/* Citation rows in the Scroll Context pane use the shared `.citation-row`
+   styles — see the citation-row block above. */
 
 /* ─── Typst reading mode (compiled SVG, frame-based) ─── */
 

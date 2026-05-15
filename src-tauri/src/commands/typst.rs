@@ -179,6 +179,10 @@ pub async fn compile_typst_html(
     let original_lines = source.lines().count();
     let source = maybe_inject_set_vault(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
+    // Tag citations with `data-cite-key` so the Scroll Context panel can
+    // locate and highlight them. HTML render path only — see
+    // `style_injection::inject_cite_tagging`.
+    let source = style_injection::inject_cite_tagging(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
 

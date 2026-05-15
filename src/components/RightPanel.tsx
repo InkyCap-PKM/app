@@ -27,7 +27,7 @@ import {
   Link,
   BrainCircuit,
   Quote,
-  Scroll,
+  Newspaper,
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
@@ -115,6 +115,25 @@ interface BacklinkWithContext extends LinkInfo {
 const RightPanel: Component = () => {
   const activePanel = rightPanelTab;
   const setActivePanel = (tab: RightPanelTab) => setRightPanelTab(tab);
+
+  // The Scroll Context tab only exists while Journal Scroll is on. When the
+  // user turns scroll off (or switches to a non-scroll tab), revert the right
+  // panel to whatever tab they had focused before — otherwise the panel keeps
+  // showing the now-orphaned scroll-context pane until manually changed.
+  let prevScrollOn = false;
+  let tabBeforeScroll: RightPanelTab = "outline";
+  createEffect(() => {
+    const t = activeFileTab();
+    const scrollOn = !!(t && isScrollEnabled(t.id));
+    if (scrollOn && !prevScrollOn) {
+      // Entering scroll: remember the prior tab, then focus Scroll Context.
+      if (activePanel() !== "scroll-context") tabBeforeScroll = activePanel();
+      setActivePanel("scroll-context");
+    } else if (!scrollOn && prevScrollOn) {
+      if (activePanel() === "scroll-context") setActivePanel(tabBeforeScroll);
+    }
+    prevScrollOn = scrollOn;
+  });
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
   const [newPropType, setNewPropType] = createSignal<PropertyType>("text");
@@ -1038,6 +1057,18 @@ const RightPanel: Component = () => {
           >
             <EllipsisVertical size={18} />
           </button>
+          {/* Scroll Context — sits between File Actions and Outline, and
+              only while Journal Scroll is on for the active tab. */}
+          <Show when={(() => { const t = activeFileTab(); return t && isScrollEnabled(t.id); })()}>
+            <button
+              class={`right-panel__tab${activePanel() === "scroll-context" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("scroll-context")}
+              title="Scroll context"
+              aria-label="Scroll context"
+            >
+              <Newspaper size={18} />
+            </button>
+          </Show>
           <button
             class={`right-panel__tab${activePanel() === "outline" ? " right-panel__tab--active" : ""}`}
             onClick={() => setActivePanel("outline")}
@@ -1070,16 +1101,6 @@ const RightPanel: Component = () => {
           >
             <Quote size={18} />
           </button>
-          <Show when={(() => { const t = activeFileTab(); return t && isScrollEnabled(t.id); })()}>
-            <button
-              class={`right-panel__tab${activePanel() === "scroll-context" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("scroll-context")}
-              title="Scroll context"
-              aria-label="Scroll context"
-            >
-              <Scroll size={18} />
-            </button>
-          </Show>
           <button
             class="right-panel__tab"
             onClick={() => {
@@ -1681,8 +1702,18 @@ const RightPanel: Component = () => {
           </Show>
 
           {/* Scroll Context tab — only meaningful when Journal Scroll is on
-              in the active tab; gated by the tab button visibility above. */}
-          <Show when={activePanel() === "scroll-context"}>
+              for the active tab; the pane is gated on the scroll state, not
+              just the selected tab, so it can never render orphaned. */}
+          <Show
+            when={(() => {
+              const tab = activeFileTab();
+              return (
+                activePanel() === "scroll-context" &&
+                tab &&
+                isScrollEnabled(tab.id)
+              );
+            })()}
+          >
             {(() => {
               const tab = activeFileTab();
               return tab ? <ScrollContextPanel tabId={tab.id} /> : null;

@@ -23,27 +23,32 @@ import {
   on,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { onFileChanged } from "../lib/events";
 import {
+  consumeScrollNavRequest,
   findOffsetForTarget,
+  getAnchorPath,
+  getAnchorPinNonce,
   getEntries,
   getFirstOffset,
   getLastOffset,
   getSavedScrollPosition,
-  getShowConnections,
+  getScrollNavRequest,
   hasMoreAfter,
   hasMoreBefore,
   isLoading,
   loadMoreAfter,
   loadMoreBefore,
+  recordScrollNavigation,
   saveScrollPosition,
   setVisibleEntries,
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
-import { resolveTextFontSync } from "../lib/fontResolver";
+import { Anchor, MessageSquareWarning, Tags } from "lucide-solid";
 import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
 
@@ -199,7 +204,6 @@ function trackVisibility(tabId: string, path: string, isVisible: boolean) {
 
 interface JournalScrollViewProps {
   tabId: string;
-  anchorPath: string;
 }
 
 const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
@@ -230,12 +234,12 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   });
 
   // Recompute connection flags whenever the loaded entry set or anchor
-  // changes. Flags are computed unconditionally — the pill's Connections
-  // toggle only controls whether the styling is shown, so toggling doesn't
-  // re-issue IPC. One backend call covers all currently-loaded paths.
+  // changes. The anchor is read from the store (not a prop) so a re-anchor
+  // — e.g. a tree-mode file-tree click — recomputes against the new anchor.
+  // One backend call covers all currently-loaded paths.
   createEffect(() => {
     const entries = getEntries(props.tabId);
-    const anchor = props.anchorPath;
+    const anchor = getAnchorPath(props.tabId);
     if (entries.length === 0 || !anchor) {
       setFlagsByPath(new Map());
       return;
@@ -252,6 +256,38 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       }
     })();
   });
+
+  // Within-scroll back/forward navigation: the header arrows issue a
+  // `scrollNavRequest` through the store; here we consume it and scroll the
+  // requested note to the top. The `nonce` on the request makes repeated
+  // navigations to the same path distinct so this effect re-fires. The
+  // request-clearing and async scroll work run untracked so the effect's
+  // only dependency is the request itself.
+  createEffect(() => {
+    const req = getScrollNavRequest(props.tabId);
+    if (!req) return;
+    untrack(() => {
+      consumeScrollNavRequest(props.tabId);
+      void navigateScrollTo(req.path);
+    });
+  });
+
+  // On every result-set rebuild, pin the anchor entry to the top of the
+  // viewport. Entries loaded *before* the anchor sit above it and compile
+  // asynchronously — growing from small placeholders to full notes — and
+  // that growth would otherwise push the anchor down ("the scroll jumps").
+  // `defer: true` skips the initial run so a tab-return (which restores the
+  // saved scroll position instead) isn't overridden; only genuine rebuilds
+  // that happen while mounted trigger a pin.
+  createEffect(
+    on(
+      () => getAnchorPinNonce(props.tabId),
+      (nonce) => {
+        if (nonce > 0) pinAnchorToTop();
+      },
+      { defer: true },
+    ),
+  );
 
   // Top + bottom sentinel observers drive bidirectional pagination.
   createEffect(() => {
@@ -338,26 +374,38 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       );
       return;
     }
-    // Plain click: if the target is already loaded in this scroll, scroll
-    // to it. Otherwise check whether the target is in the current query's
-    // sorted result. If so, page toward it until it loads, then scroll;
-    // if not, fall through to a new tab (Rule A).
-    const loaded = getEntries(props.tabId).some(
-      (entry) => entry.path === match.path,
-    );
-    if (loaded) {
-      scrollToLoadedEntry(match.path);
-      return;
-    }
-    const reached = await extendUntilLoaded(match.path);
+    // Plain click: try to navigate within the scroll (scroll to it if
+    // loaded, else page toward it). If that succeeds, record the jump so
+    // the header back arrow can return to the note the link was clicked
+    // in; if the target isn't in this query at all, fall through to a new
+    // tab (Rule A).
+    const reached = await navigateScrollTo(match.path);
     if (reached) {
-      scrollToLoadedEntry(match.path);
+      recordScrollNavigation(props.tabId, sourcePath, match.path);
     } else {
       openTab(
         { type: "file", title: match.name, path: match.path },
         { forceNewTab: true },
       );
     }
+  }
+
+  // Navigate within the scroll to `targetPath`: scroll straight to it when
+  // already loaded, otherwise page the loaded window toward it and then
+  // scroll. Returns false when the target isn't part of the current query
+  // result (caller decides the fallback). Shared by wikilink clicks and the
+  // header back/forward arrows.
+  async function navigateScrollTo(targetPath: string): Promise<boolean> {
+    if (getEntries(props.tabId).some((e) => e.path === targetPath)) {
+      scrollToLoadedEntry(targetPath);
+      return true;
+    }
+    const reached = await extendUntilLoaded(targetPath);
+    if (reached) {
+      scrollToLoadedEntry(targetPath);
+      return true;
+    }
+    return false;
   }
 
   // Extend the loaded window toward `targetPath` if it sits in the
@@ -406,6 +454,46 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Keep the anchor entry clamped to the top of the viewport while the
+  // entries above it compile and grow. Runs a per-frame correction loop
+  // that re-aligns the anchor's top edge with the container's top edge,
+  // releasing as soon as the user scrolls (wheel / pointer / touch / key)
+  // or after a generous timeout — whichever comes first. `onCleanup`
+  // tears it down if the view unmounts or the effect re-fires mid-pin.
+  function pinAnchorToTop() {
+    const container = containerRef;
+    if (!container) return;
+    const anchorPath = getAnchorPath(props.tabId);
+    if (!anchorPath) return;
+    const userEvents = ["wheel", "pointerdown", "touchstart", "keydown"];
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      for (const ev of userEvents) container.removeEventListener(ev, stop);
+    };
+    for (const ev of userEvents) {
+      container.addEventListener(ev, stop, { passive: true });
+    }
+    const deadline = performance.now() + 4000;
+    const tick = () => {
+      if (stopped || containerRef !== container) return;
+      const el = container.querySelector(
+        `[data-path="${CSS.escape(anchorPath)}"]`,
+      ) as HTMLElement | null;
+      if (el) {
+        const delta =
+          el.getBoundingClientRect().top -
+          container.getBoundingClientRect().top;
+        if (Math.abs(delta) > 0.5) container.scrollTop += delta;
+      }
+      if (performance.now() < deadline) requestAnimationFrame(tick);
+      else stop();
+    };
+    requestAnimationFrame(tick);
+    onCleanup(stop);
+  }
+
   // Scroll-position preservation on prepend. Measure the
   // previously-first entry's top-relative-to-container before the load,
   // then restore the same offset after the DOM updates.
@@ -441,9 +529,6 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   return (
     <div
       class="journal-scroll"
-      classList={{
-        "journal-scroll--connections-on": getShowConnections(props.tabId),
-      }}
       ref={containerRef}
       onClick={(e) => void handleWikilinkClick(e)}
       onAuxClick={(e) => void handleWikilinkClick(e)}
@@ -482,6 +567,85 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 
 // === Per-entry component ===
 
+// Two of the connection icons aren't in lucide — they're custom variants of
+// lucide's square-arrow family chosen by the user to read as "points out to
+// the anchor" vs. "comes in from the anchor". They mirror lucide's standard
+// SVG frame (24×24, currentColor stroke) so they style and size identically
+// to the lucide icons alongside them.
+const lucideFrame = (size: number) => ({
+  width: size,
+  height: size,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  "stroke-width": 2,
+  "stroke-linecap": "round" as const,
+  "stroke-linejoin": "round" as const,
+});
+
+/** Custom "square-arrow-out-up-right" — an arrow leaving the box toward the
+ *  upper right. Used for "links to the anchor". */
+const SquareArrowOutUpRight: Component<{ size?: number }> = (props) => (
+  <svg {...lucideFrame(props.size ?? 24)}>
+    <path d="m 21,13 v 6 a 2,2 0 0 1 -2,2 H 5 A 2,2 0 0 1 3,19 V 5 A 2,2 0 0 1 5,3 h 6" />
+    <g transform="rotate(90,8.953924,11.970112)">
+      <path d="m 3,3 9,9" />
+      <path d="M 3,9 V 3 h 6" />
+    </g>
+  </svg>
+);
+
+/** Custom "square-arrow-in-down-left" — an arrow entering the box from the
+ *  lower left. Used for "linked from the anchor". */
+const SquareArrowInDownLeft: Component<{ size?: number }> = (props) => (
+  <svg {...lucideFrame(props.size ?? 24)}>
+    <path d="M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6" />
+    <g transform="rotate(180,9.0080946,9.0379826)">
+      <path d="m 3,3 9,9" />
+      <path d="M 3,9 V 3 h 6" />
+    </g>
+  </svg>
+);
+
+// Connection badges shown in each entry's header. The colored accent strip
+// down the entry's left edge encodes the same relation by color alone; the
+// header icon + tooltip make that color self-documenting (and, unlike the
+// single-color strip, all applicable relations show at once). Icon colors
+// are set in CSS to match their corresponding strip color so the two cues
+// reinforce each other. Order here is the cascade order of the strip CSS:
+// anchor > links-to > linked-from > shares-tags.
+const CONNECTION_BADGES: ReadonlyArray<{
+  key: "is_anchor" | "links_to_anchor" | "linked_from_anchor" | "shares_tags";
+  Icon: Component<{ size?: number }>;
+  label: string;
+  cls: string;
+}> = [
+  {
+    key: "is_anchor",
+    Icon: Anchor,
+    label: "Anchor note — the focus of this scroll",
+    cls: "anchor",
+  },
+  {
+    key: "links_to_anchor",
+    Icon: SquareArrowOutUpRight,
+    label: "Links to the anchor note",
+    cls: "links-to-anchor",
+  },
+  {
+    key: "linked_from_anchor",
+    Icon: SquareArrowInDownLeft,
+    label: "Linked from the anchor note",
+    cls: "linked-from-anchor",
+  },
+  {
+    key: "shares_tags",
+    Icon: Tags,
+    label: "Shares a tag with the anchor note",
+    cls: "shares-tags",
+  },
+];
+
 interface JournalScrollEntryViewProps {
   entry: ScrollEntry;
   tabId: string;
@@ -497,17 +661,22 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   const [result, setResult] = createSignal<TypstHtmlResult | null>(null);
   const [near, setNear] = createSignal(false);
   const [visible, setVisible] = createSignal(false);
+  // Compile diagnostics are hidden behind a header button by default — in
+  // Journal Scroll the warning is incidental and can be ignored; the button
+  // reveals the full message on demand.
+  const [showDiag, setShowDiag] = createSignal(false);
+  const diagnostics = () => result()?.diagnostics ?? [];
+  const hasError = () => diagnostics().some((d) => d.severity === "error");
 
-  // Mirror the Reading view's per-entry font/size fallback. Notes that
-  // override `#note(font-family:)` already bake the override into the
-  // compiled HTML; this only applies when the note has no override and
-  // would otherwise fall back to the browser default.
+  // Journal Scroll is an in-app review surface, not a print preview, so its
+  // body text uses the Visual Editor font (`--md-body-font`) rather than the
+  // document text font — this distinguishes it as an app function instead of
+  // implying a preview of the printed output. Notes that override
+  // `#note(font-family:)` still bake that override into the compiled HTML;
+  // this only sets the fallback for notes with no override.
   const contentStyle = () => {
     const s: Record<string, string> = {};
-    const font = resolveTextFontSync(settings.fonts);
-    if (font) {
-      s["font-family"] = `"${font}", var(--editor-font-body, sans-serif)`;
-    }
+    s["font-family"] = "var(--md-body-font, var(--editor-font-body, sans-serif))";
     if (settings.document.text_size) {
       s["font-size"] = `${settings.document.text_size}pt`;
     }
@@ -614,6 +783,39 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
         >
           {props.entry.title}
         </button>
+        <div class="journal-scroll__entry-header-end">
+          <Show when={diagnostics().length > 0}>
+            <button
+              type="button"
+              class="journal-scroll__entry-warning"
+              classList={{ "is-error": hasError() }}
+              onClick={() => setShowDiag((v) => !v)}
+              title={`${diagnostics().length} compile ${
+                hasError() ? "issue" : "warning"
+              }${diagnostics().length === 1 ? "" : "s"} — click to ${
+                showDiag() ? "hide" : "view"
+              }`}
+              aria-expanded={showDiag()}
+            >
+              <MessageSquareWarning size={15} />
+            </button>
+          </Show>
+          <Show when={props.flags}>
+            {(f) => (
+              <For each={CONNECTION_BADGES.filter((b) => f()[b.key])}>
+                {(b) => (
+                  <span
+                    class={`journal-scroll__entry-connection journal-scroll__entry-connection--${b.cls}`}
+                    title={b.label}
+                    aria-label={b.label}
+                  >
+                    <b.Icon size={14} />
+                  </span>
+                )}
+              </For>
+            )}
+          </Show>
+        </div>
       </div>
       <Show when={result()} fallback={
         <div class="journal-scroll__entry-loading">
@@ -622,10 +824,10 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
       }>
         {(r) => (
           <>
-            <Show when={r().diagnostics.length > 0}>
+            <Show when={r().diagnostics.length > 0 && showDiag()}>
               {/* Reuse the Reading view's structured DiagnosticRow so
                   severity / location / hints render identically across
-                  both surfaces. */}
+                  both surfaces. Toggled by the header warning button. */}
               <div class="typst-reading__diagnostics">
                 <Show when={r().recovered}>
                   <div class="typst-reading__recovered-note">

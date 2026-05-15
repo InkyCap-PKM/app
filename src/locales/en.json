@@ -21,6 +21,7 @@
   "references.sort.authorZA": "Author (Z–A)",
   "references.sort.yearNewest": "Year (newest)",
   "references.sort.yearOldest": "Year (oldest)",
+  "references.sort.label": "Sort references",
 
   "refNotes.searchPlaceholder": "Search references to import a note…",
   "refNotes.loading": "Loading bibliography…",

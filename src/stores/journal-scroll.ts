@@ -4,7 +4,11 @@
 // Pagination model:
 //   * Anchor lives at offset 0 in the sorted query result.
 //   * Initial load fetches HALF_BATCH entries before the anchor and
-//     HALF_BATCH + 1 entries from the anchor forward (two parallel requests).
+//     HALF_BATCH + 1 entries from the anchor forward (two parallel
+//     requests). The view then pins the anchor to the top of the viewport
+//     (see `anchorPinNonce`) so the user starts on the note they entered
+//     scroll mode on, while still being able to scroll up into the
+//     entries loaded before it.
 //   * `loadMoreBefore` / `loadMoreAfter` extend `firstOffset` / `lastOffset`
 //     by BATCH each call. The backend's strict-offset slice semantics mean
 //     a `result.length < limit` response unambiguously indicates "this
@@ -38,7 +42,6 @@ export interface JournalScrollState {
   mode: ScrollMode;
   /** Only meaningful when `mode === "properties"`. */
   propertyFilter: PropertyFilter | null;
-  showConnections: boolean;
   anchorPath: string;
   entries: ScrollEntry[];
   /** Most-negative offset (relative to anchor) we've issued a request for. */
@@ -51,10 +54,33 @@ export interface JournalScrollState {
   /** Vault paths of currently in-view entries; updated by an
    *  IntersectionObserver on each entry frame. */
   visibleEntries: string[];
+  /** Scroll-local navigation history — the notes the user has jumped
+   *  between via wikilink clicks *inside* the scroll. Drives the header
+   *  back/forward arrows while scroll is enabled; the tab's own file
+   *  history is irrelevant inside a scroll. */
+  navBack: string[];
+  navForward: string[];
+  /** The note the within-scroll navigation currently considers "current"
+   *  (the most recent jump target, or the anchor before any jump). Needed
+   *  to know what to push onto the opposite stack on back/forward. */
+  navCurrent: string;
+  /** A pending request for the view to scroll a path to the top, issued by
+   *  `scrollNavBack` / `scrollNavForward`. The `nonce` makes repeated
+   *  requests for the same path distinct so the view's effect re-fires.
+   *  The view consumes (clears) it via `consumeScrollNavRequest`. */
+  scrollNavRequest: { path: string; nonce: number } | null;
+  /** Bumped each time `loadInitial` rebuilds the result set. The view
+   *  watches it and, on a change, pins the anchor entry to the top of the
+   *  viewport through the asynchronous per-entry compiles. */
+  anchorPinNonce: number;
 }
 
 const HALF_BATCH = 5;
 const BATCH = 10;
+
+// Monotonic counter feeding `JournalScrollState.anchorPinNonce` — one bump
+// per result-set rebuild so the view can observe each as a distinct event.
+let anchorPinCounter = 0;
 
 // Per-tab last-known scroll position. Survives tab-switch unmounts so that
 // when the user returns to a Journal Scroll tab they land where they left
@@ -110,11 +136,6 @@ export function getMode(tabId: string): ScrollMode {
 export function getPropertyFilter(tabId: string): PropertyFilter | null {
   scrollVersion();
   return scrollStates[tabId]?.propertyFilter ?? null;
-}
-
-export function getShowConnections(tabId: string): boolean {
-  scrollVersion();
-  return scrollStates[tabId]?.showConnections ?? false;
 }
 
 export function getEntries(tabId: string): ScrollEntry[] {
@@ -236,6 +257,13 @@ export function getLastOffset(tabId: string): number {
   return scrollStates[tabId]?.lastOffset ?? 0;
 }
 
+/** Nonce bumped on every result-set rebuild; the view pins the anchor to
+ *  the top of the viewport whenever this changes. */
+export function getAnchorPinNonce(tabId: string): number {
+  scrollVersion();
+  return scrollStates[tabId]?.anchorPinNonce ?? 0;
+}
+
 // === Loading ===
 
 async function loadInitial(tabId: string) {
@@ -256,6 +284,13 @@ async function loadInitial(tabId: string) {
       s[tabId].hasMoreBefore = true;
       s[tabId].hasMoreAfter = true;
       s[tabId].visibleEntries = [];
+      // The result set is being rebuilt — within-scroll navigation history
+      // no longer maps onto it. Reset to a clean state anchored on the
+      // (possibly new) anchor.
+      s[tabId].navBack = [];
+      s[tabId].navForward = [];
+      s[tabId].navCurrent = s[tabId].anchorPath;
+      s[tabId].scrollNavRequest = null;
     }),
   );
   bump();
@@ -280,6 +315,10 @@ async function loadInitial(tabId: string) {
         s[tabId].hasMoreBefore = before.length === HALF_BATCH;
         s[tabId].hasMoreAfter = fromAnchor.length === HALF_BATCH + 1;
         s[tabId].loading = false;
+        // Signal the view to pin the anchor to the top of the viewport
+        // (entries before the anchor were just loaded above it). The
+        // nonce makes every rebuild a distinct, observable event.
+        s[tabId].anchorPinNonce = ++anchorPinCounter;
       }),
     );
     bump();
@@ -388,15 +427,19 @@ export async function toggleScroll(tabId: string, anchorPath: string) {
         enabled: true,
         mode: "date",
         propertyFilter: null,
-        showConnections: false,
         anchorPath,
         entries: [],
-        firstOffset: -HALF_BATCH,
+        firstOffset: 0,
         lastOffset: HALF_BATCH,
         hasMoreBefore: true,
         hasMoreAfter: true,
         loading: true,
         visibleEntries: [],
+        navBack: [],
+        navForward: [],
+        navCurrent: anchorPath,
+        scrollNavRequest: null,
+        anchorPinNonce: 0,
       };
     }),
   );
@@ -450,16 +493,6 @@ export async function clearPropertyFilter(tabId: string) {
   await loadInitial(tabId);
 }
 
-export function toggleConnections(tabId: string) {
-  const state = scrollStates[tabId];
-  if (!state) return;
-  setScrollStates(
-    produce((s) => {
-      s[tabId].showConnections = !s[tabId].showConnections;
-    }),
-  );
-  bump();
-}
 
 export async function updateAnchor(tabId: string, newAnchorPath: string) {
   const state = scrollStates[tabId];
@@ -472,6 +505,92 @@ export async function updateAnchor(tabId: string, newAnchorPath: string) {
   );
   bump();
   await loadInitial(tabId);
+}
+
+// === Within-scroll navigation ===
+//
+// While scroll is enabled, the header back/forward arrows operate on this
+// per-tab history of wikilink jumps *inside* the scroll, not the tab's file
+// history. A jump records the note it was made *from* (so "back" returns to
+// the note the user clicked the link in), and a back/forward step issues a
+// `scrollNavRequest` the view picks up to scroll the target to the top.
+
+let navNonce = 0;
+
+export function canScrollNavBack(tabId: string): boolean {
+  scrollVersion();
+  return (scrollStates[tabId]?.navBack.length ?? 0) > 0;
+}
+
+export function canScrollNavForward(tabId: string): boolean {
+  scrollVersion();
+  return (scrollStates[tabId]?.navForward.length ?? 0) > 0;
+}
+
+/** Record a within-scroll wikilink jump from `fromPath` to `toPath`. The
+ *  source note goes on the back stack and the forward stack is cleared,
+ *  matching browser-style history. */
+export function recordScrollNavigation(
+  tabId: string,
+  fromPath: string,
+  toPath: string,
+) {
+  if (!scrollStates[tabId] || fromPath === toPath) return;
+  setScrollStates(
+    produce((s) => {
+      s[tabId].navBack.push(fromPath);
+      s[tabId].navForward = [];
+      s[tabId].navCurrent = toPath;
+    }),
+  );
+  bump();
+}
+
+export function scrollNavBack(tabId: string) {
+  const state = scrollStates[tabId];
+  if (!state || state.navBack.length === 0) return;
+  setScrollStates(
+    produce((s) => {
+      const prev = s[tabId].navBack.pop()!;
+      s[tabId].navForward.push(s[tabId].navCurrent);
+      s[tabId].navCurrent = prev;
+      s[tabId].scrollNavRequest = { path: prev, nonce: ++navNonce };
+    }),
+  );
+  bump();
+}
+
+export function scrollNavForward(tabId: string) {
+  const state = scrollStates[tabId];
+  if (!state || state.navForward.length === 0) return;
+  setScrollStates(
+    produce((s) => {
+      const next = s[tabId].navForward.pop()!;
+      s[tabId].navBack.push(s[tabId].navCurrent);
+      s[tabId].navCurrent = next;
+      s[tabId].scrollNavRequest = { path: next, nonce: ++navNonce };
+    }),
+  );
+  bump();
+}
+
+export function getScrollNavRequest(
+  tabId: string,
+): { path: string; nonce: number } | null {
+  scrollVersion();
+  return scrollStates[tabId]?.scrollNavRequest ?? null;
+}
+
+/** Clear a consumed scroll-nav request so it isn't replayed (e.g. on a
+ *  later view remount). Called by the view once it has acted on it. */
+export function consumeScrollNavRequest(tabId: string) {
+  if (!scrollStates[tabId]?.scrollNavRequest) return;
+  setScrollStates(
+    produce((s) => {
+      s[tabId].scrollNavRequest = null;
+    }),
+  );
+  bump();
 }
 
 /** Called by JournalScrollView's IntersectionObserver each time the set of
