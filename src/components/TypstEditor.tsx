@@ -41,6 +41,7 @@ import { toastError } from "../stores/toasts";
 import { isEnabled as isScrollEnabled } from "../stores/journal-scroll";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
+import { DiagnosticRow } from "./DiagnosticRow";
 
 export interface TypstEditorProps {
   path: string;
@@ -840,34 +841,6 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
     </div>
   );
 };
-
-const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => (
-  <div
-    class="typst-reading__diagnostic"
-    classList={{
-      "typst-reading__diagnostic--error": props.d.severity === "error",
-      "typst-reading__diagnostic--warning": props.d.severity === "warning",
-    }}
-  >
-    <div class="typst-reading__diagnostic-line">
-      <span class="typst-reading__diagnostic-severity">{props.d.severity}</span>
-      <span class="typst-reading__diagnostic-message">{props.d.message}</span>
-      <Show when={props.d.primary?.path}>
-        <span class="typst-reading__diagnostic-loc">
-          {" — "}
-          {props.d.primary!.path} @ {props.d.primary!.start}
-        </span>
-      </Show>
-    </div>
-    <Show when={props.d.hints.length > 0}>
-      <div class="typst-reading__diagnostic-hints">
-        <For each={props.d.hints}>
-          {(h) => <div>hint: {h}</div>}
-        </For>
-      </div>
-    </Show>
-  </div>
-);
 
 interface TypstHtmlReadingViewProps {
   result: TypstHtmlResult | undefined;

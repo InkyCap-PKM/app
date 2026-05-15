@@ -27,7 +27,10 @@ import {
 import * as ipc from "../lib/ipc";
 import { onFileChanged } from "../lib/events";
 import {
+  findOffsetForTarget,
   getEntries,
+  getFirstOffset,
+  getLastOffset,
   getSavedScrollPosition,
   getShowConnections,
   hasMoreAfter,
@@ -39,6 +42,9 @@ import {
   setVisibleEntries,
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
+import { settings } from "../stores/settings";
+import { resolveTextFontSync } from "../lib/fontResolver";
+import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
 
 // === Module-level render cache + bounded-concurrency queue ===
@@ -332,14 +338,18 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       return;
     }
     // Plain click: if the target is already loaded in this scroll, scroll
-    // to it; otherwise fall through to a new tab (Rule A). "In result but
-    // unloaded" is deliberately collapsed into Rule A for now — scrolling
-    // an arbitrary distance to land on a far-away entry feels worse than
-    // just opening it in its own tab.
+    // to it. Otherwise check whether the target is in the current query's
+    // sorted result. If so, page toward it until it loads, then scroll;
+    // if not, fall through to a new tab (Rule A).
     const loaded = getEntries(props.tabId).some(
       (entry) => entry.path === match.path,
     );
     if (loaded) {
+      scrollToLoadedEntry(match.path);
+      return;
+    }
+    const reached = await extendUntilLoaded(match.path);
+    if (reached) {
       scrollToLoadedEntry(match.path);
     } else {
       openTab(
@@ -347,6 +357,43 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
         { forceNewTab: true },
       );
     }
+  }
+
+  // Extend the loaded window toward `targetPath` if it sits in the
+  // current query result. Returns true once the entry is loaded, false
+  // if the target isn't in the result or the search exhausted before
+  // reaching it. The safety cap (`MAX_BATCHES`) bounds the work even on
+  // a misbehaving query — at BATCH=10 entries each, 30 iterations covers
+  // 300 entries in either direction, which is well past any reasonable
+  // wikilink jump distance.
+  async function extendUntilLoaded(targetPath: string): Promise<boolean> {
+    const targetOffset = await findOffsetForTarget(props.tabId, targetPath);
+    if (targetOffset === null) return false;
+    const MAX_BATCHES = 30;
+    for (let i = 0; i < MAX_BATCHES; i++) {
+      if (
+        getEntries(props.tabId).some((entry) => entry.path === targetPath)
+      ) {
+        return true;
+      }
+      const first = getFirstOffset(props.tabId);
+      const last = getLastOffset(props.tabId);
+      if (targetOffset < first && hasMoreBefore(props.tabId)) {
+        await loadMoreBefore(props.tabId);
+      } else if (targetOffset > last && hasMoreAfter(props.tabId)) {
+        await loadMoreAfter(props.tabId);
+      } else {
+        // Cursor on target side but no more pages — entry should be in
+        // the loaded window now. One more loop checks for it.
+        if (
+          getEntries(props.tabId).some((entry) => entry.path === targetPath)
+        ) {
+          return true;
+        }
+        return false;
+      }
+    }
+    return false;
   }
 
   function scrollToLoadedEntry(path: string) {
@@ -450,6 +497,22 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   const [near, setNear] = createSignal(false);
   const [visible, setVisible] = createSignal(false);
 
+  // Mirror the Reading view's per-entry font/size fallback. Notes that
+  // override `#note(font-family:)` already bake the override into the
+  // compiled HTML; this only applies when the note has no override and
+  // would otherwise fall back to the browser default.
+  const contentStyle = () => {
+    const s: Record<string, string> = {};
+    const font = resolveTextFontSync(settings.fonts);
+    if (font) {
+      s["font-family"] = `"${font}", var(--editor-font-body, sans-serif)`;
+    }
+    if (settings.document.text_size) {
+      s["font-size"] = `${settings.document.text_size}pt`;
+    }
+    return s;
+  };
+
   // Pre-compile when within ~2 viewport-heights of the visible area.
   createEffect(() => {
     if (!frameRef) return;
@@ -550,22 +613,34 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
         </button>
       </div>
       <Show when={result()} fallback={
-        <div class="journal-scroll__entry-loading">Compiling…</div>
+        <div class="journal-scroll__entry-loading">
+          {near() ? "Compiling…" : "…"}
+        </div>
       }>
         {(r) => (
           <>
             <Show when={r().diagnostics.length > 0}>
-              <div class="journal-scroll__entry-diagnostics">
-                {r().diagnostics.map((d) => d.message).join("; ")}
+              {/* Reuse the Reading view's structured DiagnosticRow so
+                  severity / location / hints render identically across
+                  both surfaces. */}
+              <div class="typst-reading__diagnostics">
+                <For each={r().diagnostics}>
+                  {(d) => <DiagnosticRow d={d} />}
+                </For>
               </div>
             </Show>
             {/* Share `.typst-reading__html-content` with the dedicated
                 Reading view so the same compiled Typst HTML renders
                 identically in both surfaces — headings, lists, code,
                 tables, blockquotes, footnotes all get one set of rules
-                rather than two surfaces drifting apart. */}
+                rather than two surfaces drifting apart. The same
+                document-font + size fallback is applied at the body
+                level so notes that don't override `#note(font-family:)`
+                pick up the user's global font choice the same way the
+                Reading view does. */}
             <div
               class="journal-scroll__entry-body typst-reading__html-content"
+              style={contentStyle()}
               ref={bodyRef}
             />
           </>

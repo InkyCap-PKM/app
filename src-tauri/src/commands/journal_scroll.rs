@@ -80,10 +80,64 @@ pub async fn run_scroll_query(
     state: State<'_, AppState>,
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
     let anchor_path = sanitize_vault_arg(&query.anchor)?;
+    let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
+    Ok(slice_around_anchor(&sorted, &anchor_path, query.offset, query.limit))
+}
 
+/// Locate `target` within the same sorted result set `run_scroll_query`
+/// would produce, returning its offset relative to `anchor` (negative =
+/// before, zero = anchor row, positive = after). Returns `Ok(None)` when
+/// the target isn't in the result.
+///
+/// Used by the Journal Scroll wikilink-click handler: if the user clicks a
+/// wikilink whose target is in the current scroll's query but not yet
+/// loaded, the frontend pages in that direction until the target loads,
+/// then smooth-scrolls to it. Without this, the click falls through to a
+/// new tab even when the target is just past the loaded window.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FindInScrollQuery {
+    pub filter: ScrollFilter,
+    pub sort: ScrollSort,
+    pub anchor: String,
+    pub target: String,
+}
+
+#[tauri::command]
+pub async fn find_offset_in_scroll_query(
+    query: FindInScrollQuery,
+    state: State<'_, AppState>,
+) -> Result<Option<i32>, InkyCapError> {
+    let anchor_path = sanitize_vault_arg(&query.anchor)?;
+    let target_path = sanitize_vault_arg(&query.target)?;
+    let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
+    let anchor_str = anchor_path.display().to_string();
+    let target_str = target_path.display().to_string();
+    let anchor_idx = sorted.iter().position(|e| e.path == anchor_str);
+    let target_idx = sorted.iter().position(|e| e.path == target_str);
+    match (anchor_idx, target_idx) {
+        (Some(a), Some(t)) => Ok(Some((t as i64 - a as i64) as i32)),
+        // Target not in result.
+        (_, None) => Ok(None),
+        // Anchor not in result (shouldn't happen for a normal scroll, but
+        // we treat the anchor as offset 0 by convention so target's index
+        // becomes its absolute offset).
+        (None, Some(t)) => Ok(Some(t as i32)),
+    }
+}
+
+/// Build the full sorted candidate list for a query. Shared by
+/// `run_scroll_query` and `find_offset_in_scroll_query` so both surfaces
+/// see the same sorted ordering — diverging here would let the
+/// in-result-extension wikilink path target an entry the scroll itself
+/// would never page to.
+async fn build_sorted(
+    filter: &ScrollFilter,
+    sort: &ScrollSort,
+    state: &State<'_, AppState>,
+) -> Result<Vec<ScrollEntry>, InkyCapError> {
     // Filters that need the link index read it first per the lock-ordering
     // invariant in `state::AppState` (link_index < property_index).
-    let linked_paths: Option<Vec<PathBuf>> = match &query.filter {
+    let linked_paths: Option<Vec<PathBuf>> = match filter {
         ScrollFilter::LinkedFrom { source } => {
             let link_index = state.link_index.read().await;
             Some(link_index.get_forward_links(source))
@@ -97,7 +151,7 @@ pub async fn run_scroll_query(
 
     let index = state.property_index.read().await;
 
-    let candidates: Vec<&NoteMetadata> = match &query.filter {
+    let candidates: Vec<&NoteMetadata> = match filter {
         ScrollFilter::All => index.notes.values().collect(),
         ScrollFilter::Folder { path, recursive } => {
             collect_folder_notes(&index, path, *recursive)
@@ -117,7 +171,7 @@ pub async fn run_scroll_query(
     let mut keyed: Vec<(String, ScrollEntry)> = candidates
         .into_iter()
         .filter_map(|note| {
-            let key = sort_key(note, &query.sort)?;
+            let key = sort_key(note, sort)?;
             Some((
                 key,
                 ScrollEntry {
@@ -128,14 +182,13 @@ pub async fn run_scroll_query(
         })
         .collect();
 
-    let direction = sort_direction(&query.sort);
+    let direction = sort_direction(sort);
     keyed.sort_by(|a, b| match direction {
         SortDir::Asc => a.0.cmp(&b.0),
         SortDir::Desc => b.0.cmp(&a.0),
     });
 
-    let sorted: Vec<ScrollEntry> = keyed.into_iter().map(|(_, e)| e).collect();
-    Ok(slice_around_anchor(&sorted, &anchor_path, query.offset, query.limit))
+    Ok(keyed.into_iter().map(|(_, e)| e).collect())
 }
 
 // === Connection flags ===

@@ -28,7 +28,7 @@ import {
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import type { HeadingInfo } from "../lib/ipc";
-import type { LinkInfo } from "../lib/types";
+import type { AggregatedCitation, LinkInfo } from "../lib/types";
 
 interface ScrollContextPanelProps {
   tabId: string;
@@ -120,6 +120,18 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     },
   );
 
+  const [citations] = createResource<AggregatedCitation[], VisibleNote[]>(
+    visible,
+    async (notes) => {
+      if (notes.length === 0) return [];
+      try {
+        return await ipc.aggregateCitations(notes.map((n) => n.path));
+      } catch {
+        return [];
+      }
+    },
+  );
+
   const [tagConcentration] = createResource<
     Array<{ tag: string; count: number }>,
     VisibleNote[]
@@ -155,7 +167,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     outline: true,
     connections: true,
     tags: true,
-    citations: false,
+    citations: true,
   });
   function toggle(key: keyof ReturnType<typeof openSection>) {
     setOpenSection((o) => ({ ...o, [key]: !o[key] }));
@@ -338,8 +350,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
         </Show>
       </section>
 
-      {/* Citations — placeholder until an aggregated `inkycap-cite` query
-          IPC is wired up. Listed here so the surface area is visible. */}
+      {/* Citations */}
       <section class="scroll-context__section">
         <button
           type="button"
@@ -348,13 +359,54 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
           aria-expanded={openSection().citations}
         >
           <span class="scroll-context__section-label">Citations</span>
-          <span class="scroll-context__section-count">—</span>
+          <span class="scroll-context__section-count">
+            {citations()?.length ?? 0}
+          </span>
         </button>
         <Show when={openSection().citations}>
           <div class="scroll-context__section-body">
-            <div class="scroll-context__empty-row">
-              Citation aggregation across the visible window is coming next.
-            </div>
+            <For each={citations() ?? []}>
+              {(c) => (
+                <div class="scroll-context__citation" title={c.title ?? c.key}>
+                  <div class="scroll-context__citation-key">
+                    <span class="scroll-context__citation-keyname">
+                      @{c.key}
+                    </span>
+                    <span class="scroll-context__citation-count">
+                      {c.count}
+                    </span>
+                  </div>
+                  <Show when={c.title || c.authors.length > 0 || c.year}>
+                    <div class="scroll-context__citation-meta">
+                      <Show when={c.authors.length > 0}>
+                        <span>
+                          {c.authors.slice(0, 2).join(", ")}
+                          {c.authors.length > 2 ? " et al." : ""}
+                        </span>
+                      </Show>
+                      <Show when={c.year}>
+                        <span> ({c.year})</span>
+                      </Show>
+                      <Show when={c.title}>
+                        <span class="scroll-context__citation-title">
+                          {" "}{c.title}
+                        </span>
+                      </Show>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <Show
+              when={
+                citations.state === "ready" &&
+                (citations()?.length ?? 0) === 0
+              }
+            >
+              <div class="scroll-context__empty-row">
+                No citations in visible entries.
+              </div>
+            </Show>
           </div>
         </Show>
       </section>
