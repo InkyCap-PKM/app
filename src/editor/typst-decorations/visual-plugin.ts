@@ -820,6 +820,12 @@ function handleFuncCall(
         const source = state.doc.sliceString(range.from, range.to);
         const alignArg = (text.match(/align-to\s*:\s*(left|center|right)\b/) ?? [])[1];
         const fontArg = extractNamedStringArg(text, "font");
+        // weight: integer (the pill emits this) — named-string literals
+        // like `"bold"` aren't surfaced by the pill but still parse fine
+        // in lib.typ; we just don't reflect them in the chip's active
+        // state.
+        const weightMatch = text.match(/\bweight\s*:\s*(\d+)\b/);
+        const weight = weightMatch ? Number(weightMatch[1]) : null;
         decos.push(
           Decoration.replace({
             widget: new VerseWidget({
@@ -829,6 +835,7 @@ function handleFuncCall(
               callFrom: from,
               align: (alignArg as "left" | "center" | "right") ?? "left",
               font: fontArg ?? null,
+              weight,
             }),
           }).range(from, to),
         );

@@ -7,6 +7,8 @@ import { systemFontDefaults } from "./ipc";
 // Must match `font_resolver::BUNDLED_*` constants in Rust.
 export const BUNDLED_INTERFACE = "Inter";
 export const BUNDLED_TEXT = "Junicode";
+export const BUNDLED_MONO = "JuliaMono";
+export const BUNDLED_VERSE = "iA Writer Duo S";
 
 export type FontRole = "interface" | "editor" | "monospace" | "text" | "verse";
 
@@ -23,11 +25,10 @@ export async function getSystemFontDefaults(): Promise<SystemFontDefaults> {
   return cachedDefaults;
 }
 
-function bundledFor(role: FontRole, sys: SystemFontDefaults): string {
+function bundledFor(role: FontRole, _sys: SystemFontDefaults): string {
   if (role === "interface" || role === "editor") return BUNDLED_INTERFACE;
-  // No bundled mono — defensive fallback to system for any migrated
-  // settings that carry mode === "bundled" for the monospace row.
-  if (role === "monospace") return sys.mono;
+  if (role === "monospace") return BUNDLED_MONO;
+  if (role === "verse") return BUNDLED_VERSE;
   return BUNDLED_TEXT;
 }
 

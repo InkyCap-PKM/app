@@ -25,6 +25,8 @@ use crate::settings::{FontChoice, FontSettings};
 /// `src-tauri/assets/fonts/` bundle.
 pub const BUNDLED_INTERFACE: &str = "Inter";
 pub const BUNDLED_TEXT: &str = "Junicode";
+pub const BUNDLED_MONO: &str = "JuliaMono";
+pub const BUNDLED_VERSE: &str = "iA Writer Duo S";
 
 /// Cached OS defaults. Resolved lazily on first call.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -144,15 +146,13 @@ pub enum FontRole {
     Verse,
 }
 
-/// Bundled family name for a role, if InkyCap ships one. Mono doesn't
-/// have a bundled choice — picking "bundled" for it falls back to
-/// system at the resolver level (defensive against migrated settings
-/// files; the UI no longer offers "bundled" for mono).
+/// Bundled family name for a role, if InkyCap ships one.
 fn role_bundled(role: FontRole) -> Option<&'static str> {
     match role {
         FontRole::Interface | FontRole::Editor => Some(BUNDLED_INTERFACE),
-        FontRole::Monospace => None,
-        FontRole::Text | FontRole::Verse => Some(BUNDLED_TEXT),
+        FontRole::Monospace => Some(BUNDLED_MONO),
+        FontRole::Text => Some(BUNDLED_TEXT),
+        FontRole::Verse => Some(BUNDLED_VERSE),
     }
 }
 

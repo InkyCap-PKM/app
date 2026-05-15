@@ -229,28 +229,21 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
 }
 
 /// Inject `#set-vault(...)` after the `#import` line when the user has toggled
-/// show-inline-tags or show-inline-wikilinks off, or has a verse-font configured
-/// for compiled output. Defaults are `true`/`none` in the Typst package, so we
-/// only inject when overriding. `pub(crate)` so export paths share the same
-/// directive — without it, exports rendered verse blocks in the document text
-/// font instead of the user's configured verse font.
+/// show-inline-tags or show-inline-wikilinks off. Defaults are `true` in the
+/// Typst package, so we only inject when overriding.
+///
+/// Note: the verse font is intentionally NOT auto-injected here. It's an
+/// editor-only preference (preview affordance via `--verse-font` in CSS); a
+/// user who wants verse styled differently in compiled output should reach
+/// for Typst-native control — `#set-vault(verse-font: ...)`, the `font:`
+/// argument on `#verse(...)`, or a document-level show-rule on the verse
+/// element. Auto-injecting would silently override those choices.
 pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
     let settings = state.settings.read().await;
     let show_tags = settings.editor.show_inline_tags;
     let show_wikilinks = settings.editor.show_inline_wikilinks;
-    // Verse font is injected only when the user picked something other
-    // than "follow" — "follow" mode lets lib.typ default to the text
-    // font, so omitting the directive is correct.
-    let verse_font = if settings.fonts.verse.mode == crate::settings::FontChoice::FOLLOW {
-        None
-    } else {
-        crate::font_resolver::resolve_role(
-            crate::font_resolver::FontRole::Verse,
-            &settings.fonts,
-        )
-    };
 
-    if show_tags && show_wikilinks && verse_font.is_none() {
+    if show_tags && show_wikilinks {
         return source.to_string();
     }
 
@@ -261,11 +254,6 @@ pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> St
     if !show_wikilinks {
         args.push("show-inline-wikilinks: false".to_string());
     }
-    if let Some(font) = verse_font.as_deref() {
-        // Escape backslashes and quotes for the Typst string literal.
-        let escaped = font.replace('\\', "\\\\").replace('"', "\\\"");
-        args.push(format!("verse-font: \"{}\"", escaped));
-    }
     let directive = format!("#set-vault({})", args.join(", "));
 
     let mut out = String::with_capacity(source.len() + directive.len() + 2);
@@ -273,13 +261,6 @@ pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> St
     for line in source.lines() {
         out.push_str(line);
         out.push('\n');
-        // Use the canonical helper so this matches both the current
-        // `/.inkycap/vault.typ` import and the legacy versioned package
-        // path. The previous check (`line.contains("inkycap-vault")`)
-        // missed the canonical form, causing the directive to fall
-        // through to the end-of-file fallback below — which placed it
-        // AFTER any `#verse(...)` calls, so state.update() ran after
-        // state.get() and the verse-font override silently did nothing.
         if !injected && crate::vault_package::is_vault_import_line(line) {
             out.push_str(&directive);
             out.push('\n');

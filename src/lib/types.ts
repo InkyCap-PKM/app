@@ -214,9 +214,7 @@ export interface EditorSettings {
   show_inline_tags: boolean;
   focus_mode: "none" | "line" | "section";
   focus_dim: boolean;
-  verse_font: string | null;
   auto_expand_markup: boolean;
-  apply_verse_font_to_output: boolean;
   selection_toolbar: boolean;
   command_palette: boolean;
 }

@@ -47,10 +47,21 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
         }
     }
 
-    for data in inkycap_bundled_fonts() {
-        let buffer = Bytes::new(data);
+    for (data, family_override) in inkycap_bundled_fonts() {
+        let buffer = Bytes::new(*data);
         for font in Font::iter(buffer) {
-            book.push(font.info().clone());
+            let mut info = font.info().clone();
+            // Per-file family rename. Used to merge sibling families that
+            // ship as separate binaries (e.g. iA Writer's italic file is
+            // registered upstream under "<family> Italic", which would
+            // hide it from `text(font: "<family>", style: "italic")`
+            // lookups). Renaming the registration keeps the binary's
+            // own slant/weight info intact, so Typst's face matcher
+            // still picks the right face for the requested style.
+            if let Some(name) = family_override {
+                info.family = (*name).to_string();
+            }
+            book.push(info);
             slots.push(FontSlot {
                 font: OnceLock::from(Some(font)),
             });
@@ -62,21 +73,37 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
 
 /// Static byte slices for fonts shipped with InkyCap. The files live
 /// under `src-tauri/assets/fonts/` and are `include_bytes!`'d at compile
-/// time. Placeholder zero-byte files are kept in source control until
-/// real font binaries are committed — `Font::iter` on an empty buffer
-/// yields nothing, so the bundling path stays inert until populated.
+/// time. The `Option<&str>` second element overrides the family name
+/// the font registers under in Typst's `FontBook` — used to merge
+/// upstream sibling families (e.g. iA Writer's italic file ships under
+/// `"<family> Italic"`) into a single family so that `text(style: "italic")`
+/// resolves to the right face. `None` keeps the binary's own family name.
 /// To add a new face, drop the TTF/OTF under that directory and append
 /// an entry to this list.
-fn inkycap_bundled_fonts() -> &'static [&'static [u8]] {
-    static FONTS: &[&[u8]] = &[
-        include_bytes!("../../assets/fonts/Inter-Regular.ttf"),
-        include_bytes!("../../assets/fonts/Inter-Italic.ttf"),
-        include_bytes!("../../assets/fonts/Inter-Bold.ttf"),
-        include_bytes!("../../assets/fonts/Inter-BoldItalic.ttf"),
-        include_bytes!("../../assets/fonts/Junicode-Regular.ttf"),
-        include_bytes!("../../assets/fonts/Junicode-Italic.ttf"),
-        include_bytes!("../../assets/fonts/Junicode-Bold.ttf"),
-        include_bytes!("../../assets/fonts/Junicode-BoldItalic.ttf"),
+fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
+    static FONTS: &[(&[u8], Option<&str>)] = &[
+        (include_bytes!("../../assets/fonts/Inter-Regular.ttf"), None),
+        (include_bytes!("../../assets/fonts/Inter-Italic.ttf"), None),
+        (include_bytes!("../../assets/fonts/Inter-Bold.ttf"), None),
+        (include_bytes!("../../assets/fonts/Inter-BoldItalic.ttf"), None),
+        (include_bytes!("../../assets/fonts/Junicode-Regular.ttf"), None),
+        (include_bytes!("../../assets/fonts/Junicode-Italic.ttf"), None),
+        (include_bytes!("../../assets/fonts/Junicode-Bold.ttf"), None),
+        (include_bytes!("../../assets/fonts/Junicode-BoldItalic.ttf"), None),
+        (include_bytes!("../../assets/fonts/JuliaMono-Regular.ttf"), None),
+        (include_bytes!("../../assets/fonts/JuliaMono-RegularItalic.ttf"), None),
+        (include_bytes!("../../assets/fonts/JuliaMono-Bold.ttf"), None),
+        (include_bytes!("../../assets/fonts/JuliaMono-BoldItalic.ttf"), None),
+        // iA Writer Duo S — static cuts. Variable equivalents exist (V
+        // suffix) but Typst 0.14 doesn't interpolate variable axes in
+        // compiled output, so the weight chips would silently no-op.
+        // Statics give the Bold chip a real bold face; Light/Medium/
+        // Semibold map to whichever of Regular/Bold is closest, which
+        // is graceful and predictable.
+        (include_bytes!("../../assets/fonts/iAWriterDuoS-Regular.ttf"), None),
+        (include_bytes!("../../assets/fonts/iAWriterDuoS-Italic.ttf"), None),
+        (include_bytes!("../../assets/fonts/iAWriterDuoS-Bold.ttf"), None),
+        (include_bytes!("../../assets/fonts/iAWriterDuoS-BoldItalic.ttf"), None),
     ];
     FONTS
 }

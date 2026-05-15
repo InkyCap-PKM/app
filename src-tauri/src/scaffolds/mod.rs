@@ -76,8 +76,8 @@ pub fn expand_variables(input: &str, title: &str) -> ExpandedScaffold {
 /// resolved title. If the scaffold contains a `#note(title: "...")` after
 /// pass-1 expansion, that string literal wins; otherwise we fall back to
 /// the caller-supplied `title` (typically the filename without extension).
-/// This lets a Daily Note scaffold author `title: "Notes for {{date:D MMMM
-/// YYYY}}"` once and reuse `{{title}}` in the H1 to match.
+/// This lets a Daily Note scaffold author `title: "{{date:D MMMM YYYY}}"`
+/// once and reuse `{{title}}` in the H1 to match.
 pub fn expand_variables_with_zid(input: &str, title: &str, zid_pattern: &str) -> ExpandedScaffold {
     let now = Local::now();
 

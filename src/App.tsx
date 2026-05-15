@@ -146,6 +146,7 @@ const App: Component = () => {
     await initSettings();
     applyUiScale(settings.editor.font_size);
     onSettingsChange((s) => applyUiScale(s.editor.font_size));
+    await applyFontSettings(settings.fonts);
     onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
     await initVault();

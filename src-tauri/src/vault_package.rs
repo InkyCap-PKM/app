@@ -102,7 +102,7 @@ pub const DEFAULT_NEW_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/vault.typ": *
 pub const DEFAULT_DAILY_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/vault.typ": *
 
 #note(
-  title: "Notes for {{date:D MMMM YYYY}}",
+  title: "{{date:D MMMM YYYY}}",
   date: "{{date:YYYY-MM-DD}}",
   zid: "{{zid}}",
   tags: (),

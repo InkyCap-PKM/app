@@ -48,14 +48,6 @@ pub struct EditorSettings {
     pub focus_mode: String,
     /// Dim unfocused text in the visual editor when focus mode is active.
     pub focus_dim: bool,
-    /// Optional font family override applied to `#verse(...)` blocks.
-    /// `None` (or empty) means the verse uses the surface's regular text
-    /// font (visual editor body / reading view text font).
-    pub verse_font: Option<String>,
-    /// When `verse_font` is set, also propagate it to reading view and
-    /// compiled output via `#set-vault(verse-font: ...)`. When false, the
-    /// override applies only to the visual editor.
-    pub apply_verse_font_to_output: bool,
     /// Auto-expand function markup on cursor in visual mode.
     pub auto_expand_markup: bool,
     /// Show popup toolbar when text is selected in visual mode.
@@ -83,8 +75,6 @@ impl Default for EditorSettings {
             show_inline_tags: true,
             focus_mode: "none".to_string(),
             focus_dim: false,
-            verse_font: None,
-            apply_verse_font_to_output: false,
             auto_expand_markup: false,
             selection_toolbar: true,
             command_palette: true,
@@ -467,11 +457,6 @@ pub fn load_settings() -> UserSettings {
         if let Some(ref f) = settings.document.text_font {
             if !f.is_empty() {
                 settings.fonts.text = FontChoice::custom(f);
-            }
-        }
-        if let Some(ref f) = settings.editor.verse_font {
-            if !f.is_empty() {
-                settings.fonts.verse = FontChoice::custom(f);
             }
         }
     }
