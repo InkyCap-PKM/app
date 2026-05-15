@@ -17,6 +17,7 @@ use typst_html::HtmlDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
+use crate::typst_pipeline::recovery;
 use crate::typst_pipeline::world::VaultWorld;
 
 /// PDF standard presets exposed to the frontend. Each variant maps to a
@@ -57,10 +58,16 @@ impl PdfStandardPreset {
 /// payload size we care about.
 #[derive(Debug, Clone, Serialize)]
 pub struct TypstCompileResult {
-    /// True if a `PagedDocument` was produced. Diagnostics may still contain
-    /// warnings even on success; on failure, frames is empty and diagnostics
-    /// will contain at least one error.
+    /// True if a `PagedDocument` compiled cleanly (no errors). Diagnostics may
+    /// still contain warnings even on success. When false, see `recovered`:
+    /// `frames` may still be populated by the error-tolerant recovery pass.
     pub ok: bool,
+    /// True when the document failed to compile but the recovery pass salvaged
+    /// renderable output by dropping the errored span(s). `frames` is populated
+    /// and `diagnostics` still carries the real errors. See [`recovery`].
+    ///
+    /// [`recovery`]: crate::typst_pipeline::recovery
+    pub recovered: bool,
     pub frames: Vec<TypstFrame>,
     pub diagnostics: Vec<TypstDiagnostic>,
 }
@@ -77,6 +84,9 @@ pub struct TypstFrame {
 #[derive(Debug, Clone, Serialize)]
 pub struct TypstHtmlResult {
     pub ok: bool,
+    /// See [`TypstCompileResult::recovered`]: true when `html` was salvaged by
+    /// the recovery pass after a failed compile.
+    pub recovered: bool,
     pub html: String,
     pub diagnostics: Vec<TypstDiagnostic>,
 }
@@ -177,8 +187,10 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
     ) -> Result<TypstCompileResult, CompileError> {
+        // Clone so the original source is available to restore in the world
+        // after the recovery pass (which rewrites the main file in place).
         self.world
-            .set_main(abs_path, source)
+            .set_main(abs_path, source.clone())
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
 
         // typst::compile returns a Warned<SourceResult<PagedDocument>>:
@@ -193,36 +205,39 @@ impl TypstCompiler {
             .collect();
 
         match warned.output {
-            Ok(document) => {
-                let frames = document
-                    .pages
-                    .iter()
-                    .map(|page| {
-                        let svg = typst_svg::svg(page);
-                        TypstFrame {
-                            svg,
-                            width_pt: page.frame.width().to_pt(),
-                            height_pt: page.frame.height().to_pt(),
-                        }
-                    })
-                    .collect();
-                Ok(TypstCompileResult {
-                    ok: true,
-                    frames,
-                    diagnostics,
-                })
-            }
+            Ok(document) => Ok(TypstCompileResult {
+                ok: true,
+                recovered: false,
+                frames: render_frames(&document),
+                diagnostics,
+            }),
             Err(errors) => {
                 diagnostics.extend(
                     errors
                         .iter()
                         .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world)),
                 );
-                Ok(TypstCompileResult {
-                    ok: false,
-                    frames: Vec::new(),
-                    diagnostics,
-                })
+                // Error-tolerant fallback for the reading view: salvage a
+                // renderable document by dropping the errored spans. The
+                // diagnostics above still report the real errors verbatim.
+                let recovered = recovery::recover::<PagedDocument>(&self.world, abs_path, &errors);
+                // The recovery pass left the patched source in the world;
+                // restore the user's original so later queries see it.
+                let _ = self.world.set_main(abs_path, source);
+                match recovered {
+                    Some(document) => Ok(TypstCompileResult {
+                        ok: false,
+                        recovered: true,
+                        frames: render_frames(&document),
+                        diagnostics,
+                    }),
+                    None => Ok(TypstCompileResult {
+                        ok: false,
+                        recovered: false,
+                        frames: Vec::new(),
+                        diagnostics,
+                    }),
+                }
             }
         }
     }
@@ -297,8 +312,10 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
     ) -> Result<TypstHtmlResult, CompileError> {
+        // Clone so the original source can be restored after the recovery
+        // pass rewrites the main file in place (see `compile_svg`).
         self.world
-            .set_main(abs_path, source)
+            .set_main(abs_path, source.clone())
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
 
         let warned = typst::compile::<HtmlDocument>(&self.world);
@@ -315,10 +332,14 @@ impl TypstCompiler {
                 match typst_html::html(&document) {
                     Ok(html) => Ok(TypstHtmlResult {
                         ok: true,
+                        recovered: false,
                         html,
                         diagnostics,
                     }),
                     Err(errs) => {
+                        // The document compiled; HTML generation itself
+                        // failed. Not a span-localized error, so the recovery
+                        // pass doesn't apply — report it as before.
                         diagnostics.extend(
                             errs.iter()
                                 .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
@@ -326,6 +347,7 @@ impl TypstCompiler {
                         );
                         Ok(TypstHtmlResult {
                             ok: false,
+                            recovered: false,
                             html: String::new(),
                             diagnostics,
                         })
@@ -338,14 +360,41 @@ impl TypstCompiler {
                         .iter()
                         .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world)),
                 );
-                Ok(TypstHtmlResult {
-                    ok: false,
-                    html: String::new(),
-                    diagnostics,
-                })
+                // Error-tolerant fallback for the Journal Scroll: salvage
+                // renderable HTML by dropping the errored spans.
+                let recovered = recovery::recover::<HtmlDocument>(&self.world, abs_path, &errors)
+                    .and_then(|document| typst_html::html(&document).ok());
+                let _ = self.world.set_main(abs_path, source);
+                match recovered {
+                    Some(html) => Ok(TypstHtmlResult {
+                        ok: false,
+                        recovered: true,
+                        html,
+                        diagnostics,
+                    }),
+                    None => Ok(TypstHtmlResult {
+                        ok: false,
+                        recovered: false,
+                        html: String::new(),
+                        diagnostics,
+                    }),
+                }
             }
         }
     }
+}
+
+/// Render a compiled `PagedDocument` to per-page SVG frames for IPC.
+fn render_frames(document: &PagedDocument) -> Vec<TypstFrame> {
+    document
+        .pages
+        .iter()
+        .map(|page| TypstFrame {
+            svg: typst_svg::svg(page),
+            width_pt: page.frame.width().to_pt(),
+            height_pt: page.frame.height().to_pt(),
+        })
+        .collect()
 }
 
 /// Inject a `#import` + `#show: <template>` after the inkycap-vault import.
@@ -447,6 +496,30 @@ mod tests {
             result.diagnostics
         );
         assert!(!result.frames.is_empty());
+    }
+
+    #[test]
+    fn recovers_renderable_output_around_a_localized_error() {
+        // A literal `@2025-09-15` in prose is parsed as a cross-reference to a
+        // label that doesn't exist — a hard error that would otherwise blank
+        // the whole reading view. Recovery should drop the errored span and
+        // still render the surrounding content.
+        let (_dir, root) = canonical_tempdir();
+        let note_path = root.join("recover.typ");
+        let source =
+            "= Heading\n\nApply by @2025-09-15 for the year.\n\nA later paragraph.\n".to_string();
+        fs::write(&note_path, &source).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compiler.compile_svg(&note_path, source).expect("compile call ok");
+
+        assert!(!result.ok, "compile should report failure");
+        assert!(result.recovered, "recovery should salvage a render");
+        assert!(!result.frames.is_empty(), "recovered frames expected");
+        assert!(
+            result.diagnostics.iter().any(|d| d.severity == "error"),
+            "the real error must still be surfaced",
+        );
     }
 
     #[test]

@@ -103,6 +103,7 @@ async function runOneWorker() {
     } catch (err) {
       const failResult: TypstHtmlResult = {
         ok: false,
+        recovered: false,
         html: "",
         diagnostics: [
           {
@@ -567,7 +568,9 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
       if (!bodyRef) return;
       if (!r) return;
       while (bodyRef.firstChild) bodyRef.removeChild(bodyRef.firstChild);
-      if (!r.ok || !r.html) return;
+      // Render whenever HTML is present — `ok` is false for a recovered
+      // (partial) render, but that HTML is still worth showing.
+      if (!r.html) return;
       const parser = new DOMParser();
       const doc = parser.parseFromString(r.html, "text/html");
       doc.querySelectorAll("script").forEach((s) => s.remove());
@@ -624,6 +627,12 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
                   severity / location / hints render identically across
                   both surfaces. */}
               <div class="typst-reading__diagnostics">
+                <Show when={r().recovered}>
+                  <div class="typst-reading__recovered-note">
+                    Showing a partial render — the errored content below was
+                    skipped so the rest of the entry stays visible.
+                  </div>
+                </Show>
                 <For each={r().diagnostics}>
                   {(d) => <DiagnosticRow d={d} />}
                 </For>

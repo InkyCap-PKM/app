@@ -8,7 +8,29 @@ use crate::state::AppState;
 use crate::storage::sanitize_vault_arg;
 use crate::storage::traits::VaultStorage;
 use crate::typst_pipeline::style_injection;
-use crate::typst_pipeline::{TypstCompileResult, TypstHtmlResult};
+use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
+
+/// Shift main-note diagnostic line numbers back to the user's on-disk file.
+///
+/// InkyCap inserts style/vault lines into the note source (after the import
+/// line) before handing it to Typst, so Typst's diagnostic lines are offset
+/// from what the source editor shows. The insertions all land near the top of
+/// the file, so every position below them shifts by the same line count —
+/// subtract it. Spans in imported files (`is_main == false`) are untouched.
+fn remap_diagnostic_lines(diagnostics: &mut [TypstDiagnostic], injected_line_offset: usize) {
+    if injected_line_offset == 0 {
+        return;
+    }
+    for diag in diagnostics {
+        if let Some(span) = diag.primary.as_mut() {
+            if span.is_main {
+                if let Some(line) = span.line {
+                    span.line = Some(line.saturating_sub(injected_line_offset).max(1));
+                }
+            }
+        }
+    }
+}
 
 /// Compile the note at `path` and return per-page SVG frames + diagnostics.
 ///
@@ -31,8 +53,13 @@ pub async fn compile_typst_svg(
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
+    // Track lines inserted near the top of the file: only the set-vault and
+    // style-cascade steps shift existing line numbers. The bibliography step
+    // appends at the end, below all user content, so it never does.
+    let original_lines = source.lines().count();
     let source = maybe_inject_set_vault(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
+    let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
@@ -40,9 +67,11 @@ pub async fn compile_typst_svg(
         .as_mut()
         .ok_or(InkyCapError::VaultNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
-    compiler
+    let mut result = compiler
         .compile_svg(&canonical, source)
-        .map_err(|err| InkyCapError::Typst(err.to_string()))
+        .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
+    Ok(result)
 }
 
 /// If the source has `@` citations but no `#bibliography(...)` call, append a
@@ -147,8 +176,10 @@ pub async fn compile_typst_html(
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
+    let original_lines = source.lines().count();
     let source = maybe_inject_set_vault(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
+    let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
@@ -156,9 +187,11 @@ pub async fn compile_typst_html(
         .as_mut()
         .ok_or(InkyCapError::VaultNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
-    compiler
+    let mut result = compiler
         .compile_html(&canonical, source)
-        .map_err(|err| InkyCapError::Typst(err.to_string()))
+        .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
+    Ok(result)
 }
 
 /// Inject the style cascade: app document defaults, then collection style
