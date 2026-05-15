@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { Component, Show, createSignal } from "solid-js";
+import { Flag, Scroll, ScrollText } from "lucide-solid";
 import {
   clearPropertyFilter,
   getPropertyFilter,
@@ -101,11 +102,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
         title={enabled() ? "Turn Journal Scroll off" : "Turn Journal Scroll on"}
         aria-pressed={enabled()}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 21a2 2 0 0 1-2-2V5a2 2 0 0 0-4 0v3H3" />
-          <path d="M21 6a2 2 0 0 0-2-2H8" />
-          <path d="M3 9v8a4 4 0 0 0 4 4h12" />
-        </svg>
+        {enabled() ? <Scroll size={14} /> : <ScrollText size={14} />}
       </button>
 
       <Show when={enabled()}>
@@ -152,11 +149,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
           }
           aria-pressed={showConnections()}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m13 2-2 2.5h3L12 7" />
-            <path d="M10 14v-3a4 4 0 0 1 8 0v3" />
-            <path d="M7 21h10a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2z" />
-          </svg>
+          <Flag size={14} />
         </button>
 
         <Show when={mode() === "properties" && filter()}>
