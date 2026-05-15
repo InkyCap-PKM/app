@@ -114,7 +114,7 @@ const FlowView: Component<FlowViewProps> = (props) => {
           dominant-baseline="middle"
           fill={isCenter || isHovered ? "var(--bg-primary)" : "var(--fg-primary)"}
           font-size="13"
-          font-family="var(--font-interface, sans-serif)"
+          font-family="var(--interface-font, sans-serif)"
         >
           {node.name.length > 20
             ? node.name.substring(0, 18) + "..."

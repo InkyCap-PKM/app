@@ -17,8 +17,6 @@ pub struct EditorSettings {
     /// Base UI scale factor in pixels. Drives `--text-*` CSS sizes.
     /// (The editor's textual content uses `body_font_size` instead.)
     pub font_size: u32,
-    /// Font family for the editor content area.
-    pub body_font_family: String,
     /// Base font size in pixels for live preview mode.
     pub body_font_size: u32,
     /// Limit line width for comfortable reading.
@@ -60,7 +58,6 @@ impl Default for EditorSettings {
     fn default() -> Self {
         Self {
             font_size: 15,
-            body_font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
             body_font_size: 17,
             readable_line_length: true,
             max_line_width: 80,
@@ -98,10 +95,6 @@ pub struct AppearanceSettings {
     /// Accent color as a CSS hex value (e.g. "#1D7874"). Used when
     /// `accent_source` is "custom"; otherwise ignored.
     pub accent_color: String,
-    /// Font family for UI elements (sidebar, menus, etc.).
-    pub interface_font: String,
-    /// Font family for code blocks and monospace content.
-    pub monospace_font: String,
     /// What Ctrl+/Ctrl- adjusts: "content", "interface", or "both".
     pub zoom_target: String,
     /// How the file tree groups folders relative to files when sorting:
@@ -117,8 +110,6 @@ impl Default for AppearanceSettings {
             bg_palette_dark: "default".to_string(),
             accent_source: "default".to_string(),
             accent_color: "#1D7874".to_string(),
-            interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif".to_string(),
-            monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace".to_string(),
             zoom_target: "content".to_string(),
             folder_grouping: "before".to_string(),
         }
@@ -431,29 +422,15 @@ pub fn load_settings() -> UserSettings {
         settings.fonts.editor = settings.fonts.interface.clone();
     }
 
-    // Migrate legacy flat font fields into structured FontSettings. Only
-    // fires when the new `fonts` block was absent from the file (detected
-    // by it landing at exact-default). A user with the new block already
-    // present is respected verbatim.
+    // Migrate the legacy `document.text_font` field into structured
+    // FontSettings. Only fires when the new `fonts` block was absent
+    // from the file; a file that already carries the block is respected
+    // verbatim.
     let has_fonts_block = parsed_raw
         .as_ref()
         .and_then(|v| v.get("fonts"))
         .is_some();
     if !has_fonts_block {
-        let appearance_default = AppearanceSettings::default();
-        let editor_default = EditorSettings::default();
-
-        if settings.appearance.interface_font != appearance_default.interface_font {
-            settings.fonts.interface = FontChoice::custom(&settings.appearance.interface_font);
-        }
-        if settings.editor.body_font_family != editor_default.body_font_family
-            && settings.editor.body_font_family != settings.appearance.interface_font
-        {
-            settings.fonts.editor = FontChoice::custom(&settings.editor.body_font_family);
-        }
-        if settings.appearance.monospace_font != appearance_default.monospace_font {
-            settings.fonts.monospace = FontChoice::custom(&settings.appearance.monospace_font);
-        }
         if let Some(ref f) = settings.document.text_font {
             if !f.is_empty() {
                 settings.fonts.text = FontChoice::custom(f);

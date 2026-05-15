@@ -5204,7 +5204,7 @@ svg.lucide {
 
 .cm-ilp-table {
   border-collapse: collapse;
-  font-family: var(--editor-font-body);
+  font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
   font-size: var(--text-lg);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
@@ -6452,7 +6452,7 @@ svg.lucide {
   padding: 32px 48px;
   max-width: 800px;
   margin: 0 auto;
-  font-family: var(--editor-font-body, "Adwaita Sans", Inter, system-ui, sans-serif);
+  font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
   font-size: var(--text-xl);
   line-height: 1.6;
   color: var(--fg-primary);
@@ -6798,7 +6798,7 @@ svg.lucide {
   font-size: var(--text-sm);
   cursor: pointer;
   text-align: left;
-  font-family: var(--font-ui, sans-serif);
+  font-family: var(--interface-font, sans-serif);
 }
 
 .selection-toolbar__menu-item:hover {
@@ -7490,7 +7490,7 @@ svg.lucide {
   border-radius: 4px;
   background: var(--bg-elevated);
   color: var(--fg-muted);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--editor-font-mono, monospace);
   font-size: 0.9em;
 }
 
@@ -7752,7 +7752,7 @@ svg.lucide {
   padding-left: 18px;
   max-height: 200px;
   overflow-y: auto;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--editor-font-mono, monospace);
   font-size: var(--text-sm);
   color: var(--fg-secondary);
 }
@@ -7781,7 +7781,7 @@ svg.lucide {
 .typ-audit__result pre {
   margin: 0;
   white-space: pre-wrap;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--editor-font-mono, monospace);
   font-size: var(--text-sm);
 }
 

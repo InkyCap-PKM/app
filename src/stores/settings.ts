@@ -9,7 +9,6 @@ import * as ipc from "../lib/ipc";
 const DEFAULTS: UserSettings = {
   editor: {
     font_size: 15,
-    body_font_family: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
     body_font_size: 17,
     readable_line_length: true,
     max_line_width: 80,
@@ -34,8 +33,6 @@ const DEFAULTS: UserSettings = {
     bg_palette_dark: "default",
     accent_source: "default",
     accent_color: "#1D7874",
-    interface_font: "\"Adwaita Sans\", Inter, \"Fira Sans\", \"Ubuntu Sans\", system-ui, -apple-system, sans-serif",
-    monospace_font: "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", \"IBM Plex Mono\", \"JetBrains Mono\", Consolas, monospace",
     zoom_target: "content",
     folder_grouping: "before",
   },
