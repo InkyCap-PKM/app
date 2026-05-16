@@ -36,9 +36,26 @@ For a given note's neighborhood (all notes within N hops on the link graph), can
 score = pmi_weight × normalized_pmi        (bigrams only)
       + tfidf_weight × avg_tfidf_in_neighborhood
       + proximity_weight × (neighborhood_docs_containing / neighborhood_size)
+
+bigrams additionally × bigram_boost         (multi-word phrases rank higher)
 ```
 
-Default weights: PMI 0.4, TF-IDF 0.3, proximity 0.3. These can be tuned via `MycelialConfig`.
+Default weights: PMI 0.4, TF-IDF 0.3, proximity 0.3, bigram_boost 1.6. These
+can be tuned via `MycelialConfig`.
+
+### The neighborhood
+
+The "neighborhood" a candidate is scored over is **not** just the N-hop link
+graph. A sparsely-linked note has an almost-empty link graph, which collapses
+emergent detection into single-note keyword extraction. So the neighborhood is
+the link graph **unioned with the `semantic_neighbors` most similar notes** —
+ranked by `similar_docs`, a cosine similarity over per-document TF-IDF vectors.
+This lets concepts emerge from notes that are topologically distant but
+thematically related.
+
+An emergent concept must additionally appear in at least
+`min_neighborhood_presence` (default 2) neighborhood notes — a term in a single
+note is just a word, not a concept.
 
 ## Architecture
 

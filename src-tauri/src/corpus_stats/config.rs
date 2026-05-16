@@ -25,6 +25,16 @@ pub struct MycelialConfig {
     pub tfidf_weight: f64,
     /// Weight for graph proximity (neighborhood presence ratio).
     pub proximity_weight: f64,
+    /// How many semantically-similar notes to widen the neighborhood with,
+    /// beyond the link graph. Lets a sparsely-linked note still surface
+    /// concepts that emerge from its *context*, not just its own vocabulary.
+    pub semantic_neighbors: usize,
+    /// Minimum number of neighborhood notes an emergent concept must appear
+    /// in. A term in a single note is just a word, not an emergent concept.
+    pub min_neighborhood_presence: usize,
+    /// Score multiplier for bigrams — multi-word phrases are the "unnamed
+    /// concepts" the view is really after, so they rank above bare words.
+    pub bigram_boost: f64,
 }
 
 impl Default for MycelialConfig {
@@ -40,6 +50,9 @@ impl Default for MycelialConfig {
             pmi_weight: 0.4,
             tfidf_weight: 0.3,
             proximity_weight: 0.3,
+            semantic_neighbors: 12,
+            min_neighborhood_presence: 2,
+            bigram_boost: 1.6,
         }
     }
 }

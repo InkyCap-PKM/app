@@ -475,7 +475,7 @@ export interface FlowNode {
   id: string;
   name: string;
   depth: number;
-  direction: "center" | "backlink" | "forward";
+  direction: "center" | "anchor" | "backlink" | "forward";
 }
 
 export interface FlowEdge {
@@ -489,18 +489,47 @@ export interface FlowData {
   center: string;
 }
 
+// Mycelial View
+
+/** One note that mentions a term, with context for deep-linking the editor. */
+export interface SourceMention {
+  path: string;
+  name: string;
+  snippet: string;
+  /** 1-indexed line number. */
+  line: number;
+  /** Byte offsets of the mention within its line. */
+  char_start: number;
+  char_end: number;
+}
+
+/** An existing page mentioned in notes that haven't linked to it yet. */
+export interface LatentLink {
+  term: string;
+  target_path: string;
+  target_name: string;
+  score: number;
+  is_bigram: boolean;
+  mentions: SourceMention[];
+}
+
+/** A recurring concept with no page of its own — a candidate new note. */
 export interface EmergentConcept {
   term: string;
   score: number;
-  source_notes: string[];
-  doc_count: number;
   is_bigram: boolean;
+  mentions: SourceMention[];
 }
 
 export interface MycelialData {
-  nodes: FlowNode[];
-  edges: FlowEdge[];
   center: string;
+  /** Notes a signal emerged from — inner provenance nodes. */
+  source_notes: FlowNode[];
+  /** Wikilink neighbors with no signal — the faint outer horizon ring. */
+  context_notes: FlowNode[];
+  /** Wikilinks among center / source / context notes. */
+  context_edges: FlowEdge[];
+  latent_links: LatentLink[];
   emergent_concepts: EmergentConcept[];
 }
 

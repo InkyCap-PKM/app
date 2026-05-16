@@ -1,49 +1,107 @@
 /**
- * Mycelial View — visualizes the link graph around a note plus emergent
- * concept tendrils suggested by corpus statistics (TF-IDF + PMI).
+ * Mycelial View — surfaces where a notebox wants to grow next.
  *
- * Replaces the former Flow View with an organic, mycelial-network-inspired
- * visualization that helps users discover where their knowledge graph
- * wants to grow next.
+ * Unlike a link-graph browser, this view foregrounds two signals over a
+ * note's neighborhood:
+ *
+ *  - **Latent links** — an existing page mentioned in other notes without a
+ *    wikilink. Clicking one opens a picker of the mention sites so the user
+ *    can go create the link (the editor deep-links to the exact spot).
+ *  - **Emergent concepts** — a recurring phrase with no page of its own.
+ *    Clicking one creates a new page seeded with the connections it emerged
+ *    from, as a bulleted list of wikilinks.
+ *
+ * Existing wikilinked pages appear only as faint "anchor" notes for spatial
+ * orientation — they are not the point of the view.
  */
 
-import { createSignal, onMount, For, Show } from "solid-js";
+import { createSignal, createMemo, onMount, For, Show } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
+import type { LatentLink, SourceMention } from "../lib/types";
 import {
   computeMycelialLayout,
   type MycelialLayout,
-  type LayoutNode,
-  type TendrilLayout,
+  type MycelialBox,
 } from "../lib/mycelial-layout";
 
 interface MycelialViewProps {
   path: string;
 }
 
-const NODE_WIDTH = 140;
-const NODE_HEIGHT = 34;
+const ZOOM_MIN = 0.15;
+const ZOOM_MAX = 3;
+const PAN_STEP = 140;
+
+/** Capitalize the first letter of each word, for a new page title. */
+function titleCase(s: string): string {
+  return s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+}
+
+/** Split a snippet around the first occurrence of `term` for highlighting. */
+function highlightParts(
+  snippet: string,
+  term: string,
+): { text: string; hit: boolean }[] {
+  const idx = snippet.toLowerCase().indexOf(term.toLowerCase());
+  if (idx < 0) return [{ text: snippet, hit: false }];
+  return [
+    { text: snippet.slice(0, idx), hit: false },
+    { text: snippet.slice(idx, idx + term.length), hit: true },
+    { text: snippet.slice(idx + term.length), hit: false },
+  ];
+}
 
 export default function MycelialView(props: MycelialViewProps) {
   const [layout, setLayout] = createSignal<MycelialLayout | null>(null);
   const [loading, setLoading] = createSignal(true);
-  const [hoveredNode, setHoveredNode] = createSignal<string | null>(null);
-  const [hoveredTendril, setHoveredTendril] = createSignal<string | null>(null);
+  const [hoveredBox, setHoveredBox] = createSignal<string | null>(null);
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
 
+  // Viewport transform.
+  const [zoom, setZoom] = createSignal(1);
+  const [panX, setPanX] = createSignal(0);
+  const [panY, setPanY] = createSignal(0);
+
+  // Latent-link mention picker.
+  const [picker, setPicker] = createSignal<{
+    latent: LatentLink;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  let canvasRef: HTMLDivElement | undefined;
+  let drag: { x: number; y: number; px: number; py: number; moved: boolean } | null =
+    null;
+
+  function fitToView(l: MycelialLayout) {
+    if (!canvasRef) return;
+    const cw = canvasRef.clientWidth || 800;
+    const ch = canvasRef.clientHeight || 600;
+    const z = Math.min(cw / l.width, ch / l.height, 1) * 0.92;
+    setZoom(Math.max(z, ZOOM_MIN));
+    setPanX((cw - l.width * z) / 2);
+    setPanY((ch - l.height * z) / 2);
+  }
+
   async function loadData(path?: string) {
     const targetPath = path ?? centerPath();
     setLoading(true);
+    setPicker(null);
     try {
       const data = await ipc.getMycelialData(targetPath, maxDepth());
       const computed = computeMycelialLayout(
-        data.nodes,
-        data.edges,
+        data.center,
+        data.source_notes,
+        data.context_notes,
+        data.context_edges,
+        data.latent_links,
         data.emergent_concepts,
       );
       setLayout(computed);
+      fitToView(computed);
     } catch (err) {
       console.error("Mycelial View: failed to load data", err);
     } finally {
@@ -53,11 +111,11 @@ export default function MycelialView(props: MycelialViewProps) {
 
   onMount(() => loadData());
 
-  function handleNodeClick(node: LayoutNode) {
-    if (node.direction === "center") return;
+  function recenter(path: string) {
+    if (path === centerPath()) return;
     setHistory((h) => [...h, centerPath()]);
-    setCenterPath(node.id);
-    loadData(node.id);
+    setCenterPath(path);
+    loadData(path);
   }
 
   function handleBack() {
@@ -69,44 +127,160 @@ export default function MycelialView(props: MycelialViewProps) {
     loadData(prev);
   }
 
-  function handleTendrilClick(tendril: TendrilLayout) {
-    // Create a new note with the emergent concept as title
-    openTab({
-      type: "file",
-      title: tendril.term,
-      path: tendril.term + ".typ",
-    });
-  }
-
   function handleDepthChange(e: Event) {
-    const value = parseInt((e.target as HTMLSelectElement).value);
-    setMaxDepth(value);
+    setMaxDepth(parseInt((e.target as HTMLSelectElement).value));
     loadData();
   }
 
-  function nodeColor(direction: string): string {
-    switch (direction) {
-      case "center":
-        return "var(--accent)";
-      case "backlink":
-        return "var(--flow-backlink, #4a9eff)";
-      case "forward":
-        return "var(--flow-forward, #4ecdc4)";
-      default:
-        return "var(--fg-dim)";
+  // ---- Box interactions ---------------------------------------------------
+
+  function handleBoxClick(box: MycelialBox, e: MouseEvent) {
+    e.stopPropagation();
+    if (box.kind === "emergent" && box.emergent) {
+      createEmergentNote(box);
+    } else if (box.kind === "latent" && box.latent) {
+      const rect = canvasRef?.getBoundingClientRect();
+      setPicker({
+        latent: box.latent,
+        x: e.clientX - (rect?.left ?? 0),
+        y: e.clientY - (rect?.top ?? 0),
+      });
+    } else if (box.kind === "source" || box.kind === "context") {
+      recenter(box.id);
     }
   }
 
-  function tendrilStrokeWidth(score: number): number {
-    return 1 + score * 4;
+  async function createEmergentNote(box: MycelialBox) {
+    const concept = box.emergent;
+    if (!concept) return;
+    const title = titleCase(concept.term);
+    const center = centerPath();
+    const folder = center.includes("/")
+      ? center.slice(0, center.lastIndexOf("/"))
+      : "";
+    const bullets = concept.mentions
+      .map((m) => `- #wikilink(${JSON.stringify(m.name)})`)
+      .join("\n");
+    const body =
+      `#note(title: ${JSON.stringify(title)})\n\n` +
+      `= ${title}\n\n` +
+      `== Emerged from\n\n` +
+      `This page emerged from a concept recurring across these notes:\n\n` +
+      `${bullets}\n`;
+    try {
+      const newPath = await ipc.createNote(title, folder, body);
+      openTab(
+        { type: "file", title, path: newPath },
+        { forceNewTab: true },
+      );
+    } catch (err) {
+      console.error("Mycelial View: failed to create emergent note", err);
+    }
   }
 
-  function tendrilOpacity(score: number): number {
-    return 0.3 + score * 0.5;
+  function openMention(m: SourceMention) {
+    setPicker(null);
+    openTab(
+      { type: "file", title: m.name, path: m.path },
+      {
+        forceNewTab: true,
+        match: { line: m.line, charStart: m.char_start, charEnd: m.char_end },
+      },
+    );
   }
 
-  function tendrilDash(score: number): string {
-    return score < 0.3 ? "4 2" : "none";
+  // ---- Viewport (pan / zoom) ---------------------------------------------
+
+  function zoomBy(factor: number, cx?: number, cy?: number) {
+    if (!canvasRef) return;
+    const rect = canvasRef.getBoundingClientRect();
+    const mx = cx ?? rect.width / 2;
+    const my = cy ?? rect.height / 2;
+    const next = Math.min(Math.max(zoom() * factor, ZOOM_MIN), ZOOM_MAX);
+    const wx = (mx - panX()) / zoom();
+    const wy = (my - panY()) / zoom();
+    setPanX(mx - wx * next);
+    setPanY(my - wy * next);
+    setZoom(next);
+  }
+
+  function onWheel(e: WheelEvent) {
+    e.preventDefault();
+    const rect = canvasRef!.getBoundingClientRect();
+    zoomBy(
+      e.deltaY < 0 ? 1.12 : 1 / 1.12,
+      e.clientX - rect.left,
+      e.clientY - rect.top,
+    );
+  }
+
+  function onCanvasMouseDown(e: MouseEvent) {
+    drag = { x: e.clientX, y: e.clientY, px: panX(), py: panY(), moved: false };
+  }
+
+  function onCanvasMouseMove(e: MouseEvent) {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+    setPanX(drag.px + dx);
+    setPanY(drag.py + dy);
+  }
+
+  function onCanvasMouseUp() {
+    drag = null;
+  }
+
+  function onCanvasClick() {
+    // A click that wasn't a drag dismisses the picker.
+    if (!drag?.moved) setPicker(null);
+  }
+
+  function panBy(dx: number, dy: number) {
+    setPanX(panX() + dx);
+    setPanY(panY() + dy);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === "ArrowUp") panBy(0, PAN_STEP);
+    else if (e.key === "ArrowDown") panBy(0, -PAN_STEP);
+    else if (e.key === "ArrowLeft") panBy(PAN_STEP, 0);
+    else if (e.key === "ArrowRight") panBy(-PAN_STEP, 0);
+    else if (e.key === "+" || e.key === "=") zoomBy(1.15);
+    else if (e.key === "-") zoomBy(1 / 1.15);
+    else return;
+    e.preventDefault();
+  }
+
+  // ---- Hover highlighting -------------------------------------------------
+
+  // Adjacency over mycelial connections, so hovering a box can keep the
+  // boxes its paths reach visible instead of dimming the whole view.
+  const adjacency = createMemo(() => {
+    const m = new Map<string, Set<string>>();
+    const l = layout();
+    if (!l) return m;
+    for (const c of l.connections) {
+      (m.get(c.from) ?? m.set(c.from, new Set()).get(c.from)!).add(c.to);
+      (m.get(c.to) ?? m.set(c.to, new Set()).get(c.to)!).add(c.from);
+    }
+    return m;
+  });
+
+  /** A box dims only when something else is hovered and it isn't connected. */
+  function boxDimmed(id: string): boolean {
+    const h = hoveredBox();
+    if (h === null || h === id) return false;
+    return !(adjacency().get(h)?.has(id) ?? false);
+  }
+
+  function connectionActive(from: string, to: string): boolean {
+    const h = hoveredBox();
+    return h === null || h === from || h === to;
+  }
+
+  function strokeWidth(score: number): number {
+    return 1.2 + score * 3.5;
   }
 
   return (
@@ -115,7 +289,7 @@ export default function MycelialView(props: MycelialViewProps) {
         <div class="mycelial-view__toolbar-left">
           <Show when={history().length > 0}>
             <button
-              class="mycelial-view__back-btn"
+              class="mycelial-view__btn"
               onClick={handleBack}
               title="Back"
             >
@@ -143,7 +317,7 @@ export default function MycelialView(props: MycelialViewProps) {
             </select>
           </label>
           <button
-            class="mycelial-view__refresh-btn"
+            class="mycelial-view__btn"
             onClick={() => loadData()}
             title="Refresh"
           >
@@ -152,187 +326,246 @@ export default function MycelialView(props: MycelialViewProps) {
         </div>
       </div>
 
-      <div class="mycelial-view__canvas">
-        <Show when={!loading() && layout()} fallback={<div class="mycelial-view__loading">Loading…</div>}>
+      <div
+        class="mycelial-view__canvas"
+        ref={canvasRef}
+        tabindex={0}
+        onWheel={onWheel}
+        onMouseDown={onCanvasMouseDown}
+        onMouseMove={onCanvasMouseMove}
+        onMouseUp={onCanvasMouseUp}
+        onMouseLeave={onCanvasMouseUp}
+        onClick={onCanvasClick}
+        onKeyDown={onKeyDown}
+      >
+        <Show
+          when={!loading() && layout()}
+          fallback={<div class="mycelial-view__loading">Loading…</div>}
+        >
           {(l) => {
             const data = l();
             return (
-              <svg
-                class="mycelial-view__svg"
-                width={data.width}
-                height={data.height}
-                viewBox={`0 0 ${data.width} ${data.height}`}
-              >
-                {/* Edges */}
-                <g class="mycelial-edges">
-                  <For each={data.edges}>
-                    {(edge) => (
-                      <path
-                        d={edge.path}
-                        fill="none"
-                        stroke="var(--border-primary)"
-                        stroke-width="1.5"
-                        opacity="0.5"
-                      />
-                    )}
-                  </For>
-                </g>
+              <svg class="mycelial-view__svg" width="100%" height="100%">
+                <g
+                  transform={`translate(${panX()}, ${panY()}) scale(${zoom()})`}
+                >
+                  {/* Connections */}
+                  <g class="mycelial-connections">
+                    <For each={data.connections}>
+                      {(conn) => {
+                        const active = () =>
+                          connectionActive(conn.from, conn.to);
+                        const color =
+                          conn.kind === "emergent"
+                            ? "var(--mycelial-emergent, #9a7b4f)"
+                            : conn.kind === "latent"
+                              ? "var(--mycelial-latent, #c08a3e)"
+                              : "var(--border-primary)";
+                        return (
+                          <path
+                            d={conn.path}
+                            fill="none"
+                            stroke={color}
+                            stroke-width={
+                              conn.kind === "anchor"
+                                ? 1.2
+                                : strokeWidth(conn.score)
+                            }
+                            stroke-linecap="round"
+                            stroke-dasharray={
+                              conn.kind === "latent" ? "5 4" : "none"
+                            }
+                            opacity={
+                              conn.kind === "anchor"
+                                ? active()
+                                  ? 0.4
+                                  : 0.15
+                                : active()
+                                  ? 0.85
+                                  : 0.25
+                            }
+                          />
+                        );
+                      }}
+                    </For>
+                  </g>
 
-                {/* Tendrils */}
-                <g class="mycelial-tendrils">
-                  <For each={data.tendrils}>
-                    {(tendril) => (
-                      <g
-                        class="mycelial-tendril"
-                        onMouseEnter={() => setHoveredTendril(tendril.term)}
-                        onMouseLeave={() => setHoveredTendril(null)}
-                        onClick={() => handleTendrilClick(tendril)}
+                  {/* Boxes */}
+                  <For each={data.boxes}>
+                    {(box) => (
+                      <foreignObject
+                        x={box.x}
+                        y={box.y}
+                        width={box.w}
+                        height={box.h}
+                        onMouseEnter={() => setHoveredBox(box.id)}
+                        onMouseLeave={() => setHoveredBox(null)}
                       >
-                        <path
-                          d={tendril.path}
-                          fill="none"
-                          stroke="var(--mycelial-tendril, #8b7355)"
-                          stroke-width={tendrilStrokeWidth(tendril.score)}
-                          opacity={
-                            hoveredTendril() === tendril.term
-                              ? 1
-                              : tendrilOpacity(tendril.score)
-                          }
-                          stroke-dasharray={tendrilDash(tendril.score)}
-                          stroke-linecap="round"
-                        />
-                        <circle
-                          cx={tendril.endX}
-                          cy={tendril.endY}
-                          r={4 + tendril.score * 3}
-                          fill="var(--mycelial-tendril, #8b7355)"
-                          opacity={
-                            hoveredTendril() === tendril.term
-                              ? 0.9
-                              : 0.4 + tendril.score * 0.3
-                          }
-                        />
-                        <text
-                          x={tendril.labelX + 10}
-                          y={tendril.labelY + 4}
-                          class="mycelial-tendril__label"
-                          opacity={
-                            hoveredTendril() === tendril.term
-                              ? 1
-                              : 0.7
-                          }
+                        <div
+                          class={`mycelial-box mycelial-box--${box.kind}`}
+                          classList={{
+                            "mycelial-box--dim": boxDimmed(box.id),
+                          }}
+                          style={{
+                            width: `${box.w}px`,
+                            height: `${box.h}px`,
+                          }}
+                          onClick={(e) => handleBoxClick(box, e)}
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
-                          {tendril.term}
-                        </text>
-                      </g>
+                          <Show
+                            when={
+                              box.kind === "latent" || box.kind === "emergent"
+                            }
+                            fallback={
+                              <div class="mycelial-box__note-title">
+                                {box.title}
+                              </div>
+                            }
+                          >
+                            <div class="mycelial-box__concept">
+                              {box.title}
+                            </div>
+                            <div class="mycelial-box__subtitle">
+                              {box.subtitle}
+                            </div>
+                            <Show when={box.snippet}>
+                              <div class="mycelial-box__snippet">
+                                <For
+                                  each={highlightParts(
+                                    box.snippet,
+                                    box.latent
+                                      ? box.latent.term
+                                      : (box.emergent?.term ?? ""),
+                                  )}
+                                >
+                                  {(part) => (
+                                    <span
+                                      classList={{
+                                        "mycelial-box__hit": part.hit,
+                                      }}
+                                    >
+                                      {part.text}
+                                    </span>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                            <div class="mycelial-box__source">
+                              {box.sourceLabel}
+                            </div>
+                          </Show>
+                        </div>
+                      </foreignObject>
                     )}
                   </For>
                 </g>
-
-                {/* Nodes */}
-                <g class="mycelial-nodes">
-                  <For each={data.nodes}>
-                    {(node) => (
-                      <g
-                        class="mycelial-node"
-                        transform={`translate(${node.x}, ${node.y})`}
-                        onMouseEnter={() => setHoveredNode(node.id)}
-                        onMouseLeave={() => setHoveredNode(null)}
-                        onClick={() => handleNodeClick(node)}
-                        style={{ cursor: node.direction === "center" ? "default" : "pointer" }}
-                      >
-                        <rect
-                          width={NODE_WIDTH}
-                          height={NODE_HEIGHT}
-                          rx={6}
-                          ry={6}
-                          fill={
-                            hoveredNode() === node.id
-                              ? nodeColor(node.direction)
-                              : "var(--bg-primary)"
-                          }
-                          stroke={nodeColor(node.direction)}
-                          stroke-width={node.direction === "center" ? 2 : 1.5}
-                        />
-                        <text
-                          x={NODE_WIDTH / 2}
-                          y={NODE_HEIGHT / 2}
-                          text-anchor="middle"
-                          dominant-baseline="middle"
-                          fill={
-                            hoveredNode() === node.id
-                              ? "var(--bg-primary)"
-                              : "var(--fg-primary)"
-                          }
-                          font-size="12"
-                          font-family="var(--interface-font, sans-serif)"
-                        >
-                          {node.name.length > 18
-                            ? node.name.slice(0, 17) + "…"
-                            : node.name}
-                        </text>
-                      </g>
-                    )}
-                  </For>
-                </g>
-
-                {/* Tendril tooltip on hover */}
-                <Show when={hoveredTendril()}>
-                  {(term) => {
-                    const tendril = data.tendrils.find((t) => t.term === term());
-                    if (!tendril) return null;
-                    const shownNotes = tendril.sourceNotes.slice(0, 4);
-                    const noteLabels = shownNotes.map(
-                      (n) => n.replace(/\.typ$/, "").split("/").pop() ?? n,
-                    );
-                    const longestLabel = Math.max(...noteLabels.map((l) => l.length), 0);
-                    const tooltipWidth = Math.max(longestLabel * 6.5 + 16, 130);
-                    const tooltipHeight = 20 + shownNotes.length * 14;
-                    // Clamp tooltip position to stay within SVG bounds
-                    const tx = Math.min(tendril.endX - 5, data.width - tooltipWidth - 8);
-                    const ty = Math.min(tendril.endY + 14, data.height - tooltipHeight - 8);
-                    return (
-                      <g class="mycelial-tooltip">
-                        <rect
-                          x={tx}
-                          y={ty}
-                          width={tooltipWidth}
-                          height={tooltipHeight}
-                          rx={4}
-                          fill="var(--popup-bg, var(--bg-secondary))"
-                          stroke="var(--popup-border-color, var(--border-primary))"
-                          stroke-width={0.5}
-                          opacity={0.95}
-                        />
-                        <text
-                          x={tx + 5}
-                          y={ty + 14}
-                          font-size="10"
-                          fill="var(--fg-secondary)"
-                          font-family="var(--interface-font, sans-serif)"
-                        >
-                          Found in {tendril.docCount} note{tendril.docCount > 1 ? "s" : ""}:
-                        </text>
-                        <For each={noteLabels}>
-                          {(label, i) => (
-                            <text
-                              x={tx + 9}
-                              y={ty + 28 + i() * 14}
-                              font-size="9"
-                              fill="var(--fg-dim)"
-                              font-family="var(--interface-font, sans-serif)"
-                            >
-                              {label}
-                            </text>
-                          )}
-                        </For>
-                      </g>
-                    );
-                  }}
-                </Show>
               </svg>
             );
           }}
+        </Show>
+
+        {/* Viewport controls */}
+        <div class="mycelial-controls">
+          <div class="mycelial-controls__pad">
+            <button
+              class="mycelial-controls__btn mycelial-controls__btn--n"
+              title="Pan up"
+              onClick={() => panBy(0, PAN_STEP)}
+            >
+              ↑
+            </button>
+            <button
+              class="mycelial-controls__btn mycelial-controls__btn--w"
+              title="Pan left"
+              onClick={() => panBy(PAN_STEP, 0)}
+            >
+              ←
+            </button>
+            <button
+              class="mycelial-controls__btn mycelial-controls__btn--fit"
+              title="Fit to view"
+              onClick={() => {
+                const l = layout();
+                if (l) fitToView(l);
+              }}
+            >
+              ⊡
+            </button>
+            <button
+              class="mycelial-controls__btn mycelial-controls__btn--e"
+              title="Pan right"
+              onClick={() => panBy(-PAN_STEP, 0)}
+            >
+              →
+            </button>
+            <button
+              class="mycelial-controls__btn mycelial-controls__btn--s"
+              title="Pan down"
+              onClick={() => panBy(0, -PAN_STEP)}
+            >
+              ↓
+            </button>
+          </div>
+          <div class="mycelial-controls__zoom">
+            <button
+              class="mycelial-controls__btn"
+              title="Zoom in"
+              onClick={() => zoomBy(1.2)}
+            >
+              +
+            </button>
+            <span class="mycelial-controls__level">
+              {Math.round(zoom() * 100)}%
+            </span>
+            <button
+              class="mycelial-controls__btn"
+              title="Zoom out"
+              onClick={() => zoomBy(1 / 1.2)}
+            >
+              −
+            </button>
+          </div>
+        </div>
+
+        {/* Latent-link mention picker */}
+        <Show when={picker()}>
+          {(p) => (
+            <div
+              class="mycelial-picker"
+              style={{ left: `${p().x}px`, top: `${p().y}px` }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div class="mycelial-picker__header">
+                Link “{p().latent.term}” → {p().latent.target_name}
+              </div>
+              <div class="mycelial-picker__hint">
+                Open a note to wrap the mention in <code>[[ ]]</code>:
+              </div>
+              <For each={p().latent.mentions}>
+                {(m) => (
+                  <button
+                    class="mycelial-picker__item"
+                    onClick={() => openMention(m)}
+                  >
+                    <span class="mycelial-picker__item-name">{m.name}</span>
+                    <span class="mycelial-picker__item-snippet">
+                      <For each={highlightParts(m.snippet, p().latent.term)}>
+                        {(part) => (
+                          <span
+                            classList={{ "mycelial-box__hit": part.hit }}
+                          >
+                            {part.text}
+                          </span>
+                        )}
+                      </For>
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          )}
         </Show>
       </div>
 
@@ -342,28 +575,35 @@ export default function MycelialView(props: MycelialViewProps) {
             class="mycelial-view__legend-dot"
             style={{ background: "var(--accent)" }}
           />
-          Current
+          Current note
         </span>
         <span class="mycelial-view__legend-item">
           <span
             class="mycelial-view__legend-dot"
-            style={{ background: "var(--flow-backlink, #4a9eff)" }}
+            style={{ background: "var(--mycelial-latent, #c08a3e)" }}
           />
-          Backlinks
+          Latent link
         </span>
         <span class="mycelial-view__legend-item">
           <span
             class="mycelial-view__legend-dot"
-            style={{ background: "var(--flow-forward, #4ecdc4)" }}
+            style={{ background: "var(--mycelial-emergent, #9a7b4f)" }}
           />
-          Forward
+          Emergent concept
         </span>
         <span class="mycelial-view__legend-item">
           <span
             class="mycelial-view__legend-dot"
-            style={{ background: "var(--mycelial-tendril, #8b7355)" }}
+            style={{ background: "var(--fg-secondary)" }}
           />
-          Emergent
+          Source note
+        </span>
+        <span class="mycelial-view__legend-item">
+          <span
+            class="mycelial-view__legend-dot"
+            style={{ background: "var(--border-primary)" }}
+          />
+          Linked context
         </span>
       </div>
     </div>
