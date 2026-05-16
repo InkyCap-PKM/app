@@ -3,14 +3,14 @@
 //! compilation.
 //!
 //! Uses a hybrid approach: text/font/paragraph/heading settings are
-//! delegated to `apply-vault-defaults` / `apply-collection-style` in
+//! delegated to `apply-notebox-defaults` / `apply-collection-style` in
 //! `lib.typ` via `#show: fn.with(...)`. Page geometry (`set page(...)`)
 //! is emitted as a direct `#set` rule because `set page` inside a
 //! show-rule wrapper is a no-op for document-level layout in Typst.
 //!
-//! Injection order (after the inkycap-vault `#import` line):
+//! Injection order (after the inkycap-notebox `#import` line):
 //!
-//! 1. App document defaults — `#set page(...)` + `#show: apply-vault-defaults.with(...)`
+//! 1. App document defaults — `#set page(...)` + `#show: apply-notebox-defaults.with(...)`
 //! 2. Collection style overrides — `#set page(...)` + `#show: apply-collection-style.with(...)`
 //! 3. Template import (if any) — template's own rules override 1 & 2
 //!
@@ -98,7 +98,7 @@ fn format_font_value(families: &[String]) -> Option<String> {
 /// string when no defaults are set so the caller can skip injection.
 ///
 /// Text/font/monospace settings are emitted as a single
-/// `#show: apply-vault-defaults.with(...)` call (lib.typ handles the
+/// `#show: apply-notebox-defaults.with(...)` call (lib.typ handles the
 /// actual `set` rules). Page geometry is emitted as a direct
 /// `#set page(...)` because `set page` inside a show-rule wrapper is a
 /// no-op for document-level layout in Typst.
@@ -131,7 +131,7 @@ pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) ->
     }
     if !show_args.is_empty() {
         lines.push(format!(
-            "#show: apply-vault-defaults.with({})",
+            "#show: apply-notebox-defaults.with({})",
             show_args.join(", ")
         ));
     }
@@ -156,15 +156,15 @@ pub fn build_defaults_show_call_resolved(settings: &UserSettings) -> String {
     build_defaults_show_call(&doc, &mono_str)
 }
 
-/// Inject style rules into the source after the inkycap-vault import line.
+/// Inject style rules into the source after the inkycap-notebox import line.
 ///
 /// `defaults_rules`: from `build_defaults_rules()` (app-level)
 /// `collection_rules`: from `CollectionStyle::to_typst_show_call()` (collection-level)
 ///
 /// Both are optional and only injected when non-empty. The injection point
-/// is immediately after the inkycap-vault import line — recognized via
-/// [`crate::vault_package::is_vault_import_line`], which accepts both the
-/// canonical `/.inkycap/vault.typ` form and the legacy versioned package
+/// is immediately after the inkycap-notebox import line — recognized via
+/// [`crate::notebox_package::is_notebox_import_line`], which accepts both the
+/// canonical `/.inkycap/notebox.typ` form and the legacy versioned package
 /// path. If no such line is found, rules are prepended to the source.
 pub fn inject_style_rules(
     source: &str,
@@ -183,7 +183,7 @@ pub fn inject_style_rules(
         out.push_str(line);
         out.push('\n');
 
-        if !injected && crate::vault_package::is_vault_import_line(line) {
+        if !injected && crate::notebox_package::is_notebox_import_line(line) {
             out.push_str(&injection);
             out.push('\n');
             injected = true;
@@ -207,9 +207,9 @@ pub fn inject_style_rules(
 /// occurrences and highlight them.
 ///
 /// This is injected in-memory on the HTML render path only. The on-disk
-/// note, the `inkycap-vault` package, and the PDF/SVG export path are all
+/// note, the `inkycap-notebox` package, and the PDF/SVG export path are all
 /// untouched — a user's documents and their own exports never carry this
-/// wrapper. The rule is placed right after the inkycap-vault import line
+/// wrapper. The rule is placed right after the inkycap-notebox import line
 /// (so `html` is in scope and it precedes document content); if there is no
 /// import line it is prepended.
 pub fn inject_cite_tagging(source: &str) -> String {
@@ -222,7 +222,7 @@ pub fn inject_cite_tagging(source: &str) -> String {
     for line in source.lines() {
         out.push_str(line);
         out.push('\n');
-        if !injected && crate::vault_package::is_vault_import_line(line) {
+        if !injected && crate::notebox_package::is_notebox_import_line(line) {
             out.push_str(RULE);
             out.push('\n');
             injected = true;
@@ -280,7 +280,7 @@ mod tests {
         // Page geometry: direct #set rule
         assert!(rules.contains("#set page(paper: \"us-letter\")"));
         // Text settings: delegated to lib.typ
-        assert!(rules.contains("#show: apply-vault-defaults.with("));
+        assert!(rules.contains("#show: apply-notebox-defaults.with("));
         assert!(rules.contains("text-font: \"Inter\""));
         assert!(rules.contains("text-size: 12pt"));
         // page-paper should NOT be in the show call
@@ -314,35 +314,35 @@ mod tests {
 
     #[test]
     fn inject_after_import() {
-        let source = r#"#import "/.inkycap/packages/inkycap-vault/0.1.0/lib.typ": *
+        let source = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
 
 = Hello
 "#;
         let result = inject_style_rules(
             source,
-            Some("#show: apply-vault-defaults.with(text-font: \"Inter\")"),
+            Some("#show: apply-notebox-defaults.with(text-font: \"Inter\")"),
             None,
         );
-        let import_pos = result.find("inkycap-vault").unwrap();
-        let show_pos = result.find("#show: apply-vault-defaults").unwrap();
+        let import_pos = result.find("inkycap-notebox").unwrap();
+        let show_pos = result.find("#show: apply-notebox-defaults").unwrap();
         assert!(show_pos > import_pos);
     }
 
     #[test]
     fn collection_overrides_after_defaults() {
-        let source = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
         let result = inject_style_rules(
             source,
-            Some("#show: apply-vault-defaults.with(page-paper: \"a4\")"),
+            Some("#show: apply-notebox-defaults.with(page-paper: \"a4\")"),
             Some("#show: apply-collection-style.with(page-args: (paper: \"us-letter\"))"),
         );
-        let defaults_pos = result.find("apply-vault-defaults").unwrap();
+        let defaults_pos = result.find("apply-notebox-defaults").unwrap();
         let collection_pos = result.find("apply-collection-style").unwrap();
         assert!(collection_pos > defaults_pos);
     }
 
     /// End-to-end: compile a note with the hybrid injection approach —
-    /// direct `#set page(...)` for geometry + `#show: apply-vault-defaults.with(...)`
+    /// direct `#set page(...)` for geometry + `#show: apply-notebox-defaults.with(...)`
     /// for text — and verify both take effect.
     #[test]
     fn hybrid_injection_changes_page_size_and_text() {
@@ -353,7 +353,7 @@ mod tests {
 
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize");
-        crate::vault_package::scaffold(&root);
+        crate::notebox_package::scaffold(&root);
         let note_path = root.join("note.typ");
 
         let doc = DocumentDefaults {
@@ -365,7 +365,7 @@ mod tests {
 
         let source = format!(
             "{}\n{}\n\n= Hello\n\nBody text.\n",
-            crate::vault_package::import_line(),
+            crate::notebox_package::import_line(),
             rules,
         );
         fs::write(&note_path, &source).expect("write note");

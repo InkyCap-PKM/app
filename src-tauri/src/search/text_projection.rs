@@ -70,7 +70,7 @@ pub fn project(source: &str) -> TextProjection {
 ///
 /// Default behavior is "descend into every child"; the special-cases
 /// below cover the nodes we either want to skip entirely (code mode,
-/// labels, math, comments, vault-side metadata) or for which we extract
+/// labels, math, comments, notebox-side metadata) or for which we extract
 /// text out-of-band from arguments (function calls with prose payloads).
 fn walk(node: &LinkedNode<'_>, source: &str, line_map: &LineMap, out: &mut TextProjection) {
     match node.kind() {

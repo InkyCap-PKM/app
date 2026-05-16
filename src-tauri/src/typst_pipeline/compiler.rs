@@ -1,8 +1,8 @@
-//! Public-facing compile API. Holds a [`VaultWorld`] and exposes per-document
+//! Public-facing compile API. Holds a [`NoteboxWorld`] and exposes per-document
 //! `compile_svg` (Phase 1), `compile_pdf` (Phase 9b), and query hooks.
 //!
 //! Design notes:
-//! - One compiler instance per open vault. Re-used across compiles so comemo
+//! - One compiler instance per open notebox. Re-used across compiles so comemo
 //!   memoization stays warm.
 //! - All rendering goes through `typst::compile(&world)` where the world's
 //!   "main" file pointer has been swapped to the document we want.
@@ -18,7 +18,7 @@ use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 use crate::typst_pipeline::recovery;
-use crate::typst_pipeline::world::VaultWorld;
+use crate::typst_pipeline::world::NoteboxWorld;
 
 /// PDF standard presets exposed to the frontend. Each variant maps to a
 /// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
@@ -92,24 +92,24 @@ pub struct TypstHtmlResult {
 }
 
 pub struct TypstCompiler {
-    world: VaultWorld,
+    world: NoteboxWorld,
     /// Citation style (e.g. "apa", "ieee", "mla"). `None` uses Typst default.
     bibliography_style: Option<String>,
 }
 
 impl TypstCompiler {
-    pub fn new(vault_root: PathBuf) -> Self {
+    pub fn new(notebox_root: PathBuf) -> Self {
         Self {
-            world: VaultWorld::new(vault_root),
+            world: NoteboxWorld::new(notebox_root),
             bibliography_style: None,
         }
     }
 
-    pub fn vault_root(&self) -> &Path {
-        self.world.vault_root()
+    pub fn notebox_root(&self) -> &Path {
+        self.world.notebox_root()
     }
 
-    /// Load system and vault-local fonts on demand. No-op if already loaded.
+    /// Load system and notebox-local fonts on demand. No-op if already loaded.
     pub fn ensure_system_fonts(&mut self) {
         self.world.load_system_fonts();
     }
@@ -166,14 +166,14 @@ impl TypstCompiler {
     }
 
     /// Compile the note at `abs_path` to per-page SVG. The source is supplied
-    /// by the caller (typically read via [`VaultStorage`], which validates the
-    /// path is inside the vault); this keeps the compiler out of the I/O path
+    /// by the caller (typically read via [`NoteboxStorage`], which validates the
+    /// path is inside the notebox); this keeps the compiler out of the I/O path
     /// for the main file and ensures all reads go through the trait that
-    /// enforces the vault sandbox. Imported files (`#import "/..."`) are still
+    /// enforces the notebox sandbox. Imported files (`#import "/..."`) are still
     /// read by the underlying `World` directly — that's a separate threat
     /// surface tracked as a follow-up.
     ///
-    /// `abs_path` MUST be a canonicalized absolute path inside the vault root
+    /// `abs_path` MUST be a canonicalized absolute path inside the notebox root
     /// the compiler was constructed with; the caller is responsible for that
     /// guarantee.
     ///
@@ -181,7 +181,7 @@ impl TypstCompiler {
     /// World is `Sync` and could in principle be shared, but compile is hot
     /// enough at ~20ms that we don't gain anything from concurrent compiles.
     ///
-    /// [`VaultStorage`]: crate::storage::traits::VaultStorage
+    /// [`NoteboxStorage`]: crate::storage::traits::NoteboxStorage
     pub fn compile_svg(
         &mut self,
         abs_path: &Path,
@@ -397,13 +397,13 @@ fn render_frames(document: &PagedDocument) -> Vec<TypstFrame> {
         .collect()
 }
 
-/// Inject a `#import` + `#show: <template>` after the inkycap-vault import.
+/// Inject a `#import` + `#show: <template>` after the inkycap-notebox import.
 fn inject_template_import(source: &str, template: &str) -> String {
-    // Find the line containing the inkycap-vault import (canonical or legacy).
+    // Find the line containing the inkycap-notebox import (canonical or legacy).
     let mut cursor = 0usize;
     for line in source.split_inclusive('\n') {
         let body = line.strip_suffix('\n').unwrap_or(line);
-        if crate::vault_package::is_vault_import_line(body) {
+        if crate::notebox_package::is_notebox_import_line(body) {
             let insert_at = cursor + line.len();
             let import_line = format!("#import \"{}\": *\n", template);
             let mut result = String::with_capacity(source.len() + import_line.len());
@@ -444,7 +444,7 @@ mod tests {
 
     /// Tempdirs may not be canonical on every platform (`/tmp` is a symlink
     /// to `/private/tmp` on macOS). The compile pipeline assumes a canonical
-    /// vault root so the symlink-escape check holds — tests must do the same.
+    /// notebox root so the symlink-escape check holds — tests must do the same.
     fn canonical_tempdir() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn compiles_phase_0_spike_fixture() {
-        // The Phase 0 spike fixture exercises the full inkycap-vault package
+        // The Phase 0 spike fixture exercises the full inkycap-notebox package
         // (note metadata, wikilinks, tags, verse). The fixture lives at the
         // repository root, two levels above src-tauri; we only run it when
         // the path resolves so this test still passes outside a checkout.

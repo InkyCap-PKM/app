@@ -7,14 +7,14 @@ use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
-use crate::vault_package;
+use crate::notebox_package;
 
 use super::md_to_typst::{
     extract_embed_filenames, markdown_to_typst, MarkdownDialect, MarkdownToTypstOptions,
 };
 
 /// Rewrite relative path arguments in `image`/`read`/`embed`/`bibliography`
-/// calls to vault-root-absolute paths anchored at the note's location.
+/// calls to notebox-root-absolute paths anchored at the note's location.
 /// Markdown commonly emits `![](images/foo.png)` which `markdown_to_typst`
 /// turns into `#image("images/foo.png")`. Left alone, that path is fragile
 /// (breaks on note move, breaks under merged export). Rebasing at import
@@ -25,7 +25,7 @@ fn rebase_for_note(typst_content: &str, relative_note_path: &Path) -> String {
     rebase_relative_paths(typst_content, note_dir)
 }
 
-/// Result of a vault import operation.
+/// Result of a notebox import operation.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ImportResult {
     pub notes_converted: u32,
@@ -33,18 +33,18 @@ pub struct ImportResult {
     pub errors: Vec<String>,
 }
 
-/// Import a markdown vault from a directory into the target vault location.
+/// Import a markdown notebox from a directory into the target notebox location.
 /// Converts .md files to .typ, copies other files as-is, and scaffolds the
-/// inkycap-vault package.
+/// inkycap-notebox package.
 ///
 /// Obsidian-style image embeds `![[name.png]]` carry no path — the file
-/// could live anywhere in the source vault. To resolve them faithfully
+/// could live anywhere in the source notebox. To resolve them faithfully
 /// the importer makes a first pre-pass to scan every markdown file for
 /// embed references, then routes the matching source files into the
 /// user's configured `attachment_folder` (instead of preserving their
 /// original relative paths) so the emitted
 /// `#image("/<attachment_folder>/name.png")` calls land on the actual
-/// file. Files referenced by embeds but absent from the source vault
+/// file. Files referenced by embeds but absent from the source notebox
 /// produce broken paths — surfaced to the user instead of silently
 /// rewritten — so they can be hand-fixed post-import.
 pub fn import_from_directory(
@@ -65,8 +65,8 @@ pub fn import_from_directory(
         errors: Vec::new(),
     };
 
-    // Scaffold the inkycap-vault package in the target.
-    vault_package::scaffold(target);
+    // Scaffold the inkycap-notebox package in the target.
+    notebox_package::scaffold(target);
 
     // Pre-pass: scan every .md file for `![[filename]]` embed references.
     // The resulting set drives file-routing in the main pass: anything
@@ -136,7 +136,7 @@ pub fn import_from_directory(
 /// (e.g. `"Pasted image 20240412113956.png"`) referenced by Obsidian-
 /// style embed syntax `![[…]]`. Filenames are intentionally bare —
 /// the same name in different folders collapses to one entry, matching
-/// Obsidian's vault-wide-by-name lookup semantics.
+/// Obsidian's notebox-wide-by-name lookup semantics.
 fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
     let mut targets = HashSet::new();
     for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
@@ -193,7 +193,7 @@ fn copy_asset_to_attachment_folder(
     }
 }
 
-/// Import a markdown vault from a zip archive into the target vault location.
+/// Import a markdown notebox from a zip archive into the target notebox location.
 ///
 /// Mirrors [`import_from_directory`]'s pre-scan-then-route strategy for
 /// `![[name]]` image embeds: a first pass collects embed-referenced
@@ -238,8 +238,8 @@ pub fn import_from_zip(
         }
     };
 
-    // Scaffold the inkycap-vault package in the target.
-    vault_package::scaffold(target);
+    // Scaffold the inkycap-notebox package in the target.
+    notebox_package::scaffold(target);
 
     // Detect if the zip has a single root directory wrapping everything.
     let root_prefix = detect_zip_root_prefix(&mut archive);
@@ -510,10 +510,10 @@ fn copy_asset_bytes(
     }
 }
 
-/// Auto-detect the markdown dialect of a source vault.
+/// Auto-detect the markdown dialect of a source notebox.
 ///
 /// Heuristic: presence of an `.obsidian/` directory anywhere in the
-/// source means the vault was authored in Obsidian. Otherwise default
+/// source means the notebox was authored in Obsidian. Otherwise default
 /// to Standard markdown — the safe choice for arbitrary `.md` sources
 /// (literal `#` survives, no Obsidian-only preprocessing applied).
 ///
@@ -523,7 +523,7 @@ pub fn detect_dialect_for_directory(source: &Path) -> MarkdownDialect {
         return MarkdownDialect::Obsidian;
     }
     // Also check one level down in case the user pointed at a parent
-    // directory containing the vault (`source/vault/.obsidian`).
+    // directory containing the notebox (`source/notebox/.obsidian`).
     if let Ok(entries) = fs::read_dir(source) {
         for entry in entries.flatten() {
             if entry.path().join(".obsidian").is_dir() {
@@ -558,7 +558,7 @@ pub fn detect_dialect_for_zip(zip_path: &Path) -> MarkdownDialect {
     MarkdownDialect::Standard
 }
 
-/// Import a markdown vault from a `.tar.gz` archive. Extracts the tarball
+/// Import a markdown notebox from a `.tar.gz` archive. Extracts the tarball
 /// to a temp directory and then runs [`import_from_directory`] on that
 /// extraction — mirrors the user-visible behavior of the zip path while
 /// reusing the directory walker. The temp dir is cleaned up on drop.
@@ -692,7 +692,7 @@ mod tests {
         let source = TempDir::new().unwrap();
         let target = TempDir::new().unwrap();
 
-        // Create a simple vault structure.
+        // Create a simple notebox structure.
         fs::write(
             source.path().join("note.md"),
             "---\ntitle: Test\ntags: [foo]\n---\n\n# Hello\n\nSome [[link]].",
@@ -736,12 +736,12 @@ mod tests {
         // Hidden dir skipped.
         assert!(!target.path().join(".obsidian").exists());
 
-        // Vault library scaffolded.
-        assert!(target.path().join(".inkycap/vault.typ").exists());
+        // Notebox library scaffolded.
+        assert!(target.path().join(".inkycap/notebox.typ").exists());
     }
 
     #[test]
-    fn import_rebases_relative_image_paths_to_vault_root_absolute() {
+    fn import_rebases_relative_image_paths_to_notebox_root_absolute() {
         let source = TempDir::new().unwrap();
         let target = TempDir::new().unwrap();
 
@@ -778,7 +778,7 @@ mod tests {
         // should:
         //   1. Emit `#image("/<attachment_folder>/Pasted image.png")`.
         //   2. Route the source file (wherever it lives in the source
-        //      vault) into `<target>/<attachment_folder>/`, NOT preserve
+        //      notebox) into `<target>/<attachment_folder>/`, NOT preserve
         //      its original relative path.
         // The default attachment folder is "assets" (FileSettings::
         // default), which is what load_settings() returns absent a
@@ -791,7 +791,7 @@ mod tests {
             "# Note\n\nSee ![[Pasted image 20240412113956.png]] please.",
         )
         .unwrap();
-        // Put the referenced file in a subfolder of the source vault to
+        // Put the referenced file in a subfolder of the source notebox to
         // prove that path-preservation is overridden by the embed-routing.
         fs::create_dir_all(source.path().join("Obsidian Attachments")).unwrap();
         fs::write(
@@ -840,20 +840,20 @@ mod tests {
         let target = TempDir::new().unwrap();
 
         // Create a zip in memory.
-        let zip_path = target.path().join("test_vault.zip");
+        let zip_path = target.path().join("test_notebox.zip");
         {
             let file = fs::File::create(&zip_path).unwrap();
             let mut zip_writer = zip::ZipWriter::new(file);
 
             let options = zip::write::SimpleFileOptions::default();
             zip_writer
-                .start_file("vault/hello.md", options)
+                .start_file("notebox/hello.md", options)
                 .unwrap();
             zip_writer
                 .write_all(b"# Hello\n\nWorld.")
                 .unwrap();
             zip_writer
-                .start_file("vault/assets/pic.jpg", options)
+                .start_file("notebox/assets/pic.jpg", options)
                 .unwrap();
             zip_writer.write_all(b"fake jpg").unwrap();
             zip_writer.finish().unwrap();
@@ -866,7 +866,7 @@ mod tests {
         assert_eq!(result.files_copied, 1);
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
-        // The root prefix "vault/" should be stripped.
+        // The root prefix "notebox/" should be stripped.
         let note = fs::read_to_string(import_target.path().join("hello.typ")).unwrap();
         assert!(note.contains("= Hello"));
         assert!(import_target.path().join("assets/pic.jpg").exists());

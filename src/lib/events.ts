@@ -21,7 +21,7 @@ export interface FileRenamedPayload {
 export function onFileChanged(
   callback: (payload: FileChangedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileChangedPayload>("vault:file-changed", (event) => {
+  return listen<FileChangedPayload>("notebox:file-changed", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }
@@ -29,7 +29,7 @@ export function onFileChanged(
 export function onFileCreated(
   callback: (payload: FileCreatedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileCreatedPayload>("vault:file-created", (event) => {
+  return listen<FileCreatedPayload>("notebox:file-created", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }
@@ -37,7 +37,7 @@ export function onFileCreated(
 export function onFileDeleted(
   callback: (payload: FileDeletedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileDeletedPayload>("vault:file-deleted", (event) => {
+  return listen<FileDeletedPayload>("notebox:file-deleted", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }
@@ -45,7 +45,7 @@ export function onFileDeleted(
 export function onFileRenamed(
   callback: (payload: FileRenamedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileRenamedPayload>("vault:file-renamed", (event) => {
+  return listen<FileRenamedPayload>("notebox:file-renamed", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }
@@ -53,7 +53,7 @@ export function onFileRenamed(
 export function onIndexRebuilt(
   callback: () => void,
 ): Promise<() => void> {
-  return listen("vault:index-rebuilt", () => {
+  return listen("notebox:index-rebuilt", () => {
     callback();
   }).then((unlisten) => unlisten);
 }

@@ -56,7 +56,7 @@ const CreationRuleEditor: Component = () => {
     async () => ipc.listCreationRules(),
   );
 
-  const vaultFolders = createMemo(() => {
+  const noteboxFolders = createMemo(() => {
     const folders = new Set<string>();
     for (const entry of fileList()) {
       if (entry.folder) folders.add(entry.folder);
@@ -66,8 +66,8 @@ const CreationRuleEditor: Component = () => {
 
   const filteredFolders = createMemo(() => {
     const filter = folderFilter().toLowerCase();
-    if (!filter) return vaultFolders();
-    return vaultFolders().filter((f) => f.toLowerCase().includes(filter));
+    if (!filter) return noteboxFolders();
+    return noteboxFolders().filter((f) => f.toLowerCase().includes(filter));
   });
 
   function refresh() {
@@ -75,9 +75,9 @@ const CreationRuleEditor: Component = () => {
   }
 
   /** User's preferred folder for new notes, used as the default `target_folder`
-   *  for newly-created rules. When the user has chosen "Vault root" or
+   *  for newly-created rules. When the user has chosen "Notebox root" or
    *  "Current folder" this resolves to an empty string, which the executor
-   *  treats as "use the vault root". */
+   *  treats as "use the notebox root". */
   function defaultTargetFolder(): string {
     if (settings.files.new_note_location === "specified") {
       return settings.files.new_note_folder;
@@ -334,7 +334,7 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Target folder</label>
                 <span class="settings__description">
-                  Relative to vault root. Empty falls back to{" "}
+                  Relative to notebox root. Empty falls back to{" "}
                   <em>New note location</em> from Files & Links. Supports{" "}
                   {"{{date:FORMAT}}"}, {"{{title}}"}, {"{{slug}}"} variables.
                 </span>
@@ -404,7 +404,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">Typst template</label>
                 <span class="settings__description">
                   Template name (e.g. "ieee") resolved from your templates folder,
-                  or a full vault path (e.g. "/templates/ieee.typ").
+                  or a full notebox path (e.g. "/templates/ieee.typ").
                 </span>
               </div>
               <input

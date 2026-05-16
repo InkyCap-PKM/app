@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::errors::Result;
 use crate::models::note::FileMetadata;
 
-/// A node in the vault's file/directory tree, returned by
-/// [`VaultStorage::get_file_tree`].
+/// A node in the notebox's file/directory tree, returned by
+/// [`NoteboxStorage::get_file_tree`].
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FileTreeNode {
     pub name: String,
@@ -19,10 +19,10 @@ pub struct FileTreeNode {
 }
 
 /// The sole interface for all file I/O in InkyCap.
-/// All vault access must go through this trait — never bypass it.
-/// This prepares for future sync backends (cloud, encrypted vaults).
+/// All notebox access must go through this trait — never bypass it.
+/// This prepares for future sync backends (cloud, encrypted noteboxes).
 #[async_trait]
-pub trait VaultStorage: Send + Sync {
+pub trait NoteboxStorage: Send + Sync {
     /// Read the full contents of a file as a UTF-8 string.
     async fn read_file(&self, path: &Path) -> Result<String>;
 
@@ -32,7 +32,7 @@ pub trait VaultStorage: Send + Sync {
     /// Get filesystem metadata for a file.
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
-    /// Build the full directory tree for the vault root. Returns the
+    /// Build the full directory tree for the notebox root. Returns the
     /// top-level entries; directories carry nested children.
     async fn get_file_tree(&self) -> Result<Vec<FileTreeNode>>;
 
@@ -42,7 +42,7 @@ pub trait VaultStorage: Send + Sync {
     /// Delete a file.
     async fn delete_file(&self, path: &Path) -> Result<()>;
 
-    /// Rename/move a file. Both paths are relative to vault root.
+    /// Rename/move a file. Both paths are relative to notebox root.
     async fn rename_file(&self, from: &Path, to: &Path) -> Result<()>;
 
     /// Check if a path exists.

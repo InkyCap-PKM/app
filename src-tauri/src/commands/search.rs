@@ -1,4 +1,4 @@
-// Tauri IPC commands for vault search and search-and-replace.
+// Tauri IPC commands for notebox search and search-and-replace.
 
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ use crate::errors::InkyCapError;
 use crate::search::query::parse_query;
 use crate::search::results::{ReplaceResult, SearchResult};
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 
 /// Get all tags with their counts (for tag autocomplete).
 #[tauri::command]
@@ -19,12 +19,12 @@ pub async fn get_all_tags(
     Ok(pi.all_tags_sorted())
 }
 
-/// Full-text search across the vault. When `case_sensitive` is true,
+/// Full-text search across the notebox. When `case_sensitive` is true,
 /// the (case-insensitive) inverted index is used to find candidate lines
 /// but every emitted match range is verified against the original-case
 /// query terms, so a search for `Tool` won't return `tool`.
 #[tauri::command]
-pub async fn vault_search(
+pub async fn notebox_search(
     state: State<'_, AppState>,
     query: String,
     max_results: Option<usize>,
@@ -104,7 +104,7 @@ fn original_case_terms(query: &str) -> Vec<String> {
     out
 }
 
-/// Search and replace across specified files (or all vault files if none specified).
+/// Search and replace across specified files (or all notebox files if none specified).
 #[tauri::command]
 pub async fn search_and_replace(
     state: State<'_, AppState>,

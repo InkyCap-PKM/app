@@ -7,11 +7,11 @@
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 pub const CREATE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
-    "CREATE TABLE IF NOT EXISTS vaults (
+    "CREATE TABLE IF NOT EXISTS noteboxes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         root_path TEXT NOT NULL UNIQUE,
         last_opened_at INTEGER NOT NULL
@@ -20,37 +20,37 @@ pub const CREATE_STATEMENTS: &[&str] = &[
     // into JSON columns on `files`) so a future `.collection` query evaluator can
     // compile to SQL with proper indexes — see the architecture plan.
     "CREATE TABLE IF NOT EXISTS files (
-        vault_id INTEGER NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+        notebox_id INTEGER NOT NULL REFERENCES noteboxes(id) ON DELETE CASCADE,
         path TEXT NOT NULL,
         mtime INTEGER NOT NULL,
         size INTEGER NOT NULL,
         properties_json TEXT NOT NULL,
         title TEXT,
         content TEXT,
-        PRIMARY KEY (vault_id, path)
+        PRIMARY KEY (notebox_id, path)
     )",
     "CREATE TABLE IF NOT EXISTS file_tags (
-        vault_id INTEGER NOT NULL,
+        notebox_id INTEGER NOT NULL,
         path TEXT NOT NULL,
         tag TEXT NOT NULL,
-        PRIMARY KEY (vault_id, path, tag),
-        FOREIGN KEY (vault_id, path) REFERENCES files(vault_id, path) ON DELETE CASCADE
+        PRIMARY KEY (notebox_id, path, tag),
+        FOREIGN KEY (notebox_id, path) REFERENCES files(notebox_id, path) ON DELETE CASCADE
     )",
-    "CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(vault_id, tag)",
+    "CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(notebox_id, tag)",
     "CREATE TABLE IF NOT EXISTS file_links (
-        vault_id INTEGER NOT NULL,
+        notebox_id INTEGER NOT NULL,
         source_path TEXT NOT NULL,
         target_text TEXT NOT NULL,
         ordinal INTEGER NOT NULL,
-        PRIMARY KEY (vault_id, source_path, ordinal),
-        FOREIGN KEY (vault_id, source_path) REFERENCES files(vault_id, path) ON DELETE CASCADE
+        PRIMARY KEY (notebox_id, source_path, ordinal),
+        FOREIGN KEY (notebox_id, source_path) REFERENCES files(notebox_id, path) ON DELETE CASCADE
     )",
-    "CREATE INDEX IF NOT EXISTS idx_file_links_target ON file_links(vault_id, target_text)",
+    "CREATE INDEX IF NOT EXISTS idx_file_links_target ON file_links(notebox_id, target_text)",
 ];
 
 /// Initialize the schema, wiping and recreating if the stored version is older
 /// than [`SCHEMA_VERSION`]. Foreign keys are enabled here so the cascading
-/// deletes on `vaults` / `files` actually fire.
+/// deletes on `noteboxes` / `files` actually fire.
 pub fn init(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
@@ -99,7 +99,7 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
 /// Check whether any of the expected tables already exist.
 fn has_any_table(conn: &Connection) -> bool {
     conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('files','vaults')",
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('files','noteboxes')",
         [],
         |row| row.get::<_, i32>(0),
     )
@@ -131,7 +131,7 @@ fn wipe(conn: &Connection) -> rusqlite::Result<()> {
         "file_links",
         "file_tags",
         "files",
-        "vaults",
+        "noteboxes",
         "schema_version",
     ];
     for table in tables {

@@ -2,47 +2,47 @@ use tauri::{Emitter, Manager, State};
 
 use crate::config;
 use crate::errors::InkyCapError;
-use crate::models::vault::VaultInfo;
+use crate::models::notebox::NoteboxInfo;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::watcher::file_watcher;
 
-/// Return the persisted vault path from the app config, if any.
+/// Return the persisted notebox path from the app config, if any.
 #[tauri::command]
-pub async fn get_saved_vault_path() -> Result<Option<String>, InkyCapError> {
+pub async fn get_saved_notebox_path() -> Result<Option<String>, InkyCapError> {
     let cfg = config::load_config();
-    Ok(cfg.vault_path)
+    Ok(cfg.notebox_path)
 }
 
-/// Open a vault at the given directory path: initialize storage, start the file watcher, and spawn background index build.
+/// Open a notebox at the given directory path: initialize storage, start the file watcher, and spawn background index build.
 #[tauri::command]
-pub async fn open_vault(
+pub async fn open_notebox(
     path: String,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
-) -> Result<VaultInfo, InkyCapError> {
-    let vault_path = std::path::PathBuf::from(&path);
-    if !vault_path.is_dir() {
+) -> Result<NoteboxInfo, InkyCapError> {
+    let notebox_path = std::path::PathBuf::from(&path);
+    if !notebox_path.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
             "Not a directory: {}",
             path
         )));
     }
 
-    // Phase A — fast path: walk the directory, set vault_root + storage, list
+    // Phase A — fast path: walk the directory, set notebox_root + storage, list
     // collection files. The UI can render the file tree as soon as this returns.
-    let note_count = state.open_vault_fast(vault_path.clone()).await?;
+    let note_count = state.open_notebox_fast(notebox_path.clone()).await?;
 
-    // Narrow the Tauri asset protocol scope to the newly-opened vault so that
+    // Narrow the Tauri asset protocol scope to the newly-opened notebox so that
     // `convertFileSrc()` can only load images/attachments that live inside
-    // the vault. The static config starts with an empty allow-list; we add
-    // the canonical vault root here once it's known. (Tauri's scope is
-    // additive across vault opens — this is a minor leak if the user hops
-    // between vaults in a single session, but it never grants anything
-    // outside a legitimately-opened vault, which is what matters for
+    // the notebox. The static config starts with an empty allow-list; we add
+    // the canonical notebox root here once it's known. (Tauri's scope is
+    // additive across notebox opens — this is a minor leak if the user hops
+    // between noteboxes in a single session, but it never grants anything
+    // outside a legitimately-opened notebox, which is what matters for
     // untrusted-note defense.)
     if let Some(canonical_root) = state
-        .vault_root
+        .notebox_root
         .read()
         .await
         .as_ref()
@@ -57,23 +57,23 @@ pub async fn open_vault(
         }
     }
 
-    // Replace the per-vault health monitor: abort any previous one (from
-    // a vault that's just been closed/reopened) and spawn a fresh monitor
-    // for this vault's canonical root. The monitor handles both
-    // "vault root vanished" detection and `.inkycap/` auto-healing.
-    if let Some(canonical_root) = state.vault_root.read().await.clone() {
+    // Replace the per-notebox health monitor: abort any previous one (from
+    // a notebox that's just been closed/reopened) and spawn a fresh monitor
+    // for this notebox's canonical root. The monitor handles both
+    // "notebox root vanished" detection and `.inkycap/` auto-healing.
+    if let Some(canonical_root) = state.notebox_root.read().await.clone() {
         let mut slot = state.health_monitor.write().await;
         if let Some(prev) = slot.take() {
             prev.abort();
         }
-        *slot = Some(crate::vault_health::spawn(
+        *slot = Some(crate::notebox_health::spawn(
             app_handle.clone(),
             canonical_root,
         ));
     }
 
     // Start file watcher and bridge events to the frontend
-    match file_watcher::start_watching(&vault_path) {
+    match file_watcher::start_watching(&notebox_path) {
         Ok((watcher, rx)) => {
             *state.watcher.write().await = Some(watcher);
 
@@ -91,7 +91,7 @@ pub async fn open_vault(
                     // Emit the event to all frontend windows
                     match &event {
                         crate::events::AppEvent::FileChanged { path, change } => {
-                            let _ = handle.emit("vault:file-changed", serde_json::json!({
+                            let _ = handle.emit("notebox:file-changed", serde_json::json!({
                                 "path": path.display().to_string(),
                                 "change": match change {
                                     crate::events::ChangeKind::Content => "Content",
@@ -101,13 +101,13 @@ pub async fn open_vault(
                             sync_cache_for_changed_file(&handle, path.clone());
                         }
                         crate::events::AppEvent::FileCreated { path } => {
-                            let _ = handle.emit("vault:file-created", serde_json::json!({
+                            let _ = handle.emit("notebox:file-created", serde_json::json!({
                                 "path": path.display().to_string()
                             }));
                             sync_cache_for_changed_file(&handle, path.clone());
                         }
                         crate::events::AppEvent::FileDeleted { path } => {
-                            let _ = handle.emit("vault:file-deleted", serde_json::json!({
+                            let _ = handle.emit("notebox:file-deleted", serde_json::json!({
                                 "path": path.display().to_string()
                             }));
                             sync_cache_for_deleted_file(&handle, path.clone());
@@ -117,16 +117,16 @@ pub async fn open_vault(
                             // the frontend file tree refreshes the same way
                             // it always has — components that only care about
                             // tree state don't need to know about renames.
-                            // The dedicated `vault:file-renamed` event is for
+                            // The dedicated `notebox:file-renamed` event is for
                             // listeners that want to follow the move (e.g.
                             // an open editor tab transferring to the new path).
-                            let _ = handle.emit("vault:file-deleted", serde_json::json!({
+                            let _ = handle.emit("notebox:file-deleted", serde_json::json!({
                                 "path": from.display().to_string()
                             }));
-                            let _ = handle.emit("vault:file-created", serde_json::json!({
+                            let _ = handle.emit("notebox:file-created", serde_json::json!({
                                 "path": to.display().to_string()
                             }));
-                            let _ = handle.emit("vault:file-renamed", serde_json::json!({
+                            let _ = handle.emit("notebox:file-renamed", serde_json::json!({
                                 "from": from.display().to_string(),
                                 "to": to.display().to_string()
                             }));
@@ -142,45 +142,45 @@ pub async fn open_vault(
         }
     }
 
-    // Persist the vault path and register in the vault registry
+    // Persist the notebox path and register in the notebox registry
     let mut cfg = config::load_config();
-    cfg.vault_path = Some(path.clone());
+    cfg.notebox_path = Some(path.clone());
 
     let collection_files = state.collection_files.read().await;
     let collection_count = collection_files.len();
     drop(collection_files);
 
-    let name = vault_path
+    let name = notebox_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Vault".to_string());
+        .unwrap_or_else(|| "Notebox".to_string());
 
-    cfg.upsert_vault(&path, &name);
+    cfg.upsert_notebox(&path, &name);
     let _ = config::save_config(&cfg);
 
     // Phase B — spawn the heavy index build in the background. The UI is
     // already interactive at this point; features that depend on the indexes
     // (search, tags, backlinks, properties) should show a loading state until
-    // the `vault:index-ready` event fires.
+    // the `notebox:index-ready` event fires.
     let bg_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let state = bg_handle.state::<AppState>();
         match state.build_indexes().await {
             Ok(stats) => {
-                let _ = bg_handle.emit("vault:index-ready", &stats);
+                let _ = bg_handle.emit("notebox:index-ready", &stats);
             }
             Err(err) => {
                 log::error!("Background index build failed: {err}");
                 let _ = bg_handle.emit(
-                    "vault:index-error",
+                    "notebox:index-error",
                     serde_json::json!({ "error": err.to_string() }),
                 );
             }
         }
     });
 
-    Ok(VaultInfo {
-        path: vault_path,
+    Ok(NoteboxInfo {
+        path: notebox_path,
         name,
         file_count: note_count,
         collection_count,
@@ -192,7 +192,7 @@ pub async fn open_vault(
 /// result through [`AppState::reindex_note`]. That helper updates every
 /// in-memory index (link, property, search) *and* writes through to the
 /// persistent metadata cache, so the UI stays in sync with external edits
-/// without a vault restart. Spawns a short-lived async task because the
+/// without a notebox restart. Spawns a short-lived async task because the
 /// watcher dispatcher runs on a blocking thread.
 fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathBuf) {
     // Only `.typ` note files participate in the in-memory indices and cache.
@@ -204,9 +204,9 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
 
-        // Need both vault_root and storage to parse the file. If either is
-        // missing the vault has been closed, so just bail out silently.
-        let vault_root = match state.vault_root.read().await.clone() {
+        // Need both notebox_root and storage to parse the file. If either is
+        // missing the notebox has been closed, so just bail out silently.
+        let notebox_root = match state.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
@@ -215,22 +215,22 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
             None => return,
         };
 
-        // Skip files that fall outside the canonical vault root — the
-        // storage layer canonicalizes vault_root on open, and watcher events
+        // Skip files that fall outside the canonical notebox root — the
+        // storage layer canonicalizes notebox_root on open, and watcher events
         // for symlinked files resolve to their real paths, so any event
         // whose path doesn't live under the root is an escape attempt and
         // we refuse to index it.
-        if path.strip_prefix(&vault_root).is_err() {
+        if path.strip_prefix(&notebox_root).is_err() {
             return;
         }
 
         // Read the current content through the validated storage pipeline
         // and push it into the unified reindex helper. We read via storage
         // (rather than calling the walker directly) so the path is
-        // re-validated against the vault root even though it came from the
+        // re-validated against the notebox root even though it came from the
         // watcher — defense in depth for the symlink case above.
         let rel = path
-            .strip_prefix(&vault_root)
+            .strip_prefix(&notebox_root)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| path.clone());
         match storage.read_file(&rel).await {
@@ -241,7 +241,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
                 // like the backlinks pane refetch on this.
                 use tauri::Emitter;
                 let _ = handle.emit(
-                    "vault:index-updated",
+                    "notebox:index-updated",
                     serde_json::json!({ "path": path.display().to_string() }),
                 );
             }
@@ -280,7 +280,7 @@ fn sync_cache_for_renamed_file(
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
 
-        let vault_root = match state.vault_root.read().await.clone() {
+        let notebox_root = match state.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
@@ -290,11 +290,11 @@ fn sync_cache_for_renamed_file(
         };
 
         // Symlink-escape defence: both endpoints must live under the
-        // canonical vault root. Watcher events for symlinked paths
+        // canonical notebox root. Watcher events for symlinked paths
         // resolve to their real targets, so an out-of-root path here
         // is an escape attempt.
-        if from.strip_prefix(&vault_root).is_err()
-            || to.strip_prefix(&vault_root).is_err()
+        if from.strip_prefix(&notebox_root).is_err()
+            || to.strip_prefix(&notebox_root).is_err()
         {
             return;
         }
@@ -318,7 +318,7 @@ fn sync_cache_for_renamed_file(
         state.remove_from_indices(&from).await;
 
         let rel = to
-            .strip_prefix(&vault_root)
+            .strip_prefix(&notebox_root)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| to.clone());
         match storage.read_file(&rel).await {
@@ -334,7 +334,7 @@ fn sync_cache_for_renamed_file(
         }
 
         let _ = handle.emit(
-            "vault:index-updated",
+            "notebox:index-updated",
             serde_json::json!({
                 "from": from.display().to_string(),
                 "to": to.display().to_string(),
@@ -355,19 +355,19 @@ fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, path: std::path::PathB
         state.remove_from_indices(&path).await;
         use tauri::Emitter;
         let _ = handle.emit(
-            "vault:index-updated",
+            "notebox:index-updated",
             serde_json::json!({ "path": path.display().to_string() }),
         );
     });
 }
 
-/// Return summary info (name, file count, property keys) for the currently open vault, or `None` if no vault is open.
+/// Return summary info (name, file count, property keys) for the currently open notebox, or `None` if no notebox is open.
 #[tauri::command]
-pub async fn get_vault_info(
+pub async fn get_notebox_info(
     state: State<'_, AppState>,
-) -> Result<Option<VaultInfo>, InkyCapError> {
-    let vault_root = state.vault_root.read().await;
-    let Some(ref path) = *vault_root else {
+) -> Result<Option<NoteboxInfo>, InkyCapError> {
+    let notebox_root = state.notebox_root.read().await;
+    let Some(ref path) = *notebox_root else {
         return Ok(None);
     };
 
@@ -377,9 +377,9 @@ pub async fn get_vault_info(
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Vault".to_string());
+        .unwrap_or_else(|| "Notebox".to_string());
 
-    Ok(Some(VaultInfo {
+    Ok(Some(NoteboxInfo {
         path: path.clone(),
         name,
         file_count: index.note_count(),
@@ -388,88 +388,88 @@ pub async fn get_vault_info(
     }))
 }
 
-// ── Vault registry commands ──────────────────────────────────────────
+// ── Notebox registry commands ──────────────────────────────────────────
 
-/// Return all registered vaults sorted by most recently opened.
+/// Return all registered noteboxes sorted by most recently opened.
 #[tauri::command]
-pub async fn get_vault_registry() -> Result<Vec<config::VaultRegistryEntry>, InkyCapError> {
+pub async fn get_notebox_registry() -> Result<Vec<config::NoteboxRegistryEntry>, InkyCapError> {
     let cfg = config::load_config();
-    let mut entries = cfg.vault_registry;
+    let mut entries = cfg.notebox_registry;
     entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
     Ok(entries)
 }
 
-/// Add or update a vault in the persistent registry. The path must be an existing directory.
+/// Add or update a notebox in the persistent registry. The path must be an existing directory.
 #[tauri::command]
-pub async fn register_vault(
+pub async fn register_notebox(
     path: String,
     display_name: Option<String>,
 ) -> Result<(), InkyCapError> {
-    let vault_path = std::path::PathBuf::from(&path);
-    if !vault_path.is_dir() {
+    let notebox_path = std::path::PathBuf::from(&path);
+    if !notebox_path.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
             "Not a directory: {}",
             path
         )));
     }
     let name = display_name.unwrap_or_else(|| {
-        vault_path
+        notebox_path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Vault".to_string())
+            .unwrap_or_else(|| "Notebox".to_string())
     });
     let mut cfg = config::load_config();
-    cfg.upsert_vault(&path, &name);
+    cfg.upsert_notebox(&path, &name);
     config::save_config(&cfg)?;
     Ok(())
 }
 
-/// Update the display name of an existing vault registry entry.
+/// Update the display name of an existing notebox registry entry.
 #[tauri::command]
-pub async fn update_vault_entry(
+pub async fn update_notebox_entry(
     path: String,
     display_name: String,
 ) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
     let entry = cfg
-        .vault_registry
+        .notebox_registry
         .iter_mut()
         .find(|e| e.path == path)
         .ok_or_else(|| {
-            InkyCapError::InvalidPath(format!("Vault not in registry: {}", path))
+            InkyCapError::InvalidPath(format!("Notebox not in registry: {}", path))
         })?;
     entry.display_name = display_name;
     config::save_config(&cfg)?;
     Ok(())
 }
 
-/// Remove a vault from the persistent registry (does not delete files on disk).
+/// Remove a notebox from the persistent registry (does not delete files on disk).
 #[tauri::command]
-pub async fn remove_vault_from_registry(path: String) -> Result<(), InkyCapError> {
+pub async fn remove_notebox_from_registry(path: String) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
-    cfg.remove_vault(&path);
+    cfg.remove_notebox(&path);
     config::save_config(&cfg)?;
     Ok(())
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct VaultMoveResult {
+pub struct NoteboxMoveResult {
     pub new_path: String,
     pub was_active: bool,
 }
 
-/// Rename/move a vault directory on disk and update the registry and active vault path accordingly.
+/// Rename/move a notebox directory on disk and update the registry and active notebox path accordingly.
 #[tauri::command]
-pub async fn move_vault(
+pub async fn move_notebox(
     old_path: String,
     new_path: String,
-) -> Result<VaultMoveResult, InkyCapError> {
+) -> Result<NoteboxMoveResult, InkyCapError> {
     let old = std::path::PathBuf::from(&old_path);
     let new = std::path::PathBuf::from(&new_path);
 
     if !old.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
-            "Source vault not found: {}",
+            "Source notebox not found: {}",
             old_path
         )));
     }
@@ -490,23 +490,23 @@ pub async fn move_vault(
 
     std::fs::rename(&old, &new).map_err(|e| {
         InkyCapError::InvalidPath(format!(
-            "Failed to move vault from {} to {}: {}",
+            "Failed to move notebox from {} to {}: {}",
             old_path, new_path, e
         ))
     })?;
 
     let mut cfg = config::load_config();
-    let was_active = cfg.vault_path.as_deref() == Some(&old_path);
+    let was_active = cfg.notebox_path.as_deref() == Some(&old_path);
 
-    if let Some(entry) = cfg.vault_registry.iter_mut().find(|e| e.path == old_path) {
+    if let Some(entry) = cfg.notebox_registry.iter_mut().find(|e| e.path == old_path) {
         entry.path = new_path.clone();
     }
     if was_active {
-        cfg.vault_path = Some(new_path.clone());
+        cfg.notebox_path = Some(new_path.clone());
     }
     config::save_config(&cfg)?;
 
-    Ok(VaultMoveResult {
+    Ok(NoteboxMoveResult {
         new_path,
         was_active,
     })

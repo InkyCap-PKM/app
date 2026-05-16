@@ -1,8 +1,8 @@
-//! `typst::World` implementation backed by a vault directory on disk.
+//! `typst::World` implementation backed by a notebox directory on disk.
 //!
 //! The World is the interface Typst's compiler uses to resolve everything it
 //! needs from the host: the standard library, fonts, source files, binary
-//! files, and "today". We keep one World per open vault and re-use it across
+//! files, and "today". We keep one World per open notebox and re-use it across
 //! compiles so comemo memoization stays warm — that's what gets us the
 //! sub-millisecond warm-path numbers from the Phase 0 bench.
 
@@ -19,7 +19,7 @@ use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
 use typst_library::Feature;
 
-use crate::storage::path::validate_vault_path;
+use crate::storage::path::validate_notebox_path;
 use crate::typst_pipeline::fonts::{self, FontSlot};
 
 /// Per-FileId cached source text. Held under a Mutex so `World::source` can
@@ -56,7 +56,7 @@ impl SourceCache {
         }
     }
 
-    /// Wipe the entire cache. Used on full vault reload.
+    /// Wipe the entire cache. Used on full notebox reload.
     #[allow(dead_code)]
     fn clear(&self) {
         if let Ok(mut map) = self.sources.lock() {
@@ -92,13 +92,13 @@ impl FileCache {
     }
 }
 
-pub struct VaultWorld {
-    /// Canonical vault root. The caller is responsible for canonicalizing
+pub struct NoteboxWorld {
+    /// Canonical notebox root. The caller is responsible for canonicalizing
     /// before construction (see [`crate::storage::path::canonicalize_root`]);
     /// see also the test helper which does this. Storing the canonical form
-    /// is what lets [`fs_path`] use `validate_vault_path` to reject symlink
+    /// is what lets [`fs_path`] use `validate_notebox_path` to reject symlink
     /// escapes — `starts_with` only works against a canonical prefix.
-    canonical_vault_root: PathBuf,
+    canonical_notebox_root: PathBuf,
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
     fonts: Vec<FontSlot>,
@@ -108,21 +108,21 @@ pub struct VaultWorld {
     main: Mutex<FileId>,
     /// Captured at compile start so `today()` is stable across the run.
     now: Mutex<Option<DateTime<Local>>>,
-    /// Whether system + vault fonts have been loaded (on-demand, not at startup).
+    /// Whether system + notebox fonts have been loaded (on-demand, not at startup).
     system_fonts_loaded: bool,
 }
 
-impl VaultWorld {
-    /// Build a World rooted at `canonical_vault_root`. The path MUST already
-    /// be canonical (no `..`, no symlinks in the prefix). The vault open path
-    /// at [`crate::state::AppState::open_vault_fast`] ensures this; tests use
+impl NoteboxWorld {
+    /// Build a World rooted at `canonical_notebox_root`. The path MUST already
+    /// be canonical (no `..`, no symlinks in the prefix). The notebox open path
+    /// at [`crate::state::AppState::open_notebox_fast`] ensures this; tests use
     /// the [`canonicalize_root`] helper.
-    pub fn new(canonical_vault_root: PathBuf) -> Self {
+    pub fn new(canonical_notebox_root: PathBuf) -> Self {
         let (book, fonts) = fonts::load_embedded();
         // Placeholder main; set_main replaces it before the first compile.
         let placeholder = FileId::new(None, VirtualPath::new("/__placeholder__.typ"));
         Self {
-            canonical_vault_root,
+            canonical_notebox_root,
             library: LazyHash::new(
                 Library::builder()
                     .with_features([Feature::Html].into_iter().collect())
@@ -138,33 +138,33 @@ impl VaultWorld {
         }
     }
 
-    pub fn vault_root(&self) -> &Path {
-        &self.canonical_vault_root
+    pub fn notebox_root(&self) -> &Path {
+        &self.canonical_notebox_root
     }
 
     pub fn system_fonts_loaded(&self) -> bool {
         self.system_fonts_loaded
     }
 
-    /// Load system and vault-local fonts into the font book. Called once on
+    /// Load system and notebox-local fonts into the font book. Called once on
     /// demand when the user configures a non-embedded font family. Rebuilds
-    /// the book and slots from scratch (embedded + system + vault) so the
+    /// the book and slots from scratch (embedded + system + notebox) so the
     /// index stays consistent.
     pub fn load_system_fonts(&mut self) {
         if self.system_fonts_loaded {
             return;
         }
-        let (book, slots) = fonts::load_all(&self.canonical_vault_root);
+        let (book, slots) = fonts::load_all(&self.canonical_notebox_root);
         self.book = LazyHash::new(book);
         self.fonts = slots;
         self.system_fonts_loaded = true;
     }
 
-    /// Convert a vault-absolute filesystem path into the FileId Typst uses to
-    /// reference it. The path must be inside the vault; otherwise we return
+    /// Convert a notebox-absolute filesystem path into the FileId Typst uses to
+    /// reference it. The path must be inside the notebox; otherwise we return
     /// `None`.
     pub fn file_id_for(&self, abs_path: &Path) -> Option<FileId> {
-        let rel = abs_path.strip_prefix(&self.canonical_vault_root).ok()?;
+        let rel = abs_path.strip_prefix(&self.canonical_notebox_root).ok()?;
         let mut vpath = String::from("/");
         for (i, comp) in rel.components().enumerate() {
             if i > 0 {
@@ -194,7 +194,7 @@ impl VaultWorld {
     }
 
     /// Drop a single file from both source and binary caches. Hook for the
-    /// vault watcher: when a file changes on disk, invalidate it so the next
+    /// notebox watcher: when a file changes on disk, invalidate it so the next
     /// compile picks up the new bytes. The watcher already canonicalizes
     /// paths before forwarding events, so paths that arrive here are
     /// expected to share the canonical root prefix.
@@ -206,14 +206,14 @@ impl VaultWorld {
         }
     }
 
-    /// Resolve a FileId to an on-disk path inside the vault.
+    /// Resolve a FileId to an on-disk path inside the notebox.
     ///
     /// Package imports (`@namespace/name:version`) are resolved against a local
-    /// package directory at `<vault>/.inkycap/packages/<namespace>/<name>/<version>/`.
+    /// package directory at `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`.
     /// The entrypoint defaults to the root vpath of the package (typically
     /// `/lib.typ` as declared in `typst.toml`).
     ///
-    /// Goes through [`validate_vault_path`] so a symlink inside the vault
+    /// Goes through [`validate_notebox_path`] so a symlink inside the notebox
     /// pointing at `/etc/passwd` (or anywhere outside the canonical root)
     /// fails before bytes leave disk.
     fn fs_path(&self, id: FileId) -> FileResult<PathBuf> {
@@ -221,15 +221,15 @@ impl VaultWorld {
             return self.resolve_package_path(spec, id.vpath());
         }
         let rel = id.vpath().as_rootless_path();
-        let joined = self.canonical_vault_root.join(rel);
-        validate_vault_path(&self.canonical_vault_root, &joined).map_err(|_err| {
+        let joined = self.canonical_notebox_root.join(rel);
+        validate_notebox_path(&self.canonical_notebox_root, &joined).map_err(|_err| {
             FileError::AccessDenied
         })
     }
 
     /// Resolve a package file to a local path under `.inkycap/packages/`.
     ///
-    /// Layout: `<vault>/.inkycap/packages/<namespace>/<name>/<version>/<vpath>`
+    /// Layout: `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/<vpath>`
     ///
     /// This matches the Typst-canonical layout used by `typst-cli`, Tinymist,
     /// and `typst.ts`. All user-authored content (templates and libraries)
@@ -242,7 +242,7 @@ impl VaultWorld {
     ) -> FileResult<PathBuf> {
         let rel_file = vpath.as_rootless_path();
 
-        let pkg_dir = self.canonical_vault_root
+        let pkg_dir = self.canonical_notebox_root
             .join(".inkycap/packages")
             .join(spec.namespace.as_str())
             .join(spec.name.as_str())
@@ -250,7 +250,7 @@ impl VaultWorld {
 
         if pkg_dir.is_dir() {
             let joined = pkg_dir.join(rel_file);
-            return validate_vault_path(&self.canonical_vault_root, &joined)
+            return validate_notebox_path(&self.canonical_notebox_root, &joined)
                 .map_err(|_| FileError::AccessDenied);
         }
 
@@ -281,7 +281,7 @@ impl VaultWorld {
     }
 }
 
-impl World for VaultWorld {
+impl World for NoteboxWorld {
     fn library(&self) -> &LazyHash<Library> {
         &self.library
     }
@@ -346,20 +346,20 @@ mod tests {
     ];
 
     #[test]
-    fn fs_path_rejects_traversal_outside_vault() {
+    fn fs_path_rejects_traversal_outside_notebox() {
         let tmp = tempdir().expect("tempdir");
         let root = canonicalize_root(tmp.path()).expect("canonicalize");
-        let world = VaultWorld::new(root.clone());
+        let world = NoteboxWorld::new(root.clone());
 
         // VirtualPath normalizes `..`/leading-slashes against the virtual root,
         // so a literal escape attempt like `../../etc/passwd` ends up resolving
         // back inside the root before fs_path even runs. That's good — but it's
         // not the case we care about here. The case we *do* care about is a
-        // symlink inside the vault that targets outside of it; see the
+        // symlink inside the notebox that targets outside of it; see the
         // `rejects_symlink_escape` test below.
         let inside = root.join("note.typ");
-        let id = world.file_id_for(&inside).expect("inside-vault id");
-        let resolved = world.fs_path(id).expect("inside vault should resolve");
+        let id = world.file_id_for(&inside).expect("inside-notebox id");
+        let resolved = world.fs_path(id).expect("inside notebox should resolve");
         assert!(resolved.starts_with(&root));
     }
 
@@ -368,19 +368,19 @@ mod tests {
     fn rejects_symlink_escape() {
         use std::os::unix::fs::symlink;
 
-        let vault = tempdir().expect("vault tempdir");
+        let notebox = tempdir().expect("notebox tempdir");
         let outside = tempdir().expect("outside tempdir");
-        let root = canonicalize_root(vault.path()).expect("canonicalize vault");
+        let root = canonicalize_root(notebox.path()).expect("canonicalize notebox");
 
-        // An attacker drops a symlink inside the vault that points at a
+        // An attacker drops a symlink inside the notebox that points at a
         // sensitive file outside it, then crafts a `.typ` doing
         // `#read("escape/secret.txt")` (or `#image(...)`, etc.). The compile
         // pipeline must refuse to read through it.
         fs::write(outside.path().join("secret.txt"), "shh").expect("write secret");
         symlink(outside.path(), root.join("escape")).expect("create symlink");
 
-        let world = VaultWorld::new(root.clone());
-        // FileId with a vault-relative path that traverses the symlink.
+        let world = NoteboxWorld::new(root.clone());
+        // FileId with a notebox-relative path that traverses the symlink.
         let id = FileId::new(None, VirtualPath::new("/escape/secret.txt"));
         let err = world.fs_path(id).expect_err("symlink escape must be rejected");
         assert!(matches!(err, FileError::AccessDenied), "got {err:?}");
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn world_reads_image_bytes_for_compile() {
-        // End-to-end: a `.typ` file referencing a vault-local PNG should
+        // End-to-end: a `.typ` file referencing a notebox-local PNG should
         // compile and render — typst-svg embeds the image bytes as a
         // `data:image/png;base64,...` URL inside the SVG, which is what makes
         // the reading-mode renderer self-contained (no asset protocol needed

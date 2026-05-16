@@ -1,6 +1,6 @@
 //! Typst compile pipeline.
 //!
-//! Phase 1 surface: build a [`TypstCompiler`] per open vault, compile a `.typ`
+//! Phase 1 surface: build a [`TypstCompiler`] per open notebox, compile a `.typ`
 //! file to per-page SVG for reading mode. Bibliography auto-prepend is wired
 //! in but the rest of the layered features (query for metadata, PDF export,
 //! incremental edits, package resolution, fonts beyond the embedded set) land

@@ -1,6 +1,6 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
 import { ArchiveRestore, Archive, Check, TextCursorInput } from "lucide-solid";
-import { vaultInfo, vaultRegistry, openVault } from "../stores/vault";
+import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { getActiveTab, closeTab, openTab } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
@@ -11,9 +11,9 @@ const StatusBar: Component = () => {
   const stats = wordCountStats;
 
   const displayName = createMemo(() => {
-    const info = vaultInfo();
+    const info = noteboxInfo();
     if (!info) return null;
-    const entry = vaultRegistry().find((e) => e.path === info.path);
+    const entry = noteboxRegistry().find((e) => e.path === info.path);
     return entry?.display_name ?? info.name;
   });
 
@@ -30,7 +30,7 @@ const StatusBar: Component = () => {
       return;
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const entries = vaultRegistry();
+    const entries = noteboxRegistry();
     const estimatedHeight = (entries.length + 1) * 32 + 12;
     const y = rect.top - estimatedHeight - 4;
     setSwitcherMenu({ x: rect.left, y: Math.max(4, y) });
@@ -43,14 +43,14 @@ const StatusBar: Component = () => {
     }, 0);
   }
 
-  /// Vault-relative path of the current file tab, e.g.
+  /// Notebox-relative path of the current file tab, e.g.
   /// "notes/journal/2026.typ". Returns null if the file lives outside the
-  /// vault root (which shouldn't happen for tabs opened normally) so the
+  /// notebox root (which shouldn't happen for tabs opened normally) so the
   /// status bar doesn't leak the user's full filesystem layout.
   const activeFilePath = createMemo(() => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file" || !tab.path) return null;
-    const root = vaultInfo()?.path;
+    const root = noteboxInfo()?.path;
     if (root && tab.path.startsWith(root + "/")) {
       return tab.path.slice(root.length + 1);
     }
@@ -111,16 +111,16 @@ const StatusBar: Component = () => {
     }
   }
 
-  async function switchToVault(path: string) {
+  async function switchToNotebox(path: string) {
     setSwitcherMenu(null);
     try {
-      await openVault(path);
+      await openNotebox(path);
     } catch (err) {
-      console.error("Failed to switch vault:", err);
+      console.error("Failed to switch notebox:", err);
     }
   }
 
-  function openManageVaults() {
+  function openManageNoteboxes() {
     setSwitcherMenu(null);
     document.dispatchEvent(
       new CustomEvent("inkycap:open-settings", { detail: { tab: "overview" } }),
@@ -129,13 +129,13 @@ const StatusBar: Component = () => {
 
   return (
     <div class="status-bar">
-      <Show when={vaultInfo()} fallback={<span>No vault open</span>}>
+      <Show when={noteboxInfo()} fallback={<span>No notebox open</span>}>
         {(info) => (
           <>
             <button
-              class="status-bar__vault-name"
+              class="status-bar__notebox-name"
               onClick={toggleSwitcher}
-              title="Change vault"
+              title="Change notebox"
             >
               {displayName()}
               <ArchiveRestore size={14} />
@@ -222,23 +222,23 @@ const StatusBar: Component = () => {
               top: `${menu().y}px`,
             }}
           >
-            <For each={vaultRegistry()}>
+            <For each={noteboxRegistry()}>
               {(entry) => (
                 <button
                   class="context-menu__item"
-                  onClick={() => switchToVault(entry.path)}
+                  onClick={() => switchToNotebox(entry.path)}
                 >
-                  <span class="vault-switcher__name">{entry.display_name}</span>
-                  <Show when={entry.path === vaultInfo()?.path}>
+                  <span class="notebox-switcher__name">{entry.display_name}</span>
+                  <Show when={entry.path === noteboxInfo()?.path}>
                     <Check size={14} class="context-menu__check" />
                   </Show>
                 </button>
               )}
             </For>
             <div class="context-menu__separator" />
-            <button class="context-menu__item" onClick={openManageVaults}>
+            <button class="context-menu__item" onClick={openManageNoteboxes}>
               <Archive size={14} style={{ "margin-right": "6px", opacity: "0.6", "flex-shrink": "0" }} />
-              Manage vaults...
+              Manage noteboxes...
             </button>
           </div>
         )}

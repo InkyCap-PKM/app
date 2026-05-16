@@ -90,7 +90,7 @@ function clampPastProtected(state: EditorState, pos: number): number {
 }
 
 /// Build markup for a saved attachment.
-/// `relativePath` is vault-root-relative (e.g. `assets/Foo.png`) — what
+/// `relativePath` is notebox-root-relative (e.g. `assets/Foo.png`) — what
 /// `copy_path_to_attachments` returns since the SEC-1 / path-fix work.
 /// We emit it with a leading `/` so Typst's compiler reads it as
 /// project-root-relative (works in reading view + export), while the

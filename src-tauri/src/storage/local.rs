@@ -3,26 +3,26 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::path::{canonicalize_root, validate_vault_path};
-use super::traits::{FileTreeNode, VaultStorage};
+use super::path::{canonicalize_root, validate_notebox_path};
+use super::traits::{FileTreeNode, NoteboxStorage};
 use crate::errors::{InkyCapError, Result};
 use crate::models::note::FileMetadata;
 
-/// Filesystem-backed vault storage for local vaults.
+/// Filesystem-backed notebox storage for local noteboxes.
 ///
 /// All path arguments passed to this storage are validated against
-/// `canonical_root` before any I/O. Paths that escape the vault via `..`,
+/// `canonical_root` before any I/O. Paths that escape the notebox via `..`,
 /// symlinks, or absolute references outside the root are rejected with
 /// [`InkyCapError::InvalidPath`]. This is the primary enforcement point for
-/// the vault sandbox — callers should not bypass this type to perform
-/// filesystem operations against vault content.
-pub struct LocalVaultStorage {
+/// the notebox sandbox — callers should not bypass this type to perform
+/// filesystem operations against notebox content.
+pub struct LocalNoteboxStorage {
     root: PathBuf,
     canonical_root: PathBuf,
 }
 
-impl LocalVaultStorage {
-    /// Open a vault at `root`. Canonicalizes the root once up-front; fails if
+impl LocalNoteboxStorage {
+    /// Open a notebox at `root`. Canonicalizes the root once up-front; fails if
     /// the directory does not exist or cannot be resolved.
     pub fn new(root: PathBuf) -> Result<Self> {
         let canonical_root = canonicalize_root(&root)?;
@@ -36,21 +36,21 @@ impl LocalVaultStorage {
         &self.root
     }
 
-    /// Canonical (symlink-resolved) vault root. Use when comparing paths
-    /// against the vault boundary.
+    /// Canonical (symlink-resolved) notebox root. Use when comparing paths
+    /// against the notebox boundary.
     pub fn canonical_root(&self) -> &Path {
         &self.canonical_root
     }
 
     /// Resolve a caller-supplied path to a canonical location inside the
-    /// vault. Returns an error if the path escapes the vault.
+    /// notebox. Returns an error if the path escapes the notebox.
     ///
     /// Public so adjacent subsystems (e.g. the Typst compile pipeline) can
-    /// participate in the same vault-bound validation without duplicating the
+    /// participate in the same notebox-bound validation without duplicating the
     /// canonicalization logic. Callers that perform I/O should still prefer
-    /// the [`VaultStorage`] trait methods, which validate internally.
+    /// the [`NoteboxStorage`] trait methods, which validate internally.
     pub fn resolve_path(&self, path: &Path) -> Result<PathBuf> {
-        validate_vault_path(&self.canonical_root, path)
+        validate_notebox_path(&self.canonical_root, path)
     }
 
     fn resolve(&self, path: &Path) -> Result<PathBuf> {
@@ -59,7 +59,7 @@ impl LocalVaultStorage {
 }
 
 #[async_trait]
-impl VaultStorage for LocalVaultStorage {
+impl NoteboxStorage for LocalNoteboxStorage {
     async fn read_file(&self, path: &Path) -> Result<String> {
         let full = self.resolve(path)?;
         tokio::fs::read_to_string(&full)
@@ -200,9 +200,9 @@ impl VaultStorage for LocalVaultStorage {
     }
 
     async fn exists(&self, path: &Path) -> bool {
-        // An invalid / out-of-vault path "doesn't exist" from the caller's
+        // An invalid / out-of-notebox path "doesn't exist" from the caller's
         // perspective, so callers that are only probing for presence don't
-        // leak information about the filesystem outside the vault.
+        // leak information about the filesystem outside the notebox.
         let Ok(full) = self.resolve(path) else {
             return false;
         };

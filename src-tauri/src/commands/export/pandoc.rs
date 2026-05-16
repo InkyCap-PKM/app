@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::{
     escape_xml, extract_metadata_raw,
@@ -194,8 +194,8 @@ pub(super) fn strip_inkycap_functions(source: &str) -> String {
     let linkref_re = regex::Regex::new(r#"link-ref\("([^"]*)"\)"#).unwrap();
     result = linkref_re.replace_all(&result, "$1").to_string();
 
-    let setvault_re = regex::Regex::new(r#"#set-vault\([^)]*\)\s*"#).unwrap();
-    result = setvault_re.replace_all(&result, "").to_string();
+    let setnotebox_re = regex::Regex::new(r#"#set-notebox\([^)]*\)\s*"#).unwrap();
+    result = setnotebox_re.replace_all(&result, "").to_string();
 
     result = rewrite_content_block_func(&result, "callout", |_args, body| {
         format!("#quote(block: true)[{}]", body)

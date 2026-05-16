@@ -65,10 +65,10 @@ export class LspClient {
     this.transport.setErrorHandler(handler);
   }
 
-  async start(vaultPath: string): Promise<void> {
+  async start(noteboxPath: string): Promise<void> {
     if (this.initialized) return;
 
-    this.rootUri = pathToUri(vaultPath);
+    this.rootUri = pathToUri(noteboxPath);
 
     this.transport.setNotificationHandler((msg) => this.handleNotification(msg));
     await this.transport.spawn(["lsp"]);
@@ -99,7 +99,7 @@ export class LspClient {
         },
       },
       rootUri: this.rootUri,
-      workspaceFolders: [{ uri: this.rootUri, name: "vault" }],
+      workspaceFolders: [{ uri: this.rootUri, name: "notebox" }],
     });
 
     if (initResult.result) {

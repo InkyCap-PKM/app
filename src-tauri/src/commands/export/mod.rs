@@ -1,7 +1,7 @@
 //! Export commands for Typst notes and collections.
 //!
 //! - PDF export via `typst-pdf` (single note or collection)
-//! - Self-contained `.typ` export (inlines the `inkycap-vault` package)
+//! - Self-contained `.typ` export (inlines the `inkycap-notebox` package)
 //! - Native HTML export via Typst's HTML backend
 //! - Static site generation for collections
 //! - Pandoc-based multi-format export (HTML, DOCX, ODT, LaTeX)
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn preprocess_strips_import_line() {
-        let source = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
         let result = preprocess_for_pandoc(source);
         assert!(!result.contains("#import"));
         assert!(result.contains("= Hello"));
@@ -145,30 +145,30 @@ Some text.
 
     #[test]
     fn inline_package_replaces_import() {
-        let source = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
         let result = inline_package(source);
-        assert!(result.contains("inkycap-vault package (inlined for portability)"));
+        assert!(result.contains("inkycap-notebox package (inlined for portability)"));
         assert!(!result.contains("#import \"/.inkycap/packages"));
         assert!(result.contains("= Hello"));
     }
 
     /// Notes created since the path migration use the canonical
-    /// `/.inkycap/vault.typ` import. `inline_package` must recognize that
+    /// `/.inkycap/notebox.typ` import. `inline_package` must recognize that
     /// form too.
     #[test]
     fn inline_package_replaces_canonical_import() {
-        let source = "#import \"/.inkycap/vault.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/notebox.typ\": *\n\n= Hello\n";
         let result = inline_package(source);
-        assert!(result.contains("inkycap-vault package (inlined for portability)"));
-        assert!(!result.contains("#import \"/.inkycap/vault.typ\""));
+        assert!(result.contains("inkycap-notebox package (inlined for portability)"));
+        assert!(!result.contains("#import \"/.inkycap/notebox.typ\""));
         assert!(result.contains("= Hello"));
     }
 
     #[test]
     fn ensure_document_date_after_canonical_import() {
-        let source = "#import \"/.inkycap/vault.typ\": *\n#note()\n\n= Body\n".to_string();
+        let source = "#import \"/.inkycap/notebox.typ\": *\n#note()\n\n= Body\n".to_string();
         let result = ensure_document_date_for_standard(source, PdfStandardPreset::PdfA4);
-        let import_pos = result.find("#import \"/.inkycap/vault.typ\"").unwrap();
+        let import_pos = result.find("#import \"/.inkycap/notebox.typ\"").unwrap();
         let date_pos = result.find("#set document(date:").unwrap();
         assert!(
             date_pos > import_pos,
@@ -224,7 +224,7 @@ Some text.
     #[test]
     fn inject_document_metadata_sets_title_and_author() {
         let source = concat!(
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n",
+            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n",
             "#note(title: \"My Paper\", author: \"Jane Doe\")\n",
             "\n= Hello\n",
         );
@@ -243,7 +243,7 @@ Some text.
     #[test]
     fn inject_document_metadata_multiline_note_with_mixed_types() {
         let source = concat!(
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n",
+            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n",
             "#note(\n",
             "  tag: (\"dogtag\", \"animal\"),\n",
             "  date: \"2026-04-28\",\n",
@@ -527,10 +527,10 @@ Some text.
     }
 
     #[test]
-    fn strip_set_vault() {
-        let source = "#set-vault(show-inline-tags: false)\n= Hello\n";
+    fn strip_set_notebox() {
+        let source = "#set-notebox(show-inline-tags: false)\n= Hello\n";
         let result = strip_inkycap_functions(source);
-        assert!(!result.contains("#set-vault"));
+        assert!(!result.contains("#set-notebox"));
         assert!(result.contains("= Hello"));
     }
 }

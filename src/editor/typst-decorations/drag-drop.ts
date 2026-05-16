@@ -140,7 +140,7 @@ export const dragDropHandler = ViewPlugin.fromClass(
         const types = _event.dataTransfer?.types;
         if (!types) return false;
         if (
-          types.includes("application/x-inkycap-vault-path") ||
+          types.includes("application/x-inkycap-notebox-path") ||
           types.includes("Files") ||
           types.includes("text/uri-list") ||
           types.includes("text/plain")
@@ -162,12 +162,12 @@ export const dragDropHandler = ViewPlugin.fromClass(
         });
         const pos = coords ?? view.state.selection.main.from;
 
-        // Internal drag from the file tree — file is already in the vault,
-        // no copy needed. The vault-relative path is set directly.
-        const vaultPath = cd.getData("application/x-inkycap-vault-path");
-        if (vaultPath) {
+        // Internal drag from the file tree — file is already in the notebox,
+        // no copy needed. The notebox-relative path is set directly.
+        const noteboxPath = cd.getData("application/x-inkycap-notebox-path");
+        if (noteboxPath) {
           event.preventDefault();
-          insertAttachment(view, vaultPath, pos);
+          insertAttachment(view, noteboxPath, pos);
           return true;
         }
 

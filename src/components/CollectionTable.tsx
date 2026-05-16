@@ -21,7 +21,7 @@ import type {
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import { propertyVersion } from "../stores/vault";
+import { propertyVersion } from "../stores/notebox";
 import { promptText } from "../stores/prompt";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
@@ -920,7 +920,7 @@ const CollectionMetadataEditor: Component<{
               placeholder="e.g. ieee or /templates/ieee.typ"
             />
             <span class="collection-meta__hint">
-              Template name (resolved from templates folder) or vault path starting with /
+              Template name (resolved from templates folder) or notebox path starting with /
             </span>
           </div>
 
@@ -983,7 +983,7 @@ const CollectionMetadataEditor: Component<{
               </button>
             </div>
             <span class="collection-meta__hint">
-              Path to a .bib file (relative to vault root). Setting this file will override the global file or Zotero.
+              Path to a .bib file (relative to notebox root). Setting this file will override the global file or Zotero.
             </span>
           </div>
 

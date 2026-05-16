@@ -1,4 +1,4 @@
-// Vault-scoped alias index for the wikilink autocomplete.
+// Notebox-scoped alias index for the wikilink autocomplete.
 //
 // Aliases are derived from each note's `aliases` property; the Rust
 // `PropertyIndex` keeps the canonical map, and `refreshAliases()` pulls
@@ -10,10 +10,10 @@
 //     property write currently asks for a refresh; without this we'd
 //     do N IPC roundtrips per save).
 //
-//   • A generation counter tracks the active vault — if the user
-//     switches vaults mid-flight, a stale response from the previous
-//     vault is discarded instead of overwriting the new vault's list.
-//     `bumpAliasGeneration()` is called on every vault open.
+//   • A generation counter tracks the active notebox — if the user
+//     switches noteboxes mid-flight, a stale response from the previous
+//     notebox is discarded instead of overwriting the new notebox's list.
+//     `bumpAliasGeneration()` is called on every notebox open.
 
 import { createSignal } from "solid-js";
 import type { AliasEntry } from "../lib/ipc";
@@ -41,7 +41,7 @@ export function bumpAliasGeneration(): void {
 
 /// Schedule a refresh of the alias index. Returns a promise that
 /// resolves when the next refresh completes (or when the request is
-/// superseded by a vault switch).
+/// superseded by a notebox switch).
 export function refreshAliases(): Promise<void> {
   return new Promise((resolve) => {
     pendingResolvers.push(resolve);

@@ -1,9 +1,9 @@
-//! Vault scanner.
+//! Notebox scanner.
 //!
 //! Walks `.typ` files, extracts filesystem metadata, and (for cache misses)
 //! compiles each file through the Typst pipeline to extract body-derived
 //! metadata via `typst query` against the `<inkycap-note>`, `<inkycap-tag>`,
-//! and `<inkycap-link>` labels emitted by the `inkycap-vault` package.
+//! and `<inkycap-link>` labels emitted by the `inkycap-notebox` package.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use crate::cache::{CachedFile, MetadataCache};
 use crate::errors::Result;
 use crate::link_index::LinkIndex;
 use crate::models::note::{NoteId, NoteMetadata, PropertyValue};
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::query::{self, QueryResult};
 use crate::typst_pipeline::TypstCompiler;
 
@@ -26,7 +26,7 @@ use crate::typst_pipeline::TypstCompiler;
 pub fn parse_note(
     path: &Path,
     content: &str,
-    _vault_root: &Path,
+    _notebox_root: &Path,
     compiler: Option<&mut TypstCompiler>,
 ) -> NoteMetadata {
     let mut note = NoteMetadata {
@@ -44,7 +44,7 @@ pub fn parse_note(
     note
 }
 
-/// Result of a full vault scan.
+/// Result of a full notebox scan.
 pub struct ScanResult {
     pub notes: Vec<NoteMetadata>,
     pub collection_files: Vec<PathBuf>,
@@ -61,7 +61,7 @@ pub struct ScanResult {
 /// Parse a single note file from disk, producing the full [`NoteMetadata`]
 /// (including `file.*` properties) plus the raw content.
 async fn parse_note_from_disk(
-    storage: &dyn VaultStorage,
+    storage: &dyn NoteboxStorage,
     path: &Path,
 ) -> Result<(NoteMetadata, String)> {
     let content = storage.read_file(path).await?;
@@ -142,7 +142,7 @@ pub(crate) fn note_to_cached_file(
 
     // Strip file.* properties when persisting — they're derived from the
     // filesystem stat, not from #note(...) properties, so caching them would be both
-    // redundant and wrong (the absolute path varies if the vault moves).
+    // redundant and wrong (the absolute path varies if the notebox moves).
     let mut persisted_props: HashMap<String, PropertyValue> = HashMap::new();
     for (k, v) in &note.properties {
         if !k.starts_with("file.") {
@@ -168,7 +168,7 @@ pub(crate) fn note_to_cached_file(
 fn cached_to_note(
     cached: &CachedFile,
     abs_path: &Path,
-    vault_root: &Path,
+    notebox_root: &Path,
     stat: &FileStat,
 ) -> NoteMetadata {
     let mut properties = cached.properties.clone();
@@ -180,7 +180,7 @@ fn cached_to_note(
     let folder = abs_path
         .parent()
         .map(|p| {
-            p.strip_prefix(vault_root)
+            p.strip_prefix(notebox_root)
                 .unwrap_or(p)
                 .display()
                 .to_string()
@@ -191,7 +191,7 @@ fn cached_to_note(
         .map(|e| e.to_string_lossy().into_owned())
         .unwrap_or_default();
     let rel_path = abs_path
-        .strip_prefix(vault_root)
+        .strip_prefix(notebox_root)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| abs_path.display().to_string());
 
@@ -260,29 +260,29 @@ pub(crate) async fn stat_file(path: &Path) -> Result<FileStat> {
 
 /// List `.collection` files from the reserved `.inkycap/collections/`
 /// directory. Returns an empty list if the directory is missing (callers
-/// like the scanner must not fail just because a freshly imported vault
+/// like the scanner must not fail just because a freshly imported notebox
 /// hasn't been scaffolded yet).
 async fn list_collection_files(
-    storage: &dyn VaultStorage,
-    vault_root: &Path,
+    storage: &dyn NoteboxStorage,
+    notebox_root: &Path,
 ) -> Result<Vec<PathBuf>> {
-    let dir = crate::vault_package::collections_dir(vault_root);
+    let dir = crate::notebox_package::collections_dir(notebox_root);
     if !storage.exists(&dir).await {
         return Ok(Vec::new());
     }
     storage.list_files(&dir, "*.collection").await
 }
 
-/// Scan all `.typ` files in a vault directory. This is the no-cache cold
+/// Scan all `.typ` files in a notebox directory. This is the no-cache cold
 /// path: every file is read, compiled, and queried for metadata. Used as
 /// a fallback when no cache is available.
-pub async fn scan_vault(
-    storage: &dyn VaultStorage,
-    vault_root: &Path,
+pub async fn scan_notebox(
+    storage: &dyn NoteboxStorage,
+    notebox_root: &Path,
     compiler: &mut TypstCompiler,
 ) -> Result<ScanResult> {
-    let note_files = storage.list_files(vault_root, "*.typ").await?;
-    let collection_files = list_collection_files(storage, vault_root).await?;
+    let note_files = storage.list_files(notebox_root, "*.typ").await?;
+    let collection_files = list_collection_files(storage, notebox_root).await?;
 
     let mut notes = Vec::with_capacity(note_files.len());
     let mut contents = Vec::with_capacity(note_files.len());
@@ -333,7 +333,7 @@ pub struct CacheScanStats {
     pub pruned_paths: Vec<PathBuf>,
 }
 
-/// Cache-aware vault scan. For each file:
+/// Cache-aware notebox scan. For each file:
 ///
 /// 1. `stat()` it (no read).
 /// 2. If a cache entry exists with matching `(mtime, size)`, reuse the cached
@@ -345,16 +345,16 @@ pub struct CacheScanStats {
 ///
 /// After the scan, stale entries (files in the cache that no longer exist on
 /// disk) are pruned, and the upsert batch is committed in a single transaction.
-pub async fn scan_vault_cached(
-    storage: &dyn VaultStorage,
-    vault_root: &Path,
+pub async fn scan_notebox_cached(
+    storage: &dyn NoteboxStorage,
+    notebox_root: &Path,
     cache: &MetadataCache,
     compiler: &mut TypstCompiler,
 ) -> Result<(ScanResult, CacheScanStats)> {
-    let note_files = storage.list_files(vault_root, "*.typ").await?;
-    let collection_files = list_collection_files(storage, vault_root).await?;
+    let note_files = storage.list_files(notebox_root, "*.typ").await?;
+    let collection_files = list_collection_files(storage, notebox_root).await?;
 
-    let cached_by_relpath = cache.load_vault(vault_root)?;
+    let cached_by_relpath = cache.load_notebox(notebox_root)?;
 
     let mut notes = Vec::with_capacity(note_files.len());
     let mut contents = Vec::with_capacity(note_files.len());
@@ -369,7 +369,7 @@ pub async fn scan_vault_cached(
 
     for path in &note_files {
         let relpath = path
-            .strip_prefix(vault_root)
+            .strip_prefix(notebox_root)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| path.clone());
         existing_relpaths.insert(relpath.clone());
@@ -423,7 +423,7 @@ pub async fn scan_vault_cached(
                     {
                         // fall through to reparse
                     } else {
-                        let note = cached_to_note(cached, path, vault_root, &stat);
+                        let note = cached_to_note(cached, path, notebox_root, &stat);
                         link_index
                             .set_forward_links(path.clone(), note.links.clone());
                         notes.push(note);
@@ -455,15 +455,15 @@ pub async fn scan_vault_cached(
     link_index.resolve_and_build_backlinks(&all_paths);
 
     // Persist new/changed entries and prune deletions in one go.
-    if let Err(err) = cache.upsert_many(vault_root, &to_upsert) {
+    if let Err(err) = cache.upsert_many(notebox_root, &to_upsert) {
         log::warn!("metadata cache: upsert_many failed: {err}");
     }
-    match cache.prune_collecting(vault_root, &existing_relpaths) {
+    match cache.prune_collecting(notebox_root, &existing_relpaths) {
         Ok((n, pruned_relpaths)) => {
             stats.pruned = n;
             stats.pruned_paths = pruned_relpaths
                 .into_iter()
-                .map(|rp| vault_root.join(rp))
+                .map(|rp| notebox_root.join(rp))
                 .collect();
         }
         Err(err) => log::warn!("metadata cache: prune failed: {err}"),

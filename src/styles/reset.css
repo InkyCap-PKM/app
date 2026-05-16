@@ -32,12 +32,19 @@ body,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
+  /* Resting state is a lightened blend of the thumb colour; hover
+     restores the full shade so the bar darkens under the pointer. */
+  background: color-mix(in srgb, var(--scrollbar-thumb) 55%, transparent);
   border-radius: 5px;
   /* A 2px transparent inset each side trims the visible thumb to ~8px
      so it isn't visually fatter than the stepper-button arrow glyphs
      (also 8px), while the track stays 12px to host the buttons. */
   border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb);
   background-clip: padding-box;
 }
 

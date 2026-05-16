@@ -7,13 +7,13 @@
 //! to the Typst compiler the same way every other compile path works.
 //!
 //! Notes are inlined (not `#include`d) because the Typst world enforces a
-//! vault-root sandbox that would reject temporary paths outside the vault.
+//! notebox-root sandbox that would reject temporary paths outside the notebox.
 //! Each note is preprocessed to strip its `#import` preamble, leading
 //! `#note(...)` call, and any `#bibliography(...)` call so the merged output
 //! has exactly one preamble and one bibliography.
 //!
 //! Interactive cross-chapter wikilinks rely on a `state` set in the
-//! `inkycap-vault` package; see [`build_book_source`] for the
+//! `inkycap-notebox` package; see [`build_book_source`] for the
 //! `set-merged-context(...)` invocation.
 
 use std::path::PathBuf;
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use crate::collection_parser::model::{
     BookExportConfig, BookPageNumbering, BookWikilinkMode, InjectChapterHeading,
 };
-use crate::vault_package::strip_note_preamble;
+use crate::notebox_package::strip_note_preamble;
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -218,7 +218,7 @@ fn find_balanced_paren_end(s: &str, paren_open: usize) -> Option<usize> {
 }
 
 /// Prepare a note's content for inlining into the merged book: strip the
-/// vault-package import, the leading `#note(...)` metadata call, and any
+/// notebox-package import, the leading `#note(...)` metadata call, and any
 /// `#bibliography(...)` declarations in the body.
 pub fn prepare_note_for_include(content: &str) -> String {
     let after_preamble = strip_note_preamble(content);
@@ -319,7 +319,7 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
     let mut by_label: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for note in notes {
         for decl in extract_label_decls(&note.content, &note.stem) {
-            // <inkycap-*> labels are emitted by the vault package itself
+            // <inkycap-*> labels are emitted by the notebox package itself
             // (one per note/tag/link) — collisions are expected and
             // harmless. Skip them.
             if decl.name.starts_with("inkycap-") {
@@ -484,8 +484,8 @@ pub fn build_book_source(
 ) -> String {
     let mut s = String::with_capacity(8 * 1024);
 
-    // Vault library import — same as every other compiled note.
-    s.push_str(&crate::vault_package::import_line());
+    // Notebox library import — same as every other compiled note.
+    s.push_str(&crate::notebox_package::import_line());
     s.push('\n');
 
     // Document-level metadata (title, author) for the PDF's catalog.
@@ -511,7 +511,7 @@ pub fn build_book_source(
         s.push_str(&format!("#set document({})\n", doc_args.join(", ")));
     }
 
-    // Inform the vault package we're in a merged-book compile, so the
+    // Inform the notebox package we're in a merged-book compile, so the
     // `wikilink` function can resolve internally / strip / fall through.
     let mode_str = match options.wikilink_mode {
         BookWikilinkMode::Internal => "internal",
@@ -605,7 +605,7 @@ pub fn build_book_source(
     }
 
     // Outline. Routed through `outline-with-bare-page-numbers` in the
-    // vault package — that helper scopes a `show outline.entry` rule to a
+    // notebox package — that helper scopes a `show outline.entry` rule to a
     // single outline call so decorated body page-numbering patterns
     // ("Page 1 of N", etc.) don't leak into the TOC's page labels.
     if options.include_outline {
@@ -631,7 +631,7 @@ pub fn build_book_source(
         }
         BookPageNumbering::ArabicFromPage { start_page } => {
             // Arabic numerals turn on once the document reaches `start_page`.
-            // The closure body lives in the vault package as
+            // The closure body lives in the notebox package as
             // `make-offset-numbering` so the Typst expression can be edited
             // and tested in `.typ` rather than as a Rust string literal.
             let start = start_page.max(1);
@@ -821,7 +821,7 @@ mod tests {
     fn note(stem: &str, content: &str) -> BookNote {
         BookNote {
             stem: stem.to_string(),
-            abs_path: PathBuf::from(format!("/vault/{}.typ", stem)),
+            abs_path: PathBuf::from(format!("/notebox/{}.typ", stem)),
             content: content.to_string(),
             title: None,
         }
@@ -919,7 +919,7 @@ mod tests {
         // not corrupt any of the multi-byte content.
         for fixture in UNICODE_BODY_FIXTURES {
             let src = format!(
-                "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\
+                "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\
                  #note(title: \"Title\")\n\
                  = Heading\n\
                  {}\n\
@@ -949,7 +949,7 @@ mod tests {
 
     #[test]
     fn prepare_note_strips_preamble_and_bibliography() {
-        let src = r#"#import "/.inkycap/packages/inkycap-vault/0.1.0/lib.typ": *
+        let src = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
 #note(title: "Foo")
 
 = Heading
@@ -974,7 +974,7 @@ After
 
     #[test]
     fn extract_labels_skips_inkycap_internal() {
-        // The vault package emits <inkycap-note> on every #note(...) call.
+        // The notebox package emits <inkycap-note> on every #note(...) call.
         // Those are not user-authored labels so they should still be
         // extracted (the collision filter handles them).
         let labels = extract_label_decls("#metadata((x: 1)) <inkycap-note>\n", "a");
@@ -1018,8 +1018,8 @@ After
     #[test]
     fn build_book_emits_one_bibliography() {
         let notes = vec![
-            note("alpha", "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note()\n= Alpha\nA"),
-            note("beta",  "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note()\n= Beta\nB\n#bibliography(\"refs.bib\")"),
+            note("alpha", "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n= Alpha\nA"),
+            note("beta",  "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n= Beta\nB\n#bibliography(\"refs.bib\")"),
         ];
         let src = build_book_source(
             &notes,
@@ -1198,7 +1198,7 @@ After
     fn build_book_routes_outline_through_package_helper() {
         // The TOC must show bare page integers regardless of the page
         // pattern set in Style Overrides. The wrapper now delegates this
-        // to `outline-with-bare-page-numbers` in the vault package — the
+        // to `outline-with-bare-page-numbers` in the notebox package — the
         // helper installs the same show rule we used to inline here, so
         // the rendered TOC stays independent of the body pattern.
         let n = note("a", "= A\n");

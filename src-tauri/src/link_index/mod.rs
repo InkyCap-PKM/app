@@ -4,14 +4,14 @@
 //
 // Per CLAUDE.md's Typst-first principle, we use `typst query` to *extract*
 // outgoing wikilinks from each note (via `<inkycap-link>` metadata in the
-// vault package — see `inkycap-vault/0.1.0/lib.typ`). What Typst cannot do
+// notebox package — see `inkycap-notebox/0.1.0/lib.typ`). What Typst cannot do
 // is *resolve* a wikilink target string like `"Reading notes"` to an actual
-// file path on disk: that resolution is vault-specific (filename matching,
-// disambiguation, alias lookup) and Typst has no view of the vault as a
+// file path on disk: that resolution is notebox-specific (filename matching,
+// disambiguation, alias lookup) and Typst has no view of the notebox as a
 // whole, only the file currently being compiled.
 //
 // So the split is deliberate and idiomatic: extraction is native (Typst
-// knows the source), resolution is Rust-side (Rust knows the vault).
+// knows the source), resolution is Rust-side (Rust knows the notebox).
 // ---------------------------------------------------------------------------
 
 use std::collections::HashMap;
@@ -128,7 +128,7 @@ impl LinkIndex {
 }
 
 /// Lowercase-stem → paths map, built once per resolution batch so that
-/// resolving L wikilinks against N vault paths is O(N + L) instead of O(L·N).
+/// resolving L wikilinks against N notebox paths is O(N + L) instead of O(L·N).
 struct StemIndex<'a> {
     by_stem: HashMap<String, Vec<&'a PathBuf>>,
 }
@@ -172,47 +172,47 @@ mod tests {
     #[test]
     fn test_resolve_wikilink_basic() {
         let paths = vec![
-            PathBuf::from("/vault/notes/Hello.typ"),
-            PathBuf::from("/vault/archive/Hello.typ"),
-            PathBuf::from("/vault/notes/World.typ"),
+            PathBuf::from("/notebox/notes/Hello.typ"),
+            PathBuf::from("/notebox/archive/Hello.typ"),
+            PathBuf::from("/notebox/notes/World.typ"),
         ];
 
         assert_eq!(
             resolve("World", &paths),
-            Some(PathBuf::from("/vault/notes/World.typ"))
+            Some(PathBuf::from("/notebox/notes/World.typ"))
         );
         assert!(resolve("hello", &paths).is_some());
     }
 
     #[test]
     fn test_resolve_wikilink_with_heading() {
-        let paths = vec![PathBuf::from("/vault/notes/Note.typ")];
+        let paths = vec![PathBuf::from("/notebox/notes/Note.typ")];
         assert_eq!(
             resolve("Note#heading", &paths),
-            Some(PathBuf::from("/vault/notes/Note.typ"))
+            Some(PathBuf::from("/notebox/notes/Note.typ"))
         );
         assert_eq!(
             resolve("Note::heading", &paths),
-            Some(PathBuf::from("/vault/notes/Note.typ"))
+            Some(PathBuf::from("/notebox/notes/Note.typ"))
         );
     }
 
     #[test]
     fn test_resolve_wikilink_not_found() {
-        let paths = vec![PathBuf::from("/vault/notes/Hello.typ")];
+        let paths = vec![PathBuf::from("/notebox/notes/Hello.typ")];
         assert_eq!(resolve("Missing", &paths), None);
     }
 
     #[test]
     fn test_resolve_wikilink_shortest_path_wins() {
         let paths = vec![
-            PathBuf::from("/vault/a/b/c/Note.typ"),
-            PathBuf::from("/vault/Note.typ"),
-            PathBuf::from("/vault/x/Note.typ"),
+            PathBuf::from("/notebox/a/b/c/Note.typ"),
+            PathBuf::from("/notebox/Note.typ"),
+            PathBuf::from("/notebox/x/Note.typ"),
         ];
         assert_eq!(
             resolve("Note", &paths),
-            Some(PathBuf::from("/vault/Note.typ"))
+            Some(PathBuf::from("/notebox/Note.typ"))
         );
     }
 }

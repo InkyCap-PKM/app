@@ -67,7 +67,7 @@ pub struct MarkdownToTypstOptions {
     /// Whether to convert YAML frontmatter into a `#note(...)` call.
     /// When false, frontmatter is silently dropped.
     pub convert_frontmatter: bool,
-    /// Vault attachment folder (relative to vault root, without leading
+    /// Notebox attachment folder (relative to notebox root, without leading
     /// slash) used to construct paths for Obsidian-style image embeds
     /// `![[name.png]]`. The importer routes referenced files into this
     /// folder so the emitted call `#image("/<attachment_folder>/name.png")`
@@ -118,7 +118,7 @@ static OBSIDIAN_COMMENT_RE: LazyLock<Regex> =
 
 /// Extract the set of filenames referenced by Obsidian-style image
 /// embeds (`![[name.png]]`) in a markdown source. The importer uses
-/// this to decide which files in the source vault should be routed
+/// this to decide which files in the source notebox should be routed
 /// into the user's `attachment_folder` instead of preserving their
 /// original relative paths.
 pub fn extract_embed_filenames(input: &str) -> Vec<String> {
@@ -137,7 +137,7 @@ pub fn markdown_to_typst(input: &str, options: &MarkdownToTypstOptions) -> Strin
 
     // Emit import preamble.
     let _ = options; // reserved for future conversion knobs
-    out.push_str(&crate::vault_package::import_line());
+    out.push_str(&crate::notebox_package::import_line());
     out.push('\n');
 
     // Emit #note(...) from frontmatter.
@@ -275,7 +275,7 @@ fn escape_unrecognized_hashes(text: &str) -> String {
 /// mode) tag/comment syntax with their Typst equivalents before the
 /// markdown parser sees them.
 ///
-/// `attachment_folder` is the vault-relative folder (no leading slash)
+/// `attachment_folder` is the notebox-relative folder (no leading slash)
 /// the importer routes `![[name.png]]` embeds into; the emitted
 /// `#image("/<attachment_folder>/name")` path matches where the file
 /// will actually land post-import.
@@ -336,7 +336,7 @@ fn preprocess_markdown(
     // generic wikilink pass doesn't strip the `[[…]]` and leave the
     // `!` dangling as `!#wikilink(...)`. The filename's spaces and
     // other URL-unsafe characters are left as-is — Typst paths accept
-    // them inside quoted strings. Path is rooted at vault root (Per
+    // them inside quoted strings. Path is rooted at notebox root (Per
     // CLAUDE.md's portable-paths principle) and joins the configured
     // attachment folder so the importer's file-move target matches.
     result = IMAGE_EMBED_RE
@@ -502,7 +502,7 @@ fn parse_yaml_list_inline(value: &str) -> Vec<String> {
             .filter(|s| !s.is_empty())
             .collect()
     } else {
-        // Single value — might be comma-separated without brackets in some vaults.
+        // Single value — might be comma-separated without brackets in some noteboxes.
         if value.contains(',') {
             value
                 .split(',')

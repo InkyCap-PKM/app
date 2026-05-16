@@ -30,7 +30,7 @@ import { fileList } from "../../stores/filelist";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS } from "./visual-widgets";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { isVaultImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { isNoteboxImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -147,7 +147,7 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
 
   for (let i = 1; i <= Math.min(state.doc.lines, 5); i++) {
     const line = state.doc.line(i);
-    if (isVaultImportLine(line.text)) {
+    if (isNoteboxImportLine(line.text)) {
       let hideEnd = line.to;
       if (hideEnd < state.doc.length) {
         hideEnd = Math.min(hideEnd + 1, state.doc.length);

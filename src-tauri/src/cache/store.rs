@@ -1,6 +1,6 @@
 //! [`MetadataCache`] — the public API for reading and writing the persistent
-//! metadata cache. All paths are stored relative to the vault root, and all
-//! operations are scoped to a single vault by `(vault_id, path)`.
+//! metadata cache. All paths are stored relative to the notebox root, and all
+//! operations are scoped to a single notebox by `(notebox_id, path)`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crate::models::note::PropertyValue;
 /// table plus the joined `file_tags` and `file_links` rows.
 #[derive(Debug, Clone)]
 pub struct CachedFile {
-    /// Path relative to the vault root.
+    /// Path relative to the notebox root.
     pub path: PathBuf,
     /// File mtime in unix seconds. Combined with `size` to detect staleness.
     pub mtime: i64,
@@ -27,7 +27,7 @@ pub struct CachedFile {
     pub tags: Vec<String>,
     /// Wikilink targets in their original (unresolved) form.
     pub links: Vec<String>,
-    /// Full file content, cached so subsequent vault opens can skip disk reads
+    /// Full file content, cached so subsequent notebox opens can skip disk reads
     /// for unchanged files. `None` for legacy cache entries created before
     /// content caching was added.
     pub content: Option<String>,
@@ -75,10 +75,10 @@ impl MetadataCache {
         })
     }
 
-    /// Look up the vault row for `vault_root`, inserting one if it doesn't
-    /// exist, and bumping `last_opened_at` to "now". Returns the vault id.
-    fn get_or_create_vault_id(conn: &Connection, vault_root: &Path) -> Result<i64> {
-        let key = vault_root.to_string_lossy().to_string();
+    /// Look up the notebox row for `notebox_root`, inserting one if it doesn't
+    /// exist, and bumping `last_opened_at` to "now". Returns the notebox id.
+    fn get_or_create_notebox_id(conn: &Connection, notebox_root: &Path) -> Result<i64> {
+        let key = notebox_root.to_string_lossy().to_string();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -88,43 +88,43 @@ impl MetadataCache {
         // SELECT-then-INSERT logic — both branches end with `last_opened_at`
         // refreshed to `now`.
         let updated = conn.execute(
-            "UPDATE vaults SET last_opened_at = ?1 WHERE root_path = ?2",
+            "UPDATE noteboxes SET last_opened_at = ?1 WHERE root_path = ?2",
             params![now, key],
         )?;
         if updated == 0 {
             conn.execute(
-                "INSERT INTO vaults (root_path, last_opened_at) VALUES (?1, ?2)",
+                "INSERT INTO noteboxes (root_path, last_opened_at) VALUES (?1, ?2)",
                 params![key, now],
             )?;
         }
 
         let id: i64 = conn.query_row(
-            "SELECT id FROM vaults WHERE root_path = ?1",
+            "SELECT id FROM noteboxes WHERE root_path = ?1",
             params![key],
             |row| row.get(0),
         )?;
         Ok(id)
     }
 
-    /// Load every cached file for the given vault, keyed by relative path.
-    /// Returns an empty map if the vault has no cached entries yet (e.g.
-    /// first run on this vault).
-    pub fn load_vault(&self, vault_root: &Path) -> Result<HashMap<PathBuf, CachedFile>> {
+    /// Load every cached file for the given notebox, keyed by relative path.
+    /// Returns an empty map if the notebox has no cached entries yet (e.g.
+    /// first run on this notebox).
+    pub fn load_notebox(&self, notebox_root: &Path) -> Result<HashMap<PathBuf, CachedFile>> {
         let conn = self.conn.lock().map_err(|_| {
             InkyCapError::Cache("metadata cache mutex poisoned".to_string())
         })?;
 
-        let vault_id = Self::get_or_create_vault_id(&conn, vault_root)?;
+        let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
         let mut files: HashMap<PathBuf, CachedFile> = HashMap::new();
 
-        // Pull all `files` rows for this vault.
+        // Pull all `files` rows for this notebox.
         {
             let mut stmt = conn.prepare(
                 "SELECT path, mtime, size, properties_json, title, content \
-                 FROM files WHERE vault_id = ?1",
+                 FROM files WHERE notebox_id = ?1",
             )?;
-            let rows = stmt.query_map(params![vault_id], |row| {
+            let rows = stmt.query_map(params![notebox_id], |row| {
                 let path: String = row.get(0)?;
                 let mtime: i64 = row.get(1)?;
                 let size: i64 = row.get(2)?;
@@ -161,9 +161,9 @@ impl MetadataCache {
         // Tags.
         {
             let mut stmt = conn.prepare(
-                "SELECT path, tag FROM file_tags WHERE vault_id = ?1",
+                "SELECT path, tag FROM file_tags WHERE notebox_id = ?1",
             )?;
-            let rows = stmt.query_map(params![vault_id], |row| {
+            let rows = stmt.query_map(params![notebox_id], |row| {
                 let path: String = row.get(0)?;
                 let tag: String = row.get(1)?;
                 Ok((path, tag))
@@ -180,9 +180,9 @@ impl MetadataCache {
         {
             let mut stmt = conn.prepare(
                 "SELECT source_path, target_text FROM file_links \
-                 WHERE vault_id = ?1 ORDER BY source_path, ordinal",
+                 WHERE notebox_id = ?1 ORDER BY source_path, ordinal",
             )?;
-            let rows = stmt.query_map(params![vault_id], |row| {
+            let rows = stmt.query_map(params![notebox_id], |row| {
                 let path: String = row.get(0)?;
                 let target: String = row.get(1)?;
                 Ok((path, target))
@@ -200,8 +200,8 @@ impl MetadataCache {
 
     /// Insert or replace a batch of files in a single transaction. Tags and
     /// links for each file are wiped and rewritten so callers don't need to
-    /// diff them — the cascading FK on `(vault_id, path)` handles cleanup.
-    pub fn upsert_many(&self, vault_root: &Path, files: &[CachedFile]) -> Result<()> {
+    /// diff them — the cascading FK on `(notebox_id, path)` handles cleanup.
+    pub fn upsert_many(&self, notebox_root: &Path, files: &[CachedFile]) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }
@@ -209,14 +209,14 @@ impl MetadataCache {
         let mut conn = self.conn.lock().map_err(|_| {
             InkyCapError::Cache("metadata cache mutex poisoned".to_string())
         })?;
-        let vault_id = Self::get_or_create_vault_id(&conn, vault_root)?;
+        let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
         let tx = conn.transaction()?;
         {
             let mut upsert_file = tx.prepare(
-                "INSERT INTO files (vault_id, path, mtime, size, properties_json, title, content) \
+                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-                 ON CONFLICT(vault_id, path) DO UPDATE SET \
+                 ON CONFLICT(notebox_id, path) DO UPDATE SET \
                     mtime = excluded.mtime, \
                     size = excluded.size, \
                     properties_json = excluded.properties_json, \
@@ -224,16 +224,16 @@ impl MetadataCache {
                     content = excluded.content",
             )?;
             let mut delete_tags = tx.prepare(
-                "DELETE FROM file_tags WHERE vault_id = ?1 AND path = ?2",
+                "DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2",
             )?;
             let mut insert_tag = tx.prepare(
-                "INSERT OR IGNORE INTO file_tags (vault_id, path, tag) VALUES (?1, ?2, ?3)",
+                "INSERT OR IGNORE INTO file_tags (notebox_id, path, tag) VALUES (?1, ?2, ?3)",
             )?;
             let mut delete_links = tx.prepare(
-                "DELETE FROM file_links WHERE vault_id = ?1 AND source_path = ?2",
+                "DELETE FROM file_links WHERE notebox_id = ?1 AND source_path = ?2",
             )?;
             let mut insert_link = tx.prepare(
-                "INSERT INTO file_links (vault_id, source_path, target_text, ordinal) \
+                "INSERT INTO file_links (notebox_id, source_path, target_text, ordinal) \
                  VALUES (?1, ?2, ?3, ?4)",
             )?;
 
@@ -242,7 +242,7 @@ impl MetadataCache {
                 let properties_json = serde_json::to_string(&file.properties)?;
 
                 upsert_file.execute(params![
-                    vault_id,
+                    notebox_id,
                     &path_str,
                     file.mtime,
                     file.size as i64,
@@ -251,15 +251,15 @@ impl MetadataCache {
                     file.content,
                 ])?;
 
-                delete_tags.execute(params![vault_id, &path_str])?;
+                delete_tags.execute(params![notebox_id, &path_str])?;
                 for tag in &file.tags {
-                    insert_tag.execute(params![vault_id, &path_str, tag])?;
+                    insert_tag.execute(params![notebox_id, &path_str, tag])?;
                 }
 
-                delete_links.execute(params![vault_id, &path_str])?;
+                delete_links.execute(params![notebox_id, &path_str])?;
                 for (ordinal, link) in file.links.iter().enumerate() {
                     insert_link.execute(params![
-                        vault_id,
+                        notebox_id,
                         &path_str,
                         link,
                         ordinal as i64,
@@ -274,21 +274,21 @@ impl MetadataCache {
 
     /// Upsert a single file. Convenience wrapper around [`Self::upsert_many`]
     /// for the file watcher write-through path.
-    pub fn upsert_file(&self, vault_root: &Path, file: &CachedFile) -> Result<()> {
-        self.upsert_many(vault_root, std::slice::from_ref(file))
+    pub fn upsert_file(&self, notebox_root: &Path, file: &CachedFile) -> Result<()> {
+        self.upsert_many(notebox_root, std::slice::from_ref(file))
     }
 
     /// Delete a single file's row (and its tags/links via FK cascade) from
     /// the cache. Used by the file watcher on `FileDeleted`.
-    pub fn delete_file(&self, vault_root: &Path, path: &Path) -> Result<()> {
+    pub fn delete_file(&self, notebox_root: &Path, path: &Path) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| {
             InkyCapError::Cache("metadata cache mutex poisoned".to_string())
         })?;
-        let vault_id = Self::get_or_create_vault_id(&conn, vault_root)?;
+        let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
         let path_str = path.to_string_lossy().to_string();
         conn.execute(
-            "DELETE FROM files WHERE vault_id = ?1 AND path = ?2",
-            params![vault_id, path_str],
+            "DELETE FROM files WHERE notebox_id = ?1 AND path = ?2",
+            params![notebox_id, path_str],
         )?;
         Ok(())
     }
@@ -297,29 +297,29 @@ impl MetadataCache {
     /// after a full scan so the cache stays in sync with the filesystem.
     pub fn prune(
         &self,
-        vault_root: &Path,
+        notebox_root: &Path,
         existing: &HashSet<PathBuf>,
     ) -> Result<usize> {
-        self.prune_collecting(vault_root, existing).map(|(n, _)| n)
+        self.prune_collecting(notebox_root, existing).map(|(n, _)| n)
     }
 
     /// Like [`prune`] but also returns the relative paths that were deleted,
     /// so callers can clean up other indexes (e.g. persisted search engine).
     pub fn prune_collecting(
         &self,
-        vault_root: &Path,
+        notebox_root: &Path,
         existing: &HashSet<PathBuf>,
     ) -> Result<(usize, Vec<PathBuf>)> {
         let conn = self.conn.lock().map_err(|_| {
             InkyCapError::Cache("metadata cache mutex poisoned".to_string())
         })?;
-        let vault_id = Self::get_or_create_vault_id(&conn, vault_root)?;
+        let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
         let mut stmt = conn.prepare(
-            "SELECT path FROM files WHERE vault_id = ?1",
+            "SELECT path FROM files WHERE notebox_id = ?1",
         )?;
         let cached_paths: Vec<String> = stmt
-            .query_map(params![vault_id], |row| row.get::<_, String>(0))?
+            .query_map(params![notebox_id], |row| row.get::<_, String>(0))?
             .filter_map(|r| r.ok())
             .collect();
         drop(stmt);
@@ -330,8 +330,8 @@ impl MetadataCache {
             let pb = PathBuf::from(&path);
             if !existing.contains(&pb) {
                 conn.execute(
-                    "DELETE FROM files WHERE vault_id = ?1 AND path = ?2",
-                    params![vault_id, path],
+                    "DELETE FROM files WHERE notebox_id = ?1 AND path = ?2",
+                    params![notebox_id, path],
                 )?;
                 deleted += 1;
                 pruned_paths.push(pb);

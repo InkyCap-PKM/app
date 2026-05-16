@@ -1,9 +1,9 @@
-//! Phase C of the portable-paths plan: migrate the vault's attachment
+//! Phase C of the portable-paths plan: migrate the notebox's attachment
 //! folder. When the user changes `settings.files.attachment_folder`
 //! from old → new, three things must happen atomically:
 //!
-//! 1. Move every file under `<vault>/<old>/` to `<vault>/<new>/`.
-//! 2. Across every `.typ` note in the vault, rewrite path-bearing
+//! 1. Move every file under `<notebox>/<old>/` to `<notebox>/<new>/`.
+//! 2. Across every `.typ` note in the notebox, rewrite path-bearing
 //!    calls whose string argument starts with `/<old>/` to `/<new>/`.
 //!    Limited to `image`/`read`/`embed`/`bibliography` per the
 //!    shared rewriter contract.
@@ -23,7 +23,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::path_rebase::{
     count_absolute_prefix_matches, replace_absolute_prefix,
 };
@@ -34,14 +34,14 @@ pub struct MigrationPreview {
     /// already know this but echoing it back guards against races
     /// between the user typing and the backend reading state).
     pub current_folder: String,
-    /// Number of regular files currently under `<vault>/<old>/`.
+    /// Number of regular files currently under `<notebox>/<old>/`.
     pub files_to_move: usize,
     /// Number of `.typ` notes whose source contains at least one
     /// path-bearing call referencing `/<old>/`.
     pub notes_to_update: usize,
-    /// True when `<vault>/<new>/` already exists.
+    /// True when `<notebox>/<new>/` already exists.
     pub target_exists: bool,
-    /// True when `<vault>/<new>/` exists and contains any entries.
+    /// True when `<notebox>/<new>/` exists and contains any entries.
     /// Migration refuses to clobber a non-empty target.
     pub target_is_nonempty: bool,
 }
@@ -63,12 +63,12 @@ pub async fn preview_attachment_folder_migration(
     state: State<'_, AppState>,
 ) -> Result<MigrationPreview, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root
         .as_ref()
-        .ok_or(InkyCapError::VaultNotOpen)?
+        .ok_or(InkyCapError::NoteboxNotOpen)?
         .clone();
-    drop(vault_root);
+    drop(notebox_root);
 
     let current_folder = {
         let s = state.settings.read().await;
@@ -118,12 +118,12 @@ pub async fn migrate_attachment_folder(
     state: State<'_, AppState>,
 ) -> Result<MigrationResult, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root
         .as_ref()
-        .ok_or(InkyCapError::VaultNotOpen)?
+        .ok_or(InkyCapError::NoteboxNotOpen)?
         .clone();
-    drop(vault_root);
+    drop(notebox_root);
 
     let new_folder = validate_folder_segment(&new_folder)?;
     let current_folder = {
@@ -196,11 +196,11 @@ pub async fn migrate_attachment_folder(
         .unwrap_or_default();
 
     // `list_files` returns canonical absolute paths (it walks via the
-    // storage's canonical root). The `state.vault_root` may NOT be
+    // storage's canonical root). The `state.notebox_root` may NOT be
     // canonical on platforms where the user's path contains symlinks
     // — stripping against it silently fails and the migration writes
     // nothing back. Use the storage's canonical root for the strip,
-    // and feed the vault-relative form into read/write so the storage
+    // and feed the notebox-relative form into read/write so the storage
     // sandbox can validate consistently with how other commands use it.
     let strip_root = storage.canonical_root();
     let probe = format!("/{}/", current_folder);
@@ -223,7 +223,7 @@ pub async fn migrate_attachment_folder(
         };
         // Cheap byte-level pre-filter: skip the AST parse entirely
         // when the substring can't be present. Important for large
-        // vaults — the parse is the dominant cost per note.
+        // noteboxes — the parse is the dominant cost per note.
         if !content.contains(&probe) {
             continue;
         }
@@ -263,7 +263,7 @@ pub async fn migrate_attachment_folder(
 /// Validate a candidate folder segment: must be non-empty, must not
 /// contain path separators, must not be `..` or `.`. Mirrors the
 /// constraint that attachment folders live as a single directory
-/// directly under the vault root — keeps the migration's
+/// directly under the notebox root — keeps the migration's
 /// `/<segment>/` rewrite path-bearing-call invariant honest.
 fn validate_folder_segment(s: &str) -> Result<String, InkyCapError> {
     let trimmed = s.trim();
@@ -294,7 +294,7 @@ fn count_files_in_dir(dir: &Path) -> usize {
 }
 
 async fn count_notes_referencing_segment(
-    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+    storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
     segment: &str,
 ) -> usize {
     let notes = storage

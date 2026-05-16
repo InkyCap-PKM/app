@@ -1,13 +1,20 @@
 import { Component, createSignal, createResource, createEffect, onCleanup, For, Show } from "solid-js";
-import type { PropertyValue } from "../lib/types";
+import type { PropertyValue, PropertyType } from "../lib/types";
 import { propertyType } from "../stores/propertyTypes";
 import { sanitizeAlias } from "../lib/typst";
 import * as ipc from "../lib/ipc";
+import DatePicker from "./DatePicker";
 
 export interface PropertyEditorProps {
   propKey: string;
   value: PropertyValue;
   onSave: (key: string, value: PropertyValue) => void;
+  /**
+   * Fallback type for keys the registry leaves as "auto" (e.g. the known
+   * system fields like `date-due`). Lets the caller pin an editor without
+   * registering the type globally.
+   */
+  typeHint?: PropertyType;
 }
 
 function validateValue(value: PropertyValue, declaredType: string): string | null {
@@ -44,6 +51,7 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
   const effectiveType = () => {
     const declared = propertyType(props.propKey);
     if (declared !== "auto") return declared;
+    if (props.typeHint && props.typeHint !== "auto") return props.typeHint;
     const v = props.value;
     if (v === null || v === undefined) return "null";
     if (typeof v === "boolean") return "checkbox";
@@ -476,50 +484,12 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
 };
 
 const DateEditor: Component<PropertyEditorProps & { withTime: boolean }> = (props) => {
-  const [editing, setEditing] = createSignal(false);
-  const [draft, setDraft] = createSignal(String(props.value ?? ""));
-  const isEmpty = () => !props.value;
-
-  function startEdit() {
-    setDraft(String(props.value ?? ""));
-    setEditing(true);
-  }
-
-  function commit() {
-    setEditing(false);
-    const newVal = draft();
-    if (newVal !== String(props.value ?? "")) {
-      props.onSave(props.propKey, newVal);
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") commit();
-    if (e.key === "Escape") setEditing(false);
-  }
-
   return (
-    <Show
-      when={editing()}
-      fallback={
-        <span
-          class={`property-editor__value${isEmpty() ? " property-editor__value--empty" : ""}`}
-          onClick={startEdit}
-        >
-          {isEmpty() ? "Empty" : String(props.value)}
-        </span>
-      }
-    >
-      <input
-        class="property-editor__input"
-        type={props.withTime ? "datetime-local" : "date"}
-        value={draft()}
-        onInput={(e) => setDraft(e.currentTarget.value)}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        ref={(el) => setTimeout(() => el.focus(), 0)}
-      />
-    </Show>
+    <DatePicker
+      value={String(props.value ?? "")}
+      withTime={props.withTime}
+      onSave={(v) => props.onSave(props.propKey, v)}
+    />
   );
 };
 

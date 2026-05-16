@@ -6,7 +6,7 @@
 // bounded-concurrency render queue caps how many compiles run at once, and
 // a module-level LRU cache by path keeps recently-rendered output around so
 // that scrolling back to an earlier entry is instant. The cache invalidates
-// on `vault:file-changed`.
+// on `notebox:file-changed`.
 //
 // Pagination: top + bottom IntersectionObserver sentinels drive
 // `loadMoreBefore` / `loadMoreAfter`. Prepend preserves scroll position by
@@ -336,7 +336,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   //
   // Resolution is one `getForwardLinks(source)` call per click. The source
   // is the closest `.journal-scroll__entry` ancestor, identified by its
-  // `data-path` attribute. Vault-wide resolution would also work but
+  // `data-path` attribute. Notebox-wide resolution would also work but
   // forward-links is already cached in the LinkIndex and avoids surfacing a
   // new IPC for a per-click lookup.
   async function handleWikilinkClick(e: MouseEvent) {

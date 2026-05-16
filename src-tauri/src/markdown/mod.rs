@@ -1,6 +1,6 @@
 pub mod md_to_typst;
 mod typst_to_md;
-pub mod vault_import;
+pub mod notebox_import;
 
 pub use md_to_typst::markdown_to_typst;
 pub use md_to_typst::MarkdownDialect;

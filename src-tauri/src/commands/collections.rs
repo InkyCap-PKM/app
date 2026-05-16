@@ -9,11 +9,11 @@ use crate::errors::InkyCapError;
 use crate::models::collection::{CollectionData, CollectionInfo, CollectionRow, ViewInfo};
 use crate::models::note::PropertyValue;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
-use crate::vault_package;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
+use crate::notebox_package;
 
-/// List all `.collection` files in the vault with their view counts and icons. Requires an open vault.
+/// List all `.collection` files in the notebox with their view counts and icons. Requires an open notebox.
 #[tauri::command]
 pub async fn list_collections(
     state: State<'_, AppState>,
@@ -68,12 +68,12 @@ pub async fn list_collections(
 }
 
 /// Read (modified, created) Unix-epoch seconds for a `.collection` file.
-/// The path is resolved against the vault root first so it works whether
-/// the caller passes a vault-relative or absolute path. Either field
+/// The path is resolved against the notebox root first so it works whether
+/// the caller passes a notebox-relative or absolute path. Either field
 /// falls back to zero when the filesystem doesn't track it, matching the
 /// convention used for [`crate::storage::traits::FileTreeNode`].
 fn collection_file_times(
-    storage: &crate::storage::local::LocalVaultStorage,
+    storage: &crate::storage::local::LocalNoteboxStorage,
     path: &std::path::Path,
 ) -> (u64, u64) {
     let to_secs = |t: std::io::Result<std::time::SystemTime>| {
@@ -91,7 +91,7 @@ fn collection_file_times(
     }
 }
 
-/// Load a collection's data for a specific view, applying its filters and sorts. Requires an open vault.
+/// Load a collection's data for a specific view, applying its filters and sorts. Requires an open notebox.
 #[tauri::command]
 pub async fn get_collection_data(
     collection_path: String,
@@ -99,7 +99,7 @@ pub async fn get_collection_data(
     state: State<'_, AppState>,
 ) -> Result<CollectionData, InkyCapError> {
     let storage = state.get_storage().await?;
-    let collection_path_buf = sanitize_vault_arg(&collection_path)?;
+    let collection_path_buf = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
@@ -215,9 +215,9 @@ pub async fn create_collection_file(
             name
         )));
     }
-    let rel = std::path::PathBuf::from(vault_package::collections_relpath())
+    let rel = std::path::PathBuf::from(notebox_package::collections_relpath())
         .join(format!("{}.collection", trimmed));
-    let path = sanitize_vault_arg(&rel.display().to_string())?;
+    let path = sanitize_notebox_arg(&rel.display().to_string())?;
 
     if storage.exists(&path).await {
         return Err(InkyCapError::InvalidPath(format!(
@@ -254,7 +254,7 @@ pub async fn save_collection_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = serialize_collection_file(&collection_file)?;
     storage.write_file(&path, &content).await?;
     Ok(())
@@ -267,7 +267,7 @@ pub async fn delete_collection_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     storage.delete_file(&path).await?;
 
     // Remove from tracked collection files
@@ -285,7 +285,7 @@ pub async fn rename_collection_file(
     state: State<'_, AppState>,
 ) -> Result<CollectionInfo, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old_path = sanitize_vault_arg(&collection_path)?;
+    let old_path = sanitize_notebox_arg(&collection_path)?;
     let new_path = old_path
         .parent()
         .unwrap_or(std::path::Path::new(""))
@@ -329,7 +329,7 @@ pub async fn get_collection_file(
     state: State<'_, AppState>,
 ) -> Result<CollectionFile, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let base = parse_collection_file(&content)?;
     Ok(base)
@@ -344,7 +344,7 @@ pub async fn update_view_sort(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -369,7 +369,7 @@ pub async fn update_view_columns(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -394,7 +394,7 @@ pub async fn update_collection_filters(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -421,7 +421,7 @@ pub async fn add_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -451,7 +451,7 @@ pub async fn remove_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -477,7 +477,7 @@ pub async fn rename_view(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path = sanitize_vault_arg(&collection_path)?;
+    let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
@@ -489,11 +489,11 @@ pub async fn rename_view(
     Ok(())
 }
 
-/// Get vault index data: tags with counts and property keys with counts.
+/// Get notebox index data: tags with counts and property keys with counts.
 #[tauri::command]
-pub async fn get_vault_index(
+pub async fn get_notebox_index(
     state: State<'_, AppState>,
-) -> Result<crate::models::collection::VaultIndex, InkyCapError> {
+) -> Result<crate::models::collection::NoteboxIndex, InkyCapError> {
     let index = state.property_index.read().await;
 
     let mut tags: Vec<(String, usize)> = index
@@ -515,13 +515,13 @@ pub async fn get_vault_index(
     let mut property_keys: Vec<(String, usize)> = key_counts.into_iter().collect();
     property_keys.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
-    Ok(crate::models::collection::VaultIndex {
+    Ok(crate::models::collection::NoteboxIndex {
         tags,
         property_keys,
     })
 }
 
-/// Get all property keys known in the vault (for column picker / filter builder).
+/// Get all property keys known in the notebox (for column picker / filter builder).
 #[tauri::command]
 pub async fn get_all_property_keys(
     state: State<'_, AppState>,
@@ -550,7 +550,7 @@ pub async fn get_collection_data_internal(
     state: &State<'_, AppState>,
 ) -> Result<CollectionData, InkyCapError> {
     let storage = state.get_storage().await?;
-    let collection_path_buf = sanitize_vault_arg(collection_path)?;
+    let collection_path_buf = sanitize_notebox_arg(collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 

@@ -24,7 +24,7 @@ pub struct SearchResult {
     /// File creation time as a Unix timestamp in seconds. Falls back to
     /// `modified_time` on platforms that don't expose creation time.
     pub created_time: i64,
-    /// Lines immediately before `line_text` (max 2). The vault-library
+    /// Lines immediately before `line_text` (max 2). The notebox-library
     /// import line is filtered out so users never see auto-injected
     /// preamble in search results.
     pub context_before: Vec<String>,

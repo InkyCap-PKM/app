@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::compiler::PdfStandardPreset;
 use crate::typst_pipeline::style_injection;
 
@@ -27,16 +27,16 @@ pub async fn export_note_pdf(
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
-    let content = crate::vault_package::ensure_import(&content);
+    let content = crate::notebox_package::ensure_import(&content);
 
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
-    let source = super::super::typst::maybe_inject_set_vault(&source, &state).await;
+    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
     let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let pdf_bytes = compiler
@@ -62,7 +62,7 @@ pub async fn export_note_pdf_to_file(
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
-    let content = crate::vault_package::ensure_import(&content);
+    let content = crate::notebox_package::ensure_import(&content);
 
     let source = if metadata_mode == "properties" {
         inject_document_metadata(&content)
@@ -71,13 +71,13 @@ pub async fn export_note_pdf_to_file(
     };
 
     let source = super::super::typst::inject_style_cascade(&source, &path_buf, &state).await;
-    let source = super::super::typst::maybe_inject_set_vault(&source, &state).await;
+    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
     let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let standard = pdf_standard.unwrap_or_default();
@@ -111,7 +111,7 @@ pub async fn export_collection_note_pdf(
     let collection_path_buf = PathBuf::from(&collection_path);
 
     let content = storage.read_file(&note_path_buf).await?;
-    let content = crate::vault_package::ensure_import(&content);
+    let content = crate::notebox_package::ensure_import(&content);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
 
@@ -130,10 +130,10 @@ pub async fn export_collection_note_pdf(
         if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
         collection_rules.as_deref().filter(|r| !r.is_empty()),
     );
-    let source = super::super::typst::maybe_inject_set_vault(&source, &state).await;
+    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
 
-    let vault_root = state.vault_root.read().await;
-    let vault_root_ref = vault_root.as_deref();
+    let notebox_root = state.notebox_root.read().await;
+    let notebox_root_ref = notebox_root.as_deref();
 
     let source = prepare_bibliography(
         source,
@@ -146,11 +146,11 @@ pub async fn export_collection_note_pdf(
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let resolved_template = base.typst_template.as_deref()
-        .map(|t| resolve_template_path_with_root(t, vault_root_ref));
+        .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
 
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
@@ -214,10 +214,10 @@ pub async fn export_collection_batch_pdf(
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 
-    let vault_root = state.vault_root.read().await;
-    let vault_root_ref = vault_root.as_deref();
+    let notebox_root = state.notebox_root.read().await;
+    let notebox_root_ref = notebox_root.as_deref();
     let resolved_template = base.typst_template.as_deref()
-        .map(|t| resolve_template_path_with_root(t, vault_root_ref));
+        .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
     let mut exported = Vec::new();
     let mut errors = Vec::new();
 
@@ -231,7 +231,7 @@ pub async fn export_collection_batch_pdf(
             }
         };
 
-        let content = crate::vault_package::ensure_import(&content);
+        let content = crate::notebox_package::ensure_import(&content);
         let source = if metadata_mode.as_deref() == Some("properties") {
             inject_document_metadata(&content)
         } else {
@@ -242,7 +242,7 @@ pub async fn export_collection_batch_pdf(
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
-        let source = super::super::typst::maybe_inject_set_vault(&source, &state).await;
+        let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
         let source = prepare_bibliography(
             source,
             base.bibliography_file.as_deref(),
@@ -254,7 +254,7 @@ pub async fn export_collection_batch_pdf(
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
             .as_mut()
-            .ok_or(InkyCapError::VaultNotOpen)?;
+            .ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         let standard = pdf_standard.unwrap_or_default();
@@ -400,10 +400,10 @@ pub async fn export_collection_book_pdf(
         if let Some(v) = ov.include_bibliography { options.include_bibliography = v; }
     }
 
-    // Acquire vault root up front: per-note path rebasing needs it to
-    // compute each note's vault-relative directory. The same guard is
+    // Acquire notebox root up front: per-note path rebasing needs it to
+    // compute each note's notebox-relative directory. The same guard is
     // read again further down for template / bibliography resolution.
-    let vault_root_for_rebase = state.vault_root.read().await.clone();
+    let notebox_root_for_rebase = state.notebox_root.read().await.clone();
 
     let mut notes: Vec<BookNote> = Vec::with_capacity(data.rows.len());
     for row in &data.rows {
@@ -418,10 +418,10 @@ pub async fn export_collection_book_pdf(
         // Rebase relative path arguments in the note's source so calls
         // like `image("daisy.png")` resolve against the note's own
         // folder once inlined into the merged document's synthetic main
-        // (which lives at the vault root, not next to the note). Absolute
+        // (which lives at the notebox root, not next to the note). Absolute
         // paths and non-literal arguments are left untouched. See
         // typst_pipeline::path_rebase.
-        let rebased = if let Some(ref vroot) = vault_root_for_rebase {
+        let rebased = if let Some(ref vroot) = notebox_root_for_rebase {
             let note_dir = note_path_buf
                 .parent()
                 .and_then(|p| p.strip_prefix(vroot).ok())
@@ -471,16 +471,16 @@ pub async fn export_collection_book_pdf(
         }
     }
 
-    let vault_root_guard = state.vault_root.read().await;
-    let vault_root_ref = vault_root_guard.as_deref();
+    let notebox_root_guard = state.notebox_root.read().await;
+    let notebox_root_ref = notebox_root_guard.as_deref();
     let resolved_template = base.typst_template.as_deref()
-        .map(|t| resolve_template_path_with_root(t, vault_root_ref));
+        .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
     let template_import_line = resolved_template
         .as_ref()
         .map(|t| format!("#import \"{}\": *\n", t));
     let effective_bib = resolve_effective_bib(
         base.bibliography_file.as_deref(),
-        vault_root_ref,
+        notebox_root_ref,
         &state,
     ).await;
     let bib_path_for_wrapper: Option<String> = effective_bib.as_deref().map(|b| {
@@ -492,10 +492,10 @@ pub async fn export_collection_book_pdf(
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "book".to_string());
-        // Anchor at the vault root so relative paths in inlined notes
-        // (e.g. `image("daisy.png")`) resolve against the vault — not the
+        // Anchor at the notebox root so relative paths in inlined notes
+        // (e.g. `image("daisy.png")`) resolve against the notebox — not the
         // reserved `.inkycap/collections/` location of the .collection file.
-        let parent = vault_root_ref
+        let parent = notebox_root_ref
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| {
                 collection_path_buf
@@ -505,7 +505,7 @@ pub async fn export_collection_book_pdf(
             });
         parent.join(format!("{}.book.typ", stem))
     };
-    drop(vault_root_guard);
+    drop(notebox_root_guard);
 
     let body_numbering_pattern = base
         .style
@@ -534,13 +534,13 @@ pub async fn export_collection_book_pdf(
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     if let Some(ref style) = base.bibliography_style {
         compiler.set_bibliography_style(Some(style.clone()));
     }
-    let source = super::super::typst::maybe_inject_set_vault(&source, &state).await;
+    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
     let source = apply_bibliography_visibility(source, options.include_bibliography);
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
     check_pdf_standard_requirements(&source, book_pdf_standard)?;
@@ -723,7 +723,7 @@ pub fn ensure_document_date_for_standard(
     let mut byte_pos: usize = 0;
     for line in source.lines() {
         let line_with_nl_len = line.len() + 1;
-        if crate::vault_package::is_vault_import_line(line) {
+        if crate::notebox_package::is_notebox_import_line(line) {
             let insert_at = (byte_pos + line_with_nl_len).min(source.len());
             let mut result = String::with_capacity(source.len() + set_rule.len());
             result.push_str(&source[..insert_at]);

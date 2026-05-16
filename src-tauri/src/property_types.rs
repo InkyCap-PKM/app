@@ -3,8 +3,8 @@
 // Users can assign each property key a type (Text, Number, Date,
 // Checkbox, etc.) that controls how the editor renders and writes
 // values for that key. Types are global — one entry per key, shared
-// across every note in the vault. Storage lives at
-// `<vault>/.inkycap/property-types.json` so the registry round-trips
+// across every note in the notebox. Storage lives at
+// `<notebox>/.inkycap/property-types.json` so the registry round-trips
 // across restarts.
 
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ pub enum PropertyType {
 
 /// Built-in property keys whose declared type is fixed by the system.
 /// Users may not reassign these — they have specific semantics elsewhere
-/// in the app (rendering, indexing, the `inkycap-vault` Typst package).
+/// in the app (rendering, indexing, the `inkycap-notebox` Typst package).
 pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
     "title",
     "date",
@@ -64,7 +64,7 @@ impl Default for PropertyType {
 
 /// Built-in standard property types that are always available.
 /// These cannot be deleted by users and provide correct defaults
-/// even in a fresh vault.
+/// even in a fresh notebox.
 fn builtin_property_type(key: &str) -> PropertyType {
     match key {
         "title" => PropertyType::Text,
@@ -107,11 +107,11 @@ struct RegistryFile {
 }
 
 /// Global property type registry, backed by
-/// `<vault>/.inkycap/property-types.json`.
+/// `<notebox>/.inkycap/property-types.json`.
 #[derive(Debug, Clone, Default)]
 pub struct PropertyTypeRegistry {
     types: HashMap<String, PropertyType>,
-    vault_root: Option<PathBuf>,
+    notebox_root: Option<PathBuf>,
 }
 
 impl PropertyTypeRegistry {
@@ -119,16 +119,16 @@ impl PropertyTypeRegistry {
         Self::default()
     }
 
-    /// Resolve the storage path for a given vault.
-    fn path_for(vault_root: &Path) -> PathBuf {
-        vault_root.join(".inkycap").join("property-types.json")
+    /// Resolve the storage path for a given notebox.
+    fn path_for(notebox_root: &Path) -> PathBuf {
+        notebox_root.join(".inkycap").join("property-types.json")
     }
 
-    /// Load the registry from disk for the given vault. A missing file
+    /// Load the registry from disk for the given notebox. A missing file
     /// yields an empty registry — this is the expected state for a fresh
-    /// vault, not an error.
-    pub fn load(vault_root: &Path) -> Self {
-        let path = Self::path_for(vault_root);
+    /// notebox, not an error.
+    pub fn load(notebox_root: &Path) -> Self {
+        let path = Self::path_for(notebox_root);
         let mut types = match std::fs::read_to_string(&path) {
             Ok(s) => serde_json::from_str::<RegistryFile>(&s)
                 .map(|r| r.types)
@@ -142,7 +142,7 @@ impl PropertyTypeRegistry {
         types.retain(|k, _| !is_system_property(k));
         Self {
             types,
-            vault_root: Some(vault_root.to_path_buf()),
+            notebox_root: Some(notebox_root.to_path_buf()),
         }
     }
 
@@ -150,7 +150,7 @@ impl PropertyTypeRegistry {
     /// not returned — a missing type file just means the next session
     /// falls back to Auto, which is acceptable degradation.
     pub fn save(&self) {
-        let Some(root) = &self.vault_root else {
+        let Some(root) = &self.notebox_root else {
             return;
         };
         let path = Self::path_for(root);
@@ -214,8 +214,8 @@ impl PropertyTypeRegistry {
         }
     }
 
-    pub fn set_vault_root(&mut self, root: PathBuf) {
-        self.vault_root = Some(root);
+    pub fn set_notebox_root(&mut self, root: PathBuf) {
+        self.notebox_root = Some(root);
     }
 }
 

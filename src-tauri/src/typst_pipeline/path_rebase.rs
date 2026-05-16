@@ -10,7 +10,7 @@
 //! [`rebase_relative_paths`] walks the parsed Typst AST, finds calls to
 //! the recognized functions whose first positional argument is a
 //! string-literal *relative* path, and rewrites that argument to a
-//! vault-root-absolute path computed from the note's own directory.
+//! notebox-root-absolute path computed from the note's own directory.
 //! Already-absolute paths (leading `/`) and non-string arguments are
 //! left untouched, so the rewriter is safe to run on any source.
 //!
@@ -26,18 +26,18 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 /// should be rebased. Exact identifier match, case-sensitive.
 const PATH_BEARING_CALLS: &[&str] = &["image", "read", "embed", "bibliography"];
 
-/// Rewrite relative path arguments to vault-root-absolute paths.
+/// Rewrite relative path arguments to notebox-root-absolute paths.
 ///
 /// - `source`: the note's Typst source.
 /// - `note_dir`: the directory the note's relative paths are anchored to
-///   — typically the note file's parent directory. Must be a vault-
+///   — typically the note file's parent directory. Must be a notebox-
 ///   relative path (e.g. `notes/sub`); pass an empty path for a note at
-///   the vault root.
+///   the notebox root.
 ///
 /// Returns the rewritten source. If no rewrites apply, returns a copy of
 /// the input.
 ///
-/// Paths that escape the vault after rebasing (e.g. `../../outside.png`
+/// Paths that escape the notebox after rebasing (e.g. `../../outside.png`
 /// from a top-level note) are left unchanged and a warning is logged.
 pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     let root = parse(source);
@@ -119,7 +119,7 @@ fn rebase_first_string_arg(
                 }
                 // Non-path-like (e.g. a URL) — bibliography accepts strings
                 // that look like CSL style names. Heuristic: anything
-                // containing `://` is not a vault path.
+                // containing `://` is not a notebox path.
                 if value_str.contains("://") {
                     return None;
                 }
@@ -132,7 +132,7 @@ fn rebase_first_string_arg(
                     Some(r) => r,
                     None => {
                         log::warn!(
-                            "path_rebase: path '{}' from note_dir '{}' escapes vault; left unchanged",
+                            "path_rebase: path '{}' from note_dir '{}' escapes notebox; left unchanged",
                             value_str,
                             note_dir.display()
                         );
@@ -163,22 +163,22 @@ fn rebase_first_string_arg(
     None
 }
 
-/// Compute the vault-root-absolute path for `value` anchored at
-/// `note_dir`. Returns `None` if the result escapes the vault root via
+/// Compute the notebox-root-absolute path for `value` anchored at
+/// `note_dir`. Returns `None` if the result escapes the notebox root via
 /// `..`. The returned string always starts with `/`.
 fn rebase_path(value: &str, note_dir: &Path) -> Option<String> {
     let mut joined: PathBuf = note_dir.to_path_buf();
     joined.push(value);
 
-    // Resolve `.` and `..` lexically against the vault root. We don't
+    // Resolve `.` and `..` lexically against the notebox root. We don't
     // touch the filesystem — this is purely a string operation against
-    // the vault-relative layout.
+    // the notebox-relative layout.
     let mut normalized: Vec<&std::ffi::OsStr> = Vec::new();
     for component in joined.components() {
         match component {
             Component::CurDir => continue,
             Component::ParentDir => {
-                // Escapes vault root when there's nothing to pop.
+                // Escapes notebox root when there's nothing to pop.
                 if normalized.pop().is_none() {
                     return None;
                 }
@@ -204,7 +204,7 @@ fn rebase_path(value: &str, note_dir: &Path) -> Option<String> {
 /// begins with `/<old_prefix_segment>/` so the prefix becomes
 /// `/<new_prefix_segment>/`. Used by Phase C's attachment-folder
 /// migration: when the user renames `assets` → `media`, every
-/// `#image("/assets/foo.png")` across the vault becomes
+/// `#image("/assets/foo.png")` across the notebox becomes
 /// `#image("/media/foo.png")`. Non-matching calls and non-string
 /// arguments are left untouched.
 ///
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn relative_image_at_vault_root() {
+    fn relative_image_at_notebox_root() {
         let src = "#image(\"daisy.png\")";
         let out = rebase(src, "");
         assert_eq!(out, "#image(\"/daisy.png\")");
@@ -398,10 +398,10 @@ mod tests {
     }
 
     #[test]
-    fn escape_vault_left_unchanged() {
+    fn escape_notebox_left_unchanged() {
         let src = "#image(\"../../outside.png\")";
         let out = rebase(src, "notes");
-        // Would resolve to /../outside.png — escapes vault. Untouched.
+        // Would resolve to /../outside.png — escapes notebox. Untouched.
         assert_eq!(out, src);
     }
 

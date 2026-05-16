@@ -82,15 +82,15 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     // top-level heading depths) because that's the load-bearing piece for
     // PDF/UA-1 — the spec rejects gappy heading hierarchies.
     let dir = tempfile::tempdir().expect("tempdir");
-    let vault_root =
+    let notebox_root =
         canonicalize_root(dir.path()).expect("canonicalize tempdir");
-    inkycap_lib::vault_package::scaffold(&vault_root);
+    inkycap_lib::notebox_package::scaffold(&notebox_root);
 
-    let chapter_a_path = vault_root.join("alpha.typ");
-    let chapter_b_path = vault_root.join("beta.typ");
+    let chapter_a_path = notebox_root.join("alpha.typ");
+    let chapter_b_path = notebox_root.join("beta.typ");
     std::fs::write(
         &chapter_a_path,
-        "#import \"/.inkycap/vault.typ\": *\n\
+        "#import \"/.inkycap/notebox.typ\": *\n\
          #note(title: \"Alpha\")\n\
          \n\
          = Alpha\n\
@@ -104,7 +104,7 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     .expect("write alpha");
     std::fs::write(
         &chapter_b_path,
-        "#import \"/.inkycap/vault.typ\": *\n\
+        "#import \"/.inkycap/notebox.typ\": *\n\
          #note(title: \"Beta\")\n\
          \n\
          === Skipping straight to h3 on purpose\n\
@@ -162,10 +162,10 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     // date (added by `ensure_document_date_for_standard`).
     let source = ensure_document_date_for_standard(source, PdfStandardPreset::PdfUa1);
 
-    let book_path = vault_root.join("__book.typ");
+    let book_path = notebox_root.join("__book.typ");
     std::fs::write(&book_path, &source).expect("write merged source");
 
-    let mut compiler = TypstCompiler::new(vault_root.clone());
+    let mut compiler = TypstCompiler::new(notebox_root.clone());
     compiler.ensure_system_fonts();
     let pdf_bytes = compiler
         .compile_pdf(&book_path, source, PdfStandardPreset::PdfUa1)

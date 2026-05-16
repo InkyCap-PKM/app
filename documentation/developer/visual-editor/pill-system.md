@@ -187,7 +187,7 @@ Per [CLAUDE.md](../../../CLAUDE.md), source ↔ visual identity is a load-bearin
 - [src/editor/typst-decorations/widgets.ts](../../../src/editor/typst-decorations/widgets.ts) — `PillChip` factory, `makeBlockPillRow`, embedded-widget hosts (`VerseWidget`, `BibliographyBlockWidget`).
 - [src/editor/typst-decorations/visual-plugin.ts](../../../src/editor/typst-decorations/visual-plugin.ts) — `PILL_REGISTRY`, the decoration switch, `expandFunc` effect, `expandedFuncField`, all pill CSS.
 - [src/editor/typst-decorations/effects.ts](../../../src/editor/typst-decorations/effects.ts) — `expandFunc` effect.
-- [inkycap-vault/0.1.0/lib.typ](../../../inkycap-vault/0.1.0/lib.typ) — vault-defined functions that pills target.
+- [inkycap-notebox/0.1.0/lib.typ](../../../inkycap-notebox/0.1.0/lib.typ) — notebox-defined functions that pills target.
 
 ## Adding a new pill — checklist
 

@@ -5,7 +5,7 @@ import RightPanel from "./components/RightPanel";
 import StatusBar from "./components/StatusBar";
 import ResizeHandle from "./components/ResizeHandle";
 import VerticalToolbar, { type SidebarMode } from "./components/VerticalToolbar";
-import VaultLostBanner from "./components/VaultLostBanner";
+import NoteboxLostBanner from "./components/NoteboxLostBanner";
 import {
   leftWidth,
   rightWidth,
@@ -29,7 +29,7 @@ import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
-import { initVault } from "./stores/vault";
+import { initNotebox } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initSettings, onSettingsChange, settings, updateSetting, flushSettingsSave } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
@@ -150,7 +150,7 @@ const App: Component = () => {
     await applyFontSettings(settings.fonts);
     onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
-    await initVault();
+    await initNotebox();
     await applyStartupBehavior();
     // Register every built-in command with the registry. The global
     // keyboard dispatcher (initKeyboard, called below) reads keybindings
@@ -247,7 +247,7 @@ const App: Component = () => {
           "--right-width": rightCollapsed() ? "0px" : `${rightWidth()}px`,
         }}
       >
-        <VaultLostBanner />
+        <NoteboxLostBanner />
         <VerticalToolbar
           mode={sidebarMode}
           setMode={setSidebarMode}

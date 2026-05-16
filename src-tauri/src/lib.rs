@@ -21,8 +21,8 @@ pub mod storage;
 pub mod scaffolds;
 pub mod typst_packages;
 pub mod typst_pipeline;
-pub mod vault_health;
-pub mod vault_package;
+pub mod notebox_health;
+pub mod notebox_package;
 pub mod watcher;
 pub mod window_state;
 
@@ -190,14 +190,14 @@ pub fn run() {
         })
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
-            commands::vault::open_vault,
-            commands::vault::get_vault_info,
-            commands::vault::get_saved_vault_path,
-            commands::vault::get_vault_registry,
-            commands::vault::register_vault,
-            commands::vault::update_vault_entry,
-            commands::vault::remove_vault_from_registry,
-            commands::vault::move_vault,
+            commands::notebox::open_notebox,
+            commands::notebox::get_notebox_info,
+            commands::notebox::get_saved_notebox_path,
+            commands::notebox::get_notebox_registry,
+            commands::notebox::register_notebox,
+            commands::notebox::update_notebox_entry,
+            commands::notebox::remove_notebox_from_registry,
+            commands::notebox::move_notebox,
             commands::collections::list_collections,
             commands::collections::get_collection_data,
             commands::collections::create_collection_file,
@@ -212,7 +212,7 @@ pub fn run() {
             commands::collections::remove_view,
             commands::collections::rename_view,
             commands::collections::get_all_property_keys,
-            commands::collections::get_vault_index,
+            commands::collections::get_notebox_index,
             commands::files::read_file_content,
             commands::files::get_file_tree,
             commands::files::get_file_metadata,
@@ -243,7 +243,7 @@ pub fn run() {
             commands::properties::reorder_properties,
             commands::properties::rename_tag,
             commands::properties::delete_tag,
-            commands::search::vault_search,
+            commands::search::notebox_search,
             commands::search::search_and_replace,
             commands::search::get_all_tags,
             commands::file_ops::create_file,
@@ -309,7 +309,7 @@ pub fn run() {
             commands::typst::compile_typst_html,
             commands::markdown::paste_markdown_as_typst,
             commands::markdown::convert_markdown_to_typst,
-            commands::markdown::import_markdown_vault,
+            commands::markdown::import_markdown_notebox,
             commands::markdown::detect_markdown_dialect,
             commands::markdown::export_note_markdown_to_file,
             commands::markdown::export_collection_batch_markdown,

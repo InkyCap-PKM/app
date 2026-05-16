@@ -31,7 +31,7 @@ import {
 import type { SearchResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import { indexReady } from "../stores/vault";
+import { indexReady } from "../stores/notebox";
 import {
   searchQuery,
   setSearchQuery,
@@ -205,7 +205,7 @@ const SearchPanel: Component = () => {
     setReplaceResults(null);
 
     try {
-      const res = await ipc.vaultSearch(q, 500, caseSensitive());
+      const res = await ipc.noteboxSearch(q, 500, caseSensitive());
       setSearchResults(res);
       setSearchResultCount(res.length);
     } catch (e) {
@@ -483,7 +483,7 @@ const SearchPanel: Component = () => {
             ref={(el) => (inputRef = el)}
             class="search-panel__input"
             type="text"
-            placeholder="Search vault..."
+            placeholder="Search notebox..."
             value={searchQuery()}
             onInput={(e) => handleInput(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
@@ -646,7 +646,7 @@ const SearchPanel: Component = () => {
 
       <div class="search-panel__status">
         <Show when={!indexReady()}>
-          <span>{"Indexing vault…"}</span>
+          <span>{"Indexing notebox…"}</span>
         </Show>
         <Show when={indexReady() && loading()}>
           <span>Searching...</span>

@@ -456,7 +456,7 @@ mod tests {
             properties.insert(k.to_string(), v);
         }
         NoteMetadata {
-            path: std::path::PathBuf::from("/vault/notes/TestNote.md"),
+            path: std::path::PathBuf::from("/notebox/notes/TestNote.md"),
             properties,
             links: vec![],
             tags: vec![],
@@ -470,7 +470,7 @@ mod tests {
             "file.name",
             PropertyValue::String("TestNote.md".to_string()),
         )]);
-        let self_path = Path::new("/vault/notes/TestNote.collection");
+        let self_path = Path::new("/notebox/notes/TestNote.collection");
         // file.name is "TestNote.md", this.file.name (stem) is "TestNote" — not equal
         assert!(evaluate(&expr, &note, self_path));
     }
@@ -482,7 +482,7 @@ mod tests {
             "file.ext",
             PropertyValue::String("typ".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -492,14 +492,14 @@ mod tests {
             "file.folder",
             PropertyValue::String("my/notes/folder".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
     fn test_parse_boolean_comparison() {
         let expr = parse_filter_expr("task == false").unwrap();
         let note = make_note(vec![("task", PropertyValue::Bool(false))]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -509,7 +509,7 @@ mod tests {
             "tags",
             PropertyValue::List(vec![PropertyValue::String("rust".to_string())]),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -519,14 +519,14 @@ mod tests {
             "publisher-type",
             PropertyValue::String("journal".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
     fn test_parse_bracket_access_is_empty() {
         let expr = parse_filter_expr(r#"note["publisher-type"].isEmpty()"#).unwrap();
         let note = make_note(vec![("publisher-type", PropertyValue::Null)]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -539,7 +539,7 @@ mod tests {
                 PropertyValue::String("tauri".to_string()),
             ]),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     // -- Extended coverage: negative cases, error handling,
@@ -572,7 +572,7 @@ mod tests {
                 PropertyValue::List(vec![PropertyValue::String("rust".into())]),
             )]);
             // Unknown method should evaluate to false, not panic.
-            assert!(!evaluate(&expr, &note, Path::new("/vault/x.collection")));
+            assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
         }
     }
 
@@ -583,7 +583,7 @@ mod tests {
             "file.ext",
             PropertyValue::String("pdf".to_string()),
         )]);
-        assert!(!evaluate(&expr, &note, Path::new("/vault/test.collection")));
+        assert!(!evaluate(&expr, &note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -594,13 +594,13 @@ mod tests {
             "file.ext",
             PropertyValue::String("typ".to_string()),
         )]);
-        assert!(!evaluate(&expr, &typ_note, Path::new("/vault/test.collection")));
+        assert!(!evaluate(&expr, &typ_note, Path::new("/notebox/test.collection")));
 
         let pdf_note = make_note(vec![(
             "file.ext",
             PropertyValue::String("pdf".to_string()),
         )]);
-        assert!(evaluate(&expr, &pdf_note, Path::new("/vault/test.collection")));
+        assert!(evaluate(&expr, &pdf_note, Path::new("/notebox/test.collection")));
     }
 
     #[test]
@@ -611,13 +611,13 @@ mod tests {
             "file.tags",
             PropertyValue::List(vec![PropertyValue::String("rust".into())]),
         )]);
-        assert!(!evaluate(&expr, &has_rust, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &has_rust, Path::new("/notebox/x.collection")));
 
         let no_rust = make_note(vec![(
             "file.tags",
             PropertyValue::List(vec![PropertyValue::String("go".into())]),
         )]);
-        assert!(evaluate(&expr, &no_rust, Path::new("/vault/x.collection")));
+        assert!(evaluate(&expr, &no_rust, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -627,14 +627,14 @@ mod tests {
         // never had a `tags` key, which is surprising for users.
         let expr = parse_filter_expr("tags.isEmpty()").unwrap();
         let note = make_note(vec![]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
     fn test_is_empty_on_empty_list() {
         let expr = parse_filter_expr("tags.isEmpty()").unwrap();
         let note = make_note(vec![("tags", PropertyValue::List(vec![]))]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -644,7 +644,7 @@ mod tests {
             "tags",
             PropertyValue::List(vec![PropertyValue::String("rust".into())]),
         )]);
-        assert!(!evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -657,7 +657,7 @@ mod tests {
             "file.folder",
             PropertyValue::String("my/notes".to_string()),
         )]);
-        assert!(!evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -673,7 +673,7 @@ mod tests {
         assert!(!evaluate(
             &expr,
             &note_same,
-            Path::new("/vault/notes/TestNote.collection")
+            Path::new("/notebox/notes/TestNote.collection")
         ));
 
         let note_other = make_note(vec![(
@@ -683,7 +683,7 @@ mod tests {
         assert!(evaluate(
             &expr,
             &note_other,
-            Path::new("/vault/notes/TestNote.collection")
+            Path::new("/notebox/notes/TestNote.collection")
         ));
     }
 
@@ -696,7 +696,7 @@ mod tests {
             "publisher-type",
             PropertyValue::String("blog".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -706,7 +706,7 @@ mod tests {
         // than panic.
         let expr = parse_filter_expr(r#"nonexistent == "something""#).unwrap();
         let note = make_note(vec![]);
-        assert!(!evaluate(&expr, &note, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -720,15 +720,15 @@ mod tests {
                 PropertyValue::String("thesis-ch3".into()),
             ]),
         )]);
-        assert!(evaluate(&expr, &member, Path::new("/vault/x.collection")));
+        assert!(evaluate(&expr, &member, Path::new("/notebox/x.collection")));
 
         let non_member = make_note(vec![(
             "collection",
             PropertyValue::List(vec![PropertyValue::String("other-project".into())]),
         )]);
-        assert!(!evaluate(&expr, &non_member, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &non_member, Path::new("/notebox/x.collection")));
 
         let no_collection = make_note(vec![]);
-        assert!(!evaluate(&expr, &no_collection, Path::new("/vault/x.collection")));
+        assert!(!evaluate(&expr, &no_collection, Path::new("/notebox/x.collection")));
     }
 }

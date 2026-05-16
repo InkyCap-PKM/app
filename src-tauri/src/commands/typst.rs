@@ -5,14 +5,14 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
 
 /// Shift main-note diagnostic line numbers back to the user's on-disk file.
 ///
-/// InkyCap inserts style/vault lines into the note source (after the import
+/// InkyCap inserts style/notebox lines into the note source (after the import
 /// line) before handing it to Typst, so Typst's diagnostic lines are offset
 /// from what the source editor shows. The insertions all land near the top of
 /// the file, so every position below them shifts by the same line count —
@@ -34,10 +34,10 @@ fn remap_diagnostic_lines(diagnostics: &mut [TypstDiagnostic], injected_line_off
 
 /// Compile the note at `path` and return per-page SVG frames + diagnostics.
 ///
-/// `path` may be vault-relative or absolute. Either way it is canonicalized
-/// against the open vault root and rejected if it escapes the sandbox via
-/// `..`, an absolute reference outside the vault, or a symlink. The source is
-/// read through the [`VaultStorage`] trait so the same validation applies to
+/// `path` may be notebox-relative or absolute. Either way it is canonicalized
+/// against the open notebox root and rejected if it escapes the sandbox via
+/// `..`, an absolute reference outside the notebox, or a symlink. The source is
+/// read through the [`NoteboxStorage`] trait so the same validation applies to
 /// the file read itself.
 ///
 /// When the source contains `@` citations but no explicit `#bibliography()`
@@ -48,16 +48,16 @@ pub async fn compile_typst_svg(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<TypstCompileResult, InkyCapError> {
-    let path_arg = sanitize_vault_arg(&path)?;
+    let path_arg = sanitize_notebox_arg(&path)?;
     let storage = state.get_storage().await?;
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
-    // Track lines inserted near the top of the file: only the set-vault and
+    // Track lines inserted near the top of the file: only the set-notebox and
     // style-cascade steps shift existing line numbers. The bibliography step
     // appends at the end, below all user content, so it never does.
     let original_lines = source.lines().count();
-    let source = maybe_inject_set_vault(&source, &state).await;
+    let source = maybe_inject_set_notebox(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
@@ -65,7 +65,7 @@ pub async fn compile_typst_svg(
     let mut guard = state.typst_compiler.lock().await;
     let compiler = guard
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
     let mut result = compiler
         .compile_svg(&canonical, source)
@@ -171,13 +171,13 @@ pub async fn compile_typst_html(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<TypstHtmlResult, InkyCapError> {
-    let path_arg = sanitize_vault_arg(&path)?;
+    let path_arg = sanitize_notebox_arg(&path)?;
     let storage = state.get_storage().await?;
     let canonical = storage.resolve_path(&path_arg)?;
     let source = storage.read_file(&path_arg).await?;
 
     let original_lines = source.lines().count();
-    let source = maybe_inject_set_vault(&source, &state).await;
+    let source = maybe_inject_set_notebox(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     // Tag citations with `data-cite-key` so the Scroll Context panel can
     // locate and highlight them. HTML render path only — see
@@ -189,7 +189,7 @@ pub async fn compile_typst_html(
     let mut guard = state.typst_compiler.lock().await;
     let compiler = guard
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
     let mut result = compiler
         .compile_html(&canonical, source)
@@ -199,7 +199,7 @@ pub async fn compile_typst_html(
 }
 
 /// Inject the style cascade: app document defaults, then collection style
-/// overrides. Both are injected after the inkycap-vault import line so that
+/// overrides. Both are injected after the inkycap-notebox import line so that
 /// collection overrides beat app defaults, and any template import or user
 /// `#set` rules later in the document win over both.
 pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
@@ -220,7 +220,7 @@ pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Pa
 /// Look up which collection a note belongs to and return the collection's
 /// style overrides as Typst `#set` rules, if any.
 async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState) -> Option<String> {
-    let vault_root = state.vault_root.read().await.clone()?;
+    let notebox_root = state.notebox_root.read().await.clone()?;
 
     // Find the note's collection property
     let idx = state.property_index.read().await;
@@ -241,7 +241,7 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
     }
 
     // Find the .collection file for this collection. Convention: the .collection file
-    // is named `<collection>.collection` and can live at the vault root or in
+    // is named `<collection>.collection` and can live at the notebox root or in
     // any subdirectory. We scan known collection paths from the collection list.
     let storage = match state.get_storage().await {
         Ok(s) => s,
@@ -249,7 +249,7 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
     };
 
     let collection_filename = format!("{}.collection", collection_name);
-    let collection_path = vault_root.join(&collection_filename);
+    let collection_path = notebox_root.join(&collection_filename);
     let collection_content = if let Ok(content) = storage.read_file(&collection_path).await {
         content
     } else {
@@ -265,17 +265,17 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
     if call.is_empty() { None } else { Some(call) }
 }
 
-/// Inject `#set-vault(...)` after the `#import` line when the user has toggled
+/// Inject `#set-notebox(...)` after the `#import` line when the user has toggled
 /// show-inline-tags or show-inline-wikilinks off. Defaults are `true` in the
 /// Typst package, so we only inject when overriding.
 ///
 /// Note: the verse font is intentionally NOT auto-injected here. It's an
 /// editor-only preference (preview affordance via `--verse-font` in CSS); a
 /// user who wants verse styled differently in compiled output should reach
-/// for Typst-native control — `#set-vault(verse-font: ...)`, the `font:`
+/// for Typst-native control — `#set-notebox(verse-font: ...)`, the `font:`
 /// argument on `#verse(...)`, or a document-level show-rule on the verse
 /// element. Auto-injecting would silently override those choices.
-pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> String {
+pub(crate) async fn maybe_inject_set_notebox(source: &str, state: &AppState) -> String {
     let settings = state.settings.read().await;
     let show_tags = settings.editor.show_inline_tags;
     let show_wikilinks = settings.editor.show_inline_wikilinks;
@@ -291,14 +291,14 @@ pub(crate) async fn maybe_inject_set_vault(source: &str, state: &AppState) -> St
     if !show_wikilinks {
         args.push("show-inline-wikilinks: false".to_string());
     }
-    let directive = format!("#set-vault({})", args.join(", "));
+    let directive = format!("#set-notebox({})", args.join(", "));
 
     let mut out = String::with_capacity(source.len() + directive.len() + 2);
     let mut injected = false;
     for line in source.lines() {
         out.push_str(line);
         out.push('\n');
-        if !injected && crate::vault_package::is_vault_import_line(line) {
+        if !injected && crate::notebox_package::is_notebox_import_line(line) {
             out.push_str(&directive);
             out.push('\n');
             injected = true;
@@ -326,11 +326,11 @@ async fn ensure_system_fonts_if_needed(
 /// `configure_bibliography`, this never re-exports — it just checks whether
 /// the expected file already exists on disk.
 async fn resolve_preview_bib_path(state: &AppState) -> Option<String> {
-    let vault_root = state.vault_root.read().await.clone()?;
+    let notebox_root = state.notebox_root.read().await.clone()?;
     let settings = state.settings.read().await;
     match settings.citations.source.as_str() {
         "zotero" => {
-            let export_path = vault_root.join(".inkycap/zotero-export.bib");
+            let export_path = notebox_root.join(".inkycap/zotero-export.bib");
             if export_path.exists() {
                 Some("/.inkycap/zotero-export.bib".to_string())
             } else {
@@ -339,7 +339,7 @@ async fn resolve_preview_bib_path(state: &AppState) -> Option<String> {
         }
         _ => {
             let bib = settings.citations.bibliography_path.as_ref()?;
-            let abs = vault_root.join(bib);
+            let abs = notebox_root.join(bib);
             if abs.exists() {
                 if bib.starts_with('/') { Some(bib.clone()) } else { Some(format!("/{bib}")) }
             } else {

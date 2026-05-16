@@ -228,8 +228,11 @@ const inkycapTheme = EditorView.theme({
     color: "var(--fg-dim)",
   },
   ".cm-tooltip": {
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border-primary)",
+    // Shared popup surface — see --popup-* tokens in themes.css.
+    backgroundColor: "var(--popup-bg)",
+    border: "1px solid var(--popup-border-color)",
+    borderRadius: "var(--popup-radius)",
+    boxShadow: "var(--popup-shadow)",
     color: "var(--fg-primary)",
   },
   ".cm-tooltip-autocomplete": {

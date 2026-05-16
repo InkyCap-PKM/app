@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { assertVaultWritable } from "../stores/vault";
+import { assertNoteboxWritable } from "../stores/notebox";
 import type {
-  VaultInfo,
-  VaultRegistryEntry,
-  VaultMoveResult,
+  NoteboxInfo,
+  NoteboxRegistryEntry,
+  NoteboxMoveResult,
   CollectionInfo,
   CollectionData,
   FileTreeNode,
@@ -13,7 +13,7 @@ import type {
   CollectionFile,
   SortRule,
   FilterGroup,
-  VaultIndex,
+  NoteboxIndex,
   UserSettings,
   SearchResult,
   ReplaceResult,
@@ -36,45 +36,45 @@ import type {
   AggregatedCitation,
 } from "./types";
 
-export async function getSavedVaultPath(): Promise<string | null> {
-  return invoke<string | null>("get_saved_vault_path");
+export async function getSavedNoteboxPath(): Promise<string | null> {
+  return invoke<string | null>("get_saved_notebox_path");
 }
 
-export async function openVault(path: string): Promise<VaultInfo> {
-  return invoke<VaultInfo>("open_vault", { path });
+export async function openNotebox(path: string): Promise<NoteboxInfo> {
+  return invoke<NoteboxInfo>("open_notebox", { path });
 }
 
-export async function getVaultInfo(): Promise<VaultInfo | null> {
-  return invoke<VaultInfo | null>("get_vault_info");
+export async function getNoteboxInfo(): Promise<NoteboxInfo | null> {
+  return invoke<NoteboxInfo | null>("get_notebox_info");
 }
 
-export async function getVaultRegistry(): Promise<VaultRegistryEntry[]> {
-  return invoke<VaultRegistryEntry[]>("get_vault_registry");
+export async function getNoteboxRegistry(): Promise<NoteboxRegistryEntry[]> {
+  return invoke<NoteboxRegistryEntry[]>("get_notebox_registry");
 }
 
-export async function registerVault(
+export async function registerNotebox(
   path: string,
   displayName?: string,
 ): Promise<void> {
-  return invoke<void>("register_vault", { path, displayName });
+  return invoke<void>("register_notebox", { path, displayName });
 }
 
-export async function updateVaultEntry(
+export async function updateNoteboxEntry(
   path: string,
   displayName: string,
 ): Promise<void> {
-  return invoke<void>("update_vault_entry", { path, displayName });
+  return invoke<void>("update_notebox_entry", { path, displayName });
 }
 
-export async function removeVaultFromRegistry(path: string): Promise<void> {
-  return invoke<void>("remove_vault_from_registry", { path });
+export async function removeNoteboxFromRegistry(path: string): Promise<void> {
+  return invoke<void>("remove_notebox_from_registry", { path });
 }
 
-export async function moveVault(
+export async function moveNotebox(
   oldPath: string,
   newPath: string,
-): Promise<VaultMoveResult> {
-  return invoke<VaultMoveResult>("move_vault", { oldPath, newPath });
+): Promise<NoteboxMoveResult> {
+  return invoke<NoteboxMoveResult>("move_notebox", { oldPath, newPath });
 }
 
 export async function listCollections(): Promise<CollectionInfo[]> {
@@ -115,11 +115,11 @@ export async function writeFileContent(
   path: string,
   content: string,
 ): Promise<void> {
-  // Block writes after the health monitor has reported the vault gone —
+  // Block writes after the health monitor has reported the notebox gone —
   // the IPC would fail anyway (target path doesn't resolve), but throwing
   // here surfaces a meaningful error before the round-trip and prevents
   // auto-save loops from hammering the backend.
-  assertVaultWritable();
+  assertNoteboxWritable();
   return invoke<void>("write_file_content", { path, content });
 }
 
@@ -143,7 +143,7 @@ export async function saveCollectionFile(
   collectionPath: string,
   collectionFile: CollectionFile,
 ): Promise<void> {
-  assertVaultWritable();
+  assertNoteboxWritable();
   return invoke<void>("save_collection_file", { collectionPath, collectionFile });
 }
 
@@ -214,7 +214,7 @@ export async function getAllPropertyKeys(): Promise<string[]> {
   return invoke<string[]>("get_all_property_keys");
 }
 
-/// Distinct values currently used for `key` across the vault. List values
+/// Distinct values currently used for `key` across the notebox. List values
 /// are exploded into individual entries. Used by the list-value picker so
 /// users can choose from values they've already committed to elsewhere.
 export async function getPropertyValues(key: string): Promise<string[]> {
@@ -237,8 +237,8 @@ export async function getPropertyOrder(path: string): Promise<string[]> {
   return invoke<string[]>("get_property_order", { path });
 }
 
-export async function getVaultIndex(): Promise<VaultIndex> {
-  return invoke<VaultIndex>("get_vault_index");
+export async function getNoteboxIndex(): Promise<NoteboxIndex> {
+  return invoke<NoteboxIndex>("get_notebox_index");
 }
 
 // Property types and bulk tag/property operations
@@ -424,12 +424,12 @@ export async function getOsAccentColor(): Promise<string | null> {
 
 // Search
 
-export async function vaultSearch(
+export async function noteboxSearch(
   query: string,
   maxResults?: number,
   caseSensitive?: boolean,
 ): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("vault_search", {
+  return invoke<SearchResult[]>("notebox_search", {
     query,
     maxResults: maxResults ?? null,
     caseSensitive: caseSensitive ?? null,
@@ -516,7 +516,7 @@ export async function copyToAttachments(
 
 /**
  * Copy a file identified by absolute filesystem path into the
- * vault's attachments folder. Used by drag-drop / paste handlers
+ * notebox's attachments folder. Used by drag-drop / paste handlers
  * when the browser gives us a `file://` URL instead of an in-memory
  * File (the usual case on Linux/GNOME when dragging from Nautilus).
  */
@@ -527,8 +527,8 @@ export async function copyPathToAttachments(
 }
 
 /**
- * Open a native file-picker and copy the selected files into the vault's
- * configured attachments folder. Returns the vault-root-relative saved
+ * Open a native file-picker and copy the selected files into the notebox's
+ * configured attachments folder. Returns the notebox-root-relative saved
  * paths (empty array if the user cancelled).
  */
 export async function pickAndUploadToAttachments(): Promise<string[]> {
@@ -566,7 +566,7 @@ export async function previewAttachmentFolderMigration(
 /**
  * Phase C of the portable-paths plan: rename the attachment folder.
  * Moves the on-disk folder, rewrites every path-bearing call across
- * the vault whose argument starts with `/<old>/`, and persists the
+ * the notebox whose argument starts with `/<old>/`, and persists the
  * updated setting. Confirm before calling — this is destructive.
  */
 export async function migrateAttachmentFolder(
@@ -957,13 +957,13 @@ export async function exportCollectionBookPdf(
   });
 }
 
-/// Result of a vault-wide audit of `.typ` files for InkyCap compatibility.
+/// Result of a notebox-wide audit of `.typ` files for InkyCap compatibility.
 /// Mirrors the `TypAuditReport` struct on the Rust side.
 export interface TypAuditReport {
   totalScanned: number;
-  /// Vault-relative paths missing the inkycap-vault `#import`.
+  /// Notebox-relative paths missing the inkycap-notebox `#import`.
   missingImport: string[];
-  /// Vault-relative paths missing a top-level `#note(...)` call.
+  /// Notebox-relative paths missing a top-level `#note(...)` call.
   missingNote: string[];
 }
 
@@ -1036,8 +1036,8 @@ export async function exportFigures(
 // Typst compile pipeline (Phase 1 — reading mode)
 
 /**
- * Compile a `.typ` note to per-page SVG. `path` may be vault-relative or
- * absolute; the backend canonicalizes against the open vault root and
+ * Compile a `.typ` note to per-page SVG. `path` may be notebox-relative or
+ * absolute; the backend canonicalizes against the open notebox root and
  * rejects anything that escapes the sandbox. The result includes any
  * diagnostics — warnings may be present even on success.
  */
@@ -1123,19 +1123,19 @@ export interface ImportResult {
 
 export type MarkdownDialect = "standard" | "obsidian";
 
-export async function importMarkdownVault(
+export async function importMarkdownNotebox(
   sourcePath: string,
   targetPath: string,
   dialect: MarkdownDialect | null = null,
 ): Promise<ImportResult> {
-  return invoke<ImportResult>("import_markdown_vault", {
+  return invoke<ImportResult>("import_markdown_notebox", {
     sourcePath,
     targetPath,
     dialect,
   });
 }
 
-/// Probe a source vault and return the dialect the importer would use
+/// Probe a source notebox and return the dialect the importer would use
 /// by default ("obsidian" if an `.obsidian/` folder is present in the
 /// source, otherwise "standard"). Used by the import dialog to
 /// preselect its dialect toggle.

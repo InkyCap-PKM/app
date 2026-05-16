@@ -14,12 +14,12 @@ use crate::recovery::SnapshotManager;
 use crate::scanner::property_index::PropertyIndex;
 use crate::search::engine::{PersistedSearchIndex, SearchEngine};
 use crate::settings::{CitationSettings, UserSettings};
-use crate::storage::local::LocalVaultStorage;
-use crate::storage::traits::VaultStorage;
+use crate::storage::local::LocalNoteboxStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::TypstCompiler;
 
 /// Summary stats produced by [`AppState::build_indexes`], used to populate
-/// the `vault:index-ready` event payload sent to the frontend.
+/// the `notebox:index-ready` event payload sent to the frontend.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IndexStats {
     pub file_count: usize,
@@ -45,15 +45,15 @@ pub struct IndexStats {
 /// If you add a helper that nests differently, either follow the order
 /// above or split it into sequential single-lock steps.
 pub struct AppState {
-    pub vault_root: RwLock<Option<PathBuf>>,
-    pub storage: RwLock<Option<Arc<LocalVaultStorage>>>,
+    pub notebox_root: RwLock<Option<PathBuf>>,
+    pub storage: RwLock<Option<Arc<LocalNoteboxStorage>>>,
     pub property_index: RwLock<PropertyIndex>,
     pub link_index: RwLock<LinkIndex>,
     pub collection_files: RwLock<Vec<PathBuf>>,
-    /// File watcher handle — kept alive as long as a vault is open.
+    /// File watcher handle — kept alive as long as a notebox is open.
     pub watcher: RwLock<Option<RecommendedWatcher>>,
-    /// Vault health monitor abort handle. See [`crate::vault_health`].
-    /// Owned here so opening a new vault can cancel the previous monitor
+    /// Notebox health monitor abort handle. See [`crate::notebox_health`].
+    /// Owned here so opening a new notebox can cancel the previous monitor
     /// before spawning its replacement.
     pub health_monitor: RwLock<Option<tokio::task::AbortHandle>>,
     /// User-configurable settings, persisted to disk.
@@ -67,9 +67,9 @@ pub struct AppState {
     /// Persistent metadata cache (SQLite). Optional because cache open is
     /// best-effort — a missing or corrupt cache should never block app launch.
     pub metadata_cache: RwLock<Option<Arc<MetadataCache>>>,
-    /// Global property type registry, persisted per-vault.
+    /// Global property type registry, persisted per-notebox.
     pub property_types: RwLock<PropertyTypeRegistry>,
-    /// Typst compile pipeline, instantiated on vault open. The Mutex (rather
+    /// Typst compile pipeline, instantiated on notebox open. The Mutex (rather
     /// than RwLock) is intentional: every compile mutates the underlying
     /// World's source/main caches, so all access is single-writer.
     pub typst_compiler: Mutex<Option<TypstCompiler>>,
@@ -108,7 +108,7 @@ impl AppState {
         // continues with no cache (slow path).
         let metadata_cache = Self::open_metadata_cache();
         Self {
-            vault_root: RwLock::new(None),
+            notebox_root: RwLock::new(None),
             storage: RwLock::new(None),
             property_index: RwLock::new(PropertyIndex::new()),
             link_index: RwLock::new(LinkIndex::new()),
@@ -170,16 +170,16 @@ impl AppState {
         }
     }
 
-    /// Fast vault open: sets `vault_root`, `storage`, lists collection files, clears
+    /// Fast notebox open: sets `notebox_root`, `storage`, lists collection files, clears
     /// the indexes, and returns the rough `.typ` file count from a directory
     /// walk. The expensive metadata parse / link resolution / search index
     /// build happens later in [`AppState::build_indexes`], typically spawned
-    /// as a background task by the `open_vault` Tauri command.
+    /// as a background task by the `open_notebox` Tauri command.
     ///
     /// Returns the number of note files discovered, so the caller can
-    /// populate `VaultInfo.file_count` immediately.
-    pub async fn open_vault_fast(&self, path: PathBuf) -> crate::errors::Result<usize> {
-        let storage = Arc::new(LocalVaultStorage::new(path.clone())?);
+    /// populate `NoteboxInfo.file_count` immediately.
+    pub async fn open_notebox_fast(&self, path: PathBuf) -> crate::errors::Result<usize> {
+        let storage = Arc::new(LocalNoteboxStorage::new(path.clone())?);
         // Canonicalize the root so that every in-memory path we store uses
         // the same prefix that the storage layer validates against. This
         // prevents subtle mismatches when the user-supplied path contains a
@@ -188,13 +188,13 @@ impl AppState {
 
         // Scaffold reserved `.inkycap/` directories before the scanner runs so
         // the collections folder exists by the time we list it. The scaffold
-        // also writes the vault library; the original placement (later in
+        // also writes the notebox library; the original placement (later in
         // this function) is preserved by being idempotent.
-        crate::vault_package::scaffold(&canonical_path);
+        crate::notebox_package::scaffold(&canonical_path);
 
         // Cheap directory walks — no file reads, no parsing.
         let note_files = storage.list_files(&canonical_path, "*.typ").await?;
-        let collections_dir = crate::vault_package::collections_dir(&canonical_path);
+        let collections_dir = crate::notebox_package::collections_dir(&canonical_path);
         let collection_files = if storage.exists(&collections_dir).await {
             storage.list_files(&collections_dir, "*.collection").await?
         } else {
@@ -202,9 +202,9 @@ impl AppState {
         };
         let note_count = note_files.len();
 
-        // Reset stale state from any previously open vault before swapping in
-        // the new vault root. Empty indexes are fine — UI features that depend
-        // on them should show a loading state until `vault:index-ready` fires.
+        // Reset stale state from any previously open notebox before swapping in
+        // the new notebox root. Empty indexes are fine — UI features that depend
+        // on them should show a loading state until `notebox:index-ready` fires.
         *self.property_index.write().await = PropertyIndex::new();
         *self.link_index.write().await = LinkIndex::new();
         *self.search_engine.write().await = SearchEngine::new();
@@ -212,10 +212,10 @@ impl AppState {
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
 
-        // (Scaffold already ran above so the vault library is on disk
+        // (Scaffold already ran above so the notebox library is on disk
         // before the compiler is constructed.)
 
-        // Pre-warm the Typst compiler at vault-open time so the first
+        // Pre-warm the Typst compiler at notebox-open time so the first
         // reading-mode render doesn't pay the ~340ms font-discovery cost
         // measured in the Phase 0 bench. Construction is synchronous; future
         // work that adds system fonts may want to spawn this off-thread.
@@ -229,32 +229,32 @@ impl AppState {
             compiler.set_bibliography_style(style);
         }
         *self.typst_compiler.lock().await = Some(compiler);
-        *self.vault_root.write().await = Some(canonical_path);
+        *self.notebox_root.write().await = Some(canonical_path);
         *self.storage.write().await = Some(storage);
 
         Ok(note_count)
     }
 
     /// Build the property index, link index, and full-text search index for
-    /// the currently open vault. Intended to run as a background task after
-    /// [`AppState::open_vault_fast`]; the indexes are computed locally and
+    /// the currently open notebox. Intended to run as a background task after
+    /// [`AppState::open_notebox_fast`]; the indexes are computed locally and
     /// then swapped into `AppState` with brief write locks so that read-side
     /// IPC commands aren't blocked for the entire build.
     pub async fn build_indexes(&self) -> crate::errors::Result<IndexStats> {
-        let (storage, vault_root) = {
+        let (storage, notebox_root) = {
             let storage = self
                 .storage
                 .read()
                 .await
                 .clone()
-                .ok_or(crate::errors::InkyCapError::VaultNotOpen)?;
-            let vault_root = self
-                .vault_root
+                .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)?;
+            let notebox_root = self
+                .notebox_root
                 .read()
                 .await
                 .clone()
-                .ok_or(crate::errors::InkyCapError::VaultNotOpen)?;
-            (storage, vault_root)
+                .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)?;
+            (storage, notebox_root)
         };
 
         let cache = self.metadata_cache.read().await.clone();
@@ -267,12 +267,12 @@ impl AppState {
         let mut compiler_guard = self.typst_compiler.lock().await;
         let compiler = compiler_guard
             .as_mut()
-            .ok_or(crate::errors::InkyCapError::VaultNotOpen)?;
+            .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)?;
 
         let (scan, cache_stats) = if let Some(cache) = cache.as_ref() {
-            let (scan, stats) = crate::scanner::walker::scan_vault_cached(
+            let (scan, stats) = crate::scanner::walker::scan_notebox_cached(
                 storage.as_ref(),
-                &vault_root,
+                &notebox_root,
                 cache.as_ref(),
                 compiler,
             )
@@ -283,9 +283,9 @@ impl AppState {
             );
             (scan, Some(stats))
         } else {
-            let s = crate::scanner::walker::scan_vault(
+            let s = crate::scanner::walker::scan_notebox(
                 storage.as_ref(),
-                &vault_root,
+                &notebox_root,
                 compiler,
             )
             .await?;
@@ -307,7 +307,7 @@ impl AppState {
 
         // Try to load the persisted search index and incrementally update it
         // rather than rebuilding from scratch.
-        let index_path = search_index_path(&vault_root);
+        let index_path = search_index_path(&notebox_root);
         let search_engine = if let Some(persisted) = PersistedSearchIndex::load_from_file(&index_path) {
             let mut engine = persisted.engine;
             let saved_at = persisted.saved_at;
@@ -409,12 +409,12 @@ impl AppState {
             Some(c) => c,
             None => return,
         };
-        let vault_root = match self.vault_root.read().await.clone() {
+        let notebox_root = match self.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
         let relpath = abs_path
-            .strip_prefix(&vault_root)
+            .strip_prefix(&notebox_root)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| abs_path.to_path_buf());
 
@@ -431,7 +431,7 @@ impl AppState {
 
         let cached =
             crate::scanner::walker::note_to_cached_file(note, relpath, stat.mtime, stat.size, content);
-        if let Err(err) = cache.upsert_file(&vault_root, &cached) {
+        if let Err(err) = cache.upsert_file(&notebox_root, &cached) {
             log::warn!("metadata cache: upsert_file failed: {err}");
         }
     }
@@ -444,25 +444,25 @@ impl AppState {
             Some(c) => c,
             None => return,
         };
-        let vault_root = match self.vault_root.read().await.clone() {
+        let notebox_root = match self.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
         let relpath = abs_path
-            .strip_prefix(&vault_root)
+            .strip_prefix(&notebox_root)
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|_| abs_path.to_path_buf());
-        if let Err(err) = cache.delete_file(&vault_root, &relpath) {
+        if let Err(err) = cache.delete_file(&notebox_root, &relpath) {
             log::warn!("metadata cache: delete_file failed: {err}");
         }
     }
 
-    pub async fn get_storage(&self) -> crate::errors::Result<Arc<LocalVaultStorage>> {
+    pub async fn get_storage(&self) -> crate::errors::Result<Arc<LocalNoteboxStorage>> {
         self.storage
             .read()
             .await
             .clone()
-            .ok_or(crate::errors::InkyCapError::VaultNotOpen)
+            .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)
     }
 
     /// Re-index a single note across **every** in-memory index (link, search,
@@ -474,7 +474,7 @@ impl AppState {
     /// logic was duplicated in `commands::files` and `commands::file_ops`, and
     /// the two copies drifted: the `files` copy forgot to touch the search
     /// engine, so saves made via the editor never updated full-text search
-    /// until the next vault re-open.
+    /// until the next notebox re-open.
     ///
     /// Lock ordering (to avoid deadlocks with the watcher-side path):
     ///   0. typst_compiler (acquired first, released before index locks)
@@ -484,12 +484,12 @@ impl AppState {
     ///   4. metadata cache (via `cache_upsert_note`, acquires its own guard)
     ///   5. property_index (write, last — consumes the parsed note)
     pub async fn reindex_note(&self, path: &std::path::Path, content: &str) {
-        let vault_root = self.vault_root.read().await;
-        let Some(root) = vault_root.as_ref() else {
+        let notebox_root = self.notebox_root.read().await;
+        let Some(root) = notebox_root.as_ref() else {
             return;
         };
         let root = root.clone();
-        drop(vault_root);
+        drop(notebox_root);
 
         // Acquire the compiler for typst query, then release it before
         // taking any index locks (no nesting).
@@ -518,7 +518,7 @@ impl AppState {
         }
 
         // 1. Link index: forget the old links, record the new ones, and do a
-        // full re-resolution against the entire vault.
+        // full re-resolution against the entire notebox.
         //
         // A targeted `resolve_note_links(path)` was tempting (cheaper per
         // call) but it only updates the *current* note's outgoing links and
@@ -530,7 +530,7 @@ impl AppState {
         //   • A renamed/deleted note that leaves stale forward[A] entries on
         //     other notes pointing at a path that no longer exists.
         // `resolve_and_build_backlinks` is O(N + L_total) over the StemIndex
-        // — sub-millisecond per save at vault sizes we care about — and
+        // — sub-millisecond per save at notebox sizes we care about — and
         // produces a coherent index unconditionally.
         let mut link_index = self.link_index.write().await;
         link_index.remove_note(&path.to_path_buf());
@@ -638,23 +638,23 @@ impl AppState {
             return;
         }
 
-        let vault_root = match self.vault_root.read().await.clone() {
+        let notebox_root = match self.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
 
         let engine = self.search_engine.read().await;
-        let index_path = search_index_path(&vault_root);
+        let index_path = search_index_path(&notebox_root);
         PersistedSearchIndex::save_borrowed(&engine, now, &index_path);
         self.last_search_save.store(now, Ordering::Relaxed);
     }
 }
 
 /// Resolve the on-disk path for the persisted search index. Keyed by a
-/// hash of the vault root so multiple vaults don't collide.
-fn search_index_path(vault_root: &Path) -> PathBuf {
+/// hash of the notebox root so multiple noteboxes don't collide.
+fn search_index_path(notebox_root: &Path) -> PathBuf {
     use sha2::{Digest, Sha256};
-    let hash = Sha256::digest(vault_root.to_string_lossy().as_bytes());
+    let hash = Sha256::digest(notebox_root.to_string_lossy().as_bytes());
     let short = &hex::encode(&hash)[..16];
     crate::app_paths::cache_dir().join(format!("search-index-{short}.bin"))
 }
@@ -711,10 +711,10 @@ fn extract_search_meta(
 /// Resolve the bibliography override path based on citation settings.
 /// When the source is "zotero", reads entries from the Zotero database and
 /// exports them to `.inkycap/zotero-export.bib` so the Typst compiler can
-/// resolve `@key` citations. Returns the vault-relative path to use as the
+/// resolve `@key` citations. Returns the notebox-relative path to use as the
 /// bibliography override.
 pub fn configure_bibliography(
-    vault_root: &Path,
+    notebox_root: &Path,
     citations: &CitationSettings,
 ) -> Option<String> {
     match citations.source.as_str() {
@@ -727,7 +727,7 @@ pub fn configure_bibliography(
             let Some(db_path) = db else { return None };
             match crate::typst_pipeline::zotero::read_entries(&db_path) {
                 Ok(entries) => {
-                    match crate::typst_pipeline::bibliography::write_zotero_export(vault_root, &entries) {
+                    match crate::typst_pipeline::bibliography::write_zotero_export(notebox_root, &entries) {
                         Ok(rel_path) => Some(rel_path),
                         Err(e) => {
                             log::error!("Failed to write Zotero export: {e}");

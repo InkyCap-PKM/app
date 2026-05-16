@@ -1,5 +1,5 @@
-// In-memory inverted index for full-text vault search.
-// Built on vault open, incrementally updated on file changes.
+// In-memory inverted index for full-text notebox search.
+// Built on notebox open, incrementally updated on file changes.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -96,7 +96,7 @@ struct DocEntry {
     /// Heading text (lowercased) extracted from `=`-prefix lines. Used by
     /// the `section:` filter.
     headings: Vec<String>,
-    /// Indices of lines that are the auto-injected vault-library import.
+    /// Indices of lines that are the auto-injected notebox-library import.
     /// These lines are kept in `lines` so result line numbers still point
     /// at the source, but they are filtered out of every user-facing
     /// path: word index, regex match scan, "best line" pick, filter
@@ -241,7 +241,7 @@ impl SearchEngine {
 
     /// Execute a search query and return ranked results — one entry per
     /// matched line. The frontend groups by file. Lines that belong to
-    /// the auto-injected vault-library import are filtered out so users
+    /// the auto-injected notebox-library import are filtered out so users
     /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
         let matches = self.evaluate(query);
@@ -864,8 +864,8 @@ struct DocBuild {
 ///
 /// `doc.lines` still holds the raw source so result snippets show what
 /// the user wrote, and `match_ranges` from the index continue to point
-/// at byte offsets inside the raw line. The auto-injected vault import
-/// line is skipped from indexing (so users searching for `vault` or
+/// at byte offsets inside the raw line. The auto-injected notebox import
+/// line is skipped from indexing (so users searching for `notebox` or
 /// `import` don't get every note back) but kept in `lines` so result
 /// line numbers stay aligned with the source.
 fn build_doc(
@@ -886,7 +886,7 @@ fn build_doc(
 
     let mut import_line_indices: Vec<usize> = Vec::new();
     for (line_idx, line) in lines.iter().enumerate() {
-        if crate::vault_package::is_vault_import_line(line) {
+        if crate::notebox_package::is_notebox_import_line(line) {
             import_line_indices.push(line_idx);
         }
     }
@@ -941,7 +941,7 @@ fn build_doc(
 }
 
 /// Collect up to `window` lines of context before and after `line_idx`,
-/// skipping vault-import lines. The returned tuples preserve source
+/// skipping notebox-import lines. The returned tuples preserve source
 /// order — `before` runs from earliest to nearest, `after` runs from
 /// nearest to latest.
 fn collect_context(
@@ -1008,7 +1008,7 @@ mod tests {
     fn make_engine() -> SearchEngine {
         SearchEngine::build(vec![
             (
-                PathBuf::from("/vault/note1.md"),
+                PathBuf::from("/notebox/note1.md"),
                 "# Hello World\nThis is a test note about Rust programming.\nRust is great for systems.".to_string(),
                 vec!["rust".to_string(), "programming".to_string()],
                 Some("Hello World".to_string()),
@@ -1016,7 +1016,7 @@ mod tests {
                 HashMap::new(),
             ),
             (
-                PathBuf::from("/vault/note2.md"),
+                PathBuf::from("/notebox/note2.md"),
                 "# Another Note\nPython is also a great language.\nBut Rust is faster.".to_string(),
                 vec!["python".to_string()],
                 Some("Another Note".to_string()),
@@ -1024,7 +1024,7 @@ mod tests {
                 HashMap::new(),
             ),
             (
-                PathBuf::from("/vault/daily/2024-01-01.md"),
+                PathBuf::from("/notebox/daily/2024-01-01.md"),
                 "# Daily Note\nToday I learned about search engines.\nFull-text search is powerful.".to_string(),
                 vec!["daily".to_string()],
                 None,
@@ -1177,7 +1177,7 @@ mod tests {
     #[test]
     fn test_search_and_replace() {
         let engine = make_engine();
-        let paths = vec![PathBuf::from("/vault/note1.md")];
+        let paths = vec![PathBuf::from("/notebox/note1.md")];
         let replacements = engine.search_and_replace("Rust", "Go", &paths, true);
         assert_eq!(replacements.len(), 1);
         assert!(replacements[0].1.contains("Go"));
@@ -1188,7 +1188,7 @@ mod tests {
     fn test_update_doc() {
         let mut engine = make_engine();
         engine.update_doc(
-            Path::new("/vault/note1.md"),
+            Path::new("/notebox/note1.md"),
             "# Updated\nNew content about TypeScript.",
             vec!["typescript".to_string()],
             Some("Updated".to_string()),

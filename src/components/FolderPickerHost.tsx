@@ -2,7 +2,7 @@
 // Mounted once at the app root; driven by the activeFolderPicker signal
 // in stores/folderPicker.ts. See that file for the call-site contract.
 //
-// The list is built from the live vault file tree each time the picker
+// The list is built from the live notebox file tree each time the picker
 // opens, so it always reflects folders that currently exist. Reuses the
 // .quick-open__* styles for visual consistency with the Ctrl+O switcher.
 
@@ -15,7 +15,7 @@ import {
   createEffect,
 } from "solid-js";
 import { activeFolderPicker, resolveFolderPicker } from "../stores/folderPicker";
-import { vaultInfo } from "../stores/vault";
+import { noteboxInfo } from "../stores/notebox";
 import * as ipc from "../lib/ipc";
 import type { FileTreeNode } from "../lib/types";
 
@@ -23,7 +23,7 @@ import type { FileTreeNode } from "../lib/types";
 interface FolderEntry {
   /** Absolute filesystem path. */
   abs: string;
-  /** Vault-relative path; empty string for the vault root. */
+  /** Notebox-relative path; empty string for the notebox root. */
   rel: string;
   /** Display label ("/" for the root, otherwise the relative path). */
   label: string;
@@ -43,7 +43,7 @@ const FolderPickerHost: Component = () => {
     setQuery("");
     setSelectedIndex(0);
 
-    const root = vaultInfo()?.path ?? "";
+    const root = noteboxInfo()?.path ?? "";
     ipc.getFileTree().then((tree) => {
       const entries: FolderEntry[] = [];
       const walk = (nodes: FileTreeNode[]) => {
@@ -74,10 +74,10 @@ const FolderPickerHost: Component = () => {
       });
       filtered.sort((a, b) => a.label.localeCompare(b.label));
 
-      // Pin the vault root as the first entry so the user can always
-      // move an item to the top of the vault, unless the root itself is
+      // Pin the notebox root as the first entry so the user can always
+      // move an item to the top of the notebox, unless the root itself is
       // the item's current parent (moving there would be a no-op).
-      const rootEntry: FolderEntry = { abs: root, rel: "", label: "Vault root" };
+      const rootEntry: FolderEntry = { abs: root, rel: "", label: "Notebox root" };
       const showRoot = p.currentParent !== root;
       setFolders(showRoot ? [rootEntry, ...filtered] : filtered);
     });

@@ -1,4 +1,4 @@
-// In-app folder picker. A keyboard-driven, vault-scoped dialog for
+// In-app folder picker. A keyboard-driven, notebox-scoped dialog for
 // choosing a destination folder — used by the "Move file/folder to…"
 // actions in the file tree context menu and the File Actions menu.
 //
@@ -7,8 +7,8 @@
 // and the imperative `pickFolder()` function returns a Promise.
 //
 // Picking is deliberately confined to folders that already exist inside
-// the open vault — a user cannot move a note outside the vault, which
-// keeps filesystem access scoped to the vault root (see CLAUDE.md's
+// the open notebox — a user cannot move a note outside the notebox, which
+// keeps filesystem access scoped to the notebox root (see CLAUDE.md's
 // security directives). New folders are created via the existing
 // "New Folder" action, not here.
 
@@ -43,7 +43,7 @@ export { activeFolderPicker };
 
 /**
  * Open the folder picker. Resolves with the chosen folder's
- * vault-relative path (the empty string `""` denotes the vault root),
+ * notebox-relative path (the empty string `""` denotes the notebox root),
  * or `null` if the user dismissed the dialog. If a picker is already
  * open it is cancelled (resolved with `null`) before the new one opens.
  */

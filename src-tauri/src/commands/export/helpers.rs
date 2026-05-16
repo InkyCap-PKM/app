@@ -11,7 +11,7 @@ use crate::state::AppState;
 /// citation settings (Zotero export or user-configured `.bib`).
 pub(super) async fn resolve_effective_bib(
     collection_bib: Option<&str>,
-    vault_root: Option<&Path>,
+    notebox_root: Option<&Path>,
     state: &State<'_, AppState>,
 ) -> Option<String> {
     if let Some(bib) = collection_bib {
@@ -19,9 +19,9 @@ pub(super) async fn resolve_effective_bib(
             return Some(bib.to_string());
         }
     }
-    let vault_root = vault_root?;
+    let notebox_root = notebox_root?;
     let settings = state.settings.read().await;
-    crate::state::configure_bibliography(vault_root, &settings.citations)
+    crate::state::configure_bibliography(notebox_root, &settings.citations)
 }
 
 /// Resolve the user's preferred citation style from settings. Returns the
@@ -53,8 +53,8 @@ pub(super) async fn prepare_bibliography(
     include_bibliography: bool,
     state: &State<'_, AppState>,
 ) -> String {
-    let vault_root = state.vault_root.read().await;
-    let effective_bib = resolve_effective_bib(collection_bib, vault_root.as_deref(), state).await;
+    let notebox_root = state.notebox_root.read().await;
+    let effective_bib = resolve_effective_bib(collection_bib, notebox_root.as_deref(), state).await;
     let bib_style = match collection_bib_style {
         Some(s) if !s.is_empty() => Some(s.to_string()),
         _ => resolve_user_bib_style(state).await,
@@ -481,17 +481,17 @@ pub(super) fn extract_image_paths(source: &str) -> Vec<String> {
 
 /// Resolve a template reference to a Typst import path.
 ///
-/// - Paths starting with `/` are vault-root-relative, passed through.
+/// - Paths starting with `/` are notebox-root-relative, passed through.
 /// Resolve a creation-rule's Typst-template reference into something we can
 /// inject as `#import "<resolved>": *`.
 ///
-/// - Paths starting with `/` or `@` are passed through (vault-root-absolute
+/// - Paths starting with `/` or `@` are passed through (notebox-root-absolute
 ///   or package spec — already canonical).
 /// - Bare names are interpreted as an `@local/<name>:0.1.0` spec by default.
 ///   Users authoring custom-namespace local packages can write the full
 ///   `@<namespace>/<name>:<version>` form in the rule field.
 ///
-/// `vault_root` is accepted for API symmetry with earlier code paths that
+/// `notebox_root` is accepted for API symmetry with earlier code paths that
 /// resolved against the filesystem; it's currently unused but kept so call
 /// sites don't need to change if we later add manifest-aware resolution
 /// (e.g. picking the latest available version for a bare name).
@@ -499,7 +499,7 @@ pub fn resolve_template_path(template: &str) -> String {
     resolve_template_path_with_root(template, None)
 }
 
-pub fn resolve_template_path_with_root(template: &str, _vault_root: Option<&Path>) -> String {
+pub fn resolve_template_path_with_root(template: &str, _notebox_root: Option<&Path>) -> String {
     if template.starts_with('/') || template.starts_with('@') {
         return template.to_string();
     }

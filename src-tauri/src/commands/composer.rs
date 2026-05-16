@@ -2,8 +2,8 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
 
 /// Merge multiple notes into a single target file.
 /// Content is concatenated in order with a separator between each.
@@ -27,11 +27,11 @@ pub async fn merge_notes(
     let mut source_names = Vec::new();
 
     for (i, path_str) in paths.iter().enumerate() {
-        let path = sanitize_vault_arg(path_str)?;
+        let path = sanitize_notebox_arg(path_str)?;
         let content = storage.read_file(&path).await?;
 
         let body = if i > 0 {
-            crate::vault_package::strip_note_preamble(&content).to_string()
+            crate::notebox_package::strip_note_preamble(&content).to_string()
         } else {
             content.as_str().to_string()
         };
@@ -48,9 +48,9 @@ pub async fn merge_notes(
         );
     }
 
-    let target = sanitize_vault_arg(&target_path)?;
+    let target = sanitize_notebox_arg(&target_path)?;
 
-    // storage.write_file validates the path against the vault root and
+    // storage.write_file validates the path against the notebox root and
     // creates any missing parent directories through the same validated
     // pipeline, so no std::fs bypass is needed here.
     storage.write_file(&target, &merged_content).await?;
@@ -58,7 +58,7 @@ pub async fn merge_notes(
     // Optionally delete source files (move to trash)
     if delete_sources {
         for path_str in &paths {
-            let path = sanitize_vault_arg(path_str)?;
+            let path = sanitize_notebox_arg(path_str)?;
             if path != target {
                 let _ = trash::delete(&path);
             }
@@ -81,7 +81,7 @@ pub async fn split_note(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let source_path = sanitize_vault_arg(&path)?;
+    let source_path = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&source_path).await?;
 
     let lines: Vec<&str> = content.lines().collect();

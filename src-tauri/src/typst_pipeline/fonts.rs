@@ -1,8 +1,8 @@
 //! Font discovery for the Typst compile pipeline.
 //!
 //! Loads embedded fonts (typst-assets), system fonts (via fontdb), and
-//! vault-local fonts from `<vault>/fonts/`. The combined set is used by
-//! VaultWorld for compilation and by the `list_system_fonts` command for
+//! notebox-local fonts from `<notebox>/fonts/`. The combined set is used by
+//! NoteboxWorld for compilation and by the `list_system_fonts` command for
 //! the frontend font picker.
 
 use std::path::Path;
@@ -171,9 +171,9 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     }
 }
 
-/// Load fonts from `<vault_root>/fonts/` if the directory exists.
-fn load_vault_fonts(vault_root: &Path, book: &mut FontBook, slots: &mut Vec<FontSlot>) {
-    let fonts_dir = vault_root.join("fonts");
+/// Load fonts from `<notebox_root>/fonts/` if the directory exists.
+fn load_notebox_fonts(notebox_root: &Path, book: &mut FontBook, slots: &mut Vec<FontSlot>) {
+    let fonts_dir = notebox_root.join("fonts");
     if !fonts_dir.is_dir() {
         return;
     }
@@ -205,11 +205,11 @@ fn load_vault_fonts(vault_root: &Path, book: &mut FontBook, slots: &mut Vec<Font
     }
 }
 
-/// Load all available fonts: embedded + system + vault-local.
-/// This is the primary entry point used by VaultWorld.
-pub fn load_all(vault_root: &Path) -> (FontBook, Vec<FontSlot>) {
+/// Load all available fonts: embedded + system + notebox-local.
+/// This is the primary entry point used by NoteboxWorld.
+pub fn load_all(notebox_root: &Path) -> (FontBook, Vec<FontSlot>) {
     let (mut book, mut slots) = load_embedded();
     load_system_fonts(&mut book, &mut slots);
-    load_vault_fonts(vault_root, &mut book, &mut slots);
+    load_notebox_fonts(notebox_root, &mut book, &mut slots);
     (book, slots)
 }
