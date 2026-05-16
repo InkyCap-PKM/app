@@ -5101,8 +5101,7 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
-.mycelial-view__back-btn,
-.mycelial-view__refresh-btn {
+.mycelial-view__btn {
   background: var(--bg-secondary);
   color: var(--fg-primary);
   border: 1px solid var(--border-primary);
@@ -5112,8 +5111,7 @@ svg.lucide {
   cursor: pointer;
 }
 
-.mycelial-view__back-btn:hover,
-.mycelial-view__refresh-btn:hover {
+.mycelial-view__btn:hover {
   background: var(--bg-hover);
 }
 
@@ -5143,15 +5141,21 @@ svg.lucide {
 
 .mycelial-view__canvas {
   flex: 1;
-  overflow: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  overflow: hidden;
   min-height: 0;
+  cursor: grab;
+  outline: none;
+}
+
+.mycelial-view__canvas:active {
+  cursor: grabbing;
 }
 
 .mycelial-view__svg {
   display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .mycelial-view__loading {
@@ -5184,20 +5188,285 @@ svg.lucide {
   display: inline-block;
 }
 
-.mycelial-node {
-  transition: opacity 0.15s;
-}
+/* ─── Mycelial boxes ─── */
 
-.mycelial-tendril {
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.mycelial-tendril__label {
-  font-size: 11px;
-  fill: var(--mycelial-tendril-text, #6b5b45);
+.mycelial-box {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-primary);
+  background: var(--bg-primary);
   font-family: var(--interface-font, sans-serif);
-  pointer-events: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    opacity 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
+}
+
+.mycelial-box:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+.mycelial-box--dim {
+  opacity: 0.35;
+}
+
+/* Note boxes (center / source / context) — small, text-centered. */
+.mycelial-box--center,
+.mycelial-box--source,
+.mycelial-box--context {
+  align-items: center;
+  text-align: center;
+}
+
+.mycelial-box--center {
+  border-color: var(--accent);
+  border-width: 2px;
+  cursor: default;
+}
+
+/* Source notes — provenance a signal emerged from. */
+.mycelial-box--source {
+  background: var(--bg-secondary);
+  border-color: var(--fg-muted);
+}
+
+/* Context notes — the faint outer horizon of existing wikilinks. */
+.mycelial-box--context {
+  background: var(--bg-secondary);
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.mycelial-box--context:hover {
+  opacity: 1;
+}
+
+.mycelial-box__note-title {
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.mycelial-box--center .mycelial-box__note-title {
+  color: var(--fg-primary);
+  font-weight: 600;
+}
+
+/* Latent links and emergent concepts — the focus of the view. */
+.mycelial-box--latent {
+  border-color: var(--mycelial-latent, #c08a3e);
+  border-style: dashed;
+}
+
+.mycelial-box--emergent {
+  border-color: var(--mycelial-emergent, #9a7b4f);
+  background: var(--mycelial-emergent-bg, color-mix(in srgb, #9a7b4f 8%, var(--bg-primary)));
+}
+
+/* The concept phrase dominates the box. */
+.mycelial-box__concept {
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--fg-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mycelial-box__subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+  color: var(--fg-dim);
+}
+
+.mycelial-box--latent .mycelial-box__subtitle {
+  color: var(--mycelial-latent, #c08a3e);
+}
+
+.mycelial-box--emergent .mycelial-box__subtitle {
+  color: var(--mycelial-emergent, #9a7b4f);
+}
+
+/* Search-result-style context line. */
+.mycelial-box__snippet {
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--fg-dim);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mycelial-box__hit {
+  color: var(--fg-primary);
+  font-weight: 600;
+  background: var(--mycelial-hit-bg, color-mix(in srgb, #c08a3e 22%, transparent));
+  border-radius: 2px;
+}
+
+.mycelial-box__source {
+  font-size: 10px;
+  color: var(--fg-muted);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Viewport controls ─── */
+
+.mycelial-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.mycelial-controls__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 2px;
+}
+
+.mycelial-controls__btn--n {
+  grid-column: 2;
+  grid-row: 1;
+}
+.mycelial-controls__btn--w {
+  grid-column: 1;
+  grid-row: 2;
+}
+.mycelial-controls__btn--fit {
+  grid-column: 2;
+  grid-row: 2;
+}
+.mycelial-controls__btn--e {
+  grid-column: 3;
+  grid-row: 2;
+}
+.mycelial-controls__btn--s {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.mycelial-controls__zoom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mycelial-controls__btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--popup-bg);
+  color: var(--fg-primary);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  font-size: var(--text-md);
+  cursor: pointer;
+  box-shadow: var(--popup-shadow);
+}
+
+.mycelial-controls__btn:hover {
+  background: var(--bg-hover);
+}
+
+.mycelial-controls__level {
+  font-size: 10px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Latent-link mention picker ─── */
+
+.mycelial-picker {
+  position: absolute;
+  z-index: var(--z-menu);
+  width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+}
+
+.mycelial-picker__header {
+  padding: 4px 12px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.mycelial-picker__hint {
+  padding: 0 12px 6px;
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: 4px;
+}
+
+.mycelial-picker__hint code {
+  font-family: var(--mono-font, monospace);
+  font-size: 0.9em;
+}
+
+.mycelial-picker__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: var(--popup-item-padding);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.mycelial-picker__item:hover {
+  background: var(--bg-hover);
+}
+
+.mycelial-picker__item-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.mycelial-picker__item-snippet {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ─── Note Composer ─── */

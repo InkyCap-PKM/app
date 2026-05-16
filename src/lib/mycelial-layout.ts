@@ -1,59 +1,75 @@
 /**
  * Mycelial View layout engine.
  *
- * Positions note nodes using a simple force-directed simulation, then places
- * emergent-concept tendrils at the periphery extending outward from their
- * source-note cluster.
+ * The view has two concentric regions:
+ *
+ *  - **Inner growth region** — a force-directed layout of the center note,
+ *    latent-link boxes, emergent-concept boxes, and the *source notes* a
+ *    signal emerged from. This is where the mycelium is actively growing.
+ *  - **Outer horizon ring** — the note's existing wikilink neighbors that
+ *    surfaced no signal, placed evenly on a circle that encloses the inner
+ *    region. They are demoted to faint orientation markers: present for
+ *    context, not woven into the graph.
+ *
+ * Connections: faint anchor edges (existing wikilinks), dashed latent
+ * connections (mention -> target page), and organic emergent tendrils
+ * (concept -> the notes it surfaced in).
  */
 
-import type { FlowNode, FlowEdge, EmergentConcept } from "./types";
+import type { FlowNode, FlowEdge, LatentLink, EmergentConcept } from "./types";
 
-// Layout constants
-const NODE_WIDTH = 140;
-const NODE_HEIGHT = 34;
-const SPRING_LENGTH = 180;
-const REPULSION = 8000;
-const SPRING_K = 0.05;
+// Box dimensions — concept boxes are larger to fit a phrase + context.
+export const NOTE_W = 156;
+export const NOTE_H = 46;
+export const CONCEPT_W = 224;
+export const CONCEPT_H = 104;
+
+// Force-simulation constants.
+const SPRING_LENGTH = 230;
+const REPULSION = 26000;
+const SPRING_K = 0.04;
 const DAMPING = 0.85;
-const ITERATIONS = 60;
-const PADDING = 80;
-const TENDRIL_BASE_LENGTH = 70;
-const TENDRIL_MAX_LENGTH = 150;
+const ITERATIONS = 80;
+const PADDING = 120;
+// Gap between the inner region's outer edge and the horizon ring.
+const RING_GAP = 150;
 
-export interface LayoutNode {
+export type BoxKind = "center" | "source" | "context" | "latent" | "emergent";
+export type ConnectionKind = "anchor" | "latent" | "emergent";
+
+export interface MycelialBox {
   id: string;
-  name: string;
-  depth: number;
-  direction: string;
+  kind: BoxKind;
   x: number;
   y: number;
+  w: number;
+  h: number;
+  /** Dominant phrase shown in the box. */
+  title: string;
+  /** Small role label ("Latent link" / "Potential page"). */
+  subtitle: string;
+  /** Search-result-style context line, when the box carries a signal. */
+  snippet: string;
+  /** Provenance label shown under the context. */
+  sourceLabel: string;
+  latent?: LatentLink;
+  emergent?: EmergentConcept;
+  note?: FlowNode;
 }
 
-export interface LayoutEdge {
-  sourceX: number;
-  sourceY: number;
-  targetX: number;
-  targetY: number;
+export interface MycelialConnection {
+  kind: ConnectionKind;
   path: string;
-}
-
-export interface TendrilLayout {
-  term: string;
+  /** 0..1 strength, drives stroke width / opacity. */
   score: number;
-  isBigram: boolean;
-  sourceNotes: string[];
-  docCount: number;
-  path: string;
-  labelX: number;
-  labelY: number;
-  endX: number;
-  endY: number;
+  /** Box ids of the two endpoints, for hover highlighting. */
+  from: string;
+  to: string;
 }
 
 export interface MycelialLayout {
-  nodes: LayoutNode[];
-  edges: LayoutEdge[];
-  tendrils: TendrilLayout[];
+  boxes: MycelialBox[];
+  connections: MycelialConnection[];
   width: number;
   height: number;
 }
@@ -71,237 +87,301 @@ function seededRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
+interface SimNode {
+  id: string;
+  kind: BoxKind;
+  w: number;
+  h: number;
+}
+
 export function computeMycelialLayout(
-  nodes: FlowNode[],
-  edges: FlowEdge[],
-  concepts: EmergentConcept[],
+  centerId: string,
+  sourceNotes: FlowNode[],
+  contextNotes: FlowNode[],
+  contextEdges: FlowEdge[],
+  latentLinks: LatentLink[],
+  emergentConcepts: EmergentConcept[],
 ): MycelialLayout {
-  if (nodes.length === 0) {
-    return { nodes: [], edges: [], tendrils: [], width: 200, height: 200 };
+  // ---- 1. Inner simulation nodes. -----------------------------------------
+  const latentByTarget = new Map<string, LatentLink>();
+  for (const l of latentLinks) {
+    if (!latentByTarget.has(l.target_path)) latentByTarget.set(l.target_path, l);
   }
 
-  // Initialize positions: center at origin, others in a circle by depth
-  const positions: Map<string, { x: number; y: number }> = new Map();
-  const centerNode = nodes.find((n) => n.direction === "center");
-  const centerId = centerNode?.id ?? nodes[0].id;
+  const noteById = new Map<string, FlowNode>();
+  for (const n of [...sourceNotes, ...contextNotes]) noteById.set(n.id, n);
 
-  positions.set(centerId, { x: 0, y: 0 });
+  const sim: SimNode[] = [{ id: centerId, kind: "center", w: NOTE_W, h: NOTE_H }];
+  const seen = new Set<string>([centerId]);
 
-  const nonCenter = nodes.filter((n) => n.id !== centerId);
-  const angleStep = (2 * Math.PI) / Math.max(nonCenter.length, 1);
-  nonCenter.forEach((node, i) => {
-    const angle = angleStep * i;
-    const radius = SPRING_LENGTH * node.depth;
-    positions.set(node.id, {
-      x: radius * Math.cos(angle),
-      y: radius * Math.sin(angle),
+  for (const n of sourceNotes) {
+    if (seen.has(n.id) || latentByTarget.has(n.id)) continue;
+    seen.add(n.id);
+    sim.push({ id: n.id, kind: "source", w: NOTE_W, h: NOTE_H });
+  }
+  for (const l of latentLinks) {
+    if (seen.has(l.target_path)) continue;
+    seen.add(l.target_path);
+    sim.push({
+      id: l.target_path,
+      kind: "latent",
+      w: CONCEPT_W,
+      h: CONCEPT_H,
     });
+  }
+  for (const e of emergentConcepts) {
+    const id = `emergent:${e.term}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    sim.push({ id, kind: "emergent", w: CONCEPT_W, h: CONCEPT_H });
+  }
+  const simIds = new Set(sim.map((n) => n.id));
+
+  // ---- 2. Spring connections (inner region only). -------------------------
+  interface Spring {
+    a: string;
+    b: string;
+    kind: ConnectionKind;
+    score: number;
+  }
+  const springs: Spring[] = [];
+  for (const e of contextEdges) {
+    if (simIds.has(e.source) && simIds.has(e.target)) {
+      springs.push({ a: e.source, b: e.target, kind: "anchor", score: 0.4 });
+    }
+  }
+  for (const l of latentLinks) {
+    for (const m of l.mentions) {
+      if (simIds.has(m.path) && simIds.has(l.target_path)) {
+        springs.push({
+          a: m.path,
+          b: l.target_path,
+          kind: "latent",
+          score: l.score,
+        });
+      }
+    }
+  }
+  for (const e of emergentConcepts) {
+    const id = `emergent:${e.term}`;
+    for (const m of e.mentions) {
+      if (simIds.has(m.path)) {
+        springs.push({ a: id, b: m.path, kind: "emergent", score: e.score });
+      }
+    }
+  }
+
+  // ---- 3. Force-directed simulation (center pinned at origin). ------------
+  const pos = new Map<string, { x: number; y: number }>();
+  const vel = new Map<string, { vx: number; vy: number }>();
+  pos.set(centerId, { x: 0, y: 0 });
+  const others = sim.filter((n) => n.id !== centerId);
+  const step = (2 * Math.PI) / Math.max(others.length, 1);
+  others.forEach((n, i) => {
+    const r = SPRING_LENGTH * (0.9 + seededRandom(hashString(n.id)) * 0.6);
+    pos.set(n.id, { x: r * Math.cos(step * i), y: r * Math.sin(step * i) });
   });
-
-  // Build adjacency for spring forces
-  const adjacency: Map<string, Set<string>> = new Map();
-  for (const node of nodes) {
-    adjacency.set(node.id, new Set());
-  }
-  for (const edge of edges) {
-    adjacency.get(edge.source)?.add(edge.target);
-    adjacency.get(edge.target)?.add(edge.source);
-  }
-
-  // Force-directed simulation
-  const velocities: Map<string, { vx: number; vy: number }> = new Map();
-  for (const node of nodes) {
-    velocities.set(node.id, { vx: 0, vy: 0 });
-  }
+  for (const n of sim) vel.set(n.id, { vx: 0, vy: 0 });
 
   for (let iter = 0; iter < ITERATIONS; iter++) {
-    // Repulsion between all node pairs
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = positions.get(nodes[i].id)!;
-        const b = positions.get(nodes[j].id)!;
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = pos.get(sim[i].id)!;
+        const b = pos.get(sim[j].id)!;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
         const force = REPULSION / (dist * dist);
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
-
-        if (nodes[i].id !== centerId) {
-          const va = velocities.get(nodes[i].id)!;
-          va.vx -= fx;
-          va.vy -= fy;
+        if (sim[i].id !== centerId) {
+          const v = vel.get(sim[i].id)!;
+          v.vx -= fx;
+          v.vy -= fy;
         }
-        if (nodes[j].id !== centerId) {
-          const vb = velocities.get(nodes[j].id)!;
-          vb.vx += fx;
-          vb.vy += fy;
+        if (sim[j].id !== centerId) {
+          const v = vel.get(sim[j].id)!;
+          v.vx += fx;
+          v.vy += fy;
         }
       }
     }
-
-    // Spring attraction along edges
-    for (const edge of edges) {
-      const a = positions.get(edge.source);
-      const b = positions.get(edge.target);
+    for (const s of springs) {
+      const a = pos.get(s.a);
+      const b = pos.get(s.b);
       if (!a || !b) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const displacement = dist - SPRING_LENGTH;
-      const force = SPRING_K * displacement;
+      const force = SPRING_K * (dist - SPRING_LENGTH);
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
-
-      if (edge.source !== centerId) {
-        const va = velocities.get(edge.source)!;
-        va.vx += fx;
-        va.vy += fy;
+      if (s.a !== centerId) {
+        const v = vel.get(s.a)!;
+        v.vx += fx;
+        v.vy += fy;
       }
-      if (edge.target !== centerId) {
-        const vb = velocities.get(edge.target)!;
-        vb.vx -= fx;
-        vb.vy -= fy;
+      if (s.b !== centerId) {
+        const v = vel.get(s.b)!;
+        v.vx -= fx;
+        v.vy -= fy;
       }
     }
-
-    // Apply velocities with damping
-    for (const node of nodes) {
-      if (node.id === centerId) continue;
-      const pos = positions.get(node.id)!;
-      const vel = velocities.get(node.id)!;
-      vel.vx *= DAMPING;
-      vel.vy *= DAMPING;
-      pos.x += vel.vx;
-      pos.y += vel.vy;
+    for (const n of sim) {
+      if (n.id === centerId) continue;
+      const p = pos.get(n.id)!;
+      const v = vel.get(n.id)!;
+      v.vx *= DAMPING;
+      v.vy *= DAMPING;
+      p.x += v.vx;
+      p.y += v.vy;
     }
   }
 
-  // Normalize positions to positive space with padding
+  // ---- 4. Horizon ring: place context notes on an enclosing circle. -------
+  // Radius reaches past the farthest inner box corner.
+  let innerReach = SPRING_LENGTH;
+  for (const n of sim) {
+    const p = pos.get(n.id)!;
+    const corner = Math.hypot(n.w / 2, n.h / 2);
+    innerReach = Math.max(innerReach, Math.hypot(p.x, p.y) + corner);
+  }
+  const ringRadius = innerReach + RING_GAP;
+  const ringNodes = contextNotes.filter((n) => !simIds.has(n.id));
+  const ringStep = (2 * Math.PI) / Math.max(ringNodes.length, 1);
+  ringNodes.forEach((n, i) => {
+    // Stagger the start angle so a single ring node isn't dead-centre top.
+    const angle = ringStep * i - Math.PI / 2 + ringStep / 2;
+    pos.set(n.id, {
+      x: ringRadius * Math.cos(angle),
+      y: ringRadius * Math.sin(angle),
+    });
+  });
+
+  // ---- 5. Normalize to positive coordinates. ------------------------------
+  const allBoxes: SimNode[] = [
+    ...sim,
+    ...ringNodes.map((n) => ({
+      id: n.id,
+      kind: "context" as BoxKind,
+      w: NOTE_W,
+      h: NOTE_H,
+    })),
+  ];
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
     maxY = -Infinity;
-  for (const pos of positions.values()) {
-    minX = Math.min(minX, pos.x);
-    minY = Math.min(minY, pos.y);
-    maxX = Math.max(maxX, pos.x);
-    maxY = Math.max(maxY, pos.y);
+  for (const n of allBoxes) {
+    const p = pos.get(n.id)!;
+    minX = Math.min(minX, p.x - n.w / 2);
+    minY = Math.min(minY, p.y - n.h / 2);
+    maxX = Math.max(maxX, p.x + n.w / 2);
+    maxY = Math.max(maxY, p.y + n.h / 2);
+  }
+  const offX = -minX + PADDING;
+  const offY = -minY + PADDING;
+
+  // ---- 6. Build boxes. ----------------------------------------------------
+  const boxes: MycelialBox[] = allBoxes.map((n) => {
+    const p = pos.get(n.id)!;
+    const base: MycelialBox = {
+      id: n.id,
+      kind: n.kind,
+      x: p.x + offX - n.w / 2,
+      y: p.y + offY - n.h / 2,
+      w: n.w,
+      h: n.h,
+      title: "",
+      subtitle: "",
+      snippet: "",
+      sourceLabel: "",
+    };
+    if (n.kind === "latent") {
+      const l = latentByTarget.get(n.id)!;
+      const top = l.mentions[0];
+      return {
+        ...base,
+        title: l.target_name,
+        subtitle: "Latent link",
+        snippet: top ? top.snippet : "",
+        sourceLabel: `mentioned in ${l.mentions.length} note${l.mentions.length > 1 ? "s" : ""}`,
+        latent: l,
+      };
+    }
+    if (n.kind === "emergent") {
+      const e = emergentConcepts.find((c) => `emergent:${c.term}` === n.id)!;
+      const top = e.mentions[0];
+      return {
+        ...base,
+        title: e.term,
+        subtitle: "Potential page",
+        snippet: top ? top.snippet : "",
+        sourceLabel: `emerged from ${e.mentions.length} note${e.mentions.length > 1 ? "s" : ""}`,
+        emergent: e,
+      };
+    }
+    const note = noteById.get(n.id);
+    return {
+      ...base,
+      title: note?.name ?? n.id.replace(/\.typ$/, "").split("/").pop() ?? n.id,
+      note,
+    };
+  });
+  const boxById = new Map(boxes.map((b) => [b.id, b]));
+
+  // ---- 7. Connection paths. -----------------------------------------------
+  const connections: MycelialConnection[] = [];
+  const pushConn = (
+    kind: ConnectionKind,
+    score: number,
+    from: string,
+    to: string,
+  ) => {
+    const a = boxById.get(from);
+    const b = boxById.get(to);
+    if (!a || !b) return;
+    const ax = a.x + a.w / 2;
+    const ay = a.y + a.h / 2;
+    const bx = b.x + b.w / 2;
+    const by = b.y + b.h / 2;
+    const dx = bx - ax;
+    const dy = by - ay;
+    if (kind === "emergent") {
+      const seed = hashString(from + to);
+      const len = Math.hypot(dx, dy) || 1;
+      const px = (-dy / len) * (12 + seededRandom(seed) * 26);
+      const py = (dx / len) * (12 + seededRandom(seed) * 26);
+      connections.push({
+        kind,
+        score,
+        from,
+        to,
+        path: `M ${ax} ${ay} C ${ax + dx * 0.3 + px} ${ay + dy * 0.3 + py}, ${ax + dx * 0.7 + px * 0.6} ${ay + dy * 0.7 + py * 0.6}, ${bx} ${by}`,
+      });
+    } else {
+      const ctrl = Math.max(Math.abs(dx), Math.abs(dy)) * 0.25;
+      connections.push({
+        kind,
+        score,
+        from,
+        to,
+        path: `M ${ax} ${ay} C ${ax + ctrl * Math.sign(dx)} ${ay}, ${bx - ctrl * Math.sign(dx)} ${by}, ${bx} ${by}`,
+      });
+    }
+  };
+  for (const s of springs) pushConn(s.kind, s.score, s.a, s.b);
+  // Faint wikilinks reaching out to the horizon ring.
+  for (const e of contextEdges) {
+    const fromRing = boxById.get(e.source)?.kind === "context";
+    const toRing = boxById.get(e.target)?.kind === "context";
+    if (fromRing || toRing) pushConn("anchor", 0.3, e.source, e.target);
   }
 
-  // Reserve extra space for tendrils at the periphery
-  const tendrilMargin = concepts.length > 0 ? TENDRIL_MAX_LENGTH + 60 : 0;
-
-  const offsetX = -minX + PADDING + tendrilMargin;
-  const offsetY = -minY + PADDING + tendrilMargin;
-
-  const layoutNodes: LayoutNode[] = nodes.map((node) => {
-    const pos = positions.get(node.id)!;
-    return {
-      id: node.id,
-      name: node.name,
-      depth: node.depth,
-      direction: node.direction,
-      x: pos.x + offsetX,
-      y: pos.y + offsetY,
-    };
-  });
-
-  // Build edge paths (cubic bezier)
-  const layoutEdges: LayoutEdge[] = edges
-    .map((edge) => {
-      const srcNode = layoutNodes.find((n) => n.id === edge.source);
-      const tgtNode = layoutNodes.find((n) => n.id === edge.target);
-      if (!srcNode || !tgtNode) return null;
-      const sx = srcNode.x + NODE_WIDTH / 2;
-      const sy = srcNode.y + NODE_HEIGHT / 2;
-      const tx = tgtNode.x + NODE_WIDTH / 2;
-      const ty = tgtNode.y + NODE_HEIGHT / 2;
-      const dx = tx - sx;
-      const dy = ty - sy;
-      const ctrl = Math.max(Math.abs(dx), Math.abs(dy)) * 0.3;
-      const path = `M ${sx} ${sy} C ${sx + ctrl * Math.sign(dx)} ${sy}, ${tx - ctrl * Math.sign(dx)} ${ty}, ${tx} ${ty}`;
-      return { sourceX: sx, sourceY: sy, targetX: tx, targetY: ty, path };
-    })
-    .filter((e): e is LayoutEdge => e !== null);
-
-  // Place tendrils
-  const tendrils: TendrilLayout[] = concepts.map((concept, i) => {
-    // Find centroid of source notes in the layout
-    const sourceNodes = layoutNodes.filter((n) =>
-      concept.source_notes.includes(n.id),
-    );
-    let cx: number, cy: number;
-    if (sourceNodes.length > 0) {
-      cx =
-        sourceNodes.reduce((sum, n) => sum + n.x + NODE_WIDTH / 2, 0) /
-        sourceNodes.length;
-      cy =
-        sourceNodes.reduce((sum, n) => sum + n.y + NODE_HEIGHT / 2, 0) /
-        sourceNodes.length;
-    } else {
-      // Fallback: use center node
-      const center = layoutNodes.find((n) => n.direction === "center")!;
-      cx = center.x + NODE_WIDTH / 2;
-      cy = center.y + NODE_HEIGHT / 2;
-    }
-
-    // Compute angle outward from graph center
-    const graphCenterX = layoutNodes[0].x + NODE_WIDTH / 2;
-    const graphCenterY = layoutNodes[0].y + NODE_HEIGHT / 2;
-    let angle = Math.atan2(cy - graphCenterY, cx - graphCenterX);
-
-    // Add angular spacing between tendrils to avoid overlap
-    const seed = hashString(concept.term);
-    const jitter = (seededRandom(seed) - 0.5) * 0.4;
-    angle += jitter + (i * 0.15);
-
-    const length =
-      TENDRIL_BASE_LENGTH + concept.score * (TENDRIL_MAX_LENGTH - TENDRIL_BASE_LENGTH);
-
-    // Start point: edge of source cluster
-    const startX = cx + Math.cos(angle) * 30;
-    const startY = cy + Math.sin(angle) * 30;
-
-    // End point
-    const endX = startX + Math.cos(angle) * length;
-    const endY = startY + Math.sin(angle) * length;
-
-    // Control points for organic curve
-    const perpAngle = angle + Math.PI / 2;
-    const curvature = (seededRandom(seed + 1) - 0.5) * 25;
-    const cp1X = startX + Math.cos(angle) * length * 0.35 + Math.cos(perpAngle) * curvature;
-    const cp1Y = startY + Math.sin(angle) * length * 0.35 + Math.sin(perpAngle) * curvature;
-    const cp2X = startX + Math.cos(angle) * length * 0.7 - Math.cos(perpAngle) * curvature * 0.5;
-    const cp2Y = startY + Math.sin(angle) * length * 0.7 - Math.sin(perpAngle) * curvature * 0.5;
-
-    const path = `M ${startX} ${startY} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${endX} ${endY}`;
-
-    return {
-      term: concept.term,
-      score: concept.score,
-      isBigram: concept.is_bigram,
-      sourceNotes: concept.source_notes,
-      docCount: concept.doc_count,
-      path,
-      labelX: endX,
-      labelY: endY,
-      endX,
-      endY,
-    };
-  });
-
-  // Compute final canvas dimensions
-  const allX = [
-    ...layoutNodes.map((n) => n.x + NODE_WIDTH),
-    ...tendrils.map((t) => t.endX + 80),
-  ];
-  const allY = [
-    ...layoutNodes.map((n) => n.y + NODE_HEIGHT),
-    ...tendrils.map((t) => t.endY + 30),
-  ];
-  const width = Math.max(...allX, 400) + PADDING;
-  const height = Math.max(...allY, 300) + PADDING;
-
-  return { nodes: layoutNodes, edges: layoutEdges, tendrils, width, height };
+  return {
+    boxes,
+    connections,
+    width: maxX - minX + PADDING * 2,
+    height: maxY - minY + PADDING * 2,
+  };
 }

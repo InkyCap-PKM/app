@@ -64,7 +64,8 @@ pub struct CorpusStats {
     stopwords: HashSet<String>,
 }
 
-/// A scored emergent concept suggestion.
+/// A scored emergent concept suggestion — a recurring term/phrase that has
+/// no page of its own yet.
 #[derive(Debug, Clone, Serialize)]
 pub struct EmergentConcept {
     pub term: String,
@@ -72,6 +73,26 @@ pub struct EmergentConcept {
     pub source_notes: Vec<String>,
     pub doc_count: usize,
     pub is_bigram: bool,
+}
+
+/// A scored latent-link candidate — a recurring term/phrase that *already*
+/// matches an existing page, surfaced so the user can connect the notes that
+/// mention it without a wikilink. `target_path` is the existing page; the
+/// command layer filters `source_notes` down to notes that don't link it yet.
+#[derive(Debug, Clone, Serialize)]
+pub struct LatentCandidate {
+    pub term: String,
+    pub target_path: String,
+    pub score: f64,
+    pub source_notes: Vec<String>,
+    pub doc_count: usize,
+    pub is_bigram: bool,
+}
+
+/// The two kinds of growth signal surfaced for a note's neighborhood.
+pub struct NeighborhoodAnalysis {
+    pub emergent: Vec<EmergentConcept>,
+    pub latent: Vec<LatentCandidate>,
 }
 
 impl CorpusStats {
@@ -248,68 +269,149 @@ impl CorpusStats {
         (p_bigram / (p_w1 * p_w2)).log2()
     }
 
-    /// Generate ranked emergent concept suggestions for a neighborhood of notes.
-    pub fn top_emergent_concepts(
-        &self,
-        neighborhood_paths: &[PathBuf],
-        existing_page_stems: &HashSet<String>,
-        config: &MycelialConfig,
-    ) -> Vec<EmergentConcept> {
-        if self.total_docs < config.min_corpus_size {
+    /// Rank the `m` documents most semantically similar to `center` by
+    /// cosine similarity over TF-IDF vectors. This widens a note's
+    /// neighborhood beyond its (possibly sparse) link graph, so emergent
+    /// concepts can be drawn from notes that are topologically distant but
+    /// thematically related.
+    pub fn similar_docs(&self, center: &Path, m: usize) -> Vec<PathBuf> {
+        if self.total_docs == 0 || m == 0 {
+            return Vec::new();
+        }
+        let Some(center_terms) = self.doc_unigrams.get(center) else {
+            return Vec::new();
+        };
+        let idf = |term: &str| -> f64 {
+            let df = self.doc_freq.get(term).copied().unwrap_or(0);
+            if df == 0 {
+                0.0
+            } else {
+                (self.total_docs as f64 / df as f64).ln()
+            }
+        };
+        // doc_unigrams stores unique term *sets*, so per-doc term frequency is
+        // approximated as 1/word_count — consistent with avg_tfidf_in_neighborhood.
+        let center_wc = self
+            .doc_word_count
+            .get(center)
+            .copied()
+            .unwrap_or(1)
+            .max(1) as f64;
+        let center_vec: HashMap<&str, f64> = center_terms
+            .iter()
+            .map(|t| (t.as_str(), idf(t) / center_wc))
+            .collect();
+        let center_norm: f64 = center_vec.values().map(|w| w * w).sum::<f64>().sqrt();
+        if center_norm == 0.0 {
             return Vec::new();
         }
 
+        let mut scored: Vec<(f64, &PathBuf)> = Vec::new();
+        for (path, terms) in &self.doc_unigrams {
+            if path.as_path() == center {
+                continue;
+            }
+            let wc = self.doc_word_count.get(path).copied().unwrap_or(1).max(1) as f64;
+            let mut dot = 0.0;
+            let mut norm_sq = 0.0;
+            for t in terms {
+                let w = idf(t) / wc;
+                norm_sq += w * w;
+                if let Some(cw) = center_vec.get(t.as_str()) {
+                    dot += w * cw;
+                }
+            }
+            let norm = norm_sq.sqrt();
+            if norm == 0.0 {
+                continue;
+            }
+            let cosine = dot / (center_norm * norm);
+            if cosine > 0.0 {
+                scored.push((cosine, path));
+            }
+        }
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.into_iter().take(m).map(|(_, p)| p.clone()).collect()
+    }
+
+    /// Analyze a note's neighborhood, splitting recurring terms into two
+    /// growth signals: **emergent concepts** (no page yet) and **latent
+    /// links** (a page already exists, but the notes mentioning it haven't
+    /// linked to it). `existing_pages` maps a lowercased page stem to the
+    /// page's path; a term that hits the map becomes a latent candidate.
+    pub fn analyze_neighborhood(
+        &self,
+        neighborhood_paths: &[PathBuf],
+        existing_pages: &HashMap<String, String>,
+        config: &MycelialConfig,
+    ) -> NeighborhoodAnalysis {
+        let empty = || NeighborhoodAnalysis {
+            emergent: Vec::new(),
+            latent: Vec::new(),
+        };
+        if self.total_docs < config.min_corpus_size {
+            return empty();
+        }
         let neighborhood_size = neighborhood_paths.len();
         if neighborhood_size == 0 {
-            return Vec::new();
+            return empty();
         }
 
         let max_doc_freq = (self.total_docs as f64 * config.max_doc_freq_ratio) as usize;
         let neighborhood_set: HashSet<&PathBuf> = neighborhood_paths.iter().collect();
 
-        let mut candidates: Vec<EmergentConcept> = Vec::new();
+        let mut emergent: Vec<EmergentConcept> = Vec::new();
+        let mut latent: Vec<LatentCandidate> = Vec::new();
 
-        // Score unigrams
+        // Score unigrams.
         if config.include_unigrams {
             for (term, &df) in &self.doc_freq {
                 if df < config.min_doc_freq || df > max_doc_freq {
                     continue;
                 }
-                if existing_page_stems.contains(term) {
-                    continue;
-                }
                 if self.stopwords.contains(term) {
                     continue;
                 }
-
-                // Count neighborhood presence
-                let neighborhood_count = self.count_neighborhood_presence(
-                    term,
-                    &neighborhood_set,
-                    false,
-                );
+                let neighborhood_count =
+                    self.count_neighborhood_presence(term, &neighborhood_set, false);
                 if neighborhood_count == 0 {
                     continue;
                 }
-
                 let proximity = neighborhood_count as f64 / neighborhood_size as f64;
                 let avg_tfidf = self.avg_tfidf_in_neighborhood(term, &neighborhood_set);
                 let score = config.tfidf_weight * avg_tfidf + config.proximity_weight * proximity;
-
-                if score > 0.0 {
-                    let source_notes = self.source_notes_for_term(term, &neighborhood_set, false);
-                    candidates.push(EmergentConcept {
+                if score <= 0.0 {
+                    continue;
+                }
+                let source_notes = self.source_notes_for_term(term, &neighborhood_set, false);
+                match existing_pages.get(term) {
+                    Some(target) => latent.push(LatentCandidate {
                         term: term.clone(),
+                        target_path: target.clone(),
                         score,
                         source_notes,
                         doc_count: neighborhood_count,
                         is_bigram: false,
-                    });
+                    }),
+                    // An emergent concept must recur across the neighborhood —
+                    // a term in a single note is just a word.
+                    None if neighborhood_count >= config.min_neighborhood_presence => {
+                        emergent.push(EmergentConcept {
+                            term: term.clone(),
+                            score,
+                            source_notes,
+                            doc_count: neighborhood_count,
+                            is_bigram: false,
+                        })
+                    }
+                    None => {}
                 }
             }
         }
 
-        // Score bigrams
+        // Score bigrams.
         if config.include_bigrams {
             for (bigram_key, &count) in &self.bigram_count {
                 if count < config.bigram_min_freq {
@@ -319,53 +421,63 @@ impl CorpusStats {
                 if df < config.min_doc_freq || df > max_doc_freq {
                     continue;
                 }
-
                 let display_term = bigram_key.replace(BIGRAM_SEP, " ");
-                if existing_page_stems.contains(&display_term) {
-                    continue;
-                }
-
-                let neighborhood_count = self.count_neighborhood_presence(
-                    bigram_key,
-                    &neighborhood_set,
-                    true,
-                );
+                let neighborhood_count =
+                    self.count_neighborhood_presence(bigram_key, &neighborhood_set, true);
                 if neighborhood_count == 0 {
                     continue;
                 }
-
                 let proximity = neighborhood_count as f64 / neighborhood_size as f64;
                 let pmi = self.pmi(bigram_key);
-                let score = config.pmi_weight * pmi.max(0.0) + config.proximity_weight * proximity;
-
-                if score > 0.0 {
-                    let source_notes =
-                        self.source_notes_for_term(bigram_key, &neighborhood_set, true);
-                    candidates.push(EmergentConcept {
+                // Bigrams are the multi-word "unnamed concepts" the view is
+                // really after, so their composite score is boosted.
+                let score = config.bigram_boost
+                    * (config.pmi_weight * pmi.max(0.0)
+                        + config.proximity_weight * proximity);
+                if score <= 0.0 {
+                    continue;
+                }
+                let source_notes =
+                    self.source_notes_for_term(bigram_key, &neighborhood_set, true);
+                match existing_pages.get(&display_term) {
+                    Some(target) => latent.push(LatentCandidate {
                         term: display_term,
+                        target_path: target.clone(),
                         score,
                         source_notes,
                         doc_count: neighborhood_count,
                         is_bigram: true,
-                    });
+                    }),
+                    None if neighborhood_count >= config.min_neighborhood_presence => {
+                        emergent.push(EmergentConcept {
+                            term: display_term,
+                            score,
+                            source_notes,
+                            doc_count: neighborhood_count,
+                            is_bigram: true,
+                        })
+                    }
+                    None => {}
                 }
             }
         }
 
-        // Sort descending by score, take top-K
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        candidates.truncate(config.top_k);
+        // Sort each bucket by score descending, truncate, normalize to [0, 1].
+        // Latent keeps extra headroom: the command layer drops candidates
+        // whose mentions all turn out to already be linked.
+        emergent.sort_by(|a, b| {
+            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        emergent.truncate(config.top_k);
+        normalize_scores(emergent.iter_mut().map(|c| &mut c.score));
 
-        // Normalize scores to [0, 1]
-        if let Some(max_score) = candidates.first().map(|c| c.score) {
-            if max_score > 0.0 {
-                for c in &mut candidates {
-                    c.score /= max_score;
-                }
-            }
-        }
+        latent.sort_by(|a, b| {
+            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        latent.truncate(config.top_k * 3);
+        normalize_scores(latent.iter_mut().map(|c| &mut c.score));
 
-        candidates
+        NeighborhoodAnalysis { emergent, latent }
     }
 
     fn count_neighborhood_presence(
@@ -438,6 +550,18 @@ impl CorpusStats {
             0.0
         } else {
             sum / count as f64
+        }
+    }
+}
+
+/// Normalize a set of scores in place so the largest becomes 1.0. The
+/// candidates must be pre-sorted descending (the first score is the max).
+fn normalize_scores<'a>(scores: impl Iterator<Item = &'a mut f64>) {
+    let mut scores: Vec<&mut f64> = scores.collect();
+    let max = scores.first().map(|s| **s).unwrap_or(0.0);
+    if max > 0.0 {
+        for s in &mut scores {
+            **s /= max;
         }
     }
 }
