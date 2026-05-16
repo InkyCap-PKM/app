@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::bookmarks::{self, Bookmark};
 use crate::cache::MetadataCache;
+use crate::corpus_stats::CorpusStats;
 use crate::link_index::LinkIndex;
 use crate::property_types::PropertyTypeRegistry;
 use crate::recovery::SnapshotManager;
@@ -60,6 +61,8 @@ pub struct AppState {
     pub settings: RwLock<UserSettings>,
     /// Full-text search engine with inverted index.
     pub search_engine: RwLock<SearchEngine>,
+    /// Corpus statistics for the Mycelial View (TF-IDF + PMI).
+    pub corpus_stats: RwLock<CorpusStats>,
     /// User bookmarks (notes, searches, headings, collections).
     pub bookmarks: RwLock<Vec<Bookmark>>,
     /// File recovery snapshot manager.
@@ -117,6 +120,7 @@ impl AppState {
             health_monitor: RwLock::new(None),
             settings: RwLock::new(settings),
             search_engine: RwLock::new(SearchEngine::new()),
+            corpus_stats: RwLock::new(CorpusStats::new(None)),
             bookmarks: RwLock::new(bookmarks::load_bookmarks().unwrap_or_default()),
             snapshot_manager: RwLock::new(SnapshotManager::new()),
             metadata_cache: RwLock::new(metadata_cache),
@@ -305,6 +309,16 @@ impl AppState {
 
         let property_index = PropertyIndex::build(notes);
 
+        // Build corpus statistics for the Mycelial View.
+        let corpus_stats = {
+            let docs: Vec<(PathBuf, &str)> = contents
+                .iter()
+                .map(|(p, c)| (p.clone(), c.as_str()))
+                .collect();
+            CorpusStats::build(&docs, Some(&notebox_root))
+        };
+        log::info!("corpus stats: {} docs indexed", corpus_stats.total_docs);
+
         // Try to load the persisted search index and incrementally update it
         // rather than rebuilding from scratch.
         let index_path = search_index_path(&notebox_root);
@@ -389,6 +403,7 @@ impl AppState {
         *self.link_index.write().await = link_index;
         *self.collection_files.write().await = collection_files;
         *self.search_engine.write().await = search_engine;
+        *self.corpus_stats.write().await = corpus_stats;
 
         Ok(stats)
     }
@@ -575,6 +590,13 @@ impl AppState {
             engine.update_doc(path, content, tags, title, property_keys, property_values);
         }
 
+        // 2.5 Corpus statistics update.
+        {
+            let projection = crate::search::text_projection::project(content);
+            let mut stats = self.corpus_stats.write().await;
+            stats.update_doc(path, &projection.tokens);
+        }
+
         // 3. Persistent cache write-through (best-effort).
         self.cache_upsert_note(path, &note, content).await;
 
@@ -618,6 +640,10 @@ impl AppState {
         {
             let mut engine = self.search_engine.write().await;
             engine.remove_doc(path);
+        }
+        {
+            let mut stats = self.corpus_stats.write().await;
+            stats.delete_doc(path);
         }
         self.cache_remove_note(path).await;
         self.maybe_save_search_index().await;

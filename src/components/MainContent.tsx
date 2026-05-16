@@ -11,7 +11,7 @@ import {
 } from "../stores/tabs";
 import CollectionTable from "./CollectionTable";
 import TypstEditor from "./TypstEditor";
-import FlowView from "./FlowView";
+import MycelialView from "./MycelialView";
 import { executeCommand } from "../lib/command-registry";
 import { isEnabled as isJournalScrollTab } from "../stores/journal-scroll";
 import { ChevronLeft, ChevronRight, Scroll } from "lucide-solid";
@@ -181,7 +181,7 @@ const MainContent: Component = () => {
                   return <CollectionTable path={t.path} />;
                 }
                 if (t.type === "flow") {
-                  return <FlowView path={t.path} />;
+                  return <MycelialView path={t.path} />;
                 }
                 return (
                   <TypstEditor

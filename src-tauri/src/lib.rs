@@ -2,6 +2,7 @@ pub mod app_paths;
 pub mod collection_parser;
 pub mod bookmarks;
 pub mod cache;
+pub mod corpus_stats;
 pub mod commands;
 pub mod config;
 pub mod creation_rules;
@@ -285,6 +286,7 @@ pub fn run() {
             commands::recovery::restore_snapshot,
             commands::recovery::preview_snapshot,
             commands::flow::get_flow_data,
+            commands::mycelial::get_mycelial_data,
             commands::journal_scroll::run_scroll_query,
             commands::journal_scroll::compute_connection_flags,
             commands::journal_scroll::find_offset_in_scroll_query,

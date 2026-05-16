@@ -5020,14 +5020,16 @@ svg.lucide {
 
 /* ─── Flow View ─── */
 
-.flow-view {
+/* ─── Mycelial View ─── */
+
+.mycelial-view {
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg-primary);
 }
 
-.flow-view__toolbar {
+.mycelial-view__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5036,24 +5038,49 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-.flow-view__title {
+.mycelial-view__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mycelial-view__toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mycelial-view__title {
   font-size: var(--text-md);
   font-weight: 600;
   color: var(--fg-primary);
 }
 
-.flow-view__controls {
+.mycelial-view__back-btn,
+.mycelial-view__refresh-btn {
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.mycelial-view__back-btn:hover,
+.mycelial-view__refresh-btn:hover {
+  background: var(--bg-hover);
+}
+
+.mycelial-view__depth-label {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   font-size: var(--text-base);
   color: var(--fg-secondary);
 }
 
-.flow-view__controls select {
-  /* WebKitGTK needs appearance:none to honor our dark-theme
-     background/color on a native <select>. This themes only the closed
-     control; the open popup stays OS-drawn. */
+.mycelial-view__depth-select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -5066,25 +5093,10 @@ svg.lucide {
   border-radius: 4px;
   padding: 4px 24px 4px 8px;
   font-size: var(--text-md);
-  margin-left: 4px;
   cursor: pointer;
 }
 
-.flow-view__refresh {
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: var(--text-base);
-  cursor: pointer;
-}
-
-.flow-view__refresh:hover {
-  background: var(--bg-hover);
-}
-
-.flow-view__canvas {
+.mycelial-view__canvas {
   flex: 1;
   overflow: auto;
   display: flex;
@@ -5093,18 +5105,17 @@ svg.lucide {
   min-height: 0;
 }
 
-.flow-view__svg {
+.mycelial-view__svg {
   display: block;
 }
 
-.flow-view__loading,
-.flow-view__empty {
+.mycelial-view__loading {
   color: var(--fg-dim);
   font-size: var(--text-lg);
   text-align: center;
 }
 
-.flow-view__legend {
+.mycelial-view__legend {
   display: flex;
   justify-content: center;
   gap: 20px;
@@ -5115,21 +5126,33 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-.flow-view__legend-item {
+.mycelial-view__legend-item {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.flow-view__legend-dot {
+.mycelial-view__legend-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   display: inline-block;
 }
 
-.flow-node {
+.mycelial-node {
   transition: opacity 0.15s;
+}
+
+.mycelial-tendril {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.mycelial-tendril__label {
+  font-size: 11px;
+  fill: var(--mycelial-tendril-text, #6b5b45);
+  font-family: var(--interface-font, sans-serif);
+  pointer-events: none;
 }
 
 /* ─── Note Composer ─── */

@@ -484,6 +484,21 @@ export interface FlowData {
   center: string;
 }
 
+export interface EmergentConcept {
+  term: string;
+  score: number;
+  source_notes: string[];
+  doc_count: number;
+  is_bigram: boolean;
+}
+
+export interface MycelialData {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  center: string;
+  emergent_concepts: EmergentConcept[];
+}
+
 // Bibliography (Phase 6)
 
 export interface BibEntry {
