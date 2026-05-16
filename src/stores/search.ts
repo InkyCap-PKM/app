@@ -21,6 +21,8 @@ export type SortMode =
 export const [searchQuery, setSearchQuery] = createSignal<string>("");
 export const [searchResults, setSearchResults] = createSignal<SearchResult[]>([]);
 export const [searchResultCount, setSearchResultCount] = createSignal<number>(0);
+export const [searchTotalCount, setSearchTotalCount] = createSignal<number>(0);
+export const [searchOffset, setSearchOffset] = createSignal<number>(0);
 export const [searchError, setSearchError] = createSignal<string | null>(null);
 
 // Search options.
@@ -52,6 +54,8 @@ export const [replaceResults, setReplaceResults] = createSignal<
 export function resetSearchVolatileState() {
   setSearchResults([]);
   setSearchResultCount(0);
+  setSearchTotalCount(0);
+  setSearchOffset(0);
   setSearchError(null);
   setReplaceResults(null);
   setExpandOverrides(new Set<string>());

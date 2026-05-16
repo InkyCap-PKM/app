@@ -6,7 +6,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::search::query::parse_query;
-use crate::search::results::{ReplaceResult, SearchResult};
+use crate::search::results::{ReplaceResult, SearchResponse};
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
@@ -28,28 +28,27 @@ pub async fn notebox_search(
     state: State<'_, AppState>,
     query: String,
     max_results: Option<usize>,
+    offset: Option<usize>,
     case_sensitive: Option<bool>,
-) -> Result<Vec<SearchResult>, InkyCapError> {
-    let max = max_results.unwrap_or(100);
+    use_regex: Option<bool>,
+) -> Result<SearchResponse, InkyCapError> {
+    let limit = max_results.unwrap_or(100);
+    let offset = offset.unwrap_or(0);
 
-    let parsed = parse_query(&query).ok_or_else(|| {
-        InkyCapError::FilterParse("Empty or invalid search query".to_string())
-    })?;
+    let parsed = if use_regex.unwrap_or(false) {
+        crate::search::query::QueryNode::Regex(query.clone())
+    } else {
+        parse_query(&query).ok_or_else(|| {
+            InkyCapError::FilterParse("Empty or invalid search query".to_string())
+        })?
+    };
 
     let engine = state.search_engine.read().await;
-    let mut results = engine.search(&parsed, max);
+    let (mut results, total_count) = engine.search_paginated(&parsed, offset, limit);
 
     if case_sensitive.unwrap_or(false) {
-        // Term/Phrase nodes are lowercased at parse time, so we re-derive
-        // original-case tokens directly from the raw query string. Tokens
-        // that look like prefix:value filters are skipped — case
-        // sensitivity applies to text terms only.
         let terms = original_case_terms(&query);
         if !terms.is_empty() {
-            // Drop any match range whose substring doesn't equal one of
-            // the user's cased terms; drop the whole result if no ranges
-            // survive. Filter-only results (placeholder ranges of width 0)
-            // are dropped here too — those have no meaningful text match.
             results.retain_mut(|r| {
                 r.match_ranges.retain(|(start, end)| {
                     if *start >= *end || *end > r.line_text.len() {
@@ -63,7 +62,10 @@ pub async fn notebox_search(
         }
     }
 
-    Ok(results)
+    Ok(SearchResponse {
+        results,
+        total_count,
+    })
 }
 
 /// Re-extract original-case word tokens from a raw query string. Used by
@@ -112,30 +114,27 @@ pub async fn search_and_replace(
     replacement: String,
     file_paths: Option<Vec<String>>,
     case_sensitive: Option<bool>,
+    use_regex: Option<bool>,
 ) -> Result<Vec<ReplaceResult>, InkyCapError> {
     let case_sensitive = case_sensitive.unwrap_or(false);
+    let use_regex = use_regex.unwrap_or(false);
     let storage = state.get_storage().await?;
 
     // Determine which files to operate on
     let paths: Vec<PathBuf> = if let Some(specified) = file_paths {
         specified.into_iter().map(PathBuf::from).collect()
     } else {
-        // Search all indexed files
+        // No paths specified — pass all indexed files. The regex
+        // replacement itself filters to only files with matches, so
+        // there's no need to pre-filter via the search query parser.
         let engine = state.search_engine.read().await;
-        let parsed = parse_query(&query).ok_or_else(|| {
-            InkyCapError::FilterParse("Empty or invalid search query".to_string())
-        })?;
-        engine
-            .search(&parsed, 10000)
-            .into_iter()
-            .map(|r| PathBuf::from(r.path))
-            .collect()
+        engine.all_indexed_paths()
     };
 
     // Perform replacements
     let replacements = {
         let engine = state.search_engine.read().await;
-        engine.search_and_replace(&query, &replacement, &paths, case_sensitive)
+        engine.search_and_replace(&query, &replacement, &paths, case_sensitive, use_regex)
     };
 
     let mut results = Vec::new();

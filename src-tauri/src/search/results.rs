@@ -60,6 +60,13 @@ pub fn compute_score(
     score
 }
 
+/// Paginated search response — results plus total count for the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchResponse {
+    pub results: Vec<SearchResult>,
+    pub total_count: usize,
+}
+
 /// A search-and-replace result for a single file.
 #[derive(Debug, Clone, Serialize)]
 pub struct ReplaceResult {

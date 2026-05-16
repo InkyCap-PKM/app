@@ -160,7 +160,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         setDirty(false);
         // Notify the sidebar that metadata may have changed (reindex
         // happens inside writeFileContent on the backend).
-        document.dispatchEvent(new CustomEvent("inkycap:note-saved"));
+        document.dispatchEvent(new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }));
       } catch (err) {
         toastError("Auto-save failed", err);
       }

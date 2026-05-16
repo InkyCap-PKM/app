@@ -16,6 +16,7 @@ import type {
   NoteboxIndex,
   UserSettings,
   SearchResult,
+  SearchResponse,
   ReplaceResult,
   CreationRule,
   CreationResult,
@@ -429,11 +430,15 @@ export async function noteboxSearch(
   query: string,
   maxResults?: number,
   caseSensitive?: boolean,
-): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("notebox_search", {
+  offset?: number,
+  useRegex?: boolean,
+): Promise<SearchResponse> {
+  return invoke<SearchResponse>("notebox_search", {
     query,
     maxResults: maxResults ?? null,
+    offset: offset ?? null,
     caseSensitive: caseSensitive ?? null,
+    useRegex: useRegex ?? null,
   });
 }
 
@@ -442,12 +447,14 @@ export async function searchAndReplace(
   replacement: string,
   filePaths?: string[],
   caseSensitive?: boolean,
+  useRegex?: boolean,
 ): Promise<ReplaceResult[]> {
   return invoke<ReplaceResult[]>("search_and_replace", {
     query,
     replacement,
     filePaths: filePaths ?? null,
     caseSensitive: caseSensitive ?? null,
+    useRegex: useRegex ?? null,
   });
 }
 

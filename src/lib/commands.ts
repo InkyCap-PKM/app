@@ -13,6 +13,7 @@ import {
 } from "../stores/tabs";
 import { toggleTheme } from "../stores/theme";
 import { updateSetting, settings } from "../stores/settings";
+import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
@@ -122,6 +123,7 @@ export function registerBuiltinCommands(callbacks: {
     title: "Search and Replace (notebox-wide)",
     category: "View",
     execute: () => {
+      setShowReplace(true);
       document.dispatchEvent(
         new CustomEvent("inkycap:open-search", { detail: { showReplace: true } }),
       );

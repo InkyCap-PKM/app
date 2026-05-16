@@ -39,6 +39,10 @@ import {
   setSearchResults,
   searchResultCount,
   setSearchResultCount,
+  searchTotalCount,
+  setSearchTotalCount,
+  searchOffset,
+  setSearchOffset,
   searchError,
   setSearchError,
   caseSensitive,
@@ -130,6 +134,7 @@ const SearchPanel: Component = () => {
   // etc. revert to defaults when the panel re-mounts; that matches what
   // a user would expect.
   const [loading, setLoading] = createSignal(false);
+  const [replacing, setReplacing] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
   const [showTips, setShowTips] = createSignal(false);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
@@ -170,6 +175,20 @@ const SearchPanel: Component = () => {
     const onDocClick = () => setResultContextMenu(null);
     document.addEventListener("click", onDocClick);
     onCleanup(() => document.removeEventListener("click", onDocClick));
+
+    const onNoteSaved = (e: Event) => {
+      if (!searchQuery().trim()) return;
+      const savedPath = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (!savedPath) return;
+      const current = searchResults();
+      const had = current.some((r) => r.path === savedPath);
+      if (!had) return;
+      const filtered = current.filter((r) => r.path !== savedPath);
+      setSearchResults(filtered);
+      setSearchResultCount(filtered.length);
+    };
+    document.addEventListener("inkycap:note-saved", onNoteSaved);
+    onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
   });
 
   // Re-run the active query as soon as background indexing finishes.
@@ -180,38 +199,44 @@ const SearchPanel: Component = () => {
   });
 
   function buildQuery(): string {
-    let q = searchQuery().trim();
-    if (!q) return "";
-    if (useRegex()) q = `/${q}/`;
-    return q;
+    return searchQuery().trim();
   }
 
-  async function executeSearch() {
+  const PAGE_SIZE = 500;
+
+  async function executeSearch(offset?: number) {
     const q = buildQuery();
     if (!q) {
       setSearchResults([]);
       setSearchResultCount(0);
+      setSearchTotalCount(0);
+      setSearchOffset(0);
       setSearchError(null);
       return;
     }
     if (!indexReady()) {
       setSearchResults([]);
       setSearchResultCount(0);
+      setSearchTotalCount(0);
       return;
     }
 
+    const off = offset ?? 0;
     setLoading(true);
     setSearchError(null);
     setReplaceResults(null);
 
     try {
-      const res = await ipc.noteboxSearch(q, 500, caseSensitive());
-      setSearchResults(res);
-      setSearchResultCount(res.length);
+      const resp = await ipc.noteboxSearch(q, PAGE_SIZE, caseSensitive(), off, useRegex());
+      setSearchResults(resp.results);
+      setSearchResultCount(resp.results.length);
+      setSearchTotalCount(resp.total_count);
+      setSearchOffset(off);
     } catch (e) {
       setSearchError(String(e));
       setSearchResults([]);
       setSearchResultCount(0);
+      setSearchTotalCount(0);
     } finally {
       setLoading(false);
     }
@@ -329,16 +354,18 @@ const SearchPanel: Component = () => {
     const rep = replacement();
     if (!q) return;
 
+    setReplacing(true);
     setLoading(true);
     try {
-      const filePaths = [...new Set(searchResults().map((r) => r.path))];
-      const res = await ipc.searchAndReplace(q, rep, filePaths, caseSensitive());
+      const res = await ipc.searchAndReplace(q, rep, undefined, caseSensitive(), useRegex());
       setReplaceResults(res);
       notifyFilesReloaded(res.map((r) => r.path));
+      setReplacing(false);
       await executeSearch();
     } catch (e) {
       setSearchError(String(e));
     } finally {
+      setReplacing(false);
       setLoading(false);
     }
   }
@@ -347,12 +374,16 @@ const SearchPanel: Component = () => {
     const q = searchQuery().trim();
     const rep = replacement();
     if (!q) return;
+    setReplacing(true);
     try {
-      await ipc.searchAndReplace(q, rep, [filePath], caseSensitive());
+      await ipc.searchAndReplace(q, rep, [filePath], caseSensitive(), useRegex());
       notifyFilesReloaded([filePath]);
-      await executeSearch();
+      setReplacing(false);
+      await executeSearch(searchOffset());
     } catch (e) {
       setSearchError(String(e));
+    } finally {
+      setReplacing(false);
     }
   }
 
@@ -532,6 +563,65 @@ const SearchPanel: Component = () => {
         </button>
       </div>
 
+      <Show when={showTips()}>
+        <div class="search-panel__hints">
+          <div class="search-panel__hints-title">Search Tips</div>
+          <For each={FILTER_HINTS}>
+            {(hint) => (
+              <button
+                class="search-panel__hint"
+                onClick={() => insertHint(hint)}
+                title={hint.description}
+              >
+                <span class="search-panel__hint-prefix">{hint.prefix}</span>
+                <span class="search-panel__hint-desc">{hint.description}</span>
+              </button>
+            )}
+          </For>
+          <div class="search-panel__hints-divider" />
+          <For each={SYNTAX_TIPS}>
+            {(tip) => (
+              <div class="search-panel__hint search-panel__hint--static">
+                <span class="search-panel__hint-prefix">{tip.label}</span>
+                <span class="search-panel__hint-desc">{tip.description}</span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={showReplace()}>
+        <div class="search-panel__replace-row">
+          <input
+            class="search-panel__input"
+            type="text"
+            placeholder="Replace with..."
+            value={replacement()}
+            onInput={(e) => setReplacement(e.currentTarget.value)}
+          />
+          <button
+            class="search-panel__replace-btn"
+            onClick={replaceAll}
+            title="Replace all"
+            disabled={!searchQuery().trim() || loading()}
+          >
+            Replace all
+          </button>
+          <button
+            class="icon-btn"
+            onClick={() => {
+              setShowReplace(false);
+              setReplacement("");
+              setReplaceResults(null);
+            }}
+            title="Close replace"
+            aria-label="Close replace"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </Show>
+
       <Show when={showSettings()}>
         <div class="search-panel__options-row">
           <button
@@ -576,65 +666,6 @@ const SearchPanel: Component = () => {
         </div>
       </Show>
 
-      <Show when={showTips()}>
-        <div class="search-panel__hints">
-          <div class="search-panel__hints-title">Search Tips</div>
-          <For each={FILTER_HINTS}>
-            {(hint) => (
-              <button
-                class="search-panel__hint"
-                onClick={() => insertHint(hint)}
-                title={hint.description}
-              >
-                <span class="search-panel__hint-prefix">{hint.prefix}</span>
-                <span class="search-panel__hint-desc">{hint.description}</span>
-              </button>
-            )}
-          </For>
-          <div class="search-panel__hints-divider" />
-          <For each={SYNTAX_TIPS}>
-            {(tip) => (
-              <div class="search-panel__hint search-panel__hint--static">
-                <span class="search-panel__hint-prefix">{tip.label}</span>
-                <span class="search-panel__hint-desc">{tip.description}</span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-
-      <Show when={showReplace()}>
-        <div class="search-panel__replace-row">
-          <input
-            class="search-panel__input"
-            type="text"
-            placeholder="Replace with..."
-            value={replacement()}
-            onInput={(e) => setReplacement(e.currentTarget.value)}
-          />
-          <button
-            class="search-panel__replace-btn"
-            onClick={replaceAll}
-            title="Replace all"
-            disabled={!searchQuery().trim() || loading()}
-          >
-            All
-          </button>
-          <button
-            class="icon-btn"
-            onClick={() => {
-              setShowReplace(false);
-              setReplacement("");
-              setReplaceResults(null);
-            }}
-            title="Close replace"
-            aria-label="Close replace"
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </Show>
-
       <Show when={replaceResults()}>
         {(res) => (
           <div class="search-panel__replace-info">
@@ -649,7 +680,12 @@ const SearchPanel: Component = () => {
           <span>{"Indexing notebox…"}</span>
         </Show>
         <Show when={indexReady() && loading()}>
-          <span>Searching...</span>
+          <span class="search-panel__busy">
+            {replacing() ? "Replacing" : "Searching"}
+            <span class="search-panel__dot search-panel__dot--1">.</span>
+            <span class="search-panel__dot search-panel__dot--2">.</span>
+            <span class="search-panel__dot search-panel__dot--3">.</span>
+          </span>
         </Show>
         <Show when={indexReady() && !loading() && searchQuery().trim()}>
           <button
@@ -657,7 +693,9 @@ const SearchPanel: Component = () => {
             title="More actions"
             onClick={() => setShowOverflowMenu(!showOverflowMenu())}
           >
-            {searchResultCount()} result{searchResultCount() !== 1 ? "s" : ""} {"⌄"}
+            {searchTotalCount() > searchResultCount()
+              ? `${searchOffset() + 1}–${searchOffset() + searchResultCount()} of ${searchTotalCount()} results`
+              : `${searchResultCount()} result${searchResultCount() !== 1 ? "s" : ""}`} {"⌄"}
           </button>
           <Show when={showOverflowMenu()}>
             <div
@@ -710,6 +748,25 @@ const SearchPanel: Component = () => {
           </Show>
         </Show>
       </div>
+
+      <Show when={searchTotalCount() > searchResultCount() + searchOffset()  || searchOffset() > 0}>
+        <div class="search-panel__pagination">
+          <button
+            class="search-panel__page-btn"
+            disabled={searchOffset() === 0}
+            onClick={() => executeSearch(Math.max(0, searchOffset() - PAGE_SIZE))}
+          >
+            Previous
+          </button>
+          <button
+            class="search-panel__page-btn"
+            disabled={searchOffset() + searchResultCount() >= searchTotalCount()}
+            onClick={() => executeSearch(searchOffset() + PAGE_SIZE)}
+          >
+            Next
+          </button>
+        </div>
+      </Show>
 
       <Show when={searchError()}>
         <div class="search-panel__error">{searchError()}</div>
