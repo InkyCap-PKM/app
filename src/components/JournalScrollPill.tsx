@@ -93,7 +93,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
         class="journal-scroll-pill__toggle"
         classList={{ "is-active": enabled() }}
         onClick={() => void toggleScroll(props.tabId, props.anchorPath)}
-        title={enabled() ? "Turn Journal Scroll off" : "Turn Journal Scroll on"}
+        title={enabled() ? "Turn Journal Scroll off" : "Start Journal Scroll anchored from this note"}
         aria-pressed={enabled()}
       >
         {enabled() ? <Scroll size={14} /> : <ScrollText size={14} />}

@@ -49,7 +49,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "files", label: "Files & Links" },
   { id: "citations", label: "Citations" },
   { id: "export", label: "Import / Export" },
-  { id: "creation-rules", label: "Rules" },
+  { id: "creation-rules", label: "Creation Rules" },
   { id: "behaviour", label: "Behaviour" },
 ];
 
@@ -143,7 +143,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 <Show when={activeTab() === "creation-rules"}>
                   <div class="settings__section">
                     <p class="settings__section-note">
-                      Rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties or content to insert, an optional Typst template, a target folder, and a shortcut.
+                      Creation rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties or content to insert, an optional Typst template, a target folder, and a shortcut.
                     </p>
                   </div>
                   <CreationRuleEditor />
@@ -1267,13 +1267,13 @@ function ExportSettingsSection() {
 
 function BehaviourSettingsSection() {
   const [tree] = createResource(() => ipc.getFileTree());
+  const [creationRules] = createResource(() => ipc.listCreationRules());
   const allFiles = () => tree() ? collectPaths(tree()!, false) : [];
   const fileSuggestions = () => allFiles().filter((p) => p.endsWith(".typ"));
   const collectionSuggestions = () => allFiles().filter((p) => p.endsWith(".collection"));
 
   const targetDescription = () => {
     switch (settings.startup.behavior) {
-      case "creation-rule": return "Creation Rule ID to execute on startup";
       case "specific-page": return "File path to open on startup";
       case "specific-collection": return "Collection to open on startup";
       default: return "";
@@ -1281,9 +1281,31 @@ function BehaviourSettingsSection() {
   };
 
   const showTarget = () =>
-    settings.startup.behavior === "creation-rule" ||
     settings.startup.behavior === "specific-page" ||
     settings.startup.behavior === "specific-collection";
+
+  /** Rule options for the startup creation-rule picker. Disabled rules are
+   *  excluded since they can't be executed. */
+  const ruleOptions = () =>
+    (creationRules() ?? [])
+      .filter((r) => !r.disabled)
+      .map((r) => ({
+        value: r.id,
+        label: r.name,
+      }));
+
+  // A native <select> silently displays its first option when the bound
+  // value matches nothing — leaving `target` empty/stale even though a rule
+  // appears chosen. Once rules have loaded, coerce `target` to a real rule
+  // id so the persisted setting always agrees with what's shown.
+  createEffect(() => {
+    if (settings.startup.behavior !== "creation-rule") return;
+    const opts = ruleOptions();
+    if (opts.length === 0) return;
+    if (!opts.some((o) => o.value === settings.startup.target)) {
+      updateSetting("startup", "target", opts[0].value);
+    }
+  });
 
   const targetSuggestions = () => {
     if (settings.startup.behavior === "specific-page") return fileSuggestions();
@@ -1294,13 +1316,13 @@ function BehaviourSettingsSection() {
   return (
     <div class="settings__section">
       <SettingSelect
-        label="Startup behavior"
-        description="What to open when InkyCap launches"
+        label="Startup behaviour"
+        description="InkyCap will do or display your choice upon starting."
         value={settings.startup.behavior}
         options={[
           { value: "default", label: "Tabula rasa (file tree)" },
           { value: "last-file", label: "Last opened file" },
-          { value: "creation-rule", label: "Run a Creation Rule" },
+          { value: "creation-rule", label: "Launch a rule" },
           { value: "specific-page", label: "Open a specific page" },
           { value: "specific-collection", label: "Open a specific collection" },
         ]}
@@ -1312,6 +1334,25 @@ function BehaviourSettingsSection() {
           )
         }
       />
+      <Show when={settings.startup.behavior === "creation-rule"}>
+        <Show
+          when={ruleOptions().length > 0}
+          fallback={
+            <p class="settings__section-note">
+              No creation rules are defined yet. Add one in the Rules tab to
+              use it as a startup action.
+            </p>
+          }
+        >
+          <SettingSelect
+            label="Rule"
+            description="The creation rule to execute on startup."
+            value={settings.startup.target}
+            options={ruleOptions()}
+            onChange={(v) => updateSetting("startup", "target", v)}
+          />
+        </Show>
+      </Show>
       <Show when={showTarget()}>
         <SettingPathText
           label="Target"
@@ -1334,15 +1375,16 @@ function BehaviourSettingsSection() {
         description="Sort axis applied to every Journal Scroll mode (Date, Tree, Properties)."
         value={settings.journal_scroll.date_sort}
         options={[
-          { value: "created", label: "Date created" },
-          { value: "modified", label: "Date modified" },
-          { value: "zid", label: "zid (YYYYMMDDHHmmss)" },
+          { value: "created", label: "File creation date" },
+          { value: "modified", label: "File modification date" },
+          { value: "zid", label: "Note's zid property" },
+          { value: "note_date", label: "Note's date property" },
         ]}
         onChange={(v) =>
           updateSetting(
             "journal_scroll",
             "date_sort",
-            v as "created" | "modified" | "zid",
+            v as "created" | "modified" | "zid" | "note_date",
           )
         }
       />

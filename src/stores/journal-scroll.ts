@@ -176,6 +176,11 @@ function buildSort(): ScrollSort {
       return { kind: "property", name: "file.mtime", direction: "desc" };
     case "zid":
       return { kind: "zid" };
+    case "note_date":
+      // The `date` property authored in `#note(date: ...)`. Datetime values
+      // are stringified to ISO `YYYY-MM-DD` by lib.typ, so a lexicographic
+      // descending compare yields most-recent-first.
+      return { kind: "property", name: "date", direction: "desc" };
     case "created":
     default:
       return { kind: "property", name: "file.ctime", direction: "desc" };
