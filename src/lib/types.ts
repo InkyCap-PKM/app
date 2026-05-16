@@ -287,7 +287,7 @@ export interface StartupSettings {
 }
 
 export interface JournalScrollSettings {
-  date_sort: "created" | "modified" | "zid";
+  date_sort: "created" | "modified" | "zid" | "note_date";
   tree_scope: "folder" | "recursive";
 }
 

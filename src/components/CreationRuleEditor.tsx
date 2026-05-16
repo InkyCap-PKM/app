@@ -266,8 +266,7 @@ const CreationRuleEditor: Component = () => {
         </button>
       </div>
       <p class="settings__description" style={{ "margin-bottom": "12px" }}>
-        Rules define presets for creating new notes. Each rule specifies a
-        filename pattern, scaffold, and target folder.
+        Define your presets for creating new notes.
       </p>
 
       {/* Editing form */}

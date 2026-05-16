@@ -623,7 +623,7 @@ const CONNECTION_BADGES: ReadonlyArray<{
   {
     key: "is_anchor",
     Icon: Anchor,
-    label: "Anchor note — the focus of this scroll",
+    label: "Anchor note: journal is scrolling relative to this note",
     cls: "anchor",
   },
   {
