@@ -273,7 +273,7 @@ export function registerBuiltinCommands(callbacks: {
 
   registerCommand({
     id: "tools:flow-view",
-    title: "Open Flow View",
+    title: "Open Mycelial View",
     category: "Tools",
     execute: () => {
       const tab = getActiveTab();

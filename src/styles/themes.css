@@ -138,6 +138,13 @@
   --accent-danger: #c42025;
   --accent-danger-bg: #fde8e8;
 
+  /* Mycelial View (light) */
+  --mycelial-tendril: #8b7355;
+  --mycelial-tendril-strong: #5d4e37;
+  --mycelial-tendril-text: #6b5b45;
+  --flow-backlink: #4a9eff;
+  --flow-forward: #4ecdc4;
+
   /* Visual-editor decoration tokens (light) */
   --pill-fg: #ffffff;
   --warn-fg: #d97706;
@@ -243,6 +250,13 @@
   --accent-orange: #F4C095;
   --accent-danger: #EE2E31;
   --accent-danger-bg: #3a1215;
+
+  /* Mycelial View (dark) */
+  --mycelial-tendril: #c4a882;
+  --mycelial-tendril-strong: #d4b892;
+  --mycelial-tendril-text: #b89e78;
+  --flow-backlink: #6ab4ff;
+  --flow-forward: #6ee0d8;
 
   /* Visual-editor decoration tokens (dark) */
   --pill-fg: #ffffff;

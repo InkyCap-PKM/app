@@ -23,6 +23,7 @@ import type {
   BookmarkKind,
   SnapshotInfo,
   FlowData,
+  MycelialData,
   PropertyType,
   ConnectionFlags,
   ScrollEntry,
@@ -792,6 +793,18 @@ export async function getFlowData(
   maxDepth?: number,
 ): Promise<FlowData> {
   return invoke<FlowData>("get_flow_data", {
+    path,
+    maxDepth: maxDepth ?? null,
+  });
+}
+
+// Mycelial View
+
+export async function getMycelialData(
+  path: string,
+  maxDepth?: number,
+): Promise<MycelialData> {
+  return invoke<MycelialData>("get_mycelial_data", {
     path,
     maxDepth: maxDepth ?? null,
   });
