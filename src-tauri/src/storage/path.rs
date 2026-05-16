@@ -1,19 +1,19 @@
-//! Vault-scoped path validation.
+//! Notebox-scoped path validation.
 //!
 //! Every path that enters the backend from the frontend — whether via an IPC
 //! command argument, a clipboard drop, or a file-watcher event — must be
-//! validated against the vault root before it is used for I/O. This module is
+//! validated against the notebox root before it is used for I/O. This module is
 //! the single source of truth for that check.
 //!
 //! The validator defends against three classes of escape:
 //!
 //! 1. **Relative traversal** (`../../etc/passwd`): canonicalization collapses
 //!    `..` components, and the result is then compared against the canonical
-//!    vault root with `starts_with`.
-//! 2. **Absolute paths** pointing outside the vault: treated the same as
+//!    notebox root with `starts_with`.
+//! 2. **Absolute paths** pointing outside the notebox: treated the same as
 //!    relative paths — join, canonicalize, verify containment.
 //! 3. **Symlink escapes**: `std::fs::canonicalize` follows symlinks, so a
-//!    symlink inside the vault that targets `/tmp` will canonicalize to
+//!    symlink inside the notebox that targets `/tmp` will canonicalize to
 //!    `/tmp/...` and fail the containment check.
 //!
 //! For paths whose target does not yet exist (e.g. a file about to be created
@@ -26,12 +26,12 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::errors::{InkyCapError, Result};
 
-/// Canonicalize the vault root once, up-front. Fails if the root does not
+/// Canonicalize the notebox root once, up-front. Fails if the root does not
 /// exist or cannot be resolved (e.g. permission denied).
 pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
     std::fs::canonicalize(root).map_err(|e| {
         InkyCapError::InvalidPath(format!(
-            "cannot canonicalize vault root {}: {}",
+            "cannot canonicalize notebox root {}: {}",
             root.display(),
             e
         ))
@@ -43,9 +43,9 @@ pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
 /// Catches the most common injection patterns before the path reaches storage:
 /// null bytes and `..` traversal components. Accepts both absolute and relative
 /// paths — the frontend sends absolute paths (from `FileTreeNode.path`) for most
-/// operations. The downstream `LocalVaultStorage::resolve_path` performs the full
-/// canonical containment check against the vault root.
-pub fn sanitize_vault_arg(path: &str) -> Result<PathBuf> {
+/// operations. The downstream `LocalNoteboxStorage::resolve_path` performs the full
+/// canonical containment check against the notebox root.
+pub fn sanitize_notebox_arg(path: &str) -> Result<PathBuf> {
     if path.contains('\0') {
         return Err(InkyCapError::InvalidPath(
             "path contains null byte".to_string(),
@@ -66,13 +66,13 @@ pub fn sanitize_vault_arg(path: &str) -> Result<PathBuf> {
 /// `canonical_root`, and return the canonical resolved path.
 ///
 /// `canonical_root` MUST already be canonicalized (typically via
-/// [`canonicalize_root`] stored on [`LocalVaultStorage`]). Passing a raw root
+/// [`canonicalize_root`] stored on [`LocalNoteboxStorage`]). Passing a raw root
 /// would break the `starts_with` comparison when the root itself contains a
 /// symlink.
 ///
 /// The `path` argument may be relative (joined to root) or absolute (used as
 /// given). Either way, the final resolved path must live under the root.
-pub fn validate_vault_path(canonical_root: &Path, path: &Path) -> Result<PathBuf> {
+pub fn validate_notebox_path(canonical_root: &Path, path: &Path) -> Result<PathBuf> {
     let joined = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -83,7 +83,7 @@ pub fn validate_vault_path(canonical_root: &Path, path: &Path) -> Result<PathBuf
 
     if !resolved.starts_with(canonical_root) {
         return Err(InkyCapError::InvalidPath(format!(
-            "path escapes vault root: {}",
+            "path escapes notebox root: {}",
             path.display()
         )));
     }
@@ -96,7 +96,7 @@ pub fn validate_vault_path(canonical_root: &Path, path: &Path) -> Result<PathBuf
 /// Walks upward until an existing ancestor is found, canonicalizes it, then
 /// re-appends the non-existent tail. Tail components are restricted to plain
 /// `Normal` components — `..` and `.` in the tail are rejected, otherwise a
-/// create-new-file operation could escape the vault even though the ancestor
+/// create-new-file operation could escape the notebox even though the ancestor
 /// is safely inside it.
 fn canonicalize_with_nonexistent_tail(path: &Path) -> Result<PathBuf> {
     // Fast path: the target already exists.
@@ -168,7 +168,7 @@ mod tests {
         fs::create_dir(root.join("sub")).unwrap();
         fs::write(root.join("sub/note.md"), "x").unwrap();
 
-        let ok = validate_vault_path(&root, Path::new("sub/note.md")).unwrap();
+        let ok = validate_notebox_path(&root, Path::new("sub/note.md")).unwrap();
         assert!(ok.starts_with(&root));
         assert!(ok.ends_with("note.md"));
     }
@@ -180,7 +180,7 @@ mod tests {
         fs::write(root.join("note.md"), "x").unwrap();
 
         let abs = root.join("note.md");
-        let ok = validate_vault_path(&root, &abs).unwrap();
+        let ok = validate_notebox_path(&root, &abs).unwrap();
         assert_eq!(ok, abs);
     }
 
@@ -188,7 +188,7 @@ mod tests {
     fn rejects_parent_traversal() {
         let tmp = tmpdir();
         let root = canonicalize_root(tmp.path()).unwrap();
-        let err = validate_vault_path(&root, Path::new("../etc/passwd"));
+        let err = validate_notebox_path(&root, Path::new("../etc/passwd"));
         assert!(err.is_err(), "expected traversal to be rejected");
     }
 
@@ -196,7 +196,7 @@ mod tests {
     fn rejects_absolute_outside_root() {
         let tmp = tmpdir();
         let root = canonicalize_root(tmp.path()).unwrap();
-        let err = validate_vault_path(&root, Path::new("/etc/passwd"));
+        let err = validate_notebox_path(&root, Path::new("/etc/passwd"));
         assert!(err.is_err());
     }
 
@@ -206,7 +206,7 @@ mod tests {
         let root = canonicalize_root(tmp.path()).unwrap();
         // New file inside existing root — should validate even though it
         // doesn't exist yet.
-        let ok = validate_vault_path(&root, Path::new("new-note.md")).unwrap();
+        let ok = validate_notebox_path(&root, Path::new("new-note.md")).unwrap();
         assert!(ok.starts_with(&root));
     }
 
@@ -215,7 +215,7 @@ mod tests {
         let tmp = tmpdir();
         let root = canonicalize_root(tmp.path()).unwrap();
         // Ancestor exists (root), tail contains `..` — must be rejected.
-        let err = validate_vault_path(&root, Path::new("a/../../escape.md"));
+        let err = validate_notebox_path(&root, Path::new("a/../../escape.md"));
         assert!(err.is_err());
     }
 
@@ -223,15 +223,15 @@ mod tests {
     #[test]
     fn rejects_symlink_escape() {
         use std::os::unix::fs::symlink;
-        let tmp_vault = tmpdir();
+        let tmp_notebox = tmpdir();
         let tmp_outside = tmpdir();
-        let root = canonicalize_root(tmp_vault.path()).unwrap();
+        let root = canonicalize_root(tmp_notebox.path()).unwrap();
         fs::write(tmp_outside.path().join("secret.md"), "secret").unwrap();
 
-        // Symlink inside the vault pointing outside.
+        // Symlink inside the notebox pointing outside.
         symlink(tmp_outside.path(), root.join("link")).unwrap();
 
-        let err = validate_vault_path(&root, Path::new("link/secret.md"));
+        let err = validate_notebox_path(&root, Path::new("link/secret.md"));
         assert!(err.is_err(), "symlink escape must be rejected");
     }
 }

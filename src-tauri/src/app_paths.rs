@@ -21,7 +21,7 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// Per-platform data dir. Holds non-config user data that isn't
-/// regenerable from vault content — currently the recovery snapshot
+/// regenerable from notebox content — currently the recovery snapshot
 /// store.
 pub fn data_dir() -> PathBuf {
     dirs::data_dir()
@@ -31,7 +31,7 @@ pub fn data_dir() -> PathBuf {
 
 /// Per-platform cache dir. Holds regenerable indexes — the metadata
 /// SQLite, the persisted search index. Anything in here can be
-/// deleted without data loss; the app rebuilds from vault content
+/// deleted without data loss; the app rebuilds from notebox content
 /// on next open.
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()

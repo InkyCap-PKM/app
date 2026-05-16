@@ -5,7 +5,7 @@ This folder holds InkyCap's living documentation, split by audience.
 ## Structure
 
 - **[`developer/`](developer/)** — reference material for contributors: architecture, design decisions, normative rules for subsystems. Update whenever the corresponding code or design changes.
-- **[`user/`](user/)** — end-user documentation: how to use InkyCap, vault concepts, editor features. (Reserved — content to come.)
+- **[`user/`](user/)** — end-user documentation: how to use InkyCap, notebox concepts, editor features. (Reserved — content to come.)
 
 ## Developer documentation
 

@@ -25,7 +25,7 @@ pub async fn update_settings(
     crate::settings::save_settings(&settings)?;
 
     // Propagate citation settings to the Typst compiler so changes take
-    // effect without reopening the vault.
+    // effect without reopening the notebox.
     if let Some(compiler) = state.typst_compiler.lock().await.as_mut() {
         let style = settings.citations.custom_csl_path.clone()
             .or_else(|| settings.citations.citation_style.as_deref()
@@ -37,8 +37,8 @@ pub async fn update_settings(
     // When the citation source is Zotero, export entries to
     // .inkycap/zotero-export.bib so the file exists on disk for
     // preview compiles and explicit #bibliography() calls.
-    if let Some(vault_root) = state.vault_root.read().await.as_ref() {
-        crate::state::configure_bibliography(vault_root, &settings.citations);
+    if let Some(notebox_root) = state.notebox_root.read().await.as_ref() {
+        crate::state::configure_bibliography(notebox_root, &settings.citations);
     }
 
     *state.settings.write().await = settings;

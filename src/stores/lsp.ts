@@ -10,7 +10,7 @@ export function getLspClient(): LspClient | null {
   return lspReady() ? client : null;
 }
 
-export async function startLsp(vaultPath: string): Promise<void> {
+export async function startLsp(noteboxPath: string): Promise<void> {
   await stopLsp();
 
   client = new LspClient();
@@ -19,10 +19,10 @@ export async function startLsp(vaultPath: string): Promise<void> {
   });
 
   try {
-    await client.start(vaultPath);
+    await client.start(noteboxPath);
     setLspReady(true);
     setLspError(null);
-    console.log("[LSP] Tinymist initialized, ready for", vaultPath);
+    console.log("[LSP] Tinymist initialized, ready for", noteboxPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[LSP] Failed to start Tinymist:", msg);

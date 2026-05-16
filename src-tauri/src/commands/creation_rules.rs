@@ -8,7 +8,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::scaffolds;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
 
 /// Result of executing a creation rule, including optional cursor offset.
@@ -86,8 +86,8 @@ pub async fn execute_creation_rule(
     state: State<'_, AppState>,
 ) -> Result<CreationResult, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let rules = creation_rules::load_rules();
     let rule = rules
@@ -122,7 +122,7 @@ pub async fn execute_creation_rule(
     // If the rule has a scaffold, read and expand it
     if !rule.scaffold_path.is_empty() {
         let scaffold_file_path =
-            crate::vault_package::scaffolds_dir(root).join(&rule.scaffold_path);
+            crate::notebox_package::scaffolds_dir(root).join(&rule.scaffold_path);
         if storage.exists(&scaffold_file_path).await {
             let title = file_path
                 .file_stem()
@@ -144,7 +144,7 @@ pub async fn execute_creation_rule(
     }
 
     // Ensure the import line is present
-    let import_line = crate::vault_package::import_line();
+    let import_line = crate::notebox_package::import_line();
     if !content.contains(&import_line) {
         let has_note_call = content.contains("#note(");
         let prefix = if has_note_call {
@@ -224,10 +224,10 @@ pub async fn list_scaffolds(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
+    let scaffold_dir = crate::notebox_package::scaffolds_dir(root);
     if !storage.exists(&scaffold_dir).await {
         return Ok(Vec::new());
     }
@@ -268,10 +268,10 @@ pub async fn list_scaffold_entries(
     state: State<'_, AppState>,
 ) -> Result<Vec<TemplateEntry>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
+    let scaffold_dir = crate::notebox_package::scaffolds_dir(root);
     if !storage.exists(&scaffold_dir).await {
         return Ok(Vec::new());
     }
@@ -332,8 +332,8 @@ pub async fn prepare_scaffold_insert(
     selection_to: Option<usize>,
 ) -> Result<ScaffoldInsertResult, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let zid_pattern = {
         let settings = state.settings.read().await;
@@ -347,7 +347,7 @@ pub async fn prepare_scaffold_insert(
     } else {
         format!("{}.typ", scaffold_name)
     };
-    let scaffold_path = crate::vault_package::scaffolds_dir(root).join(&filename);
+    let scaffold_path = crate::notebox_package::scaffolds_dir(root).join(&filename);
     if !storage.exists(&scaffold_path).await {
         return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string()));
     }
@@ -471,7 +471,7 @@ fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, String
     // Skip leading `#import` lines regardless of #note presence — when the
     // scaffold author wrote imports at the top, they should be effective
     // for the new note's content, not re-imported into the target note.
-    // (The target already has the canonical vault import.)
+    // (The target already has the canonical notebox import.)
     let body_start = if let Some(ref s) = span {
         s.end
     } else {
@@ -518,8 +518,8 @@ pub async fn create_scaffold(
     name: String,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let safe = sanitize_template_name(&name)?;
     let filename = if safe.ends_with(".typ") {
@@ -528,7 +528,7 @@ pub async fn create_scaffold(
         format!("{}.typ", safe)
     };
 
-    let scaffold_dir = crate::vault_package::scaffolds_dir(root);
+    let scaffold_dir = crate::notebox_package::scaffolds_dir(root);
     storage.create_dir(&scaffold_dir).await?;
 
     let file_path = scaffold_dir.join(&filename);

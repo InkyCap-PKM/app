@@ -9,7 +9,7 @@
 // that expect `[[Foo]]`. Likewise `#tag("x")` becomes prose, and `#note(...)`
 // vanishes into PDF metadata instead of YAML frontmatter.
 //
-// The exporter here is the `inkycap-vault` package's reverse map, kept in
+// The exporter here is the `inkycap-notebox` package's reverse map, kept in
 // Rust because it's the only place the package's vocabulary and markdown's
 // vocabulary both make sense. Per CLAUDE.md's Typst-first principle: the
 // rule says "before developing something outside" — we did look, the native
@@ -730,7 +730,7 @@ mod tests {
 
     #[test]
     fn headings() {
-        let input = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Title\n\n== Subtitle";
+        let input = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Title\n\n== Subtitle";
         let result = convert(input);
         assert!(result.contains("# Title"));
         assert!(result.contains("## Subtitle"));
@@ -739,7 +739,7 @@ mod tests {
 
     #[test]
     fn note_to_frontmatter() {
-        let input = r#"#import "/.inkycap/packages/inkycap-vault/0.1.0/lib.typ": *
+        let input = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
 
 #note(
   title: "My Note",

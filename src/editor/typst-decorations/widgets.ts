@@ -466,7 +466,7 @@ export class EmbedBlockWidget extends WidgetType {
       e.preventDefault();
       e.stopPropagation();
       const menu = document.createElement("div");
-      menu.style.cssText = "position:fixed;z-index:9999;background:var(--bg-primary);border:1px solid var(--border-primary);border-radius:4px;padding:4px 0;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-size:13px;";
+      menu.style.cssText = "position:fixed;z-index:var(--z-menu,1000);background:var(--popup-bg);border:1px solid var(--popup-border-color);border-radius:var(--popup-radius);padding:var(--popup-padding-block,4px) 0;box-shadow:var(--popup-shadow);font-size:13px;";
       const item = document.createElement("div");
       item.style.cssText = "padding:4px 12px;cursor:pointer;white-space:nowrap;";
       item.textContent = "Open in new tab";
@@ -600,7 +600,7 @@ export class EmbedWidget extends WidgetType {
       e.preventDefault();
       e.stopPropagation();
       const menu = document.createElement("div");
-      menu.style.cssText = "position:fixed;z-index:9999;background:var(--bg-primary);border:1px solid var(--border-primary);border-radius:4px;padding:4px 0;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-size:13px;";
+      menu.style.cssText = "position:fixed;z-index:var(--z-menu,1000);background:var(--popup-bg);border:1px solid var(--popup-border-color);border-radius:var(--popup-radius);padding:var(--popup-padding-block,4px) 0;box-shadow:var(--popup-shadow);font-size:13px;";
       const item = document.createElement("div");
       item.style.cssText = "padding:4px 12px;cursor:pointer;white-space:nowrap;";
       item.textContent = "Open in new tab";

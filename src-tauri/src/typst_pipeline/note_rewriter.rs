@@ -159,7 +159,7 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 /// Update a single property in the `#note(...)` call. If the call exists
 /// and the key is present, the value is replaced. If the call exists but
 /// the key is absent, a new named argument is appended. If no call exists
-/// at all, one is materialized after the vault import line (or at the top
+/// at all, one is materialized after the notebox import line (or at the top
 /// of the file when no import is present).
 ///
 /// Args other than the one being updated are preserved with their exact
@@ -384,11 +384,11 @@ fn format_note_call(args: &[(String, String)]) -> String {
 }
 
 /// Insert a fresh `#note(...)` call into a document that doesn't have one.
-/// Lands it immediately after the vault import line; falls back to the top
+/// Lands it immediately after the notebox import line; falls back to the top
 /// of the file if no import line is present.
 fn insert_note_call(content: &str, call: &str) -> String {
     for (i, line) in content.lines().enumerate() {
-        if crate::vault_package::is_vault_import_line(line) {
+        if crate::notebox_package::is_notebox_import_line(line) {
             let line_end = content
                 .match_indices('\n')
                 .nth(i)
@@ -439,7 +439,7 @@ pub fn typst_value_to_plain_text(raw: &str) -> String {
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"#import "/.inkycap/packages/inkycap-vault/0.1.0/lib.typ": *
+    const SAMPLE: &str = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
 #note(
   title: "Reading notes on Heidegger",
   date: datetime(year: 2026, month: 4, day: 29),
@@ -511,7 +511,7 @@ Some body text here.
 
     #[test]
     fn remove_last_property_dematerializes() {
-        let content = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note(title: \"Hello\")\n\n= Body\n";
+        let content = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(title: \"Hello\")\n\n= Body\n";
         let updated = remove_note_property(content, "title");
         assert!(!updated.contains("#note"));
         assert!(updated.contains("= Body"));
@@ -520,7 +520,7 @@ Some body text here.
     #[test]
     fn materialize_note_call() {
         let content =
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\n= Body\n";
+            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Body\n";
         let updated = update_note_property(
             content,
             "title",
@@ -580,7 +580,7 @@ Some body text here.
     /// so slicing into the source is safe.
     #[test]
     fn roundtrip_preserves_unicode() {
-        let src = r#"#import "/.inkycap/packages/inkycap-vault/0.1.0/lib.typ": *
+        let src = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
 #note(
   title: "L'« Être » et le temps — α/β/γ",
   description: "中文 العربية русский",
@@ -646,7 +646,7 @@ Some body text here.
     /// the AST hands us byte ranges that ignore the comments.
     #[test]
     fn tolerates_inline_comments() {
-        let src = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n\
+        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\
             #note(\n  title: \"X\", // inline comment\n  status: \"draft\",\n)\n\n= H\n";
         let updated =
             update_note_property(src, "status", &PropertyValue::String("done".into()));

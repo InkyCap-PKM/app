@@ -11,7 +11,7 @@ interface PaletteItem {
   /** When set, accepting the item runs the attachment picker instead of
    *  inserting the `insert` template. The picker copies the selected
    *  file(s) into `settings.files.attachment_folder` and emits
-   *  `#image("/...")` / `#embed("/...")` with a vault-root-absolute path.
+   *  `#image("/...")` / `#embed("/...")` with a notebox-root-absolute path.
    *  See CLAUDE.md's portable-paths principle. */
   pickAttachment?: "image" | "embed";
   /** Inline typing shortcut shown at the right edge of the row, when
@@ -236,7 +236,7 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const deleteTo = view.state.selection.main.from;
 
   // Image / Embed: open the attachment picker and replace the slash trigger
-  // with a vault-root-absolute call. The picker is async; hide the popup
+  // with a notebox-root-absolute call. The picker is async; hide the popup
   // first so the dialog can take focus cleanly.
   if (item.pickAttachment) {
     hidePopup();

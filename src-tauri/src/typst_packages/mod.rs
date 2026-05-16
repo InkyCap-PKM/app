@@ -7,7 +7,7 @@
 //!
 //! After extraction, InkyCap's package resolver looks them up at:
 //!
-//!   <vault>/.inkycap/packages/<namespace>/<name>/<version>/
+//!   <notebox>/.inkycap/packages/<namespace>/<name>/<version>/
 //!
 //! Tarball entries are sandboxed to the target directory at extraction time —
 //! any entry whose normalized path escapes the target is skipped (defense
@@ -16,7 +16,7 @@
 //!
 //! This module is intentionally small. It exists because two separate
 //! features both need `.tar.gz` handling: Universe install (here) and the
-//! markdown vault importer (which accepts `.tar.gz` as an alternate input
+//! markdown notebox importer (which accepts `.tar.gz` as an alternate input
 //! shape alongside `.zip`). See [`extract_tar_gz`] for the shared path.
 //!
 //! Per CLAUDE.md's Typst-first principle: this module is unavoidable Rust
@@ -102,8 +102,8 @@ impl PackageSpec {
         format!("@{}/{}:{}", self.namespace, self.name, self.version)
     }
 
-    pub fn install_dir(&self, vault_root: &Path) -> PathBuf {
-        vault_root
+    pub fn install_dir(&self, notebox_root: &Path) -> PathBuf {
+        notebox_root
             .join(".inkycap")
             .join("packages")
             .join(&self.namespace)

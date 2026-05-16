@@ -13,7 +13,8 @@ import CollectionTable from "./CollectionTable";
 import TypstEditor from "./TypstEditor";
 import FlowView from "./FlowView";
 import { executeCommand } from "../lib/command-registry";
-import { ChevronLeft, ChevronRight } from "lucide-solid";
+import { isEnabled as isJournalScrollTab } from "../stores/journal-scroll";
+import { ChevronLeft, ChevronRight, Scroll } from "lucide-solid";
 
 /// Render the title for a tab. File tabs show the basename without the
 /// extension; other tab types keep their title verbatim (e.g. "Flow:
@@ -126,6 +127,11 @@ const MainContent: Component = () => {
                 onDrop={() => handleDrop(index())}
                 onDragEnd={handleDragEnd}
               >
+                <Show when={isJournalScrollTab(tab.id)}>
+                  <span class="tab__icon" title="Journal Scroll">
+                    <Scroll size={13} />
+                  </span>
+                </Show>
                 <span class="tab__title">
                   {dirtyTabs().has(tab.id) ? "\u25CF " : ""}
                   {displayTabTitle(tab)}

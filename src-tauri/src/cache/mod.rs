@@ -1,10 +1,10 @@
-//! Persistent metadata cache for vault files.
+//! Persistent metadata cache for notebox files.
 //!
 //! Stores parsed note metadata, links, and tags in a SQLite database under the
-//! Tauri app data directory (NOT inside the vault). On vault open, the cache
+//! Tauri app data directory (NOT inside the notebox). On notebox open, the cache
 //! is consulted to skip re-parsing
 //! files whose `(mtime, size)` are unchanged since the last run, dramatically
-//! reducing cold-start time for large vaults.
+//! reducing cold-start time for large noteboxes.
 //!
 //! The cache is purely a performance optimization. If the database is missing,
 //! corrupt, or out of sync, the system falls back to a full filesystem scan

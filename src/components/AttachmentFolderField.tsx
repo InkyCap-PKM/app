@@ -1,7 +1,7 @@
 // Settings field for `files.attachment_folder`. Unlike the other path
 // settings, changing this one is destructive: every file under the old
 // folder must move, and every `image`/`read`/`embed`/`bibliography`
-// call across the vault that references `/<old>/...` must be rewritten
+// call across the notebox that references `/<old>/...` must be rewritten
 // to `/<new>/...`. This component drives that migration explicitly:
 // the current folder is displayed read-only; a "Rename folder…" button
 // opens a confirmation modal with a live preview of "<n> files will
@@ -137,9 +137,9 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
         <div class="settings__row-info">
           <label class="settings__label">Attachment folder</label>
           <span class="settings__description">
-            Where images and files are stored (relative to vault root).
+            Where images and files are stored (relative to notebox root).
             Renaming moves existing files and rewrites references across
-            the vault.
+            the notebox.
           </span>
         </div>
         <div class="attachment-folder-field__control">

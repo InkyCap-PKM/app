@@ -6,7 +6,7 @@
 //! - [`install_typst_package_from_file`] — extract a local `.tar.gz` the
 //!   user already has on disk.
 //!
-//! Both land in `<vault>/.inkycap/packages/<namespace>/<name>/<version>/`,
+//! Both land in `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`,
 //! which the Typst compile pipeline already resolves at
 //! `typst_pipeline/world.rs::resolve_package_path`.
 
@@ -42,9 +42,9 @@ pub async fn install_typst_package_by_spec(
         ))
     })?;
 
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
     if install_dir.exists() && install_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false)
@@ -96,9 +96,9 @@ pub async fn install_typst_package_from_file(
         return Err(InkyCapError::FileNotFound(archive_path));
     }
 
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     // Extract into a temp dir first, then promote into the canonical
     // location once we know the package's name/version. This avoids
@@ -179,7 +179,7 @@ pub struct InstalledPackageEntry {
     pub description: Option<String>,
 }
 
-/// List every package installed under `<vault>/.inkycap/packages/`.
+/// List every package installed under `<notebox>/.inkycap/packages/`.
 ///
 /// Walks the canonical three-level tree (`<ns>/<name>/<ver>/`) and reads
 /// each `typst.toml` to (a) confirm it's a real package and (b) classify
@@ -191,9 +191,9 @@ pub struct InstalledPackageEntry {
 pub async fn list_installed_packages(
     state: State<'_, AppState>,
 ) -> Result<Vec<InstalledPackageEntry>, InkyCapError> {
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     let packages_dir = root.join(".inkycap").join("packages");
     if !packages_dir.is_dir() {
@@ -273,9 +273,9 @@ pub async fn uninstall_typst_package(
         InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec))
     })?;
 
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
     if !install_dir.exists() {
@@ -311,7 +311,7 @@ pub struct CreatedPackage {
 }
 
 /// Scaffold a brand-new local package at
-/// `<vault>/.inkycap/packages/<ns>/<name>/<version>/`. Defaults to the
+/// `<notebox>/.inkycap/packages/<ns>/<name>/<version>/`. Defaults to the
 /// `@local/` namespace and version `0.1.0` when the user passes a bare name.
 /// When `as_template` is true, declares `[template]` in the manifest and
 /// generates `template/main.typ`.
@@ -328,9 +328,9 @@ pub async fn create_local_package(
         ))
     })?;
 
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
     if install_dir.exists()

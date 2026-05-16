@@ -451,12 +451,13 @@ export const visualTheme = EditorView.theme({
   },
   // ── Pill super-context-menu (R6) ──
   ".cm-typst-pill-menu": {
-    backgroundColor: "var(--bg-primary)",
-    border: "1px solid var(--border-subtle)",
-    borderRadius: "6px",
-    padding: "4px 0",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.18)",
-    zIndex: "1000",
+    // Shared popup surface — see --popup-* tokens in themes.css.
+    backgroundColor: "var(--popup-bg)",
+    border: "1px solid var(--popup-border-color)",
+    borderRadius: "var(--popup-radius)",
+    padding: "var(--popup-padding-block) 0",
+    boxShadow: "var(--popup-shadow)",
+    zIndex: "var(--z-menu)",
     minWidth: "200px",
     fontSize: "0.9em",
     // UI chrome (a menu popup), so it follows the interface font.
@@ -472,13 +473,13 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-pill-menu-sep": {
     height: "1px",
     margin: "4px 0",
-    backgroundColor: "var(--border-subtle)",
+    backgroundColor: "var(--popup-border-color)",
   },
   ".cm-typst-pill-menu-item": {
     display: "flex",
     alignItems: "center",
     width: "100%",
-    padding: "5px 12px",
+    padding: "var(--popup-item-padding)",
     fontSize: "inherit",
     fontFamily: "inherit",
     color: "var(--fg-primary)",

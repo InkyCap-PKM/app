@@ -1246,16 +1246,17 @@ const ICON_PASTE = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" 
 function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLElement {
   const menu = document.createElement("div");
   menu.className = "cm-table-context-menu";
+  // Shared popup surface — see --popup-* tokens in themes.css.
   menu.style.cssText = `
     position: fixed;
-    z-index: 99999;
+    z-index: var(--z-menu, 1000);
     left: ${x}px;
     top: ${y}px;
-    background: var(--bg-primary, #fff);
-    border: 1px solid var(--border-subtle, #ddd);
-    border-radius: 6px;
-    padding: 4px 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: var(--popup-bg, #fff);
+    border: 1px solid var(--popup-border-color, #ddd);
+    border-radius: var(--popup-radius, 6px);
+    padding: var(--popup-padding-block, 4px) 0;
+    box-shadow: var(--popup-shadow, 0 4px 12px rgba(0,0,0,0.18));
     min-width: 200px;
     font-size: 0.85em;
     font-family: inherit;
@@ -1265,7 +1266,7 @@ function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLE
   for (const item of items) {
     if (!item) {
       const sep = document.createElement("div");
-      sep.style.cssText = "height:1px;background:var(--border-subtle,#ddd);margin:4px 0;";
+      sep.style.cssText = "height:1px;background:var(--popup-border-color,#ddd);margin:4px 0;";
       menu.appendChild(sep);
       continue;
     }
@@ -1275,7 +1276,7 @@ function buildMenuAtPos(x: number, y: number, items: (MenuItem | null)[]): HTMLE
       align-items: center;
       gap: 8px;
       width: 100%;
-      padding: 5px 12px;
+      padding: var(--popup-item-padding, 5px 12px);
       border: none;
       background: transparent;
       color: ${item.danger ? "var(--danger, #e53e3e)" : "inherit"};

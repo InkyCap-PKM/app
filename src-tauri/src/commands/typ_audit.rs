@@ -1,4 +1,4 @@
-//! Audit and repair foreign `.typ` files in the vault.
+//! Audit and repair foreign `.typ` files in the notebox.
 //!
 //! Users frequently bring `.typ` files into InkyCap from other tools
 //! (Pandoc/typst.app conversion of `.docx`, files copied from another
@@ -6,15 +6,15 @@
 //! compile fine in stock Typst but are missing the small preamble that
 //! makes them first-class citizens in InkyCap:
 //!
-//! 1. The `inkycap-vault` package import — without it, `#wikilink(...)`,
-//!    `#tag(...)`, `#callout(...)`, and other vault primitives would not
+//! 1. The `inkycap-notebox` package import — without it, `#wikilink(...)`,
+//!    `#tag(...)`, `#callout(...)`, and other notebox primitives would not
 //!    resolve when the user adds them later.
 //! 2. A top-level `#note(...)` metadata call — without it, the collection
 //!    table has nothing to display for the file (no title/author/date),
 //!    and `typst query` against `<inkycap-note>` returns no entries.
 //!
 //! This module exposes two Tauri commands:
-//! - [`audit_typ_files`] — walk the vault and report which files are
+//! - [`audit_typ_files`] — walk the notebox and report which files are
 //!   missing each preamble element.
 //! - [`repair_typ_files`] — apply non-destructive fixes (prepend the
 //!   import, insert a stub `#note()`) to a user-chosen subset.
@@ -30,36 +30,36 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter::note_call_span;
 
-/// Result of one audit pass over the vault.
+/// Result of one audit pass over the notebox.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TypAuditReport {
     /// Total `.typ` files visited (excluding those under `.inkycap/`).
     pub total_scanned: usize,
-    /// Vault-relative paths of files missing the `inkycap-vault` import.
+    /// Notebox-relative paths of files missing the `inkycap-notebox` import.
     pub missing_import: Vec<String>,
-    /// Vault-relative paths of files missing a `#note(...)` call.
+    /// Notebox-relative paths of files missing a `#note(...)` call.
     pub missing_note: Vec<String>,
 }
 
-/// Walk the vault for `.typ` files and report which ones are missing
-/// either the `inkycap-vault` import line or a `#note(...)` metadata
-/// call. Files under `.inkycap/` (the vault's internal package and
+/// Walk the notebox for `.typ` files and report which ones are missing
+/// either the `inkycap-notebox` import line or a `#note(...)` metadata
+/// call. Files under `.inkycap/` (the notebox's internal package and
 /// scaffold storage) are skipped — they are not user notes.
 #[tauri::command]
 pub async fn audit_typ_files(
     state: State<'_, AppState>,
 ) -> Result<TypAuditReport, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root_guard = state.vault_root.read().await;
-    let vault_root = vault_root_guard
+    let notebox_root_guard = state.notebox_root.read().await;
+    let notebox_root = notebox_root_guard
         .as_ref()
         .cloned()
-        .ok_or(InkyCapError::VaultNotOpen)?;
-    drop(vault_root_guard);
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    drop(notebox_root_guard);
 
     let abs_paths = storage
         .list_files(&PathBuf::from(""), "*.typ")
@@ -72,11 +72,11 @@ pub async fn audit_typ_files(
     };
 
     for abs in abs_paths {
-        // Resolve to a vault-relative path for both display and skipping
-        // the vault's internal `.inkycap/` tree. `list_files` skips most
+        // Resolve to a notebox-relative path for both display and skipping
+        // the notebox's internal `.inkycap/` tree. `list_files` skips most
         // hidden dirs but defensively re-check here so the audit stays
         // correct even if that policy changes.
-        let rel = match abs.strip_prefix(&vault_root) {
+        let rel = match abs.strip_prefix(&notebox_root) {
             Ok(r) => r.to_path_buf(),
             Err(_) => continue,
         };
@@ -92,7 +92,7 @@ pub async fn audit_typ_files(
 
         report.total_scanned += 1;
 
-        if !has_vault_import(&content) {
+        if !has_notebox_import(&content) {
             report.missing_import.push(rel_str.clone());
         }
         if note_call_span(&content).is_none() {
@@ -106,7 +106,7 @@ pub async fn audit_typ_files(
 }
 
 /// Apply the non-destructive preamble fixes to the given files. Each
-/// repaired file is added to the returned list with its vault-relative
+/// repaired file is added to the returned list with its notebox-relative
 /// path. Files that turn out to already be in good shape (e.g. another
 /// process patched them between audit and repair) are silently skipped.
 #[tauri::command]
@@ -116,7 +116,7 @@ pub async fn repair_typ_files(
 ) -> Result<TypRepairSummary, InkyCapError> {
     let storage = state.get_storage().await?;
 
-    let import_line = crate::vault_package::import_line();
+    let import_line = crate::notebox_package::import_line();
     let mut summary = TypRepairSummary {
         repaired: Vec::new(),
         errors: Vec::new(),
@@ -161,17 +161,17 @@ pub struct TypRepairSummary {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// Detect whether the file already pulls in the inkycap-vault library.
+/// Detect whether the file already pulls in the inkycap-notebox library.
 /// Accepts both the canonical version-less import path and the legacy
 /// versioned package path, including non-glob variants
-/// (`#import "...vault.typ": tag, wikilink`).
-fn has_vault_import(content: &str) -> bool {
-    content.lines().any(crate::vault_package::is_vault_import_line)
+/// (`#import "...notebox.typ": tag, wikilink`).
+fn has_notebox_import(content: &str) -> bool {
+    content.lines().any(crate::notebox_package::is_notebox_import_line)
 }
 
 /// Build the corrected source for a single file. Two independent
 /// fixes are applied; either or both may be needed:
-/// - prepend the inkycap-vault `#import` line if missing,
+/// - prepend the inkycap-notebox `#import` line if missing,
 /// - insert an empty `#note()` stub directly after the import block if
 ///   no `#note(...)` call is present anywhere in the file.
 ///
@@ -180,8 +180,8 @@ fn has_vault_import(content: &str) -> bool {
 fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
     let mut out = String::with_capacity(source.len() + import_line.len() + 16);
 
-    // 1. Ensure the vault-package import is present, prepended if absent.
-    let with_import = if has_vault_import(source) {
+    // 1. Ensure the notebox-package import is present, prepended if absent.
+    let with_import = if has_notebox_import(source) {
         source.to_string()
     } else {
         // Preserve the user's leading whitespace structure: insert the
@@ -191,7 +191,7 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
     };
 
     // 2. Ensure a `#note(...)` call exists. If not, insert `#note()`
-    //    right after the trailing newline of the inkycap-vault import
+    //    right after the trailing newline of the inkycap-notebox import
     //    line. We re-detect the import position from `with_import` so
     //    this works whether we just prepended it or it was already
     //    present higher up in the file.
@@ -199,7 +199,7 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
         return with_import;
     }
 
-    // Locate the vault-library import line and insert `#note()` on the
+    // Locate the notebox-library import line and insert `#note()` on the
     // line directly below it. If the marker is absent for some reason
     // (e.g. an unusual import variant we didn't match earlier), fall
     // back to prepending the stub.
@@ -208,7 +208,7 @@ fn apply_preamble_fixes(source: &str, import_line: &str) -> String {
         let mut found: Option<usize> = None;
         for line in with_import.split_inclusive('\n') {
             let body = line.strip_suffix('\n').unwrap_or(line);
-            if crate::vault_package::is_vault_import_line(body) {
+            if crate::notebox_package::is_notebox_import_line(body) {
                 found = Some(cursor + line.len());
                 break;
             }
@@ -233,40 +233,40 @@ mod tests {
     use super::*;
 
     fn import_line() -> String {
-        crate::vault_package::import_line()
+        crate::notebox_package::import_line()
     }
 
     #[test]
-    fn detects_missing_vault_import() {
+    fn detects_missing_notebox_import() {
         let src = "= Hello\nbody\n";
-        assert!(!has_vault_import(src));
+        assert!(!has_notebox_import(src));
     }
 
     #[test]
-    fn detects_present_vault_import() {
-        let src = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n= Hello\n";
-        assert!(has_vault_import(src));
+    fn detects_present_notebox_import() {
+        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n= Hello\n";
+        assert!(has_notebox_import(src));
     }
 
     #[test]
     fn repair_adds_both_when_missing() {
         let src = "= Body\nText.\n";
         let out = apply_preamble_fixes(src, &import_line());
-        assert!(has_vault_import(&out));
+        assert!(has_notebox_import(&out));
         assert!(note_call_span(&out).is_some());
         assert!(out.ends_with("= Body\nText.\n"));
     }
 
     #[test]
     fn repair_only_adds_note_when_import_present() {
-        let src = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n= Body\n";
+        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
         // Import line not duplicated.
-        assert_eq!(out.matches("inkycap-vault").count(), 1);
+        assert_eq!(out.matches("inkycap-notebox").count(), 1);
         assert!(note_call_span(&out).is_some());
         // Stub note inserted directly after the import line.
         assert!(out.starts_with(
-            "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note()\n"
+            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n"
         ));
     }
 
@@ -274,17 +274,17 @@ mod tests {
     fn repair_only_adds_import_when_note_present() {
         let src = "#note(collection: (\"X\",))\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
-        assert!(has_vault_import(&out));
+        assert!(has_notebox_import(&out));
         assert_eq!(note_call_span(&out).is_some(), true);
         // The user's existing #note() must be preserved verbatim.
         assert!(out.contains("#note(collection: (\"X\",))"));
         // Import comes first (canonical version-less path).
-        assert!(out.starts_with("#import \"/.inkycap/vault.typ\""));
+        assert!(out.starts_with("#import \"/.inkycap/notebox.typ\""));
     }
 
     #[test]
     fn repair_idempotent_on_conformant_file() {
-        let src = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note(title: \"X\")\n= Body\n";
+        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(title: \"X\")\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
         assert_eq!(out, src);
     }

@@ -2,7 +2,7 @@
 // plus the global property type registry.
 //
 // These commands mutate every note (and optionally .collection file) in the
-// vault that references the targeted key or tag. They go through the
+// notebox that references the targeted key or tag. They go through the
 // same per-note `reindex_note` path as individual edits so the in-memory
 // indexes and the persistent metadata cache stay coherent.
 
@@ -17,12 +17,12 @@ use crate::models::note::PropertyValue;
 use crate::property_types::{coerce_value, is_system_property, PropertyType};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
 
 // ── Property type registry ────────────────────────────────────────────
 
-/// Return the vault's property type registry (key to declared type mapping). Requires an open vault.
+/// Return the notebox's property type registry (key to declared type mapping). Requires an open notebox.
 #[tauri::command]
 pub async fn get_property_types(
     state: State<'_, AppState>,
@@ -195,7 +195,7 @@ pub async fn remove_property_from_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::remove_note_property(&content, &key);
     if updated != content {
@@ -214,7 +214,7 @@ pub async fn get_property_order(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(note_rewriter::extract_note_properties(&content)
         .into_iter()
@@ -233,7 +233,7 @@ pub async fn reorder_properties(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::reorder_note_properties(&content, &order);
     if updated != content {
@@ -243,7 +243,7 @@ pub async fn reorder_properties(
     Ok(())
 }
 
-/// Return the distinct values currently used for `key` across the vault,
+/// Return the distinct values currently used for `key` across the notebox,
 /// sorted alphabetically. List values are exploded — each member becomes a
 /// separate entry — so the picker for `tags`, `status`, etc. can show the
 /// universe of choices the user has previously committed to.
@@ -297,7 +297,7 @@ fn push_property_strings(
 
 // ── Tag rename / delete ───────────────────────────────────────────────
 
-/// Rename a tag across all notes and collection files in the vault. Requires an open vault.
+/// Rename a tag across all notes and collection files in the notebox. Requires an open notebox.
 #[tauri::command]
 pub async fn rename_tag(
     old_tag: String,
@@ -341,7 +341,7 @@ pub async fn rename_tag(
     Ok(())
 }
 
-/// Remove a tag from every note in the vault that carries it. Requires an open vault.
+/// Remove a tag from every note in the notebox that carries it. Requires an open notebox.
 #[tauri::command]
 pub async fn delete_tag(
     tag: String,
@@ -450,7 +450,7 @@ fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
     out
 }
 
-/// Apply a text transform to every `.collection` file in the vault.
+/// Apply a text transform to every `.collection` file in the notebox.
 async fn rewrite_collection_files<F>(
     state: &State<'_, AppState>,
     transform: F,
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn rewrite_tag_in_typst_content() {
-        let content = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note(\n  tags: (\"foo\", \"bar\"),\n)\n\nSome content with #foo inline.\n";
+        let content = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(\n  tags: (\"foo\", \"bar\"),\n)\n\nSome content with #foo inline.\n";
         let out = rewrite_tag_in_content(content, "foo", Some("baz"));
         assert!(out.contains("#baz inline"));
         assert!(!out.contains("#foo inline"));

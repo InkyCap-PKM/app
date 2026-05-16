@@ -4,13 +4,13 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::extract_image_paths;
 
 // ── Self-contained .typ export ──────────────────────────────────
 
-/// Export a note as a self-contained `.typ` file with the `inkycap-vault`
+/// Export a note as a self-contained `.typ` file with the `inkycap-notebox`
 /// package inlined and referenced images copied alongside. The output
 /// directory will contain the `.typ` plus any assets it references.
 #[tauri::command]
@@ -22,9 +22,9 @@ pub async fn export_self_contained_typ(
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     let output = PathBuf::from(&output_path);
     let output_dir = output
@@ -72,20 +72,20 @@ pub async fn export_self_contained_typ(
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write .typ file: {e}")))
 }
 
-/// Inline the `inkycap-vault` package into a note's source.
+/// Inline the `inkycap-notebox` package into a note's source.
 pub(super) fn inline_package(source: &str) -> String {
-    let lib_source = std::str::from_utf8(crate::vault_package::LIB_TYP_BYTES)
-        .unwrap_or("// inkycap-vault package could not be inlined");
+    let lib_source = std::str::from_utf8(crate::notebox_package::LIB_TYP_BYTES)
+        .unwrap_or("// inkycap-notebox package could not be inlined");
 
     let mut result = String::with_capacity(source.len() + lib_source.len() + 200);
 
     let mut found_import = false;
     for line in source.lines() {
-        if !found_import && crate::vault_package::is_vault_import_line(line) {
+        if !found_import && crate::notebox_package::is_notebox_import_line(line) {
             found_import = true;
-            result.push_str("// ── inkycap-vault package (inlined for portability) ──\n");
+            result.push_str("// ── inkycap-notebox package (inlined for portability) ──\n");
             result.push_str(lib_source);
-            result.push_str("\n// ── end inkycap-vault ──\n");
+            result.push_str("\n// ── end inkycap-notebox ──\n");
         } else {
             result.push_str(line);
             result.push('\n');
@@ -94,9 +94,9 @@ pub(super) fn inline_package(source: &str) -> String {
 
     if !found_import {
         let mut prefixed = String::with_capacity(result.len() + lib_source.len() + 200);
-        prefixed.push_str("// ── inkycap-vault package (inlined for portability) ──\n");
+        prefixed.push_str("// ── inkycap-notebox package (inlined for portability) ──\n");
         prefixed.push_str(lib_source);
-        prefixed.push_str("\n// ── end inkycap-vault ──\n\n");
+        prefixed.push_str("\n// ── end inkycap-notebox ──\n\n");
         prefixed.push_str(&result);
         return prefixed;
     }
@@ -115,10 +115,10 @@ pub async fn export_figures(
 ) -> Result<Vec<String>, InkyCapError> {
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root
         .as_ref()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let content = storage.read_file(&path_buf).await?;
     let image_paths = extract_image_paths(&content);

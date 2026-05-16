@@ -1,5 +1,5 @@
 // Quick-open command palette (Ctrl+O).
-// Fuzzy searches the vault file list and opens the selected file.
+// Fuzzy searches the notebox file list and opens the selected file.
 
 import { Component, createSignal, createMemo, For, Show } from "solid-js";
 import { fileList, type FileEntry } from "../stores/filelist";

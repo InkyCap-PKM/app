@@ -33,7 +33,7 @@ import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
 import { getLspClient, lspReady } from "../stores/lsp";
 import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
-import { vaultInfo } from "../stores/vault";
+import { noteboxInfo } from "../stores/notebox";
 import { setActiveEditorView } from "../stores/editor";
 import { readingFormat, setReadingFormat } from "../stores/reading-format";
 import { resolveTextFontSync } from "../lib/fontResolver";
@@ -179,12 +179,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   // ── LSP helpers ────────────────────────────────────────
 
   function buildDocumentUri(filePath: string): string {
-    const vault = vaultInfo();
-    if (!vault) return filePathToUri(filePath);
+    const notebox = noteboxInfo();
+    if (!notebox) return filePathToUri(filePath);
     if (filePath.startsWith("/") || filePath.startsWith("\\")) {
       return filePathToUri(filePath);
     }
-    return filePathToUri(`${vault.path}/${filePath}`);
+    return filePathToUri(`${notebox.path}/${filePath}`);
   }
 
   let cleanupDiagnostics: (() => void) | null = null;
@@ -315,6 +315,24 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         editorHandle.setVisualMode(mode === "live");
       }
     }),
+  );
+
+  // Journal Scroll replaces the editor for this tab. Toggling scroll does
+  // not remount this component — only the <Show> blocks in the render swap
+  // the editor's mount node in and out of the DOM. So when scroll turns on
+  // we must tear down the CodeMirror handle ourselves; otherwise it keeps
+  // pointing at a now-detached DOM node, the re-rendered editor shows blank,
+  // and operations on the stale handle can crash. When scroll turns back
+  // off, the mount node's ref callback re-runs and re-creates the editor
+  // (editorHandle is undefined again), restoring the cached doc + history.
+  createEffect(
+    on(
+      () => isScrollEnabled(props.tabId),
+      (scrollOn, prevScrollOn) => {
+        if (prevScrollOn === undefined) return;
+        if (scrollOn) destroyEditor();
+      },
+    ),
   );
 
   createEffect(
@@ -801,7 +819,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             result={htmlResult()}
             loading={htmlResult.loading}
             documentFont={resolveTextFontSync(settings.fonts)}
-            documentSize={settings.document.text_size ?? undefined}
           />
         }>
           <TypstReadingView
@@ -881,17 +898,16 @@ interface TypstHtmlReadingViewProps {
   result: TypstHtmlResult | undefined;
   loading: boolean;
   documentFont?: string;
-  documentSize?: number;
 }
 
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
+  // Font size is intentionally left to CSS (--md-body-size) so the
+  // content zoom (Ctrl+= / Ctrl+-) applies here. Only the font family
+  // is pinned from settings.
   const contentStyle = () => {
     const s: Record<string, string> = {};
     if (props.documentFont) {
       s["font-family"] = `"${props.documentFont}", var(--editor-font-body, sans-serif)`;
-    }
-    if (props.documentSize) {
-      s["font-size"] = `${props.documentSize}pt`;
     }
     return s;
   };

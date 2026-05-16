@@ -23,7 +23,7 @@ export interface FileMetadata {
   size: number;
 }
 
-export interface VaultInfo {
+export interface NoteboxInfo {
   path: string;
   name: string;
   file_count: number;
@@ -31,13 +31,13 @@ export interface VaultInfo {
   property_keys: string[];
 }
 
-export interface VaultRegistryEntry {
+export interface NoteboxRegistryEntry {
   path: string;
   display_name: string;
   last_opened: number;
 }
 
-export interface VaultMoveResult {
+export interface NoteboxMoveResult {
   new_path: string;
   was_active: boolean;
 }
@@ -110,7 +110,7 @@ export interface ViewDef {
   summaries?: Record<string, string> | null;
 }
 
-export interface VaultIndex {
+export interface NoteboxIndex {
   tags: [string, number][];
   property_keys: [string, number][];
 }
@@ -532,7 +532,7 @@ export interface TypstFrame {
 }
 
 export interface TypstSpan {
-  /** Vault-relative path of the file the span points into. `null` when
+  /** Notebox-relative path of the file the span points into. `null` when
    *  Typst couldn't resolve the source — usually a synthesized fragment. */
   path: string | null;
   /** Byte offsets into the file's UTF-8 source. */

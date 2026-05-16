@@ -28,7 +28,7 @@ pub struct Snapshot {
 /// Metadata for all snapshots of a single file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSnapshots {
-    /// Vault-relative path of the original file.
+    /// Notebox-relative path of the original file.
     pub file_path: String,
     /// Ordered list of snapshots (oldest first).
     pub snapshots: Vec<Snapshot>,
@@ -50,7 +50,7 @@ impl SnapshotManager {
         Self { base_dir }
     }
 
-    /// Create a snapshot of `content` for the given vault-relative `file_path`.
+    /// Create a snapshot of `content` for the given notebox-relative `file_path`.
     /// Returns true if a new snapshot was created, false if content hasn't changed.
     pub fn create_snapshot(&self, file_path: &str, content: &str) -> crate::errors::Result<bool> {
         let hash = Self::content_hash(content);
@@ -132,7 +132,7 @@ impl SnapshotManager {
     ) -> crate::errors::Result<String> {
         let content = self.restore_snapshot(file_path, hash)?;
 
-        let body = crate::vault_package::strip_note_preamble(&content);
+        let body = crate::notebox_package::strip_note_preamble(&content);
         let preview: String = body.chars().take(max_chars).collect();
         Ok(preview)
     }
@@ -278,7 +278,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mgr = test_manager(tmp.path());
 
-        let content = "#import \"/.inkycap/packages/inkycap-vault/0.1.0/lib.typ\": *\n#note(\n  title: \"Preview Test\",\n)\n\nThis is the body text.";
+        let content = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(\n  title: \"Preview Test\",\n)\n\nThis is the body text.";
         mgr.create_snapshot("notes/preview.typ", content).unwrap();
 
         let snapshots = mgr.list_snapshots("notes/preview.typ").unwrap();

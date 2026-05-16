@@ -122,9 +122,9 @@ impl Default for AppearanceSettings {
 pub struct FileSettings {
     /// Where new notes are created: "root", "current", or "specified".
     pub new_note_location: String,
-    /// Folder path (relative to vault root) for new notes when location is "specified".
+    /// Folder path (relative to notebox root) for new notes when location is "specified".
     pub new_note_folder: String,
-    /// Folder path (relative to vault root) for attachments (images, files).
+    /// Folder path (relative to notebox root) for attachments (images, files).
     pub attachment_folder: String,
     /// Regex patterns for files to exclude from search and quick-open.
     pub excluded_files_regex: Vec<String>,
@@ -172,7 +172,7 @@ pub struct StartupSettings {
     pub behavior: String,
     /// Target: creation rule ID or file/base path (depends on behavior).
     pub target: String,
-    /// Vault-relative path of the last active file, persisted by the frontend.
+    /// Notebox-relative path of the last active file, persisted by the frontend.
     pub last_active_file: Option<String>,
 }
 
@@ -211,7 +211,7 @@ impl Default for JournalScrollSettings {
 pub struct CitationSettings {
     /// Citation source: "file" or "zotero".
     pub source: String,
-    /// Vault-relative path to bibliography file (.bib, .yml, .json).
+    /// Notebox-relative path to bibliography file (.bib, .yml, .json).
     pub bibliography_path: Option<String>,
     /// Citation style name (e.g. "chicago-author-date", "apa").
     pub citation_style: Option<String>,

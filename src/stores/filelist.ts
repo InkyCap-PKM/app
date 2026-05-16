@@ -7,7 +7,7 @@ import type { FileTreeNode } from "../lib/types";
 export interface FileEntry {
   path: string;
   name: string;
-  /** Folder path relative to vault root, for display. */
+  /** Folder path relative to notebox root, for display. */
   folder: string;
 }
 

@@ -1,10 +1,10 @@
-//! Vault-default bibliography auto-injection and bib file parsing.
+//! Notebox-default bibliography auto-injection and bib file parsing.
 //!
 //! Per [TYPST_PIVOT.md](../../TYPST_PIVOT.md) §8 #5 (and the Phase 0 decision
 //! recorded in PHASE_0_NOTES.md): if a note doesn't already declare its own
-//! `#bibliography(...)` AND the vault has a default bibliography file, the
+//! `#bibliography(...)` AND the notebox has a default bibliography file, the
 //! compile pipeline injects a `#bibliography("/<path>")` directive
-//! immediately after the `inkycap-vault` import line. The on-disk file is
+//! immediately after the `inkycap-notebox` import line. The on-disk file is
 //! never modified — augmentation happens to an in-memory copy that becomes
 //! the main source.
 //!
@@ -23,16 +23,16 @@ use serde::Serialize;
 /// is expected to surface a warning in that case.
 const DEFAULT_BIB_FILES: &[&str] = &["references.bib", "references.yml", "references.json"];
 
-/// Resolve which bibliography file (if any) should auto-load for the vault.
+/// Resolve which bibliography file (if any) should auto-load for the notebox.
 /// `override_path`, when set, comes from `.inkycap/settings.json
-/// bibliographyPath` and is treated as vault-relative.
-pub fn detect_default(vault_root: &Path, override_path: Option<&str>) -> Option<PathBuf> {
+/// bibliographyPath` and is treated as notebox-relative.
+pub fn detect_default(notebox_root: &Path, override_path: Option<&str>) -> Option<PathBuf> {
     if let Some(rel) = override_path {
-        let candidate = vault_root.join(rel);
+        let candidate = notebox_root.join(rel);
         return candidate.exists().then_some(candidate);
     }
     for name in DEFAULT_BIB_FILES {
-        let candidate = vault_root.join(name);
+        let candidate = notebox_root.join(name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -66,7 +66,7 @@ pub fn already_declares_bibliography(source: &str) -> bool {
 }
 
 /// Build the augmented source for compile. Returns the input unchanged if
-/// there's nothing to inject; otherwise appends a call to the vault
+/// there's nothing to inject; otherwise appends a call to the notebox
 /// package's [`apply-bibliography`] (a thin wrapper around Typst's own
 /// `#bibliography(...)`) at the end of the source. Citation collection in
 /// Typst is whole-document, so the appended call is purely about *where*
@@ -78,14 +78,14 @@ pub fn already_declares_bibliography(source: &str) -> bool {
 /// to interpret the value.
 pub fn augment(
     source: &str,
-    vault_root: &Path,
+    notebox_root: &Path,
     bibliography: &Path,
     style: Option<&str>,
 ) -> String {
     if already_declares_bibliography(source) {
         return source.to_string();
     }
-    let Ok(rel) = bibliography.strip_prefix(vault_root) else {
+    let Ok(rel) = bibliography.strip_prefix(notebox_root) else {
         return source.to_string();
     };
     let typst_path = rel
@@ -205,7 +205,7 @@ pub fn last_parse_skipped_count() -> u32 {
 }
 
 /// Load the parsed bibliography for `path`, using an mtime+size keyed cache.
-/// The cache holds a single slot — vaults have one active bibliography file
+/// The cache holds a single slot — noteboxes have one active bibliography file
 /// at a time, and an LRU would just add bookkeeping.
 fn load_cached(path: &Path) -> Result<ParsedBibliography, String> {
     let meta = std::fs::metadata(path)
@@ -466,9 +466,9 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
 }
 
 /// Write a Zotero export BibTeX file to `.inkycap/zotero-export.bib` inside the
-/// vault. Returns the vault-relative path suitable for `bibliography_override`.
-pub fn write_zotero_export(vault_root: &Path, entries: &[BibEntry]) -> Result<String, String> {
-    let inkycap_dir = vault_root.join(".inkycap");
+/// notebox. Returns the notebox-relative path suitable for `bibliography_override`.
+pub fn write_zotero_export(notebox_root: &Path, entries: &[BibEntry]) -> Result<String, String> {
+    let inkycap_dir = notebox_root.join(".inkycap");
     std::fs::create_dir_all(&inkycap_dir)
         .map_err(|e| format!("Failed to create .inkycap directory: {e}"))?;
     let bib_path = inkycap_dir.join("zotero-export.bib");
@@ -529,21 +529,21 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn vault() -> PathBuf {
-        PathBuf::from("/tmp/vault")
+    fn notebox() -> PathBuf {
+        PathBuf::from("/tmp/notebox")
     }
 
     #[test]
     fn no_inject_when_user_declares() {
         let src = "#import \"/lib.typ\": *\n#bibliography(\"/refs.bib\")\n= Title\n";
-        let out = augment(src, &vault(), &vault().join("references.bib"), None);
+        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
         assert_eq!(out, src);
     }
 
     #[test]
     fn injects_at_end() {
         let src = "#import \"/lib.typ\": *\n= Title\n";
-        let out = augment(src, &vault(), &vault().join("references.bib"), None);
+        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
         assert!(out.contains("#apply-bibliography(\"/references.bib\")"));
         assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
     }
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn injects_at_end_when_no_import() {
         let src = "= Title\nbody\n";
-        let out = augment(src, &vault(), &vault().join("references.bib"), None);
+        let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
         assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
         assert!(out.starts_with("= Title"));
     }
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn injects_with_style() {
         let src = "#import \"/lib.typ\": *\n= Title\n";
-        let out = augment(src, &vault(), &vault().join("references.bib"), Some("apa"));
+        let out = augment(src, &notebox(), &notebox().join("references.bib"), Some("apa"));
         assert!(
             out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")")
         );

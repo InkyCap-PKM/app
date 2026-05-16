@@ -1,11 +1,11 @@
 // Settings panel — modal overlay for configuring user preferences.
-// Organized into tabs: Editor, Appearance, Files, Startup.
+// Organized into tabs.
 
 import { Component, Show, createSignal, createEffect, createResource, For, onMount } from "solid-js";
 import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPaletteLight, setBgPaletteDark } from "../stores/theme";
-import { vaultInfo, vaultRegistry, loadVaultRegistry, openVault } from "../stores/vault";
-import type { UserSettings, AccentSource, BgPalette, VaultRegistryEntry, FileTreeNode } from "../lib/types";
+import { noteboxInfo, noteboxRegistry, loadNoteboxRegistry, openNotebox } from "../stores/notebox";
+import type { UserSettings, AccentSource, BgPalette, NoteboxRegistryEntry, FileTreeNode } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Pencil, Check, X } from "lucide-solid";
@@ -55,13 +55,13 @@ const TABS: { id: SettingsTab; label: string }[] = [
 
 const TAB_SETTING_GROUPS: Record<SettingsTab, (keyof UserSettings)[]> = {
   overview: [],
-  editor: ["editor", "journal_scroll"],
+  editor: ["editor"],
   appearance: ["appearance", "document"],
   files: ["files"],
   citations: ["citations"],
   export: ["export"],
   "creation-rules": [],
-  behaviour: ["startup"],
+  behaviour: ["startup", "journal_scroll"],
 };
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
@@ -217,19 +217,19 @@ function OverviewSection() {
         </div>
       </div>
 
-      <VaultManagementSection />
+      <NoteboxManagementSection />
     </div>
   );
 }
 
-function VaultManagementSection() {
+function NoteboxManagementSection() {
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [addPath, setAddPath] = createSignal("");
   const [addName, setAddName] = createSignal("");
   const [editingPath, setEditingPath] = createSignal<string | null>(null);
   const [editName, setEditName] = createSignal("");
 
-  function startEdit(entry: VaultRegistryEntry) {
+  function startEdit(entry: NoteboxRegistryEntry) {
     setEditingPath(entry.path);
     setEditName(entry.display_name);
   }
@@ -238,10 +238,10 @@ function VaultManagementSection() {
     const name = editName().trim();
     if (!name) return;
     try {
-      await ipc.updateVaultEntry(path, name);
-      await loadVaultRegistry();
+      await ipc.updateNoteboxEntry(path, name);
+      await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", `Failed to rename vault: ${err}`);
+      showToast("error", `Failed to rename notebox: ${err}`);
     }
     setEditingPath(null);
   }
@@ -252,10 +252,10 @@ function VaultManagementSection() {
 
   async function handleRemove(path: string) {
     try {
-      await ipc.removeVaultFromRegistry(path);
-      await loadVaultRegistry();
+      await ipc.removeNoteboxFromRegistry(path);
+      await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", `Failed to remove vault: ${err}`);
+      showToast("error", `Failed to remove notebox: ${err}`);
     }
   }
 
@@ -267,11 +267,11 @@ function VaultManagementSection() {
     }
   }
 
-  async function handleMove(entry: VaultRegistryEntry) {
+  async function handleMove(entry: NoteboxRegistryEntry) {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select new location for vault",
+      title: "Select new location for notebox",
       defaultPath: entry.path,
     });
     if (!selected) return;
@@ -282,26 +282,26 @@ function VaultManagementSection() {
       : selected + "/" + dirName;
 
     try {
-      const result = await ipc.moveVault(entry.path, newPath);
-      await loadVaultRegistry();
+      const result = await ipc.moveNotebox(entry.path, newPath);
+      await loadNoteboxRegistry();
       if (result.was_active) {
-        await openVault(result.new_path);
+        await openNotebox(result.new_path);
       }
-      showToast("info", `Vault moved to ${result.new_path}`);
+      showToast("info", `Notebox moved to ${result.new_path}`);
     } catch (err) {
-      showToast("error", `Failed to move vault: ${err}`);
+      showToast("error", `Failed to move notebox: ${err}`);
     }
   }
 
-  async function browseForNewVault() {
+  async function browseForNewNotebox() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select vault folder",
+      title: "Select notebox folder",
     });
     if (!selected) return;
     setAddPath(selected);
-    const dirName = selected.split("/").pop() ?? "Vault";
+    const dirName = selected.split("/").pop() ?? "Notebox";
     if (!addName()) setAddName(dirName);
   }
 
@@ -309,17 +309,17 @@ function VaultManagementSection() {
     const path = addPath().trim();
     const name = addName().trim();
     if (!path) {
-      showToast("error", "Please select a vault folder.");
+      showToast("error", "Please select a notebox folder.");
       return;
     }
     try {
-      await ipc.registerVault(path, name || undefined);
-      await loadVaultRegistry();
+      await ipc.registerNotebox(path, name || undefined);
+      await loadNoteboxRegistry();
       setShowAddForm(false);
       setAddPath("");
       setAddName("");
     } catch (err) {
-      showToast("error", `Failed to add vault: ${err}`);
+      showToast("error", `Failed to add notebox: ${err}`);
     }
   }
 
@@ -332,29 +332,29 @@ function VaultManagementSection() {
   return (
     <>
       <div class="settings__section-header">
-        <span class="settings__label">Vault Management</span>
+        <span class="settings__label">Notebox Management</span>
         <button
           class="settings__detect-btn"
           onClick={() => setShowAddForm(true)}
           disabled={showAddForm()}
         >
-          New vault
+          New notebox
         </button>
       </div>
 
-      <For each={vaultRegistry()}>
+      <For each={noteboxRegistry()}>
         {(entry) => {
-          const isActive = () => entry.path === vaultInfo()?.path;
+          const isActive = () => entry.path === noteboxInfo()?.path;
           const isEditing = () => editingPath() === entry.path;
 
           return (
-            <div class="settings__row vault-row">
+            <div class="settings__row notebox-row">
               <div class="settings__row-info">
-                <div class="vault-row__name-line">
+                <div class="notebox-row__name-line">
                   <Show
                     when={!isEditing()}
                     fallback={
-                      <div class="vault-row__inline-edit">
+                      <div class="notebox-row__inline-edit">
                         <input
                           class="settings__text-input"
                           value={editName()}
@@ -366,14 +366,14 @@ function VaultManagementSection() {
                           ref={(el) => setTimeout(() => el.focus(), 0)}
                         />
                         <button
-                          class="vault-row__icon-btn"
+                          class="notebox-row__icon-btn"
                           onClick={() => saveEdit(entry.path)}
                           title="Save"
                         >
                           <Check size={14} />
                         </button>
                         <button
-                          class="vault-row__icon-btn vault-row__icon-btn--cancel"
+                          class="notebox-row__icon-btn notebox-row__icon-btn--cancel"
                           onClick={cancelEdit}
                           title="Cancel"
                         >
@@ -384,20 +384,20 @@ function VaultManagementSection() {
                   >
                     <label class="settings__label">{entry.display_name}</label>
                     <button
-                      class="vault-row__edit-btn"
+                      class="notebox-row__edit-btn"
                       onClick={() => startEdit(entry)}
-                      title="Rename vault"
+                      title="Rename notebox"
                     >
                       <Pencil size={12} />
                     </button>
                     <Show when={isActive()}>
-                      <span class="vault-row__active-badge">active</span>
+                      <span class="notebox-row__active-badge">active</span>
                     </Show>
                   </Show>
                 </div>
                 <span class="settings__description">{entry.path}</span>
               </div>
-              <div class="vault-row__actions">
+              <div class="notebox-row__actions">
                 <button
                   class="settings__detect-btn"
                   onClick={() => handleShowInFilesystem(entry.path)}
@@ -423,7 +423,7 @@ function VaultManagementSection() {
       </For>
 
       <Show when={showAddForm()}>
-        <div class="settings__row vault-row vault-row--add-form">
+        <div class="settings__row notebox-row notebox-row--add-form">
           <div class="settings__row-info">
             <input
               class="settings__text-input"
@@ -439,8 +439,8 @@ function VaultManagementSection() {
               {addPath() || "No folder selected"}
             </span>
           </div>
-          <div class="vault-row__actions">
-            <button class="settings__detect-btn" onClick={browseForNewVault}>
+          <div class="notebox-row__actions">
+            <button class="settings__detect-btn" onClick={browseForNewNotebox}>
               Browse
             </button>
             <button
@@ -570,44 +570,6 @@ function EditorSettingsSection() {
           Some visual editor conveniences are only accessible through these tools.
         </p>
       </Show>
-
-      {/* Journal Scroll settings */}
-      <div class="settings__section-header">
-        <span class="settings__label">Journal Scroll</span>
-      </div>
-      <SettingSelect
-        label="Sort by"
-        description="Sort axis applied to every Journal Scroll mode (Date, Tree, Properties)"
-        value={settings.journal_scroll.date_sort}
-        options={[
-          { value: "created", label: "Date created" },
-          { value: "modified", label: "Date modified" },
-          { value: "zid", label: "ZID (YYYYMMDDHHmmss)" },
-        ]}
-        onChange={(v) =>
-          updateSetting(
-            "journal_scroll",
-            "date_sort",
-            v as "created" | "modified" | "zid",
-          )
-        }
-      />
-      <SettingSelect
-        label="Tree mode scope"
-        description="Whether Tree mode includes notes from subfolders of the anchor"
-        value={settings.journal_scroll.tree_scope}
-        options={[
-          { value: "folder", label: "Anchor folder only" },
-          { value: "recursive", label: "Anchor folder + subfolders" },
-        ]}
-        onChange={(v) =>
-          updateSetting(
-            "journal_scroll",
-            "tree_scope",
-            v as "folder" | "recursive",
-          )
-        }
-      />
     </div>
   );
 }
@@ -858,7 +820,7 @@ function FileSettingsSection() {
         description="Where new notes are created"
         value={settings.files.new_note_location}
         options={[
-          { value: "root", label: "Vault root" },
+          { value: "root", label: "Notebox root" },
           { value: "current", label: "Current folder" },
           { value: "specified", label: "Specified folder" },
         ]}
@@ -873,7 +835,7 @@ function FileSettingsSection() {
       <Show when={settings.files.new_note_location === "specified"}>
         <SettingPathText
           label="New note folder"
-          description="Folder path relative to vault root"
+          description="Folder path relative to notebox root"
           value={settings.files.new_note_folder}
           onChange={(v) => updateSetting("files", "new_note_folder", v)}
           suggestions={folderSuggestions}
@@ -1004,7 +966,7 @@ function CitationsSettingsSection() {
           <div class="settings__row-info">
             <label class="settings__label">Bibliography file</label>
             <span class="settings__description">
-              Vault-relative path (e.g. references.bib). Leave empty for auto-detection.
+              Notebox-relative path (e.g. references.bib). Leave empty for auto-detection.
             </span>
           </div>
           <div class="settings__input-with-button">
@@ -1022,10 +984,10 @@ function CitationsSettingsSection() {
                 const selected = await open({
                   multiple: false,
                   filters: [{ name: "Bibliography", extensions: ["bib", "yml", "yaml", "json"] }],
-                  defaultPath: vaultInfo()?.path,
+                  defaultPath: noteboxInfo()?.path,
                 });
                 if (typeof selected === "string" && selected) {
-                  const root = vaultInfo()?.path;
+                  const root = noteboxInfo()?.path;
                   if (root && selected.startsWith(root)) {
                     const rel = selected.slice(root.length).replace(/^[/\\]/, "");
                     updateSetting("citations", "bibliography_path", rel);
@@ -1138,13 +1100,13 @@ function ExportSettingsSection() {
   async function pickFile() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const zipPath = await open({
-      title: "Select markdown vault archive",
+      title: "Select markdown notebox archive",
       // Tauri filter extensions match the final dot-segment only — `tar.gz`
       // wouldn't match `.tar.gz` files. We list `gz` (covers `.tar.gz`) plus
       // `tgz`; the backend validates the actual archive shape and rejects
       // bare `.gz` files that aren't tarballs.
       filters: [
-        { name: "Vault archive", extensions: ["zip", "gz", "tgz"] },
+        { name: "Notebox archive", extensions: ["zip", "gz", "tgz"] },
       ],
     });
     if (!zipPath) return;
@@ -1168,17 +1130,17 @@ function ExportSettingsSection() {
     const source = pickedFile();
     if (!source) return;
 
-    const vaultRoot = (await import("../lib/ipc")).getVaultInfo;
-    const info = await vaultRoot();
+    const noteboxRoot = (await import("../lib/ipc")).getNoteboxInfo;
+    const info = await noteboxRoot();
     if (!info) {
-      setImportStatus("No vault is open. Open a vault first.");
+      setImportStatus("No notebox is open. Open a notebox first.");
       return;
     }
 
     setImporting(true);
     setImportStatus("Importing...");
     try {
-      const result = await ipc.importMarkdownVault(source, info.path, dialect());
+      const result = await ipc.importMarkdownNotebox(source, info.path, dialect());
       let msg = `Imported ${result.notes_converted} note(s) and ${result.files_copied} file(s).`;
       if (result.errors.length > 0) {
         msg += ` ${result.errors.length} error(s): ${result.errors.slice(0, 3).join("; ")}`;
@@ -1203,7 +1165,7 @@ function ExportSettingsSection() {
     <div class="settings__section">
       <div class="settings__label">Import markdown files</div>
       <span class="settings__description">
-        Create an archive (.tar.gz or .zip) of the markdown files that you would like to import then click the button to select it. InkyCap will convert the files into Typst files in your vault and map YAML frontmatter to InkyCap properties as best as possible.
+        Create an archive (.tar.gz or .zip) of the markdown files that you would like to import then click the button to select it. InkyCap will convert the files into Typst files in your notebox and map YAML frontmatter to InkyCap properties as best as possible.
       </span>
       <Show when={!pickedFile()}>
         <div style={{ "margin-top": "8px" }}>
@@ -1359,6 +1321,47 @@ function BehaviourSettingsSection() {
           suggestions={targetSuggestions}
         />
       </Show>
+
+      {/* Journal Scroll settings */}
+      <div class="settings__section-header">
+        <span class="settings__label">Journal Scroll</span>
+      </div>
+      <p class="settings__section-note">
+        Read your notes sorted as a continuous feed. Choose a file to anchor your starting point then scroll down or up to see your notes chronologically.
+      </p>
+      <SettingSelect
+        label="Sort by"
+        description="Sort axis applied to every Journal Scroll mode (Date, Tree, Properties)."
+        value={settings.journal_scroll.date_sort}
+        options={[
+          { value: "created", label: "Date created" },
+          { value: "modified", label: "Date modified" },
+          { value: "zid", label: "zid (YYYYMMDDHHmmss)" },
+        ]}
+        onChange={(v) =>
+          updateSetting(
+            "journal_scroll",
+            "date_sort",
+            v as "created" | "modified" | "zid",
+          )
+        }
+      />
+      <SettingSelect
+        label="Tree mode scope"
+        description="Whether Tree mode includes notes from subfolders of the anchor note's location"
+        value={settings.journal_scroll.tree_scope}
+        options={[
+          { value: "folder", label: "Anchor folder only" },
+          { value: "recursive", label: "Anchor folder + subfolders" },
+        ]}
+        onChange={(v) =>
+          updateSetting(
+            "journal_scroll",
+            "tree_scope",
+            v as "folder" | "recursive",
+          )
+        }
+      />
     </div>
   );
 }

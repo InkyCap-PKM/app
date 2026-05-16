@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum AppEvent {
-    VaultOpened { path: PathBuf },
+    NoteboxOpened { path: PathBuf },
     FileChanged { path: PathBuf, change: ChangeKind },
     FileCreated { path: PathBuf },
     FileDeleted { path: PathBuf },

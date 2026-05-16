@@ -51,7 +51,7 @@ export interface JournalScrollState {
   hasMoreBefore: boolean;
   hasMoreAfter: boolean;
   loading: boolean;
-  /** Vault paths of currently in-view entries; updated by an
+  /** Notebox paths of currently in-view entries; updated by an
    *  IntersectionObserver on each entry frame. */
   visibleEntries: string[];
   /** Scroll-local navigation history — the notes the user has jumped

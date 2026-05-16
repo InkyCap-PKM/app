@@ -19,12 +19,12 @@ pub struct CreationRule {
     pub name: String,
     /// Emoji icon for the toolbar/palette.
     pub icon_emoji: String,
-    /// Path to scaffold file (relative to vault's scaffold folder).
+    /// Path to scaffold file (relative to notebox's scaffold folder).
     /// Empty string means no scaffold.
     #[serde(default)]
     pub scaffold_path: String,
-    /// Target folder for new notes (relative to vault root).
-    /// Empty string means vault root.
+    /// Target folder for new notes (relative to notebox root).
+    /// Empty string means notebox root.
     pub target_folder: String,
     /// Filename pattern with variables (e.g. "{{date:YYYYMMDDHHmmss}}").
     #[serde(default)]
@@ -65,7 +65,7 @@ pub fn default_rules() -> Vec<CreationRule> {
             id: "new-note".to_string(),
             name: "New Note".to_string(),
             icon_emoji: "lucide:file".to_string(),
-            scaffold_path: crate::vault_package::NEW_NOTE_SCAFFOLD_FILE.to_string(),
+            scaffold_path: crate::notebox_package::NEW_NOTE_SCAFFOLD_FILE.to_string(),
             target_folder: String::new(),
             filename_pattern: "{{date:YYYYMMDDHHmmss}}".to_string(),
             creation_mode: "create_and_open".to_string(),
@@ -80,7 +80,7 @@ pub fn default_rules() -> Vec<CreationRule> {
             id: "daily-note".to_string(),
             name: "Daily Note".to_string(),
             icon_emoji: "lucide:calendar-plus".to_string(),
-            scaffold_path: crate::vault_package::DAILY_NOTE_SCAFFOLD_FILE.to_string(),
+            scaffold_path: crate::notebox_package::DAILY_NOTE_SCAFFOLD_FILE.to_string(),
             target_folder: "daily/{{date:YYYY}}".to_string(),
             filename_pattern: "{{date:YYYY-MM-DD}}".to_string(),
             creation_mode: "create_and_open".to_string(),
@@ -173,15 +173,15 @@ pub fn save_rules(rules: &[CreationRule]) -> Result<()> {
 }
 
 /// Resolve the on-disk target directory for a rule, applying the
-/// vault-level fallback when the rule's `target_folder` is empty.
+/// notebox-level fallback when the rule's `target_folder` is empty.
 ///
 /// `fallback_folder` is the user's "New note location" preference
-/// expressed as a path relative to the vault root (empty string = vault
+/// expressed as a path relative to the notebox root (empty string = notebox
 /// root). Variables are expanded in both the rule's folder and the
 /// fallback so e.g. a fallback of `daily/{{date:YYYY}}` still works.
 pub fn resolve_target_dir(
     rule: &CreationRule,
-    vault_root: &std::path::Path,
+    notebox_root: &std::path::Path,
     fallback_folder: &str,
 ) -> PathBuf {
     let raw = if rule.target_folder.is_empty() {
@@ -190,10 +190,10 @@ pub fn resolve_target_dir(
         rule.target_folder.as_str()
     };
     if raw.is_empty() {
-        return vault_root.to_path_buf();
+        return notebox_root.to_path_buf();
     }
     let expanded = scaffolds::expand_variables(raw, "");
-    vault_root.join(&expanded.content)
+    notebox_root.join(&expanded.content)
 }
 
 /// Sanitize a user-supplied filename for use as a `.typ` basename.
@@ -228,7 +228,7 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
 /// `target_folder` is empty. See [`resolve_target_dir`].
 pub fn execute_rule(
     rule: &CreationRule,
-    vault_root: &std::path::Path,
+    notebox_root: &std::path::Path,
     title_override: Option<&str>,
     fallback_folder: &str,
     zid_pattern: &str,
@@ -263,7 +263,7 @@ pub fn execute_rule(
         }
     };
 
-    let target_dir = resolve_target_dir(rule, vault_root, fallback_folder);
+    let target_dir = resolve_target_dir(rule, notebox_root, fallback_folder);
     let filename = format!("{}.typ", expanded_name);
     let file_path = target_dir.join(&filename);
 
@@ -287,7 +287,7 @@ mod tests {
     fn test_execute_new_note_rule() {
         let rules = default_rules();
         let (path, content, cursor) =
-            execute_rule(&rules[0], Path::new("/vault"), None, "", "YYYYMMDDHHmmss")
+            execute_rule(&rules[0], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
                 .expect("new-note default executes");
         let filename = path.file_name().unwrap().to_string_lossy();
         assert!(filename.ends_with(".typ"));
@@ -302,7 +302,7 @@ mod tests {
     fn test_execute_daily_note_rule() {
         let rules = default_rules();
         let (path, _content, _cursor) =
-            execute_rule(&rules[1], Path::new("/vault"), None, "", "YYYYMMDDHHmmss")
+            execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
                 .expect("daily-note default executes");
         assert!(path.to_string_lossy().contains("daily"));
         let filename = path.file_name().unwrap().to_string_lossy();
@@ -313,7 +313,7 @@ mod tests {
     fn test_daily_note_target_uses_year_subfolder() {
         let rules = default_rules();
         let (path, _, _) =
-            execute_rule(&rules[1], Path::new("/vault"), None, "", "YYYYMMDDHHmmss")
+            execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
                 .expect("daily-note default executes");
         let year = chrono::Local::now().format("%Y").to_string();
         let path_str = path.to_string_lossy();
@@ -329,7 +329,7 @@ mod tests {
     fn test_execute_empty_pattern_requires_title_override() {
         let mut rule = default_rules()[0].clone();
         rule.filename_pattern = String::new();
-        let err = execute_rule(&rule, Path::new("/vault"), None, "", "YYYYMMDDHHmmss")
+        let err = execute_rule(&rule, Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
             .expect_err("empty pattern with no override must signal");
         match err {
             InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
@@ -343,7 +343,7 @@ mod tests {
         rule.filename_pattern = String::new();
         let (path, _, _) = execute_rule(
             &rule,
-            Path::new("/vault"),
+            Path::new("/notebox"),
             Some("My Note"),
             "",
             "YYYYMMDDHHmmss",
@@ -360,13 +360,13 @@ mod tests {
         rule.target_folder = String::new();
         let (path, _, _) = execute_rule(
             &rule,
-            Path::new("/vault"),
+            Path::new("/notebox"),
             None,
             "Inbox",
             "YYYYMMDDHHmmss",
         )
         .expect("executes");
-        assert!(path.to_string_lossy().contains("/vault/Inbox/"));
+        assert!(path.to_string_lossy().contains("/notebox/Inbox/"));
     }
 
     #[test]

@@ -37,7 +37,7 @@ pub struct ViewInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VaultIndex {
+pub struct NoteboxIndex {
     pub tags: Vec<(String, usize)>,
     pub property_keys: Vec<(String, usize)>,
 }

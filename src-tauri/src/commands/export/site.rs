@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
@@ -56,20 +56,20 @@ pub async fn export_collection_static_site(
     for row in &data.rows {
         let note_path_buf = PathBuf::from(&row.file_path);
         let content = storage.read_file(&note_path_buf).await?;
-        let content = crate::vault_package::ensure_import(&content);
+        let content = crate::notebox_package::ensure_import(&content);
         let content = rewrite_wikilinks_to_links(&content, &name_to_file);
         let content = style_injection::inject_style_rules(
             &content,
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
         );
-        let content = super::super::typst::maybe_inject_set_vault(&content, &state).await;
+        let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
         let source = prepare_bibliography(content, None, None, true, &state).await;
 
         let mut compiler = state.typst_compiler.lock().await;
         let compiler = compiler
             .as_mut()
-            .ok_or(InkyCapError::VaultNotOpen)?;
+            .ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         let result = compiler

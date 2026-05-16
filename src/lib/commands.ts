@@ -111,7 +111,7 @@ export function registerBuiltinCommands(callbacks: {
 
   registerCommand({
     id: "view:search",
-    title: "Search in Vault",
+    title: "Search in Notebox",
     category: "View",
     keybinding: "Ctrl+Shift+F",
     execute: callbacks.openSearch,
@@ -119,7 +119,7 @@ export function registerBuiltinCommands(callbacks: {
 
   registerCommand({
     id: "view:search-replace",
-    title: "Search and Replace (vault-wide)",
+    title: "Search and Replace (notebox-wide)",
     category: "View",
     execute: () => {
       document.dispatchEvent(
@@ -409,7 +409,7 @@ function registerMarkupCommands() {
     // template with an empty path the user must hand-type (which would
     // produce a fragile relative reference), they drive the attachment
     // picker, copy the chosen file(s) into `settings.files.attachment_folder`,
-    // and emit a vault-root-absolute `#image("/...")` call.
+    // and emit a notebox-root-absolute `#image("/...")` call.
     // The `insert` field here is unused for these two ids — `pickInsert: true`
     // diverts the execute path.
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },

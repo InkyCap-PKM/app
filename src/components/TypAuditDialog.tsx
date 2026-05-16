@@ -2,11 +2,11 @@ import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { TypAuditReport } from "../lib/ipc";
 
-/// Surfaces the result of a vault-wide audit of `.typ` files for InkyCap
+/// Surfaces the result of a notebox-wide audit of `.typ` files for InkyCap
 /// compatibility. Foreign `.typ` files (typically copied in from another
 /// tool, or converted from `.docx` via typst.app/Pandoc) often lack the
-/// inkycap-vault import and the top-level `#note(...)` metadata call —
-/// neither breaks Typst compilation, but together they cause vault
+/// inkycap-notebox import and the top-level `#note(...)` metadata call —
+/// neither breaks Typst compilation, but together they cause notebox
 /// primitives (`#wikilink`, `#tag`, …) to fail and leave the collection
 /// table without title/author/date for those files.
 ///
@@ -106,7 +106,7 @@ const TypAuditDialog: Component<{
 
           <div class="typ-audit__body">
             <Show when={phase() === "auditing"}>
-              <p class="typ-audit__hint">Scanning vault for .typ files…</p>
+              <p class="typ-audit__hint">Scanning notebox for .typ files…</p>
             </Show>
 
             <Show when={error()}>
@@ -128,7 +128,7 @@ const TypAuditDialog: Component<{
                         when={fixCount > 0}
                         fallback={
                           <span>
-                            All files have the inkycap-vault import and a{" "}
+                            All files have the inkycap-notebox import and a{" "}
                             <code>#note(...)</code> call.
                           </span>
                         }
@@ -143,10 +143,10 @@ const TypAuditDialog: Component<{
                     <Show when={r.missingImport.length > 0}>
                       <details class="typ-audit__group" open>
                         <summary>
-                          Missing inkycap-vault <code>#import</code> ({r.missingImport.length})
+                          Missing inkycap-notebox <code>#import</code> ({r.missingImport.length})
                         </summary>
                         <p class="typ-audit__group-hint">
-                          Without this line, vault primitives like{" "}
+                          Without this line, notebox primitives like{" "}
                           <code>#wikilink(...)</code> and <code>#tag(...)</code>{" "}
                           won't resolve when added to the file.
                         </p>

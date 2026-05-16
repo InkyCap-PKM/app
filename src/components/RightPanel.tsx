@@ -7,7 +7,7 @@ import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
-import { indexReady, bumpPropertyVersion } from "../stores/vault";
+import { indexReady, bumpPropertyVersion } from "../stores/notebox";
 import { pickFolder } from "../stores/folderPicker";
 import {
   PROPERTY_TYPE_OPTIONS,
@@ -288,13 +288,13 @@ const RightPanel: Component = () => {
   }
 
   // Refetch metadata and link data when the active note (or any other
-  // note in the vault) gets reindexed. The two events distinguish where
+  // note in the notebox) gets reindexed. The two events distinguish where
   // the change originated:
   //   • `inkycap:note-saved` — the editor in this window finished auto-
   //     saving the active note. writeFileContent waits for the backend
   //     reindex before resolving, so by the time this fires the indices
   //     are up to date.
-  //   • `vault:index-updated` (Tauri event) — the file watcher detected
+  //   • `notebox:index-updated` (Tauri event) — the file watcher detected
   //     an external change (drag-drop, external editor, sync) and
   //     reindexed in the background. The payload's `path` is the file
   //     that changed; we refresh links unconditionally because:
@@ -306,9 +306,9 @@ const RightPanel: Component = () => {
   //         this note's name
   //
   // The earlier bug — Links pane wouldn't refresh after dropping .typ
-  // files into the vault, or after typing a new wikilink — was a missing
+  // files into the notebox, or after typing a new wikilink — was a missing
   // `refetchBacklinks/refetchForwardLinks` here plus no listener for
-  // `vault:index-updated` at all.
+  // `notebox:index-updated` at all.
   const refreshAllLinks = () => {
     refetchBacklinks();
     refetchForwardLinks();
@@ -326,7 +326,7 @@ const RightPanel: Component = () => {
 
   let indexUpdatedUnlisten: UnlistenFn | null = null;
   onMount(async () => {
-    indexUpdatedUnlisten = await listen("vault:index-updated", () => {
+    indexUpdatedUnlisten = await listen("notebox:index-updated", () => {
       refetchMetadata();
       refreshAllLinks();
     });
@@ -440,7 +440,7 @@ const RightPanel: Component = () => {
     return a - b;
   }
 
-  // Debounce the filter input so each keystroke doesn't fire a vault_search
+  // Debounce the filter input so each keystroke doesn't fire a notebox_search
   // IPC. 250ms feels responsive and matches the SearchPanel's cadence.
   const [debouncedFilterQuery, setDebouncedFilterQuery] = createSignal(
     linksFilterQuery(),
@@ -455,7 +455,7 @@ const RightPanel: Component = () => {
     if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
   });
 
-  /// Run the same vault search the left-panel uses (boolean operators,
+  /// Run the same notebox search the left-panel uses (boolean operators,
   /// phrase quotes, tag:/file:/path:/section:/property: filters, /regex/
   /// literals) and surface the result rows so the Links pane can filter
   /// its sections to "links whose target file matches this query". The
@@ -469,7 +469,7 @@ const RightPanel: Component = () => {
     async ({ q, ready }): Promise<SearchResult[] | null> => {
       if (!q || !ready) return null;
       try {
-        return await ipc.vaultSearch(q, 1000, false);
+        return await ipc.noteboxSearch(q, 1000, false);
       } catch {
         return [];
       }
@@ -615,7 +615,7 @@ const RightPanel: Component = () => {
 
   // Per-row context menu state for the Links pane. Mirrors the file
   // tree's "Open in new tab / Open in new window" affordance. We don't
-  // currently surface vault-mutation actions on links (no rename, no
+  // currently surface notebox-mutation actions on links (no rename, no
   // delete) because deleting from a navigation list is too easy to do
   // by accident — those belong on the file tree where the source of
   // truth lives.
@@ -933,7 +933,7 @@ const RightPanel: Component = () => {
     const tab = activeFileTab();
     if (!tab) return;
     try {
-      // Vault-scoped folder picker — `dest` is a vault-relative path
+      // Notebox-scoped folder picker — `dest` is a notebox-relative path
       // ("" for the root), exactly the shape `move_file` expects.
       const slash = tab.path.lastIndexOf("/");
       const currentParent = slash >= 0 ? tab.path.slice(0, slash) : undefined;
@@ -1049,10 +1049,22 @@ const RightPanel: Component = () => {
       {/* Tab bar — always visible so the collapse toggle is accessible */}
       <div class="right-panel__tabs">
         <Show when={activeFileTab()}>
+          {/* File actions (rename/move/delete) act on a single note, so they
+              are disabled while the tab is in Journal Scroll — that view has
+              no single "current file" to operate on. */}
           <button
             class="right-panel__tab"
             onClick={openFileMenu}
-            title="File actions"
+            disabled={(() => {
+              const t = activeFileTab();
+              return !!(t && isScrollEnabled(t.id));
+            })()}
+            title={(() => {
+              const t = activeFileTab();
+              return t && isScrollEnabled(t.id)
+                ? "File actions unavailable in Journal Scroll"
+                : "File actions";
+            })()}
             aria-label="File actions"
           >
             <EllipsisVertical size={18} />
@@ -1182,6 +1194,7 @@ const RightPanel: Component = () => {
                                 propKey={key}
                                 value={value}
                                 onSave={handlePropertySave}
+                                typeHint={ty()}
                               />
                             </div>
                             <button
@@ -1279,7 +1292,7 @@ const RightPanel: Component = () => {
           {/* Links tab */}
           <Show when={activePanel() === "links"}>
             <Show when={!indexReady()}>
-              <p class="sidebar-hint">{"Indexing vault\u2026"}</p>
+              <p class="sidebar-hint">{"Indexing notebox\u2026"}</p>
             </Show>
 
             {/* Toolbar: Sort, Expand/Collapse, More Context, Filter.

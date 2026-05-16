@@ -4,9 +4,9 @@ import { expandFunc } from "./effects";
 
 export interface ProtectedRange { from: number; to: number }
 
-const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/vault.typ"';
-const LEGACY_IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-vault/';
-export function isVaultImportLine(text: string): boolean {
+const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/notebox.typ"';
+const LEGACY_IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-notebox/';
+export function isNoteboxImportLine(text: string): boolean {
   const trimmed = text.trimStart();
   return (
     trimmed.startsWith(CANONICAL_IMPORT_PREFIX) ||
@@ -26,7 +26,7 @@ export function computeProtectedRanges(
     const line = state.doc.line(i);
     const trimmed = line.text.trimStart();
 
-    const isImport = isVaultImportLine(line.text);
+    const isImport = isNoteboxImportLine(line.text);
     const isNote = trimmed.startsWith("#note(");
     const isBibliography = trimmed.startsWith("#bibliography(");
 

@@ -46,6 +46,54 @@
      "control" in a panel or heading row. Update here to retune the
      whole UI's roundedness in one place. */
   --radius-control: 6px;
+
+  /* ── Surface roles ──────────────────────────────────────────────
+     Two coordinated UI-surface styles, distinguished by element ROLE,
+     not by where on screen the element is triggered (a menu is a menu
+     whether it opens from a sidebar or inside the editor).
+
+       --popup-*  Floating, transient surfaces: context menus,
+                  dropdowns, command/slash palettes, suggestion &
+                  autocomplete popups, hover preview tooltips, the
+                  visual-editor pill menu, floating toolbars.
+       --modal-*  Centered, backdropped, dismiss-to-continue dialogs:
+                  Settings, Composer, Export, Quick Open, busy overlay.
+
+     RULE: every such element references these tokens — never hardcode
+     a popup/modal background, border, radius, shadow, or z-index.
+     Stacking uses the --z-menu < --z-modal < --z-toast scale below.
+     The tokens work in plain CSS, CodeMirror EditorView.theme objects,
+     and inline style strings alike. Adding a new menu means pointing
+     at these, not copying literal values from a neighbour. Colour
+     tokens reference the per-theme primitives via var(), so they
+     resolve correctly under every theme/palette — retune the whole
+     UI's popup or modal look from here. (See also CLAUDE.md →
+     Coding Standards → UI surfaces.) */
+
+  /* Popup surface — floating menus, dropdowns, suggestion popups. */
+  --popup-bg: var(--bg-primary);
+  --popup-border-color: var(--border-subtle);
+  --popup-radius: 6px;
+  /* Two-layer shadow: a tight, near-zero-blur "contact" layer gives a
+     crisp, solid edge (the elementary-OS look); a softer ambient layer
+     adds depth without the whole frame going blurry. */
+  --popup-shadow: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 8px rgba(0, 0, 0, 0.14);
+  --popup-padding-block: 4px;       /* vertical padding of the surface */
+  --popup-item-padding: 5px 12px;   /* a standard action-list row */
+
+  /* Modal surface — centered, backdropped dialogs. */
+  --modal-bg: var(--bg-primary);
+  --modal-border-color: var(--border-primary);
+  --modal-radius: 8px;
+  /* Same two-layer approach as --popup-shadow, scaled up for a dialog. */
+  --modal-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 24px rgba(0, 0, 0, 0.18);
+  --modal-backdrop: rgba(0, 0, 0, 0.45);
+
+  /* Stacking order — single source of truth. Toasts sit above modals
+     so errors surface even over an open dialog. */
+  --z-menu: 1000;
+  --z-modal: 2000;
+  --z-toast: 3000;
 }
 
 :root,
@@ -100,7 +148,9 @@
   --syntax-emphasis: #a86430;
   --syntax-strong: #071E22;
   --syntax-strike: #8a9e9a;
-  --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  /* Links sit at the accent itself (no black mix) so they read as a
+     distinct hue against near-black body text rather than blending in. */
+  --syntax-link: var(--accent-color, #1D7874);
   --syntax-mono: #a86430;
   --syntax-mono-bg: #f0f0f0;
   --syntax-quote: #2a6a50;
@@ -113,9 +163,9 @@
   --syntax-type: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
 
   /* Typst syntax decorations */
-  --wikilink: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --wikilink: var(--accent-color, #1D7874);
   --wikilink-bracket: #8a9e9a;
-  --embed: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --embed: var(--accent-color, #1D7874);
   --embed-bracket: #8a9e9a;
   --hashtag: var(--accent-color, #1D7874);
   --hashtag-bg: color-mix(in srgb, var(--accent-color, #1D7874) 12%, white);
@@ -124,7 +174,7 @@
   --highlight-mark: #8a9e9a;
 
   --block-id: #8a9e9a;
-  --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
+  --footnote-ref: var(--accent-color, #1D7874);
   --footnote-def: #4d706a;
 
   /* Code blocks */
@@ -204,7 +254,9 @@
   --syntax-emphasis: #F4C095;
   --syntax-strong: #d8e0e0;
   --syntax-strike: #7a9490;
-  --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  /* A saturated, brighter teal so links read against the dark teal
+     editor background without washing out into the grey body text. */
+  --syntax-link: color-mix(in srgb, var(--accent-color, #1D7874) 72%, white);
   --syntax-mono: #F4C095;
   --syntax-mono-bg: #0c2a2f;
   --syntax-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
@@ -217,9 +269,9 @@
   --syntax-type: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
 
   /* Typst syntax decorations */
-  --wikilink: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --wikilink: color-mix(in srgb, var(--accent-color, #1D7874) 72%, white);
   --wikilink-bracket: #4d706a;
-  --embed: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --embed: color-mix(in srgb, var(--accent-color, #1D7874) 72%, white);
   --embed-bracket: #4d706a;
   --hashtag: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
   --hashtag-bg: color-mix(in srgb, var(--accent-color, #1D7874) 15%, #071e22);
@@ -228,7 +280,7 @@
   --highlight-mark: #4d706a;
 
   --block-id: #4d706a;
-  --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 45%, white);
+  --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 40%, white);
   --footnote-def: #7a9490;
 
   /* Code blocks */
@@ -326,26 +378,26 @@
 
 .wikilink-suggest {
   position: fixed;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 200;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   min-width: 220px;
   max-width: 380px;
   max-height: 260px;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--popup-padding-block) 0;
 }
 
 .wikilink-suggest__item {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 5px 12px;
+  padding: var(--popup-item-padding);
   cursor: pointer;
   font-size: var(--text-md);
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
 }
 
 .wikilink-suggest__item.is-selected {
@@ -399,12 +451,14 @@
 
 .citation-suggest-preview {
   position: fixed;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
   border-left: none;
-  border-radius: 0 6px 6px 0;
-  box-shadow: 4px 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 201;
+  /* Asymmetric radius — this preview butts against the suggest list's
+     right edge, so only the outer corners are rounded. */
+  border-radius: 0 var(--popup-radius) var(--popup-radius) 0;
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   width: 280px;
   padding: 10px 14px;
   font-size: var(--text-md);

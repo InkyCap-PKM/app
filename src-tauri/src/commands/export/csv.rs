@@ -24,7 +24,7 @@ pub async fn export_collection_csv_to_file(
     Ok(())
 }
 
-/// Export a collection view as CSV and return the content as a string. Requires an open vault.
+/// Export a collection view as CSV and return the content as a string. Requires an open notebox.
 #[tauri::command]
 pub async fn export_collection_csv(
     collection_path: String,

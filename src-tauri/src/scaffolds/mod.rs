@@ -25,7 +25,7 @@ use chrono::Local;
 use regex::Regex;
 
 use crate::errors::Result;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
 
 /// Result of expanding a scaffold: the final content and an optional cursor offset.
@@ -35,9 +35,9 @@ pub struct ExpandedScaffold {
     pub cursor_offset: Option<usize>,
 }
 
-/// Read a scaffold file from the vault's scaffold folder and expand variables.
+/// Read a scaffold file from the notebox's scaffold folder and expand variables.
 pub async fn expand_scaffold(
-    storage: &dyn VaultStorage,
+    storage: &dyn NoteboxStorage,
     scaffold_path: &Path,
     title: &str,
 ) -> Result<ExpandedScaffold> {
@@ -47,7 +47,7 @@ pub async fn expand_scaffold(
 
 /// Read a scaffold file and expand variables including `{{zid}}`.
 pub async fn expand_scaffold_with_zid(
-    storage: &dyn VaultStorage,
+    storage: &dyn NoteboxStorage,
     scaffold_path: &Path,
     title: &str,
     zid_pattern: &str,

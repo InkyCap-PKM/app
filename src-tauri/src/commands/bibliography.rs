@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::bibliography::{self, BibEntry};
 
 /// Return all entries from the configured citation source (file or Zotero).
@@ -15,12 +15,12 @@ use crate::typst_pipeline::bibliography::{self, BibEntry};
 pub async fn get_bibliography_entries(
     state: State<'_, AppState>,
 ) -> Result<Vec<BibEntry>, InkyCapError> {
-    let vault_root = state
-        .vault_root
+    let notebox_root = state
+        .notebox_root
         .read()
         .await
         .clone()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
         let settings = state.settings.read().await;
@@ -43,7 +43,7 @@ pub async fn get_bibliography_entries(
             }
         }
         _ => {
-            let bib = bibliography::detect_default(&vault_root, bib_path.as_deref());
+            let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
                 Some(p) => bibliography::parse_bibliography(&p)
                     .map_err(|e| InkyCapError::Typst(e)),
@@ -61,7 +61,7 @@ pub async fn get_file_citations(
     state: State<'_, AppState>,
 ) -> Result<Vec<FileCitation>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let source = storage.read_file(&sanitize_vault_arg(&path)?).await?;
+    let source = storage.read_file(&sanitize_notebox_arg(&path)?).await?;
 
     let keys = bibliography::extract_citations(&source);
     if keys.is_empty() {
@@ -92,12 +92,12 @@ pub async fn get_file_citations(
 
 /// Shared entry loading logic.
 async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapError> {
-    let vault_root = state
-        .vault_root
+    let notebox_root = state
+        .notebox_root
         .read()
         .await
         .clone()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
         let settings = state.settings.read().await;
@@ -120,7 +120,7 @@ async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapEr
             }
         }
         _ => {
-            let bib = bibliography::detect_default(&vault_root, bib_path.as_deref());
+            let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
                 Some(p) => bibliography::parse_bibliography(&p)
                     .map_err(|e| InkyCapError::Typst(e)),
@@ -136,17 +136,17 @@ async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapEr
 pub async fn refresh_bibliography(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, InkyCapError> {
-    let vault_root = state
-        .vault_root
+    let notebox_root = state
+        .notebox_root
         .read()
         .await
         .clone()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     let citations = {
         let settings = state.settings.read().await;
         settings.citations.clone()
     };
-    Ok(crate::state::configure_bibliography(&vault_root, &citations))
+    Ok(crate::state::configure_bibliography(&notebox_root, &citations))
 }
 
 /// Return the count of entries skipped during the most recent BibTeX parse
@@ -172,12 +172,12 @@ pub async fn get_reference_notes(
     key: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<bibliography::RefNote>, InkyCapError> {
-    let vault_root = state
-        .vault_root
+    let notebox_root = state
+        .notebox_root
         .read()
         .await
         .clone()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
         let settings = state.settings.read().await;
@@ -220,7 +220,7 @@ pub async fn get_reference_notes(
             }
         }
         _ => {
-            let bib = bibliography::detect_default(&vault_root, bib_path.as_deref());
+            let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
                 Some(p) => {
                     let notes = bibliography::get_entry_notes(&p, &key)
@@ -501,7 +501,7 @@ pub struct AggregatedCitation {
     /// Total occurrence count across all input paths (a single note
     /// citing the same key twice counts twice).
     pub count: usize,
-    /// Distinct vault-relative paths of notes that cite this key,
+    /// Distinct notebox-relative paths of notes that cite this key,
     /// preserved in input order.
     pub paths: Vec<String>,
     /// Zotero library item key, when the bibliography is Zotero-backed —
@@ -534,11 +534,11 @@ pub async fn aggregate_citations(
         HashMap::new();
 
     for raw_path in &paths {
-        let vault_path = match sanitize_vault_arg(raw_path) {
+        let notebox_path = match sanitize_notebox_arg(raw_path) {
             Ok(p) => p,
             Err(_) => continue,
         };
-        let source = match storage.read_file(&vault_path).await {
+        let source = match storage.read_file(&notebox_path).await {
             Ok(s) => s,
             Err(_) => continue,
         };

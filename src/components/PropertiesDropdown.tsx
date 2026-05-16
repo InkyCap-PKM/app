@@ -34,6 +34,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { ArrowLeft } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import type { PropertyFilter } from "../stores/journal-scroll";
@@ -148,6 +149,10 @@ const PropertiesDropdown: Component<PropertiesDropdownProps> = (props) => {
   });
 
   return (
+    // Portal to <body> so the dropdown escapes the editor header's
+    // stacking context (which has its own z-index for the lip shadow);
+    // otherwise --z-menu can't lift it above the right sidebar.
+    <Portal>
     <div class="properties-dropdown" ref={popoverRef} role="dialog">
       {/* ── View 1: property picker ── */}
       <Show when={!selectedKey()}>
@@ -194,7 +199,7 @@ const PropertiesDropdown: Component<PropertiesDropdownProps> = (props) => {
             when={propertyKeys()?.length}
             fallback={
               <div class="properties-dropdown__empty">
-                No user properties in this vault yet.
+                No user properties in this notebox yet.
               </div>
             }
           >
@@ -324,6 +329,7 @@ const PropertiesDropdown: Component<PropertiesDropdownProps> = (props) => {
         </div>
       </Show>
     </div>
+    </Portal>
   );
 };
 

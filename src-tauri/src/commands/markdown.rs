@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 use crate::errors::InkyCapError;
-use crate::markdown::vault_import::{self, ImportResult};
+use crate::markdown::notebox_import::{self, ImportResult};
 use crate::markdown::{
     markdown_to_typst, typst_to_markdown, MarkdownToTypstOptions, TypstToMarkdownOptions,
     UnconvertibleMode,
 };
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 
 /// Read clipboard text and convert from markdown to Typst in one step.
 /// Bypasses webview clipboard restrictions by reading from the native
@@ -34,7 +34,7 @@ pub async fn paste_markdown_as_typst(
     };
 
     let attachment_folder = crate::settings::load_settings().files.attachment_folder;
-    // Paste-from-clipboard has no source vault to inspect for dialect;
+    // Paste-from-clipboard has no source notebox to inspect for dialect;
     // default to Standard so prices like `$3000`, version refs like
     // `#42`, and other literal hashes survive intact.
     let options = MarkdownToTypstOptions {
@@ -140,12 +140,12 @@ pub async fn convert_markdown_to_typst(
     }
 }
 
-/// Import a markdown vault from a zip file or directory into the target
-/// vault. `dialect` selects the source-markdown flavor ("standard" or
+/// Import a markdown notebox from a zip file or directory into the target
+/// notebox. `dialect` selects the source-markdown flavor ("standard" or
 /// "obsidian"); pass `None` to let the importer auto-detect by looking
 /// for an `.obsidian/` folder in the source.
 #[tauri::command]
-pub async fn import_markdown_vault(
+pub async fn import_markdown_notebox(
     source_path: String,
     target_path: String,
     dialect: Option<String>,
@@ -166,18 +166,18 @@ pub async fn import_markdown_vault(
         Some("obsidian") => crate::markdown::md_to_typst::MarkdownDialect::Obsidian,
         Some("standard") => crate::markdown::md_to_typst::MarkdownDialect::Standard,
         _ => match archive_kind {
-            Some(ArchiveKind::Zip) => vault_import::detect_dialect_for_zip(&source),
-            Some(ArchiveKind::TarGz) => vault_import::detect_dialect_for_tarball(&source),
-            None => vault_import::detect_dialect_for_directory(&source),
+            Some(ArchiveKind::Zip) => notebox_import::detect_dialect_for_zip(&source),
+            Some(ArchiveKind::TarGz) => notebox_import::detect_dialect_for_tarball(&source),
+            None => notebox_import::detect_dialect_for_directory(&source),
         },
     };
 
     let result = match archive_kind {
-        Some(ArchiveKind::Zip) => vault_import::import_from_zip(&source, &target, resolved_dialect),
+        Some(ArchiveKind::Zip) => notebox_import::import_from_zip(&source, &target, resolved_dialect),
         Some(ArchiveKind::TarGz) => {
-            vault_import::import_from_tarball(&source, &target, resolved_dialect)
+            notebox_import::import_from_tarball(&source, &target, resolved_dialect)
         }
-        None => vault_import::import_from_directory(&source, &target, resolved_dialect),
+        None => notebox_import::import_from_directory(&source, &target, resolved_dialect),
     };
 
     Ok(result)
@@ -206,7 +206,7 @@ fn archive_kind_for(path: &Path) -> Option<ArchiveKind> {
     }
 }
 
-/// Probe a source vault (directory or .zip) and report which markdown
+/// Probe a source notebox (directory or .zip) and report which markdown
 /// dialect the importer would use by default. The frontend calls this
 /// after the user picks a file so the import dialog can preselect the
 /// toggle without committing the user to anything.
@@ -217,11 +217,11 @@ pub async fn detect_markdown_dialect(source_path: String) -> Result<String, Stri
         return Err(format!("Source path does not exist: {}", source_path));
     }
     let detected = if source.is_dir() {
-        vault_import::detect_dialect_for_directory(&source)
+        notebox_import::detect_dialect_for_directory(&source)
     } else {
         match archive_kind_for(&source) {
-            Some(ArchiveKind::Zip) => vault_import::detect_dialect_for_zip(&source),
-            Some(ArchiveKind::TarGz) => vault_import::detect_dialect_for_tarball(&source),
+            Some(ArchiveKind::Zip) => notebox_import::detect_dialect_for_zip(&source),
+            Some(ArchiveKind::TarGz) => notebox_import::detect_dialect_for_tarball(&source),
             None => {
                 return Err("Source must be a directory, .zip, or .tar.gz file".to_string());
             }

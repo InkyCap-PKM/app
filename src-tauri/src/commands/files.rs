@@ -5,8 +5,8 @@ use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
 
 pub use crate::storage::traits::FileTreeNode;
 
@@ -41,18 +41,18 @@ fn file_times(path: &std::path::Path) -> (u64, u64) {
     (mtime, ctime)
 }
 
-/// Read the UTF-8 content of a file in the vault. Requires an open vault.
+/// Read the UTF-8 content of a file in the notebox. Requires an open notebox.
 #[tauri::command]
 pub async fn read_file_content(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     storage.read_file(&path_buf).await
 }
 
-/// Return the vault's directory tree as a flat list of nodes. Requires an open vault.
+/// Return the notebox's directory tree as a flat list of nodes. Requires an open notebox.
 #[tauri::command]
 pub async fn get_file_tree(
     state: State<'_, AppState>,
@@ -67,7 +67,7 @@ pub async fn get_file_metadata(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<NoteMetadata, InkyCapError> {
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     {
         let index = state.property_index.read().await;
@@ -76,7 +76,7 @@ pub async fn get_file_metadata(
         }
     }
 
-    // Fallback: file isn't in the index yet (initial vault scan may have
+    // Fallback: file isn't in the index yet (initial notebox scan may have
     // missed it, or it was created out-of-band). Read it and reindex on
     // demand so the panel doesn't stay permanently blank until the user
     // edits the file.
@@ -99,7 +99,7 @@ pub async fn get_backlinks(
     state: State<'_, AppState>,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let link_index = state.link_index.read().await;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     let backlinks = link_index.get_backlinks(&path_buf);
     Ok(backlinks
@@ -127,7 +127,7 @@ pub async fn get_forward_links(
     state: State<'_, AppState>,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let link_index = state.link_index.read().await;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     let links = link_index.get_forward_links(&path_buf);
     Ok(links
@@ -178,7 +178,7 @@ pub async fn get_outbound_links(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<OutboundLink>, InkyCapError> {
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     // Read raw wikilink targets from the note's metadata, falling back to
     // an on-demand reindex if the property index hasn't seen this file
@@ -271,7 +271,7 @@ pub async fn write_file_content(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     storage.write_file(&path_buf, &content).await?;
 
     // Re-index the note after saving
@@ -290,15 +290,15 @@ pub async fn update_property(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     let content = storage.read_file(&path_buf).await?;
-    // Ensure the inkycap-vault import is present before the rewriter
+    // Ensure the inkycap-notebox import is present before the rewriter
     // synthesizes a `#note(...)` call. Without this, a note that has no
     // import yet gets a `#note(...)` call referencing an unbound symbol —
     // `typst query` fails on reindex, and the new property never reaches
     // the property index, leaving the panel blank after first add.
-    let content = crate::vault_package::ensure_import(&content);
+    let content = crate::notebox_package::ensure_import(&content);
     let updated = note_rewriter::update_note_property(&content, &key, &value);
     storage.write_file(&path_buf, &updated).await?;
 
@@ -309,30 +309,30 @@ pub async fn update_property(
 }
 
 /// Resolve an embed target (e.g. "image.png") to an absolute file path.
-/// Searches all files in the vault by filename (case-insensitive, shortest path).
+/// Searches all files in the notebox by filename (case-insensitive, shortest path).
 #[tauri::command]
 pub async fn resolve_embed_path(
     target: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root
         .as_ref()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     // Strip any size suffix (e.g. "image.png|400" -> "image.png")
     let clean_target = target.split('|').next().unwrap_or(&target).trim();
 
-    // If the target contains a path separator, treat it as a vault-root-
+    // If the target contains a path separator, treat it as a notebox-root-
     // relative path (with or without a leading slash, matching Typst's own
     // `#image("/assets/foo.png")` semantics). Resolve directly and skip
     // the filename search. Defends against `..` traversal via
-    // validate_vault_path.
+    // validate_notebox_path.
     if clean_target.contains('/') || clean_target.contains('\\') {
         let stripped = clean_target.trim_start_matches('/').trim_start_matches('\\');
         let candidate = root.join(stripped);
-        if let Ok(resolved) = crate::storage::path::validate_vault_path(root, &candidate) {
+        if let Ok(resolved) = crate::storage::path::validate_notebox_path(root, &candidate) {
             if resolved.is_file() {
                 return Ok(Some(resolved.display().to_string()));
             }
@@ -340,7 +340,7 @@ pub async fn resolve_embed_path(
         return Ok(None);
     }
 
-    // Bare filename — search the whole vault by name.
+    // Bare filename — search the whole notebox by name.
     let ext = std::path::Path::new(clean_target)
         .extension()
         .map(|e| e.to_string_lossy().into_owned())
@@ -416,7 +416,7 @@ pub async fn resolve_wikilink(
 
 /// Create a new note file. Returns the full path of the created file.
 /// If scaffold_content is provided, it is used as the initial content.
-/// Otherwise the file starts with the inkycap-vault import line.
+/// Otherwise the file starts with the inkycap-notebox import line.
 #[tauri::command]
 pub async fn create_note(
     name: String,
@@ -425,8 +425,8 @@ pub async fn create_note(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     // Build the target path
     let dir = if folder.is_empty() {
@@ -454,7 +454,7 @@ pub async fn create_note(
 
     // storage.write_file creates any missing parent directories through the
     // same validated path pipeline, so no std::fs bypass is needed here.
-    let import_line = crate::vault_package::import_line();
+    let import_line = crate::notebox_package::import_line();
     let content = scaffold_content.unwrap_or_else(|| {
         format!("{import_line}\n\n")
     });
@@ -481,11 +481,11 @@ pub async fn get_note_preview(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
     let max = max_chars.unwrap_or(200);
-    let body = crate::vault_package::strip_note_preamble(&content);
+    let body = crate::notebox_package::strip_note_preamble(&content);
     let preview: String = body.chars().take(max).collect();
     Ok(preview)
 }
@@ -506,7 +506,7 @@ pub async fn get_note_headings(
     state: State<'_, AppState>,
 ) -> Result<Vec<HeadingInfo>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(extract_headings(&content))
 }
@@ -535,7 +535,7 @@ pub async fn ensure_heading_label(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
     let headings = extract_headings(&content);
@@ -672,8 +672,8 @@ pub async fn get_backlink_context(
     const MAX_SNIPPET_CHARS: usize = 200;
 
     let storage = state.get_storage().await?;
-    let source = sanitize_vault_arg(&source_path)?;
-    let target = sanitize_vault_arg(&target_path)?;
+    let source = sanitize_notebox_arg(&source_path)?;
+    let target = sanitize_notebox_arg(&target_path)?;
 
     let content = storage.read_file(&source).await?;
 
@@ -749,18 +749,18 @@ pub struct PotentialLink {
 /// Find notes that mention the current note's filename stem as a phrase but
 /// don't yet wikilink to it. Useful for surfacing missed link opportunities.
 ///
-/// Strategy: phrase-search the vault for the stem via the existing inverted
+/// Strategy: phrase-search the notebox for the stem via the existing inverted
 /// index, then filter out (a) the current note itself, (b) any note already
 /// known to link to it (resolved or unresolved targets that match by stem),
 /// and (c) results whose only "match" is the wikilink call we'd otherwise
 /// suggest creating. Result count is capped to keep the panel snappy on
-/// large vaults.
+/// large noteboxes.
 #[tauri::command]
 pub async fn get_potential_links(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<PotentialLink>, InkyCapError> {
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     let stem = path_buf
         .file_stem()
@@ -838,7 +838,7 @@ pub async fn get_potential_links(
             // SearchResult uses i64 (Tantivy/Hayagriva legacy); clamp to
             // u64 to match the surrounding LinkInfo / FileTreeNode shape.
             // Negative timestamps would only appear for pre-1970 ctime
-            // values, which we never see for vault files.
+            // values, which we never see for notebox files.
             modified_time: r.modified_time.max(0) as u64,
             created_time: r.created_time.max(0) as u64,
         });

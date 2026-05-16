@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features include:
+InkyCap is a Tauri-based, notebox-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features include:
 
 1. Reciprocal note-linking with wikilinks and automatic backlinks at the center of the navigation model
-2. Typed, vault-queryable metadata that's portable to any Typst tool (via the `inkycap-vault` Typst package)
+2. Typed, notebox-queryable metadata that's portable to any Typst tool (via the `inkycap-notebox` Typst package)
 3. Three editor modes: source (full Typst), visual (WYSIWYM with honest fallback to raw markup), reading (rendered)
 4. First-class bibliography with a dedicated References sidebar tab
-5. Self-contained vaults that compile in any Typst environment
+5. Self-contained noteboxes that compile in any Typst environment
 6. Academic publishing and research-specific workflows
 7. First-class free-form writing options with a verse mode that respects idiosyncratic spacing.
 
@@ -20,7 +20,7 @@ InkyCap is a Tauri-based, vault-style **Typst editor** optimized for writing, ac
 "can Typst do this natively?"** Native means: a built-in function, show
 rule, set rule, label/query, package primitive, or behaviour of the
 `typst` / `typst-pdf` / `typst-html` / `typst-syntax` crates. The
-`inkycap-vault` Typst package is a first-class extension surface — adding
+`inkycap-notebox` Typst package is a first-class extension surface — adding
 a helper to `lib.typ` counts as the Typst-native answer.
 
 This isn't a stylistic preference. Typst is the source of truth for the
@@ -32,12 +32,12 @@ The order of preference, strictly:
 1. **Built-in Typst feature.** Show rule, set rule, `#metadata` + label
    + `query()`, `context`, the `typst::syntax` AST, `typst-pdf`'s own
    PDF/A and PDF/UA standards, etc.
-2. **`inkycap-vault` package extension.** Add a function to `lib.typ`
+2. **`inkycap-notebox` package extension.** Add a function to `lib.typ`
    so the Typst expression lives in `.typ` where it can be edited and
    tested. Rust then emits a single function call.
 3. **Rust glue that orchestrates the above.** A thin layer that decides
    *when* to invoke a Typst feature, validates user input at trust
-   boundaries, or threads per-vault state — but doesn't reimplement
+   boundaries, or threads per-notebox state — but doesn't reimplement
    parsing, evaluation, or layout work Typst already does.
 4. **Custom non-Typst code, as a last resort.** Only when the native
    path is provably unreachable, *and* the gap is necessary to ship a
@@ -76,21 +76,21 @@ In the visual editor, all Typst function markup that is **not** in the simple di
 - Interactive functions (`wikilink`, `tag`, `link`) always render as semantic widgets (no pill).
 - Unknown `#func[content]` calls use the same pill pattern via the default case.
 
-### Metadata via the `inkycap-vault` package
+### Metadata via the `inkycap-notebox` package
 
-All vault primitives (`note`, `tag`, `wikilink`, `link-ref`, `embed`, `callout`, `verse`, `set-vault`) live in a Typst package bundled with the vault at `.inkycap/packages/inkycap-vault/<version>/`. Notes auto-import via `#import "/.inkycap/packages/inkycap-vault/<version>/lib.typ": *`. Backlink scanning, tag indexing, and properties all flow through `typst query` against stable labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`).
+All notebox primitives (`note`, `tag`, `wikilink`, `link-ref`, `embed`, `callout`, `verse`, `set-notebox`) live in a Typst package bundled with the notebox at `.inkycap/packages/inkycap-notebox/<version>/`. Notes auto-import via `#import "/.inkycap/packages/inkycap-notebox/<version>/lib.typ": *`. Backlink scanning, tag indexing, and properties all flow through `typst query` against stable labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`).
 
 Document properties are the typed arguments to a `#note(...)` call at the top of the file, optionally materialized via the inline property panel.
 
-### Path arguments in note source are vault-root-absolute
+### Path arguments in note source are notebox-root-absolute
 
 Any InkyCap code path that emits an `image`, `read`, `embed`, or
 `bibliography` call into a note's source writes a path that starts with
-`/` (the Typst "project root", which we configure to the vault root).
+`/` (the Typst "project root", which we configure to the notebox root).
 Relative paths are tolerated when a user hand-authors them, but never
 emitted by InkyCap itself — they are fragile under note moves and break
 under merged collection export. Drag-and-drop, paste-image, the `/`
-command palette's image/embed entries, and markdown vault import all
+command palette's image/embed entries, and markdown notebox import all
 funnel attachments into `settings.files.attachment_folder` and emit
 `#image("/<folder>/<file>")`-shaped calls. When inlining a note's
 content into a synthetic document (merged export today, more later), or
@@ -100,7 +100,7 @@ AST-based rewriter that all such call sites share.
 
 ### Architectural extensibility
 
-- All file I/O goes through a `VaultStorage` trait (prepares for sync backends)
+- All file I/O goes through a `NoteboxStorage` trait (prepares for sync backends)
 - An event bus carries all significant app events (prepares for plugin hooks)
 - A `LinkIndex` tracks forward/backward links between notes (backed by `typst query`)
 - Extension points are defined as an enum even before runtime loading exists
@@ -130,24 +130,24 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Avoid hard-coding values into user interface elements, keep them dynamic and responsive to the user's system's affordances wherever possible.
 
 ### Modularity & extensibility
-- Architectural seams (`VaultStorage`, event bus, `LinkIndex`, extension enums) must hide their implementations behind stable interfaces. Swapping a sync backend or compile path should not ripple into callers.
-- New features land as composable units (CodeMirror extensions, vault commands, event-bus subscribers), not as edits scattered through unrelated modules.
+- Architectural seams (`NoteboxStorage`, event bus, `LinkIndex`, extension enums) must hide their implementations behind stable interfaces. Swapping a sync backend or compile path should not ripple into callers.
+- New features land as composable units (CodeMirror extensions, notebox commands, event-bus subscribers), not as edits scattered through unrelated modules.
 - Define extension shapes (traits, event types, enum variants) early even if no runtime loader exists yet — future plugins should slot in additively, not via breaking changes.
 - Cross-cutting concerns (logging, error reporting, i18n) flow through dedicated layers; never inline them ad hoc.
 
 ### Performance & efficiency
 - The Typst compile loop is the hot path. Incremental compilation, debounced edits, and cached `typst query` results are the default — not the optimization.
-- Vaults of thousands of notes must remain responsive. Iterate, stream, and index — don't load whole vaults into memory when an iterator suffices.
+- Noteboxes of thousands of notes must remain responsive. Iterate, stream, and index — don't load whole noteboxes into memory when an iterator suffices.
 - Instrument key paths (compile time, query time, indexer time) from the outset so regressions surface before users notice.
 - Frontend: keep Solid.js signals granular and CodeMirror decoration updates incremental. Avoid full re-renders on every keystroke.
 
 ### Security & privacy
-- InkyCap is local-first. No telemetry, analytics, or remote logging by default. Vault contents never leave the user's device unless they explicitly opt into a sync backend.
+- InkyCap is local-first. No telemetry, analytics, or remote logging by default. Notebox contents never leave the user's device unless they explicitly opt into a sync backend.
 - Treat note contents and filesystem paths as sensitive. They do not appear in any outbound request, including crash reports or error telemetry, should those ever exist.
-- Tauri capabilities use the narrowest allowlist that works. Filesystem access stays scoped to the active vault root; commands exposed to the frontend follow the principle of least privilege.
-- Validate untrusted input at every boundary — vault content can come from other tools, imported packages, or shared vaults. Never `eval` user content; never shell-out with unsanitized paths; sanitize anything that flows into a renderer.
+- Tauri capabilities use the narrowest allowlist that works. Filesystem access stays scoped to the active notebox root; commands exposed to the frontend follow the principle of least privilege.
+- Validate untrusted input at every boundary — notebox content can come from other tools, imported packages, or shared noteboxes. Never `eval` user content; never shell-out with unsanitized paths; sanitize anything that flows into a renderer.
 - Vet dependencies before adding them. Prefer narrow, well-maintained crates and npm packages over kitchen-sink frameworks. Supply chain is a security surface; review transitive dependencies on additions.
-- When sync arrives, end-to-end encryption is the design baseline, not a v2 ask. Architect interfaces (`VaultStorage`, sync transport) so an encryption layer can be inserted without redesign.
+- When sync arrives, end-to-end encryption is the design baseline, not a v2 ask. Architect interfaces (`NoteboxStorage`, sync transport) so an encryption layer can be inserted without redesign.
 
 ## Technology Stack
 
@@ -162,7 +162,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 ```
 /                              Project root
 ├── CLAUDE.md                  This file
-├── inkycap-vault/             Typst package bundled into vaults
+├── inkycap-notebox/             Typst package bundled into noteboxes
 ├── scripts/                   Build/setup scripts (e.g. Tinymist downloader)
 ├── src-tauri/                 Rust backend
 └── src/                       Solid.js frontend
@@ -175,7 +175,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Prefer structured error types over string errors
 - All Tauri commands should be async where I/O is involved
 - File paths handled with `std::path::PathBuf`, not string manipulation
-- The `VaultStorage` trait is the only interface for file I/O — never bypass it
+- The `NoteboxStorage` trait is the only interface for file I/O — never bypass it
 - **UTF-8 correctness in string transforms.** Note content is full of multi-byte
   characters (em-dashes, smart quotes, accented Latin, CJK, RTL scripts). When
   transforming a `&str`, never construct the output by pushing individual `u8`
@@ -270,6 +270,28 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Instead, distinguish heading/label elements with `font-weight: 600`, subtle `letter-spacing` (0.3–0.5px), muted color (`--fg-muted` / `--fg-dim`), or a border/background — not capitalization transforms.
 - This applies everywhere: sidebar headings, settings section labels, command palette categories, diagnostic badges, collection metadata labels.
 
+### UI surfaces (menus, popups, dialogs)
+- Floating, transient surfaces — context menus, dropdowns, command/`/`
+  palettes, suggestion & autocomplete popups, hover preview tooltips,
+  the visual-editor pill menu, floating toolbars — use the **`--popup-*`**
+  tokens (`--popup-bg`, `--popup-border-color`, `--popup-radius`,
+  `--popup-shadow`, `--popup-padding-block`, `--popup-item-padding`).
+- Centered, backdropped, dismiss-to-continue dialogs — Settings,
+  Composer, Export, Quick Open, command palette overlay, the busy
+  overlay — use the **`--modal-*`** tokens (`--modal-bg`,
+  `--modal-border-color`, `--modal-radius`, `--modal-shadow`,
+  `--modal-backdrop`).
+- Stacking is the three-tier scale: **`--z-menu` < `--z-modal` <
+  `--z-toast`**. Never invent a raw `z-index` for these elements.
+- **Never hardcode a popup or modal background, border, radius, shadow,
+  or z-index.** The distinction is by element *role*, not by where on
+  screen it is triggered — a menu is a menu whether it opens from a
+  sidebar or inside the editor. Tokens are defined and documented in
+  [src/styles/themes.css](src/styles/themes.css); they work in plain
+  CSS, CodeMirror `EditorView.theme` objects, and inline `style`
+  strings alike. Adding a new menu means referencing them, not copying
+  literal values from a neighbour.
+
 ### General
 - All user-facing text should go through i18n from the start (even if only English is supported initially)
 - Test the Typst compile pipeline against representative documents — round-trip identity (source ↔ visual mode) is a load-bearing invariant
@@ -282,7 +304,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 
 ## Where to start
 
-If you're picking this up fresh, start by reading this file and exploring the codebase. Run `npm run tauri dev` to launch the app. The `inkycap-vault/` directory contains the Typst package that defines vault primitives — `lib.typ` is the entry point.
+If you're picking this up fresh, start by reading this file and exploring the codebase. Run `npm run tauri dev` to launch the app. The `inkycap-notebox/` directory contains the Typst package that defines notebox primitives — `lib.typ` is the entry point.
 
 ## Reference material
 

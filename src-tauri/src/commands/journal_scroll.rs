@@ -18,7 +18,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::scanner::property_index::PropertyIndex;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
+use crate::storage::sanitize_notebox_arg;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ScrollQuery {
@@ -34,7 +34,7 @@ pub struct ScrollQuery {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScrollFilter {
-    /// All notes in the vault.
+    /// All notes in the notebox.
     All,
     /// Notes within a folder (recursive when set).
     Folder { path: PathBuf, recursive: bool },
@@ -79,7 +79,7 @@ pub async fn run_scroll_query(
     query: ScrollQuery,
     state: State<'_, AppState>,
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
-    let anchor_path = sanitize_vault_arg(&query.anchor)?;
+    let anchor_path = sanitize_notebox_arg(&query.anchor)?;
     let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
     Ok(slice_around_anchor(&sorted, &anchor_path, query.offset, query.limit))
 }
@@ -107,8 +107,8 @@ pub async fn find_offset_in_scroll_query(
     query: FindInScrollQuery,
     state: State<'_, AppState>,
 ) -> Result<Option<i32>, InkyCapError> {
-    let anchor_path = sanitize_vault_arg(&query.anchor)?;
-    let target_path = sanitize_vault_arg(&query.target)?;
+    let anchor_path = sanitize_notebox_arg(&query.anchor)?;
+    let target_path = sanitize_notebox_arg(&query.target)?;
     let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
     let anchor_str = anchor_path.display().to_string();
     let target_str = target_path.display().to_string();
@@ -217,7 +217,7 @@ pub async fn compute_connection_flags(
     paths: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConnectionFlags>, InkyCapError> {
-    let anchor_path = sanitize_vault_arg(&anchor)?;
+    let anchor_path = sanitize_notebox_arg(&anchor)?;
 
     // Lock order: link_index before property_index (see AppState comment).
     let (outgoing, incoming) = {
@@ -242,7 +242,7 @@ pub async fn compute_connection_flags(
 
     let mut out = Vec::with_capacity(paths.len());
     for p in &paths {
-        let path = match sanitize_vault_arg(p) {
+        let path = match sanitize_notebox_arg(p) {
             Ok(pp) => pp,
             Err(_) => continue,
         };

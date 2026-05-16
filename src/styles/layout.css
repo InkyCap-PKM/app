@@ -119,6 +119,21 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* Bottom lip shadow — confined to the content column (not the full-width
+   status bar), so content appears to slide under the status bar only
+   where the two actually meet. Inset by 1px to clear the body borders. */
+.main-content::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 0;
+  height: 4px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.22), transparent);
 }
 
 .main-content__tabs {
@@ -235,7 +250,7 @@
   padding: 0 4px;
 }
 
-/* Centered vault-relative path of the active file. The two flex spacers
+/* Centered notebox-relative path of the active file. The two flex spacers
    on either side of this span do the centering; the inner text is
    allowed to ellipsize when the path doesn't fit. */
 .status-bar__path {
@@ -256,7 +271,7 @@
 }
 
 .status-bar__path-rename {
-  /* No fixed dimensions — sizes to the icon (matches the .status-bar__vault-name
+  /* No fixed dimensions — sizes to the icon (matches the .status-bar__notebox-name
      button's approach so both status-bar glyphs render at the same scale). */
   display: inline-flex;
   align-items: center;
@@ -330,7 +345,7 @@
 }
 
 /* File tree root drop zone — wraps the tree so a drop released in the
-   empty space below the last row moves the item to the vault root. The
+   empty space below the last row moves the item to the notebox root. The
    padding guarantees that droppable empty space always exists, even
    when the tree is taller than the panel and scrolled to the bottom. */
 .left-sidebar__tree-root {
@@ -440,6 +455,19 @@ svg.lucide {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 180px;
+}
+
+/* Leading icon marking a tab that holds a Journal Scroll view. */
+.tab__icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--fg-dim);
+}
+
+.tab__icon svg {
+  width: 13px;
+  height: 13px;
 }
 
 .tab__close {
@@ -593,13 +621,13 @@ svg.lucide {
   position: absolute;
   top: 100%;
   right: 0;
-  z-index: 100;
+  z-index: var(--z-menu);
   min-width: 180px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 4px 0;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
   margin-top: 2px;
 }
 
@@ -840,13 +868,13 @@ svg.lucide {
 /* Context menu (shared by view tabs and sidebar) */
 .context-menu {
   position: fixed;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 200;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   min-width: 120px;
-  padding: 4px 0;
+  padding: var(--popup-padding-block) 0;
 }
 
 .context-menu__item {
@@ -855,8 +883,8 @@ svg.lucide {
   text-align: left;
   background: none;
   border: none;
-  color: var(--fg-secondary);
-  padding: 6px 16px;
+  color: var(--fg-primary);
+  padding: var(--popup-item-padding);
   font-size: var(--text-md);
   cursor: pointer;
   /* Menu items are short labels — keep each on one line so the menu
@@ -865,11 +893,11 @@ svg.lucide {
 }
 
 .context-menu__item:hover {
-  background: var(--bg-selection);
+  background: var(--bg-hover);
 }
 
 /* Icon + label menu items (e.g. the New-note dropdown's
-   "Folder" / "Upload into vault" entries). Uses flex so the icon
+   "Folder" / "Upload into notebox" entries). Uses flex so the icon
    sits inline with the label rather than inheriting the default
    block layout. */
 .context-menu__item--icon {
@@ -893,7 +921,7 @@ svg.lucide {
 
 .context-menu__separator {
   height: 1px;
-  background: var(--border-primary);
+  background: var(--popup-border-color);
   margin: 4px 0;
 }
 
@@ -903,13 +931,13 @@ svg.lucide {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 16px;
-  color: var(--fg-secondary);
+  padding: var(--popup-item-padding);
+  color: var(--fg-primary);
   font-size: var(--text-md);
   cursor: pointer;
 }
 .context-menu__item--submenu:hover {
-  background: var(--bg-selection);
+  background: var(--bg-hover);
 }
 .context-menu__chevron {
   opacity: 0.6;
@@ -1510,7 +1538,7 @@ svg.lucide {
 
 /* Built-in InkyCap properties are tagged "system"; user-created properties
    carry no label. (Reversed from the prior "custom" tag — most properties
-   are user-created in real vaults, so the label noise belongs on the
+   are user-created in real noteboxes, so the label noise belongs on the
    smaller built-in set.) */
 .property-row--system .property-row__key::after {
   content: "system";
@@ -1591,15 +1619,150 @@ svg.lucide {
   text-decoration-style: solid;
 }
 
+/* Custom calendar date picker (replaces the native <input type=date>). */
+.date-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.date-picker__popup {
+  position: fixed;
+  z-index: var(--z-menu);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: 8px;
+  width: 238px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.date-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.date-picker__heading {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.date-picker__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.date-picker__nav:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.date-picker__grid {
+  display: grid;
+  /* Fixed 30px columns keep the popup an exact, predictable width
+     (7×30 + 6×2 gap = 222px) instead of stretching with 1fr. */
+  grid-template-columns: repeat(7, 30px);
+  gap: 2px;
+}
+
+.date-picker__weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.date-picker__day {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.date-picker__day:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.date-picker__day--blank {
+  cursor: default;
+}
+
+.date-picker__day--blank:hover {
+  background: none;
+}
+
+.date-picker__day--today {
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.date-picker__day--cursor {
+  border-color: var(--border-input-focus);
+}
+
+.date-picker__day--selected {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+.date-picker__time-row {
+  margin-top: 8px;
+}
+
+.date-picker__footer {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.date-picker__action {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.date-picker__action:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 .collection-picker {
   position: relative;
 }
 
 .collection-picker__dropdown {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — keeps the control's 4px radius. */
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--popup-shadow);
   margin-top: 4px;
   max-height: 180px;
   overflow-y: auto;
@@ -1725,22 +1888,22 @@ svg.lucide {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
   display: flex;
   justify-content: center;
   padding-top: 15vh;
 }
 
 .quick-open {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 500px;
   max-height: 400px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--modal-shadow);
   overflow: hidden;
 }
 
@@ -1932,22 +2095,22 @@ svg.lucide {
 
 /* Footnote tooltip */
 .cm-tooltip-footnote {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
   padding: 8px 12px;
   color: var(--fg-secondary);
   font-size: var(--text-md);
   max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--popup-shadow);
 }
 
-/* Vault index sidebar */
-.vault-index__section {
+/* Notebox index sidebar */
+.notebox-index__section {
   margin-bottom: 16px;
 }
 
-.vault-index__heading {
+.notebox-index__heading {
   font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -1955,7 +2118,7 @@ svg.lucide {
   padding: 0 4px 6px;
 }
 
-.vault-index__count {
+.notebox-index__count {
   color: var(--fg-dim);
   font-size: var(--text-sm);
   margin-left: auto;
@@ -1968,8 +2131,8 @@ svg.lucide {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 150;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1977,16 +2140,16 @@ svg.lucide {
 }
 
 .settings__panel {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 10px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 900px;
   height: 80vh;
   max-height: 750px;
   min-height: 500px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--modal-shadow);
   overflow: hidden;
 }
 
@@ -2257,11 +2420,12 @@ svg.lucide {
   right: 0;
   margin-top: 2px;
   min-width: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-input);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — keeps the control's 4px radius. */
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 10;
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   max-height: 180px;
   overflow-y: auto;
 }
@@ -2363,11 +2527,13 @@ svg.lucide {
   width: 280px;
   max-height: 240px;
   overflow-y: auto;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-input);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached dropdown — keeps the 4px radius of the control it
+     hangs off rather than the free-floating --popup-radius. */
   border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  z-index: 100;
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
 }
 
 /* Drop-up variant: opened above the input when there isn't enough space
@@ -2458,11 +2624,12 @@ svg.lucide {
   right: 0;
   margin-top: 2px;
   min-width: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-input);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — keeps the control's 4px radius. */
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 10;
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   max-height: 180px;
   overflow-y: auto;
 }
@@ -2658,11 +2825,11 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
   padding: 4px 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--popup-shadow);
   position: relative;
 }
 
@@ -2710,13 +2877,13 @@ svg.lucide {
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  padding: 4px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
   min-width: 180px;
-  z-index: 200;
+  z-index: var(--z-menu);
 }
 
 .cm-fmt-toolbar__dropdown-item {
@@ -2726,11 +2893,10 @@ svg.lucide {
   width: 100%;
   background: none;
   border: none;
-  border-radius: 4px;
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   cursor: pointer;
   font-size: var(--text-md);
-  padding: 6px 10px;
+  padding: var(--popup-item-padding);
   text-align: left;
 }
 
@@ -2749,12 +2915,12 @@ svg.lucide {
 
 /* Page preview tooltip */
 .cm-tooltip-page-preview {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
   padding: 10px 14px;
   max-width: 350px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--popup-shadow);
 }
 
 .cm-tooltip-page-preview__title {
@@ -3142,7 +3308,7 @@ svg.lucide {
   position: absolute;
   top: 100%;
   margin-top: 2px;
-  z-index: 10;
+  z-index: var(--z-menu);
 }
 
 .search-panel__menu-anchored--right {
@@ -3469,11 +3635,12 @@ svg.lucide {
   right: 0;
   max-height: 160px;
   overflow-y: auto;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — flush top edge against the control above. */
   border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  z-index: 10;
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
 }
 
 .creation-rules__folder-option {
@@ -3747,11 +3914,11 @@ svg.lucide {
 .icon-picker__dropdown {
   width: 260px;
   max-height: 300px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 100;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3823,22 +3990,22 @@ svg.lucide {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 100;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
   display: flex;
   justify-content: center;
   padding-top: 15vh;
 }
 
 .cmd-palette {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 560px;
   max-height: 420px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--modal-shadow);
   overflow: hidden;
 }
 
@@ -4065,6 +4232,16 @@ svg.lucide {
   color: var(--fg-primary);
   border-color: var(--border-input);
   background: var(--bg-highlight);
+}
+
+.right-panel__tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.right-panel__tab:disabled:hover {
+  color: var(--fg-muted);
+  background: none;
 }
 
 .right-panel__tab-content {
@@ -4704,23 +4881,23 @@ svg.lucide {
 .snapshot-viewer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 .snapshot-viewer {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 700px;
   max-width: 90vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--modal-shadow);
 }
 
 .snapshot-viewer__header {
@@ -4960,23 +5137,23 @@ svg.lucide {
 .composer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 .composer-modal {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 550px;
   max-width: 90vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--modal-shadow);
 }
 
 .composer-modal__header {
@@ -5133,8 +5310,12 @@ svg.lucide {
   gap: 8px;
   padding: 4px 12px 4px;
   background: linear-gradient(to top, var(--bg-editor-toolbar), var(--bg-secondary));
-  box-shadow: 0 1px 1px 1px var(--border-subtle);
   flex-shrink: 0;
+  /* Lift above the scrollable content so the lip shadow casts over it,
+     making content appear to slide underneath the editor header. */
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 5px 6px -5px rgba(0, 0, 0, 0.28);
 }
 
 .editor-header__center {
@@ -5701,9 +5882,9 @@ svg.lucide {
   box-shadow: -6px 0 8px -2px rgba(0, 0, 0, 0.5);
 }
 
-/* ─── Status bar: clickable vault name ─── */
+/* ─── Status bar: clickable notebox name ─── */
 
-.status-bar__vault-name {
+.status-bar__notebox-name {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -5718,20 +5899,20 @@ svg.lucide {
   transition: color 0.15s ease;
 }
 
-.status-bar__vault-name:hover {
+.status-bar__notebox-name:hover {
   color: var(--accent-color, #1D7874);
 }
 
-/* ─── Vault switcher popup ─── */
+/* ─── Notebox switcher popup ─── */
 
-.context-menu__item:has(.vault-switcher__name),
+.context-menu__item:has(.notebox-switcher__name),
 .context-menu__item:has(svg) {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.vault-switcher__name {
+.notebox-switcher__name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5739,19 +5920,19 @@ svg.lucide {
   text-align: left;
 }
 
-/* ─── Vault management (Settings > Overview) ─── */
+/* ─── Notebox management (Settings > Overview) ─── */
 
-.vault-row {
+.notebox-row {
   align-items: flex-start;
 }
 
-.vault-row__name-line {
+.notebox-row__name-line {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.vault-row__edit-btn {
+.notebox-row__edit-btn {
   display: inline-flex;
   align-items: center;
   background: none;
@@ -5762,21 +5943,21 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-.vault-row__edit-btn:hover {
+.notebox-row__edit-btn:hover {
   color: var(--accent-color, #1D7874);
 }
 
-.vault-row__inline-edit {
+.notebox-row__inline-edit {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.vault-row__inline-edit .settings__text-input {
+.notebox-row__inline-edit .settings__text-input {
   flex: 1;
 }
 
-.vault-row__icon-btn {
+.notebox-row__icon-btn {
   display: inline-flex;
   align-items: center;
   background: none;
@@ -5787,31 +5968,31 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-.vault-row__icon-btn:hover {
+.notebox-row__icon-btn:hover {
   color: var(--accent-color, #1D7874);
 }
 
-.vault-row__icon-btn--cancel:hover {
+.notebox-row__icon-btn--cancel:hover {
   color: var(--fg-error, #f44336);
 }
 
-.vault-row__active-badge {
+.notebox-row__active-badge {
   font-size: var(--text-xs, 11px);
   color: var(--accent-color, #1D7874);
   font-weight: 600;
 }
 
-.vault-row__actions {
+.notebox-row__actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
 }
 
 
-/* ─── Vault-lost banner (top-of-app warning when the vault directory
+/* ─── Notebox-lost banner (top-of-app warning when the notebox directory
        has vanished from disk while the app is still running) ─── */
 
-.vault-lost-banner {
+.notebox-lost-banner {
   position: fixed;
   top: 0;
   left: 0;
@@ -5829,12 +6010,12 @@ svg.lucide {
   line-height: 1.4;
 }
 
-.vault-lost-banner__icon {
+.notebox-lost-banner__icon {
   flex-shrink: 0;
   margin-top: 2px;
 }
 
-.vault-lost-banner__body {
+.notebox-lost-banner__body {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -5842,15 +6023,15 @@ svg.lucide {
   flex: 1;
 }
 
-.vault-lost-banner__title {
+.notebox-lost-banner__title {
   font-weight: 600;
 }
 
-.vault-lost-banner__detail {
+.notebox-lost-banner__detail {
   opacity: 0.92;
 }
 
-.vault-lost-banner__path {
+.notebox-lost-banner__path {
   font-family: var(--editor-font-mono, monospace);
   font-size: 0.9em;
   padding: 1px 4px;
@@ -5978,15 +6159,17 @@ svg.lucide {
 
 .properties-dropdown {
   position: fixed;
-  z-index: 50;
+  z-index: var(--z-menu);
   min-width: 280px;
   max-width: 360px;
   max-height: 60vh;
   overflow-y: auto;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  /* Richer dropdown (chips, filters) — keeps its own 8px content
+     padding rather than the standard --popup-padding-block. */
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -6625,10 +6808,19 @@ svg.lucide {
 /* HTML reading view — flowing, copyable content */
 .typst-reading__html-content {
   padding: 32px 48px;
+  /* `width: 100%` (capped by max-width) gives the box a definite width.
+     Without it, the auto margins below would override align-self:stretch
+     on the flex parent (.typst-reading), shrinking the box to its content
+     and centering short notes instead of left-aligning them. */
+  width: 100%;
   max-width: 800px;
+  box-sizing: border-box;
   margin: 0 auto;
   font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
-  font-size: var(--text-xl);
+  /* Driven by the editor's body-font-size preference so Ctrl+= / Ctrl+-
+     (the "content" zoom target) resize the HTML reading view, matching
+     the visual editor. */
+  font-size: var(--md-body-size, var(--text-xl));
   line-height: 1.6;
   color: var(--fg-primary);
   word-wrap: break-word;
@@ -6652,13 +6844,13 @@ svg.lucide {
 }
 
 .typst-reading__html-content a {
-  color: var(--accent-primary, #1D7874);
+  color: var(--syntax-link);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent-primary, #1D7874) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--syntax-link) 40%, transparent);
 }
 
 .typst-reading__html-content a:hover {
-  text-decoration-color: var(--accent-primary, #1D7874);
+  text-decoration-color: var(--syntax-link);
 }
 
 .typst-reading__html-content pre {
@@ -6810,16 +7002,16 @@ svg.lucide {
 /* Slash command palette (/ key in visual editor) */
 .command-palette {
   position: fixed;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 200;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   min-width: 200px;
   max-width: 320px;
   max-height: 300px;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--popup-padding-block) 0;
 }
 
 .command-palette__category {
@@ -6834,10 +7026,10 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px;
+  padding: var(--popup-item-padding);
   cursor: pointer;
   font-size: var(--text-md);
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
 }
 
 .command-palette__item.is-selected {
@@ -6865,13 +7057,13 @@ svg.lucide {
 /* Paste-as-URL popup menu */
 .paste-url-menu {
   position: fixed;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 200;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
   min-width: 140px;
-  padding: 4px 0;
+  padding: var(--popup-padding-block) 0;
 }
 
 .paste-url-menu__header {
@@ -6882,10 +7074,10 @@ svg.lucide {
 }
 
 .paste-url-menu__item {
-  padding: 5px 12px;
+  padding: var(--popup-item-padding);
   cursor: pointer;
   font-size: var(--text-md);
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
 }
 
 .paste-url-menu__item.is-selected {
@@ -6893,18 +7085,18 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
-/* Floating selection toolbar */
+/* Floating selection toolbar — surface from the shared --popup-* tokens. */
 .selection-toolbar {
   position: fixed;
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
   padding: 3px;
-  z-index: 200;
+  z-index: var(--z-menu);
 }
 
 .selection-toolbar__btn {
@@ -6952,24 +7144,23 @@ svg.lucide {
   display: flex;
   flex-direction: column;
   min-width: 180px;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-  padding: 4px;
-  z-index: 201;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+  z-index: var(--z-menu);
 }
 
 .selection-toolbar__menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--popup-item-padding);
   border: none;
-  border-radius: 4px;
   background: transparent;
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   font-size: var(--text-sm);
   cursor: pointer;
   text-align: left;
@@ -6996,8 +7187,8 @@ svg.lucide {
 
 .selection-toolbar__menu-sep {
   height: 1px;
-  background: var(--border-primary);
-  margin: 4px 8px;
+  background: var(--border-subtle);
+  margin: 4px 0;
 }
 
 /* ── Alignment sub-popup ── */
@@ -7005,12 +7196,12 @@ svg.lucide {
   position: fixed;
   display: flex;
   gap: 2px;
-  background: var(--bg-active);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
   padding: 3px;
-  z-index: 201;
+  z-index: var(--z-menu);
 }
 
 /* ── Export dialog ───────────────────────────────────────── */
@@ -7018,20 +7209,20 @@ svg.lucide {
 .export-dialog__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
 }
 
 .export-dialog {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 420px;
   max-width: 90vw;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--modal-shadow);
 }
 
 .export-dialog__header {
@@ -7235,20 +7426,20 @@ svg.lucide {
 .app-modal__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: var(--z-modal);
 }
 
 .app-modal {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 420px;
   max-width: 90vw;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--modal-shadow);
   display: flex;
   flex-direction: column;
 }
@@ -7458,13 +7649,13 @@ svg.lucide {
    pane above. The original modal mount was removed. */
 
 .templates-panel {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: 560px;
   max-width: 92vw;
   max-height: 80vh;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--modal-shadow);
   display: flex;
   flex-direction: column;
 }
@@ -7687,7 +7878,7 @@ svg.lucide {
   position: fixed;
   bottom: 32px;
   right: 16px;
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
@@ -7769,10 +7960,12 @@ svg.lucide {
 .busy-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Working scrim — kept lighter than --modal-backdrop and paired with
+     a blur, since it signals "busy" rather than a dismissable dialog. */
   background: rgba(0, 0, 0, 0.32);
   backdrop-filter: blur(2px);
   animation: busy-overlay-fade-in 120ms ease-out;
@@ -7787,13 +7980,13 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   padding: 18px 22px;
   min-width: 280px;
   max-width: 480px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--modal-shadow);
 }
 
 .busy-overlay__spinner {
@@ -7834,22 +8027,22 @@ svg.lucide {
 .typ-audit__backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.32);
+  z-index: var(--z-modal);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .typ-audit__panel {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
   width: min(720px, 92vw);
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--modal-shadow);
 }
 
 .typ-audit__header {

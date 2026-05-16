@@ -81,7 +81,7 @@ pub fn compile_and_query(
     }
     // The preamble compile recovers properties from `#note(...)` but
     // throws away body-derived metadata — wikilinks and body tags. For a
-    // user with a vault full of notes where one body has a typst error
+    // user with a notebox full of notes where one body has a typst error
     // (an unresolved citation, a broken embed path, etc.), the result
     // is a Links pane that silently shows nothing for every note that
     // hit this path. Use `typst::syntax` to walk the parsed AST and
@@ -106,7 +106,7 @@ pub fn compile_and_query(
 /// Walk the parsed AST and collect raw wikilink targets and tag names.
 /// Used as a fallback for files that fail to compile but still need to
 /// surface their outgoing links in the Links pane. Restricted to the
-/// `wikilink(...)` and `tag(...)` call shapes the `inkycap-vault`
+/// `wikilink(...)` and `tag(...)` call shapes the `inkycap-notebox`
 /// package exports — anything else would require evaluation to be
 /// trusted.
 fn extract_body_metadata_via_syntax(source: &str) -> (Vec<String>, Vec<String>) {
@@ -186,10 +186,10 @@ fn first_string_positional_arg(call_node: &LinkedNode<'_>) -> Option<String> {
 }
 
 /// Return just the import preamble + `#note(...)` call as a standalone source.
-/// Mirror of [`crate::vault_package::strip_note_preamble`] — same parser, but
+/// Mirror of [`crate::notebox_package::strip_note_preamble`] — same parser, but
 /// keeps the prefix and drops the body.
 fn extract_note_preamble(content: &str) -> String {
-    let body_start = content.len() - crate::vault_package::strip_note_preamble(content).len();
+    let body_start = content.len() - crate::notebox_package::strip_note_preamble(content).len();
     content[..body_start].to_string()
 }
 
@@ -344,17 +344,17 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    fn setup_vault_with_package(source: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    fn setup_notebox_with_package(source: &str) -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize");
 
-        // Scaffold the package into the vault
-        crate::vault_package::scaffold(&root);
+        // Scaffold the package into the notebox
+        crate::notebox_package::scaffold(&root);
 
         let note_path = root.join("test.typ");
         let full_source = format!(
             "{}\n\n{}",
-            crate::vault_package::import_line(),
+            crate::notebox_package::import_line(),
             source
         );
         fs::write(&note_path, &full_source).expect("write note");
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn extracts_note_metadata() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Test Note", status: "draft", tags: ("research", "typst"))"#,
         );
         let note_path = root.join("test.typ");
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn extracts_inline_tags() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             "Some text with #tag(\"important\") and #tag(\"review\") inline.",
         );
         let note_path = root.join("test.typ");
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn extracts_wikilinks() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"Link to #wikilink("Other Note") and #wikilink("Another", display: "see this")."#,
         );
         let note_path = root.join("test.typ");
@@ -421,7 +421,7 @@ mod tests {
         // references an undefined function — full compile dies, preamble
         // fallback succeeds. The AST walk must recover the wikilink so
         // the Links pane still shows it.
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Has Broken Body")
 
 = Heading
@@ -452,7 +452,7 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn ast_fallback_extracts_body_tags_when_compile_fails() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Tagged But Broken")
 
 #tag("research") and #tag("draft").
@@ -472,7 +472,7 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn extracts_link_refs_from_note_metadata() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Test", source: link-ref("Source Note"))"#,
         );
         let note_path = root.join("test.typ");
@@ -486,7 +486,7 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn deduplicates_tags_from_note_and_inline() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             "#note(tags: (\"shared\",))\n\nSome #tag(\"shared\") and #tag(\"unique\").",
         );
         let note_path = root.join("test.typ");
@@ -504,7 +504,7 @@ Reference to #wikilink("Target Note") here.
     fn broken_file_without_note_returns_empty() {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize");
-        crate::vault_package::scaffold(&root);
+        crate::notebox_package::scaffold(&root);
 
         let note_path = root.join("broken.typ");
         fs::write(&note_path, "#unknown_function(\n").expect("write");
@@ -531,7 +531,7 @@ Reference to #wikilink("Target Note") here.
     fn returns_empty_result_when_compilation_fails() {
         let dir = tempdir().expect("tempdir");
         let root = canonicalize_root(dir.path()).expect("canonicalize");
-        crate::vault_package::scaffold(&root);
+        crate::notebox_package::scaffold(&root);
 
         // File has `#note(...)` but no import, so compilation will fail.
         let note_path = root.join("no_import.typ");
@@ -558,7 +558,7 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn extracts_collection_property_as_list() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#note(title: "Paper Draft", collection: ("my-paper", "thesis-ch3"))"#,
         );
         let note_path = root.join("test.typ");
@@ -575,7 +575,7 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn extracts_embed_links() {
-        let (_dir, root) = setup_vault_with_package(
+        let (_dir, root) = setup_notebox_with_package(
             r#"#embed("Embedded Note")"#,
         );
         let note_path = root.join("test.typ");

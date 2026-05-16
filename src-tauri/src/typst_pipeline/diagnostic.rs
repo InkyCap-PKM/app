@@ -24,7 +24,7 @@ pub struct TypstDiagnostic {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TypstSpan {
-    /// Path of the file the span points into, vault-rootless (e.g.
+    /// Path of the file the span points into, notebox-rootless (e.g.
     /// `"notes/heidegger.typ"`). `None` if Typst could not resolve a file —
     /// usually because the span is in a synthesized synthetic source.
     pub path: Option<String>,
@@ -36,7 +36,7 @@ pub struct TypstSpan {
     /// the offset couldn't be mapped (e.g. a synthesized source).
     ///
     /// NOTE: these are positions in the source as *compiled*. InkyCap injects
-    /// style/vault lines into the main note before compiling, so for the main
+    /// style/notebox lines into the main note before compiling, so for the main
     /// file the command layer shifts `line` back to the user's on-disk file —
     /// see `remap_diagnostic_lines` in `commands/typst.rs`. `is_main` tells it
     /// which spans need that shift.

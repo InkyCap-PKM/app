@@ -7,9 +7,9 @@ use tauri::{Emitter, State};
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::sanitize_vault_arg;
-use crate::storage::traits::VaultStorage;
-use crate::storage::validate_vault_path;
+use crate::storage::sanitize_notebox_arg;
+use crate::storage::traits::NoteboxStorage;
+use crate::storage::validate_notebox_path;
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 
 /// Copy a file (given as base64 data) to the attachment folder.
@@ -365,8 +365,8 @@ pub async fn copy_path_to_attachments(
     write_to_attachments(&filename, &data, &app, &state).await
 }
 
-/// Open a native file-picker and copy each selected file into the vault's
-/// configured attachments folder. Returns the vault-root-relative paths of
+/// Open a native file-picker and copy each selected file into the notebox's
+/// configured attachments folder. Returns the notebox-root-relative paths of
 /// each saved file.
 ///
 /// **Security.** Unlike `copy_path_to_attachments`, the source paths here
@@ -418,7 +418,7 @@ pub async fn pick_and_upload_to_attachments(
     Ok(saved)
 }
 
-/// Write `data` into the vault's attachment folder under `filename`.
+/// Write `data` into the notebox's attachment folder under `filename`.
 /// Finds a collision-free name and returns the saved name.
 async fn write_to_attachments(
     filename: &str,
@@ -426,9 +426,9 @@ async fn write_to_attachments(
     app: &tauri::AppHandle,
     state: &State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?.clone();
-    drop(vault_root);
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    drop(notebox_root);
 
     // Defense in depth: reject filenames that try to escape the attachment
     // folder (e.g. `../../evil.png`). Basename-only enforcement is enough
@@ -448,9 +448,9 @@ async fn write_to_attachments(
     drop(settings);
 
     let attach_dir = root.join(&attachment_folder);
-    // Validate the attachment folder is inside the vault — protects against a
+    // Validate the attachment folder is inside the notebox — protects against a
     // malicious settings file with an absolute / traversal path.
-    let attach_dir = validate_vault_path(&root, &attach_dir)?;
+    let attach_dir = validate_notebox_path(&root, &attach_dir)?;
     tokio::fs::create_dir_all(&attach_dir).await?;
 
     let mut target = attach_dir.join(filename);
@@ -470,18 +470,18 @@ async fn write_to_attachments(
     }
 
     // Re-validate the final target after collision resolution.
-    let target = validate_vault_path(&root, &target)?;
+    let target = validate_notebox_path(&root, &target)?;
     tokio::fs::write(&target, data).await?;
 
     // The file watcher only tracks .typ/.collection files, so attachment
     // writes (images, PDFs, etc.) won't trigger a tree refresh on their
     // own. Emit the event directly so the frontend file tree updates.
     let _ = app.emit(
-        "vault:file-created",
+        "notebox:file-created",
         serde_json::json!({ "path": target.display().to_string() }),
     );
 
-    // Return the vault-root-relative path (e.g. `assets/Screenshot.png`)
+    // Return the notebox-root-relative path (e.g. `assets/Screenshot.png`)
     // rather than just the basename, so callers can build a Typst markup
     // string that resolves in the compiler — `#image("/assets/foo.png")`
     // works in both the visual editor (via the updated resolve_embed_path)
@@ -500,7 +500,7 @@ async fn write_to_attachments(
     Ok(saved_relative)
 }
 
-/// Create a new `.typ` file with the inkycap-vault import.
+/// Create a new `.typ` file with the inkycap-notebox import.
 #[tauri::command]
 pub async fn create_file(
     name: String,
@@ -508,8 +508,8 @@ pub async fn create_file(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let dir = if folder.is_empty() {
         root.clone()
@@ -531,7 +531,7 @@ pub async fn create_file(
         )));
     }
 
-    let mut content = format!("{}\n#note()\n\n", crate::vault_package::import_line());
+    let mut content = format!("{}\n#note()\n\n", crate::notebox_package::import_line());
 
     // Auto-set zid property when zettelkasten is enabled
     let settings = state.settings.read().await;
@@ -562,8 +562,8 @@ pub async fn create_folder(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let parent_dir = if parent.is_empty() {
         root.clone()
@@ -591,7 +591,7 @@ pub async fn rename_file(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old = sanitize_vault_arg(&old_path)?;
+    let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
     let parent = old.parent().ok_or_else(|| {
         InkyCapError::InvalidPath("No parent directory".to_string())
@@ -636,7 +636,7 @@ pub async fn rename_and_update_links(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let old = sanitize_vault_arg(&old_path)?;
+    let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
 
     let parent = old.parent().ok_or_else(|| {
@@ -668,7 +668,7 @@ pub async fn rename_and_update_links(
     if !is_dir {
         rewrite_backlinks_for_rename(&old, &new_path, &storage, &*state).await?;
         // Phase B: rebase relative path arguments in this note's own
-        // source to vault-root-absolute, anchored at the pre-rename
+        // source to notebox-root-absolute, anchored at the pre-rename
         // parent. For a same-folder rename the anchor is unchanged so
         // this is just canonicalization; for a follow-up move it makes
         // the references survive.
@@ -696,10 +696,10 @@ pub async fn move_file(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let old = sanitize_vault_arg(&old_path)?;
+    let old = sanitize_notebox_arg(&old_path)?;
     let filename = old
         .file_name()
         .ok_or_else(|| InkyCapError::InvalidPath("No filename".to_string()))?;
@@ -722,7 +722,7 @@ pub async fn move_file(
     storage.create_dir(&new_dir).await?;
 
     // Phase B: rebase relative path arguments in the moved note's
-    // source to vault-root-absolute paths anchored at the OLD parent,
+    // source to notebox-root-absolute paths anchored at the OLD parent,
     // so `image("daisy.png")` etc. keep resolving after the folder
     // change. Runs unconditionally on move — this is a correctness
     // fix for the bug that prompted Phases A–D, not a discretionary
@@ -745,7 +745,7 @@ pub async fn move_file(
 /// folder move never changes. What does need fixing is each contained
 /// note's own relative `image()`/`read()`/`embed()`/`bibliography()`
 /// arguments — those are anchored at the note's parent directory, so
-/// every `.typ` file under the folder is rebased to vault-root-absolute
+/// every `.typ` file under the folder is rebased to notebox-root-absolute
 /// paths (Phase B) before the move, exactly as `move_file` does for a
 /// single note.
 #[tauri::command]
@@ -755,10 +755,10 @@ pub async fn move_folder(
     state: State<'_, AppState>,
 ) -> Result<String, InkyCapError> {
     let storage = state.get_storage().await?;
-    let vault_root = state.vault_root.read().await;
-    let root = vault_root.as_ref().ok_or(InkyCapError::VaultNotOpen)?;
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let old = sanitize_vault_arg(&old_path)?;
+    let old = sanitize_notebox_arg(&old_path)?;
     let old_abs = storage.resolve_path(&old)?;
     if !old_abs.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
@@ -820,7 +820,7 @@ pub async fn delete_file(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     storage.move_to_trash(&path_buf).await?;
     remove_from_indices(&path_buf, &state).await;
@@ -835,7 +835,7 @@ pub async fn delete_folder(
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
-    let path_buf = sanitize_vault_arg(&path)?;
+    let path_buf = sanitize_notebox_arg(&path)?;
 
     // Remove all indexed notes within this folder
     let notes_in_folder: Vec<PathBuf> = {
@@ -858,7 +858,7 @@ pub async fn delete_folder(
 
 /// Replace wikilinks in content so they continue to resolve after a note
 /// has been renamed from `old_stem` to `new_stem`. Handles both forms that
-/// appear in vault sources:
+/// appear in notebox sources:
 ///
 ///   - `[[old_stem]]`, `[[old_stem#heading]]`, `[[old_stem|alias]]` —
 ///     the inline shortcut.
@@ -1008,8 +1008,8 @@ fn typst_string_unescape(s: &str) -> String {
     out
 }
 
-/// Read the note at `old_vault_path` and rewrite any relative path
-/// arguments in `image`/`read`/`embed`/`bibliography` calls to vault-
+/// Read the note at `old_notebox_path` and rewrite any relative path
+/// arguments in `image`/`read`/`embed`/`bibliography` calls to notebox-
 /// root-absolute paths anchored at the note's CURRENT (pre-move) parent
 /// directory. After this pass, the note's path references are stable
 /// across subsequent moves — see CLAUDE.md's portable-paths principle
@@ -1026,7 +1026,7 @@ fn typst_string_unescape(s: &str) -> String {
 /// not Phase B's to escalate).
 pub(crate) async fn rebase_paths_for_note_move(
     old_path: &std::path::Path,
-    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+    storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
 ) -> Result<(), InkyCapError> {
     let content = match storage.read_file(old_path).await {
         Ok(c) => c,
@@ -1040,14 +1040,14 @@ pub(crate) async fn rebase_paths_for_note_move(
         }
     };
 
-    // The frontend sends both absolute and vault-relative paths through
-    // the various rename/move commands (see `sanitize_vault_arg`'s
-    // docstring). `rebase_relative_paths` needs a vault-RELATIVE parent
+    // The frontend sends both absolute and notebox-relative paths through
+    // the various rename/move commands (see `sanitize_notebox_arg`'s
+    // docstring). `rebase_relative_paths` needs a notebox-RELATIVE parent
     // — passing an absolute path makes the rewriter short-circuit on
     // the `RootDir` component and produce no edits at all. Normalize
     // here, defensively, against whichever shape the caller passed.
-    let vault_relative = vault_relative_path(old_path, storage);
-    let note_dir = vault_relative
+    let notebox_relative = notebox_relative_path(old_path, storage);
+    let note_dir = notebox_relative
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default();
@@ -1062,12 +1062,12 @@ pub(crate) async fn rebase_paths_for_note_move(
 }
 
 /// Best-effort conversion of an absolute-or-relative caller path to
-/// the vault-relative form. Strips the storage root (canonical or
+/// the notebox-relative form. Strips the storage root (canonical or
 /// declared) when the path is absolute; passes the input through when
 /// it's already relative.
-fn vault_relative_path(
+fn notebox_relative_path(
     path: &std::path::Path,
-    storage: &crate::storage::local::LocalVaultStorage,
+    storage: &crate::storage::local::LocalNoteboxStorage,
 ) -> std::path::PathBuf {
     if path.is_relative() {
         return path.to_path_buf();
@@ -1090,7 +1090,7 @@ fn vault_relative_path(
 pub(crate) async fn rewrite_backlinks_for_rename(
     old_path: &std::path::Path,
     new_path: &std::path::Path,
-    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+    storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
     state: &AppState,
 ) -> Result<(), InkyCapError> {
     let old_stem = match old_path.file_stem() {
@@ -1146,7 +1146,7 @@ async fn remove_from_indices(path: &std::path::Path, state: &State<'_, AppState>
 async fn reindex_directory(
     old_dir: &std::path::Path,
     new_dir: &std::path::Path,
-    storage: &std::sync::Arc<crate::storage::local::LocalVaultStorage>,
+    storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
     state: &State<'_, AppState>,
 ) {
     // List notes at the new location (renamed dir already exists on disk)
@@ -1233,15 +1233,15 @@ mod tests {
 
     /// Integration check for the Phase B helper: a note that lives in a
     /// subfolder and references a sibling asset with a relative path
-    /// gets rewritten to a vault-root-absolute reference anchored at
+    /// gets rewritten to a notebox-root-absolute reference anchored at
     /// the note's pre-move parent. The on-disk file content is updated;
     /// the asset is not touched.
     #[tokio::test]
     async fn rebase_paths_for_note_move_rewrites_relative_image() {
-        let vault = TempDir::new().unwrap();
-        std::fs::create_dir_all(vault.path().join("notes")).unwrap();
+        let notebox = TempDir::new().unwrap();
+        std::fs::create_dir_all(notebox.path().join("notes")).unwrap();
         let note_rel = std::path::Path::new("notes/foo.typ");
-        let note_abs = vault.path().join(note_rel);
+        let note_abs = notebox.path().join(note_rel);
         std::fs::write(
             &note_abs,
             "= Foo\n\n#image(\"daisy.png\")\n#read(\"data.csv\")\n",
@@ -1249,7 +1249,7 @@ mod tests {
         .unwrap();
 
         let storage = Arc::new(
-            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+            crate::storage::local::LocalNoteboxStorage::new(notebox.path().to_path_buf()).unwrap(),
         );
 
         rebase_paths_for_note_move(note_rel, &storage)
@@ -1271,12 +1271,12 @@ mod tests {
     /// (via `FileTreeNode.path`); the helper used to pass the absolute
     /// parent dir straight into `rebase_relative_paths`, which short-
     /// circuits on the `RootDir` component and produced no edits. The
-    /// fix normalizes to vault-relative before rebasing.
+    /// fix normalizes to notebox-relative before rebasing.
     #[tokio::test]
     async fn rebase_paths_for_note_move_handles_absolute_path_input() {
-        let vault = TempDir::new().unwrap();
-        std::fs::create_dir_all(vault.path().join("journal")).unwrap();
-        let note_abs_pb = vault.path().join("journal/jan.typ");
+        let notebox = TempDir::new().unwrap();
+        std::fs::create_dir_all(notebox.path().join("journal")).unwrap();
+        let note_abs_pb = notebox.path().join("journal/jan.typ");
         std::fs::write(
             &note_abs_pb,
             "= Jan\n\n#image(\"daisy.png\")\n",
@@ -1284,7 +1284,7 @@ mod tests {
         .unwrap();
 
         let storage = Arc::new(
-            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+            crate::storage::local::LocalNoteboxStorage::new(notebox.path().to_path_buf()).unwrap(),
         );
 
         rebase_paths_for_note_move(&note_abs_pb, &storage)
@@ -1303,15 +1303,15 @@ mod tests {
     /// to avoid churning the on-disk file's mtime/contents.
     #[tokio::test]
     async fn rebase_paths_for_note_move_no_op_when_already_absolute() {
-        let vault = TempDir::new().unwrap();
-        std::fs::create_dir_all(vault.path().join("notes")).unwrap();
+        let notebox = TempDir::new().unwrap();
+        std::fs::create_dir_all(notebox.path().join("notes")).unwrap();
         let note_rel = std::path::Path::new("notes/foo.typ");
-        let note_abs = vault.path().join(note_rel);
+        let note_abs = notebox.path().join(note_rel);
         let original = "= Foo\n\n#image(\"/assets/daisy.png\")\n";
         std::fs::write(&note_abs, original).unwrap();
 
         let storage = Arc::new(
-            crate::storage::local::LocalVaultStorage::new(vault.path().to_path_buf()).unwrap(),
+            crate::storage::local::LocalNoteboxStorage::new(notebox.path().to_path_buf()).unwrap(),
         );
 
         rebase_paths_for_note_move(note_rel, &storage)

@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
-use crate::storage::traits::VaultStorage;
+use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::{
     escape_html_attr, escape_html_content, extract_metadata_raw,
@@ -25,7 +25,7 @@ pub async fn export_note_html(
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
-    let content = crate::vault_package::ensure_import(&content);
+    let content = crate::notebox_package::ensure_import(&content);
 
     let raw_metadata = if metadata_mode == "properties" {
         extract_metadata_raw(&content)
@@ -40,14 +40,14 @@ pub async fn export_note_html(
     };
 
     let content = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
-    let content = super::super::typst::maybe_inject_set_vault(&content, &state).await;
+    let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
 
     let source = prepare_bibliography(content, None, None, include_bibliography.unwrap_or(true), &state).await;
 
     let mut compiler = state.typst_compiler.lock().await;
     let compiler = compiler
         .as_mut()
-        .ok_or(InkyCapError::VaultNotOpen)?;
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let result = compiler

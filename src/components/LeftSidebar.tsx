@@ -35,7 +35,7 @@ import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { settings } from "../stores/settings";
-import { vaultInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/vault";
+import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
   isEnabled as isScrollEnabled,
@@ -191,7 +191,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
   const [showNewMenu, setShowNewMenu] = createSignal(false);
 
-  // File tree drag-and-drop: path of the directory (or "" for vault
+  // File tree drag-and-drop: path of the directory (or "" for notebox
   // root) currently hovered as a move target, so the row can highlight.
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
 
@@ -236,7 +236,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [renameValue, setRenameValue] = createSignal("");
 
   const [collections, { refetch: refetchCollections }] = createResource(
-    () => ({ info: vaultInfo(), tick: refreshTick(), version: fileTreeVersion() }),
+    () => ({ info: noteboxInfo(), tick: refreshTick(), version: fileTreeVersion() }),
     async ({ info }) => {
       if (!info) return [];
       return ipc.listCollections();
@@ -244,7 +244,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   );
 
   const [fileTree, { refetch: refetchFileTree }] = createResource(
-    () => ({ info: vaultInfo(), tick: refreshTick(), version: fileTreeVersion() }),
+    () => ({ info: noteboxInfo(), tick: refreshTick(), version: fileTreeVersion() }),
     async ({ info }) => {
       if (!info) return [];
       return ipc.getFileTree();
@@ -340,11 +340,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     return filtered.sort(cmp);
   }
 
-  const [vaultIndex, { refetch: refetchVaultIndex }] = createResource(
-    () => ({ info: vaultInfo(), tick: refreshTick(), pv: propertyVersion() }),
+  const [noteboxIndex, { refetch: refetchNoteboxIndex }] = createResource(
+    () => ({ info: noteboxInfo(), tick: refreshTick(), pv: propertyVersion() }),
     async ({ info }) => {
       if (!info) return null;
-      return ipc.getVaultIndex();
+      return ipc.getNoteboxIndex();
     },
   );
 
@@ -446,7 +446,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRenamingTag(null);
     if (!oldTag || !newTag || oldTag === newTag) return;
 
-    const existing = vaultIndex()?.tags.find(([t]) => t === newTag);
+    const existing = noteboxIndex()?.tags.find(([t]) => t === newTag);
     if (existing) {
       const ok = await ask(
         `A tag already exists with the name "${newTag}". Renaming "${oldTag}" will merge tags into "${newTag}". Continue?`,
@@ -458,7 +458,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     try {
       await ipc.renameTag(oldTag, newTag);
       refresh();
-      refetchVaultIndex();
+      refetchNoteboxIndex();
     } catch (err) {
       toastError("Failed to rename tag", err);
     }
@@ -474,7 +474,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     try {
       await ipc.deleteTag(tag);
       refresh();
-      refetchVaultIndex();
+      refetchNoteboxIndex();
     } catch (err) {
       toastError("Failed to delete tag", err);
     }
@@ -492,7 +492,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRenamingProperty(null);
     if (!oldKey || !newKey || oldKey === newKey) return;
 
-    const existing = vaultIndex()?.property_keys.find(([k]) => k === newKey);
+    const existing = noteboxIndex()?.property_keys.find(([k]) => k === newKey);
     if (existing) {
       const oldType = allPropertyTypes()[oldKey];
       const newType = allPropertyTypes()[newKey];
@@ -509,7 +509,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       await reloadPropertyTypes();
       bumpPropertyVersion();
       refresh();
-      refetchVaultIndex();
+      refetchNoteboxIndex();
     } catch (err) {
       toastError("Failed to rename property", err);
     }
@@ -527,7 +527,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       await reloadPropertyTypes();
       bumpPropertyVersion();
       refresh();
-      refetchVaultIndex();
+      refetchNoteboxIndex();
     } catch (err) {
       toastError("Failed to delete property", err);
     }
@@ -630,18 +630,18 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   /// MIME type carrying a file-tree node during an intra-sidebar move
-  /// drag. Distinct from `application/x-inkycap-vault-path` (which the
+  /// drag. Distinct from `application/x-inkycap-notebox-path` (which the
   /// editor consumes to embed a file) so a tree move never registers as
   /// an embed and vice versa.
   const TREE_MOVE_MIME = "application/x-inkycap-tree-move";
 
   /// Context-menu entry point: open the folder picker, then move the
-  /// node into the chosen folder. The picker is vault-scoped and hides
+  /// node into the chosen folder. The picker is notebox-scoped and hides
   /// the node's own subtree (for folders) and current parent, so every
   /// returned destination is a valid, non-trivial move.
   async function moveNodeViaDialog(node: FileTreeNode) {
     setFileContextMenu(null);
-    const root = vaultInfo()?.path ?? "";
+    const root = noteboxInfo()?.path ?? "";
     const slash = node.path.lastIndexOf("/");
     const currentParent = slash >= 0 ? node.path.slice(0, slash) : root;
     const dest = await pickFolder({
@@ -655,7 +655,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   /// Move a dragged file or folder into `destDir` (an absolute path, or
-  /// the vault root). Rejects no-op moves and folder-into-self up front;
+  /// the notebox root). Rejects no-op moves and folder-into-self up front;
   /// the backend rebases relative asset paths and reindexes, and the
   /// file watcher refreshes the tree — `refresh()` is belt-and-braces so
   /// the move shows immediately even if the watcher event is debounced.
@@ -663,7 +663,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     src: { path: string; is_dir: boolean },
     destDir: string,
   ) {
-    const root = vaultInfo()?.path ?? "";
+    const root = noteboxInfo()?.path ?? "";
     const slash = src.path.lastIndexOf("/");
     const srcParent = slash >= 0 ? src.path.slice(0, slash) : root;
     if (srcParent === destDir) return; // already in that folder
@@ -695,7 +695,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // ── Collection CRUD ──
 
   async function createCollection() {
-    if (!vaultInfo()) return;
+    if (!noteboxInfo()) return;
     const name = await promptText({
       title: "New collection",
       label: "Collection name",
@@ -884,7 +884,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   async function createNewNoteAtRoot() {
-    const info = vaultInfo();
+    const info = noteboxInfo();
     if (!info) return;
     await createNewFile(info.path);
   }
@@ -904,12 +904,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function createNewFolderAtRoot() {
     setShowNewMenu(false);
-    const info = vaultInfo();
+    const info = noteboxInfo();
     if (!info) return;
     await createNewFolder(info.path);
   }
 
-  async function uploadIntoVault() {
+  async function uploadIntoNotebox() {
     setShowNewMenu(false);
     try {
       const saved = await ipc.pickAndUploadToAttachments();
@@ -1241,10 +1241,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     <button
                       class="context-menu__item context-menu__item--icon"
                       role="menuitem"
-                      onClick={uploadIntoVault}
+                      onClick={uploadIntoNotebox}
                     >
                       <Upload size={14} />
-                      <span>Upload into vault</span>
+                      <span>Upload into notebox</span>
                     </button>
                   </div>
                 </Show>
@@ -1256,20 +1256,20 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             fallback={<p class="sidebar-hint">Loading...</p>}
           >
             {/* Root drop zone: a drag released outside any folder row
-                lands here and moves the item to the vault root. Rows
+                lands here and moves the item to the notebox root. Rows
                 stop propagation on their own drag events, so this only
                 fires for the empty space / top-level area. */}
             <div
               classList={{
                 "left-sidebar__tree-root": true,
                 "left-sidebar__tree-root--drop-target":
-                  dragOverDir() === (vaultInfo()?.path ?? ""),
+                  dragOverDir() === (noteboxInfo()?.path ?? ""),
               }}
               onDragOver={(e) => {
                 if (!e.dataTransfer?.types.includes(TREE_MOVE_MIME)) return;
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
-                setDragOverDir(vaultInfo()?.path ?? "");
+                setDragOverDir(noteboxInfo()?.path ?? "");
               }}
               onDragLeave={(e) => {
                 if (e.currentTarget === e.target) setDragOverDir(null);
@@ -1280,7 +1280,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 if (!raw) return;
                 e.preventDefault();
                 try {
-                  moveNode(JSON.parse(raw), vaultInfo()?.path ?? "");
+                  moveNode(JSON.parse(raw), noteboxInfo()?.path ?? "");
                 } catch {
                   /* malformed payload — ignore */
                 }
@@ -1299,7 +1299,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     onRenameCancel={() => setFileRenamingPath(null)}
                     activePath={getActiveTab()?.path ?? null}
                     revealPath={revealPath()}
-                    vaultRoot={vaultInfo()?.path ?? ""}
+                    noteboxRoot={noteboxInfo()?.path ?? ""}
                     expandedDirs={expandedDirs}
                     onToggleDir={toggleDir}
                     treeMoveMime={TREE_MOVE_MIME}
@@ -1396,7 +1396,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </Show>
             </div>
           </Show>
-          <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
+          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (
               <For
                 each={sortAndFilterList(idx().tags, tagSortMode(), tagFilter())}
@@ -1415,7 +1415,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                           <Tag size={14} />
                         </span>
                         <span class="sidebar-item__label">{tag}</span>
-                        <span class="vault-index__count">{count}</span>
+                        <span class="notebox-index__count">{count}</span>
                       </div>
                     }
                   >
@@ -1519,7 +1519,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </Show>
             </div>
           </Show>
-          <Show when={vaultIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
+          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
             {(idx) => (
               <For
                 each={sortAndFilterList(idx().property_keys, propSortMode(), propFilter())}
@@ -1535,7 +1535,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                         onContextMenu={(e) => handlePropertyContext(e, key)}
                       >
                         <span class="sidebar-item__label">{key}</span>
-                        <span class="vault-index__count">{count}</span>
+                        <span class="notebox-index__count">{count}</span>
                       </div>
                     }
                   >
@@ -1817,7 +1817,7 @@ const TreeNode: Component<{
   onRenameCancel: () => void;
   activePath: string | null;
   revealPath: string | null;
-  vaultRoot: string;
+  noteboxRoot: string;
   /// Hoisted expansion state so the Expand All / Collapse All toolbar
   /// button can flip every folder at once. Each TreeNode reads its own
   /// directory's expanded flag from this set and toggles via the
@@ -1849,7 +1849,7 @@ const TreeNode: Component<{
   const dropDest = () => {
     if (props.node.is_dir) return props.node.path;
     const slash = props.node.path.lastIndexOf("/");
-    return slash >= 0 ? props.node.path.slice(0, slash) : props.vaultRoot;
+    return slash >= 0 ? props.node.path.slice(0, slash) : props.noteboxRoot;
   };
   const isDropTarget = () => props.dragOverDir() === props.node.path;
 
@@ -1904,11 +1904,11 @@ const TreeNode: Component<{
                 e.dataTransfer!.effectAllowed = "move";
               } else {
                 // Files can also be dropped into the editor to embed
-                // them, which reads this vault-relative-path payload.
-                const rel = props.node.path.startsWith(props.vaultRoot + "/")
-                  ? props.node.path.slice(props.vaultRoot.length + 1)
+                // them, which reads this notebox-relative-path payload.
+                const rel = props.node.path.startsWith(props.noteboxRoot + "/")
+                  ? props.node.path.slice(props.noteboxRoot.length + 1)
                   : props.node.name;
-                e.dataTransfer!.setData("application/x-inkycap-vault-path", rel);
+                e.dataTransfer!.setData("application/x-inkycap-notebox-path", rel);
                 e.dataTransfer!.effectAllowed = "copyMove";
               }
             }}
@@ -2002,7 +2002,7 @@ const TreeNode: Component<{
               onRenameCancel={props.onRenameCancel}
               activePath={props.activePath}
               revealPath={props.revealPath}
-              vaultRoot={props.vaultRoot}
+              noteboxRoot={props.noteboxRoot}
               expandedDirs={props.expandedDirs}
               onToggleDir={props.onToggleDir}
               treeMoveMime={props.treeMoveMime}

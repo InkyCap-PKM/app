@@ -11,8 +11,8 @@ pub enum InkyCapError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("Vault not open")]
-    VaultNotOpen,
+    #[error("Notebox not open")]
+    NoteboxNotOpen,
 
     #[error("File not found: {0}")]
     FileNotFound(String),

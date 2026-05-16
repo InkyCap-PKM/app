@@ -1,4 +1,4 @@
-// inkycap-vault 0.1.0 — Typst package for InkyCap notes.
+// inkycap-notebox 0.1.0 — Typst package for InkyCap notes.
 //
 // Public API:
 //   #note(...)            document-level metadata
@@ -9,7 +9,7 @@
 //   #callout("type")[...] styled admonition block
 //   #verse(body, ...)     whitespace-preserving free-form text with inline
 //                         markup (eval'd per line)
-//   #set-vault(...)       per-document rendering toggles + verse-font
+//   #set-notebox(...)       per-document rendering toggles + verse-font
 //
 // Three queryable labels:
 //   <inkycap-note>  — at most one per file, attached to a metadata dict
@@ -17,7 +17,7 @@
 //   <inkycap-link>  — one per outgoing link (body wikilinks + link-refs in metadata)
 
 // ---------------------------------------------------------------------------
-// apply-vault-defaults / apply-collection-style: document-level styling hooks.
+// apply-notebox-defaults / apply-collection-style: document-level styling hooks.
 //
 // The Rust side emits one or two `#show:` calls right after the package
 // import to apply app-level defaults and per-collection overrides. Using
@@ -31,7 +31,7 @@
 //
 // Usage (emitted by Rust):
 //
-//   #show: apply-vault-defaults.with(text-font: "Inter", text-size: 12pt)
+//   #show: apply-notebox-defaults.with(text-font: "Inter", text-size: 12pt)
 //   #show: apply-collection-style.with(page: (paper: "us-letter"))
 //
 // Both rules wrap the rest of the document; later show/set rules in the
@@ -40,13 +40,13 @@
 
 // `body` is the positional parameter `show:` invokes the function with —
 // it must live directly on the function (not behind a nested `body => ...`
-// closure) so that `apply-vault-defaults.with(...)` returns a function that
+// closure) so that `apply-notebox-defaults.with(...)` returns a function that
 // still accepts the document body positionally.
 //
 // NOTE: `set page(...)` inside a show-rule wrapper is a no-op for
 // document-level layout. The Rust side emits `#set page(...)` as a
 // separate direct rule; `page-paper` here is kept for direct-call use.
-#let apply-vault-defaults(
+#let apply-notebox-defaults(
   text-font: none,
   text-size: none,
   page-paper: none,
@@ -100,10 +100,10 @@
 // ---------------------------------------------------------------------------
 // apply-bibliography: thin wrapper around Typst's `#bibliography(...)`.
 //
-// Rust calls this when the vault has an auto-detected bibliography file and
+// Rust calls this when the notebox has an auto-detected bibliography file and
 // the document doesn't declare one of its own. Keeping the call here (rather
 // than emitting `#bibliography(...)` from Rust) means Typst-specific concerns
-// like style coercion or per-vault default titles can evolve without
+// like style coercion or per-notebox default titles can evolve without
 // touching the Rust side.
 // ---------------------------------------------------------------------------
 
@@ -173,7 +173,7 @@
 
 #let _show-inline-tags = state("inkycap-show-inline-tags", true)
 #let _show-inline-wikilinks = state("inkycap-show-inline-wikilinks", true)
-// Verse font override. When set (via `set-vault(verse-font: "...")`), all
+// Verse font override. When set (via `set-notebox(verse-font: "...")`), all
 // verse() calls without an explicit `font:` argument render in this font.
 // `none` means inherit the document body font.
 #let _verse-font-state = state("inkycap-verse-font", none)
@@ -195,21 +195,21 @@
   _merged-context.update((active: active, mode: mode, chapters: chapters))
 }
 
-#let set-vault(
+#let set-notebox(
   show-inline-tags: none,
   show-inline-wikilinks: none,
   verse-font: none,
 ) = {
   if show-inline-tags != none {
-    assert(type(show-inline-tags) == bool, message: "set-vault: show-inline-tags must be bool")
+    assert(type(show-inline-tags) == bool, message: "set-notebox: show-inline-tags must be bool")
     _show-inline-tags.update(show-inline-tags)
   }
   if show-inline-wikilinks != none {
-    assert(type(show-inline-wikilinks) == bool, message: "set-vault: show-inline-wikilinks must be bool")
+    assert(type(show-inline-wikilinks) == bool, message: "set-notebox: show-inline-wikilinks must be bool")
     _show-inline-wikilinks.update(show-inline-wikilinks)
   }
   if verse-font != none {
-    assert(type(verse-font) == str, message: "set-vault: verse-font must be a string")
+    assert(type(verse-font) == str, message: "set-notebox: verse-font must be a string")
     _verse-font-state.update(verse-font)
   }
 }
@@ -521,7 +521,7 @@
 //   \*, \_, \#, \[, \\, etc.
 //
 // Arguments:
-//   font:       explicit font family (string). Overrides set-vault's
+//   font:       explicit font family (string). Overrides set-notebox's
 //               verse-font. When `none`, falls back to the verse-font
 //               state, then to document body font.
 //   weight:     text weight (integer 100–900 or named string like "bold").
@@ -553,7 +553,7 @@
   let _align = align
 
   context {
-    // Resolve font: explicit arg > set-vault state > inherit (none →
+    // Resolve font: explicit arg > set-notebox state > inherit (none →
     // omit the font argument entirely so the document default applies).
     // `text(font: auto)` is a type error in Typst — font must be string,
     // dict, or array, never `auto` — so the argument has to be omitted

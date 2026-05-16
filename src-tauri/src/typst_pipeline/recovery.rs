@@ -25,7 +25,7 @@ use typst::World;
 use typst::diag::SourceDiagnostic;
 use typst::syntax::Span;
 
-use crate::typst_pipeline::world::VaultWorld;
+use crate::typst_pipeline::world::NoteboxWorld;
 
 /// Upper bound on recompiles. Each pass removes one error; errors can cascade
 /// (a dropped span exposes or creates a neighbouring one), so a few passes are
@@ -48,7 +48,7 @@ inset: (x: 3pt), radius: 2pt)[#text(fill: rgb(\"#b91c1c\"), weight: 700)[\u{26a0
 /// Errors in imported files, or errors with no span, are skipped: rewriting
 /// another file to satisfy this note would be a surprising side effect, and a
 /// spanless error has no location to neutralise.
-fn patch_first_recoverable(world: &VaultWorld, errors: &[SourceDiagnostic]) -> Option<String> {
+fn patch_first_recoverable(world: &NoteboxWorld, errors: &[SourceDiagnostic]) -> Option<String> {
     let main_id = world.main();
     for diag in errors {
         let span: Span = diag.span;
@@ -80,7 +80,7 @@ fn patch_first_recoverable(world: &VaultWorld, errors: &[SourceDiagnostic]) -> O
 /// Returns `Some(doc)` once a (possibly degraded) document builds, or `None`
 /// if recovery could not make progress within [`MAX_RECOVERY_PASSES`].
 pub fn recover<D: typst::Document>(
-    world: &VaultWorld,
+    world: &NoteboxWorld,
     main_path: &Path,
     first_errors: &[SourceDiagnostic],
 ) -> Option<D> {
