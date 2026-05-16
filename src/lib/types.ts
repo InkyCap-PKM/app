@@ -412,6 +412,11 @@ export interface SearchResult {
   context_after: string[];
 }
 
+export interface SearchResponse {
+  results: SearchResult[];
+  total_count: number;
+}
+
 export interface ReplaceResult {
   path: string;
   replacements: number;

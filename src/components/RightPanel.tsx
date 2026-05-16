@@ -469,7 +469,8 @@ const RightPanel: Component = () => {
     async ({ q, ready }): Promise<SearchResult[] | null> => {
       if (!q || !ready) return null;
       try {
-        return await ipc.noteboxSearch(q, 1000, false);
+        const resp = await ipc.noteboxSearch(q, 1000, false);
+        return resp.results;
       } catch {
         return [];
       }

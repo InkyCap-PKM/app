@@ -147,6 +147,10 @@ impl SearchEngine {
         self.path_to_doc.keys().map(|p| p.as_path()).collect()
     }
 
+    pub fn all_indexed_paths(&self) -> Vec<PathBuf> {
+        self.path_to_doc.keys().cloned().collect()
+    }
+
     /// Build the index from a set of files and their contents.
     /// Each entry is (path, content, tags, title, property_keys, property_values).
     pub fn build(
@@ -244,6 +248,28 @@ impl SearchEngine {
     /// the auto-injected notebox-library import are filtered out so users
     /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
+        let mut results = self.collect_ranked_results(query);
+        results.truncate(max_results);
+        results
+    }
+
+    /// Like [`search`], but returns the total match count before
+    /// truncation and supports an offset for pagination.
+    pub fn search_paginated(
+        &self,
+        query: &QueryNode,
+        offset: usize,
+        limit: usize,
+    ) -> (Vec<SearchResult>, usize) {
+        let results = self.collect_ranked_results(query);
+        let total_count = results.len();
+        let page = results.into_iter().skip(offset).take(limit).collect();
+        (page, total_count)
+    }
+
+    /// Core search logic: evaluate query, build scored results, sort by
+    /// relevance descending. Callers decide how to slice the output.
+    fn collect_ranked_results(&self, query: &QueryNode) -> Vec<SearchResult> {
         let matches = self.evaluate(query);
         let mut results: Vec<SearchResult> = Vec::new();
 
@@ -331,7 +357,6 @@ impl SearchEngine {
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        results.truncate(max_results);
         results
     }
 
@@ -753,13 +778,17 @@ impl SearchEngine {
         replacement: &str,
         file_paths: &[PathBuf],
         case_sensitive: bool,
+        use_regex: bool,
     ) -> Vec<(PathBuf, String, usize)> {
-        // Build a regex for the literal search query
-        let escaped = regex::escape(query);
-        let pattern = if case_sensitive {
-            escaped
+        let base = if use_regex {
+            query.to_string()
         } else {
-            format!("(?i){}", escaped)
+            regex::escape(query)
+        };
+        let pattern = if case_sensitive {
+            base
+        } else {
+            format!("(?i){}", base)
         };
         let re = match Regex::new(&pattern) {
             Ok(r) => r,
@@ -1178,7 +1207,7 @@ mod tests {
     fn test_search_and_replace() {
         let engine = make_engine();
         let paths = vec![PathBuf::from("/notebox/note1.md")];
-        let replacements = engine.search_and_replace("Rust", "Go", &paths, true);
+        let replacements = engine.search_and_replace("Rust", "Go", &paths, true, false);
         assert_eq!(replacements.len(), 1);
         assert!(replacements[0].1.contains("Go"));
         assert_eq!(replacements[0].2, 2); // "Rust" appears twice in note1
@@ -1203,6 +1232,26 @@ mod tests {
         let query2 = parse_query("\"rust programming\"").unwrap();
         let results2 = engine.search(&query2, 10);
         assert!(results2.is_empty() || !results2.iter().any(|r| r.path.contains("note1")));
+    }
+
+    #[test]
+    fn test_search_and_replace_empty_replacement() {
+        let engine = make_engine();
+        let paths = vec![PathBuf::from("/notebox/note1.md")];
+        // Replace "Rust" with empty string (deletion)
+        let replacements = engine.search_and_replace("Rust", "", &paths, true, false);
+        assert_eq!(replacements.len(), 1, "Should have replaced in 1 file");
+        assert!(!replacements[0].1.contains("Rust"), "Rust should be removed");
+        assert_eq!(replacements[0].2, 2);
+    }
+
+    #[test]
+    fn test_search_and_replace_regex_empty_replacement() {
+        let engine = make_engine();
+        let paths = vec![PathBuf::from("/notebox/note1.md")];
+        let replacements = engine.search_and_replace("Rust", "", &paths, true, true);
+        assert_eq!(replacements.len(), 1, "Should have replaced in 1 file");
+        assert!(!replacements[0].1.contains("Rust"), "Rust should be removed");
     }
 
 }
