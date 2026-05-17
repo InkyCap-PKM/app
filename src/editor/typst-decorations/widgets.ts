@@ -5,6 +5,7 @@ import * as ipc from "../../lib/ipc";
 import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
+import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -71,11 +72,17 @@ function renderTypstBody(text: string, parent: HTMLElement) {
     link.textContent = display;
     link.title = target;
     link.addEventListener("mousedown", (e) => {
+      if (e.button === 2) return;
       e.preventDefault();
       e.stopPropagation();
       document.dispatchEvent(
         new CustomEvent("inkycap:navigate-wikilink", { detail: { target } }),
       );
+    });
+    link.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showWikilinkContextMenu(e.clientX, e.clientY, target);
     });
     parent.appendChild(link);
     lastIdx = match.index + match[0].length;
@@ -755,9 +762,7 @@ export class WikilinkWidget extends WidgetType {
     pill.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      document.dispatchEvent(
-        new CustomEvent("inkycap:navigate-wikilink", { detail: { target: this.target, label: this.label || undefined, newTab: true } }),
-      );
+      showWikilinkContextMenu(e.clientX, e.clientY, this.target, this.label || undefined);
     });
     return pill;
   }

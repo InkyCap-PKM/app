@@ -34,6 +34,13 @@ pub struct TextToken {
     pub line: usize,
     pub char_start: usize,
     pub char_end: usize,
+    /// True when phrase-separating punctuation (a comma, paren, sentence
+    /// terminator, dash, …) sat between this token and the one before it.
+    /// The corpus engine's n-gram extractors break a phrase run here, so a
+    /// bigram/trigram never spans a punctuation boundary — keeping the
+    /// commas in "(CIADI, Milieux, NextGen Cities)" from fusing list items
+    /// into meaningless collocations.
+    pub phrase_break_before: bool,
 }
 
 /// Output of [`project`]: searchable tokens plus a few structural
@@ -53,6 +60,12 @@ pub struct TextProjection {
     /// if any. Used as a fallback signal for the title-match relevance
     /// bonus when a note doesn't set `#note(title: …)`.
     pub first_h1: Option<String>,
+    /// Transient build state, not output: set when a phrase-separating
+    /// character was the last thing seen, so the *next* token emitted —
+    /// possibly from a different AST node — is flagged as starting a fresh
+    /// phrase run. This carries a trailing comma on one `Text` node across
+    /// to the first word of the next one.
+    pending_break: bool,
 }
 
 /// Walk the parsed AST and produce a [`TextProjection`].
@@ -311,14 +324,28 @@ fn emit_string_tokens(
     let line_start = line_map.line_start(line);
     let col = anchor_byte.saturating_sub(line_start);
 
+    let mut prev_word_end = 0usize;
+    let mut first = true;
     for (offset, word) in word_boundaries(text) {
         let char_start = col + offset;
+        let break_before = (first && out.pending_break)
+            || gap_breaks_phrase(&text[prev_word_end..offset]);
         out.tokens.push(TextToken {
             word: word.to_lowercase(),
             line,
             char_start,
             char_end: char_start + word.len(),
+            phrase_break_before: break_before,
         });
+        if first {
+            out.pending_break = false;
+            first = false;
+        }
+        prev_word_end = offset + word.len();
+    }
+    // A separator after the last word carries to the next emitted token.
+    if gap_breaks_phrase(&text[prev_word_end..]) {
+        out.pending_break = true;
     }
 }
 
@@ -341,11 +368,16 @@ fn emit_tokens_in_range(
     let mut line_byte_start = line_map.line_start(line);
 
     let mut word_start_in_seg: Option<usize> = None;
+    // Byte index (within `segment`) just past the previous emitted word, so
+    // the run of characters between two words can be inspected for phrase-
+    // separating punctuation.
+    let mut prev_word_end_in_seg: usize = 0;
 
     let emit = |seg_start: usize,
                     seg_end: usize,
                     line: usize,
                     line_byte_start: usize,
+                    prev_end: usize,
                     out: &mut TextProjection| {
         let abs_start = range.start + seg_start;
         let abs_end = range.start + seg_end;
@@ -358,7 +390,23 @@ fn emit_tokens_in_range(
             line,
             char_start: abs_start - line_byte_start,
             char_end: abs_end - line_byte_start,
+            phrase_break_before: gap_breaks_phrase(&segment[prev_end..seg_start]),
         });
+    };
+
+    // OR a carried-over phrase break (a separator at the tail of an earlier
+    // node) into the first token this call emits, then clear it.
+    let mut first = true;
+    let mut consume_pending = |out: &mut TextProjection| {
+        if first {
+            if out.pending_break {
+                if let Some(tok) = out.tokens.last_mut() {
+                    tok.phrase_break_before = true;
+                }
+                out.pending_break = false;
+            }
+            first = false;
+        }
     };
 
     for (i, ch) in segment.char_indices() {
@@ -370,7 +418,9 @@ fn emit_tokens_in_range(
             }
         } else {
             if let Some(s) = word_start_in_seg.take() {
-                emit(s, i, line, line_byte_start, out);
+                emit(s, i, line, line_byte_start, prev_word_end_in_seg, out);
+                consume_pending(out);
+                prev_word_end_in_seg = i;
             }
             if ch == '\n' {
                 line += 1;
@@ -382,7 +432,15 @@ fn emit_tokens_in_range(
     }
 
     if let Some(s) = word_start_in_seg {
-        emit(s, segment.len(), line, line_byte_start, out);
+        emit(s, segment.len(), line, line_byte_start, prev_word_end_in_seg, out);
+        consume_pending(out);
+        prev_word_end_in_seg = segment.len();
+    }
+
+    // A separator in the segment tail (after the last word — or the whole
+    // segment, if it held no words) carries to the next token emitted.
+    if gap_breaks_phrase(&segment[prev_word_end_in_seg..]) {
+        out.pending_break = true;
     }
 }
 
@@ -436,6 +494,28 @@ fn word_boundaries(text: &str) -> Vec<(usize, &str)> {
 
 fn is_word_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_' || ch == '-'
+}
+
+/// A character that ends one phrase and begins another — commas, brackets,
+/// sentence terminators, dashes, quotes. Used to stop n-gram extraction from
+/// forming a "phrase" across a punctuation boundary. Intra-word punctuation
+/// (`'` in "don't", `-` in "gasoline-powered") is deliberately excluded —
+/// those are handled by `is_word_char` and never split a word.
+fn is_phrase_separator(ch: char) -> bool {
+    matches!(
+        ch,
+        ',' | ';' | ':' | '.' | '!' | '?'
+            | '(' | ')' | '[' | ']' | '{' | '}'
+            | '/' | '\\' | '|'
+            | '"' | '«' | '»' | '\u{201C}' | '\u{201D}'
+            | '\u{2026}' | '\u{2014}' | '\u{2013}'
+    )
+}
+
+/// True when the run of characters between two adjacent words contains a
+/// phrase boundary — separating punctuation or a line break.
+fn gap_breaks_phrase(gap: &str) -> bool {
+    gap.chars().any(|c| c == '\n' || is_phrase_separator(c))
 }
 
 /// Filename stem from a path-shaped string (forward-slash separated,
@@ -627,6 +707,47 @@ mod tests {
         // "can" appears twice on this line (leading + inside highlight);
         // we just want at least one occurrence.
         assert!(on_line0.iter().filter(|t| **t == "can").count() >= 1);
+    }
+
+    /// Find the first token with a given word.
+    fn tok<'a>(p: &'a TextProjection, word: &str) -> &'a TextToken {
+        p.tokens
+            .iter()
+            .find(|t| t.word == word)
+            .unwrap_or_else(|| panic!("token `{word}` not found"))
+    }
+
+    #[test]
+    fn comma_marks_a_phrase_break() {
+        let p = project("alpha beta, gamma delta");
+        assert!(!tok(&p, "alpha").phrase_break_before);
+        assert!(!tok(&p, "beta").phrase_break_before);
+        // The comma sits between `beta` and `gamma`.
+        assert!(tok(&p, "gamma").phrase_break_before);
+        assert!(!tok(&p, "delta").phrase_break_before);
+    }
+
+    #[test]
+    fn parenthetical_list_items_each_break() {
+        // The mycelial motivating case: a comma-separated parenthetical list.
+        // Every item after the opening paren or a comma starts a fresh
+        // phrase run, so no bigram/trigram fuses the list items together.
+        let p = project("4 institutes (ciadi, milieux, nextgen, appliedai)");
+        for w in ["ciadi", "milieux", "nextgen", "appliedai"] {
+            assert!(
+                tok(&p, w).phrase_break_before,
+                "`{w}` should start a fresh phrase run"
+            );
+        }
+    }
+
+    #[test]
+    fn plain_prose_has_no_phrase_breaks() {
+        // Words separated only by spaces (and formatting markup) are one run.
+        let p = project("the *quick* brown fox");
+        for w in ["quick", "brown", "fox"] {
+            assert!(!tok(&p, w).phrase_break_before, "`{w}` unexpectedly broke");
+        }
     }
 
     #[test]

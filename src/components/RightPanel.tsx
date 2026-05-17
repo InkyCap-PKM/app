@@ -3,6 +3,11 @@
 
 import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { getActiveTab, openTab, closeTab } from "../stores/tabs";
+import {
+  contextNotes,
+  hoveredGraphNode,
+  setHoveredContextNote,
+} from "../stores/mycelial";
 import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
@@ -1121,22 +1126,186 @@ const RightPanel: Component = () => {
               if (tab) {
                 const name = tab.title.replace(/\.[^.]+$/, "");
                 openTab(
-                  { type: "flow", title: `Flow: ${name}`, path: tab.path },
+                  { type: "mycelial", title: name, path: tab.path },
                   { forceNewTab: true },
                 );
               }
             }}
-            title="Flow view"
-            aria-label="Flow view"
+            title="Mycelial View"
+            aria-label="Mycelial View"
           >
             <BrainCircuit size={18} />
           </button>
         </Show>
       </div>
 
+      {/* Mycelial context notes — shown when a mycelial tab is active */}
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
+        {(() => {
+          const [contextFilter, setContextFilter] = createSignal("");
+          const [contextSort, setContextSort] = createSignal<"name" | "connections">("connections");
+          const [expandedContext, setExpandedContext] = createSignal<Set<string>>(new Set());
+
+          const sortedFiltered = createMemo(() => {
+            const filter = contextFilter().toLowerCase();
+            let notes = contextNotes();
+            if (filter) {
+              notes = notes.filter((n) => n.name.toLowerCase().includes(filter));
+            }
+            return [...notes].sort((a, b) => {
+              if (contextSort() === "connections") {
+                return b.linkedInnerIds.length - a.linkedInnerIds.length;
+              }
+              return a.name.localeCompare(b.name);
+            });
+          });
+
+          function toggleExpanded(path: string) {
+            setExpandedContext((prev) => {
+              const next = new Set(prev);
+              if (next.has(path)) next.delete(path);
+              else next.add(path);
+              return next;
+            });
+          }
+
+          function isHighlighted(note: { path: string; linkedInnerIds: string[] }): boolean {
+            const hovered = hoveredGraphNode();
+            if (!hovered) return false;
+            return note.linkedInnerIds.includes(hovered);
+          }
+
+          function innerNodeName(id: string): string {
+            return id.startsWith("emergent:")
+              ? id.slice(9)
+              : id.replace(/\.typ$/, "").split("/").pop() ?? id;
+          }
+
+          return (
+            <div class="right-panel__tab-content">
+              <div class="right-panel__section">
+                <div class="right-panel__section-header">
+                  <span>Linked context</span>
+                  <span class="right-panel__count">{contextNotes().length}</span>
+                </div>
+                <div class="mycelial-context__controls">
+                  <div class="mycelial-context__filter-wrap">
+                    <input
+                      class="mycelial-context__filter"
+                      type="text"
+                      placeholder="Filter…"
+                      value={contextFilter()}
+                      onInput={(e) => setContextFilter(e.currentTarget.value)}
+                    />
+                    <Show when={contextFilter().length > 0}>
+                      <button
+                        class="mycelial-context__filter-clear"
+                        onMouseDown={(e) => { e.preventDefault(); setContextFilter(""); }}
+                        title="Clear filter"
+                        aria-label="Clear filter"
+                      >
+                        <X size={12} />
+                      </button>
+                    </Show>
+                  </div>
+                  <select
+                    class="mycelial-context__sort"
+                    value={contextSort()}
+                    onChange={(e) => setContextSort(e.currentTarget.value as "name" | "connections")}
+                  >
+                    <option value="connections">By connections</option>
+                    <option value="name">By name</option>
+                  </select>
+                </div>
+                <Show
+                  when={sortedFiltered().length > 0}
+                  fallback={<p class="sidebar-hint">No context notes</p>}
+                >
+                  <div class="search-panel__results">
+                    <For each={sortedFiltered()}>
+                      {(note) => {
+                        const expanded = () => expandedContext().has(note.path);
+                        return (
+                          <div class="search-panel__file-group">
+                            <div
+                              class="search-panel__result-file"
+                              classList={{
+                                "mycelial-context__item--highlighted":
+                                  isHighlighted(note),
+                              }}
+                              onMouseEnter={() => setHoveredContextNote(note.path)}
+                              onMouseLeave={() => setHoveredContextNote(null)}
+                            >
+                              <Show
+                                when={note.linkedInnerIds.length > 0}
+                                fallback={
+                                  <span class="mycelial-context__chevron-spacer" />
+                                }
+                              >
+                                <button
+                                  class="search-panel__group-chevron"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleExpanded(note.path);
+                                  }}
+                                  title={expanded() ? "Collapse" : "Expand"}
+                                  aria-expanded={expanded()}
+                                >
+                                  <Show
+                                    when={expanded()}
+                                    fallback={<ChevronRight size={14} />}
+                                  >
+                                    <ChevronDown size={14} />
+                                  </Show>
+                                </button>
+                              </Show>
+                              <span
+                                class="search-panel__file-label"
+                                onClick={() =>
+                                  openTab(
+                                    { type: "file", title: note.name, path: note.path },
+                                    { forceNewTab: true },
+                                  )
+                                }
+                              >
+                                {note.name}
+                              </span>
+                              <Show when={note.linkedInnerIds.length > 0}>
+                                <span class="search-panel__match-count">
+                                  {note.linkedInnerIds.length}
+                                </span>
+                              </Show>
+                            </div>
+                            <Show when={expanded()}>
+                              <For each={note.linkedInnerIds}>
+                                {(innerId) => (
+                                  <div class="search-panel__result">
+                                    <span class="search-panel__result-line">
+                                      → {innerNodeName(innerId)}
+                                    </span>
+                                  </div>
+                                )}
+                              </For>
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          );
+        })()}
+      </Show>
+
       <Show
         when={activeFileTab()}
-        fallback={<p class="sidebar-hint">No file selected</p>}
+        fallback={
+          <Show when={getActiveTab()?.type !== "mycelial"}>
+            <p class="sidebar-hint">No file selected</p>
+          </Show>
+        }
       >
 
         <div class="right-panel__tab-content">

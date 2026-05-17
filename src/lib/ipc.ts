@@ -23,7 +23,6 @@ import type {
   Bookmark,
   BookmarkKind,
   SnapshotInfo,
-  FlowData,
   MycelialData,
   PropertyType,
   ConnectionFlags,
@@ -793,18 +792,6 @@ export async function previewSnapshot(
   });
 }
 
-// Flow View
-
-export async function getFlowData(
-  path: string,
-  maxDepth?: number,
-): Promise<FlowData> {
-  return invoke<FlowData>("get_flow_data", {
-    path,
-    maxDepth: maxDepth ?? null,
-  });
-}
-
 // Mycelial View
 
 export async function getMycelialData(
@@ -815,6 +802,10 @@ export async function getMycelialData(
     path,
     maxDepth: maxDepth ?? null,
   });
+}
+
+export async function addMycelialStopword(term: string): Promise<void> {
+  return invoke<void>("add_mycelial_stopword", { term });
 }
 
 // Note Composer

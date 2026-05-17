@@ -1,28 +1,40 @@
 /**
  * Mycelial View — surfaces where a notebox wants to grow next.
  *
- * Unlike a link-graph browser, this view foregrounds two signals over a
- * note's neighborhood:
- *
- *  - **Latent links** — an existing page mentioned in other notes without a
- *    wikilink. Clicking one opens a picker of the mention sites so the user
- *    can go create the link (the editor deep-links to the exact spot).
- *  - **Emergent concepts** — a recurring phrase with no page of its own.
- *    Clicking one creates a new page seeded with the connections it emerged
- *    from, as a bulleted list of wikilinks.
- *
- * Existing wikilinked pages appear only as faint "anchor" notes for spatial
- * orientation — they are not the point of the view.
+ * The graph shows the inner growth region: the center note, latent links,
+ * emergent concepts, and source notes. Context notes (wikilink neighbors
+ * with no signal) are shown in the right panel as a clickable list.
  */
 
-import { createSignal, createMemo, onMount, For, Show } from "solid-js";
+import {
+  createSignal,
+  createMemo,
+  createEffect,
+  onMount,
+  onCleanup,
+  For,
+  Show,
+} from "solid-js";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import type { LatentLink, SourceMention } from "../lib/types";
+import {
+  contextNotes,
+  setContextNotes,
+  contextEdges,
+  setContextEdges,
+  setHoveredGraphNode,
+  hoveredContextNote,
+  type MycelialContextNote,
+} from "../stores/mycelial";
+import type { LatentLink, SourceMention, FlowEdge } from "../lib/types";
 import {
   computeMycelialLayout,
+  hashString,
+  seededRandom,
   type MycelialLayout,
   type MycelialBox,
+  type MycelialConnection,
+  type BoxKind,
 } from "../lib/mycelial-layout";
 
 interface MycelialViewProps {
@@ -33,12 +45,31 @@ const ZOOM_MIN = 0.15;
 const ZOOM_MAX = 3;
 const PAN_STEP = 140;
 
-/** Capitalize the first letter of each word, for a new page title. */
+interface ViewCacheEntry {
+  layout: MycelialLayout;
+  zoom: number;
+  panX: number;
+  panY: number;
+  isolated: BoxKind | null;
+  history: string[];
+  centerPath: string;
+  maxDepth: number;
+  /** Right-panel context list — cached so a tab switch and return doesn't
+   *  blank it (the underlying signal is module-global and gets cleared on
+   *  unmount). */
+  contextNotes: MycelialContextNote[];
+  contextEdges: FlowEdge[];
+}
+
+const viewCache = new Map<string, ViewCacheEntry>();
+
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(Math.max(v, lo), hi);
+
 function titleCase(s: string): string {
   return s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 }
 
-/** Split a snippet around the first occurrence of `term` for highlighting. */
 function highlightParts(
   snippet: string,
   term: string,
@@ -52,6 +83,29 @@ function highlightParts(
   ];
 }
 
+const LEGEND: { kind: BoxKind; label: string; color: string; dashed: boolean }[] =
+  [
+    { kind: "center", label: "Current note", color: "var(--accent)", dashed: false },
+    {
+      kind: "latent",
+      label: "Latent link",
+      color: "var(--mycelial-latent, #c08a3e)",
+      dashed: true,
+    },
+    {
+      kind: "emergent",
+      label: "Emergent concept",
+      color: "var(--mycelial-emergent, #6f4423)",
+      dashed: false,
+    },
+    {
+      kind: "source",
+      label: "Source note",
+      color: "var(--mycelial-source, #6e6e6e)",
+      dashed: false,
+    },
+  ];
+
 export default function MycelialView(props: MycelialViewProps) {
   const [layout, setLayout] = createSignal<MycelialLayout | null>(null);
   const [loading, setLoading] = createSignal(true);
@@ -59,13 +113,21 @@ export default function MycelialView(props: MycelialViewProps) {
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
+  const [isolated, setIsolated] = createSignal<BoxKind | null>(null);
 
-  // Viewport transform.
+  // Clicking the "Current note" legend item pulses the anchor box rather
+  // than isolating it (isolating a lone node would just blank the canvas).
+  const [pulsing, setPulsing] = createSignal(false);
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Arbitrary stopword entry, opened from the legend row.
+  const [stopwordOpen, setStopwordOpen] = createSignal(false);
+  const [stopwordDraft, setStopwordDraft] = createSignal("");
+
   const [zoom, setZoom] = createSignal(1);
   const [panX, setPanX] = createSignal(0);
   const [panY, setPanY] = createSignal(0);
 
-  // Latent-link mention picker.
   const [picker, setPicker] = createSignal<{
     latent: LatentLink;
     x: number;
@@ -73,8 +135,24 @@ export default function MycelialView(props: MycelialViewProps) {
   } | null>(null);
 
   let canvasRef: HTMLDivElement | undefined;
-  let drag: { x: number; y: number; px: number; py: number; moved: boolean } | null =
-    null;
+  let drag: { sx: number; sy: number; ax: number; ay: number; moved: boolean } | null = null;
+  let suppressClick = false;
+  let hoverTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function setHoverDebounced(id: string | null) {
+    clearTimeout(hoverTimeout);
+    if (id === null) {
+      hoverTimeout = setTimeout(() => {
+        setHoveredBox(null);
+        setHoveredGraphNode(null);
+      }, 80);
+    } else {
+      setHoveredBox(id);
+      setHoveredGraphNode(id);
+    }
+  }
+
+  // ---- Viewport -----------------------------------------------------------
 
   function fitToView(l: MycelialLayout) {
     if (!canvasRef) return;
@@ -86,16 +164,82 @@ export default function MycelialView(props: MycelialViewProps) {
     setPanY((ch - l.height * z) / 2);
   }
 
+  /** Centre the viewport on the anchor note and pulse it a few times. */
+  function spotlightCenter() {
+    const l = layout();
+    const center = l?.boxes.find((b) => b.kind === "center");
+    if (center && canvasRef) {
+      const cw = canvasRef.clientWidth || 800;
+      const ch = canvasRef.clientHeight || 600;
+      setPanX(cw / 2 - (center.x + center.w / 2) * zoom());
+      setPanY(ch / 2 - (center.y + center.h / 2) * zoom());
+    }
+    // Restart the CSS animation: drop the class, re-add it next frame.
+    setPulsing(false);
+    clearTimeout(pulseTimer);
+    requestAnimationFrame(() => {
+      setPulsing(true);
+      pulseTimer = setTimeout(() => setPulsing(false), 1500);
+    });
+  }
+
+  // Dismiss the stopword popup on an outside click (it lives in the legend,
+  // outside the canvas, so the canvas click-handler doesn't reach it).
+  createEffect(() => {
+    if (!stopwordOpen()) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".mycelial-view__legend-tools")) {
+        setStopwordOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown, true);
+    onCleanup(() => document.removeEventListener("mousedown", onDown, true));
+  });
+
+  /** Append a user-typed term to the notebox stopword list and recompute. */
+  async function addArbitraryStopword() {
+    const term = stopwordDraft().trim();
+    if (!term) return;
+    setStopwordOpen(false);
+    setStopwordDraft("");
+    try {
+      await ipc.addMycelialStopword(term);
+      loadData();
+    } catch (err) {
+      console.error("Failed to add stopword", err);
+    }
+  }
+
   async function loadData(path?: string) {
     const targetPath = path ?? centerPath();
     setLoading(true);
     setPicker(null);
+    setNamer(null);
     try {
       const data = await ipc.getMycelialData(targetPath, maxDepth());
+
+      // Build the set of inner node IDs so we can resolve which inner nodes
+      // each context note connects to.
+      const innerIds = new Set<string>([data.center]);
+      for (const n of data.source_notes) innerIds.add(n.id);
+      for (const l of data.latent_links) innerIds.add(l.target_path);
+      for (const e of data.emergent_concepts) innerIds.add(`emergent:${e.term}`);
+
+      setContextNotes(
+        data.context_notes.map((n) => {
+          const linked: string[] = [];
+          for (const edge of data.context_edges) {
+            if (edge.source === n.id && innerIds.has(edge.target)) linked.push(edge.target);
+            if (edge.target === n.id && innerIds.has(edge.source)) linked.push(edge.source);
+          }
+          return { path: n.id, name: n.name, linkedInnerIds: linked };
+        }),
+      );
+      setContextEdges(data.context_edges);
+
       const computed = computeMycelialLayout(
         data.center,
         data.source_notes,
-        data.context_notes,
         data.context_edges,
         data.latent_links,
         data.emergent_concepts,
@@ -109,7 +253,46 @@ export default function MycelialView(props: MycelialViewProps) {
     }
   }
 
-  onMount(() => loadData());
+  onMount(() => {
+    const cached = viewCache.get(props.path);
+    if (cached) {
+      setLayout(cached.layout);
+      setZoom(cached.zoom);
+      setPanX(cached.panX);
+      setPanY(cached.panY);
+      setIsolated(cached.isolated);
+      setHistory(cached.history);
+      setCenterPath(cached.centerPath);
+      setMaxDepth(cached.maxDepth);
+      setContextNotes(cached.contextNotes);
+      setContextEdges(cached.contextEdges);
+      setLoading(false);
+    } else {
+      loadData();
+    }
+  });
+
+  onCleanup(() => {
+    clearTimeout(pulseTimer);
+    const l = layout();
+    if (l) {
+      viewCache.set(props.path, {
+        layout: l,
+        zoom: zoom(),
+        panX: panX(),
+        panY: panY(),
+        isolated: isolated(),
+        history: history(),
+        centerPath: centerPath(),
+        maxDepth: maxDepth(),
+        contextNotes: contextNotes(),
+        contextEdges: contextEdges(),
+      });
+    }
+    setContextNotes([]);
+    setContextEdges([]);
+    setHoveredGraphNode(null);
+  });
 
   function recenter(path: string) {
     if (path === centerPath()) return;
@@ -132,12 +315,175 @@ export default function MycelialView(props: MycelialViewProps) {
     loadData();
   }
 
+  // ---- Derived data -------------------------------------------------------
+
+  const boxById = createMemo(() => {
+    const m = new Map<string, MycelialBox>();
+    for (const b of layout()?.boxes ?? []) m.set(b.id, b);
+    return m;
+  });
+
+  // Render order for the boxes. `<foreignObject>`s have no z-index — they
+  // paint in document order — so the hovered box is moved last to guarantee
+  // it sits on top of any overlapping neighbour and stays clickable.
+  const orderedBoxes = createMemo(() => {
+    const boxes = layout()?.boxes ?? [];
+    const h = hoveredBox();
+    if (!h) return boxes;
+    const idx = boxes.findIndex((b) => b.id === h);
+    if (idx < 0) return boxes;
+    return [...boxes.slice(0, idx), ...boxes.slice(idx + 1), boxes[idx]];
+  });
+
+  const adjacency = createMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const c of layout()?.connections ?? []) {
+      (m.get(c.from) ?? m.set(c.from, new Set()).get(c.from)!).add(c.to);
+      (m.get(c.to) ?? m.set(c.to, new Set()).get(c.to)!).add(c.from);
+    }
+    return m;
+  });
+
+  // When the legend filters to one kind, the graph's real connections are
+  // hidden — so synthesize "pathway" edges between the surviving boxes via
+  // their shared provenance: two concepts that emerged from / are mentioned
+  // in the same note are linked. Source notes already carry real wikilink
+  // edges among themselves, so those are reused directly.
+  const derivedConnections = createMemo<MycelialConnection[]>(() => {
+    const iso = isolated();
+    const l = layout();
+    if (!iso || !l) return [];
+
+    if (iso === "emergent" || iso === "latent") {
+      const boxes = l.boxes.filter((b) => b.kind === iso);
+      const notesOf = (b: MycelialBox): Set<string> => {
+        const ms =
+          b.kind === "emergent" ? b.emergent?.mentions : b.latent?.mentions;
+        return new Set((ms ?? []).map((m) => m.path));
+      };
+      const sets = boxes.map(notesOf);
+      const out: MycelialConnection[] = [];
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          let shared = 0;
+          for (const p of sets[i]) if (sets[j].has(p)) shared++;
+          if (shared > 0) {
+            out.push({
+              kind: iso,
+              score: Math.min(shared / 3, 1),
+              from: boxes[i].id,
+              to: boxes[j].id,
+            });
+          }
+        }
+      }
+      return out;
+    }
+
+    if (iso === "source") {
+      return l.connections.filter((c) => {
+        if (c.kind !== "anchor") return false;
+        const a = boxById().get(c.from);
+        const b = boxById().get(c.to);
+        return a?.kind === "source" && b?.kind === "source";
+      });
+    }
+    return [];
+  });
+
+  function edgePoint(
+    box: MycelialBox,
+    targetX: number,
+    targetY: number,
+  ): { x: number; y: number } {
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    const dx = targetX - cx;
+    const dy = targetY - cy;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy };
+    const scaleX = dx !== 0 ? (box.w / 2) / Math.abs(dx) : Infinity;
+    const scaleY = dy !== 0 ? (box.h / 2) / Math.abs(dy) : Infinity;
+    const scale = Math.min(scaleX, scaleY);
+    return { x: cx + dx * scale, y: cy + dy * scale };
+  }
+
+  function connectionPath(conn: MycelialConnection): string {
+    const a = boxById().get(conn.from);
+    const b = boxById().get(conn.to);
+    if (!a || !b) return "";
+    const acx = a.x + a.w / 2, acy = a.y + a.h / 2;
+    const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    const A = edgePoint(a, bcx, bcy);
+    const B = edgePoint(b, acx, acy);
+    const dx = B.x - A.x;
+    const dy = B.y - A.y;
+    if (conn.kind === "emergent") {
+      const seed = hashString(conn.from + conn.to);
+      const len = Math.hypot(dx, dy) || 1;
+      const px = (-dy / len) * (16 + seededRandom(seed) * 30);
+      const py = (dx / len) * (16 + seededRandom(seed) * 30);
+      return `M ${A.x} ${A.y} C ${A.x + dx * 0.3 + px} ${A.y + dy * 0.3 + py}, ${A.x + dx * 0.7 + px * 0.6} ${A.y + dy * 0.7 + py * 0.6}, ${B.x} ${B.y}`;
+    }
+    const ctrl = Math.max(Math.abs(dx), Math.abs(dy)) * 0.3;
+    return `M ${A.x} ${A.y} C ${A.x + ctrl * Math.sign(dx)} ${A.y}, ${B.x - ctrl * Math.sign(dx)} ${B.y}, ${B.x} ${B.y}`;
+  }
+
+  function boxVisible(kind: BoxKind): boolean {
+    return isolated() === null || isolated() === kind;
+  }
+
+  function boxDimmed(id: string): boolean {
+    const h = hoveredBox();
+    const panelHover = hoveredContextNote();
+    if (panelHover !== null) {
+      const ctx = contextNotes().find((n) => n.path === panelHover);
+      if (ctx) return !ctx.linkedInnerIds.includes(id) && id !== panelHover;
+      return false;
+    }
+    if (h === null) return false;
+    if (h === id) return false;
+    return !(adjacency().get(h)?.has(id) ?? false);
+  }
+
+  function connectionActive(from: string, to: string): boolean {
+    const h = hoveredBox();
+    const panelHover = hoveredContextNote();
+    if (panelHover !== null) {
+      const ctx = contextNotes().find((n) => n.path === panelHover);
+      if (ctx) return ctx.linkedInnerIds.includes(from) || ctx.linkedInnerIds.includes(to);
+      return false;
+    }
+    return h === null || h === from || h === to;
+  }
+
+  function strokeWidth(score: number): number {
+    return 1.8 + score * 3.5;
+  }
+
   // ---- Box interactions ---------------------------------------------------
 
   function handleBoxClick(box: MycelialBox, e: MouseEvent) {
     e.stopPropagation();
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     if (box.kind === "emergent" && box.emergent) {
-      createEmergentNote(box);
+      // A short concept (1–3 words) is already a usable page title — create
+      // it directly. A longer stitched run is a recurring phrase, not a
+      // title, so open the namer popup to let the user trim it first.
+      const wordCount = box.emergent.term.trim().split(/\s+/).length;
+      if (wordCount > 3) {
+        const rect = canvasRef?.getBoundingClientRect();
+        setNamerDraft(titleCase(box.emergent.term));
+        setNamer({
+          box,
+          x: e.clientX - (rect?.left ?? 0),
+          y: e.clientY - (rect?.top ?? 0),
+        });
+      } else {
+        createEmergentNote(box);
+      }
     } else if (box.kind === "latent" && box.latent) {
       const rect = canvasRef?.getBoundingClientRect();
       setPicker({
@@ -145,15 +491,24 @@ export default function MycelialView(props: MycelialViewProps) {
         x: e.clientX - (rect?.left ?? 0),
         y: e.clientY - (rect?.top ?? 0),
       });
-    } else if (box.kind === "source" || box.kind === "context") {
+    } else if (box.kind === "source") {
       recenter(box.id);
     }
   }
 
-  async function createEmergentNote(box: MycelialBox) {
+  // Edit-title popup, shown when a long (multi-word) emergent run is clicked
+  // so the user can trim the recurring phrase down to a real page title.
+  const [namer, setNamer] = createSignal<{
+    box: MycelialBox;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [namerDraft, setNamerDraft] = createSignal("");
+
+  async function createEmergentNote(box: MycelialBox, titleOverride?: string) {
     const concept = box.emergent;
     if (!concept) return;
-    const title = titleCase(concept.term);
+    const title = titleOverride?.trim() || titleCase(concept.term);
     const center = centerPath();
     const folder = center.includes("/")
       ? center.slice(0, center.lastIndexOf("/"))
@@ -169,13 +524,38 @@ export default function MycelialView(props: MycelialViewProps) {
       `${bullets}\n`;
     try {
       const newPath = await ipc.createNote(title, folder, body);
-      openTab(
-        { type: "file", title, path: newPath },
-        { forceNewTab: true },
-      );
+      openTab({ type: "file", title, path: newPath }, { forceNewTab: true });
     } catch (err) {
       console.error("Mycelial View: failed to create emergent note", err);
     }
+  }
+
+  const [contextMenu, setContextMenu] = createSignal<{
+    term: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  async function handleAddStopword(term: string) {
+    setContextMenu(null);
+    try {
+      await ipc.addMycelialStopword(term);
+      loadData();
+    } catch (err) {
+      console.error("Failed to add stopword", err);
+    }
+  }
+
+  function handleBoxContextMenu(box: MycelialBox, e: MouseEvent) {
+    if (box.kind !== "emergent" || !box.emergent) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = canvasRef?.getBoundingClientRect();
+    setContextMenu({
+      term: box.emergent.term,
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0),
+    });
   }
 
   function openMention(m: SourceMention) {
@@ -189,14 +569,14 @@ export default function MycelialView(props: MycelialViewProps) {
     );
   }
 
-  // ---- Viewport (pan / zoom) ---------------------------------------------
+  // ---- Viewport (pan / zoom) ----------------------------------------------
 
   function zoomBy(factor: number, cx?: number, cy?: number) {
     if (!canvasRef) return;
     const rect = canvasRef.getBoundingClientRect();
     const mx = cx ?? rect.width / 2;
     const my = cy ?? rect.height / 2;
-    const next = Math.min(Math.max(zoom() * factor, ZOOM_MIN), ZOOM_MAX);
+    const next = clamp(zoom() * factor, ZOOM_MIN, ZOOM_MAX);
     const wx = (mx - panX()) / zoom();
     const wy = (my - panY()) / zoom();
     setPanX(mx - wx * next);
@@ -215,25 +595,37 @@ export default function MycelialView(props: MycelialViewProps) {
   }
 
   function onCanvasMouseDown(e: MouseEvent) {
-    drag = { x: e.clientX, y: e.clientY, px: panX(), py: panY(), moved: false };
+    drag = {
+      sx: e.clientX,
+      sy: e.clientY,
+      ax: panX(),
+      ay: panY(),
+      moved: false,
+    };
   }
 
   function onCanvasMouseMove(e: MouseEvent) {
     if (!drag) return;
-    const dx = e.clientX - drag.x;
-    const dy = e.clientY - drag.y;
+    const dx = e.clientX - drag.sx;
+    const dy = e.clientY - drag.sy;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
-    setPanX(drag.px + dx);
-    setPanY(drag.py + dy);
+    setPanX(drag.ax + dx);
+    setPanY(drag.ay + dy);
   }
 
   function onCanvasMouseUp() {
+    suppressClick = drag?.moved ?? false;
     drag = null;
   }
 
   function onCanvasClick() {
-    // A click that wasn't a drag dismisses the picker.
-    if (!drag?.moved) setPicker(null);
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    setPicker(null);
+    setContextMenu(null);
+    setNamer(null);
   }
 
   function panBy(dx: number, dy: number) {
@@ -252,47 +644,116 @@ export default function MycelialView(props: MycelialViewProps) {
     e.preventDefault();
   }
 
-  // ---- Hover highlighting -------------------------------------------------
+  // ---- Rendering ----------------------------------------------------------
 
-  // Adjacency over mycelial connections, so hovering a box can keep the
-  // boxes its paths reach visible instead of dimming the whole view.
-  const adjacency = createMemo(() => {
-    const m = new Map<string, Set<string>>();
-    const l = layout();
-    if (!l) return m;
-    for (const c of l.connections) {
-      (m.get(c.from) ?? m.set(c.from, new Set()).get(c.from)!).add(c.to);
-      (m.get(c.to) ?? m.set(c.to, new Set()).get(c.to)!).add(c.from);
-    }
-    return m;
-  });
-
-  /** A box dims only when something else is hovered and it isn't connected. */
-  function boxDimmed(id: string): boolean {
-    const h = hoveredBox();
-    if (h === null || h === id) return false;
-    return !(adjacency().get(h)?.has(id) ?? false);
+  function connectionColor(kind: string): string {
+    return kind === "emergent"
+      ? "var(--mycelial-emergent, #6f4423)"
+      : kind === "latent"
+        ? "var(--mycelial-latent, #c08a3e)"
+        : "var(--border-primary)";
   }
 
-  function connectionActive(from: string, to: string): boolean {
-    const h = hoveredBox();
-    return h === null || h === from || h === to;
-  }
+  const renderConnection = (conn: MycelialConnection) => {
+    const active = () => connectionActive(conn.from, conn.to);
+    return (
+      <path
+        d={connectionPath(conn)}
+        fill="none"
+        stroke={connectionColor(conn.kind)}
+        stroke-width={conn.kind === "anchor" ? 1.5 : strokeWidth(conn.score)}
+        stroke-linecap="round"
+        stroke-dasharray={conn.kind === "latent" ? "5 4" : "none"}
+        opacity={
+          conn.kind === "anchor"
+            ? active()
+              ? 0.5
+              : 0.1
+            : active()
+              ? 0.9
+              : 0.15
+        }
+        style="transition: opacity 0.3s ease"
+      />
+    );
+  };
 
-  function strokeWidth(score: number): number {
-    return 1.2 + score * 3.5;
-  }
+  // Pathway edge between two filtered survivors — faint, dotted, distinct
+  // from the real connections so it reads as "derived, not literal".
+  const renderPathway = (conn: MycelialConnection) => {
+    const active = () => connectionActive(conn.from, conn.to);
+    return (
+      <path
+        d={connectionPath(conn)}
+        fill="none"
+        stroke={connectionColor(conn.kind)}
+        stroke-width={1.2 + conn.score * 2.4}
+        stroke-linecap="round"
+        stroke-dasharray="2 6"
+        opacity={active() ? 0.6 : 0.22}
+        style="transition: opacity 0.3s ease"
+      />
+    );
+  };
+
+  const renderBox = (box: MycelialBox) => (
+    <Show when={boxVisible(box.kind)}>
+      <foreignObject
+        x={box.x}
+        y={box.y}
+        width={box.w}
+        height={box.h}
+        onMouseEnter={() => setHoverDebounced(box.id)}
+        onMouseLeave={() => setHoverDebounced(null)}
+      >
+        <div
+          class={`mycelial-box mycelial-box--${box.kind}`}
+          classList={{
+            "mycelial-box--dim": boxDimmed(box.id),
+            "mycelial-box--pulse": box.kind === "center" && pulsing(),
+          }}
+          style={{ width: `${box.w}px`, height: `${box.h}px` }}
+          onClick={(e) => handleBoxClick(box, e)}
+          onContextMenu={(e) => handleBoxContextMenu(box, e)}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <Show
+            when={box.kind === "latent" || box.kind === "emergent"}
+            fallback={
+              <div class="mycelial-box__note-title">{box.title}</div>
+            }
+          >
+            <div class="mycelial-box__concept">{box.title}</div>
+            <div class="mycelial-box__subtitle">{box.subtitle}</div>
+            <Show when={box.snippet}>
+              <div class="mycelial-box__snippet">
+                <For
+                  each={highlightParts(
+                    box.snippet,
+                    box.latent ? box.latent.term : (box.emergent?.term ?? ""),
+                  )}
+                >
+                  {(part) => (
+                    <span classList={{ "mycelial-box__hit": part.hit }}>
+                      {part.text}
+                    </span>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <div class="mycelial-box__source">{box.sourceLabel}</div>
+          </Show>
+        </div>
+      </foreignObject>
+    </Show>
+  );
 
   return (
     <div class="mycelial-view">
       <div class="mycelial-view__toolbar">
         <div class="mycelial-view__toolbar-left">
           <Show when={history().length > 0}>
-            <button
-              class="mycelial-view__btn"
-              onClick={handleBack}
-              title="Back"
-            >
+            <button class="mycelial-view__btn" onClick={handleBack} title="Back">
               ←
             </button>
           </Show>
@@ -304,7 +765,10 @@ export default function MycelialView(props: MycelialViewProps) {
           </span>
         </div>
         <div class="mycelial-view__toolbar-right">
-          <label class="mycelial-view__depth-label">
+          <label
+            class="mycelial-view__depth-label"
+            title="How many wikilink hops out to scan for the corpus neighborhood"
+          >
             Depth
             <select
               class="mycelial-view__depth-select"
@@ -319,7 +783,7 @@ export default function MycelialView(props: MycelialViewProps) {
           <button
             class="mycelial-view__btn"
             onClick={() => loadData()}
-            title="Refresh"
+            title="Recompute from the current notebox contents"
           >
             ↻
           </button>
@@ -346,118 +810,26 @@ export default function MycelialView(props: MycelialViewProps) {
             const data = l();
             return (
               <svg class="mycelial-view__svg" width="100%" height="100%">
-                <g
-                  transform={`translate(${panX()}, ${panY()}) scale(${zoom()})`}
-                >
-                  {/* Connections */}
-                  <g class="mycelial-connections">
-                    <For each={data.connections}>
-                      {(conn) => {
-                        const active = () =>
-                          connectionActive(conn.from, conn.to);
-                        const color =
-                          conn.kind === "emergent"
-                            ? "var(--mycelial-emergent, #9a7b4f)"
-                            : conn.kind === "latent"
-                              ? "var(--mycelial-latent, #c08a3e)"
-                              : "var(--border-primary)";
-                        return (
-                          <path
-                            d={conn.path}
-                            fill="none"
-                            stroke={color}
-                            stroke-width={
-                              conn.kind === "anchor"
-                                ? 1.2
-                                : strokeWidth(conn.score)
-                            }
-                            stroke-linecap="round"
-                            stroke-dasharray={
-                              conn.kind === "latent" ? "5 4" : "none"
-                            }
-                            opacity={
-                              conn.kind === "anchor"
-                                ? active()
-                                  ? 0.4
-                                  : 0.15
-                                : active()
-                                  ? 0.85
-                                  : 0.25
-                            }
-                          />
-                        );
-                      }}
-                    </For>
-                  </g>
+                <g transform={`translate(${panX()}, ${panY()}) scale(${zoom()})`}>
+                  <Show
+                    when={isolated() === null}
+                    fallback={
+                      <g class="mycelial-connections mycelial-connections--pathway">
+                        <For each={derivedConnections()}>
+                          {(conn) => renderPathway(conn)}
+                        </For>
+                      </g>
+                    }
+                  >
+                    <g class="mycelial-connections">
+                      <For each={data.connections}>
+                        {(conn) => renderConnection(conn)}
+                      </For>
+                    </g>
+                  </Show>
 
-                  {/* Boxes */}
-                  <For each={data.boxes}>
-                    {(box) => (
-                      <foreignObject
-                        x={box.x}
-                        y={box.y}
-                        width={box.w}
-                        height={box.h}
-                        onMouseEnter={() => setHoveredBox(box.id)}
-                        onMouseLeave={() => setHoveredBox(null)}
-                      >
-                        <div
-                          class={`mycelial-box mycelial-box--${box.kind}`}
-                          classList={{
-                            "mycelial-box--dim": boxDimmed(box.id),
-                          }}
-                          style={{
-                            width: `${box.w}px`,
-                            height: `${box.h}px`,
-                          }}
-                          onClick={(e) => handleBoxClick(box, e)}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <Show
-                            when={
-                              box.kind === "latent" || box.kind === "emergent"
-                            }
-                            fallback={
-                              <div class="mycelial-box__note-title">
-                                {box.title}
-                              </div>
-                            }
-                          >
-                            <div class="mycelial-box__concept">
-                              {box.title}
-                            </div>
-                            <div class="mycelial-box__subtitle">
-                              {box.subtitle}
-                            </div>
-                            <Show when={box.snippet}>
-                              <div class="mycelial-box__snippet">
-                                <For
-                                  each={highlightParts(
-                                    box.snippet,
-                                    box.latent
-                                      ? box.latent.term
-                                      : (box.emergent?.term ?? ""),
-                                  )}
-                                >
-                                  {(part) => (
-                                    <span
-                                      classList={{
-                                        "mycelial-box__hit": part.hit,
-                                      }}
-                                    >
-                                      {part.text}
-                                    </span>
-                                  )}
-                                </For>
-                              </div>
-                            </Show>
-                            <div class="mycelial-box__source">
-                              {box.sourceLabel}
-                            </div>
-                          </Show>
-                        </div>
-                      </foreignObject>
-                    )}
+                  <For each={orderedBoxes()}>
+                    {(box) => renderBox(box)}
                   </For>
                 </g>
               </svg>
@@ -507,7 +879,7 @@ export default function MycelialView(props: MycelialViewProps) {
               ↓
             </button>
           </div>
-          <div class="mycelial-controls__zoom">
+          <div class="mycelial-controls__group">
             <button
               class="mycelial-controls__btn"
               title="Zoom in"
@@ -538,7 +910,7 @@ export default function MycelialView(props: MycelialViewProps) {
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div class="mycelial-picker__header">
-                Link “{p().latent.term}” → {p().latent.target_name}
+                Link "{p().latent.term}" → {p().latent.target_name}
               </div>
               <div class="mycelial-picker__hint">
                 Open a note to wrap the mention in <code>[[ ]]</code>:
@@ -553,9 +925,7 @@ export default function MycelialView(props: MycelialViewProps) {
                     <span class="mycelial-picker__item-snippet">
                       <For each={highlightParts(m.snippet, p().latent.term)}>
                         {(part) => (
-                          <span
-                            classList={{ "mycelial-box__hit": part.hit }}
-                          >
+                          <span classList={{ "mycelial-box__hit": part.hit }}>
                             {part.text}
                           </span>
                         )}
@@ -567,44 +937,184 @@ export default function MycelialView(props: MycelialViewProps) {
             </div>
           )}
         </Show>
+
+        {/* Emergent concept context menu */}
+        <Show when={contextMenu()}>
+          {(cm) => (
+            <div
+              class="mycelial-context-menu"
+              style={{ left: `${cm().x}px`, top: `${cm().y}px` }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                class="mycelial-context-menu__item"
+                onClick={() => handleAddStopword(cm().term)}
+              >
+                Add "{cm().term}" to stopwords
+              </button>
+            </div>
+          )}
+        </Show>
+
+        {/* Edit-title popup — shown for long emergent runs before creating */}
+        <Show when={namer()}>
+          {(n) => {
+            const submit = () => {
+              if (!namerDraft().trim()) return;
+              createEmergentNote(n().box, namerDraft());
+              setNamer(null);
+            };
+            return (
+              <div
+                class="mycelial-picker mycelial-namer"
+                style={{ left: `${n().x}px`, top: `${n().y}px` }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div class="mycelial-picker__header">New page from phrase</div>
+                <div class="mycelial-picker__hint">
+                  This is a recurring phrase — trim it to a page title:
+                </div>
+                <input
+                  class="mycelial-namer__input"
+                  type="text"
+                  value={namerDraft()}
+                  onInput={(e) => setNamerDraft(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submit();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setNamer(null);
+                    }
+                  }}
+                  ref={(el) =>
+                    queueMicrotask(() => {
+                      el.focus();
+                      el.select();
+                    })
+                  }
+                />
+                <div class="mycelial-namer__actions">
+                  <button
+                    class="app-modal__btn app-modal__btn--secondary"
+                    onClick={() => setNamer(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="app-modal__btn app-modal__btn--primary"
+                    disabled={!namerDraft().trim()}
+                    onClick={submit}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            );
+          }}
+        </Show>
       </div>
 
+      {/* Legend doubles as a type filter */}
       <div class="mycelial-view__legend">
-        <span class="mycelial-view__legend-item">
-          <span
-            class="mycelial-view__legend-dot"
-            style={{ background: "var(--accent)" }}
-          />
-          Current note
-        </span>
-        <span class="mycelial-view__legend-item">
-          <span
-            class="mycelial-view__legend-dot"
-            style={{ background: "var(--mycelial-latent, #c08a3e)" }}
-          />
-          Latent link
-        </span>
-        <span class="mycelial-view__legend-item">
-          <span
-            class="mycelial-view__legend-dot"
-            style={{ background: "var(--mycelial-emergent, #9a7b4f)" }}
-          />
-          Emergent concept
-        </span>
-        <span class="mycelial-view__legend-item">
-          <span
-            class="mycelial-view__legend-dot"
-            style={{ background: "var(--fg-secondary)" }}
-          />
-          Source note
-        </span>
-        <span class="mycelial-view__legend-item">
-          <span
-            class="mycelial-view__legend-dot"
-            style={{ background: "var(--border-primary)" }}
-          />
-          Linked context
-        </span>
+        <For each={LEGEND}>
+          {(item) => (
+            <button
+              class="mycelial-view__legend-item"
+              classList={{
+                "mycelial-view__legend-item--active": isolated() === item.kind,
+                "mycelial-view__legend-item--muted":
+                  isolated() !== null
+                  && isolated() !== item.kind
+                  && item.kind !== "center",
+              }}
+              title={
+                item.kind === "center"
+                  ? "Pan to the current note"
+                  : isolated() === item.kind
+                    ? "Show all types"
+                    : `Show only ${item.label.toLowerCase()}`
+              }
+              onClick={() => {
+                // The anchor is a single node — isolating it just blanks the
+                // canvas. Clear any filter and pulse it into view instead.
+                if (item.kind === "center") {
+                  setIsolated(null);
+                  spotlightCenter();
+                } else {
+                  setIsolated((cur) => (cur === item.kind ? null : item.kind));
+                }
+              }}
+            >
+              <span
+                class="mycelial-view__legend-line"
+                classList={{
+                  "mycelial-view__legend-line--dashed": item.dashed,
+                }}
+                style={{ "border-color": item.color }}
+              />
+              {item.label}
+            </button>
+          )}
+        </For>
+
+        {/* Arbitrary stopword entry — sits at the right edge of the row. */}
+        <div class="mycelial-view__legend-tools">
+          <button
+            class="mycelial-view__legend-stopword"
+            title="Add a word to the mycelial stopword list"
+            onClick={() => setStopwordOpen((v) => !v)}
+          >
+            + stopword
+          </button>
+          <Show when={stopwordOpen()}>
+            <div
+              class="mycelial-picker mycelial-namer mycelial-view__stopword-pop"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div class="mycelial-picker__header">Add stopword</div>
+              <div class="mycelial-picker__hint">
+                Stopwords are excluded from concept detection.
+              </div>
+              <input
+                class="mycelial-namer__input"
+                type="text"
+                placeholder="word to ignore"
+                value={stopwordDraft()}
+                onInput={(e) => setStopwordDraft(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addArbitraryStopword();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setStopwordOpen(false);
+                  }
+                }}
+                ref={(el) => queueMicrotask(() => el.focus())}
+              />
+              <div class="mycelial-namer__actions">
+                <button
+                  class="app-modal__btn app-modal__btn--secondary"
+                  onClick={() => setStopwordOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  class="app-modal__btn app-modal__btn--primary"
+                  disabled={!stopwordDraft().trim()}
+                  onClick={addArbitraryStopword}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
       </div>
     </div>
   );

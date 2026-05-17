@@ -2,14 +2,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::State;
 
-use crate::errors::InkyCapError;
 use crate::link_index::LinkIndex;
-use crate::state::AppState;
-use crate::storage::sanitize_notebox_arg;
 
-/// A node in the flow/mycelial view graph.
+/// A node in the link graph (used by the Mycelial View for BFS neighborhood seeding).
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowNode {
     pub id: String,
@@ -18,19 +14,11 @@ pub struct FlowNode {
     pub direction: String,
 }
 
-/// An edge in the flow/mycelial view graph.
+/// An edge in the link graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowEdge {
     pub source: String,
     pub target: String,
-}
-
-/// Complete flow view data for SVG rendering.
-#[derive(Debug, Clone, Serialize)]
-pub struct FlowData {
-    pub nodes: Vec<FlowNode>,
-    pub edges: Vec<FlowEdge>,
-    pub center: String,
 }
 
 /// BFS traversal of the link graph from a center note.
@@ -123,22 +111,3 @@ pub fn bfs_link_graph(
     (nodes, edges)
 }
 
-/// Get the flow graph data for a note, expanding up to `max_depth` levels.
-#[tauri::command]
-pub async fn get_flow_data(
-    path: String,
-    max_depth: Option<usize>,
-    state: State<'_, AppState>,
-) -> Result<FlowData, InkyCapError> {
-    let link_index = state.link_index.read().await;
-    let max_depth = max_depth.unwrap_or(2).min(3);
-    let center_path = sanitize_notebox_arg(&path)?;
-
-    let (nodes, edges) = bfs_link_graph(&link_index, &center_path, &path, max_depth);
-
-    Ok(FlowData {
-        nodes,
-        edges,
-        center: path,
-    })
-}

@@ -31,5 +31,8 @@
   "refNotes.loadingNotes": "Loading notes…",
   "refNotes.noNotes": "No notes found for this reference.",
   "wikilink.suggest.create": "Create: {name}",
-  "wikilink.suggest.alias_hint": "via alias \"{alias}\""
+  "wikilink.suggest.alias_hint": "via alias \"{alias}\"",
+  "wikilink.menu.openNewTab": "Open in new tab",
+  "wikilink.menu.openScroll": "Open in Journal Scroll tab",
+  "wikilink.menu.openMycelial": "Open in Mycelial View tab"
 }

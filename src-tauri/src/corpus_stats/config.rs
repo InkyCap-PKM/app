@@ -13,8 +13,15 @@ pub struct MycelialConfig {
     pub bigram_min_freq: usize,
     /// Whether to include single-word emergent concepts.
     pub include_unigrams: bool,
-    /// Whether to include multi-word (bigram) emergent concepts.
+    /// Whether to include two-word (bigram) emergent concepts.
     pub include_bigrams: bool,
+    /// Whether to include three-word (trigram) emergent concepts.
+    pub include_trigrams: bool,
+    /// Minimum number of documents a trigram must appear in to be considered.
+    pub trigram_min_freq: usize,
+    /// Score multiplier for trigrams — three-word phrases that recur are the
+    /// strongest "unnamed concept" signal, so they rank above bigrams.
+    pub trigram_boost: f64,
     /// Number of top suggestions to return.
     pub top_k: usize,
     /// Minimum number of notes in the notebox before suggestions activate.
@@ -45,6 +52,9 @@ impl Default for MycelialConfig {
             bigram_min_freq: 3,
             include_unigrams: true,
             include_bigrams: true,
+            include_trigrams: true,
+            trigram_min_freq: 2,
+            trigram_boost: 2.0,
             top_k: 12,
             min_corpus_size: 20,
             pmi_weight: 0.4,

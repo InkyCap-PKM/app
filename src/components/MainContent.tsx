@@ -14,10 +14,10 @@ import TypstEditor from "./TypstEditor";
 import MycelialView from "./MycelialView";
 import { executeCommand } from "../lib/command-registry";
 import { isEnabled as isJournalScrollTab } from "../stores/journal-scroll";
-import { ChevronLeft, ChevronRight, Scroll } from "lucide-solid";
+import { BrainCircuit, ChevronLeft, ChevronRight, Scroll } from "lucide-solid";
 
 /// Render the title for a tab. File tabs show the basename without the
-/// extension; other tab types keep their title verbatim (e.g. "Flow:
+/// extension; other tab types keep their title verbatim (e.g. "Mycelial:
 /// foo", "References", search results). The dot must follow at least one
 /// character so a leading-dot file like ".gitignore" doesn't render blank.
 function displayTabTitle(tab: { type: string; title: string }): string {
@@ -132,6 +132,11 @@ const MainContent: Component = () => {
                     <Scroll size={13} />
                   </span>
                 </Show>
+                <Show when={tab.type === "mycelial"}>
+                  <span class="tab__icon" title="Mycelial View">
+                    <BrainCircuit size={13} />
+                  </span>
+                </Show>
                 <span class="tab__title">
                   {dirtyTabs().has(tab.id) ? "\u25CF " : ""}
                   {displayTabTitle(tab)}
@@ -180,7 +185,7 @@ const MainContent: Component = () => {
                 if (t.type === "collection") {
                   return <CollectionTable path={t.path} />;
                 }
-                if (t.type === "flow") {
+                if (t.type === "mycelial") {
                   return <MycelialView path={t.path} />;
                 }
                 return (
