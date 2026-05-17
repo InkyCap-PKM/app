@@ -28,6 +28,7 @@ import {
   setCachedEditorState,
   closeTab,
 } from "../stores/tabs";
+import { navigateWikilink } from "../lib/wikilink-nav";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
@@ -580,27 +581,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     const label = detail?.label as string | undefined;
     const newTab = detail?.newTab as boolean | undefined;
     if (!target) return;
-    (async () => {
-      try {
-        const resolved = await ipc.resolveWikilink(target);
-        if (resolved) {
-          const name = resolved.replace(/\.typ$/, "").split("/").pop() ?? resolved;
-          openTab(
-            { type: "file", title: name, path: resolved },
-            { forceNewTab: newTab ?? false, headingLabel: label },
-          );
-        } else {
-          const created = await ipc.createNote(target, "");
-          const name = created.replace(/\.typ$/, "").split("/").pop() ?? target;
-          openTab(
-            { type: "file", title: name, path: created },
-            { forceNewTab: newTab ?? false },
-          );
-        }
-      } catch (err) {
-        console.error("[TypstEditor] wikilink navigate failed:", err);
-      }
-    })();
+    void navigateWikilink(target, label, newTab ?? false);
   };
   document.addEventListener("inkycap:navigate-wikilink", onWikilinkNav);
   onCleanup(() => document.removeEventListener("inkycap:navigate-wikilink", onWikilinkNav));

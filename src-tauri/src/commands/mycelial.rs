@@ -231,12 +231,17 @@ pub async fn get_mycelial_data(
     }
     source_ids.remove(&path);
 
-    let source_notes: Vec<FlowNode> = source_ids
+    // `source_ids` / `link_node_ids` are HashSets — iteration order varies
+    // per call. Sort the rendered node lists by id so the Mycelial View
+    // layout (whose force simulation seeds off input order) is stable across
+    // recomputes of the same notebox.
+    let mut source_notes: Vec<FlowNode> = source_ids
         .iter()
         .map(|p| flow_node(p, &path))
         .collect();
+    source_notes.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let context_notes: Vec<FlowNode> = link_node_ids
+    let mut context_notes: Vec<FlowNode> = link_node_ids
         .iter()
         .filter(|id| {
             **id != path
@@ -245,6 +250,7 @@ pub async fn get_mycelial_data(
         })
         .map(|p| flow_node(p, &path))
         .collect();
+    context_notes.sort_by(|a, b| a.id.cmp(&b.id));
 
     // Faint wikilinks among the rendered notes (excludes latent targets,
     // whose connections are shown as the latent links themselves).
@@ -252,10 +258,13 @@ pub async fn get_mycelial_data(
         .chain(source_ids.iter())
         .chain(context_notes.iter().map(|n| &n.id))
         .collect();
-    let context_edges: Vec<FlowEdge> = link_edges
+    let mut context_edges: Vec<FlowEdge> = link_edges
         .into_iter()
         .filter(|e| rendered.contains(&e.source) && rendered.contains(&e.target))
         .collect();
+    context_edges.sort_by(|a, b| {
+        a.source.cmp(&b.source).then_with(|| a.target.cmp(&b.target))
+    });
 
     Ok(MycelialData {
         center: path,
@@ -344,4 +353,50 @@ fn trim_snippet(line: &str) -> String {
     let mut out: String = trimmed.chars().take(SNIPPET_MAX_CHARS).collect();
     out.push('…');
     out
+}
+
+#[tauri::command]
+pub async fn add_mycelial_stopword(
+    term: String,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+
+    // Ensure parent directory exists.
+    if let Some(parent) = stopwords_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    // Read existing content to avoid duplicates.
+    let existing = tokio::fs::read_to_string(&stopwords_path)
+        .await
+        .unwrap_or_default();
+    let lowered = term.to_lowercase();
+    let already = existing
+        .lines()
+        .any(|line| line.trim().to_lowercase() == lowered);
+    if already {
+        return Ok(());
+    }
+
+    // Append the term on its own line.
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stopwords_path)
+        .await?;
+    let line = if existing.ends_with('\n') || existing.is_empty() {
+        format!("{lowered}\n")
+    } else {
+        format!("\n{lowered}\n")
+    };
+    file.write_all(line.as_bytes()).await?;
+
+    // Reload stopwords in the corpus stats engine.
+    let mut corpus = state.corpus_stats.write().await;
+    corpus.reload_stopwords(Some(storage.root()));
+
+    Ok(())
 }

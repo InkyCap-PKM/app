@@ -143,9 +143,8 @@
   --mycelial-tendril-strong: #5d4e37;
   --mycelial-tendril-text: #6b5b45;
   --mycelial-latent: #c08a3e;
-  --mycelial-emergent: #9a7b4f;
-  --flow-backlink: #4a9eff;
-  --flow-forward: #4ecdc4;
+  --mycelial-emergent: #6f4423;
+  --mycelial-source: #6e6e6e;
 
   /* Visual-editor decoration tokens (light) */
   --pill-fg: #ffffff;
@@ -258,9 +257,10 @@
   --mycelial-tendril-strong: #d4b892;
   --mycelial-tendril-text: #b89e78;
   --mycelial-latent: #d6a45c;
-  --mycelial-emergent: #c4a882;
-  --flow-backlink: #6ab4ff;
-  --flow-forward: #6ee0d8;
+  --mycelial-emergent: #b07d52;
+  --mycelial-emergent-bg: color-mix(in srgb, #b07d52 10%, var(--bg-primary));
+  --mycelial-source: #9a9a9a;
+  --mycelial-hit-bg: color-mix(in srgb, #d6a45c 25%, transparent);
 
   /* Visual-editor decoration tokens (dark) */
   --pill-fg: #ffffff;

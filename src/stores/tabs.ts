@@ -5,7 +5,7 @@ export type EditingMode = "source" | "live" | "reading";
 
 export interface Tab {
   id: string;
-  type: "collection" | "file" | "flow" | "empty";
+  type: "collection" | "file" | "mycelial" | "empty";
   title: string;
   path: string;
   viewName?: string;
@@ -22,7 +22,7 @@ export interface Tab {
 }
 
 interface TabHistoryEntry {
-  type: "collection" | "file" | "flow" | "empty";
+  type: "collection" | "file" | "mycelial" | "empty";
   title: string;
   path: string;
 }
@@ -93,7 +93,7 @@ export interface OpenTabOptions {
 }
 
 /**
- * Open a file/collection/flow. By default, navigates within the active
+ * Open a file/collection/mycelial view. By default, navigates within the active
  * tab (replacing its content and pushing history). If `forceNewTab` is
  * set, or there is no active tab, a new tab is created instead.
  *
@@ -243,7 +243,7 @@ export function switchToTabByIndex(index: number) {
  * becoming a phantom that errors on the next save.
  *
  * The new title is derived from the destination filename, matching how
- * `openTab` callers (App.tsx, FlowView.tsx, NoteComposer.tsx) compute
+ * `openTab` callers (App.tsx, MycelialView.tsx, NoteComposer.tsx) compute
  * the title from a path. We don't try to detect "user-customized
  * titles" because the app doesn't currently support them — every tab
  * title is the basename of its path.

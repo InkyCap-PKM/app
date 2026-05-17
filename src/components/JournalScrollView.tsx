@@ -27,6 +27,7 @@ import {
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { onFileChanged } from "../lib/events";
+import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import {
   consumeScrollNavRequest,
   findOffsetForTarget,
@@ -328,7 +329,8 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 
   // Wikilink click routing (delegated on the container so it covers every
   // entry without per-entry handler installation). Smart routing:
-  //   - modifier-click / middle-click / right-click → open in new tab
+  //   - right-click → wikilink context menu (open-as destinations)
+  //   - modifier-click / middle-click → open in new tab
   //   - plain click + target is in the currently-loaded entry window →
   //     smooth-scroll to it
   //   - plain click + target is unresolved or outside the loaded window →
@@ -354,6 +356,14 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     if (!rawName) return;
     const baseName = rawName.split("::")[0].split("#")[0].trim();
     if (!baseName) return;
+    // Right-click: offer the open-as destinations rather than acting.
+    if (e.type === "contextmenu") {
+      const label = rawName.includes("::")
+        ? rawName.split("::")[1].trim() || undefined
+        : undefined;
+      showWikilinkContextMenu(e.clientX, e.clientY, baseName, label);
+      return;
+    }
     let forwardLinks;
     try {
       forwardLinks = await ipc.getForwardLinks(sourcePath);
@@ -365,8 +375,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       (l) => l.name.toLowerCase() === baseName.toLowerCase(),
     );
     if (!match) return;
-    const isModifier =
-      e.ctrlKey || e.metaKey || e.button === 1 || e.button === 2;
+    const isModifier = e.ctrlKey || e.metaKey || e.button === 1;
     if (isModifier) {
       openTab(
         { type: "file", title: match.name, path: match.path },

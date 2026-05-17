@@ -274,7 +274,7 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   registerCommand({
-    id: "tools:flow-view",
+    id: "tools:mycelial-view",
     title: "Open Mycelial View",
     category: "Tools",
     execute: () => {
@@ -283,8 +283,8 @@ export function registerBuiltinCommands(callbacks: {
         const name = tab.title.replace(/\.[^.]+$/, "");
         openTab(
           {
-            type: "flow",
-            title: `Flow: ${name}`,
+            type: "mycelial",
+            title: name,
             path: tab.path,
           },
           { forceNewTab: true },

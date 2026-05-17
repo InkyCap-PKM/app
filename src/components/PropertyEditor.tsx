@@ -3,6 +3,7 @@ import type { PropertyValue, PropertyType } from "../lib/types";
 import { propertyType } from "../stores/propertyTypes";
 import { sanitizeAlias } from "../lib/typst";
 import * as ipc from "../lib/ipc";
+import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import DatePicker from "./DatePicker";
 
 export interface PropertyEditorProps {
@@ -127,6 +128,11 @@ function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
       document.dispatchEvent(
         new CustomEvent("inkycap:navigate-wikilink", { detail: { target } }),
       );
+    });
+    link.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showWikilinkContextMenu(e.clientX, e.clientY, target);
     });
     parts.push(link);
     lastIdx = match.index + match[0].length;

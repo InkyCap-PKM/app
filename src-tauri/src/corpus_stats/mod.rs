@@ -45,6 +45,10 @@ pub struct CorpusStats {
     pub bigram_doc_freq: HashMap<String, usize>,
     /// bigram key → total corpus-wide occurrence count
     pub bigram_count: HashMap<String, usize>,
+    /// trigram key → number of documents containing the adjacent triple
+    pub trigram_doc_freq: HashMap<String, usize>,
+    /// trigram key → total corpus-wide occurrence count
+    pub trigram_count: HashMap<String, usize>,
     /// term → total corpus-wide occurrence count
     pub unigram_count: HashMap<String, usize>,
     /// Total number of unigram tokens across the corpus (cached for PMI denominator)
@@ -57,6 +61,10 @@ pub struct CorpusStats {
     doc_bigrams: HashMap<PathBuf, Vec<String>>,
     /// Per-document unique bigram sets (for fast neighborhood membership queries)
     doc_bigram_sets: HashMap<PathBuf, HashSet<String>>,
+    /// Per-document trigram occurrence lists (for count subtraction on removal)
+    doc_trigrams: HashMap<PathBuf, Vec<String>>,
+    /// Per-document unique trigram sets (for fast neighborhood membership queries)
+    doc_trigram_sets: HashMap<PathBuf, HashSet<String>>,
     /// Per-document total word count (for accurate TF-IDF)
     doc_word_count: HashMap<PathBuf, usize>,
     /// Active stopword set
@@ -103,12 +111,16 @@ impl CorpusStats {
             doc_freq: HashMap::new(),
             bigram_doc_freq: HashMap::new(),
             bigram_count: HashMap::new(),
+            trigram_doc_freq: HashMap::new(),
+            trigram_count: HashMap::new(),
             unigram_count: HashMap::new(),
             total_unigrams: 0,
             total_bigrams: 0,
             doc_unigrams: HashMap::new(),
             doc_bigrams: HashMap::new(),
             doc_bigram_sets: HashMap::new(),
+            doc_trigrams: HashMap::new(),
+            doc_trigram_sets: HashMap::new(),
             doc_word_count: HashMap::new(),
             stopwords: stopwords::build_stopwords(notebox_root),
         }
@@ -165,10 +177,23 @@ impl CorpusStats {
             *self.bigram_doc_freq.entry(bg.clone()).or_insert(0) += 1;
         }
 
+        // Trigrams: three adjacent non-stopword tokens on the same line.
+        let trigrams_vec = extract_trigrams_from_tokens(tokens, &self.stopwords);
+        let mut seen_trigrams: HashSet<String> = HashSet::new();
+        for tg in &trigrams_vec {
+            *self.trigram_count.entry(tg.clone()).or_insert(0) += 1;
+            seen_trigrams.insert(tg.clone());
+        }
+        for tg in &seen_trigrams {
+            *self.trigram_doc_freq.entry(tg.clone()).or_insert(0) += 1;
+        }
+
         // Store for incremental subtraction and neighborhood queries
         self.doc_unigrams.insert(path.to_path_buf(), seen_unigrams);
         self.doc_bigrams.insert(path.to_path_buf(), bigrams_vec);
         self.doc_bigram_sets.insert(path.to_path_buf(), seen_bigrams);
+        self.doc_trigrams.insert(path.to_path_buf(), trigrams_vec);
+        self.doc_trigram_sets.insert(path.to_path_buf(), seen_trigrams);
     }
 
     /// Remove a document's contribution from corpus statistics.
@@ -214,6 +239,29 @@ impl CorpusStats {
                     *count = count.saturating_sub(1);
                     if *count == 0 {
                         self.bigram_doc_freq.remove(bg);
+                    }
+                }
+            }
+        }
+
+        // Subtract trigram counts using the full occurrence list
+        if let Some(trigrams) = self.doc_trigrams.remove(path) {
+            for tg in &trigrams {
+                if let Some(count) = self.trigram_count.get_mut(tg) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        self.trigram_count.remove(tg);
+                    }
+                }
+            }
+        }
+        // Subtract trigram doc_freq using the unique set
+        if let Some(trigram_set) = self.doc_trigram_sets.remove(path) {
+            for tg in &trigram_set {
+                if let Some(count) = self.trigram_doc_freq.get_mut(tg) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        self.trigram_doc_freq.remove(tg);
                     }
                 }
             }
@@ -374,8 +422,11 @@ impl CorpusStats {
                 if self.stopwords.contains(term) {
                     continue;
                 }
-                let neighborhood_count =
-                    self.count_neighborhood_presence(term, &neighborhood_set, false);
+                let neighborhood_count = self.count_neighborhood_presence(
+                    term,
+                    &neighborhood_set,
+                    &self.doc_unigrams,
+                );
                 if neighborhood_count == 0 {
                     continue;
                 }
@@ -385,7 +436,8 @@ impl CorpusStats {
                 if score <= 0.0 {
                     continue;
                 }
-                let source_notes = self.source_notes_for_term(term, &neighborhood_set, false);
+                let source_notes =
+                    self.source_notes_for_term(term, &neighborhood_set, &self.doc_unigrams);
                 match existing_pages.get(term) {
                     Some(target) => latent.push(LatentCandidate {
                         term: term.clone(),
@@ -422,8 +474,11 @@ impl CorpusStats {
                     continue;
                 }
                 let display_term = bigram_key.replace(BIGRAM_SEP, " ");
-                let neighborhood_count =
-                    self.count_neighborhood_presence(bigram_key, &neighborhood_set, true);
+                let neighborhood_count = self.count_neighborhood_presence(
+                    bigram_key,
+                    &neighborhood_set,
+                    &self.doc_bigram_sets,
+                );
                 if neighborhood_count == 0 {
                     continue;
                 }
@@ -437,8 +492,11 @@ impl CorpusStats {
                 if score <= 0.0 {
                     continue;
                 }
-                let source_notes =
-                    self.source_notes_for_term(bigram_key, &neighborhood_set, true);
+                let source_notes = self.source_notes_for_term(
+                    bigram_key,
+                    &neighborhood_set,
+                    &self.doc_bigram_sets,
+                );
                 match existing_pages.get(&display_term) {
                     Some(target) => latent.push(LatentCandidate {
                         term: display_term,
@@ -462,17 +520,94 @@ impl CorpusStats {
             }
         }
 
+        // Score trigrams. Cohesion is the weaker of the two constituent-bigram
+        // PMIs — a phrase "w1 w2 w3" holds together only if both adjacent
+        // pairs do. Trigrams that recur are the strongest concept signal.
+        if config.include_trigrams {
+            for (trigram_key, _count) in &self.trigram_count {
+                let df = self
+                    .trigram_doc_freq
+                    .get(trigram_key)
+                    .copied()
+                    .unwrap_or(0);
+                if df < config.trigram_min_freq || df > max_doc_freq {
+                    continue;
+                }
+                let display_term = trigram_key.replace(BIGRAM_SEP, " ");
+                let neighborhood_count = self.count_neighborhood_presence(
+                    trigram_key,
+                    &neighborhood_set,
+                    &self.doc_trigram_sets,
+                );
+                if neighborhood_count == 0 {
+                    continue;
+                }
+                let proximity = neighborhood_count as f64 / neighborhood_size as f64;
+                let parts: Vec<&str> = trigram_key.split(BIGRAM_SEP).collect();
+                let cohesion = if parts.len() == 3 {
+                    let pmi_a = self.pmi(&format!("{}{}{}", parts[0], BIGRAM_SEP, parts[1]));
+                    let pmi_b = self.pmi(&format!("{}{}{}", parts[1], BIGRAM_SEP, parts[2]));
+                    pmi_a.min(pmi_b).max(0.0)
+                } else {
+                    0.0
+                };
+                let score = config.trigram_boost
+                    * (config.pmi_weight * cohesion + config.proximity_weight * proximity);
+                if score <= 0.0 {
+                    continue;
+                }
+                let source_notes = self.source_notes_for_term(
+                    trigram_key,
+                    &neighborhood_set,
+                    &self.doc_trigram_sets,
+                );
+                match existing_pages.get(&display_term) {
+                    Some(target) => latent.push(LatentCandidate {
+                        term: display_term,
+                        target_path: target.clone(),
+                        score,
+                        source_notes,
+                        doc_count: neighborhood_count,
+                        is_bigram: true,
+                    }),
+                    None if neighborhood_count >= config.min_neighborhood_presence => {
+                        emergent.push(EmergentConcept {
+                            term: display_term,
+                            score,
+                            source_notes,
+                            doc_count: neighborhood_count,
+                            is_bigram: true,
+                        })
+                    }
+                    None => {}
+                }
+            }
+        }
+
+        // Fuse consecutive overlapping shingles ("a b c" + "b c d" → "a b c
+        // d") into one concept before ranking, so the user sees the phrase
+        // rather than three near-identical windows of it.
+        stitch_overlapping_shingles(&mut emergent);
+
         // Sort each bucket by score descending, truncate, normalize to [0, 1].
         // Latent keeps extra headroom: the command layer drops candidates
         // whose mentions all turn out to already be linked.
+        // Sort by score, then term, so equal-scoring candidates land in a
+        // stable order (HashMap iteration order is otherwise non-deterministic).
         emergent.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.term.cmp(&b.term))
         });
         emergent.truncate(config.top_k);
         normalize_scores(emergent.iter_mut().map(|c| &mut c.score));
 
         latent.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.term.cmp(&b.term))
         });
         latent.truncate(config.top_k * 3);
         normalize_scores(latent.iter_mut().map(|c| &mut c.score));
@@ -480,50 +615,44 @@ impl CorpusStats {
         NeighborhoodAnalysis { emergent, latent }
     }
 
+    /// Count neighborhood notes whose `sets` entry contains `term`. `sets` is
+    /// one of `doc_unigrams` / `doc_bigram_sets` / `doc_trigram_sets`.
     fn count_neighborhood_presence(
         &self,
         term: &str,
         neighborhood: &HashSet<&PathBuf>,
-        is_bigram: bool,
+        sets: &HashMap<PathBuf, HashSet<String>>,
     ) -> usize {
         let term_owned = term.to_owned();
-        if is_bigram {
-            neighborhood.iter()
-                .filter(|path| {
-                    self.doc_bigram_sets.get(path.as_path()).map_or(false, |s| s.contains(&term_owned))
-                })
-                .count()
-        } else {
-            neighborhood.iter()
-                .filter(|path| {
-                    self.doc_unigrams.get(path.as_path()).map_or(false, |s| s.contains(&term_owned))
-                })
-                .count()
-        }
+        neighborhood
+            .iter()
+            .filter(|path| {
+                sets.get(path.as_path())
+                    .map_or(false, |s| s.contains(&term_owned))
+            })
+            .count()
     }
 
     fn source_notes_for_term(
         &self,
         term: &str,
         neighborhood: &HashSet<&PathBuf>,
-        is_bigram: bool,
+        sets: &HashMap<PathBuf, HashSet<String>>,
     ) -> Vec<String> {
         let term_owned = term.to_owned();
-        if is_bigram {
-            neighborhood.iter()
-                .filter(|path| {
-                    self.doc_bigram_sets.get(path.as_path()).map_or(false, |s| s.contains(&term_owned))
-                })
-                .map(|path| path.display().to_string())
-                .collect()
-        } else {
-            neighborhood.iter()
-                .filter(|path| {
-                    self.doc_unigrams.get(path.as_path()).map_or(false, |s| s.contains(&term_owned))
-                })
-                .map(|path| path.display().to_string())
-                .collect()
-        }
+        let mut notes: Vec<String> = neighborhood
+            .iter()
+            .filter(|path| {
+                sets.get(path.as_path())
+                    .map_or(false, |s| s.contains(&term_owned))
+            })
+            .map(|path| path.display().to_string())
+            .collect();
+        // `neighborhood` is a HashSet — iteration order varies per call.
+        // Sort so the same notebox always yields the same result, and the
+        // Mycelial View layout stays stable across recomputes.
+        notes.sort();
+        notes
     }
 
     fn avg_tfidf_in_neighborhood(
@@ -554,6 +683,120 @@ impl CorpusStats {
     }
 }
 
+/// Fuse emergent concepts that are consecutive overlapping shingles of one
+/// longer run — "a b c" + "b c d" + "c d e" → "a b c d e".
+///
+/// Two same-length n-grams chain when the suffix of one equals the prefix of
+/// the next *and* they share a source note (so they are windows of the same
+/// run, not a coincidental word match in unrelated notes). The stitched
+/// concept keeps the best score of its parts and the union of their source
+/// notes; `resolve_mention` in the command layer then verifies the run
+/// actually occurs verbatim, dropping any over-eager stitch.
+///
+/// Same-length only: a bigram that is a prefix of a trigram ("machine
+/// learning" vs "machine learning models") is a legitimately distinct
+/// concept at a coarser grain and is deliberately left alone.
+fn stitch_overlapping_shingles(emergent: &mut Vec<EmergentConcept>) {
+    let n = emergent.len();
+    if n < 2 {
+        return;
+    }
+
+    let words: Vec<Vec<&str>> = emergent
+        .iter()
+        .map(|c| c.term.split(' ').filter(|w| !w.is_empty()).collect())
+        .collect();
+
+    let share_source = |a: usize, b: usize| -> bool {
+        emergent[a]
+            .source_notes
+            .iter()
+            .any(|s| emergent[b].source_notes.contains(s))
+    };
+
+    // successor[i] = the candidate that is the next shingle after i.
+    let mut successor: Vec<Option<usize>> = vec![None; n];
+    for i in 0..n {
+        if words[i].len() < 2 {
+            continue;
+        }
+        let wi = &words[i];
+        let mut best: Option<usize> = None;
+        for j in 0..n {
+            if i == j || words[j].len() != wi.len() {
+                continue;
+            }
+            // wi advanced by one word == wj.
+            if wi[1..] == words[j][..words[j].len() - 1] && share_source(i, j) {
+                if best.map_or(true, |b| emergent[j].score > emergent[b].score) {
+                    best = Some(j);
+                }
+            }
+        }
+        successor[i] = best;
+    }
+    let mut has_pred = vec![false; n];
+    for &s in successor.iter().flatten() {
+        has_pred[s] = true;
+    }
+
+    // Walk each chain from its head (a node nothing points to).
+    let mut consumed = vec![false; n];
+    let mut merged: Vec<EmergentConcept> = Vec::new();
+    for head in 0..n {
+        if has_pred[head] || consumed[head] || words[head].len() < 2 {
+            continue;
+        }
+        let mut chain = vec![head];
+        let mut cur = head;
+        while let Some(next) = successor[cur] {
+            if consumed[next] || chain.contains(&next) {
+                break;
+            }
+            chain.push(next);
+            cur = next;
+        }
+        if chain.len() < 2 {
+            continue;
+        }
+        for &i in &chain {
+            consumed[i] = true;
+        }
+        // Stitched term: head's words, then the last word of each later link.
+        let mut stitched: Vec<&str> = words[chain[0]].clone();
+        for &i in &chain[1..] {
+            stitched.push(*words[i].last().unwrap());
+        }
+        let score = chain
+            .iter()
+            .map(|&i| emergent[i].score)
+            .fold(0.0_f64, f64::max);
+        let mut source_notes: Vec<String> = Vec::new();
+        for &i in &chain {
+            for s in &emergent[i].source_notes {
+                if !source_notes.contains(s) {
+                    source_notes.push(s.clone());
+                }
+            }
+        }
+        merged.push(EmergentConcept {
+            term: stitched.join(" "),
+            score,
+            doc_count: source_notes.len(),
+            source_notes,
+            is_bigram: true,
+        });
+    }
+
+    if merged.is_empty() {
+        return;
+    }
+    let mut rebuilt: Vec<EmergentConcept> =
+        emergent.drain(..).enumerate().filter(|(i, _)| !consumed[*i]).map(|(_, c)| c).collect();
+    rebuilt.extend(merged);
+    *emergent = rebuilt;
+}
+
 /// Normalize a set of scores in place so the largest becomes 1.0. The
 /// candidates must be pre-sorted descending (the first score is the max).
 fn normalize_scores<'a>(scores: impl Iterator<Item = &'a mut f64>) {
@@ -577,6 +820,11 @@ pub fn extract_bigrams_from_tokens(
     let mut prev_line: usize = usize::MAX;
 
     for token in tokens {
+        // Punctuation between this token and the last ends the phrase run —
+        // a bigram must not span a comma, paren, sentence boundary, etc.
+        if token.phrase_break_before {
+            prev_word = None;
+        }
         let word = token.word.to_lowercase();
         if word.len() < 2 || stopwords.contains(&word) {
             prev_word = None;
@@ -600,6 +848,55 @@ pub fn extract_bigrams_from_tokens(
     bigrams
 }
 
+/// Extract trigram keys from a token stream.
+/// Three adjacent tokens on the same line, all passing the stopword filter.
+pub fn extract_trigrams_from_tokens(
+    tokens: &[TextToken],
+    stopwords: &HashSet<String>,
+) -> Vec<String> {
+    let mut trigrams = Vec::new();
+    // `w1`/`w2` are the two preceding non-stopword tokens; a stopword (or a
+    // line break) clears the run.
+    let mut w1: Option<String> = None;
+    let mut w2: Option<String> = None;
+    let mut line1: usize = usize::MAX;
+    let mut line2: usize = usize::MAX;
+
+    for token in tokens {
+        // Punctuation ends the phrase run — a trigram must not span a comma,
+        // paren, sentence boundary, etc. The break token still starts a
+        // fresh run of its own.
+        if token.phrase_break_before {
+            w1 = None;
+            w2 = None;
+        }
+        let word = token.word.to_lowercase();
+        if word.len() < 2 || stopwords.contains(&word) {
+            w1 = None;
+            w2 = None;
+            continue;
+        }
+        if let (Some(a), Some(b)) = (&w1, &w2) {
+            if line1 == token.line && line2 == token.line {
+                let mut key =
+                    String::with_capacity(a.len() + b.len() + word.len() + 2);
+                key.push_str(a);
+                key.push(BIGRAM_SEP);
+                key.push_str(b);
+                key.push(BIGRAM_SEP);
+                key.push_str(&word);
+                trigrams.push(key);
+            }
+        }
+        w1 = w2.take();
+        line1 = line2;
+        w2 = Some(word);
+        line2 = token.line;
+    }
+
+    trigrams
+}
+
 /// Persisted form for cache serialization.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PersistedCorpusStats {
@@ -617,6 +914,7 @@ mod tests {
             line,
             char_start: 0,
             char_end: word.len(),
+            phrase_break_before: false,
         }
     }
 
@@ -689,6 +987,47 @@ mod tests {
         assert_eq!(stats.doc_freq.get("alpha"), None);
         assert_eq!(stats.doc_freq.get("gamma"), Some(&1));
         assert_eq!(stats.total_docs, 1);
+    }
+
+    fn concept(term: &str, score: f64, sources: &[&str]) -> EmergentConcept {
+        EmergentConcept {
+            term: term.to_owned(),
+            score,
+            source_notes: sources.iter().map(|s| s.to_string()).collect(),
+            doc_count: sources.len(),
+            is_bigram: true,
+        }
+    }
+
+    #[test]
+    fn stitch_merges_consecutive_shingles() {
+        let mut emergent = vec![
+            concept("a b c", 0.5, &["n1.typ"]),
+            concept("b c d", 0.8, &["n1.typ"]),
+            concept("c d e", 0.6, &["n1.typ"]),
+            concept("unrelated phrase", 0.4, &["n2.typ"]),
+        ];
+        stitch_overlapping_shingles(&mut emergent);
+        // The three windows fuse into one run; the unrelated bigram stays.
+        assert_eq!(emergent.len(), 2, "got: {:?}", emergent);
+        let run = emergent
+            .iter()
+            .find(|c| c.term == "a b c d e")
+            .expect("stitched run");
+        assert!((run.score - 0.8).abs() < 1e-9, "keeps the best score");
+        assert!(emergent.iter().any(|c| c.term == "unrelated phrase"));
+    }
+
+    #[test]
+    fn stitch_requires_a_shared_source_note() {
+        // Same word overlap, but the windows come from different notes —
+        // a coincidental match, not one run. Leave them apart.
+        let mut emergent = vec![
+            concept("a b c", 0.5, &["n1.typ"]),
+            concept("b c d", 0.8, &["n2.typ"]),
+        ];
+        stitch_overlapping_shingles(&mut emergent);
+        assert_eq!(emergent.len(), 2);
     }
 
     #[test]

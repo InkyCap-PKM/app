@@ -469,7 +469,7 @@ export interface SnapshotInfo {
   size: number;
 }
 
-// Flow View
+// Mycelial View — link graph node/edge types are used for BFS neighborhood seeding
 
 export interface FlowNode {
   id: string;
@@ -482,14 +482,6 @@ export interface FlowEdge {
   source: string;
   target: string;
 }
-
-export interface FlowData {
-  nodes: FlowNode[];
-  edges: FlowEdge[];
-  center: string;
-}
-
-// Mycelial View
 
 /** One note that mentions a term, with context for deep-linking the editor. */
 export interface SourceMention {

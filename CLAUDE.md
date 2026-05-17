@@ -294,6 +294,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 
 ### General
 - All user-facing text should go through i18n from the start (even if only English is supported initially)
+- Use Canadian English spellings as the standard base.
 - Test the Typst compile pipeline against representative documents — round-trip identity (source ↔ visual mode) is a load-bearing invariant
 - Document properties round-trip through `#note(...)` — the property editor must preserve untouched fields and whitespace byte-for-byte
 
