@@ -301,7 +301,7 @@ const SearchPanel: Component = () => {
         title,
         path: result.path,
       },
-      { forceNewTab, match },
+      { forceNewTab, newTabAction: forceNewTab, match },
     );
   }
 

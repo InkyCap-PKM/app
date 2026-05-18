@@ -379,7 +379,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     if (isModifier) {
       openTab(
         { type: "file", title: match.name, path: match.path },
-        { forceNewTab: true },
+        { forceNewTab: true, newTabAction: true },
       );
       return;
     }

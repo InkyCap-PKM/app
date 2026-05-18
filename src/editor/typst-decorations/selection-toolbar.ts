@@ -497,15 +497,18 @@ function applyWrap(view: EditorView, before: string, after: string) {
 // user gesture (mouse drag, double/triple-click, shift+arrow, etc.) versus a
 // programmatic dispatch (search reveal, "go to line", reveal-by-label, …).
 // CM6 tags pointer- and keyboard-driven selection transactions with a
-// `select.*` userEvent; everything else is treated as programmatic. The flag
-// is preserved across doc edits so that clicking a toolbar button (which
+// `select.*` userEvent; everything else is treated as programmatic. The
+// in-page find/replace is a special case — it tags its match-reveal
+// selections `select.search`, so those are excluded explicitly: a search
+// should highlight matches without summoning the format toolbar. The flag is
+// preserved across doc edits so that clicking a toolbar button (which
 // dispatches changes + a new selection without a userEvent) does not dismiss
 // the toolbar mid-format.
 const userSelectionField = StateField.define<boolean>({
   create: () => false,
   update(value, tr) {
     if (tr.newSelection.main.empty) return false;
-    if (tr.isUserEvent("select")) return true;
+    if (tr.isUserEvent("select") && !tr.isUserEvent("select.search")) return true;
     if (tr.selection && !tr.docChanged) return false;
     return value;
   },

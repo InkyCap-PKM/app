@@ -205,6 +205,24 @@ impl Default for JournalScrollSettings {
     }
 }
 
+/// General behaviour settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BehaviourSettings {
+    /// When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
+    /// "open in new tab" action), switch the content focus to that tab
+    /// immediately. When false, the tab opens in the background.
+    pub switch_to_new_tab: bool,
+}
+
+impl Default for BehaviourSettings {
+    fn default() -> Self {
+        Self {
+            switch_to_new_tab: false,
+        }
+    }
+}
+
 /// Citation and bibliography settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -354,6 +372,7 @@ pub struct UserSettings {
     pub export: ExportSettings,
     pub document: DocumentDefaults,
     pub fonts: FontSettings,
+    pub behaviour: BehaviourSettings,
 }
 
 // --- Persistence ---

@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { settings } from "./settings";
 
 export type EditingMode = "source" | "live" | "reading";
 
@@ -84,6 +85,15 @@ let nextId = 1;
 export interface OpenTabOptions {
   /** If true, always open in a new tab (Ctrl+Click behaviour). */
   forceNewTab?: boolean;
+  /**
+   * Marks this as a discretionary "open in a new tab" action — a
+   * Ctrl/Cmd+click or a right-click "open in new tab" menu item. When set,
+   * whether the content focus switches to the opened tab is governed by the
+   * user's "Switch to new tabs immediately" setting
+   * (`behaviour.switch_to_new_tab`). Without this flag an opened tab always
+   * takes focus, so creations, header buttons and quick-open keep switching.
+   */
+  newTabAction?: boolean;
   /** Byte offset to place the cursor at after the file loads (from scaffold {{cursor}}). */
   cursorOffset?: number;
   /** Heading label to scroll to after the file loads. */
@@ -93,12 +103,24 @@ export interface OpenTabOptions {
 }
 
 /**
+ * Decide whether an `openTab` call should switch the content focus to the
+ * opened tab. A discretionary "open in new tab" action defers to the user's
+ * preference; every other open (in-place navigation, creations, quick-open,
+ * header buttons) takes focus immediately.
+ */
+function shouldActivate(opts: OpenTabOptions | undefined): boolean {
+  if (opts?.newTabAction) return settings.behaviour.switch_to_new_tab;
+  return true;
+}
+
+/**
  * Open a file/collection/mycelial view. By default, navigates within the active
  * tab (replacing its content and pushing history). If `forceNewTab` is
  * set, or there is no active tab, a new tab is created instead.
  *
- * If a tab with the same path+type already exists, it is activated
- * regardless of options.
+ * If a tab with the same path+type already exists, that tab is reused.
+ * Whether the content focus switches to the opened/reused tab is governed
+ * by `shouldActivate` (see `OpenTabOptions.activate`).
  */
 export function openTab(
   tab: Omit<Tab, "id">,
@@ -119,7 +141,9 @@ export function openTab(
     if (opts?.match) {
       setTabs((t) => t.id === existing.id, "pendingMatch", opts.match);
     }
-    setActiveTabId(existing.id);
+    if (shouldActivate(opts) || activeTabId() === null) {
+      setActiveTabId(existing.id);
+    }
     return existing.id;
   }
 
@@ -170,7 +194,11 @@ export function openTab(
     pendingHeadingLabel: opts?.headingLabel,
     pendingMatch: opts?.match,
   })));
-  setActiveTabId(id);
+  // Always activate when there was no active tab to fall back on, otherwise
+  // the new tab would open into an empty content area with nothing focused.
+  if (shouldActivate(opts) || !active) {
+    setActiveTabId(id);
+  }
   return id;
 }
 

@@ -592,7 +592,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title: node.name.replace(/\.collection$/i, ""),
           path: node.path,
         },
-        { forceNewTab },
+        { forceNewTab, newTabAction: forceNewTab },
       );
       return;
     }
@@ -602,7 +602,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
     openTab(
       { type: "file", title: node.name, path: node.path },
-      { forceNewTab },
+      { forceNewTab, newTabAction: forceNewTab },
     );
   }
 
@@ -615,13 +615,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title: node.name.replace(/\.collection$/i, ""),
           path: node.path,
         },
-        { forceNewTab: true },
+        { forceNewTab: true, newTabAction: true },
       );
       return;
     }
     openTab(
       { type: "file", title: node.name, path: node.path },
-      { forceNewTab: true },
+      { forceNewTab: true, newTabAction: true },
     );
   }
 

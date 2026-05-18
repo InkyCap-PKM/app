@@ -48,6 +48,23 @@
   "journalScroll.mode.tree": "Tree",
   "journalScroll.mode.properties": "Properties",
 
+  "search.find": "Find",
+  "search.replace": "Replace",
+  "search.next": "Next",
+  "search.previous": "Previous",
+  "search.all": "All",
+  "search.replaceNext": "Replace",
+  "search.replaceAll": "Replace all",
+  "search.matchCase": "Match case",
+  "search.regexp": "Regexp",
+  "search.byWord": "By word",
+  "search.close": "Close",
+  "search.clear": "Clear",
+  "search.toggleReplace": "Find and replace",
+  "search.tip.matchCase": "Match the search term's exact upper- and lower-case letters",
+  "search.tip.regexp": "Treat the search term as a regular expression",
+  "search.tip.byWord": "Match whole words only, not partial words",
+
   "readingFormat.toggle": "Toggle reading format",
   "readingFormat.svg": "Viewing as SVG (paginated) — click for HTML (continuous)",
   "readingFormat.html": "Viewing as HTML (continuous) — click for SVG (paginated)"
