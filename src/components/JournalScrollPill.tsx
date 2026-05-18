@@ -15,7 +15,8 @@
 //
 // Interaction model:
 //   * Scroll off → clicking the toggle turns scroll on in Date mode.
-//   * Clicking the active mode button while scroll is on turns scroll off.
+//   * Re-clicking the active mode button is a no-op; scroll is turned off
+//     only via the dedicated scroll toggle.
 //   * Clicking "Properties" opens the PropertiesDropdown; picking a filter
 //     commits to Properties mode with that filter, dismissing the dropdown
 //     leaves the current mode unchanged.
@@ -35,6 +36,7 @@ import {
   type ScrollMode,
 } from "../stores/journal-scroll";
 import PropertiesDropdown from "./PropertiesDropdown";
+import { t } from "../lib/i18n";
 
 interface JournalScrollPillProps {
   tabId: string;
@@ -63,12 +65,12 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
       return;
     }
     if (mode() === target) {
+      // Re-clicking the already-active mode is a no-op. Scroll is turned
+      // off only via the dedicated scroll toggle — never by a mode button —
+      // so an accidental second click can't collapse the whole view.
       if (target === "properties") {
         // Re-open dropdown to change filter.
         setDropdownOpen(true);
-      } else {
-        // Toggle off: clicking the active mode disables scroll.
-        void toggleScroll(props.tabId, props.anchorPath);
       }
       return;
     }
@@ -87,20 +89,20 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
   }
 
   return (
-    <div class="journal-scroll-pill" role="group" aria-label="Journal Scroll">
+    <div class="journal-scroll-pill" role="group" aria-label={t("journalScroll.group")}>
       <button
         type="button"
         class="journal-scroll-pill__toggle"
         classList={{ "is-active": enabled() }}
         onClick={() => void toggleScroll(props.tabId, props.anchorPath)}
-        title={enabled() ? "Turn Journal Scroll off" : "Start Journal Scroll anchored from this note"}
+        title={enabled() ? t("journalScroll.toggle.stop") : t("journalScroll.toggle.start")}
         aria-pressed={enabled()}
       >
         {enabled() ? <Scroll size={14} /> : <ScrollText size={14} />}
       </button>
 
       <Show when={enabled()}>
-        <div class="journal-scroll-pill__modes" role="group" aria-label="Scroll mode">
+        <div class="journal-scroll-pill__modes" role="group" aria-label={t("journalScroll.modeGroup")}>
           <button
             type="button"
             class="journal-scroll-pill__mode"
@@ -108,7 +110,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
             onClick={() => onModeClick("date")}
             aria-pressed={mode() === "date"}
           >
-            Date
+            {t("journalScroll.mode.date")}
           </button>
           <button
             type="button"
@@ -117,7 +119,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
             onClick={() => onModeClick("tree")}
             aria-pressed={mode() === "tree"}
           >
-            Tree
+            {t("journalScroll.mode.tree")}
           </button>
           <button
             type="button"
@@ -127,7 +129,7 @@ const JournalScrollPill: Component<JournalScrollPillProps> = (props) => {
             onClick={() => onModeClick("properties")}
             aria-pressed={mode() === "properties"}
           >
-            Properties
+            {t("journalScroll.mode.properties")}
           </button>
         </div>
 

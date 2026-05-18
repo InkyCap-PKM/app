@@ -76,6 +76,14 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
       </div>
       <div class="vertical-toolbar__bottom">
         <button
+          class="vertical-toolbar__btn"
+          onClick={toggleTheme}
+          title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label="Toggle theme"
+        >
+          {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+        <button
           class={`vertical-toolbar__btn${props.mode() === "templates" ? " vertical-toolbar__btn--active" : ""}`}
           onClick={() => {
             props.setMode("templates");
@@ -85,14 +93,6 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           aria-label="Open Scaffolds, Templates, &amp; Packages"
         >
           <LayoutTemplate size={18} />
-        </button>
-        <button
-          class="vertical-toolbar__btn"
-          onClick={toggleTheme}
-          title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          aria-label="Toggle theme"
-        >
-          {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
         </button>
         <button
           class="vertical-toolbar__btn"

@@ -6,6 +6,7 @@ import {
   Show,
 } from "solid-js";
 import type { FilterGroup } from "../lib/types";
+import { Dropdown } from "./Dropdown";
 
 /** Operators available in the filter builder. */
 const OPERATORS = [
@@ -193,17 +194,15 @@ const FilterBuilder: Component<{
                 placeholder="property"
               />
 
-              <select
-                class="filter-builder__select"
+              <Dropdown
                 value={row().operator}
-                onChange={(e) => updateRow(index, "operator", e.currentTarget.value)}
-              >
-                <For each={OPERATORS}>
-                  {(op) => (
-                    <option value={op.value}>{op.label}</option>
-                  )}
-                </For>
-              </select>
+                options={OPERATORS.map((op) => ({
+                  value: op.value as string,
+                  label: op.label,
+                }))}
+                onChange={(v) => updateRow(index, "operator", v)}
+                ariaLabel="Filter operator"
+              />
 
               <Show when={row().operator !== ".isEmpty" && row().operator !== "!.isEmpty"}>
                 <input

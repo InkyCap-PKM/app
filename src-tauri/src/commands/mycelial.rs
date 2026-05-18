@@ -113,18 +113,42 @@ pub async fn get_mycelial_data(
         bfs_link_graph(&link_index, &center_path, &path, max_depth)
     };
 
-    // 2. Map every existing page stem -> its path, so corpus analysis can tell
+    // 2. Map every existing page name -> its path, so corpus analysis can tell
     //    a latent link (page exists) from an emergent concept (no page).
+    //
+    //    A page is named by its file stem *and* by its `title` property *and*
+    //    by any `aliases`. Stem alone is not enough: notes with ZID-style
+    //    filenames (`Some Concept 20210628145342`) carry their human-facing
+    //    name only in `title`, so a stem-only check would misclassify a
+    //    recurring concept as "emergent" even though its page already exists.
     let existing_pages: HashMap<String, String> = {
         let prop_index = state.property_index.read().await;
-        prop_index
-            .notes
-            .keys()
-            .filter_map(|p| {
-                p.file_stem()
-                    .map(|s| (s.to_string_lossy().to_lowercase(), p.display().to_string()))
-            })
-            .collect()
+        let mut map: HashMap<String, String> = HashMap::new();
+        let mut add = |name: &str, path: &str| {
+            let key = name.trim().to_lowercase();
+            if !key.is_empty() {
+                map.entry(key).or_insert_with(|| path.to_string());
+            }
+        };
+        for (note_path, meta) in &prop_index.notes {
+            let path_str = note_path.display().to_string();
+            if let Some(stem) = note_path.file_stem() {
+                // Decode any leftover `%XX` URL-escapes (a `%20` in a file
+                // name would otherwise never match the plain-text concept).
+                add(&percent_decode(&stem.to_string_lossy()), &path_str);
+            }
+            if let Some(crate::models::note::PropertyValue::String(title)) =
+                meta.properties.get("title")
+            {
+                add(title, &path_str);
+            }
+        }
+        for (alias, ids) in prop_index.aliases_iter() {
+            if let Some(first) = ids.first() {
+                add(alias, &first.display().to_string());
+            }
+        }
+        map
     };
 
     // 3. Build the analysis neighborhood: the link graph widened with the
@@ -284,6 +308,39 @@ fn flow_node(id: &str, center: &str) -> FlowNode {
         name: stem_name(&PathBuf::from(id)),
         depth: if is_center { 0 } else { 1 },
         direction: if is_center { "center" } else { "anchor" }.to_string(),
+    }
+}
+
+/// Decode `%XX` percent-escapes (e.g. a `%20` left in a file name).
+///
+/// Works in the byte domain so a multi-byte UTF-8 character spread across
+/// several escapes reassembles correctly, then rebuilds a `String` lossily.
+/// A `%` not followed by two hex digits is left verbatim.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push(hi * 16 + lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Numeric value of a single ASCII hex digit, or `None` if not a hex digit.
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }
 

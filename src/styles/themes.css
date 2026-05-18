@@ -98,6 +98,11 @@
 
 :root,
 [data-theme="light"] {
+  /* Native form controls (scrollbars, checkboxes, date pickers) follow
+     the theme rather than the desktop palette. App dropdowns are the
+     custom <Dropdown> component, not native <select>. */
+  color-scheme: light;
+
   /* Backgrounds — neutral gray palette. --bg-primary is the bright
      main-content surface; --bg-secondary is the chrome (sidebars, tab
      bar, right panel, status bar, vertical toolbar). */
@@ -214,6 +219,9 @@
 }
 
 [data-theme="dark"] {
+  /* Native form controls follow the theme — see the light block above. */
+  color-scheme: dark;
+
   /* Backgrounds — built from Ink Black */
   --bg-primary: #071E22;
   --bg-editor-toolbar: #0c2a2f;
@@ -257,8 +265,10 @@
   --mycelial-tendril-strong: #d4b892;
   --mycelial-tendril-text: #b89e78;
   --mycelial-latent: #d6a45c;
-  --mycelial-emergent: #b07d52;
-  --mycelial-emergent-bg: color-mix(in srgb, #b07d52 10%, var(--bg-primary));
+  /* Pulled toward true brown (less orange) so it reads as distinct from the
+     gold latent-link colour above rather than a near-sibling of it. */
+  --mycelial-emergent: #97603a;
+  --mycelial-emergent-bg: color-mix(in srgb, #97603a 10%, var(--bg-primary));
   --mycelial-source: #9a9a9a;
   --mycelial-hit-bg: color-mix(in srgb, #d6a45c 25%, transparent);
 

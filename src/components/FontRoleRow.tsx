@@ -3,9 +3,10 @@
 // which apply) and reveals the FontPicker beneath when "Custom" is
 // selected.
 
-import { Component, Show, For } from "solid-js";
+import { Component, Show } from "solid-js";
 import type { FontChoice, FontMode } from "../lib/types";
 import { FontPicker } from "./FontPicker";
+import { Dropdown } from "./Dropdown";
 
 export interface FontRoleOption {
   value: FontMode;
@@ -36,17 +37,12 @@ export const FontRoleRow: Component<Props> = (props) => {
         <label class="settings__label">{props.label}</label>
         <span class="settings__description">{props.description}</span>
       </div>
-      <select
-        class="settings__select"
-        onChange={(e) => handleMode(e.currentTarget.value as FontMode)}
-      >
-        <For each={props.options}>{(opt) => (
-          <option
-            value={opt.value}
-            selected={opt.value === props.choice.mode}
-          >{opt.label}</option>
-        )}</For>
-      </select>
+      <Dropdown<FontMode>
+        value={props.choice.mode}
+        options={props.options}
+        onChange={handleMode}
+        ariaLabel={props.label}
+      />
       <Show when={props.choice.mode === "custom"}>
         <FontPicker
           value={props.choice.custom}

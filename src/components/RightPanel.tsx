@@ -30,7 +30,6 @@ import {
   NotebookTabs,
   TableOfContents,
   Link,
-  BrainCircuit,
   Quote,
   Newspaper,
   ArrowDownNarrowWide,
@@ -44,6 +43,7 @@ import {
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
+import { Dropdown } from "./Dropdown";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -1119,23 +1119,6 @@ const RightPanel: Component = () => {
           >
             <Quote size={18} />
           </button>
-          <button
-            class="right-panel__tab"
-            onClick={() => {
-              const tab = activeFileTab();
-              if (tab) {
-                const name = tab.title.replace(/\.[^.]+$/, "");
-                openTab(
-                  { type: "mycelial", title: name, path: tab.path },
-                  { forceNewTab: true },
-                );
-              }
-            }}
-            title="Mycelial View"
-            aria-label="Mycelial View"
-          >
-            <BrainCircuit size={18} />
-          </button>
         </Show>
       </div>
 
@@ -1208,14 +1191,16 @@ const RightPanel: Component = () => {
                       </button>
                     </Show>
                   </div>
-                  <select
-                    class="mycelial-context__sort"
+                  <Dropdown<"name" | "connections">
+                    class="dropdown--sm"
                     value={contextSort()}
-                    onChange={(e) => setContextSort(e.currentTarget.value as "name" | "connections")}
-                  >
-                    <option value="connections">By connections</option>
-                    <option value="name">By name</option>
-                  </select>
+                    options={[
+                      { value: "connections", label: "By connections" },
+                      { value: "name", label: "By name" },
+                    ]}
+                    onChange={setContextSort}
+                    ariaLabel="Sort context notes"
+                  />
                 </div>
                 <Show
                   when={sortedFiltered().length > 0}
@@ -1437,17 +1422,18 @@ const RightPanel: Component = () => {
                     </div>
                   </Show>
                   <Show when={!KNOWN_FIELDS.has(newPropKey().trim()) && getPropertyType(newPropKey().trim()) === "auto"}>
-                    <select
-                      class="property-editor__type-select"
+                    <Dropdown<PropertyType>
+                      class="dropdown--block"
                       value={newPropType()}
-                      onChange={(e) => setNewPropType(e.currentTarget.value as PropertyType)}
-                    >
-                      <For each={PROPERTY_TYPE_OPTIONS.filter((t) => t !== "auto")}>
-                        {(ty) => (
-                          <option value={ty}>{propertyTypeLabel(ty)}</option>
-                        )}
-                      </For>
-                    </select>
+                      options={PROPERTY_TYPE_OPTIONS.filter(
+                        (t) => t !== "auto",
+                      ).map((ty) => ({
+                        value: ty,
+                        label: propertyTypeLabel(ty),
+                      }))}
+                      onChange={setNewPropType}
+                      ariaLabel="New property type"
+                    />
                   </Show>
                 </div>
               </Show>
@@ -1814,7 +1800,7 @@ const RightPanel: Component = () => {
                 aria-expanded={linksSectionExpanded().potential}
               >
                 <span>
-                  Potential Links
+                  Possible wikilinks
                   <Show when={sortedPotentialLinks().length}>
                     <span class="right-panel__count">
                       {" "}({sortedPotentialLinks().length})
@@ -1873,7 +1859,7 @@ const RightPanel: Component = () => {
                   }}
                 </For>
                 <Show when={sortedPotentialLinks().length === 0}>
-                  <p class="sidebar-hint">No potential links</p>
+                  <p class="sidebar-hint">No possible wikilinks</p>
                 </Show>
               </Show>
             </div>

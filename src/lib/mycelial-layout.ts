@@ -23,6 +23,12 @@ const REPULSION = 52000;
 const SPRING_K = 0.04;
 const DAMPING = 0.82;
 const ITERATIONS = 120;
+// Centering pull toward the origin, proportional to distance. Without it a
+// node with few or no springs is only ever pushed *outward* by repulsion and
+// drifts far past the cluster — visible as a lone card stranded off-screen.
+// Gravity counteracts that so the graph stays compact, while springs and
+// repulsion still set the local arrangement.
+const GRAVITY = 0.0016;
 const PADDING = 120;
 // Soft cap on the laid-out size. Kept generous so the force simulation's
 // natural 2-D spread is preserved rather than crushed into a narrow ribbon;
@@ -212,6 +218,9 @@ export function computeMycelialLayout(
       if (n.id === centerId) continue;
       const p = pos.get(n.id)!;
       const v = vel.get(n.id)!;
+      // Centering pull toward the origin (the pinned anchor note).
+      v.vx -= p.x * GRAVITY;
+      v.vy -= p.y * GRAVITY;
       v.vx *= DAMPING;
       v.vy *= DAMPING;
       p.x += v.vx;

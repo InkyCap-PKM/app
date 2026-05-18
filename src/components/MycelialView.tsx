@@ -10,13 +10,14 @@ import {
   createSignal,
   createMemo,
   createEffect,
-  onMount,
   onCleanup,
+  untrack,
   For,
   Show,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
+import { Dropdown } from "./Dropdown";
 import {
   contextNotes,
   setContextNotes,
@@ -50,7 +51,8 @@ interface ViewCacheEntry {
   zoom: number;
   panX: number;
   panY: number;
-  isolated: BoxKind | null;
+  /** Box kinds the user has switched off via the legend. */
+  hidden: Set<BoxKind>;
   history: string[];
   centerPath: string;
   maxDepth: number;
@@ -85,7 +87,7 @@ function highlightParts(
 
 const LEGEND: { kind: BoxKind; label: string; color: string; dashed: boolean }[] =
   [
-    { kind: "center", label: "Current note", color: "var(--accent)", dashed: false },
+    { kind: "center", label: "Anchor note", color: "var(--accent)", dashed: false },
     {
       kind: "latent",
       label: "Latent link",
@@ -113,12 +115,11 @@ export default function MycelialView(props: MycelialViewProps) {
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
-  const [isolated, setIsolated] = createSignal<BoxKind | null>(null);
-
-  // Clicking the "Current note" legend item pulses the anchor box rather
-  // than isolating it (isolating a lone node would just blank the canvas).
-  const [pulsing, setPulsing] = createSignal(false);
-  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+  // The legend is a visibility filter: every box kind is shown by default,
+  // and a kind listed here has been switched off by the user. This lets the
+  // user remove the kinds they don't want and keep several visible at once,
+  // rather than only being able to isolate a single kind.
+  const [hidden, setHidden] = createSignal<Set<BoxKind>>(new Set());
 
   // Arbitrary stopword entry, opened from the legend row.
   const [stopwordOpen, setStopwordOpen] = createSignal(false);
@@ -162,25 +163,6 @@ export default function MycelialView(props: MycelialViewProps) {
     setZoom(Math.max(z, ZOOM_MIN));
     setPanX((cw - l.width * z) / 2);
     setPanY((ch - l.height * z) / 2);
-  }
-
-  /** Centre the viewport on the anchor note and pulse it a few times. */
-  function spotlightCenter() {
-    const l = layout();
-    const center = l?.boxes.find((b) => b.kind === "center");
-    if (center && canvasRef) {
-      const cw = canvasRef.clientWidth || 800;
-      const ch = canvasRef.clientHeight || 600;
-      setPanX(cw / 2 - (center.x + center.w / 2) * zoom());
-      setPanY(ch / 2 - (center.y + center.h / 2) * zoom());
-    }
-    // Restart the CSS animation: drop the class, re-add it next frame.
-    setPulsing(false);
-    clearTimeout(pulseTimer);
-    requestAnimationFrame(() => {
-      setPulsing(true);
-      pulseTimer = setTimeout(() => setPulsing(false), 1500);
-    });
   }
 
   // Dismiss the stopword popup on an outside click (it lives in the legend,
@@ -253,42 +235,60 @@ export default function MycelialView(props: MycelialViewProps) {
     }
   }
 
-  onMount(() => {
-    const cached = viewCache.get(props.path);
-    if (cached) {
-      setLayout(cached.layout);
-      setZoom(cached.zoom);
-      setPanX(cached.panX);
-      setPanY(cached.panY);
-      setIsolated(cached.isolated);
-      setHistory(cached.history);
-      setCenterPath(cached.centerPath);
-      setMaxDepth(cached.maxDepth);
-      setContextNotes(cached.contextNotes);
-      setContextEdges(cached.contextEdges);
-      setLoading(false);
-    } else {
-      loadData();
-    }
+  /** Snapshot the current graph state so returning to this note is instant. */
+  function cacheView(path: string) {
+    const l = layout();
+    if (!l) return;
+    viewCache.set(path, {
+      layout: l,
+      zoom: zoom(),
+      panX: panX(),
+      panY: panY(),
+      hidden: new Set<BoxKind>(hidden()),
+      history: history(),
+      centerPath: centerPath(),
+      maxDepth: maxDepth(),
+      contextNotes: contextNotes(),
+      contextEdges: contextEdges(),
+    });
+  }
+
+  // Load (or restore) the graph whenever the bound note changes. This must
+  // be an effect, not `onMount`: the Mycelial View tab is repointed at a new
+  // note in place (the component instance is reused), so a once-only
+  // `onMount` would leave the graph stuck on the previously opened note.
+  let loadedPath: string | null = null;
+  createEffect(() => {
+    const path = props.path;
+    if (path === loadedPath) return;
+    untrack(() => {
+      // Cache the note we're leaving before swapping in the new one.
+      if (loadedPath) cacheView(loadedPath);
+      loadedPath = path;
+      const cached = viewCache.get(path);
+      if (cached) {
+        setLayout(cached.layout);
+        setZoom(cached.zoom);
+        setPanX(cached.panX);
+        setPanY(cached.panY);
+        setHidden(new Set<BoxKind>(cached.hidden));
+        setHistory(cached.history);
+        setCenterPath(cached.centerPath);
+        setMaxDepth(cached.maxDepth);
+        setContextNotes(cached.contextNotes);
+        setContextEdges(cached.contextEdges);
+        setLoading(false);
+      } else {
+        setCenterPath(path);
+        setHistory([]);
+        setHidden(new Set<BoxKind>());
+        loadData(path);
+      }
+    });
   });
 
   onCleanup(() => {
-    clearTimeout(pulseTimer);
-    const l = layout();
-    if (l) {
-      viewCache.set(props.path, {
-        layout: l,
-        zoom: zoom(),
-        panX: panX(),
-        panY: panY(),
-        isolated: isolated(),
-        history: history(),
-        centerPath: centerPath(),
-        maxDepth: maxDepth(),
-        contextNotes: contextNotes(),
-        contextEdges: contextEdges(),
-      });
-    }
+    if (loadedPath) cacheView(loadedPath);
     setContextNotes([]);
     setContextEdges([]);
     setHoveredGraphNode(null);
@@ -310,8 +310,8 @@ export default function MycelialView(props: MycelialViewProps) {
     loadData(prev);
   }
 
-  function handleDepthChange(e: Event) {
-    setMaxDepth(parseInt((e.target as HTMLSelectElement).value));
+  function handleDepthChange(depth: number) {
+    setMaxDepth(depth);
     loadData();
   }
 
@@ -323,17 +323,13 @@ export default function MycelialView(props: MycelialViewProps) {
     return m;
   });
 
-  // Render order for the boxes. `<foreignObject>`s have no z-index — they
-  // paint in document order — so the hovered box is moved last to guarantee
-  // it sits on top of any overlapping neighbour and stays clickable.
-  const orderedBoxes = createMemo(() => {
-    const boxes = layout()?.boxes ?? [];
-    const h = hoveredBox();
-    if (!h) return boxes;
-    const idx = boxes.findIndex((b) => b.id === h);
-    if (idx < 0) return boxes;
-    return [...boxes.slice(0, idx), ...boxes.slice(idx + 1), boxes[idx]];
-  });
+  // Boxes render in a STABLE document order — deliberately *not* reordered to
+  // float the hovered box last. The layout's `resolveOverlaps` pass already
+  // guarantees no two boxes overlap, so document order never causes occlusion.
+  // Reordering the array on hover forced WebKitGTK (the Tauri webview) to move
+  // a `<foreignObject>` inside a transformed `<g>` on every hover, and its
+  // foreignObject repaint bug left a stale "phantom" copy of the box behind.
+  // Keeping the order fixed eliminates that DOM mutation entirely.
 
   const adjacency = createMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -344,13 +340,40 @@ export default function MycelialView(props: MycelialViewProps) {
     return m;
   });
 
+  // The non-anchor kinds the legend currently shows.
+  const visibleKinds = createMemo<BoxKind[]>(() => {
+    const h = hidden();
+    return (["latent", "emergent", "source"] as BoxKind[]).filter(
+      (k) => !h.has(k),
+    );
+  });
+
+  // When the legend leaves exactly one kind visible, the graph's real
+  // connections (which run between kinds) all but vanish — so fall back to
+  // synthesized "pathway" edges among that surviving kind.
+  const soloKind = createMemo<BoxKind | null>(() => {
+    const v = visibleKinds();
+    return v.length === 1 ? v[0] : null;
+  });
+
+  // Real connections, filtered to those whose endpoints are both visible.
+  const visibleConnections = createMemo<MycelialConnection[]>(() => {
+    const conns = layout()?.connections ?? [];
+    const bb = boxById();
+    return conns.filter((c) => {
+      const a = bb.get(c.from);
+      const b = bb.get(c.to);
+      return !!a && !!b && boxVisible(a.kind) && boxVisible(b.kind);
+    });
+  });
+
   // When the legend filters to one kind, the graph's real connections are
   // hidden — so synthesize "pathway" edges between the surviving boxes via
   // their shared provenance: two concepts that emerged from / are mentioned
   // in the same note are linked. Source notes already carry real wikilink
   // edges among themselves, so those are reused directly.
   const derivedConnections = createMemo<MycelialConnection[]>(() => {
-    const iso = isolated();
+    const iso = soloKind();
     const l = layout();
     if (!iso || !l) return [];
 
@@ -429,7 +452,7 @@ export default function MycelialView(props: MycelialViewProps) {
   }
 
   function boxVisible(kind: BoxKind): boolean {
-    return isolated() === null || isolated() === kind;
+    return !hidden().has(kind);
   }
 
   function boxDimmed(id: string): boolean {
@@ -696,55 +719,56 @@ export default function MycelialView(props: MycelialViewProps) {
     );
   };
 
+  // Boxes are plain HTML positioned in the `.mycelial-view__nodes` overlay —
+  // deliberately NOT `<foreignObject>` inside the SVG. WebKitGTK (the Tauri
+  // webview) repaints foreignObject content while ignoring the ancestor
+  // `<g>`'s `scale()` transform, so on a content change a box ghosts at its
+  // native un-zoomed size near the cursor. An HTML layer carrying the same
+  // pan/zoom transform via CSS has no such bug.
   const renderBox = (box: MycelialBox) => (
     <Show when={boxVisible(box.kind)}>
-      <foreignObject
-        x={box.x}
-        y={box.y}
-        width={box.w}
-        height={box.h}
+      <div
+        class={`mycelial-box mycelial-box--${box.kind}`}
+        classList={{
+          "mycelial-box--dim": boxDimmed(box.id),
+        }}
+        style={{
+          left: `${box.x}px`,
+          top: `${box.y}px`,
+          width: `${box.w}px`,
+          height: `${box.h}px`,
+        }}
         onMouseEnter={() => setHoverDebounced(box.id)}
         onMouseLeave={() => setHoverDebounced(null)}
+        onClick={(e) => handleBoxClick(box, e)}
+        onContextMenu={(e) => handleBoxContextMenu(box, e)}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <div
-          class={`mycelial-box mycelial-box--${box.kind}`}
-          classList={{
-            "mycelial-box--dim": boxDimmed(box.id),
-            "mycelial-box--pulse": box.kind === "center" && pulsing(),
-          }}
-          style={{ width: `${box.w}px`, height: `${box.h}px` }}
-          onClick={(e) => handleBoxClick(box, e)}
-          onContextMenu={(e) => handleBoxContextMenu(box, e)}
-          onMouseDown={(e) => e.stopPropagation()}
+        <Show
+          when={box.kind === "latent" || box.kind === "emergent"}
+          fallback={<div class="mycelial-box__note-title">{box.title}</div>}
         >
-          <Show
-            when={box.kind === "latent" || box.kind === "emergent"}
-            fallback={
-              <div class="mycelial-box__note-title">{box.title}</div>
-            }
-          >
-            <div class="mycelial-box__concept">{box.title}</div>
-            <div class="mycelial-box__subtitle">{box.subtitle}</div>
-            <Show when={box.snippet}>
-              <div class="mycelial-box__snippet">
-                <For
-                  each={highlightParts(
-                    box.snippet,
-                    box.latent ? box.latent.term : (box.emergent?.term ?? ""),
-                  )}
-                >
-                  {(part) => (
-                    <span classList={{ "mycelial-box__hit": part.hit }}>
-                      {part.text}
-                    </span>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <div class="mycelial-box__source">{box.sourceLabel}</div>
+          <div class="mycelial-box__concept">{box.title}</div>
+          <div class="mycelial-box__subtitle">{box.subtitle}</div>
+          <Show when={box.snippet}>
+            <div class="mycelial-box__snippet">
+              <For
+                each={highlightParts(
+                  box.snippet,
+                  box.latent ? box.latent.term : (box.emergent?.term ?? ""),
+                )}
+              >
+                {(part) => (
+                  <span classList={{ "mycelial-box__hit": part.hit }}>
+                    {part.text}
+                  </span>
+                )}
+              </For>
+            </div>
           </Show>
-        </div>
-      </foreignObject>
+          <div class="mycelial-box__source">{box.sourceLabel}</div>
+        </Show>
+      </div>
     </Show>
   );
 
@@ -770,15 +794,16 @@ export default function MycelialView(props: MycelialViewProps) {
             title="How many wikilink hops out to scan for the corpus neighborhood"
           >
             Depth
-            <select
-              class="mycelial-view__depth-select"
+            <Dropdown
               value={maxDepth()}
+              options={[
+                { value: 1, label: "1" },
+                { value: 2, label: "2" },
+                { value: 3, label: "3" },
+              ]}
               onChange={handleDepthChange}
-            >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
+              ariaLabel="Corpus scan depth"
+            />
           </label>
           <button
             class="mycelial-view__btn"
@@ -806,13 +831,12 @@ export default function MycelialView(props: MycelialViewProps) {
           when={!loading() && layout()}
           fallback={<div class="mycelial-view__loading">Loading…</div>}
         >
-          {(l) => {
-            const data = l();
-            return (
+          {(_layout) => (
+            <>
               <svg class="mycelial-view__svg" width="100%" height="100%">
                 <g transform={`translate(${panX()}, ${panY()}) scale(${zoom()})`}>
                   <Show
-                    when={isolated() === null}
+                    when={soloKind() === null}
                     fallback={
                       <g class="mycelial-connections mycelial-connections--pathway">
                         <For each={derivedConnections()}>
@@ -822,19 +846,26 @@ export default function MycelialView(props: MycelialViewProps) {
                     }
                   >
                     <g class="mycelial-connections">
-                      <For each={data.connections}>
+                      <For each={visibleConnections()}>
                         {(conn) => renderConnection(conn)}
                       </For>
                     </g>
                   </Show>
-
-                  <For each={orderedBoxes()}>
-                    {(box) => renderBox(box)}
-                  </For>
                 </g>
               </svg>
-            );
-          }}
+
+              {/* Node layer — plain HTML over the SVG, carrying the same
+                  pan/zoom transform so boxes and edges stay registered. */}
+              <div
+                class="mycelial-view__nodes"
+                style={{
+                  transform: `translate(${panX()}px, ${panY()}px) scale(${zoom()})`,
+                }}
+              >
+                <For each={_layout().boxes}>{(box) => renderBox(box)}</For>
+              </div>
+            </>
+          )}
         </Show>
 
         {/* Viewport controls */}
@@ -1018,35 +1049,28 @@ export default function MycelialView(props: MycelialViewProps) {
         </Show>
       </div>
 
-      {/* Legend doubles as a type filter */}
+      {/* Legend doubles as a per-kind visibility filter: every kind shows
+          by default, and clicking an item toggles that kind off. */}
       <div class="mycelial-view__legend">
         <For each={LEGEND}>
           {(item) => (
             <button
               class="mycelial-view__legend-item"
               classList={{
-                "mycelial-view__legend-item--active": isolated() === item.kind,
-                "mycelial-view__legend-item--muted":
-                  isolated() !== null
-                  && isolated() !== item.kind
-                  && item.kind !== "center",
+                "mycelial-view__legend-item--off": hidden().has(item.kind),
               }}
               title={
-                item.kind === "center"
-                  ? "Pan to the current note"
-                  : isolated() === item.kind
-                    ? "Show all types"
-                    : `Show only ${item.label.toLowerCase()}`
+                hidden().has(item.kind)
+                  ? `Show ${item.label.toLowerCase()}`
+                  : `Hide ${item.label.toLowerCase()}`
               }
               onClick={() => {
-                // The anchor is a single node — isolating it just blanks the
-                // canvas. Clear any filter and pulse it into view instead.
-                if (item.kind === "center") {
-                  setIsolated(null);
-                  spotlightCenter();
-                } else {
-                  setIsolated((cur) => (cur === item.kind ? null : item.kind));
-                }
+                setHidden((cur) => {
+                  const next = new Set(cur);
+                  if (next.has(item.kind)) next.delete(item.kind);
+                  else next.add(item.kind);
+                  return next;
+                });
               }}
             >
               <span

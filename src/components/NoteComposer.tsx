@@ -1,6 +1,7 @@
 import { Component, createSignal, Show, For } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { openTab, tabs } from "../stores/tabs";
+import { Dropdown } from "./Dropdown";
 
 interface NoteComposerProps {
   visible: boolean;
@@ -244,28 +245,31 @@ const NoteComposer: Component<NoteComposerProps> = (props) => {
             <Show when={mode() === "split"}>
               <div class="composer-section">
                 <label>Select note to split (from open tabs):</label>
-                <select
-                  class="composer-select"
+                <Dropdown<string>
+                  class="dropdown--block"
                   value={splitPath()}
-                  onChange={(e) => loadHeadings(e.currentTarget.value)}
-                >
-                  <option value="">-- Select a note --</option>
-                  <For each={getOpenFileTabs()}>
-                    {(tab) => <option value={tab.path}>{tab.title}</option>}
-                  </For>
-                </select>
+                  options={[
+                    { value: "", label: "-- Select a note --" },
+                    ...getOpenFileTabs().map((tab) => ({
+                      value: tab.path,
+                      label: tab.title,
+                    })),
+                  ]}
+                  onChange={loadHeadings}
+                  ariaLabel="Note to split"
+                />
                 <Show when={headings().length > 0}>
                   <label>Split at heading:</label>
-                  <select
-                    class="composer-select"
+                  <Dropdown<string>
+                    class="dropdown--block"
                     value={splitHeading()}
-                    onChange={(e) => setSplitHeading(e.currentTarget.value)}
-                  >
-                    <option value="">-- Select a heading --</option>
-                    <For each={headings()}>
-                      {(h) => <option value={h}>{h}</option>}
-                    </For>
-                  </select>
+                    options={[
+                      { value: "", label: "-- Select a heading --" },
+                      ...headings().map((h) => ({ value: h, label: h })),
+                    ]}
+                    onChange={setSplitHeading}
+                    ariaLabel="Split at heading"
+                  />
                 </Show>
                 <button
                   class="composer-action-btn"
@@ -281,16 +285,19 @@ const NoteComposer: Component<NoteComposerProps> = (props) => {
             <Show when={mode() === "export"}>
               <div class="composer-section">
                 <label>Select note to export:</label>
-                <select
-                  class="composer-select"
+                <Dropdown<string>
+                  class="dropdown--block"
                   value={exportPath()}
-                  onChange={(e) => setExportPath(e.currentTarget.value)}
-                >
-                  <option value="">-- Select a note --</option>
-                  <For each={getOpenFileTabs()}>
-                    {(tab) => <option value={tab.path}>{tab.title}</option>}
-                  </For>
-                </select>
+                  options={[
+                    { value: "", label: "-- Select a note --" },
+                    ...getOpenFileTabs().map((tab) => ({
+                      value: tab.path,
+                      label: tab.title,
+                    })),
+                  ]}
+                  onChange={setExportPath}
+                  ariaLabel="Note to export"
+                />
                 <button
                   class="composer-action-btn"
                   onClick={handleExportHtml}
