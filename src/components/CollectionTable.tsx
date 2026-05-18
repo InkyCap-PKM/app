@@ -29,6 +29,7 @@ import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
+import { Dropdown } from "./Dropdown";
 
 // ── Cell rendering ─────────────────────────────────────────────────
 
@@ -280,15 +281,15 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Paper size</label>
-              <select
-                class="settings__select"
-                value={val("page", "paper")}
-                onChange={(e) => update("page.paper", e.currentTarget.value)}
-              >
-                <For each={COLLECTION_PAGE_SIZES}>
-                  {(opt) => <option value={opt.value}>{opt.label}</option>}
-                </For>
-              </select>
+              <Dropdown<string>
+                value={String(val("page", "paper"))}
+                options={COLLECTION_PAGE_SIZES.map((opt) => ({
+                  value: opt.value,
+                  label: opt.label,
+                }))}
+                onChange={(v) => update("page.paper", v)}
+                ariaLabel="Paper size"
+              />
             </div>
 
             <div class="collection-meta__row">
@@ -386,18 +387,18 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Justify</label>
-              <select
-                class="settings__select"
+              <Dropdown<string>
                 value={val("paragraph", "justify") === "" ? "" : String(val("paragraph", "justify"))}
-                onChange={(e) => {
-                  const v = e.currentTarget.value;
-                  update("paragraph.justify", v === "" ? null : v === "true");
-                }}
-              >
-                <option value="">Inherit</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
+                options={[
+                  { value: "", label: "Inherit" },
+                  { value: "true", label: "Yes" },
+                  { value: "false", label: "No" },
+                ]}
+                onChange={(v) =>
+                  update("paragraph.justify", v === "" ? null : v === "true")
+                }
+                ariaLabel="Justify"
+              />
             </div>
 
             <div class="collection-meta__row">
@@ -697,53 +698,56 @@ const CollectionBookEditor: Component<{
       </div>
       <div class="collection-meta__row">
         <label class="collection-meta__label">Chapter heading</label>
-        <select
-          class="settings__select"
+        <Dropdown<"always" | "fallback" | "never">
           value={injectMode()}
-          onChange={(e) => {
-            setInjectMode(e.currentTarget.value as "always" | "fallback" | "never");
+          options={[
+            { value: "fallback", label: "Inject only when note has no top-level heading" },
+            { value: "always", label: "Always inject from the note's title" },
+            { value: "never", label: "Never inject (notes own their headings)" },
+          ]}
+          onChange={(v) => {
+            setInjectMode(v);
             flush();
           }}
-        >
-          <option value="fallback">Inject only when note has no top-level heading</option>
-          <option value="always">Always inject from the note's title</option>
-          <option value="never">Never inject (notes own their headings)</option>
-        </select>
+          ariaLabel="Chapter heading"
+        />
       </div>
 
       <div class="collection-meta__section-label">Wikilinks</div>
       <div class="collection-meta__row">
         <label class="collection-meta__label">Resolution</label>
-        <select
-          class="settings__select"
+        <Dropdown<"internal" | "external" | "plain">
           value={wikilinkMode()}
-          onChange={(e) => {
-            setWikilinkMode(e.currentTarget.value as "internal" | "external" | "plain");
+          options={[
+            { value: "internal", label: "Resolve to in-book chapters" },
+            { value: "external", label: "Link to source files (as in single-note compile)" },
+            { value: "plain", label: "Plain text only (strip linking)" },
+          ]}
+          onChange={(v) => {
+            setWikilinkMode(v);
             flush();
           }}
-        >
-          <option value="internal">Resolve to in-book chapters</option>
-          <option value="external">Link to source files (as in single-note compile)</option>
-          <option value="plain">Plain text only (strip linking)</option>
-        </select>
+          ariaLabel="Wikilink resolution"
+        />
       </div>
 
       <div class="collection-meta__section-label">Page numbering</div>
       <div class="collection-meta__row">
         <label class="collection-meta__label">Style</label>
-        <select
-          class="settings__select"
+        <Dropdown<PageStyle>
           value={pageStyle()}
-          onChange={(e) => {
-            setPageStyle(e.currentTarget.value as PageStyle);
+          options={[
+            { value: "roman_then_arabic", label: "Roman (i, ii, iii…) then arabic from chapter 1" },
+            { value: "arabic_from_chapters", label: "Front matter unnumbered, chapters start at 1" },
+            { value: "arabic", label: "Arabic numerals from page 1" },
+            { value: "arabic_from_page", label: "Arabic numerals starting at a specific page" },
+          ]}
+          onChange={(v) => {
+            setPageStyle(v);
             flush();
           }}
-        >
-          <option value="roman_then_arabic">Roman (i, ii, iii…) then arabic from chapter 1</option>
-          <option value="arabic_from_chapters">Front matter unnumbered, chapters start at 1</option>
-          <option value="arabic">Arabic numerals from page 1</option>
-          <option value="arabic_from_page">Arabic numerals starting at a specific page</option>
-        </select>
+          ariaLabel="Page numbering style"
+        />
       </div>
       <Show when={pageStyle() === "arabic_from_page"}>
         <div class="collection-meta__row">
@@ -944,16 +948,18 @@ const CollectionMetadataEditor: Component<{
                   Browse…
                 </button>
               </Show>
-              <select
-                class="settings__select"
+              <Dropdown<string>
                 value={bibStyleValue()}
-                onChange={(e) => handleBibStyleChange(e.currentTarget.value)}
-              >
-                <option value="">Inherit from app settings</option>
-                <For each={CITATION_STYLES}>
-                  {(s) => <option value={s.value}>{s.label}</option>}
-                </For>
-              </select>
+                options={[
+                  { value: "", label: "Inherit from app settings" },
+                  ...CITATION_STYLES.map((s) => ({
+                    value: s.value,
+                    label: s.label,
+                  })),
+                ]}
+                onChange={handleBibStyleChange}
+                ariaLabel="Bibliography style"
+              />
             </div>
           </div>
 
@@ -1537,16 +1543,17 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                       <div class="context-menu__separator" />
                       <div class="collection-table__export-menu-field">
                         <label class="collection-table__export-menu-label">PDF standard</label>
-                        <select
-                          class="collection-table__export-menu-select"
+                        <Dropdown<ipc.PdfStandardPreset>
+                          class="dropdown--block"
                           value={exportPdfStandard()}
-                          onChange={(e) => setExportPdfStandard(e.currentTarget.value as ipc.PdfStandardPreset)}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="standard">Standard (PDF 1.7)</option>
-                          <option value="pdf-a4">PDF/A-4 (archival)</option>
-                          <option value="pdf-ua1">PDF/UA-1 (accessible)</option>
-                        </select>
+                          options={[
+                            { value: "standard", label: "Standard (PDF 1.7)" },
+                            { value: "pdf-a4", label: "PDF/A-4 (archival)" },
+                            { value: "pdf-ua1", label: "PDF/UA-1 (accessible)" },
+                          ]}
+                          onChange={setExportPdfStandard}
+                          ariaLabel="PDF standard"
+                        />
                       </div>
                       <button
                         class="context-menu__item"

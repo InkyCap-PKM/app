@@ -644,16 +644,6 @@ svg.lucide {
   white-space: nowrap;
 }
 
-.collection-table__export-menu-select {
-  flex: 1;
-  font-size: var(--text-xs);
-  padding: 2px 4px;
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-}
-
 .collection-table__export-status {
   padding: 6px 12px;
   font-size: var(--text-sm);
@@ -1128,31 +1118,6 @@ svg.lucide {
   min-width: 80px;
 }
 
-.filter-builder__select {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  color: var(--fg-primary);
-  font-size: var(--text-md);
-  padding: 4px 8px;
-  height: 30px;
-  outline: none;
-  cursor: pointer;
-}
-
-[data-theme="dark"] .filter-builder__select {
-  color-scheme: dark;
-}
-
-.filter-builder__select option {
-  background: var(--bg-primary);
-  color: var(--fg-primary);
-}
-
-.filter-builder__select:focus {
-  border-color: var(--accent);
-}
-
 .filter-builder__remove {
   background: none;
   border: none;
@@ -1506,34 +1471,6 @@ svg.lucide {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.property-editor__type-select {
-  /* appearance:none is required so WebKitGTK honors our dark-theme
-     colors on a native <select>. Note this only themes the *closed*
-     control — the open popup is OS-drawn. Where a fully themed popup
-     matters, use a button + `.context-menu` instead (see the Browse
-     References sort control in ReferencesPanel). */
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: var(--bg-input);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  border: 1px solid var(--border-input);
-  border-radius: 3px;
-  color: var(--fg-primary);
-  font-size: var(--text-base);
-  padding: 2px 24px 2px 6px;
-  width: 100%;
-  box-sizing: border-box;
-  outline: none;
-  font-family: inherit;
-}
-
-.property-editor__type-select:focus {
-  border-color: var(--border-input-focus);
 }
 
 /* Built-in InkyCap properties are tagged "system"; user-created properties
@@ -2456,34 +2393,6 @@ svg.lucide {
 }
 
 /* Select dropdown */
-.settings__select {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  color: var(--fg-primary);
-  font-size: var(--text-md);
-  padding: 4px 8px;
-  outline: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.settings__select:focus {
-  border-color: var(--accent);
-}
-
-/* Native <select> dropdowns in WebKitGTK ignore CSS background/color
-   on <option> elements. color-scheme tells the browser to use its
-   native dark palette for the dropdown popup. */
-[data-theme="dark"] .settings__select {
-  color-scheme: dark;
-}
-
-.settings__select option {
-  background: var(--bg-primary);
-  color: var(--fg-primary);
-}
-
 /* Font picker — searchable dropdown with font preview. */
 .settings__font-picker {
   position: relative;
@@ -3367,6 +3276,121 @@ svg.lucide {
 .context-menu__item--active {
   background: var(--bg-highlight);
   color: var(--accent-text);
+}
+
+/* ─── Dropdown (themed <select> replacement, see Dropdown.tsx) ───
+   The trigger looks like a text input; the popup reuses `.context-menu`.
+   Native <select> popups can't be themed under WebKitGTK — this can. */
+.dropdown {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+/* Fill the available width — for dropdowns used as form fields. */
+.dropdown--block {
+  display: flex;
+  width: 100%;
+}
+
+.dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.dropdown__trigger:hover {
+  background: var(--bg-hover);
+}
+
+.dropdown__trigger:focus-visible,
+.dropdown__trigger--open {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dropdown__trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dropdown__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown__chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+/* Compact variant — for tight toolbars (e.g. the mycelial sort control). */
+.dropdown--sm .dropdown__trigger {
+  padding: 3px 6px;
+  font-size: var(--text-xs);
+}
+
+.dropdown__menu {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* The selected option is marked with a trailing checkmark — not a
+   background — so it never competes with the hover/keyboard highlight. */
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropdown__item-label {
+  flex: 1;
+}
+
+.dropdown__check {
+  flex-shrink: 0;
+  color: var(--accent-text);
+}
+
+.dropdown__item--highlight {
+  background: var(--bg-hover);
+}
+
+.dropdown__item--disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dropdown__item--disabled:hover {
+  background: none;
+}
+
+/* Group heading inside the menu — the <optgroup> equivalent. */
+.dropdown__group {
+  padding: 6px 12px 2px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-dim);
+}
+
+.dropdown__group:not(:first-child) {
+  margin-top: 2px;
+  border-top: 1px solid var(--popup-border-color);
+  padding-top: 6px;
 }
 
 /* Clear-X button inside the search input. Only visible when the input
@@ -5121,22 +5145,6 @@ svg.lucide {
   color: var(--fg-secondary);
 }
 
-.mycelial-view__depth-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: var(--bg-input);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  color: var(--fg-primary);
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  padding: 4px 24px 4px 8px;
-  font-size: var(--text-md);
-  cursor: pointer;
-}
-
 .mycelial-view__canvas {
   flex: 1;
   position: relative;
@@ -5144,6 +5152,10 @@ svg.lucide {
   min-height: 0;
   cursor: grab;
   outline: none;
+  /* Panning the graph is a click-drag; without this the drag starts a
+     text selection that spills across the whole window. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .mycelial-view__canvas:active {
@@ -5154,6 +5166,18 @@ svg.lucide {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Node overlay — plain HTML boxes positioned over the SVG edge layer. It
+   carries the same pan/zoom transform as the SVG `<g>`; `transform-origin`
+   must be the top-left corner to match the SVG's default origin. The layer
+   itself is click-through so empty space still pans the canvas underneath;
+   individual boxes re-enable pointer events. */
+.mycelial-view__nodes {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
 }
 
 .mycelial-view__loading {
@@ -5221,14 +5245,13 @@ svg.lucide {
   background: var(--bg-hover);
 }
 
-.mycelial-view__legend-item--active {
-  border-color: var(--border-primary);
-  background: var(--bg-hover);
-  font-weight: 600;
+/* A kind switched off via the legend is dimmed, with a hollowed swatch. */
+.mycelial-view__legend-item--off {
+  opacity: 0.4;
 }
 
-.mycelial-view__legend-item--muted {
-  opacity: 0.5;
+.mycelial-view__legend-item--off .mycelial-view__legend-line {
+  opacity: 0.45;
 }
 
 /* Small line swatch — dashed for the latent / context types. */
@@ -5246,8 +5269,8 @@ svg.lucide {
 
 .mycelial-box {
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -5265,6 +5288,10 @@ svg.lucide {
 
 .mycelial-box:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+  /* Lift the hovered box above its neighbours so the shadow is not clipped.
+     Works because boxes are now positioned HTML siblings, not foreignObjects
+     (which have no z-index). */
+  z-index: 1;
 }
 
 .mycelial-box--dim {
@@ -5286,25 +5313,6 @@ svg.lucide {
   border-color: var(--accent);
   border-width: 2px;
   cursor: default;
-}
-
-/* Pulse drawn when the "Current note" legend item is clicked. A background +
-   border flash (not an outset glow) so it stays inside the foreignObject,
-   which clips anything drawn beyond the box bounds. */
-@keyframes mycelial-pulse {
-  0%,
-  100% {
-    background: var(--bg-primary);
-    border-color: var(--accent);
-  }
-  50% {
-    background: color-mix(in srgb, var(--accent) 28%, var(--bg-primary));
-    border-color: color-mix(in srgb, var(--accent) 60%, var(--fg-primary));
-  }
-}
-
-.mycelial-box--pulse {
-  animation: mycelial-pulse 0.5s ease-in-out 3;
 }
 
 /* Source notes — provenance a signal emerged from. */
@@ -5491,18 +5499,21 @@ svg.lucide {
   padding: var(--popup-padding-block) 0;
 }
 
+/* Header + hint form a non-interactive caption block. Kept deliberately
+   dimmer and lighter-weight than the picker items below so it doesn't read
+   as another clickable row, and closed off with a dashed rule. */
 .mycelial-picker__header {
   padding: 4px 12px;
   font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--fg-primary);
+  font-weight: 500;
+  color: var(--fg-muted);
 }
 
 .mycelial-picker__hint {
   padding: 0 12px 6px;
   font-size: var(--text-xs);
   color: var(--fg-dim);
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px dashed var(--border-primary);
   margin-bottom: 4px;
 }
 
@@ -5665,18 +5676,6 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
-.mycelial-context__sort {
-  appearance: none;
-  -webkit-appearance: none;
-  background: var(--bg-input);
-  color: var(--fg-secondary);
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  padding: 3px 8px;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
 /* The context list reuses the left-sidebar search-result styling
    (.search-panel__file-group / __result-file / __group-chevron /
    __file-label / __match-count / __result) for cross-panel consistency.
@@ -5803,15 +5802,6 @@ svg.lucide {
 }
 
 .composer-input,
-.composer-select {
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: var(--text-md);
-}
-
 .composer-textarea {
   background: var(--bg-secondary);
   color: var(--fg-primary);
@@ -7839,24 +7829,6 @@ svg.lucide {
   font-size: var(--text-base);
   font-weight: 500;
   color: var(--fg-secondary);
-}
-
-.export-dialog__field select {
-  padding: 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  font-size: var(--text-md);
-}
-
-[data-theme="dark"] .export-dialog__field select {
-  color-scheme: dark;
-}
-
-.export-dialog__field select option {
-  background: var(--bg-primary);
-  color: var(--fg-primary);
 }
 
 .export-dialog__checkbox {

@@ -34,5 +34,21 @@
   "wikilink.suggest.alias_hint": "via alias \"{alias}\"",
   "wikilink.menu.openNewTab": "Open in new tab",
   "wikilink.menu.openScroll": "Open in Journal Scroll tab",
-  "wikilink.menu.openMycelial": "Open in Mycelial View tab"
+  "wikilink.menu.openMycelial": "Open in Mycelial View tab",
+
+  "mycelial.button.title": "Mycelial View anchored from this note",
+  "mycelial.tab.title": "Mycelial View",
+
+  "journalScroll.tab.title": "Journal Scroll",
+  "journalScroll.group": "Journal Scroll",
+  "journalScroll.toggle.start": "Start Journal Scroll anchored from this note",
+  "journalScroll.toggle.stop": "Turn Journal Scroll off",
+  "journalScroll.modeGroup": "Scroll mode",
+  "journalScroll.mode.date": "Date",
+  "journalScroll.mode.tree": "Tree",
+  "journalScroll.mode.properties": "Properties",
+
+  "readingFormat.toggle": "Toggle reading format",
+  "readingFormat.svg": "Viewing as SVG (paginated) — click for HTML (continuous)",
+  "readingFormat.html": "Viewing as HTML (continuous) — click for SVG (paginated)"
 }

@@ -9,6 +9,7 @@ import {
   reorderTab,
   createEmptyTab,
 } from "../stores/tabs";
+import { t } from "../lib/i18n";
 import CollectionTable from "./CollectionTable";
 import TypstEditor from "./TypstEditor";
 import MycelialView from "./MycelialView";
@@ -128,12 +129,12 @@ const MainContent: Component = () => {
                 onDragEnd={handleDragEnd}
               >
                 <Show when={isJournalScrollTab(tab.id)}>
-                  <span class="tab__icon" title="Journal Scroll">
+                  <span class="tab__icon" title={t("journalScroll.tab.title")}>
                     <Scroll size={13} />
                   </span>
                 </Show>
                 <Show when={tab.type === "mycelial"}>
-                  <span class="tab__icon" title="Mycelial View">
+                  <span class="tab__icon" title={t("mycelial.tab.title")}>
                     <BrainCircuit size={13} />
                   </span>
                 </Show>

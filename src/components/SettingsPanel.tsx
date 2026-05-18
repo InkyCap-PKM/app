@@ -14,6 +14,7 @@ import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
 import { FontRoleRow, type FontRoleOption } from "./FontRoleRow";
 import { SettingCombobox } from "./SettingCombobox";
+import { Dropdown } from "./Dropdown";
 import { BUNDLED_INTERFACE, BUNDLED_TEXT, BUNDLED_MONO, BUNDLED_VERSE } from "../lib/fontResolver";
 import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
@@ -1600,15 +1601,12 @@ function SettingSelect(props: {
         <label class="settings__label">{props.label}</label>
         <span class="settings__description">{props.description}</span>
       </div>
-      <select
-        class="settings__select"
+      <Dropdown
         value={props.value}
-        onChange={(e) => props.onChange(e.currentTarget.value)}
-      >
-        <For each={props.options}>
-          {(opt) => <option value={opt.value}>{opt.label}</option>}
-        </For>
-      </select>
+        options={props.options}
+        onChange={props.onChange}
+        ariaLabel={props.label}
+      />
     </div>
   );
 }

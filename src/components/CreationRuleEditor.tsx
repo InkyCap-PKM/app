@@ -19,6 +19,7 @@ import { loadCreationRules } from "../stores/creation-rules";
 import { settings } from "../stores/settings";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
+import { Dropdown } from "./Dropdown";
 import { toastError, toastWarning } from "../stores/toasts";
 
 // ── Hotkey conflict detection ──────────────────────────────────
@@ -385,18 +386,15 @@ const CreationRuleEditor: Component = () => {
                   {"{{slug}}"}, {"{{date}}"}, {"{{cursor}}"}, {"{{zid}}"} placeholders.
                 </span>
               </div>
-              <select
-                class="settings__select"
+              <Dropdown<string>
                 value={rule().scaffold_path}
-                onChange={(e) =>
-                  updateField("scaffold_path", e.currentTarget.value)
-                }
-              >
-                <option value="">None</option>
-                <For each={scaffolds() ?? []}>
-                  {(s) => <option value={s}>{s}</option>}
-                </For>
-              </select>
+                options={[
+                  { value: "", label: "None" },
+                  ...(scaffolds() ?? []).map((s) => ({ value: s, label: s })),
+                ]}
+                onChange={(v) => updateField("scaffold_path", v)}
+                ariaLabel="Scaffold file"
+              />
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
@@ -420,19 +418,15 @@ const CreationRuleEditor: Component = () => {
               <div class="settings__row-info">
                 <label class="settings__label">Creation mode</label>
               </div>
-              <select
-                class="settings__select"
+              <Dropdown<"create" | "create_and_open">
                 value={rule().creation_mode}
-                onChange={(e) =>
-                  updateField(
-                    "creation_mode",
-                    e.currentTarget.value as "create" | "create_and_open",
-                  )
-                }
-              >
-                <option value="create_and_open">Create and open</option>
-                <option value="create">Create only</option>
-              </select>
+                options={[
+                  { value: "create_and_open", label: "Create and open" },
+                  { value: "create", label: "Create only" },
+                ]}
+                onChange={(v) => updateField("creation_mode", v)}
+                ariaLabel="Creation mode"
+              />
             </div>
 
             {/* Hotkey capture */}

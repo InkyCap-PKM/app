@@ -2,6 +2,7 @@ import { Component, createSignal, onMount, onCleanup, Show } from "solid-js";
 import { save } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset } from "../lib/ipc";
+import { Dropdown } from "./Dropdown";
 
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "html" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
@@ -253,37 +254,38 @@ const ExportDialog: Component = () => {
 
             <div class="export-dialog__field">
               <label>Format</label>
-              <select
+              <Dropdown<ExportFormat>
+                class="dropdown--block"
                 value={format()}
-                onChange={(e) => setFormat(e.currentTarget.value as ExportFormat)}
-              >
-                <optgroup label="Native">
-                  <option value="pdf">{FORMAT_INFO.pdf.label}</option>
-                  <option value="typ">{FORMAT_INFO.typ.label}</option>
-                  <option value="typst-html">{FORMAT_INFO["typst-html"].label}</option>
-                  <option value="markdown">{FORMAT_INFO.markdown.label}</option>
-                </optgroup>
-                <optgroup label="Via Pandoc">
-                  <option value="html">{FORMAT_INFO.html.label}</option>
-                  <option value="odt">{FORMAT_INFO.odt.label}</option>
-                  <option value="docx">{FORMAT_INFO.docx.label}</option>
-                  <option value="latex">{FORMAT_INFO.latex.label}</option>
-                  <option value="pandoc-pdf">{FORMAT_INFO["pandoc-pdf"].label}</option>
-                </optgroup>
-              </select>
+                options={[
+                  { value: "pdf", label: FORMAT_INFO.pdf.label, group: "Native" },
+                  { value: "typ", label: FORMAT_INFO.typ.label, group: "Native" },
+                  { value: "typst-html", label: FORMAT_INFO["typst-html"].label, group: "Native" },
+                  { value: "markdown", label: FORMAT_INFO.markdown.label, group: "Native" },
+                  { value: "html", label: FORMAT_INFO.html.label, group: "Via Pandoc" },
+                  { value: "odt", label: FORMAT_INFO.odt.label, group: "Via Pandoc" },
+                  { value: "docx", label: FORMAT_INFO.docx.label, group: "Via Pandoc" },
+                  { value: "latex", label: FORMAT_INFO.latex.label, group: "Via Pandoc" },
+                  { value: "pandoc-pdf", label: FORMAT_INFO["pandoc-pdf"].label, group: "Via Pandoc" },
+                ]}
+                onChange={setFormat}
+                ariaLabel="Export format"
+              />
             </div>
 
             <Show when={supportsPdfStandard(format())}>
               <div class="export-dialog__field">
                 <label>PDF standard</label>
-                <select
+                <Dropdown<PdfStandardPreset>
+                  class="dropdown--block"
                   value={pdfStandard()}
-                  onChange={(e) => setPdfStandard(e.currentTarget.value as PdfStandardPreset)}
-                >
-                  {PDF_STANDARD_OPTIONS.map((opt) => (
-                    <option value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                  options={PDF_STANDARD_OPTIONS.map((opt) => ({
+                    value: opt.value,
+                    label: opt.label,
+                  }))}
+                  onChange={setPdfStandard}
+                  ariaLabel="PDF standard"
+                />
                 <span class="export-dialog__hint">
                   {PDF_STANDARD_OPTIONS.find((o) => o.value === pdfStandard())?.description}
                 </span>
@@ -299,13 +301,16 @@ const ExportDialog: Component = () => {
             <Show when={supportsMetadataMode(format())}>
               <div class="export-dialog__field">
                 <label>Note metadata</label>
-                <select
+                <Dropdown<MetadataMode>
+                  class="dropdown--block"
                   value={metadataMode()}
-                  onChange={(e) => setMetadataMode(e.currentTarget.value as MetadataMode)}
-                >
-                  <option value="exclude">{METADATA_LABELS.exclude}</option>
-                  <option value="properties">{METADATA_LABELS.properties}</option>
-                </select>
+                  options={[
+                    { value: "exclude", label: METADATA_LABELS.exclude },
+                    { value: "properties", label: METADATA_LABELS.properties },
+                  ]}
+                  onChange={setMetadataMode}
+                  ariaLabel="Note metadata"
+                />
                 <Show when={metadataHint()}>
                   <span class="export-dialog__hint">{metadataHint()}</span>
                 </Show>

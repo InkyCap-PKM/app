@@ -11,6 +11,7 @@ import {
   Show,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
 import {
   tabs,
@@ -46,6 +47,7 @@ import {
   scrollNavBack,
   scrollNavForward,
 } from "../stores/journal-scroll";
+import { BrainCircuit } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollFilterChip from "./JournalScrollFilterChip";
 import JournalScrollView from "./JournalScrollView";
@@ -706,14 +708,31 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
         <div class="editor-header__right-group">
         <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+        <button
+          type="button"
+          class="editor-header__reading-format-btn"
+          onClick={() => {
+            const tab = tabs.find((t) => t.id === props.tabId);
+            if (!tab) return;
+            const name = tab.title.replace(/\.[^.]+$/, "");
+            openTab(
+              { type: "mycelial", title: name, path: tab.path },
+              { forceNewTab: true },
+            );
+          }}
+          title={t("mycelial.button.title")}
+          aria-label={t("mycelial.button.title")}
+        >
+          <BrainCircuit size={14} />
+        </button>
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <button
             type="button"
             class="editor-header__reading-format-btn"
             classList={{ "is-html": readingFormat() === "html" }}
             onClick={() => setReadingFormat(readingFormat() === "svg" ? "html" : "svg")}
-            title={readingFormat() === "svg" ? "Viewing as SVG (paginated) — click for HTML (continuous)" : "Viewing as HTML (continuous) — click for SVG (paginated)"}
-            aria-label="Toggle reading format"
+            title={readingFormat() === "svg" ? t("readingFormat.svg") : t("readingFormat.html")}
+            aria-label={t("readingFormat.toggle")}
           >
             <Show when={readingFormat() === "svg"} fallback={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
