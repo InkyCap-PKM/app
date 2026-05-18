@@ -50,6 +50,8 @@ import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { activeEditorView } from "../stores/editor";
+import { openEditorFind, openEditorReplace } from "../editor/search-panel";
 import {
   LINKS_SORT_OPTIONS,
   linksSortMode,
@@ -615,7 +617,7 @@ const RightPanel: Component = () => {
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
     openTab(
       { type: "file", title: link.name, path: link.path },
-      { forceNewTab },
+      { forceNewTab, newTabAction: forceNewTab },
     );
   }
 
@@ -1005,12 +1007,14 @@ const RightPanel: Component = () => {
 
   function menuFind() {
     setFileMenu(null);
-    document.dispatchEvent(new CustomEvent("inkycap:editor-find"));
+    const handle = activeEditorView();
+    if (handle) openEditorFind(handle.view);
   }
 
   function menuReplace() {
     setFileMenu(null);
-    document.dispatchEvent(new CustomEvent("inkycap:editor-replace"));
+    const handle = activeEditorView();
+    if (handle) openEditorReplace(handle.view);
   }
 
   async function menuShowInExplorer() {
@@ -1951,7 +1955,7 @@ const RightPanel: Component = () => {
                 setLinkRowMenu(null);
                 openTab(
                   { type: "file", title: m.name, path: m.path },
-                  { forceNewTab: true },
+                  { forceNewTab: true, newTabAction: true },
                 );
               }}
             >

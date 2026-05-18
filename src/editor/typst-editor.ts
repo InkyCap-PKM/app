@@ -127,6 +127,7 @@ import { headingFold } from "./typst-decorations/heading-fold";
 import { wordCountTracker } from "./typst-decorations/word-count";
 import { lspExtension } from "./lsp";
 import type { LspClient } from "./lsp";
+import { inkycapSearch } from "./search-panel";
 
 export interface TypstEditorHandle {
   view: EditorView;
@@ -217,7 +218,19 @@ const inkycapTheme = EditorView.theme({
   "&.cm-focused .cm-cursor": {
     borderLeftColor: "var(--fg-primary)",
   },
+  // Only the current match is highlighted while searching — the always-on
+  // all-match highlight is suppressed so it can't be confused with the
+  // "All" (select-all-matches) action. See search-panel.ts.
   ".cm-searchMatch": {
+    backgroundColor: "transparent",
+  },
+  ".cm-searchMatch-selected": {
+    backgroundColor: "var(--bg-search-match)",
+  },
+  // The search panel's "All" toggle adds this class to the editor root to
+  // bring back the highlight on every match (otherwise only the current
+  // match is shown). See search-panel.ts.
+  "&.cm-search-highlight-all .cm-searchMatch": {
     backgroundColor: "var(--bg-search-match)",
   },
   ".cm-matchingBracket": {
@@ -253,7 +266,198 @@ const inkycapTheme = EditorView.theme({
   ".cm-panels.cm-panels-top": {
     borderBottom: "1px solid var(--border-subtle)",
   },
-  ".cm-panel.cm-search input, .cm-panel.cm-search button": {
+  ".cm-panels.cm-panels-bottom": {
+    borderTop: "1px solid var(--border-subtle)",
+    // Carry the content area's bottom "lip" shadow onto the panel's top edge
+    // so editor content still appears to slide underneath when the panel is
+    // open. Mirrors the editor header's lip (.editor-header in layout.css).
+    position: "relative",
+    zIndex: "2",
+    boxShadow: "0 -4px 6px -4px rgba(0, 0, 0, 0.22)",
+  },
+  // In-page find/replace panel (Ctrl+F). InkyCap supplies its own panel DOM
+  // (see search-panel.ts); these rules style it with app tokens so it reads
+  // correctly in both themes and matches the rest of the UI. The whole block
+  // is centred horizontally while its rows stay left-justified within it.
+  ".cm-panel.cm-search": {
+    display: "flex",
+    justifyContent: "center",
+    padding: "6px 8px",
+    fontSize: "var(--text-md)",
+    color: "var(--fg-primary)",
+  },
+  // The disclosure toggle sits beside the rows-column; both rows share the
+  // column's left edge, so Find and Replace line up with no manual indent.
+  ".cm-search__body": {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
+  ".cm-search__rows": {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "6px",
+  },
+  ".cm-search__row": {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "6px",
+  },
+  ".cm-search__row--replace": {
+    display: "none",
+  },
+  ".cm-search--replace-open .cm-search__row--replace": {
+    display: "flex",
+  },
+  // Each text field is wrapped so a clear button can sit at its right edge.
+  // Find and Replace share one width so the two rows align cleanly.
+  ".cm-search__field": {
+    position: "relative",
+    display: "inline-flex",
+    alignItems: "center",
+    width: "20em",
+  },
+  ".cm-panel.cm-search .cm-textfield": {
+    background: "var(--bg-input)",
+    color: "var(--fg-primary)",
+    border: "1px solid var(--border-input)",
+    borderRadius: "4px",
+    // Right padding leaves room for the clear button.
+    padding: "5px 26px 5px 8px",
+    fontSize: "var(--text-md)",
+    outline: "none",
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  ".cm-search__clear": {
+    // A normal flex item of `.cm-search__field` (inline-flex, align-items
+    // centre), so it is vertically centred by the wrapper with no manual
+    // offset. A negative left margin pulls it back over the input's right
+    // padding, leaving a 5px gap to the field's right edge (input width
+    // 100% − 21px margin + 16px button = field width − 5px).
+    flex: "0 0 auto",
+    marginLeft: "-21px",
+    width: "16px",
+    height: "16px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "var(--bg-secondary)",
+    border: "none",
+    borderRadius: "50%",
+    color: "var(--fg-muted)",
+    cursor: "pointer",
+    padding: "0",
+  },
+  ".cm-search__clear:hover": {
+    background: "var(--bg-hover)",
+    color: "var(--fg-primary)",
+  },
+  ".cm-search__clear[hidden]": {
+    display: "none",
+  },
+  ".cm-panel.cm-search .cm-textfield:focus": {
+    borderColor: "var(--accent)",
+  },
+  // Buttons mirror the app's toolbar buttons — a flat, bordered control
+  // rather than the default CodeMirror button, which read as pre-pressed.
+  ".cm-panel.cm-search .cm-button": {
+    background: "none",
+    backgroundImage: "none",
+    border: "1px solid var(--border-primary)",
+    borderRadius: "4px",
+    color: "var(--fg-muted)",
+    cursor: "pointer",
+    padding: "4px 10px",
+    fontSize: "var(--text-sm)",
+  },
+  ".cm-panel.cm-search .cm-button:hover": {
+    borderColor: "var(--fg-dim)",
+    color: "var(--fg-primary)",
+    background: "none",
+  },
+  ".cm-panel.cm-search .cm-button:active": {
+    background: "var(--bg-active)",
+  },
+  // Action buttons are kept close together but each stays a self-contained
+  // button — its own border, fully rounded on every corner.
+  ".cm-search__group": {
+    display: "inline-flex",
+    gap: "4px",
+  },
+  // The "All" button is a toggle; reflect its on-state.
+  ".cm-panel.cm-search .cm-button.is-active": {
+    background: "var(--bg-active)",
+    borderColor: "var(--fg-dim)",
+    color: "var(--fg-primary)",
+  },
+  ".cm-panel.cm-search .cm-button--icon": {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 8px",
+  },
+  ".cm-panel.cm-search .cm-button--icon svg": {
+    display: "block",
+  },
+  ".cm-search__option": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    fontSize: "var(--text-sm)",
+    color: "var(--fg-secondary)",
+    cursor: "pointer",
+  },
+  ".cm-search__option input": {
+    accentColor: "var(--accent)",
+    cursor: "pointer",
+    margin: "0",
+  },
+  ".cm-search__disclosure": {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius-control)",
+    color: "var(--fg-muted)",
+    cursor: "pointer",
+    padding: "0",
+    // border-box keeps the rendered width at exactly 26px (border included)
+    // so the Replace row's 32px indent lines up with the Find field.
+    boxSizing: "border-box",
+    width: "26px",
+    height: "26px",
+  },
+  ".cm-search__disclosure:hover": {
+    background: "var(--bg-hover)",
+    color: "var(--fg-primary)",
+  },
+  ".cm-search__disclosure svg": {
+    transition: "transform 0.12s",
+  },
+  ".cm-search--replace-open .cm-search__disclosure svg": {
+    transform: "rotate(90deg)",
+  },
+  ".cm-search__close": {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "1px solid transparent",
+    borderRadius: "var(--radius-control)",
+    color: "var(--fg-muted)",
+    cursor: "pointer",
+    fontSize: "18px",
+    lineHeight: "1",
+    padding: "0",
+    width: "28px",
+    height: "28px",
+  },
+  ".cm-search__close:hover": {
+    background: "var(--bg-hover)",
     color: "var(--fg-primary)",
   },
 });
@@ -308,6 +512,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
       indentWithTab,
     ]),
     typstLanguage(),
+    inkycapSearch,
     drawSelection(),
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),

@@ -15,6 +15,7 @@ import {
   For,
   Show,
 } from "solid-js";
+import { Info } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { Dropdown } from "./Dropdown";
@@ -125,6 +126,20 @@ export default function MycelialView(props: MycelialViewProps) {
   const [stopwordOpen, setStopwordOpen] = createSignal(false);
   const [stopwordDraft, setStopwordDraft] = createSignal("");
 
+  // "What am I looking at?" help panel, opened from the legend's info icon.
+  const [helpOpen, setHelpOpen] = createSignal(false);
+
+  // Anchor-note spotlight — the legend's "Anchor note" item pulses the
+  // center box rather than filtering it (it's always present, never hidden).
+  // When the anchor is off-screen, an edge beacon is shown instead, pinned to
+  // the viewport edge in its direction so the user knows which way to scroll.
+  const [pulsing, setPulsing] = createSignal(false);
+  const [edgeBeacon, setEdgeBeacon] = createSignal<{
+    x: number;
+    y: number;
+  } | null>(null);
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
   const [zoom, setZoom] = createSignal(1);
   const [panX, setPanX] = createSignal(0);
   const [panY, setPanY] = createSignal(0);
@@ -165,6 +180,45 @@ export default function MycelialView(props: MycelialViewProps) {
     setPanY((ch - l.height * z) / 2);
   }
 
+  /** Spotlight the anchor note without moving the graph. If the anchor is
+   *  within the viewport it pulses in place; if it's scrolled off-screen, a
+   *  pulsing beacon is pinned to the viewport edge in its direction instead,
+   *  so the user can see which way to scroll to reach it. */
+  function spotlightCenter() {
+    const l = layout();
+    const center = l?.boxes.find((b) => b.kind === "center");
+    if (!center || !canvasRef) return;
+    const cw = canvasRef.clientWidth || 800;
+    const ch = canvasRef.clientHeight || 600;
+    // Anchor centre in viewport (screen) coordinates.
+    const sx = panX() + (center.x + center.w / 2) * zoom();
+    const sy = panY() + (center.y + center.h / 2) * zoom();
+    const onScreen = sx >= 0 && sx <= cw && sy >= 0 && sy <= ch;
+
+    // Restart any in-flight spotlight: drop both cues, then re-add next
+    // frame so the CSS animation replays from the start.
+    setPulsing(false);
+    setEdgeBeacon(null);
+    clearTimeout(pulseTimer);
+    requestAnimationFrame(() => {
+      if (onScreen) {
+        setPulsing(true);
+      } else {
+        // Land the beacon flush on the viewport edge — the canvas clips its
+        // outer half, so it reads as a diffuse glow bleeding in from beyond
+        // the edge rather than a pin marking an exact spot.
+        setEdgeBeacon({
+          x: clamp(sx, 0, cw),
+          y: clamp(sy, 0, ch),
+        });
+      }
+      pulseTimer = setTimeout(() => {
+        setPulsing(false);
+        setEdgeBeacon(null);
+      }, 2850);
+    });
+  }
+
   // Dismiss the stopword popup on an outside click (it lives in the legend,
   // outside the canvas, so the canvas click-handler doesn't reach it).
   createEffect(() => {
@@ -176,6 +230,25 @@ export default function MycelialView(props: MycelialViewProps) {
     };
     document.addEventListener("mousedown", onDown, true);
     onCleanup(() => document.removeEventListener("mousedown", onDown, true));
+  });
+
+  // Dismiss the help panel on an outside click or the Escape key.
+  createEffect(() => {
+    if (!helpOpen()) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".mycelial-view__legend-help")) {
+        setHelpOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHelpOpen(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    });
   });
 
   /** Append a user-typed term to the notebox stopword list and recompute. */
@@ -292,6 +365,7 @@ export default function MycelialView(props: MycelialViewProps) {
     setContextNotes([]);
     setContextEdges([]);
     setHoveredGraphNode(null);
+    clearTimeout(pulseTimer);
   });
 
   function recenter(path: string) {
@@ -731,6 +805,7 @@ export default function MycelialView(props: MycelialViewProps) {
         class={`mycelial-box mycelial-box--${box.kind}`}
         classList={{
           "mycelial-box--dim": boxDimmed(box.id),
+          "mycelial-box--pulse": box.kind === "center" && pulsing(),
         }}
         style={{
           left: `${box.x}px`,
@@ -865,6 +940,17 @@ export default function MycelialView(props: MycelialViewProps) {
                 <For each={_layout().boxes}>{(box) => renderBox(box)}</For>
               </div>
             </>
+          )}
+        </Show>
+
+        {/* Off-screen anchor beacon — pinned to the viewport edge in the
+            anchor's direction when the user spotlights an off-screen anchor. */}
+        <Show when={edgeBeacon()}>
+          {(b) => (
+            <div
+              class="mycelial-edge-beacon"
+              style={{ left: `${b().x}px`, top: `${b().y}px` }}
+            />
           )}
         </Show>
 
@@ -1005,7 +1091,7 @@ export default function MycelialView(props: MycelialViewProps) {
               >
                 <div class="mycelial-picker__header">New page from phrase</div>
                 <div class="mycelial-picker__hint">
-                  This is a recurring phrase — trim it to a page title:
+                  This is a recurring phrase. Use as-is or alter it for a new page title?
                 </div>
                 <input
                   class="mycelial-namer__input"
@@ -1052,19 +1138,107 @@ export default function MycelialView(props: MycelialViewProps) {
       {/* Legend doubles as a per-kind visibility filter: every kind shows
           by default, and clicking an item toggles that kind off. */}
       <div class="mycelial-view__legend">
+        {/* Help — "what am I looking at?" — pinned to the left edge so the
+            type-filter items stay centred. */}
+        <div class="mycelial-view__legend-help">
+          <button
+            class="mycelial-view__legend-help-btn"
+            classList={{ "is-active": helpOpen() }}
+            title="About the Mycelial View"
+            aria-label="About the Mycelial View"
+            aria-expanded={helpOpen()}
+            onClick={() => setHelpOpen((v) => !v)}
+          >
+            <Info size={16} />
+          </button>
+          <Show when={helpOpen()}>
+            <div
+              class="mycelial-view__help-pop"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div class="mycelial-view__help-title">
+                The Mycelial View
+              </div>
+	      <div class="mycelial-view__help-heading">Where Does Your Knowledge Want to Grow?</div>
+              <p class="mycelial-view__help-lead">
+                This view helps you identify what you have not yet written in your notebox. Mycelial View is computed around the note you opened it from (the anchor) but it is not a graphical map of existing links.
+              </p>
+
+              <div class="mycelial-view__help-heading">The Nodes</div>
+              <ul class="mycelial-view__help-list">
+                <li>
+                  <b>Anchor note:</b> the note this view is built around.
+                  Everything else is found relative to it.
+                </li>
+                <li>
+                  <b>Source notes:</b> other existing notes that contribute to the signal. Click one to rebuild the view around it.
+                </li>
+                <li>
+                  <b>Latent link:</b> an existing page that other notes
+                  mention by name without linking to it. Click it to see
+                  those mentions, then open one to add the wikilink {" "}
+                  <code>[[ ]]</code> in place.
+                </li>
+                <li>
+                  <b>Emergent concept:</b> a phrase that recurs across
+                  several notes but has no page yet. Click it to create
+                  that page (a long phrase will prompt you to trim its title first).
+                </li>
+              </ul>
+
+              <div class="mycelial-view__help-heading">The Paths</div>
+              <p>
+                A path (connective line) means two nodes share a signal. Thicker paths are
+                stronger signals; faint grey paths are ordinary wikilinks
+                between notes. Hovering a node highlights just its paths.
+              </p>
+
+              <div class="mycelial-view__help-heading">
+                Why these Appear
+              </div>
+              <p>
+                InkyCap looks at the anchor note plus its neighbourhood (notes it links to and the notes that read as most similar to it) and finds words or short phrases that recur in that neighbourhood in a distinctive way. If a recurring phrase matches an existing page, it surfaces as a latent link; if it has no page, it surfaces as an emergent concept. That's why a concept can appear even though you never wrote it as a heading—it was repeated often enough to stand out.
+              </p>
+
+              <div class="mycelial-view__help-heading">Controls</div>
+              <ul class="mycelial-view__help-list">
+                <li>
+                  <b>Legend:</b> click a type to hide or show it.
+                </li>
+                <li>
+                  <b>Depth:</b> how many wikilink hops out to scan.
+                </li>
+                <li>
+                  <b>+ Stopword:</b> exclude a word from concept
+                  detection when it's too generic to be useful.
+                </li>
+              </ul>
+            </div>
+          </Show>
+        </div>
         <For each={LEGEND}>
           {(item) => (
             <button
               class="mycelial-view__legend-item"
               classList={{
-                "mycelial-view__legend-item--off": hidden().has(item.kind),
+                "mycelial-view__legend-item--off":
+                  item.kind !== "center" && hidden().has(item.kind),
               }}
               title={
-                hidden().has(item.kind)
-                  ? `Show ${item.label.toLowerCase()}`
-                  : `Hide ${item.label.toLowerCase()}`
+                item.kind === "center"
+                  ? "Find the anchor note"
+                  : hidden().has(item.kind)
+                    ? `Show ${item.label.toLowerCase()}`
+                    : `Hide ${item.label.toLowerCase()}`
               }
               onClick={() => {
+                // The anchor note is always present and can't be filtered
+                // out — clicking its legend item spotlights it instead.
+                if (item.kind === "center") {
+                  spotlightCenter();
+                  return;
+                }
                 setHidden((cur) => {
                   const next = new Set(cur);
                   if (next.has(item.kind)) next.delete(item.kind);
@@ -1092,7 +1266,7 @@ export default function MycelialView(props: MycelialViewProps) {
             title="Add a word to the mycelial stopword list"
             onClick={() => setStopwordOpen((v) => !v)}
           >
-            + stopword
+            + Stopword
           </button>
           <Show when={stopwordOpen()}>
             <div

@@ -79,6 +79,9 @@ const DEFAULTS: UserSettings = {
     text: { mode: "bundled", custom: "" },
     verse: { mode: "follow", custom: "" },
   },
+  behaviour: {
+    switch_to_new_tab: false,
+  },
 };
 
 const [settings, setSettings] = createStore<UserSettings>(structuredClone(DEFAULTS));

@@ -295,6 +295,13 @@ export interface ExportSettings {
   pandoc_path: string | null;
 }
 
+export interface BehaviourSettings {
+  /** When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
+   *  "open in new tab" action), switch the content focus to that tab
+   *  immediately. When false, the tab opens in the background. */
+  switch_to_new_tab: boolean;
+}
+
 export interface DocumentDefaults {
   /** Legacy text-font field. Migrated into `UserSettings.fonts.text` on load. */
   text_font: string | null;
@@ -337,6 +344,7 @@ export interface UserSettings {
   export: ExportSettings;
   document: DocumentDefaults;
   fonts: FontSettings;
+  behaviour: BehaviourSettings;
 }
 
 // ============================================================================

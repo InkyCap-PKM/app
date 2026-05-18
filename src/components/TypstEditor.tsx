@@ -707,7 +707,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__right-group">
-        <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
         <button
           type="button"
           class="editor-header__reading-format-btn"
@@ -725,6 +724,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         >
           <BrainCircuit size={14} />
         </button>
+        <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <button
             type="button"

@@ -2272,7 +2272,7 @@ svg.lucide {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--border-input);
+  background: var(--toggle-off-bg);
   border-radius: 20px;
   transition: background 200ms;
 }
@@ -5227,6 +5227,98 @@ svg.lucide {
   right: 0;
 }
 
+/* "What am I looking at?" help — pinned to the left edge of the legend so
+   the type-filter items stay centred (mirrors .mycelial-view__legend-tools). */
+.mycelial-view__legend-help {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.mycelial-view__legend-help-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.mycelial-view__legend-help-btn:hover,
+.mycelial-view__legend-help-btn.is-active {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* The help panel opens upward from the info icon. */
+.mycelial-view__help-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: var(--z-menu);
+  width: 380px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  text-align: left;
+}
+
+.mycelial-view__help-pop p {
+  margin: 0 0 8px;
+}
+
+.mycelial-view__help-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: 6px;
+}
+
+.mycelial-view__help-lead {
+  color: var(--fg-muted);
+}
+
+/* Section label — distinguished by weight/colour/spacing, never caps. */
+.mycelial-view__help-heading {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-primary);
+  margin: 12px 0 4px;
+}
+
+.mycelial-view__help-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.mycelial-view__help-list li {
+  margin-bottom: 5px;
+}
+
+.mycelial-view__help-pop b {
+  color: var(--fg-primary);
+  font-weight: 600;
+}
+
+.mycelial-view__help-pop code {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: 0.9em;
+  background: var(--syntax-mono-bg, var(--bg-secondary));
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
 /* Each legend row is a toggle that isolates its type in the graph. */
 .mycelial-view__legend-item {
   display: flex;
@@ -5299,6 +5391,57 @@ svg.lucide {
      graph still reads as a whole rather than collapsing to a few nodes. */
   opacity: 0.45;
   pointer-events: none;
+}
+
+/* Anchor-note spotlight — a few accent-coloured glow pulses, triggered by
+   clicking the "Anchor note" legend item. Three 0.95s cycles ≈ the 2850ms
+   the component keeps the class applied. */
+@keyframes mycelial-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+.mycelial-box--pulse {
+  animation: mycelial-pulse 0.95s ease-in-out 3;
+}
+
+/* Edge beacon — shown when the spotlighted anchor note is off-screen. Its
+   `left`/`top` sit flush on the viewport edge and `translate(-50%, -50%)`
+   centres a soft radial glow on that point; the canvas's `overflow: hidden`
+   clips the outer half, so it reads as a diffuse glow bleeding in from
+   beyond the edge — telling the user which way to scroll without pinning an
+   exact spot. The three 0.95s cycles match the box pulse and the 2850ms
+   timer. */
+.mycelial-edge-beacon {
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 60%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 42%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: var(--z-menu);
+  animation: mycelial-beacon-pulse 0.95s ease-in-out 3;
+}
+
+@keyframes mycelial-beacon-pulse {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.95;
+  }
 }
 
 /* Note boxes (center / source / context) — small, text-centered. */

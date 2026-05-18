@@ -42,7 +42,7 @@ export async function navigateWikilink(
     const { path, name } = await resolveOrCreateWikilink(target);
     openTab(
       { type: "file", title: name, path },
-      { forceNewTab: newTab, headingLabel: label },
+      { forceNewTab: newTab, newTabAction: newTab, headingLabel: label },
     );
   } catch (err) {
     console.error("[wikilink-nav] navigate failed:", err);
@@ -55,7 +55,7 @@ async function openInNewTab(target: string, label?: string): Promise<void> {
     const { path, name } = await resolveOrCreateWikilink(target);
     openTab(
       { type: "file", title: name, path },
-      { forceNewTab: true, headingLabel: label },
+      { forceNewTab: true, newTabAction: true, headingLabel: label },
     );
   } catch (err) {
     console.error("[wikilink-nav] open in new tab failed:", err);
@@ -68,7 +68,7 @@ async function openInJournalScroll(target: string): Promise<void> {
     const { path, name } = await resolveOrCreateWikilink(target);
     const tabId = openTab(
       { type: "file", title: name, path },
-      { forceNewTab: true },
+      { forceNewTab: true, newTabAction: true },
     );
     if (!isScrollEnabled(tabId)) await toggleScroll(tabId, path);
   } catch (err) {
@@ -82,7 +82,7 @@ async function openInMycelialView(target: string): Promise<void> {
     const { path, name } = await resolveOrCreateWikilink(target);
     openTab(
       { type: "mycelial", title: name, path },
-      { forceNewTab: true },
+      { forceNewTab: true, newTabAction: true },
     );
   } catch (err) {
     console.error("[wikilink-nav] open in mycelial view failed:", err);

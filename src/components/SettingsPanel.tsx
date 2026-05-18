@@ -62,7 +62,7 @@ const TAB_SETTING_GROUPS: Record<SettingsTab, (keyof UserSettings)[]> = {
   citations: ["citations"],
   export: ["export"],
   "creation-rules": [],
-  behaviour: ["startup", "journal_scroll"],
+  behaviour: ["startup", "behaviour", "journal_scroll"],
 };
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
@@ -1363,6 +1363,17 @@ function BehaviourSettingsSection() {
           suggestions={targetSuggestions}
         />
       </Show>
+
+      {/* Tab settings */}
+      <div class="settings__section-header">
+        <span class="settings__label">Tabs</span>
+      </div>
+      <SettingToggle
+        label="Switch to new tabs immediately"
+        description="When you Ctrl/Cmd+click or use a right-click 'open in new tab' action, move focus to the new tab right away. When off, the tab opens in the background and you stay on the current page."
+        value={settings.behaviour.switch_to_new_tab}
+        onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
+      />
 
       {/* Journal Scroll settings */}
       <div class="settings__section-header">
