@@ -80,6 +80,18 @@ function getOrCreateHistory(tabId: string): TabHistory {
   return h;
 }
 
+// Stack of recently-closed tabs, most-recent last. Powers "Reopen Closed
+// Tab" (Ctrl+Shift+T). Empty (file-less) tabs are never recorded; the
+// stack is capped so a long session doesn't accumulate unbounded entries.
+interface ClosedTab {
+  type: Tab["type"];
+  title: string;
+  path: string;
+  editingMode?: EditingMode;
+}
+const closedTabs: ClosedTab[] = [];
+const CLOSED_TAB_LIMIT = 25;
+
 let nextId = 1;
 
 export interface OpenTabOptions {
@@ -224,6 +236,19 @@ export function closeTab(id: string) {
   const idx = tabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
 
+  // Record the closing tab so it can be reopened (Ctrl+Shift+T). Empty
+  // tabs have no file to restore, so they're skipped.
+  const closing = tabs[idx];
+  if (closing.type !== "empty" && closing.path) {
+    closedTabs.push({
+      type: closing.type,
+      title: closing.title,
+      path: closing.path,
+      editingMode: closing.editingMode,
+    });
+    if (closedTabs.length > CLOSED_TAB_LIMIT) closedTabs.shift();
+  }
+
   setTabs(produce((t) => t.splice(idx, 1)));
   historyMap.delete(id);
   editorStateCache.delete(id);
@@ -232,6 +257,19 @@ export function closeTab(id: string) {
     const newIdx = Math.min(idx, tabs.length - 1);
     setActiveTabId(newIdx >= 0 ? tabs[newIdx]?.id ?? null : null);
   }
+}
+
+/** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
+ *  closed-tab stack is empty. Opens in a fresh tab; if a tab with the
+ *  same path is already open, that tab is focused instead. */
+export function reopenClosedTab() {
+  const last = closedTabs.pop();
+  if (!last) return;
+  const tabId = openTab(
+    { type: last.type, title: last.title, path: last.path },
+    { forceNewTab: true },
+  );
+  if (last.editingMode) setTabEditingMode(tabId, last.editingMode);
 }
 
 export function getActiveTab(): Tab | undefined {

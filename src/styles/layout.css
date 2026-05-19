@@ -337,6 +337,18 @@
   background: var(--bg-hover);
 }
 
+/* File tree multi-selection: rows picked via Ctrl/Shift-click. Tinted
+   with the accent so a selection reads distinctly from the open-file
+   `--active` highlight, which a selection can overlap. */
+.sidebar-item--selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg-primary);
+}
+
+.sidebar-item--selected:hover {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 /* File tree drag-to-move: the folder (or file's folder) under the
    cursor during a move drag. */
 .sidebar-item--drop-target {

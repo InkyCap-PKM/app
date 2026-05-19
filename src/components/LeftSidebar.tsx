@@ -92,17 +92,17 @@ type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
 const FILE_SORT_OPTIONS: { value: FileSortMode; label: string }[] = [
   { value: "name-asc", label: "Name (A – Z)" },
   { value: "name-desc", label: "Name (Z – A)" },
-  { value: "modified-desc", label: "Modified (newest)" },
-  { value: "modified-asc", label: "Modified (oldest)" },
-  { value: "created-desc", label: "Created (newest)" },
-  { value: "created-asc", label: "Created (oldest)" },
+  { value: "modified-desc", label: "Modified (new – old)" },
+  { value: "modified-asc", label: "Modified (old – new)" },
+  { value: "created-desc", label: "Created (new – old)" },
+  { value: "created-asc", label: "Created (old – new)" },
 ];
 
 const LIST_SORT_OPTIONS: { value: ListSortMode; label: string }[] = [
   { value: "name-asc", label: "Alphabetical (A – Z)" },
   { value: "name-desc", label: "Alphabetical (Z – A)" },
-  { value: "count-desc", label: "Quantity (highest)" },
-  { value: "count-asc", label: "Quantity (lowest)" },
+  { value: "count-desc", label: "Quantity (high – low)" },
+  { value: "count-asc", label: "Quantity (low – high)" },
 ];
 
 /// Sort one level of a file tree. The `grouping` parameter controls
@@ -194,6 +194,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // root) currently hovered as a move target, so the row can highlight.
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
 
+  // File tree multi-selection. `selectedPaths` holds the paths of every
+  // file/folder picked via Ctrl/Shift-click; `selectionAnchor` is the
+  // last single-clicked row, from which a Shift-click extends a range.
+  // A plain click clears the selection (the open file is shown by the
+  // `--active` highlight instead).
+  const [selectedPaths, setSelectedPaths] = createSignal<Set<string>>(new Set());
+  const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null);
+
   // Collections: sort mode + inline search filter. Sort reuses the File
   // Tree options (name / modified / created) per product spec — the
   // Tags/Properties "by quantity" options don't apply to collections.
@@ -255,6 +263,53 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (!tree) return [];
     const filtered = typstOnly() ? filterTypstFiles(tree) : tree;
     return sortFileTree(filtered, fileSortMode(), settings.appearance.folder_grouping);
+  });
+
+  /// Path → node lookup over the *entire* tree (regardless of expansion).
+  /// Lets the multi-selection code resolve a selected path back to its
+  /// `is_dir` flag for move/delete without re-walking the tree.
+  const nodeIndex = createMemo(() => {
+    const map = new Map<string, FileTreeNode>();
+    const walk = (nodes: FileTreeNode[]) => {
+      for (const n of nodes) {
+        map.set(n.path, n);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(filteredFileTree());
+    return map;
+  });
+
+  /// Flattened list of currently *visible* rows, in display order —
+  /// folders contribute their children only when expanded. Shift-click
+  /// range selection walks this list between the anchor and the target.
+  const visibleNodeList = createMemo(() => {
+    const out: FileTreeNode[] = [];
+    const walk = (nodes: FileTreeNode[]) => {
+      for (const n of nodes) {
+        out.push(n);
+        if (n.is_dir && n.children && expandedDirs().has(n.path)) {
+          walk(n.children);
+        }
+      }
+    };
+    walk(filteredFileTree());
+    return out;
+  });
+
+  /// The selected paths resolved to nodes, with any item nested inside
+  /// another selected folder pruned out — moving/deleting a folder
+  /// already carries its descendants, so a separately-selected child
+  /// would otherwise be acted on twice with a stale path.
+  const selectedNodes = createMemo<FileTreeNode[]>(() => {
+    const index = nodeIndex();
+    const nodes = [...selectedPaths()]
+      .map((p) => index.get(p))
+      .filter((n): n is FileTreeNode => n !== undefined);
+    const dirs = nodes.filter((n) => n.is_dir).map((n) => n.path);
+    return nodes.filter(
+      (n) => !dirs.some((d) => n.path !== d && n.path.startsWith(d + "/")),
+    );
   });
 
   /// Collections, filtered by the inline search box and ordered by the
@@ -641,16 +696,69 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRefreshTick((t) => t + 1);
   }
 
+  /// Handle a click on a file-tree row, dispatching on modifier keys:
+  ///   • Ctrl/Cmd-click  — toggle this row in the multi-selection.
+  ///   • Shift-click     — extend a contiguous range from the anchor.
+  ///   • plain click     — clear the selection and open the file (or
+  ///                       toggle the folder); the row becomes the new
+  ///                       anchor for a subsequent Shift-click.
+  function handleNodeClick(node: FileTreeNode, e: MouseEvent) {
+    if (e.shiftKey && selectionAnchor()) {
+      const list = visibleNodeList();
+      const a = list.findIndex((n) => n.path === selectionAnchor());
+      const b = list.findIndex((n) => n.path === node.path);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a <= b ? [a, b] : [b, a];
+        const next = e.ctrlKey || e.metaKey
+          ? new Set(selectedPaths())
+          : new Set<string>();
+        for (let i = lo; i <= hi; i++) next.add(list[i].path);
+        setSelectedPaths(next);
+      }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(selectedPaths());
+      if (next.has(node.path)) next.delete(node.path);
+      else next.add(node.path);
+      setSelectedPaths(next);
+      setSelectionAnchor(node.path);
+      return;
+    }
+    // Plain click — drop any multi-selection and act on the row.
+    setSelectedPaths(new Set<string>());
+    setSelectionAnchor(node.path);
+    if (node.is_dir) {
+      toggleDir(node.path);
+    } else {
+      openFile(node, e);
+    }
+  }
+
+  /// The set of items a drag starting on `node` should carry: the whole
+  /// multi-selection when the dragged row is part of it, otherwise just
+  /// the row itself. Descendants of selected folders are pruned by
+  /// `selectedNodes`.
+  function dragItemsFor(
+    node: FileTreeNode,
+  ): { path: string; is_dir: boolean }[] {
+    const selection = selectedPaths();
+    if (selection.size > 1 && selection.has(node.path)) {
+      return selectedNodes().map((n) => ({ path: n.path, is_dir: n.is_dir }));
+    }
+    return [{ path: node.path, is_dir: node.is_dir }];
+  }
+
   /// MIME type carrying a file-tree node during an intra-sidebar move
   /// drag. Distinct from `application/x-inkycap-notebox-path` (which the
   /// editor consumes to embed a file) so a tree move never registers as
   /// an embed and vice versa.
   const TREE_MOVE_MIME = "application/x-inkycap-tree-move";
 
-  /// Context-menu entry point: open the folder picker, then move the
-  /// node into the chosen folder. The picker is notebox-scoped and hides
-  /// the node's own subtree (for folders) and current parent, so every
-  /// returned destination is a valid, non-trivial move.
+  /// Context-menu entry point for a single node: open the folder picker,
+  /// then move the node into the chosen folder. The picker is notebox-
+  /// scoped and hides the node's own subtree (for folders) and current
+  /// parent, so every returned destination is a valid, non-trivial move.
   async function moveNodeViaDialog(node: FileTreeNode) {
     setFileContextMenu(null);
     const root = noteboxInfo()?.path ?? "";
@@ -663,44 +771,75 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     });
     if (dest == null) return;
     const destDir = dest === "" ? root : `${root}/${dest}`;
-    moveNode({ path: node.path, is_dir: node.is_dir }, destDir);
+    moveItems([{ path: node.path, is_dir: node.is_dir }], destDir);
   }
 
-  /// Move a dragged file or folder into `destDir` (an absolute path, or
-  /// the notebox root). Rejects no-op moves and folder-into-self up front;
-  /// the backend rebases relative asset paths and reindexes, and the
-  /// file watcher refreshes the tree — `refresh()` is belt-and-braces so
-  /// the move shows immediately even if the watcher event is debounced.
-  async function moveNode(
-    src: { path: string; is_dir: boolean },
+  /// Context-menu entry point for the current multi-selection: open the
+  /// folder picker once, then move every selected node into the chosen
+  /// folder. `disallowPrefix` can only express one subtree, so it's used
+  /// only when a single folder is selected; `moveItems` still guards each
+  /// item against folder-into-self.
+  async function moveSelectionViaDialog() {
+    setFileContextMenu(null);
+    const items = selectedNodes();
+    if (items.length === 0) return;
+    const root = noteboxInfo()?.path ?? "";
+    const dest = await pickFolder({
+      title: "Move files to...",
+      disallowPrefix:
+        items.length === 1 && items[0].is_dir ? items[0].path : undefined,
+    });
+    if (dest == null) return;
+    const destDir = dest === "" ? root : `${root}/${dest}`;
+    moveItems(
+      items.map((n) => ({ path: n.path, is_dir: n.is_dir })),
+      destDir,
+    );
+  }
+
+  /// Move one or more dragged/selected files or folders into `destDir`
+  /// (an absolute path, or the notebox root). Each item is checked for a
+  /// no-op move and folder-into-self; the backend rebases relative asset
+  /// paths and reindexes, and the file watcher refreshes the tree —
+  /// `refresh()` is belt-and-braces so the move shows immediately even if
+  /// the watcher event is debounced.
+  async function moveItems(
+    items: { path: string; is_dir: boolean }[],
     destDir: string,
   ) {
     const root = noteboxInfo()?.path ?? "";
-    const slash = src.path.lastIndexOf("/");
-    const srcParent = slash >= 0 ? src.path.slice(0, slash) : root;
-    if (srcParent === destDir) return; // already in that folder
-    if (
-      src.is_dir &&
-      (destDir === src.path || destDir.startsWith(src.path + "/"))
-    ) {
-      toastError("Cannot move a folder into itself");
-      return;
-    }
     const destRel =
       destDir === root || destDir === ""
         ? ""
         : destDir.startsWith(root + "/")
           ? destDir.slice(root.length + 1)
           : destDir;
-    try {
-      if (src.is_dir) {
-        await ipc.moveFolder(src.path, destRel);
-      } else {
-        await ipc.moveFile(src.path, destRel);
+    let moved = false;
+    for (const src of items) {
+      const slash = src.path.lastIndexOf("/");
+      const srcParent = slash >= 0 ? src.path.slice(0, slash) : root;
+      if (srcParent === destDir) continue; // already in that folder
+      if (
+        src.is_dir &&
+        (destDir === src.path || destDir.startsWith(src.path + "/"))
+      ) {
+        toastError("Cannot move a folder into itself");
+        continue;
       }
+      try {
+        if (src.is_dir) {
+          await ipc.moveFolder(src.path, destRel);
+        } else {
+          await ipc.moveFile(src.path, destRel);
+        }
+        moved = true;
+      } catch (e) {
+        toastError("Failed to move item", e);
+      }
+    }
+    if (moved) {
+      setSelectedPaths(new Set<string>());
       refresh();
-    } catch (e) {
-      toastError("Failed to move item", e);
     }
   }
 
@@ -783,6 +922,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu(null);
+    // Right-clicking a row outside the current multi-selection drops the
+    // selection so the menu acts on just that row — standard file-manager
+    // behaviour. Right-clicking inside the selection keeps it intact.
+    if (!selectedPaths().has(node.path)) {
+      setSelectedPaths(new Set<string>());
+      setSelectionAnchor(node.path);
+    }
     const { x, y } = clampMenuPos(e.clientX, e.clientY);
     setFileContextMenu({ x, y, node });
   }
@@ -868,30 +1014,42 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  async function handleDeleteFile(node: FileTreeNode) {
+  /// Delete one or more files/folders, after a single confirmation that
+  /// names the item (or counts them, for a multi-selection). Used by both
+  /// the single-node "Delete" menu entry and the multi-selection one.
+  async function deleteItems(items: { path: string; is_dir: boolean }[]) {
     setFileContextMenu(null);
+    if (items.length === 0) return;
     const settings = await ipc.getSettings();
     if (settings.files.confirm_before_delete) {
-      const confirmed = await ask(
-        `Move "${node.name}" to trash?`,
-        { title: "Delete", kind: "warning" },
-      );
+      const message =
+        items.length === 1
+          ? `Move "${items[0].path.split("/").pop()}" to trash?`
+          : `Move ${items.length} items to trash?`;
+      const confirmed = await ask(message, { title: "Delete", kind: "warning" });
       if (!confirmed) return;
     }
-    try {
-      if (node.is_dir) {
-        await ipc.deleteFolder(node.path);
-      } else {
-        await ipc.deleteFile(node.path);
-        // Close open tab for this file
-        const openFileTab = tabs.find(
-          (t) => t.type === "file" && t.path === node.path,
-        );
-        if (openFileTab) closeTab(openFileTab.id);
+    let deleted = false;
+    for (const item of items) {
+      try {
+        if (item.is_dir) {
+          await ipc.deleteFolder(item.path);
+        } else {
+          await ipc.deleteFile(item.path);
+          // Close any open tab for this file.
+          const openFileTab = tabs.find(
+            (t) => t.type === "file" && t.path === item.path,
+          );
+          if (openFileTab) closeTab(openFileTab.id);
+        }
+        deleted = true;
+      } catch (e) {
+        toastError("Failed to delete", e);
       }
+    }
+    if (deleted) {
+      setSelectedPaths(new Set<string>());
       refresh();
-    } catch (e) {
-      toastError("Failed to delete", e);
     }
   }
 
@@ -977,20 +1135,20 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           <LibraryBig size={18} />
         </button>
         <button
-          class={`left-sidebar__mode-btn ${mode() === "tags" ? "left-sidebar__mode-btn--active" : ""}`}
-          onClick={() => setMode("tags")}
-          title="Tags"
-          aria-label="Tags"
-        >
-          <Tags size={18} />
-        </button>
-        <button
           class={`left-sidebar__mode-btn ${mode() === "properties" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("properties")}
           title="Properties"
           aria-label="Properties"
         >
           <NotebookTabs size={18} />
+        </button>
+        <button
+          class={`left-sidebar__mode-btn ${mode() === "tags" ? "left-sidebar__mode-btn--active" : ""}`}
+          onClick={() => setMode("tags")}
+          title="Tags"
+          aria-label="Tags"
+        >
+          <Tags size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "bookmarks" ? "left-sidebar__mode-btn--active" : ""}`}
@@ -1292,17 +1450,23 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 if (!raw) return;
                 e.preventDefault();
                 try {
-                  moveNode(JSON.parse(raw), noteboxInfo()?.path ?? "");
+                  moveItems(JSON.parse(raw), noteboxInfo()?.path ?? "");
                 } catch {
                   /* malformed payload — ignore */
                 }
+              }}
+              onClick={(e) => {
+                // A click in the empty space below the rows clears the
+                // multi-selection. Row clicks stopPropagation, so this
+                // only fires for the container itself.
+                if (e.target === e.currentTarget) setSelectedPaths(new Set<string>());
               }}
             >
               <For each={filteredFileTree()}>
                 {(node) => (
                   <TreeNode
                     node={node}
-                    onOpen={openFile}
+                    onNodeClick={handleNodeClick}
                     onContext={handleFileContext}
                     renamingPath={fileRenamingPath()}
                     renameValue={fileRenameValue()}
@@ -1310,14 +1474,16 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     onRenameCommit={commitFileRename}
                     onRenameCancel={() => setFileRenamingPath(null)}
                     activePath={getActiveTab()?.path ?? null}
+                    selectedPaths={selectedPaths}
                     revealPath={revealPath()}
                     noteboxRoot={noteboxInfo()?.path ?? ""}
                     expandedDirs={expandedDirs}
                     onToggleDir={toggleDir}
                     treeMoveMime={TREE_MOVE_MIME}
+                    dragItems={dragItemsFor}
                     dragOverDir={dragOverDir}
                     setDragOverDir={setDragOverDir}
-                    onMoveNode={moveNode}
+                    onMoveItems={moveItems}
                   />
                 )}
               </For>
@@ -1719,6 +1885,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           const node = menu().node;
           // Get folder path for "new file/folder" actions
           const folderPath = node.is_dir ? node.path : node.path.replace(/\/[^/]+$/, "");
+          // When the right-clicked row is part of a multi-selection, the
+          // menu acts on the whole selection instead of the single node.
+          const isMultiSelection = () =>
+            selectedPaths().size > 1 && selectedPaths().has(node.path);
           return (
             <div
               class="context-menu"
@@ -1728,6 +1898,29 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              <Show when={isMultiSelection()}>
+                <button
+                  class="context-menu__item"
+                  onClick={() => moveSelectionViaDialog()}
+                >
+                  Move files to...
+                </button>
+                <div class="context-menu__separator" />
+                <button
+                  class="context-menu__item context-menu__item--danger"
+                  onClick={() =>
+                    deleteItems(
+                      selectedNodes().map((n) => ({
+                        path: n.path,
+                        is_dir: n.is_dir,
+                      })),
+                    )
+                  }
+                >
+                  Delete {selectedNodes().length} items
+                </button>
+              </Show>
+              <Show when={!isMultiSelection()}>
               <Show when={!node.is_dir}>
                 <button
                   class="context-menu__item"
@@ -1806,10 +1999,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </button>
               <button
                 class="context-menu__item context-menu__item--danger"
-                onClick={() => handleDeleteFile(node)}
+                onClick={() =>
+                  deleteItems([{ path: node.path, is_dir: node.is_dir }])
+                }
               >
                 Delete
               </button>
+              </Show>
             </div>
           );
         }}
@@ -1820,7 +2016,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
 const TreeNode: Component<{
   node: FileTreeNode;
-  onOpen: (node: FileTreeNode, e?: MouseEvent) => void;
+  /// Click handler that dispatches on modifier keys: plain click opens
+  /// the file / toggles the folder, Ctrl/Shift-click manage the
+  /// multi-selection.
+  onNodeClick: (node: FileTreeNode, e: MouseEvent) => void;
   onContext: (e: MouseEvent, node: FileTreeNode) => void;
   renamingPath: string | null;
   renameValue: string;
@@ -1828,6 +2027,9 @@ const TreeNode: Component<{
   onRenameCommit: () => void;
   onRenameCancel: () => void;
   activePath: string | null;
+  /// Paths of all rows in the current multi-selection, so each row can
+  /// reflect whether it is selected.
+  selectedPaths: () => Set<string>;
   revealPath: string | null;
   noteboxRoot: string;
   /// Hoisted expansion state so the Expand All / Collapse All toolbar
@@ -1837,14 +2039,17 @@ const TreeNode: Component<{
   expandedDirs: () => Set<string>;
   onToggleDir: (path: string) => void;
   /// Drag-to-move plumbing. `treeMoveMime` is the dataTransfer type that
-  /// carries the dragged node; `dragOverDir` / `setDragOverDir` track
-  /// which row is the current drop target so it can highlight; and
-  /// `onMoveNode` performs the move once a drop lands.
+  /// carries the dragged node(s); `dragItems` resolves a row to the set
+  /// of items a drag should carry (the whole selection, or just the
+  /// row); `dragOverDir` / `setDragOverDir` track which row is the
+  /// current drop target so it can highlight; and `onMoveItems` performs
+  /// the move once a drop lands.
   treeMoveMime: string;
+  dragItems: (node: FileTreeNode) => { path: string; is_dir: boolean }[];
   dragOverDir: () => string | null;
   setDragOverDir: (path: string | null) => void;
-  onMoveNode: (
-    src: { path: string; is_dir: boolean },
+  onMoveItems: (
+    items: { path: string; is_dir: boolean }[],
     destDir: string,
   ) => void;
   depth?: number;
@@ -1855,6 +2060,7 @@ const TreeNode: Component<{
   const isRenaming = () => props.renamingPath === props.node.path;
   const isActive = () =>
     !props.node.is_dir && props.activePath === props.node.path;
+  const isSelected = () => props.selectedPaths().has(props.node.path);
 
   /// Folder a drop on this row moves the item into: the folder itself
   /// for a directory row, or the containing folder for a file row.
@@ -1899,29 +2105,31 @@ const TreeNode: Component<{
               "sidebar-item": true,
               "sidebar-item--dir": props.node.is_dir,
               "sidebar-item--active": isActive(),
+              "sidebar-item--selected": isSelected(),
               "sidebar-item--drop-target": isDropTarget(),
             }}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
             draggable={true}
             onDragStart={(e) => {
-              // Intra-sidebar move payload — files and folders alike.
+              // Intra-sidebar move payload — an array of files/folders.
+              // When the dragged row is part of a multi-selection, every
+              // selected item travels with it.
+              const items = props.dragItems(props.node);
               e.dataTransfer!.setData(
                 props.treeMoveMime,
-                JSON.stringify({
-                  path: props.node.path,
-                  is_dir: props.node.is_dir,
-                }),
+                JSON.stringify(items),
               );
-              if (props.node.is_dir) {
-                e.dataTransfer!.effectAllowed = "move";
-              } else {
-                // Files can also be dropped into the editor to embed
-                // them, which reads this notebox-relative-path payload.
+              if (items.length === 1 && !items[0].is_dir) {
+                // A lone file can also be dropped into the editor to
+                // embed it, which reads this notebox-relative-path
+                // payload. Multi-drag carries the move payload only.
                 const rel = props.node.path.startsWith(props.noteboxRoot + "/")
                   ? props.node.path.slice(props.noteboxRoot.length + 1)
                   : props.node.name;
                 e.dataTransfer!.setData("application/x-inkycap-notebox-path", rel);
                 e.dataTransfer!.effectAllowed = "copyMove";
+              } else {
+                e.dataTransfer!.effectAllowed = "move";
               }
             }}
             onDragOver={(e) => {
@@ -1949,18 +2157,12 @@ const TreeNode: Component<{
               e.preventDefault();
               e.stopPropagation();
               try {
-                props.onMoveNode(JSON.parse(raw), dropDest());
+                props.onMoveItems(JSON.parse(raw), dropDest());
               } catch {
                 /* malformed payload — ignore */
               }
             }}
-            onClick={(e) => {
-              if (props.node.is_dir) {
-                props.onToggleDir(props.node.path);
-              } else {
-                props.onOpen(props.node, e);
-              }
-            }}
+            onClick={(e) => props.onNodeClick(props.node, e)}
             onContextMenu={(e) => props.onContext(e, props.node)}
           >
             <span class="sidebar-item__icon">
@@ -2005,7 +2207,7 @@ const TreeNode: Component<{
           {(child) => (
             <TreeNode
               node={child}
-              onOpen={props.onOpen}
+              onNodeClick={props.onNodeClick}
               onContext={props.onContext}
               renamingPath={props.renamingPath}
               renameValue={props.renameValue}
@@ -2013,14 +2215,16 @@ const TreeNode: Component<{
               onRenameCommit={props.onRenameCommit}
               onRenameCancel={props.onRenameCancel}
               activePath={props.activePath}
+              selectedPaths={props.selectedPaths}
               revealPath={props.revealPath}
               noteboxRoot={props.noteboxRoot}
               expandedDirs={props.expandedDirs}
               onToggleDir={props.onToggleDir}
               treeMoveMime={props.treeMoveMime}
+              dragItems={props.dragItems}
               dragOverDir={props.dragOverDir}
               setDragOverDir={props.setDragOverDir}
-              onMoveNode={props.onMoveNode}
+              onMoveItems={props.onMoveItems}
               depth={depth + 1}
             />
           )}
