@@ -349,6 +349,15 @@
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* Non-`.typ` files (attachments, data files, bibliographies) are shown in
+   the tree so users can see and link to them, but de-emphasized: InkyCap
+   doesn't edit them and they open in the OS default app. Only the label
+   and icon are muted, so the selection/active background still reads. */
+.sidebar-item--non-note .sidebar-item__label,
+.sidebar-item--non-note .sidebar-item__icon {
+  color: var(--fg-dim);
+}
+
 /* File tree drag-to-move: the folder (or file's folder) under the
    cursor during a move drag. */
 .sidebar-item--drop-target {
@@ -385,7 +394,6 @@ svg.lucide {
 .left-sidebar__mode-btn > svg.lucide,
 .right-panel__tab > svg.lucide,
 .left-sidebar__icon-btn > svg.lucide,
-.left-sidebar__filter-btn > svg.lucide,
 .left-sidebar__add-btn > svg.lucide,
 .right-panel__icon-btn > svg.lucide,
 .icon-btn > svg.lucide,
@@ -1270,34 +1278,9 @@ svg.lucide {
   align-items: center;
 }
 
-.left-sidebar__filter-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  color: var(--fg-dim);
-  cursor: pointer;
-  padding: 2px 4px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.left-sidebar__filter-btn:hover {
-  color: var(--fg-muted);
-}
-
-.left-sidebar__filter-btn--active {
-  color: var(--accent, #1D7874);
-  border-color: var(--accent, #1D7874);
-  background: color-mix(in srgb, var(--accent, #1D7874) 10%, transparent);
-}
-
 /* Generic header icon button used by the Sort, Expand/Collapse, and
    Filter (search) toggles across file-tree / tags / properties panes, and
-   mirrored on the right panel (Outline toggle, future per-pane actions).
-   Visually equivalent to .left-sidebar__filter-btn but kept separate so
-   the existing typst-only toggle keeps its dedicated --active rule. */
+   mirrored on the right panel (Outline toggle, future per-pane actions). */
 .left-sidebar__icon-btn,
 .right-panel__icon-btn {
   background: none;
@@ -1328,7 +1311,6 @@ svg.lucide {
 /* Inline SVGs sit on the text baseline, leaving ~1px of extra space
    above the icon and visually thinning the bottom border. Block-level
    icons remove the baseline gap so all four borders read evenly. */
-.left-sidebar__filter-btn > svg,
 .left-sidebar__icon-btn > svg,
 .right-panel__icon-btn > svg,
 .left-sidebar__add-btn > svg,
@@ -2941,7 +2923,7 @@ svg.lucide {
    heading-row icon button so it picks up the unified --radius-control,
    border, and hover treatment. Existing class-specific buttons
    (.left-sidebar__icon-btn, .right-panel__icon-btn, .icon-btn,
-   .left-sidebar__filter-btn, .left-sidebar__add-btn) are visually
+   .left-sidebar__add-btn) are visually
    equivalent — prefer this class for new code so future radius /
    color retuning happens in one place. Add an `is-active` modifier
    for toggled states. */
@@ -7623,13 +7605,17 @@ svg.lucide {
 }
 
 /* Floating selection toolbar — surface from the shared --popup-* tokens. */
+/* The selection toolbar floats directly over document text, so unlike
+   menus that open into empty space it uses a contrasting surface
+   (--toolbar-float-*) rather than plain --popup-bg, which equals the
+   page background. */
 .selection-toolbar {
   position: fixed;
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--popup-bg);
-  border: 1px solid var(--popup-border-color);
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
   box-shadow: var(--popup-shadow);
   padding: 3px;
@@ -7645,7 +7631,7 @@ svg.lucide {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: var(--fg-secondary);
+  color: var(--toolbar-float-fg);
   font-size: var(--text-md);
   cursor: pointer;
   font-family: var(--editor-font-mono, monospace);
@@ -7653,8 +7639,8 @@ svg.lucide {
 }
 
 .selection-toolbar__btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
+  background: var(--toolbar-float-hover-bg);
+  color: var(--toolbar-float-fg-strong);
 }
 
 .selection-toolbar__btn svg {
@@ -7670,7 +7656,7 @@ svg.lucide {
 .selection-toolbar__sep {
   width: 1px;
   height: 18px;
-  background: var(--border-primary);
+  background: var(--toolbar-float-sep);
   margin: 0 2px;
   flex-shrink: 0;
 }
@@ -7681,8 +7667,10 @@ svg.lucide {
   display: flex;
   flex-direction: column;
   min-width: 180px;
-  background: var(--popup-bg);
-  border: 1px solid var(--popup-border-color);
+  /* Match the toolbar's contrasting surface — these menus open from it,
+     so a plain --popup-bg menu would jump to the page colour. */
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
   box-shadow: var(--popup-shadow);
   padding: var(--popup-padding-block) 0;
@@ -7697,7 +7685,7 @@ svg.lucide {
   padding: var(--popup-item-padding);
   border: none;
   background: transparent;
-  color: var(--fg-primary);
+  color: var(--toolbar-float-fg-strong);
   font-size: var(--text-sm);
   cursor: pointer;
   text-align: left;
@@ -7705,8 +7693,8 @@ svg.lucide {
 }
 
 .selection-toolbar__menu-item:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
+  background: var(--toolbar-float-hover-bg);
+  color: var(--toolbar-float-fg-strong);
 }
 
 .selection-toolbar__menu-icon {
@@ -7724,7 +7712,7 @@ svg.lucide {
 
 .selection-toolbar__menu-sep {
   height: 1px;
-  background: var(--border-subtle);
+  background: var(--toolbar-float-sep);
   margin: 4px 0;
 }
 
@@ -7733,8 +7721,8 @@ svg.lucide {
   position: fixed;
   display: flex;
   gap: 2px;
-  background: var(--popup-bg);
-  border: 1px solid var(--popup-border-color);
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
   box-shadow: var(--popup-shadow);
   padding: 3px;

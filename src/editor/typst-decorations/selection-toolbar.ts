@@ -29,7 +29,7 @@ const ICON_LINK = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" s
 const ICON_CODE = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 2 10 6 6"/><polyline points="14 6 18 10 14 14"/></svg>`;
 
 
-const ICON_VERSE = `<svg viewBox="0 0 32 32" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="22" height="3.5" rx="1" fill="currentColor" stroke="none"/><path d="M7.5 5.5H24.5L29 20V24.5C29 26.5 27.5 28 25.5 28H6.5C4.5 28 3 26.5 3 24.5V20Z" fill="currentColor" stroke="none"/><rect x="11" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="18" y="10" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="7" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="12" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="17" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><rect x="22" y="16" width="3" height="3" rx="0.5" fill="var(--bg-active)" stroke="none"/><line x1="10" y1="23.5" x2="22" y2="23.5" stroke="var(--bg-active)" stroke-width="2.5"/></svg>`;
+const ICON_VERSE = `<svg viewBox="0 0 32 32" width="14" height="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="22" height="3.5" rx="1" fill="currentColor" stroke="none"/><path d="M7.5 5.5H24.5L29 20V24.5C29 26.5 27.5 28 25.5 28H6.5C4.5 28 3 26.5 3 24.5V20Z" fill="currentColor" stroke="none"/><rect x="11" y="10" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><rect x="18" y="10" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><rect x="7" y="16" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><rect x="12" y="16" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><rect x="17" y="16" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><rect x="22" y="16" width="3" height="3" rx="0.5" fill="var(--toolbar-float-bg)" stroke="none"/><line x1="10" y1="23.5" x2="22" y2="23.5" stroke="var(--toolbar-float-bg)" stroke-width="2.5"/></svg>`;
 
 const ICON_ALIGN_LEFT = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="4" x2="17" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="17" y2="12"/><line x1="3" y1="16" x2="11" y2="16"/></svg>`;
 
@@ -409,9 +409,14 @@ function toggleAlignPopup(anchorBtn: HTMLElement) {
     ap.style.display = "none";
     return;
   }
+  // Drop from the toolbar's bottom edge — not the button's — so the popup
+  // clears the toolbar with the same 4px gap as the block-type dropdown.
+  // The button sits inside the toolbar's padding, so anchoring to it would
+  // leave the popup all but touching the toolbar.
   const btnRect = anchorBtn.getBoundingClientRect();
+  const tbRect = toolbar?.getBoundingClientRect();
   ap.style.left = `${btnRect.left}px`;
-  ap.style.top = `${btnRect.bottom + 4}px`;
+  ap.style.top = `${(tbRect ? tbRect.bottom : btnRect.bottom) + 4}px`;
   ap.style.display = "flex";
 }
 

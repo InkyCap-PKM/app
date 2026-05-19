@@ -22,8 +22,8 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
+  File,
   NotebookTabs,
-  Filter,
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
@@ -61,22 +61,39 @@ interface LeftSidebarProps {
   setMode: (m: SidebarMode) => void;
 }
 
-const TYPST_EXTS = new Set([".typ"]);
 const HIDDEN_NAMES = new Set([".inkycap"]);
 
-function filterTypstFiles(nodes: FileTreeNode[]): FileTreeNode[] {
+/// A `.typ` note — the file kind InkyCap edits in its own editor.
+function isNoteFile(name: string): boolean {
+  return name.toLowerCase().endsWith(".typ");
+}
+
+/// A `.collection` document — also opened in-app, in the collection view.
+function isCollectionFile(name: string): boolean {
+  return name.toLowerCase().endsWith(".collection");
+}
+
+/// Files InkyCap opens in one of its own editors. Everything else
+/// (images, PDFs, `.bib`, data files) is shown in the tree so users can
+/// see and link to attachments, but is opened with the OS default app
+/// and visually de-emphasized.
+function isAppEditable(name: string): boolean {
+  return isNoteFile(name) || isCollectionFile(name);
+}
+
+/// Strip InkyCap's internal directories but keep everything else: every
+/// folder — including empty ones the user just created — and every file,
+/// regardless of extension. Typst can reference an asset from anywhere in
+/// the notebox, so hiding non-`.typ` files risks hiding a compile
+/// dependency; they are de-emphasized in the UI instead.
+function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
   return nodes
     .filter((n) => !HIDDEN_NAMES.has(n.name))
-    .map((n) => {
-      if (n.is_dir) {
-        const children = n.children ? filterTypstFiles(n.children) : [];
-        if (children.length === 0) return null;
-        return { ...n, children };
-      }
-      const ext = n.name.lastIndexOf(".") >= 0 ? n.name.slice(n.name.lastIndexOf(".")) : "";
-      return TYPST_EXTS.has(ext) ? n : null;
-    })
-    .filter((n): n is FileTreeNode => n !== null);
+    .map((n) =>
+      n.is_dir
+        ? { ...n, children: n.children ? visibleFileTree(n.children) : [] }
+        : n,
+    );
 }
 
 type FileSortMode =
@@ -180,7 +197,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const mode = props.mode;
   const setMode = props.setMode;
   const [refreshTick, setRefreshTick] = createSignal(0);
-  const [typstOnly, setTypstOnly] = createSignal(true);
 
   // File tree: sort mode + per-folder expansion state hoisted from the
   // TreeNode component so the Expand All / Collapse All button can flip
@@ -261,7 +277,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const filteredFileTree = createMemo(() => {
     const tree = fileTree();
     if (!tree) return [];
-    const filtered = typstOnly() ? filterTypstFiles(tree) : tree;
+    const filtered = visibleFileTree(tree);
     return sortFileTree(filtered, fileSortMode(), settings.appearance.folder_grouping);
   });
 
@@ -606,18 +622,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     });
   }
 
-  const BINARY_EXTENSIONS = new Set([
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",
-    "pdf", "zip", "tar", "gz", "7z", "rar",
-    "mp3", "wav", "ogg", "flac", "mp4", "webm", "mkv", "avi",
-    "woff", "woff2", "ttf", "otf", "eot",
-  ]);
-
-  function isBinaryFile(name: string): boolean {
-    const ext = name.split(".").pop()?.toLowerCase() ?? "";
-    return BINARY_EXTENSIONS.has(ext);
-  }
-
   function openFile(node: FileTreeNode, e?: MouseEvent) {
     if (node.is_dir) return;
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
@@ -629,7 +633,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     // clicked note) AND the scroll's anchor is moved (so the feed
     // re-centres). Doing only one leaves the tab title and the feed
     // disagreeing. Ctrl/Cmd-click still opens the note in its own tab.
-    if (!forceNewTab && !isCollection && !isBinaryFile(node.name)) {
+    if (!forceNewTab && !isCollection && isNoteFile(node.name)) {
       const active = getActiveTab();
       if (active && isScrollEnabled(active.id)) {
         openTab(
@@ -652,7 +656,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       );
       return;
     }
-    if (isBinaryFile(node.name)) {
+    // Non-`.typ` files (images, PDFs, `.bib`, data files) aren't edited
+    // in-app — hand them to the OS default application.
+    if (!isNoteFile(node.name)) {
       ipc.openFileExternally(node.path);
       return;
     }
@@ -684,6 +690,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         },
         { forceNewTab: true, newTabAction: true },
       );
+      return;
+    }
+    if (!isNoteFile(node.name)) {
+      ipc.openFileExternally(node.path);
       return;
     }
     openTab(
@@ -1360,14 +1370,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   <ListChevronsDownUp size={18} />
                 </Show>
               </button>
-              <button
-                class={`left-sidebar__filter-btn${typstOnly() ? " left-sidebar__filter-btn--active" : ""}`}
-                onClick={() => setTypstOnly((v) => !v)}
-                title={typstOnly() ? "Showing .typ files only — click to show all" : "Showing all files — click to filter to .typ only"}
-                aria-label="Toggle file filter"
-              >
-                <Filter size={18} />
-              </button>
               <div
                 class="left-sidebar__split-btn"
                 onClick={(e) => e.stopPropagation()}
@@ -1921,7 +1923,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </button>
               </Show>
               <Show when={!isMultiSelection()}>
-              <Show when={!node.is_dir}>
+              <Show when={!node.is_dir && isAppEditable(node.name)}>
                 <button
                   class="context-menu__item"
                   onClick={() => {
@@ -1963,7 +1965,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               >
                 New Folder
               </button>
-              <Show when={!node.is_dir}>
+              <Show when={!node.is_dir && isNoteFile(node.name)}>
                 <button
                   class="context-menu__item"
                   onClick={async () => {
@@ -2104,6 +2106,8 @@ const TreeNode: Component<{
             classList={{
               "sidebar-item": true,
               "sidebar-item--dir": props.node.is_dir,
+              "sidebar-item--non-note":
+                !props.node.is_dir && !isAppEditable(props.node.name),
               "sidebar-item--active": isActive(),
               "sidebar-item--selected": isSelected(),
               "sidebar-item--drop-target": isDropTarget(),
@@ -2172,11 +2176,21 @@ const TreeNode: Component<{
                 ) : (
                   <ChevronRight size={14} />
                 )
-              ) : (
+              ) : isAppEditable(props.node.name) ? (
                 <FileText size={14} />
+              ) : (
+                <File size={14} />
               )}
             </span>
-            <span class="sidebar-item__label">{
+            <span
+              class="sidebar-item__label"
+              // Non-note files are de-emphasized; when the user has
+              // extension display off, the hover title surfaces the full
+              // filename so it's clear *why* the row is dimmed.
+              title={
+                isAppEditable(props.node.name) ? undefined : props.node.name
+              }
+            >{
               props.node.is_dir || settings.files.show_file_extensions
                 ? props.node.name
                 : props.node.name.replace(/\.[^.]+$/, "")
