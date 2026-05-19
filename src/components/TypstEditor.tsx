@@ -44,12 +44,13 @@ import {
   isEnabled as isScrollEnabled,
   canScrollNavBack,
   canScrollNavForward,
+  getAnchorPath,
+  getScrollDirection,
   scrollNavBack,
   scrollNavForward,
 } from "../stores/journal-scroll";
 import { BrainCircuit } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
-import JournalScrollFilterChip from "./JournalScrollFilterChip";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
 
@@ -667,6 +668,20 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       ? scrollNavForward(props.tabId)
       : goForward(props.tabId);
 
+  // Journal Scroll status line, shown centred in the editor header while
+  // scroll is on — a quiet reminder of the feed's direction and anchor.
+  const scrollStatusText = () => {
+    const anchor = getAnchorPath(props.tabId);
+    const base = anchor.split("/").pop() ?? anchor;
+    const title = base.replace(/\.typ$/i, "");
+    return t(
+      getScrollDirection(props.tabId) === "desc"
+        ? "journalScroll.status.recentFirst"
+        : "journalScroll.status.oldestFirst",
+      { anchor: title },
+    );
+  };
+
   return (
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
@@ -703,7 +718,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__center">
-          <JournalScrollFilterChip tabId={props.tabId} />
+          <Show when={isScrollEnabled(props.tabId)}>
+            <span class="editor-header__scroll-status">
+              {scrollStatusText()}
+            </span>
+          </Show>
         </div>
 
         <div class="editor-header__right-group">

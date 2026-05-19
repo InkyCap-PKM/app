@@ -177,7 +177,13 @@ const MainContent: Component = () => {
           }
         >
           {(tab) => (
-            <Show when={`${tab().type}::${tab().path}`} keyed>
+            // Keyed by tab id *and* type::path: the editor is rebuilt when a
+            // tab navigates in-place to a different file (path changes), and
+            // — crucially — two tabs that share a path still get distinct
+            // editor instances. Without the id, opening a note that is also
+            // a Journal Scroll's anchor reuses the scroll tab's editor (same
+            // path), so the new tab wrongly renders as a Journal Scroll.
+            <Show when={`${tab().id}::${tab().type}::${tab().path}`} keyed>
               {(_key: string) => {
                 const t = tab();
                 if (t.type === "empty" || !t.path) {

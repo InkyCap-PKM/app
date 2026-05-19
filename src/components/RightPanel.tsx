@@ -24,7 +24,13 @@ import {
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
 import ScrollContextPanel from "./ScrollContextPanel";
-import { isEnabled as isScrollEnabled } from "../stores/journal-scroll";
+import {
+  isEnabled as isScrollEnabled,
+  getScrollDirection,
+  scrollToAnchor,
+  toggleScrollDirection,
+} from "../stores/journal-scroll";
+import { t } from "../lib/i18n";
 import {
   EllipsisVertical,
   NotebookTabs,
@@ -32,6 +38,9 @@ import {
   Link,
   Quote,
   Newspaper,
+  Anchor,
+  CalendarArrowDown,
+  CalendarArrowUp,
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
@@ -168,6 +177,12 @@ const RightPanel: Component = () => {
   const activeFileTab = () => {
     const tab = getActiveTab();
     return tab?.type === "file" ? tab : undefined;
+  };
+
+  /** True when the active tab is currently in Journal Scroll mode. */
+  const activeTabScrollOn = () => {
+    const t = activeFileTab();
+    return !!(t && isScrollEnabled(t.id));
   };
 
   const [metadata, { refetch: refetchMetadata }] = createResource(
@@ -1059,70 +1074,107 @@ const RightPanel: Component = () => {
       {/* Tab bar — always visible so the collapse toggle is accessible */}
       <div class="right-panel__tabs">
         <Show when={activeFileTab()}>
-          {/* File actions (rename/move/delete) act on a single note, so they
-              are disabled while the tab is in Journal Scroll — that view has
-              no single "current file" to operate on. */}
-          <button
-            class="right-panel__tab"
-            onClick={openFileMenu}
-            disabled={(() => {
-              const t = activeFileTab();
-              return !!(t && isScrollEnabled(t.id));
-            })()}
-            title={(() => {
-              const t = activeFileTab();
-              return t && isScrollEnabled(t.id)
-                ? "File actions unavailable in Journal Scroll"
-                : "File actions";
-            })()}
-            aria-label="File actions"
+          {/* In Journal Scroll the right panel is wholly owned by the scroll
+              context — the file-scoped tabs (File actions, Outline,
+              Properties, Links, References) all operate on a single "current
+              file" that the scroll view doesn't have. Rather than disable
+              them one by one, suppress the whole tab row (mirroring how the
+              Mycelial View hides the panel tabs) and leave only a
+              non-interactive marker so the panel still reads as "Scroll
+              context". */}
+          <Show
+            when={!activeTabScrollOn()}
+            fallback={
+              <>
+                <div
+                  class="right-panel__tab right-panel__tab--indicator"
+                  title="Scroll context — linked notes for the entry in view"
+                  aria-label="Scroll context"
+                >
+                  <Newspaper size={18} />
+                </div>
+                {/* The Journal Scroll's own controls — date direction and
+                    return-to-anchor — live here beside the Scroll Context
+                    indicator rather than on the editor-header pill. */}
+                <Show when={activeFileTab()}>
+                  {(tab) => (
+                    <>
+                      <button
+                        class="right-panel__tab"
+                        onClick={() => void toggleScrollDirection(tab().id)}
+                        title={
+                          getScrollDirection(tab().id) === "desc"
+                            ? t("journalScroll.direction.recentFirst")
+                            : t("journalScroll.direction.oldestFirst")
+                        }
+                        aria-label={
+                          getScrollDirection(tab().id) === "desc"
+                            ? t("journalScroll.direction.recentFirst")
+                            : t("journalScroll.direction.oldestFirst")
+                        }
+                      >
+                        {getScrollDirection(tab().id) === "desc" ? (
+                          <CalendarArrowDown size={18} />
+                        ) : (
+                          <CalendarArrowUp size={18} />
+                        )}
+                      </button>
+                      <button
+                        class="right-panel__tab"
+                        onClick={() => scrollToAnchor(tab().id)}
+                        title={t("journalScroll.anchor.return")}
+                        aria-label={t("journalScroll.anchor.return")}
+                      >
+                        <Anchor size={18} />
+                      </button>
+                    </>
+                  )}
+                </Show>
+              </>
+            }
           >
-            <EllipsisVertical size={18} />
-          </button>
-          {/* Scroll Context — sits between File Actions and Outline, and
-              only while Journal Scroll is on for the active tab. */}
-          <Show when={(() => { const t = activeFileTab(); return t && isScrollEnabled(t.id); })()}>
+            {/* File actions (rename/move/delete) act on a single note. */}
             <button
-              class={`right-panel__tab${activePanel() === "scroll-context" ? " right-panel__tab--active" : ""}`}
-              onClick={() => setActivePanel("scroll-context")}
-              title="Scroll context"
-              aria-label="Scroll context"
+              class="right-panel__tab"
+              onClick={openFileMenu}
+              title="File actions"
+              aria-label="File actions"
             >
-              <Newspaper size={18} />
+              <EllipsisVertical size={18} />
+            </button>
+            <button
+              class={`right-panel__tab${activePanel() === "outline" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("outline")}
+              title="Outline"
+              aria-label="Outline"
+            >
+              <TableOfContents size={18} />
+            </button>
+            <button
+              class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("properties")}
+              title="Properties"
+              aria-label="Properties"
+            >
+              <NotebookTabs size={18} />
+            </button>
+            <button
+              class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("links")}
+              title="Links"
+              aria-label="Links"
+            >
+              <Link size={18} />
+            </button>
+            <button
+              class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("references")}
+              title="References"
+              aria-label="References"
+            >
+              <Quote size={18} />
             </button>
           </Show>
-          <button
-            class={`right-panel__tab${activePanel() === "outline" ? " right-panel__tab--active" : ""}`}
-            onClick={() => setActivePanel("outline")}
-            title="Outline"
-            aria-label="Outline"
-          >
-            <TableOfContents size={18} />
-          </button>
-          <button
-            class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
-            onClick={() => setActivePanel("properties")}
-            title="Properties"
-            aria-label="Properties"
-          >
-            <NotebookTabs size={18} />
-          </button>
-          <button
-            class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
-            onClick={() => setActivePanel("links")}
-            title="Links"
-            aria-label="Links"
-          >
-            <Link size={18} />
-          </button>
-          <button
-            class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
-            onClick={() => setActivePanel("references")}
-            title="References"
-            aria-label="References"
-          >
-            <Quote size={18} />
-          </button>
         </Show>
       </div>
 

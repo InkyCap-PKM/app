@@ -57,8 +57,9 @@ pub enum ScrollSort {
     Property { name: String, direction: SortDir },
     /// Sort by title (case-insensitive).
     Title { direction: SortDir },
-    /// Sort by ZID (descending — most recent first).
-    Zid,
+    /// Sort by ZID. `desc` is most-recent-first; `asc` reverses it (the
+    /// Journal Scroll's date-direction toggle drives this).
+    Zid { direction: SortDir },
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
@@ -168,27 +169,56 @@ async fn build_sorted(
             .collect(),
     };
 
-    let mut keyed: Vec<(String, ScrollEntry)> = candidates
+    Ok(sort_candidates(candidates, sort))
+}
+
+/// Sort a candidate note set into the scroll's display order.
+///
+/// Each note is keyed by `(tier, key)`. Tier 0 = the note has the sort
+/// property; tier 1 = it doesn't. A note missing the property is never
+/// dropped — that would silently hide notes from the feed *and*, if the
+/// anchor itself lacked the property, strand the anchor (breaking
+/// anchor-return and offset math). Instead it lands in tier 1, after every
+/// tier-0 note, ordered among its peers by file creation date so the tail
+/// is still a stable, sensible chronological run.
+fn sort_candidates(candidates: Vec<&NoteMetadata>, sort: &ScrollSort) -> Vec<ScrollEntry> {
+    let mut keyed: Vec<((u8, String), ScrollEntry)> = candidates
         .into_iter()
-        .filter_map(|note| {
-            let key = sort_key(note, sort)?;
-            Some((
-                key,
-                ScrollEntry {
-                    path: note.path.display().to_string(),
-                    title: get_title(note),
-                },
-            ))
+        .map(|note| {
+            let entry = ScrollEntry {
+                path: note.path.display().to_string(),
+                title: get_title(note),
+            };
+            let key = match sort_key(note, sort) {
+                Some(k) => (0u8, k),
+                None => (1u8, creation_date_key(note)),
+            };
+            (key, entry)
         })
         .collect();
 
     let direction = sort_direction(sort);
-    keyed.sort_by(|a, b| match direction {
-        SortDir::Asc => a.0.cmp(&b.0),
-        SortDir::Desc => b.0.cmp(&a.0),
+    keyed.sort_by(|a, b| {
+        // Tier always ranks first and ascending — missing-property notes
+        // stay at the end regardless of the chosen sort direction.
+        a.0 .0
+            .cmp(&b.0 .0)
+            .then_with(|| match direction {
+                SortDir::Asc => a.0 .1.cmp(&b.0 .1),
+                SortDir::Desc => b.0 .1.cmp(&a.0 .1),
+            })
+            // Final tiebreaker: the note's path. The candidate set is
+            // collected from a HashMap, so its iteration order varies
+            // between calls; a stable sort would then leave two notes
+            // sharing a sort key in a different relative order each time.
+            // Pagination depends on the sorted list being identical across
+            // queries (the anchor's index must not move) — without a unique
+            // tiebreaker the anchor drifts and the scroll re-fetches and
+            // duplicates entries, visibly snapping back to the anchor.
+            .then_with(|| a.1.path.cmp(&b.1.path))
     });
 
-    Ok(keyed.into_iter().map(|(_, e)| e).collect())
+    keyed.into_iter().map(|(_, e)| e).collect()
 }
 
 // === Connection flags ===
@@ -272,20 +302,43 @@ pub async fn compute_connection_flags(
 
 // === Filter helpers ===
 
+/// The notebox-relative parent folder of a note — the walker's `file.folder`
+/// property — trimmed of any leading/trailing slash. Empty for a note that
+/// sits directly at the notebox root.
+fn note_folder_rel(note: &NoteMetadata) -> &str {
+    note.properties
+        .get("file.folder")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim_matches('/')
+}
+
 fn collect_folder_notes<'a>(
     index: &'a PropertyIndex,
     folder: &Path,
     recursive: bool,
 ) -> Vec<&'a NoteMetadata> {
+    // Match on the walker's notebox-relative `file.folder` property, not on
+    // `note.path`: depending on whether a note arrived from the metadata
+    // cache or a fresh parse, `note.path` may be absolute or relative, but
+    // `file.folder` is always notebox-relative. The target folder (from the
+    // "Anchor scope" setting) is notebox-relative too; both sides are
+    // trimmed of slashes so a stray leading/trailing `/` can't mismatch.
+    let target = folder.to_string_lossy();
+    let target = target.trim_matches('/');
     index
         .notes
         .values()
         .filter(|note| {
-            let parent = note.path.parent().unwrap_or(&note.path);
+            let nf = note_folder_rel(note);
             if recursive {
-                note.path.starts_with(folder)
+                target.is_empty()
+                    || nf == target
+                    || nf
+                        .strip_prefix(target)
+                        .is_some_and(|rest| rest.starts_with('/'))
             } else {
-                parent == folder
+                nf == target
             }
         })
         .collect()
@@ -359,18 +412,27 @@ fn sort_key(note: &NoteMetadata, sort: &ScrollSort) -> Option<String> {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .filter(|s| !s.is_empty()),
         ScrollSort::Title { .. } => Some(get_title(note).to_lowercase()),
-        ScrollSort::Zid => extract_zid(note),
+        ScrollSort::Zid { .. } => extract_zid(note),
     }
+}
+
+/// Fallback sort key for a note that lacks the requested sort property —
+/// its file creation date. `file.ctime` is an indexed pseudo-property
+/// (the same one the "created" sort axis uses), so this needs no extra
+/// filesystem I/O. An empty string when even that is unavailable, which
+/// simply groups such notes together at one end of the tier-1 tail.
+fn creation_date_key(note: &NoteMetadata) -> String {
+    note.properties
+        .get("file.ctime")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default()
 }
 
 fn sort_direction(sort: &ScrollSort) -> SortDir {
     match sort {
-        ScrollSort::Property { direction, .. } | ScrollSort::Title { direction, .. } => {
-            *direction
-        }
-        // ZID is monotonic in time; most-recent-first is the only sensible
-        // default and there is no UI surface that requests the other order.
-        ScrollSort::Zid => SortDir::Desc,
+        ScrollSort::Property { direction, .. }
+        | ScrollSort::Title { direction, .. }
+        | ScrollSort::Zid { direction } => *direction,
     }
 }
 
@@ -539,12 +601,27 @@ mod tests {
 
     #[test]
     fn folder_filter_respects_recursion() {
+        // Folder matching keys off the notebox-relative `file.folder`
+        // property, so the target folder is notebox-relative too. A leading
+        // slash on the target must not cause a spurious mismatch.
         let index = build_index(vec![
-            note("/v/notes/a.typ", &[], &[]),
-            note("/v/notes/sub/b.typ", &[], &[]),
-            note("/v/other/c.typ", &[], &[]),
+            note(
+                "/v/notes/a.typ",
+                &[("file.folder", PropertyValue::String("notes".into()))],
+                &[],
+            ),
+            note(
+                "/v/notes/sub/b.typ",
+                &[("file.folder", PropertyValue::String("notes/sub".into()))],
+                &[],
+            ),
+            note(
+                "/v/other/c.typ",
+                &[("file.folder", PropertyValue::String("other".into()))],
+                &[],
+            ),
         ]);
-        let folder = PathBuf::from("/v/notes");
+        let folder = PathBuf::from("/notes");
 
         let mut shallow: Vec<String> = collect_folder_notes(&index, &folder, false)
             .iter()
@@ -628,5 +705,66 @@ mod tests {
 
         let n3 = note("/v/no-zid.typ", &[], &[]);
         assert_eq!(extract_zid(&n3), None);
+    }
+
+    #[test]
+    fn sort_candidates_keeps_notes_missing_the_sort_key_at_the_end() {
+        // Two notes carry a zid; two don't. The keyless pair must still
+        // appear (never dropped — that would strand the anchor) and must
+        // sort after the keyed pair, ordered among themselves by ctime.
+        let with_zid_old = note("/v/a.typ", &[("zid", PropertyValue::String("20260101000000".into()))], &[]);
+        let with_zid_new = note("/v/b.typ", &[("zid", PropertyValue::String("20260301000000".into()))], &[]);
+        let no_zid_old = note(
+            "/v/c.typ",
+            &[("file.ctime", PropertyValue::String("2026-02-01T00:00:00Z".into()))],
+            &[],
+        );
+        let no_zid_new = note(
+            "/v/d.typ",
+            &[("file.ctime", PropertyValue::String("2026-05-01T00:00:00Z".into()))],
+            &[],
+        );
+
+        let candidates = vec![&no_zid_old, &with_zid_old, &no_zid_new, &with_zid_new];
+        let sorted = sort_candidates(
+            candidates,
+            &ScrollSort::Zid {
+                direction: SortDir::Desc,
+            },
+        );
+        let order: Vec<&str> = sorted.iter().map(|e| e.path.as_str()).collect();
+
+        // Zid is descending: keyed notes newest-first, then keyless notes
+        // newest-ctime-first.
+        assert_eq!(order, vec!["/v/b.typ", "/v/a.typ", "/v/d.typ", "/v/c.typ"]);
+    }
+
+    #[test]
+    fn sort_candidates_is_order_independent_for_equal_keys() {
+        // Three notes share one sort key. Pagination needs the sorted list
+        // to be identical no matter what order the candidate set arrives in
+        // (it comes from a HashMap), so the path tiebreaker must fully
+        // determine the order.
+        let mk = || {
+            vec![
+                note("/v/c.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
+                note("/v/a.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
+                note("/v/b.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
+            ]
+        };
+        let sort = ScrollSort::Property {
+            name: "date".into(),
+            direction: SortDir::Desc,
+        };
+        let notes_a = mk();
+        let notes_b = mk();
+        let paths = |entries: Vec<ScrollEntry>| {
+            entries.into_iter().map(|e| e.path).collect::<Vec<_>>()
+        };
+        let order_a = paths(sort_candidates(notes_a.iter().collect(), &sort));
+        // Reversed input must yield the same output.
+        let order_b = paths(sort_candidates(notes_b.iter().rev().collect(), &sort));
+        assert_eq!(order_a, ["/v/a.typ", "/v/b.typ", "/v/c.typ"]);
+        assert_eq!(order_a, order_b);
     }
 }

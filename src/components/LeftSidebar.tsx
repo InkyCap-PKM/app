@@ -39,7 +39,6 @@ import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } fr
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
   isEnabled as isScrollEnabled,
-  getMode as getScrollMode,
   updateAnchor as updateScrollAnchor,
 } from "../stores/journal-scroll";
 import {
@@ -91,19 +90,19 @@ type FileSortMode =
 type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
 
 const FILE_SORT_OPTIONS: { value: FileSortMode; label: string }[] = [
-  { value: "name-asc", label: "Name (A to Z)" },
-  { value: "name-desc", label: "Name (Z to A)" },
-  { value: "modified-desc", label: "Modified (new to old)" },
-  { value: "modified-asc", label: "Modified (old to new)" },
-  { value: "created-desc", label: "Created (new to old)" },
-  { value: "created-asc", label: "Created (old to new)" },
+  { value: "name-asc", label: "Name (A – Z)" },
+  { value: "name-desc", label: "Name (Z – A)" },
+  { value: "modified-desc", label: "Modified (newest)" },
+  { value: "modified-asc", label: "Modified (oldest)" },
+  { value: "created-desc", label: "Created (newest)" },
+  { value: "created-asc", label: "Created (oldest)" },
 ];
 
 const LIST_SORT_OPTIONS: { value: ListSortMode; label: string }[] = [
-  { value: "name-asc", label: "Alphabetical (A to Z)" },
-  { value: "name-desc", label: "Alphabetical (Z to A)" },
-  { value: "count-desc", label: "Quantity (high to low)" },
-  { value: "count-asc", label: "Quantity (low to high)" },
+  { value: "name-asc", label: "Alphabetical (A – Z)" },
+  { value: "name-desc", label: "Alphabetical (Z – A)" },
+  { value: "count-desc", label: "Quantity (highest)" },
+  { value: "count-asc", label: "Quantity (lowest)" },
 ];
 
 /// Sort one level of a file tree. The `grouping` parameter controls
@@ -569,17 +568,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const forceNewTab = !!(e && (e.ctrlKey || e.metaKey));
     const isCollection = node.name.toLowerCase().endsWith(".collection");
 
-    // When the active tab is a Journal Scroll in Tree mode, a plain click on
-    // a note in the file tree re-anchors the scroll on that note (Tree mode
-    // is meant to be steered from the tree) rather than opening it as its
-    // own tab. Ctrl/Cmd-click still opens it in a new tab as usual.
+    // When the active tab is a Journal Scroll, a plain click on a note in
+    // the file tree re-anchors the scroll on that note. Both halves must
+    // happen together: the tab is repointed (so its title follows the
+    // clicked note) AND the scroll's anchor is moved (so the feed
+    // re-centres). Doing only one leaves the tab title and the feed
+    // disagreeing. Ctrl/Cmd-click still opens the note in its own tab.
     if (!forceNewTab && !isCollection && !isBinaryFile(node.name)) {
       const active = getActiveTab();
-      if (
-        active &&
-        isScrollEnabled(active.id) &&
-        getScrollMode(active.id) === "tree"
-      ) {
+      if (active && isScrollEnabled(active.id)) {
+        openTab(
+          { type: "file", title: node.name, path: node.path },
+          { forceNewTab: false },
+        );
         void updateScrollAnchor(active.id, node.path);
         return;
       }
@@ -600,9 +601,20 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       ipc.openFileExternally(node.path);
       return;
     }
+    // If the note is currently serving as a Journal Scroll's anchor, the
+    // tab holding that scroll shares this note's path — a plain openTab
+    // would match it and re-focus the scroll instead of opening the note.
+    // `allowDuplicate` forces a distinct, regular editor tab in that case.
+    const hasScrollTabForPath = tabs.some(
+      (t) => t.path === node.path && isScrollEnabled(t.id),
+    );
     openTab(
       { type: "file", title: node.name, path: node.path },
-      { forceNewTab, newTabAction: forceNewTab },
+      {
+        forceNewTab,
+        newTabAction: forceNewTab,
+        allowDuplicate: hasScrollTabForPath,
+      },
     );
   }
 

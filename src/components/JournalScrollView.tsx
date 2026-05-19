@@ -8,10 +8,15 @@
 // that scrolling back to an earlier entry is instant. The cache invalidates
 // on `notebox:file-changed`.
 //
-// Pagination: top + bottom IntersectionObserver sentinels drive
-// `loadMoreBefore` / `loadMoreAfter`. Prepend preserves scroll position by
-// measuring the previously-first entry's position before and after the DOM
-// update and adjusting `scrollTop` by the delta.
+// Pagination: the feed is one-directional. The anchor is always the first
+// row; a single bottom IntersectionObserver sentinel drives `loadMoreAfter`
+// as the user scrolls down. Nothing is ever loaded above the anchor.
+//
+// Scroll anchoring: entries compile asynchronously and grow from short
+// placeholders to full notes. WebKitGTK has no native CSS scroll anchoring,
+// so a `scrollAnchorRO` ResizeObserver manually folds the growth of any
+// entry above the viewport into `scrollTop` — without it the feed visibly
+// jumps back to an earlier note as off-screen entries finish compiling.
 // ---------------------------------------------------------------------------
 
 import {
@@ -19,6 +24,7 @@ import {
   For,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   on,
   onCleanup,
@@ -34,15 +40,12 @@ import {
   getAnchorPath,
   getAnchorPinNonce,
   getEntries,
-  getFirstOffset,
   getLastOffset,
   getSavedScrollPosition,
   getScrollNavRequest,
   hasMoreAfter,
-  hasMoreBefore,
   isLoading,
   loadMoreAfter,
-  loadMoreBefore,
   recordScrollNavigation,
   saveScrollPosition,
   setVisibleEntries,
@@ -209,30 +212,116 @@ interface JournalScrollViewProps {
 
 const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
-  let topSentinelRef: HTMLDivElement | undefined;
   let bottomSentinelRef: HTMLDivElement | undefined;
+  // Stop fn for the currently-running `holdEntry` correction loop, if any.
+  // A new hold cancels the previous so they never fight each other.
+  let activeHoldStop: (() => void) | null = null;
   const [flagsByPath, setFlagsByPath] = createSignal<
     Map<string, ConnectionFlags>
   >(new Map());
 
+  // === Manual scroll anchoring ===
+  //
+  // WebKitGTK — Tauri's webview on Linux — does not implement CSS scroll
+  // anchoring (`overflow-anchor`). So when an entry above the viewport
+  // finishes compiling and grows from a short placeholder to a full note,
+  // the content the user is reading is shoved downward and the feed
+  // appears to "jump back" to an earlier note. (A Chrome/Firefox build
+  // would get this compensation for free.)
+  //
+  // This ResizeObserver, installed on every entry frame, folds the height
+  // growth of any entry lying fully above the viewport straight into
+  // `scrollTop`, holding the visible content still. Unlike `holdEntry` it
+  // never releases on user scroll: growth above the fold is phantom
+  // content and must be cancelled no matter what the user is doing.
+  const entryHeights = new WeakMap<Element, number>();
+  const scrollAnchorRO = new ResizeObserver((records) => {
+    const container = containerRef;
+    if (!container) return;
+    // A running `holdEntry` loop already pins an entry by absolute
+    // measurement, which subsumes above-the-fold growth — relative
+    // compensation on top would double-count. Keep baselines current so
+    // there is no spurious jump once the hold ends.
+    if (activeHoldStop) {
+      for (const rec of records) {
+        entryHeights.set(
+          rec.target,
+          (rec.target as HTMLElement).getBoundingClientRect().height,
+        );
+      }
+      return;
+    }
+    const cTop = container.getBoundingClientRect().top;
+    let delta = 0;
+    for (const rec of records) {
+      const el = rec.target as HTMLElement;
+      const r = el.getBoundingClientRect();
+      const prev = entryHeights.get(el);
+      entryHeights.set(el, r.height);
+      if (prev === undefined) continue; // first callback = baseline
+      const grew = r.height - prev;
+      // Only fold in growth of an entry fully above the viewport top; a
+      // straddling or on-screen entry's growth belongs in view.
+      if (grew !== 0 && r.bottom <= cTop + 1) delta += grew;
+    }
+    if (delta !== 0) container.scrollTop += delta;
+  });
+  onCleanup(() => scrollAnchorRO.disconnect());
+
+  // `<For>` keys rows by element reference. The store rebuilds its `entries`
+  // array on every pagination step, and elements round-tripped through the
+  // reactive store do not keep a stable identity — so `<For each={getEntries()}>`
+  // would tear down and recreate EVERY entry component on each load-more.
+  // Recreated entries reset to placeholders, the feed momentarily collapses,
+  // `scrollTop` clamps against the now-short content, and the viewport snaps
+  // back toward the anchor. This memo hands `<For>` a per-path-stable object:
+  // the same path always yields the same reference, so existing entry
+  // components survive a load-more untouched and only new entries mount.
+  const entryIdentity = new Map<string, ScrollEntry>();
+  const stableEntries = createMemo<ScrollEntry[]>(() => {
+    const raw = getEntries(props.tabId);
+    const seen = new Set<string>();
+    const out: ScrollEntry[] = [];
+    for (const e of raw) {
+      // Skip a path already emitted this pass. The store dedupes on merge,
+      // but guarding here too means a duplicate can never reach `<For>` as
+      // two identical references (which it cannot key apart).
+      if (seen.has(e.path)) continue;
+      seen.add(e.path);
+      let stable = entryIdentity.get(e.path);
+      if (!stable) {
+        stable = { path: e.path, title: e.title };
+        entryIdentity.set(e.path, stable);
+      }
+      out.push(stable);
+    }
+    // Drop identities for entries no longer loaded so the map can't grow
+    // unbounded across a long session of re-anchoring.
+    if (entryIdentity.size > seen.size) {
+      for (const key of [...entryIdentity.keys()]) {
+        if (!seen.has(key)) entryIdentity.delete(key);
+      }
+    }
+    return out;
+  });
+
   onMount(ensureFileChangeListener);
 
-  // Restore the previously-saved scroll position. Two rAFs: the first
-  // lets the <For> commit its entry frames into the DOM, the second
-  // lets layout settle after the initial near-viewport entries hit the
-  // module-level htmlCache (cached results paint in a microtask).
-  // Without both ticks, the scrollTop assignment can clamp to the
-  // current (smaller) content height and silently land at 0.
+  // On mount: focus the feed (so the keyboard scrolls it right away) and
+  // restore the saved scroll position. Restoration re-pins the saved entry
+  // to its saved viewport offset via `holdEntry` — a correction loop, not a
+  // one-shot `scrollTop` assignment, because entries compile asynchronously
+  // and the saved entry and its neighbours grow from placeholders to full
+  // height over the first frames after mount; a single assignment would
+  // clamp against the still-short content and land near the top.
   onMount(() => {
     if (!containerRef) return;
+    containerRef.focus({ preventScroll: true });
     const saved = getSavedScrollPosition(props.tabId);
-    if (saved <= 0) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (containerRef) containerRef.scrollTop = saved;
-      });
-    });
+    if (saved) holdEntry(saved.path, saved.offset);
   });
+
+  onCleanup(() => activeHoldStop?.());
 
   // Recompute connection flags whenever the loaded entry set or anchor
   // changes. The anchor is read from the store (not a prop) so a re-anchor
@@ -258,54 +347,57 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     })();
   });
 
-  // Within-scroll back/forward navigation: the header arrows issue a
-  // `scrollNavRequest` through the store; here we consume it and scroll the
-  // requested note to the top. The `nonce` on the request makes repeated
-  // navigations to the same path distinct so this effect re-fires. The
-  // request-clearing and async scroll work run untracked so the effect's
-  // only dependency is the request itself.
+  // Scroll-nav requests: the within-scroll back/forward arrows and the
+  // anchor-return button issue a `scrollNavRequest` through the store; here
+  // we consume it. The `nonce` makes repeated requests for the same path
+  // distinct so this effect re-fires. Request-clearing and async scroll
+  // work run untracked so the effect's only dependency is the request.
+  //
+  // The anchor is always the first row, so a request to return to it is an
+  // exact, instant `scrollTop = 0` — no smooth-scroll through a feed of
+  // still-compiling, resizing entries (which lands unpredictably).
   createEffect(() => {
     const req = getScrollNavRequest(props.tabId);
     if (!req) return;
     untrack(() => {
       consumeScrollNavRequest(props.tabId);
+      if (req.path === getAnchorPath(props.tabId)) {
+        activeHoldStop?.();
+        if (containerRef) containerRef.scrollTop = 0;
+        return;
+      }
       void navigateScrollTo(req.path);
     });
   });
 
-  // On every result-set rebuild, pin the anchor entry to the top of the
-  // viewport. Entries loaded *before* the anchor sit above it and compile
-  // asynchronously — growing from small placeholders to full notes — and
-  // that growth would otherwise push the anchor down ("the scroll jumps").
+  // On every result-set rebuild, reset the viewport to the anchor (the
+  // first row) — a plain scrollTop 0.
+  //
+  // CRITICAL: the `nonce !== prevNonce` guard is load-bearing. Every store
+  // mutation calls `bump()`, which ticks the `scrollVersion` signal that
+  // *every* journal-scroll selector reads — including `getAnchorPinNonce`.
+  // So this `on` effect re-fires on every `bump()` (each `loadMoreAfter`,
+  // each loading-flag flip), not only when the nonce changes. Without the
+  // guard, `pinAnchorToTop` would run on every pagination step and the feed
+  // would snap back to the anchor the instant you scrolled to the bottom.
   // `defer: true` skips the initial run so a tab-return (which restores the
-  // saved scroll position instead) isn't overridden; only genuine rebuilds
-  // that happen while mounted trigger a pin.
+  // saved scroll position) isn't overridden.
   createEffect(
     on(
       () => getAnchorPinNonce(props.tabId),
-      (nonce) => {
-        if (nonce > 0) pinAnchorToTop();
+      (nonce, prevNonce) => {
+        if (nonce !== prevNonce && nonce > 0) pinAnchorToTop();
       },
       { defer: true },
     ),
   );
 
-  // Top + bottom sentinel observers drive bidirectional pagination.
+  // Bottom sentinel observer drives downward pagination. The feed is
+  // one-directional — there is no top sentinel and nothing loads above the
+  // anchor.
   createEffect(() => {
-    if (!containerRef || !topSentinelRef || !bottomSentinelRef) return;
+    if (!containerRef || !bottomSentinelRef) return;
 
-    const topObserver = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries[0]?.isIntersecting &&
-          !isLoading(props.tabId) &&
-          hasMoreBefore(props.tabId)
-        ) {
-          void handleLoadMoreBefore();
-        }
-      },
-      { root: containerRef, rootMargin: "200px 0px 0px 0px" },
-    );
     const bottomObserver = new IntersectionObserver(
       (entries) => {
         if (
@@ -319,12 +411,8 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       { root: containerRef, rootMargin: "0px 0px 200px 0px" },
     );
 
-    topObserver.observe(topSentinelRef);
     bottomObserver.observe(bottomSentinelRef);
-    onCleanup(() => {
-      topObserver.disconnect();
-      bottomObserver.disconnect();
-    });
+    onCleanup(() => bottomObserver.disconnect());
   });
 
   // Wikilink click routing (delegated on the container so it covers every
@@ -417,16 +505,15 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     return false;
   }
 
-  // Extend the loaded window toward `targetPath` if it sits in the
-  // current query result. Returns true once the entry is loaded, false
-  // if the target isn't in the result or the search exhausted before
-  // reaching it. The safety cap (`MAX_BATCHES`) bounds the work even on
-  // a misbehaving query — at BATCH=10 entries each, 30 iterations covers
-  // 300 entries in either direction, which is well past any reasonable
-  // wikilink jump distance.
+  // Extend the feed downward until `targetPath` is loaded. Returns false
+  // when the target isn't in the query result, or sits *before* the anchor
+  // (negative offset) — the one-directional feed can't reach those, so the
+  // caller falls back to opening a new tab. The safety cap (`MAX_BATCHES`)
+  // bounds the work on a misbehaving query: at BATCH=10 entries each, 30
+  // iterations covers 300 entries, well past any reasonable jump distance.
   async function extendUntilLoaded(targetPath: string): Promise<boolean> {
     const targetOffset = await findOffsetForTarget(props.tabId, targetPath);
-    if (targetOffset === null) return false;
+    if (targetOffset === null || targetOffset < 0) return false;
     const MAX_BATCHES = 30;
     for (let i = 0; i < MAX_BATCHES; i++) {
       if (
@@ -434,22 +521,17 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       ) {
         return true;
       }
-      const first = getFirstOffset(props.tabId);
-      const last = getLastOffset(props.tabId);
-      if (targetOffset < first && hasMoreBefore(props.tabId)) {
-        await loadMoreBefore(props.tabId);
-      } else if (targetOffset > last && hasMoreAfter(props.tabId)) {
-        await loadMoreAfter(props.tabId);
-      } else {
-        // Cursor on target side but no more pages — entry should be in
-        // the loaded window now. One more loop checks for it.
-        if (
-          getEntries(props.tabId).some((entry) => entry.path === targetPath)
-        ) {
-          return true;
-        }
-        return false;
+      if (
+        getLastOffset(props.tabId) >= targetOffset ||
+        !hasMoreAfter(props.tabId)
+      ) {
+        // The window already spans the target's offset, or the feed is
+        // exhausted — one final check decides whether it actually loaded.
+        return getEntries(props.tabId).some(
+          (entry) => entry.path === targetPath,
+        );
       }
+      await loadMoreAfter(props.tabId);
     }
     return false;
   }
@@ -463,99 +545,125 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Keep the anchor entry clamped to the top of the viewport while the
-  // entries above it compile and grow. Runs a per-frame correction loop
-  // that re-aligns the anchor's top edge with the container's top edge,
-  // releasing as soon as the user scrolls (wheel / pointer / touch / key)
-  // or after a generous timeout — whichever comes first. `onCleanup`
-  // tears it down if the view unmounts or the effect re-fires mid-pin.
-  function pinAnchorToTop() {
+  // Hold the entry at `path` pinned to viewport offset `offsetTop` through
+  // a per-frame correction loop. Entries compile asynchronously and grow
+  // from placeholders to full height; without this the viewport drifts as
+  // content above the pinned entry changes size. The loop releases as soon
+  // as the user scrolls (wheel / pointer / touch / key) — their intent wins
+  // — or after a generous deadline. Used to restore a saved scroll position
+  // on tab return (the initial anchor pin needs no loop: the anchor is the
+  // first row, so scrollTop 0 alone holds it — see `pinAnchorToTop`). A new
+  // hold cancels any hold already running so they never fight `scrollTop`.
+  function holdEntry(path: string, offsetTop: number) {
     const container = containerRef;
-    if (!container) return;
-    const anchorPath = getAnchorPath(props.tabId);
-    if (!anchorPath) return;
+    if (!container || !path) return;
+    activeHoldStop?.();
     const userEvents = ["wheel", "pointerdown", "touchstart", "keydown"];
     let stopped = false;
     const stop = () => {
       if (stopped) return;
       stopped = true;
       for (const ev of userEvents) container.removeEventListener(ev, stop);
+      if (activeHoldStop === stop) activeHoldStop = null;
     };
     for (const ev of userEvents) {
       container.addEventListener(ev, stop, { passive: true });
     }
+    activeHoldStop = stop;
     const deadline = performance.now() + 4000;
     const tick = () => {
       if (stopped || containerRef !== container) return;
       const el = container.querySelector(
-        `[data-path="${CSS.escape(anchorPath)}"]`,
+        `[data-path="${CSS.escape(path)}"]`,
       ) as HTMLElement | null;
       if (el) {
         const delta =
           el.getBoundingClientRect().top -
-          container.getBoundingClientRect().top;
+          container.getBoundingClientRect().top -
+          offsetTop;
         if (Math.abs(delta) > 0.5) container.scrollTop += delta;
       }
       if (performance.now() < deadline) requestAnimationFrame(tick);
       else stop();
     };
-    requestAnimationFrame(tick);
-    onCleanup(stop);
+    // Run the first correction synchronously so the very first painted
+    // frame is already at the target position — otherwise the view paints
+    // at scrollTop 0 for a frame, flashing the top of the feed.
+    tick();
   }
 
-  // Scroll-position preservation on prepend. Measure the
-  // previously-first entry's top-relative-to-container before the load,
-  // then restore the same offset after the DOM updates.
-  async function handleLoadMoreBefore() {
+  function pinAnchorToTop() {
+    // Anchor-first loading makes the anchor the first row, so resetting the
+    // viewport to it is simply scrollTop 0. Nothing is loaded above it, so
+    // 0 stays correct as the rows below compile and grow — no correction
+    // loop. Cancel any restore hold so the two don't fight over scrollTop.
     if (!containerRef) return;
-    const oldFirst = getEntries(props.tabId)[0];
-    let beforeOffset: number | null = null;
-    if (oldFirst) {
-      const el = containerRef.querySelector(
-        `[data-path="${CSS.escape(oldFirst.path)}"]`,
-      ) as HTMLElement | null;
-      if (el) {
-        beforeOffset =
-          el.getBoundingClientRect().top -
-          containerRef.getBoundingClientRect().top;
+    activeHoldStop?.();
+    containerRef.scrollTop = 0;
+    // The result set was just rebuilt; the <For> may not have committed
+    // yet. A second assignment next frame catches that case.
+    requestAnimationFrame(() => {
+      if (containerRef) containerRef.scrollTop = 0;
+    });
+  }
+
+  // Save the scroll position entry-anchored — the topmost visible entry's
+  // path plus its pixel offset from the viewport top. A raw `scrollTop`
+  // can't be restored after a remount (entries above may still be
+  // placeholders), but an entry + offset can.
+  //
+  // Runs synchronously on every scroll event (no rAF throttle): a throttled
+  // capture can be outrun by a tab switch — the unmount lands before the
+  // queued frame fires, so the *last* scroll never gets saved and the tab
+  // returns to a stale position. The scan breaks at the first entry
+  // crossing the viewport top, so it reads only a handful of rects.
+  function captureScrollPosition() {
+    if (!containerRef) return;
+    // Suppress while a programmatic hold is steering scrollTop (the initial
+    // position restore): the in-flight value isn't the user's intent and
+    // would clobber the saved position we're restoring toward. A real user
+    // gesture stops the hold, after which captures resume normally.
+    if (activeHoldStop) return;
+    const cTop = containerRef.getBoundingClientRect().top;
+    const frames = containerRef.querySelectorAll<HTMLElement>(
+      ".journal-scroll__entry",
+    );
+    for (const el of frames) {
+      const r = el.getBoundingClientRect();
+      // The first entry whose bottom edge is still below the viewport top
+      // is the one occupying the top of the viewport.
+      if (r.bottom > cTop + 1) {
+        const path = el.dataset.path;
+        if (path) {
+          saveScrollPosition(props.tabId, { path, offset: r.top - cTop });
+        }
+        return;
       }
     }
-    await loadMoreBefore(props.tabId);
-    if (beforeOffset === null || !oldFirst) return;
-    requestAnimationFrame(() => {
-      if (!containerRef) return;
-      const el = containerRef.querySelector(
-        `[data-path="${CSS.escape(oldFirst.path)}"]`,
-      ) as HTMLElement | null;
-      if (!el) return;
-      const afterOffset =
-        el.getBoundingClientRect().top -
-        containerRef.getBoundingClientRect().top;
-      containerRef.scrollTop += afterOffset - beforeOffset;
-    });
   }
 
   return (
     <div
       class="journal-scroll"
       ref={containerRef}
+      /* Focusable so the keyboard's PageUp/PageDown/arrows scroll the feed
+         the moment the tab is shown — see the focus() call in onMount. */
+      tabindex={-1}
       onClick={(e) => void handleWikilinkClick(e)}
       onAuxClick={(e) => void handleWikilinkClick(e)}
       onContextMenu={(e) => void handleWikilinkClick(e)}
-      onScroll={(e) =>
-        saveScrollPosition(props.tabId, e.currentTarget.scrollTop)
-      }
+      onScroll={captureScrollPosition}
     >
-      <div ref={topSentinelRef} class="journal-scroll__sentinel" />
       <Show when={isLoading(props.tabId) && getEntries(props.tabId).length === 0}>
         <div class="journal-scroll__loading">Loading…</div>
       </Show>
-      <For each={getEntries(props.tabId)}>
+      <For each={stableEntries()}>
         {(entry) => (
           <JournalScrollEntryView
             entry={entry}
             tabId={props.tabId}
             container={containerRef!}
+            scrollAnchorRO={scrollAnchorRO}
             flags={flagsByPath().get(entry.path) ?? null}
           />
         )}
@@ -659,6 +767,9 @@ interface JournalScrollEntryViewProps {
   entry: ScrollEntry;
   tabId: string;
   container: HTMLDivElement;
+  /** Shared scroll-anchoring observer — every entry frame registers with
+   *  it so above-the-viewport compile growth is compensated. */
+  scrollAnchorRO: ResizeObserver;
   flags: ConnectionFlags | null;
 }
 
@@ -730,6 +841,15 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
     trackVisibility(props.tabId, props.entry.path, false);
   });
 
+  // Register this frame with the shared scroll-anchoring observer so its
+  // compile-driven growth is compensated when it sits above the viewport.
+  onMount(() => {
+    if (frameRef) props.scrollAnchorRO.observe(frameRef);
+  });
+  onCleanup(() => {
+    if (frameRef) props.scrollAnchorRO.unobserve(frameRef);
+  });
+
   // Trigger render when the entry approaches view; subscribe to results.
   createEffect(
     on([near, () => props.entry.path], ([isNear, path]) => {
@@ -759,13 +879,20 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   );
 
   function handleTitleClick() {
+    // The header title button is "Open in new tab" — it always opens a
+    // fresh, regular file tab in the user's default editor mode.
+    // `allowDuplicate` is essential, not optional: the anchor entry's path
+    // IS the Journal Scroll tab's own path, so without it openTab would
+    // match the scroll tab and just re-focus the scroll instead of opening
+    // the note. (A new tabId carries no scroll state, so the new tab
+    // renders as a normal editor regardless of path.)
     openTab(
       {
         type: "file",
         title: props.entry.title,
         path: props.entry.path,
       },
-      { forceNewTab: true },
+      { forceNewTab: true, allowDuplicate: true },
     );
   }
 

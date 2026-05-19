@@ -18,6 +18,7 @@ import { Dropdown } from "./Dropdown";
 import { BUNDLED_INTERFACE, BUNDLED_TEXT, BUNDLED_MONO, BUNDLED_VERSE } from "../lib/fontResolver";
 import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
+import { dailyNotesFolder } from "../stores/journal-scroll";
 import { showToast } from "../stores/toasts";
 import inkycapLogo from "../assets/inkycap-logo.svg";
 
@@ -1270,6 +1271,7 @@ function BehaviourSettingsSection() {
   const [tree] = createResource(() => ipc.getFileTree());
   const [creationRules] = createResource(() => ipc.listCreationRules());
   const allFiles = () => tree() ? collectPaths(tree()!, false) : [];
+  const folderSuggestions = () => (tree() ? collectPaths(tree()!, true) : []);
   const fileSuggestions = () => allFiles().filter((p) => p.endsWith(".typ"));
   const collectionSuggestions = () => allFiles().filter((p) => p.endsWith(".collection"));
 
@@ -1380,11 +1382,13 @@ function BehaviourSettingsSection() {
         <span class="settings__label">Journal Scroll</span>
       </div>
       <p class="settings__section-note">
-        Read your notes sorted as a continuous feed. Choose a file to anchor your starting point then scroll down or up to see your notes chronologically.
+        Read your notes as a continuous feed. Switching Journal Scroll on
+        anchors it on the active note; the feed shows notes around it sorted
+        by the axis below, and scrolling moves up and down through them.
       </p>
       <SettingSelect
         label="Sort by"
-        description="Sort axis applied to every Journal Scroll mode (Date, Tree, Properties)."
+        description="The axis the feed is ordered along. Notes missing the chosen property are placed at the end, ordered by file creation date."
         value={settings.journal_scroll.date_sort}
         options={[
           { value: "created", label: "File creation date" },
@@ -1401,21 +1405,58 @@ function BehaviourSettingsSection() {
         }
       />
       <SettingSelect
-        label="Tree mode scope"
-        description="Whether Tree mode includes notes from subfolders of the anchor note's location"
-        value={settings.journal_scroll.tree_scope}
+        label="Anchor scope"
+        description="The largest set of notes the feed may show. 'All' spans the whole notebox; the others confine it to a folder."
+        value={settings.journal_scroll.anchor_scope}
         options={[
-          { value: "folder", label: "Anchor folder only" },
-          { value: "recursive", label: "Anchor folder + subfolders" },
+          { value: "all", label: "All notes" },
+          { value: "daily", label: "Daily Notes folder" },
+          { value: "custom", label: "Custom folder" },
         ]}
         onChange={(v) =>
           updateSetting(
             "journal_scroll",
-            "tree_scope",
-            v as "folder" | "recursive",
+            "anchor_scope",
+            v as "all" | "daily" | "custom",
           )
         }
       />
+      <Show
+        when={
+          settings.journal_scroll.anchor_scope === "daily" &&
+          dailyNotesFolder() !== ""
+        }
+      >
+        <p class="settings__section-note">
+          The feed will be confined to{" "}
+          <code>{dailyNotesFolder()}</code> and its subfolders — the target
+          folder of your Daily Note creation rule.
+        </p>
+      </Show>
+      <Show
+        when={
+          settings.journal_scroll.anchor_scope === "daily" &&
+          dailyNotesFolder() === ""
+        }
+      >
+        <p class="settings__section-note settings__section-note--warn">
+          Your Daily Note creation rule has no fixed target folder set, so
+          there is no folder to scope to. Set a target folder on the Daily
+          Note rule (under Creation rules) for this option to take effect —
+          until then the feed falls back to all notes.
+        </p>
+      </Show>
+      <Show when={settings.journal_scroll.anchor_scope === "custom"}>
+        <SettingPathText
+          label="Custom scope folder"
+          description="Folder path relative to notebox root. The feed is confined to this folder and its subfolders."
+          value={settings.journal_scroll.custom_scope_folder}
+          onChange={(v) =>
+            updateSetting("journal_scroll", "custom_scope_folder", v)
+          }
+          suggestions={folderSuggestions}
+        />
+      </Show>
     </div>
   );
 }
@@ -1576,7 +1617,14 @@ function SettingPathText(props: {
           onKeyDown={handleKeyDown}
         />
         <Show when={open() && filtered().length > 0}>
-          <div class="settings__path-dropdown" classList={{ "is-flipped": flipUp() }}>
+          <div
+            class="settings__path-dropdown"
+            classList={{ "is-flipped": flipUp() }}
+            /* Keep the input focused when the dropdown itself is clicked —
+               notably its scrollbar, which is not a focusable element and
+               would otherwise blur the input and dismiss the dropdown. */
+            onMouseDown={(e) => e.preventDefault()}
+          >
             <For each={filtered()}>
               {(item, i) => (
                 <button
