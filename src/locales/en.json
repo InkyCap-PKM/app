@@ -44,8 +44,8 @@
   "journalScroll.toggle.start": "Start Journal Scroll anchored from this note",
   "journalScroll.toggle.stop": "Turn Journal Scroll off",
   "journalScroll.anchor.return": "Return to the anchor note",
-  "journalScroll.direction.recentFirst": "Date direction: recent to past — click to reverse",
-  "journalScroll.direction.oldestFirst": "Date direction: past to recent — click to reverse",
+  "journalScroll.direction.recentFirst": "Show forward in time form anchor",
+  "journalScroll.direction.oldestFirst": "Show backward in time from anchor",
   "journalScroll.status.recentFirst": "Viewing new to old from {anchor}",
   "journalScroll.status.oldestFirst": "Viewing old to new from {anchor}",
 

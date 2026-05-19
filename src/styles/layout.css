@@ -6033,12 +6033,19 @@ svg.lucide {
 /* Journal Scroll status line — a quiet, mixed-case reminder of the feed's
    direction and anchor, centred in the editor header. Not a heading. */
 .editor-header__scroll-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--fg-dim);
   font-size: 12px;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.editor-header__scroll-status svg {
+  flex-shrink: 0;
 }
 
 .editor-header__right-group {
@@ -6982,6 +6989,14 @@ svg.lucide {
   box-sizing: content-box;
 }
 
+/* Hide bibliography and footnote sections in the scroll view — the Scroll
+   Context sidebar already surfaces citations per-entry, so the full
+   bibliography is redundant noise in the compact scroll layout. */
+.journal-scroll__entry-body section[role="doc-bibliography"],
+.journal-scroll__entry-body section[role="doc-endnotes"] {
+  display: none;
+}
+
 .journal-scroll__entry-loading {
   padding: 16px 24px;
   color: var(--fg-dim);
@@ -7316,6 +7331,25 @@ svg.lucide {
   text-decoration-color: var(--syntax-link);
 }
 
+.typst-reading__html-content a:not(.inkycap-wikilink)[href^="http"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: 2px;
+  vertical-align: baseline;
+  position: relative;
+  top: 0.05em;
+  opacity: 0.45;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
 .typst-reading__html-content pre {
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
@@ -7394,6 +7428,34 @@ svg.lucide {
    visual continuity with sibling list items. */
 .typst-reading__html-content li > p {
   margin: 0;
+}
+
+/* Typst emits bibliography entries as <section role="doc-bibliography"> with
+   a <ul> of <li> entries. The section carries class="hanging-indent" when the
+   citation style calls for it (Chicago, APA, MLA, etc.). */
+.typst-reading__html-content section[role="doc-bibliography"] {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] > h2 {
+  margin-top: 0;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] ul {
+  padding-left: 0;
+  margin: 0;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] li {
+  margin: 0.8em 0;
+  line-height: 1.5;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"].hanging-indent li {
+  padding-left: 2em;
+  text-indent: -2em;
 }
 
 /* Typst emits footnote bodies as <section role="doc-endnotes"> at the end of

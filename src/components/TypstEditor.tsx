@@ -49,7 +49,7 @@ import {
   scrollNavBack,
   scrollNavForward,
 } from "../stores/journal-scroll";
-import { BrainCircuit } from "lucide-solid";
+import { BrainCircuit, ArrowUpFromDot, ArrowDownToDot } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
@@ -720,6 +720,22 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         <div class="editor-header__center">
           <Show when={isScrollEnabled(props.tabId)}>
             <span class="editor-header__scroll-status">
+              <Show
+                when={getScrollDirection(props.tabId) === "desc"}
+                fallback={
+                  // "Viewing old to new": arrow-down-to-dot, flipped up.
+                  <ArrowDownToDot
+                    size={14}
+                    style={{ transform: "rotate(180deg)" }}
+                  />
+                }
+              >
+                {/* "Viewing new to old": arrow-up-from-dot, flipped down. */}
+                <ArrowUpFromDot
+                  size={14}
+                  style={{ transform: "rotate(180deg)" }}
+                />
+              </Show>
               {scrollStatusText()}
             </span>
           </Show>

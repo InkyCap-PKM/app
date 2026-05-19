@@ -74,16 +74,16 @@ pub async fn get_file_citations(
 
     let citations = keys
         .into_iter()
-        .map(|key| {
-            let entry = entries.iter().find(|e| e.key == key);
-            FileCitation {
+        .filter_map(|key| {
+            let entry = entries.iter().find(|e| e.key == key)?;
+            Some(FileCitation {
                 key: key.clone(),
-                title: entry.map(|e| e.title.clone()),
-                authors: entry.map(|e| e.authors.clone()).unwrap_or_default(),
-                year: entry.and_then(|e| e.year.clone()),
-                entry_type: entry.map(|e| e.entry_type.clone()),
-                zotero_item_key: entry.and_then(|e| e.zotero_item_key.clone()),
-            }
+                title: Some(entry.title.clone()),
+                authors: entry.authors.clone(),
+                year: entry.year.clone(),
+                entry_type: Some(entry.entry_type.clone()),
+                zotero_item_key: entry.zotero_item_key.clone(),
+            })
         })
         .collect();
 
@@ -91,7 +91,7 @@ pub async fn get_file_citations(
 }
 
 /// Shared entry loading logic.
-async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapError> {
+pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapError> {
     let notebox_root = state
         .notebox_root
         .read()
@@ -559,18 +559,18 @@ pub async fn aggregate_citations(
 
     let mut out: Vec<AggregatedCitation> = totals
         .into_iter()
-        .map(|(key, (count, paths, _))| {
-            let entry = entries.iter().find(|e| e.key == key);
-            AggregatedCitation {
+        .filter_map(|(key, (count, paths, _))| {
+            let entry = entries.iter().find(|e| e.key == key)?;
+            Some(AggregatedCitation {
                 key,
-                title: entry.map(|e| e.title.clone()),
-                authors: entry.map(|e| e.authors.clone()).unwrap_or_default(),
-                year: entry.and_then(|e| e.year.clone()),
-                entry_type: entry.map(|e| e.entry_type.clone()),
+                title: Some(entry.title.clone()),
+                authors: entry.authors.clone(),
+                year: entry.year.clone(),
+                entry_type: Some(entry.entry_type.clone()),
                 count,
                 paths,
-                zotero_item_key: entry.and_then(|e| e.zotero_item_key.clone()),
-            }
+                zotero_item_key: entry.zotero_item_key.clone(),
+            })
         })
         .collect();
 

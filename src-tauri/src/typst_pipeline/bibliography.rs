@@ -153,6 +153,11 @@ pub struct BibEntry {
     /// Computed once at load time so the picker doesn't pay per-entry SQL
     /// or parse costs.
     pub has_notes: bool,
+    /// Extra BibTeX fields (publisher, journal, volume, pages, doi, url, etc.)
+    /// captured from Zotero for the exported `.bib` file. Empty for file-based
+    /// entries (the user's `.bib` already has all fields).
+    #[serde(skip)]
+    pub extra_fields: std::collections::HashMap<String, String>,
 }
 
 /// A note attached to a bibliography entry.
@@ -288,6 +293,7 @@ fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
                     entry_type,
                     zotero_item_key: None,
                     has_notes: !entry_notes.is_empty(),
+                    extra_fields: std::collections::HashMap::new(),
                 });
                 notes.push(entry_notes);
             }
@@ -354,6 +360,7 @@ fn hayagriva_to_entries(library: &hayagriva::Library) -> (Vec<BibEntry>, Vec<Vec
             title, authors, year, entry_type,
             zotero_item_key: None,
             has_notes,
+            extra_fields: std::collections::HashMap::new(),
         });
         notes.push(entry_notes);
     }
@@ -433,10 +440,61 @@ fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
             entry_type: e.entry_type.unwrap_or_else(|| "unknown".to_string()),
             zotero_item_key: None,
             has_notes,
+            extra_fields: std::collections::HashMap::new(),
         });
         notes.push(entry_notes);
     }
     Ok(ParsedBibliography { entries, notes, skipped_entries: 0 })
+}
+
+/// Sanitize a BibTeX field value for safe embedding inside `{...}`.
+///
+/// - Collapses newlines to single spaces (multi-line values with `@` at
+///   the start of a continuation line confuse hayagriva's parser).
+/// - Escapes unbalanced `{` / `}` so the entry structure stays intact.
+fn sanitize_bibtex_value(value: &str) -> std::borrow::Cow<'_, str> {
+    let needs_newline_fix = value.contains('\n');
+    let has_braces = value.contains('{') || value.contains('}');
+
+    if !needs_newline_fix && !has_braces {
+        return std::borrow::Cow::Borrowed(value);
+    }
+
+    let mut result = if needs_newline_fix {
+        // Collapse runs of whitespace (including newlines) to single spaces.
+        let mut s = String::with_capacity(value.len());
+        let mut prev_ws = false;
+        for c in value.chars() {
+            if c.is_whitespace() {
+                if !prev_ws { s.push(' '); }
+                prev_ws = true;
+            } else {
+                s.push(c);
+                prev_ws = false;
+            }
+        }
+        s
+    } else {
+        value.to_string()
+    };
+
+    if has_braces {
+        let mut depth: i32 = 0;
+        let mut safe = true;
+        for c in result.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => { depth -= 1; if depth < 0 { safe = false; break; } }
+                _ => {}
+            }
+        }
+        if depth != 0 { safe = false; }
+        if !safe {
+            result = result.replace('{', r"\{").replace('}', r"\}");
+        }
+    }
+
+    std::borrow::Cow::Owned(result)
 }
 
 /// Export bibliography entries to BibTeX format for the Typst compile pipeline.
@@ -452,13 +510,19 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
         let bib_type = zotero_type_to_bibtex(&entry.entry_type);
         out.push_str(&format!("@{}{{{},\n", bib_type, entry.key));
         if !entry.title.is_empty() {
-            out.push_str(&format!("  title = {{{}}},\n", entry.title));
+            out.push_str(&format!("  title = {{{}}},\n", sanitize_bibtex_value(&entry.title)));
         }
         if !entry.authors.is_empty() {
-            out.push_str(&format!("  author = {{{}}},\n", entry.authors.join(" and ")));
+            let authors = entry.authors.join(" and ");
+            out.push_str(&format!("  author = {{{}}},\n", sanitize_bibtex_value(&authors)));
         }
         if let Some(ref year) = entry.year {
             out.push_str(&format!("  year = {{{}}},\n", year));
+        }
+        for (field, value) in &entry.extra_fields {
+            if !value.is_empty() {
+                out.push_str(&format!("  {} = {{{}}},\n", field, sanitize_bibtex_value(value)));
+            }
         }
         out.push_str("}\n\n");
     }
@@ -494,16 +558,18 @@ fn zotero_type_to_bibtex(zotero_type: &str) -> &str {
 }
 
 /// Extract citation keys from Typst source. Matches both `@key` and
-/// `#cite(<key>)` forms.
+/// `#cite(<key>)` forms. Skips escaped `\@` and `@` inside backtick
+/// code spans (inline `` `...` `` and fenced `` ```...``` ``).
 pub fn extract_citations(source: &str) -> Vec<String> {
+    let stripped = strip_code_spans(source);
     let mut keys = Vec::new();
     // @key — the standard Typst citation shorthand
-    for m in at_cite_re().find_iter(source) {
+    for m in at_cite_re().find_iter(&stripped) {
         let s = m.as_str();
         keys.push(s[1..].to_string());
     }
     // #cite(<key>) — the function form
-    for cap in cite_func_re().captures_iter(source) {
+    for cap in cite_func_re().captures_iter(&stripped) {
         if let Some(m) = cap.get(1) {
             keys.push(m.as_str().to_string());
         }
@@ -512,6 +578,105 @@ pub fn extract_citations(source: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     keys.retain(|k| seen.insert(k.clone()));
     keys
+}
+
+/// Replace code spans, string literals, and escaped `@` with whitespace
+/// so the citation regexes don't match inside them. Handles:
+/// - fenced code blocks (```...```, with any number of backticks ≥ 3)
+/// - inline raw spans (`...`, with any number of backticks)
+/// - Typst string literals ("...")
+/// - escaped at-signs (`\@`)
+fn strip_code_spans(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut out = source.to_string().into_bytes();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'\\' && i + 1 < len && bytes[i + 1] == b'@' {
+            out[i] = b' ';
+            out[i + 1] = b' ';
+            i += 2;
+            continue;
+        }
+        // Typst string literals: "..." (with backslash escapes inside)
+        if bytes[i] == b'"' {
+            let start = i;
+            i += 1;
+            while i < len {
+                if bytes[i] == b'\\' && i + 1 < len {
+                    i += 2; // skip escaped character
+                } else if bytes[i] == b'"' {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+            for j in start..i.min(len) {
+                out[j] = b' ';
+            }
+            continue;
+        }
+        if bytes[i] == b'`' {
+            let tick_start = i;
+            let mut tick_count = 0;
+            while i < len && bytes[i] == b'`' {
+                tick_count += 1;
+                i += 1;
+            }
+            // Find matching closing backtick sequence of the same length
+            let closing = std::str::from_utf8(&bytes[i..])
+                .ok()
+                .and_then(|rest| {
+                    let needle: String = (0..tick_count).map(|_| '`').collect();
+                    rest.find(&needle).map(|pos| pos + i)
+                });
+            if let Some(close_start) = closing {
+                let end = close_start + tick_count;
+                for j in tick_start..end.min(len) {
+                    out[j] = b' ';
+                }
+                i = end;
+            }
+            // No closing found — the ticks are literal; leave i advanced past them
+            continue;
+        }
+        i += 1;
+    }
+    // Safety: we only replaced ASCII bytes with ASCII spaces
+    String::from_utf8(out).unwrap_or_else(|_| source.to_string())
+}
+
+/// Escape `@key` patterns in the source that do not match any entry in
+/// `valid_keys`. Replaces `@key` with `\@key` so Typst treats it as
+/// literal text instead of a citation reference. Skips code spans and
+/// already-escaped `\@` (same contexts as `extract_citations`).
+pub fn escape_invalid_citations(source: &str, valid_keys: &std::collections::HashSet<String>) -> String {
+    if valid_keys.is_empty() {
+        // Can't determine what's valid — leave source untouched to avoid
+        // accidentally escaping legitimate citations.
+        return source.to_string();
+    }
+    let stripped = strip_code_spans(source);
+    let bytes = source.as_bytes();
+    let mut out = Vec::with_capacity(source.len() + 64);
+    let mut last = 0;
+    for m in at_cite_re().find_iter(&stripped) {
+        let key = &stripped[m.start() + 1..m.end()];
+        if valid_keys.contains(key) {
+            continue;
+        }
+        // This @key is not in the bibliography — escape it.
+        out.extend_from_slice(&bytes[last..m.start()]);
+        out.push(b'\\');
+        out.extend_from_slice(&bytes[m.start()..m.end()]);
+        last = m.end();
+    }
+    if last == 0 {
+        return source.to_string();
+    }
+    out.extend_from_slice(&bytes[last..]);
+    String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
 fn at_cite_re() -> &'static Regex {
@@ -616,5 +781,76 @@ mod tests {
         let src = "@alpha, #cite(<beta>), @alpha\n";
         let keys = extract_citations(src);
         assert_eq!(keys, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn extract_skips_escaped_at() {
+        let src = r"Real @smith2020, escaped \@notacite, also @jones2021";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["smith2020", "jones2021"]);
+    }
+
+    #[test]
+    fn extract_skips_inline_code() {
+        let src = "See @real but `@inside_ticks` is code and @also_real";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["real", "also_real"]);
+    }
+
+    #[test]
+    fn extract_skips_fenced_code() {
+        let src = "```\n@codeblock\n```\n@outside\n";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["outside"]);
+    }
+
+    #[test]
+    fn extract_skips_double_backtick_code() {
+        let src = "``@inner`` and @outer";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["outer"]);
+    }
+
+    #[test]
+    fn extract_skips_escaped_email() {
+        let src = r"nailisa.tanner\@mcgill.ca and @real_cite";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["real_cite"]);
+    }
+
+    #[test]
+    fn extract_preserves_normal_citations() {
+        let src = "@a @b #cite(<c>)";
+        let keys = extract_citations(src);
+        assert_eq!(keys, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn escape_invalid_keeps_valid_citations() {
+        let valid: std::collections::HashSet<String> =
+            ["smith2020"].iter().map(|s| s.to_string()).collect();
+        let src = "See @smith2020 and paulgott9@gmail.com for details.";
+        let out = escape_invalid_citations(src, &valid);
+        assert!(out.contains("@smith2020"));
+        assert!(out.contains(r"\@gmail"));
+        assert!(!out.contains(" @gmail"));
+    }
+
+    #[test]
+    fn escape_invalid_no_bib_leaves_untouched() {
+        let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let src = "Contact @someone and @other";
+        let out = escape_invalid_citations(src, &valid);
+        assert_eq!(out, src);
+    }
+
+    #[test]
+    fn escape_preserves_string_literals() {
+        let valid: std::collections::HashSet<String> =
+            ["smith2020"].iter().map(|s| s.to_string()).collect();
+        let src = r#"@smith2020 #bibliography("/user@host/refs.bib")"#;
+        let out = escape_invalid_citations(src, &valid);
+        // @smith2020 is valid, @host is inside a string literal — neither should be escaped
+        assert_eq!(out, src);
     }
 }

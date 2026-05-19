@@ -42,8 +42,11 @@ pub struct MigrationPreview {
     /// True when `<notebox>/<new>/` already exists.
     pub target_exists: bool,
     /// True when `<notebox>/<new>/` exists and contains any entries.
-    /// Migration refuses to clobber a non-empty target.
     pub target_is_nonempty: bool,
+    /// Number of files already in the target folder.
+    pub target_file_count: usize,
+    /// Number of filenames that collide between source and target.
+    pub name_conflicts: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,14 +90,19 @@ pub async fn preview_attachment_folder_migration(
         0
     };
 
-    let (target_exists, target_is_nonempty) = if new_abs.exists() {
-        let nonempty = new_abs
-            .read_dir()
-            .map(|mut it| it.next().is_some())
-            .unwrap_or(false);
-        (true, nonempty)
+    let (target_exists, target_is_nonempty, target_file_count) = if new_abs.is_dir() {
+        let count = count_files_in_dir(&new_abs);
+        (true, count > 0, count)
+    } else if new_abs.exists() {
+        (true, true, 0)
     } else {
-        (false, false)
+        (false, false, 0)
+    };
+
+    let name_conflicts = if target_is_nonempty && old_abs.is_dir() {
+        count_name_conflicts(&old_abs, &new_abs)
+    } else {
+        0
     };
 
     let notes_to_update = if current_folder == new_folder {
@@ -109,6 +117,8 @@ pub async fn preview_attachment_folder_migration(
         notes_to_update,
         target_exists,
         target_is_nonempty,
+        target_file_count,
+        name_conflicts,
     })
 }
 
@@ -142,42 +152,40 @@ pub async fn migrate_attachment_folder(
     let _ = validate_folder_segment(&current_folder)?;
     let old_abs = root.join(&current_folder);
     let new_abs = root.join(&new_folder);
+    let mut errors: Vec<String> = Vec::new();
 
-    // Pre-flight collision check.
-    if new_abs.exists() {
-        let nonempty = new_abs
-            .read_dir()
-            .map(|mut it| it.next().is_some())
-            .unwrap_or(false);
-        if nonempty {
-            return Err(InkyCapError::InvalidPath(format!(
-                "Target folder '{}' already exists and is not empty",
-                new_folder
-            )));
-        }
-        // Empty dir at target: remove so the rename below can succeed.
-        // (On most platforms rename() refuses to overwrite a directory
-        // even when it's empty.)
-        tokio::fs::remove_dir(&new_abs).await.map_err(|e| {
-            InkyCapError::Io(std::io::Error::other(format!(
-                "removing empty target '{}': {e}",
-                new_abs.display()
-            )))
-        })?;
-    }
-
-    // Step 1: filesystem rename. Single rename is atomic on the same
-    // filesystem; this is the only step we can safely call atomic.
+    // Step 1: move files from old → new. When the target is empty or
+    // doesn't exist, a single atomic rename suffices. When the target
+    // already has files, merge by moving individual files across.
     let files_moved = if old_abs.is_dir() {
-        let count = count_files_in_dir(&old_abs);
-        tokio::fs::rename(&old_abs, &new_abs).await.map_err(|e| {
-            InkyCapError::Io(std::io::Error::other(format!(
-                "renaming '{}' → '{}': {e}",
-                old_abs.display(),
-                new_abs.display()
-            )))
-        })?;
-        count
+        let target_nonempty = new_abs.is_dir()
+            && new_abs
+                .read_dir()
+                .map(|mut it| it.next().is_some())
+                .unwrap_or(false);
+
+        if target_nonempty {
+            merge_directories(&old_abs, &new_abs, &mut errors).await
+        } else {
+            // Target doesn't exist or is an empty directory
+            if new_abs.is_dir() {
+                tokio::fs::remove_dir(&new_abs).await.map_err(|e| {
+                    InkyCapError::Io(std::io::Error::other(format!(
+                        "removing empty target '{}': {e}",
+                        new_abs.display()
+                    )))
+                })?;
+            }
+            let count = count_files_in_dir(&old_abs);
+            tokio::fs::rename(&old_abs, &new_abs).await.map_err(|e| {
+                InkyCapError::Io(std::io::Error::other(format!(
+                    "renaming '{}' → '{}': {e}",
+                    old_abs.display(),
+                    new_abs.display()
+                )))
+            })?;
+            count
+        }
     } else {
         // No old folder to move (the user may be establishing a new
         // attachment folder with no prior attachments). Continue with
@@ -188,7 +196,6 @@ pub async fn migrate_attachment_folder(
 
     // Step 2: rewrite path-bearing calls across every `.typ` note.
     let mut notes_updated = 0usize;
-    let mut errors: Vec<String> = Vec::new();
 
     let notes = storage
         .list_files(&PathBuf::from(""), "*.typ")
@@ -291,6 +298,118 @@ fn count_files_in_dir(dir: &Path) -> usize {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .count()
+}
+
+/// Count filenames that exist in both source and target directories.
+fn count_name_conflicts(src: &Path, dst: &Path) -> usize {
+    let dst_names: std::collections::HashSet<_> = walkdir::WalkDir::new(dst)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            e.path()
+                .strip_prefix(dst)
+                .ok()
+                .map(|p| p.to_path_buf())
+        })
+        .collect();
+
+    walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            e.path()
+                .strip_prefix(src)
+                .ok()
+                .map(|p| p.to_path_buf())
+        })
+        .filter(|rel| dst_names.contains(rel))
+        .count()
+}
+
+/// Merge source directory into an existing target directory by moving
+/// files individually. Conflicting filenames in the target are
+/// suffixed with `_1`, `_2`, etc. to avoid data loss. After all files
+/// are moved, the (now-empty) source directory tree is removed.
+async fn merge_directories(src: &Path, dst: &Path, errors: &mut Vec<String>) -> usize {
+    let entries: Vec<_> = walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .collect();
+
+    let mut moved = 0usize;
+    for entry in &entries {
+        let rel = match entry.path().strip_prefix(src) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let mut target = dst.join(rel);
+
+        // Ensure parent directory exists in target
+        if let Some(parent) = target.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                errors.push(format!("mkdir {}: {e}", parent.display()));
+                continue;
+            }
+        }
+
+        // Deduplicate filename on conflict
+        if target.exists() {
+            target = deduplicate_path(&target);
+        }
+
+        match tokio::fs::rename(entry.path(), &target).await {
+            Ok(()) => moved += 1,
+            Err(e) => {
+                // rename across filesystems fails; fall back to copy+remove
+                match tokio::fs::copy(entry.path(), &target).await {
+                    Ok(_) => {
+                        let _ = tokio::fs::remove_file(entry.path()).await;
+                        moved += 1;
+                    }
+                    Err(e2) => {
+                        errors.push(format!(
+                            "move {} → {}: rename={e}, copy={e2}",
+                            entry.path().display(),
+                            target.display()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Clean up empty source tree
+    if let Err(e) = tokio::fs::remove_dir_all(src).await {
+        errors.push(format!("cleanup {}: {e}", src.display()));
+    }
+
+    moved
+}
+
+/// Given a path that already exists, append `_1`, `_2`, etc. before
+/// the extension until a free slot is found.
+fn deduplicate_path(path: &Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = path.extension().map(|e| e.to_string_lossy().to_string());
+    let parent = path.parent().unwrap_or(path);
+    for n in 1..10000 {
+        let name = match &ext {
+            Some(e) => format!("{stem}_{n}.{e}"),
+            None => format!("{stem}_{n}"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    // Extremely unlikely fallback
+    parent.join(format!("{stem}_dup", stem = stem))
 }
 
 async fn count_notes_referencing_segment(

@@ -40,7 +40,6 @@ import {
   getAnchorPath,
   getAnchorPinNonce,
   getEntries,
-  getLastOffset,
   getSavedScrollPosition,
   getScrollNavRequest,
   hasMoreAfter,
@@ -49,6 +48,7 @@ import {
   recordScrollNavigation,
   saveScrollPosition,
   setVisibleEntries,
+  reanchorForNavigation,
 } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
@@ -488,52 +488,23 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   }
 
   // Navigate within the scroll to `targetPath`: scroll straight to it when
-  // already loaded, otherwise page the loaded window toward it and then
-  // scroll. Returns false when the target isn't part of the current query
-  // result (caller decides the fallback). Shared by wikilink clicks and the
-  // header back/forward arrows.
+  // already loaded, otherwise re-anchor the scroll on the target so it
+  // becomes the first entry. Returns false when the target isn't part of
+  // the current query result (caller decides the fallback). Shared by
+  // wikilink clicks and the header back/forward arrows.
   async function navigateScrollTo(targetPath: string): Promise<boolean> {
     if (getEntries(props.tabId).some((e) => e.path === targetPath)) {
       scrollToLoadedEntry(targetPath);
       return true;
     }
-    const reached = await extendUntilLoaded(targetPath);
-    if (reached) {
-      scrollToLoadedEntry(targetPath);
-      return true;
-    }
-    return false;
-  }
-
-  // Extend the feed downward until `targetPath` is loaded. Returns false
-  // when the target isn't in the query result, or sits *before* the anchor
-  // (negative offset) — the one-directional feed can't reach those, so the
-  // caller falls back to opening a new tab. The safety cap (`MAX_BATCHES`)
-  // bounds the work on a misbehaving query: at BATCH=10 entries each, 30
-  // iterations covers 300 entries, well past any reasonable jump distance.
-  async function extendUntilLoaded(targetPath: string): Promise<boolean> {
+    // Check whether the target exists in this query at all.
     const targetOffset = await findOffsetForTarget(props.tabId, targetPath);
-    if (targetOffset === null || targetOffset < 0) return false;
-    const MAX_BATCHES = 30;
-    for (let i = 0; i < MAX_BATCHES; i++) {
-      if (
-        getEntries(props.tabId).some((entry) => entry.path === targetPath)
-      ) {
-        return true;
-      }
-      if (
-        getLastOffset(props.tabId) >= targetOffset ||
-        !hasMoreAfter(props.tabId)
-      ) {
-        // The window already spans the target's offset, or the feed is
-        // exhausted — one final check decides whether it actually loaded.
-        return getEntries(props.tabId).some(
-          (entry) => entry.path === targetPath,
-        );
-      }
-      await loadMoreAfter(props.tabId);
-    }
-    return false;
+    if (targetOffset === null) return false;
+    // Re-anchor the scroll on the target — clears the current entries
+    // and loads a fresh window starting from the target note, preserving
+    // the back/forward nav stack.
+    await reanchorForNavigation(props.tabId, targetPath);
+    return getEntries(props.tabId).some((e) => e.path === targetPath);
   }
 
   function scrollToLoadedEntry(path: string) {

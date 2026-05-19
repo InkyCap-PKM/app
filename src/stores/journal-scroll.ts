@@ -449,6 +449,42 @@ export async function updateAnchor(tabId: string, newAnchorPath: string) {
   await loadInitial(tabId);
 }
 
+/** Re-anchor the scroll on `targetPath` without clearing the
+ *  back/forward navigation history. Used by in-scroll wikilink
+ *  navigation where the caller manages the nav stack separately. */
+export async function reanchorForNavigation(
+  tabId: string,
+  targetPath: string,
+) {
+  const state = scrollStates[tabId];
+  if (!state || !state.enabled) return;
+
+  resetSavedScroll(tabId);
+
+  // Snapshot the nav state before loadInitial resets it.
+  const navBack = [...(state.navBack ?? [])];
+  const navForward = [...(state.navForward ?? [])];
+  const navCurrent = state.navCurrent;
+
+  setScrollStates(
+    produce((s) => {
+      s[tabId].anchorPath = targetPath;
+    }),
+  );
+  bump();
+  await loadInitial(tabId);
+
+  // Restore navigation history.
+  setScrollStates(
+    produce((s) => {
+      s[tabId].navBack = navBack;
+      s[tabId].navForward = navForward;
+      s[tabId].navCurrent = navCurrent;
+    }),
+  );
+  bump();
+}
+
 /** Flip the date-feed direction (recent→past ⇄ past→recent) and rebuild.
  *  The anchor stays put; only which temporal side unfolds downward changes. */
 export async function toggleScrollDirection(tabId: string) {

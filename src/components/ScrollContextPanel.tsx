@@ -246,7 +246,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     { initialValue: dataCache.get(props.tabId)?.connections ?? [] },
   );
 
-  const [citations] = createResource<AggregatedCitation[], VisibleNote[]>(
+  const [citations, { refetch: refetchCitations }] = createResource<AggregatedCitation[], VisibleNote[]>(
     visible,
     async (notes) => {
       if (notes.length === 0) return [];
@@ -260,6 +260,18 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     },
     { initialValue: dataCache.get(props.tabId)?.citations ?? [] },
   );
+
+  {
+    const onNoteSaved = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const visiblePaths = visible().map((v) => v.path);
+      if (detail?.path && visiblePaths.includes(detail.path)) {
+        refetchCitations();
+      }
+    };
+    document.addEventListener("inkycap:note-saved", onNoteSaved);
+    onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
+  }
 
   const [tagConcentration] = createResource<
     Array<{ tag: string; count: number }>,
