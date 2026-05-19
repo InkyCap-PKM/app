@@ -134,6 +134,19 @@
   --fg-gutter: #8a9e9a;
   --fg-separator: #d6d6d6;
 
+  /* Floating selection toolbar — a deliberately contrasting surface so it
+     stands out against the document text it overlaps (plain --popup-bg
+     equals --bg-primary, so it reads as the page). Light themes get a
+     dark toolbar; the dark theme overrides these with an elevated
+     surface. Derived from --fg-primary / --bg-primary so every palette
+     adapts automatically. */
+  --toolbar-float-bg: color-mix(in srgb, var(--fg-primary) 94%, var(--bg-primary));
+  --toolbar-float-fg: color-mix(in srgb, var(--bg-primary) 80%, var(--fg-primary));
+  --toolbar-float-fg-strong: var(--bg-primary);
+  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.13);
+  --toolbar-float-border: rgba(0, 0, 0, 0.4);
+  --toolbar-float-sep: rgba(255, 255, 255, 0.18);
+
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);
   --accent-hover: color-mix(in srgb, var(--accent-color, #1D7874) 80%, black);
@@ -253,6 +266,17 @@
   --fg-dim: #4d706a;
   --fg-gutter: #7a9490;
   --fg-separator: #1a4045;
+
+  /* Floating selection toolbar — see the light block. Dark themes can't
+     invert to a light surface (a bright rectangle glares against a dark
+     page), so the toolbar is an *elevated* surface instead: --bg-primary
+     lifted toward white. */
+  --toolbar-float-bg: color-mix(in srgb, var(--bg-primary) 82%, #ffffff);
+  --toolbar-float-fg: var(--fg-secondary);
+  --toolbar-float-fg-strong: var(--fg-primary);
+  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.10);
+  --toolbar-float-border: rgba(255, 255, 255, 0.14);
+  --toolbar-float-sep: rgba(255, 255, 255, 0.14);
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);
