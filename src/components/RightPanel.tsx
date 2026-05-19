@@ -13,7 +13,8 @@ import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
-import { pickFolder } from "../stores/folderPicker";
+import { moveActiveFileInteractive } from "../lib/move-file";
+import { deleteActiveFileInteractive } from "../lib/delete-file";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
@@ -53,7 +54,6 @@ import {
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import { Dropdown } from "./Dropdown";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
@@ -953,25 +953,7 @@ const RightPanel: Component = () => {
 
   async function menuMoveFile() {
     setFileMenu(null);
-    const tab = activeFileTab();
-    if (!tab) return;
-    try {
-      // Notebox-scoped folder picker — `dest` is a notebox-relative path
-      // ("" for the root), exactly the shape `move_file` expects.
-      const slash = tab.path.lastIndexOf("/");
-      const currentParent = slash >= 0 ? tab.path.slice(0, slash) : undefined;
-      const dest = await pickFolder({
-        title: "Move file to...",
-        currentParent,
-      });
-      if (dest == null) return;
-      const newPath = await ipc.moveFile(tab.path, dest);
-      const name = newPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? tab.title;
-      closeTab(tab.id);
-      openTab({ type: "file", title: name, path: newPath }, { forceNewTab: true });
-    } catch (err) {
-      toastError("Move failed", err);
-    }
+    await moveActiveFileInteractive();
   }
 
   async function menuBookmark() {
@@ -1054,19 +1036,7 @@ const RightPanel: Component = () => {
 
   async function menuDelete() {
     setFileMenu(null);
-    const tab = activeFileTab();
-    if (!tab) return;
-    const confirmed = await ask("Delete this file permanently?", {
-      title: "Delete file",
-      kind: "warning",
-    });
-    if (!confirmed) return;
-    try {
-      await ipc.deleteFile(tab.path);
-      closeTab(tab.id);
-    } catch (err) {
-      toastError("Delete failed", err);
-    }
+    await deleteActiveFileInteractive();
   }
 
   return (

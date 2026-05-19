@@ -5,12 +5,15 @@ import { registerCommand } from "./command-registry";
 import {
   openTab,
   closeTab,
+  reopenClosedTab,
   getActiveTab,
   switchToNextTab,
   switchToPrevTab,
   setTabEditingMode,
   createEmptyTab,
 } from "../stores/tabs";
+import { moveActiveFileInteractive } from "./move-file";
+import { deleteActiveFileInteractive } from "./delete-file";
 import { toggleTheme } from "../stores/theme";
 import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
@@ -71,6 +74,36 @@ export function registerBuiltinCommands(callbacks: {
     keybinding: "Ctrl+T",
     execute: () => {
       createEmptyTab();
+    },
+  });
+
+  // The keyboard dispatcher folds Cmd into Ctrl (see lib/keyboard.ts), so
+  // a single "Ctrl+…" binding also covers the macOS Cmd equivalent.
+  registerCommand({
+    id: "file:reopen-closed-tab",
+    title: "Reopen Closed Tab",
+    category: "File",
+    keybinding: "Ctrl+Shift+T",
+    execute: reopenClosedTab,
+  });
+
+  registerCommand({
+    id: "file:move",
+    title: "Move File to...",
+    category: "File",
+    keybinding: "Ctrl+M",
+    execute: () => {
+      void moveActiveFileInteractive();
+    },
+  });
+
+  registerCommand({
+    id: "file:delete",
+    title: "Delete File",
+    category: "File",
+    keybinding: "Ctrl+Shift+D",
+    execute: () => {
+      void deleteActiveFileInteractive();
     },
   });
 

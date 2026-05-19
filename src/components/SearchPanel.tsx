@@ -120,12 +120,12 @@ const SYNTAX_TIPS: { label: string; description: string }[] = [
 
 const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "relevance", label: "Relevance" },
-  { value: "name-asc", label: "File name (A to Z)" },
-  { value: "name-desc", label: "File name (Z to A)" },
-  { value: "modified-desc", label: "Modified time (new to old)" },
-  { value: "modified-asc", label: "Modified time (old to new)" },
-  { value: "created-desc", label: "Created time (new to old)" },
-  { value: "created-asc", label: "Created time (old to new)" },
+  { value: "name-asc", label: "File name (A – Z)" },
+  { value: "name-desc", label: "File name (Z – A)" },
+  { value: "modified-desc", label: "Modified time (new – old)" },
+  { value: "modified-asc", label: "Modified time (old – new)" },
+  { value: "created-desc", label: "Created time (new – old)" },
+  { value: "created-asc", label: "Created time (old – new)" },
 ];
 
 const SearchPanel: Component = () => {

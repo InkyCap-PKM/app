@@ -23,12 +23,12 @@ export type LinksSortMode =
   | "created-asc";
 
 export const LINKS_SORT_OPTIONS: { value: LinksSortMode; label: string }[] = [
-  { value: "name-asc", label: "Name (A to Z)" },
-  { value: "name-desc", label: "Name (Z to A)" },
-  { value: "modified-desc", label: "Modified (new to old)" },
-  { value: "modified-asc", label: "Modified (old to new)" },
-  { value: "created-desc", label: "Created (new to old)" },
-  { value: "created-asc", label: "Created (old to new)" },
+  { value: "name-asc", label: "Name (A – Z)" },
+  { value: "name-desc", label: "Name (Z – A)" },
+  { value: "modified-desc", label: "Modified (new – old)" },
+  { value: "modified-asc", label: "Modified (old – new)" },
+  { value: "created-desc", label: "Created (new – old)" },
+  { value: "created-asc", label: "Created (old – new)" },
 ];
 
 export type LinksSection = "inbound" | "outbound" | "potential";

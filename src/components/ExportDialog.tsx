@@ -8,15 +8,15 @@ export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "html" | 
 export type MetadataMode = "exclude" | "properties";
 
 const FORMAT_INFO: Record<ExportFormat, { label: string; ext: string; pandoc: boolean }> = {
-  pdf: { label: "PDF (native Typst)", ext: "pdf", pandoc: false },
-  typ: { label: "Self-contained .typ", ext: "typ", pandoc: false },
-  "typst-html": { label: "HTML (native Typst)", ext: "html", pandoc: false },
+  pdf: { label: "PDF (.pdf)", ext: "pdf", pandoc: false },
+  typ: { label: "Self-contained (.typ)", ext: "typ", pandoc: false },
+  "typst-html": { label: "HTML (.html)", ext: "html", pandoc: false },
   markdown: { label: "Markdown (.md)", ext: "md", pandoc: false },
-  html: { label: "HTML (Pandoc)", ext: "html", pandoc: true },
-  odt: { label: "OpenDocument ODT", ext: "odt", pandoc: true },
-  docx: { label: "Word DOCX", ext: "docx", pandoc: true },
-  latex: { label: "LaTeX", ext: "tex", pandoc: true },
-  "pandoc-pdf": { label: "PDF — includes properties", ext: "pdf", pandoc: true },
+  html: { label: "HTML (.html)", ext: "html", pandoc: true },
+  odt: { label: "OpenDocument (.odt)", ext: "odt", pandoc: true },
+  docx: { label: "Word (.docx)", ext: "docx", pandoc: true },
+  latex: { label: "LaTeX (.tex)", ext: "tex", pandoc: true },
+  "pandoc-pdf": { label: "PDF with properties (.pdf)", ext: "pdf", pandoc: true },
 };
 
 const METADATA_LABELS: Record<MetadataMode, string> = {
@@ -258,10 +258,10 @@ const ExportDialog: Component = () => {
                 class="dropdown--block"
                 value={format()}
                 options={[
-                  { value: "pdf", label: FORMAT_INFO.pdf.label, group: "Native" },
-                  { value: "typ", label: FORMAT_INFO.typ.label, group: "Native" },
-                  { value: "typst-html", label: FORMAT_INFO["typst-html"].label, group: "Native" },
-                  { value: "markdown", label: FORMAT_INFO.markdown.label, group: "Native" },
+                  { value: "pdf", label: FORMAT_INFO.pdf.label, group: "Typst" },
+                  { value: "typ", label: FORMAT_INFO.typ.label, group: "Typst" },
+                  { value: "typst-html", label: FORMAT_INFO["typst-html"].label, group: "Typst" },
+                  { value: "markdown", label: FORMAT_INFO.markdown.label, group: "Typst" },
                   { value: "html", label: FORMAT_INFO.html.label, group: "Via Pandoc" },
                   { value: "odt", label: FORMAT_INFO.odt.label, group: "Via Pandoc" },
                   { value: "docx", label: FORMAT_INFO.docx.label, group: "Via Pandoc" },
