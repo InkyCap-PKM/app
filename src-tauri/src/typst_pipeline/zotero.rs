@@ -141,6 +141,7 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
         let mut title = String::new();
         let mut date = None;
         let mut citation_key = None;
+        let mut extra_fields = std::collections::HashMap::new();
 
         // Read item data fields
         if let Ok(rows) = data_stmt.query_map([item_id], |row| {
@@ -151,6 +152,23 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
                     "title" => title = row.1,
                     "date" => date = Some(extract_year(&row.1)),
                     "citationKey" => citation_key = Some(row.1),
+                    "publicationTitle" => { extra_fields.insert("journal".to_string(), row.1); }
+                    "bookTitle" => { extra_fields.insert("booktitle".to_string(), row.1); }
+                    "publisher" => { extra_fields.insert("publisher".to_string(), row.1); }
+                    "place" => { extra_fields.insert("address".to_string(), row.1); }
+                    "volume" => { extra_fields.insert("volume".to_string(), row.1); }
+                    "issue" | "number" => { extra_fields.insert("number".to_string(), row.1); }
+                    "pages" | "numPages" => { extra_fields.insert("pages".to_string(), row.1); }
+                    "DOI" => { extra_fields.insert("doi".to_string(), row.1); }
+                    "url" => { extra_fields.insert("url".to_string(), row.1); }
+                    "ISBN" => { extra_fields.insert("isbn".to_string(), row.1); }
+                    "ISSN" => { extra_fields.insert("issn".to_string(), row.1); }
+                    // abstractNote skipped — not needed for bibliography rendering
+                    "edition" => { extra_fields.insert("edition".to_string(), row.1); }
+                    "series" => { extra_fields.insert("series".to_string(), row.1); }
+                    "institution" | "university" => { extra_fields.insert("institution".to_string(), row.1); }
+                    "conferenceName" => { extra_fields.insert("booktitle".to_string(), row.1); }
+                    "language" => { extra_fields.insert("language".to_string(), row.1); }
                     _ => {}
                 }
             }
@@ -176,6 +194,7 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
 
         // Read creators
         let mut authors = Vec::new();
+        let mut editors = Vec::new();
         if let Ok(rows) = creator_stmt.query_map([item_id], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -184,14 +203,20 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
             ))
         }) {
             for (first, last, role) in rows.flatten() {
-                if role == "author" || role == "editor" {
-                    if first.is_empty() {
-                        authors.push(last);
-                    } else {
-                        authors.push(format!("{last}, {first}"));
-                    }
+                let name = if first.is_empty() {
+                    last
+                } else {
+                    format!("{last}, {first}")
+                };
+                match role.as_str() {
+                    "author" => authors.push(name),
+                    "editor" => editors.push(name),
+                    _ => {}
                 }
             }
+        }
+        if !editors.is_empty() {
+            extra_fields.insert("editor".to_string(), editors.join(" and "));
         }
 
         entries.push(BibEntry {
@@ -202,6 +227,7 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
             entry_type: type_name,
             zotero_item_key: Some(zotero_key),
             has_notes: items_with_notes.contains(&item_id),
+            extra_fields,
         });
     }
 

@@ -91,7 +91,6 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
     if (!isValidDraft()) return false;
     const p = preview();
     if (!p) return false;
-    if (p.target_is_nonempty) return false;
     return true;
   }
 
@@ -203,10 +202,15 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                     will be updated
                   </div>
                   <Show when={preview()!.target_is_nonempty}>
-                    <div class="app-modal__error">
-                      Target folder already exists and is not empty —
-                      cannot rename. Choose a different name or empty the
-                      target first.
+                    <div class="app-modal__hint">
+                      Target folder already contains{" "}
+                      <strong>{preview()!.target_file_count}</strong> file(s)
+                      — contents will be merged.
+                      <Show when={preview()!.name_conflicts > 0}>
+                        {" "}<strong>{preview()!.name_conflicts}</strong>{" "}
+                        conflicting filename(s) will be suffixed to avoid
+                        overwriting.
+                      </Show>
                     </div>
                   </Show>
                   <Show
@@ -243,7 +247,11 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                 onClick={apply}
                 disabled={!canApply() || applying()}
               >
-                {applying() ? "Renaming…" : "Rename"}
+                {applying()
+                  ? "Renaming…"
+                  : preview()?.target_is_nonempty
+                    ? "Merge"
+                    : "Rename"}
               </button>
             </div>
           </div>

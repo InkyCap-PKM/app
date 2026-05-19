@@ -75,7 +75,6 @@ function sortEntries(entries: BibEntry[], key: SortKey): BibEntry[] {
 const ReferencesPanel: Component = () => {
   const [showAll, setShowAll] = createSignal(false);
   const [browseQuery, setBrowseQuery] = createSignal("");
-  const [citationVersion, setCitationVersion] = createSignal(0);
   const [refreshing, setRefreshing] = createSignal(false);
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   const [sortKey, setSortKey] = createSignal<SortKey>(loadSortPreference());
@@ -118,10 +117,9 @@ const ReferencesPanel: Component = () => {
     return tab?.type === "file" ? tab : undefined;
   };
 
-  const [citations] = createResource(
+  const [citations, { refetch: refetchCitations }] = createResource(
     () => {
       const path = activeFileTab()?.path;
-      const _v = citationVersion();
       const _source = settings.citations.source;
       return path;
     },
@@ -164,13 +162,20 @@ const ReferencesPanel: Component = () => {
   );
 
   onMount(() => {
-    const handler = () => {
-      setTimeout(() => {
-        setCitationVersion((v) => v + 1);
-      }, 1500);
+    const onInsertCitation = () => {
+      setTimeout(() => refetchCitations(), 1500);
     };
-    document.addEventListener("inkycap:insert-citation", handler);
-    onCleanup(() => document.removeEventListener("inkycap:insert-citation", handler));
+    document.addEventListener("inkycap:insert-citation", onInsertCitation);
+    onCleanup(() => document.removeEventListener("inkycap:insert-citation", onInsertCitation));
+
+    const onNoteSaved = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.path === activeFileTab()?.path) {
+        refetchCitations();
+      }
+    };
+    document.addEventListener("inkycap:note-saved", onNoteSaved);
+    onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
   });
 
   const sortedAndFiltered = createMemo(() => {
@@ -243,7 +248,7 @@ const ReferencesPanel: Component = () => {
     setRefreshing(true);
     try {
       await ipc.refreshBibliography();
-      setCitationVersion((v) => v + 1);
+      refetchCitations();
       if (showAll()) {
         setShowAll(false);
         queueMicrotask(() => setShowAll(true));

@@ -1256,7 +1256,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       onClick={uploadIntoNotebox}
                     >
                       <Upload size={14} />
-                      <span>Upload into notebox</span>
+                      <span>Copy into notebox</span>
                     </button>
                   </div>
                 </Show>

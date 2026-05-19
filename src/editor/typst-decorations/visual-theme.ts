@@ -85,6 +85,13 @@ export const visualTheme = EditorView.theme({
     color: "var(--syntax-type)",
     cursor: "pointer",
   },
+  ".cm-typst-ref-plain, .cm-typst-ref-plain span": {
+    color: "inherit !important",
+    cursor: "text",
+    fontFamily: "inherit !important",
+    fontSize: "inherit !important",
+    backgroundColor: "transparent !important",
+  },
   ".cm-typst-h1, .cm-typst-h2, .cm-typst-h3, .cm-typst-h4, .cm-typst-h5, .cm-typst-h6": {
     color: "var(--fg-primary)",
   },

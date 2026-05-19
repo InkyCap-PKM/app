@@ -548,6 +548,8 @@ export interface AttachmentMigrationPreview {
   notes_to_update: number;
   target_exists: boolean;
   target_is_nonempty: boolean;
+  target_file_count: number;
+  name_conflicts: number;
 }
 
 export interface AttachmentMigrationResult {

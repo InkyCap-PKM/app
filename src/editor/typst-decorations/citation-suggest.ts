@@ -326,4 +326,15 @@ const suggestTracker = ViewPlugin.fromClass(
   },
 );
 
+/** Synchronous read of the cached bibliography keys. Returns an empty
+ *  set before the first fetch completes (~30 s TTL cache). */
+export function getCachedBibKeys(): Set<string> {
+  if (!cachedEntries) {
+    // Kick off a background fetch so the next call has data.
+    void getEntries();
+    return new Set();
+  }
+  return new Set(cachedEntries.map((e) => e.key));
+}
+
 export const citationSuggest: Extension = [suggestKeyHandler, suggestTracker];

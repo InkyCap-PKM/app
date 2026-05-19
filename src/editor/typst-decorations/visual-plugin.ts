@@ -27,6 +27,7 @@ import {
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
+import { getCachedBibKeys } from "./citation-suggest";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS } from "./visual-widgets";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
@@ -51,6 +52,7 @@ const mathInline = Decoration.mark({ class: "cm-typst-math-inline" });
 const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
+const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
 // Inline #quote[…] body — adds smart-quote brackets via ::before/::after.
 const quoteInlineMark = Decoration.mark({ class: "cm-typst-quote-inline" });
 
@@ -324,13 +326,20 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             const refText = state.doc.sliceString(node.from, node.to);
             if (refText.startsWith("@")) {
               const key = refText.slice(1);
-              decos.push(
-                Decoration.replace({
-                  widget: new CitationWidget(key, node.from, node.to),
-                  inclusiveStart: false,
-                  inclusiveEnd: false,
-                }).range(node.from, node.to),
-              );
+              const bibKeys = getCachedBibKeys();
+              if (bibKeys.size === 0 || bibKeys.has(key)) {
+                decos.push(
+                  Decoration.replace({
+                    widget: new CitationWidget(key, node.from, node.to),
+                    inclusiveStart: false,
+                    inclusiveEnd: false,
+                  }).range(node.from, node.to),
+                );
+              } else {
+                // Not in bibliography — override syntax highlighting so
+                // email addresses render as plain text, not link-colored.
+                decos.push(refPlainMark.range(node.from, node.to));
+              }
             } else {
               decos.push(refMark.range(node.from, node.to));
             }

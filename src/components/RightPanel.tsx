@@ -1114,9 +1114,9 @@ const RightPanel: Component = () => {
                         }
                       >
                         {getScrollDirection(tab().id) === "desc" ? (
-                          <CalendarArrowDown size={18} />
-                        ) : (
                           <CalendarArrowUp size={18} />
+                        ) : (
+                          <CalendarArrowDown size={18} />
                         )}
                       </button>
                       <button

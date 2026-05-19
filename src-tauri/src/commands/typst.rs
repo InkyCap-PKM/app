@@ -61,6 +61,7 @@ pub async fn compile_typst_svg(
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
+    let source = escape_non_bib_citations(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
     let compiler = guard
@@ -74,16 +75,43 @@ pub async fn compile_typst_svg(
     Ok(result)
 }
 
-/// If the source has `@` citations but no `#bibliography(...)` call, append a
-/// bibliography so citations resolve and the bibliography section renders in
-/// reading mode.
+/// Resolve the user's chosen citation style from settings. Returns `None`
+/// when no style is configured (Typst's built-in default will apply).
+async fn resolve_citation_style(state: &AppState) -> Option<String> {
+    let settings = state.settings.read().await;
+    settings
+        .citations
+        .custom_csl_path
+        .clone()
+        .or_else(|| {
+            settings
+                .citations
+                .citation_style
+                .as_deref()
+                .filter(|s| !s.is_empty() && *s != "custom")
+                .map(String::from)
+        })
+}
+
+/// Ensure the source has a bibliography call that resolves citations and
+/// respects the user's style setting from preferences.
+///
+/// Three cases:
+/// 1. No `#bibliography(...)` and valid citations exist → append full call
+///    with path and style.
+/// 2. Explicit `#bibliography(...)` present but no `style:` argument →
+///    inject the user's style from settings so they don't get Typst's
+///    default (IEEE) when they've chosen e.g. Chicago Notes.
+/// 3. Explicit `#bibliography(...)` with `style:` → leave untouched.
 async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> String {
-    let has_explicit_bib = source.lines().any(|line| {
+    let explicit_bib_line = source.lines().enumerate().find(|(_, line)| {
         let trimmed = line.trim();
         !trimmed.starts_with("//") && trimmed.contains("#bibliography(")
     });
-    if has_explicit_bib {
-        return source.to_string();
+
+    if let Some((line_idx, line)) = explicit_bib_line {
+        // User has an explicit #bibliography() — inject style if missing.
+        return inject_style_into_explicit_bib(source, line, line_idx, state).await;
     }
 
     if !source_has_citation(source) {
@@ -95,22 +123,19 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
         return source.to_string();
     };
 
-    let style = {
-        let settings = state.settings.read().await;
-        settings
-            .citations
-            .custom_csl_path
-            .clone()
-            .or_else(|| {
-                settings
-                    .citations
-                    .citation_style
-                    .as_deref()
-                    .filter(|s| !s.is_empty() && *s != "custom")
-                    .map(String::from)
-            })
-    };
+    // Only inject if at least one extracted citation key actually exists
+    // in the bibliography. Prevents false-positives from email addresses
+    // like `user@domain.com` where Typst sees `@domain` as a citation.
+    if let Ok(entries) = super::bibliography::load_entries_inner(state).await {
+        let extracted = crate::typst_pipeline::bibliography::extract_citations(source);
+        let has_valid = extracted.iter().any(|k| entries.iter().any(|e| e.key == *k))
+            || source_has_attribution(source);
+        if !has_valid {
+            return source.to_string();
+        }
+    }
 
+    let style = resolve_citation_style(state).await;
     match style {
         Some(s) => format!(
             "{}\n\n#bibliography(\"{}\", style: \"{}\")\n",
@@ -126,30 +151,72 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
     }
 }
 
+/// When the user has an explicit `#bibliography(...)` call but no `style:`
+/// argument, inject their preferred style from settings so the rendered
+/// bibliography matches their choice (not Typst's default IEEE).
+async fn inject_style_into_explicit_bib(
+    source: &str,
+    bib_line: &str,
+    _line_idx: usize,
+    state: &AppState,
+) -> String {
+    if bib_line.contains("style:") {
+        return source.to_string();
+    }
+    let Some(style) = resolve_citation_style(state).await else {
+        return source.to_string();
+    };
+    let escaped = style.replace('\\', "\\\\").replace('"', "\\\"");
+    // Insert `style: "..."` before the closing `)` of the #bibliography() call.
+    let trimmed = bib_line.trim();
+    if let Some(close_paren) = trimmed.rfind(')') {
+        let before = &trimmed[..close_paren];
+        let after = &trimmed[close_paren..];
+        let separator = if before.trim_end().ends_with(',') || before.trim_end().ends_with('(') {
+            " "
+        } else {
+            ", "
+        };
+        let new_line = format!("{}{separator}style: \"{escaped}\"{after}", before);
+        source.replace(trimmed, &new_line)
+    } else {
+        source.to_string()
+    }
+}
+
+/// Escape `@key` patterns that don't match any entry in the user's
+/// bibliography, so Typst treats them as literal text (e.g. email
+/// addresses like `user@domain.com`). Runs after bibliography injection.
+async fn escape_non_bib_citations(source: &str, state: &AppState) -> String {
+    let valid_keys: std::collections::HashSet<String> = match super::bibliography::load_entries_inner(state).await {
+        Ok(entries) => entries.into_iter().map(|e| e.key).collect(),
+        Err(_) => std::collections::HashSet::new(),
+    };
+    crate::typst_pipeline::bibliography::escape_invalid_citations(source, &valid_keys)
+}
+
 /// True when `source` contains anything Typst will treat as a citation
 /// (and therefore needs a bibliography to resolve).
 ///
 /// Two forms count:
-/// - `@key` — markup-mode citation sugar.
-/// - `attribution: <key>` — `quote`'s label-as-cite parameter form. The
-///   bare `<key>` literal in expression position is what `#quote(block:
-///   true, attribution: <camus1942>)` uses, and it's the same machinery
-///   as `cite(<camus1942>)` under the hood. Without this branch, a quote
-///   whose only citation lives inside `attribution:` would compile
-///   against no bibliography and Typst would raise "the document does
-///   not contain a bibliography" — which is what users hit when they
-///   add a bibkey via the quote pill.
+/// - `@key` — markup-mode citation sugar (via `extract_citations`).
+/// - `attribution: <key>` — `quote`'s label-as-cite parameter form.
 ///
 /// Comment lines (`//`) and `#import` / `#set` lines are excluded so an
 /// `@` inside an import path or set rule doesn't false-positive.
 pub(crate) fn source_has_citation(source: &str) -> bool {
+    if !crate::typst_pipeline::bibliography::extract_citations(source).is_empty() {
+        return true;
+    }
+    source_has_attribution(source)
+}
+
+/// True when `source` contains `attribution: <key>` — `quote`'s
+/// label-as-cite parameter form that also requires a bibliography.
+fn source_has_attribution(source: &str) -> bool {
     source.lines().any(|line| {
         let trimmed = line.trim();
         if trimmed.starts_with("//") { return false; }
-        if trimmed.starts_with("#import") || trimmed.starts_with("#set") { return false; }
-        if trimmed.contains('@') { return true; }
-        // attribution: <foo> — anchor on the named arg so we don't pick
-        // up unrelated `<label>` markers attached to content elsewhere.
         if let Some(idx) = trimmed.find("attribution") {
             let after = &trimmed[idx + "attribution".len()..];
             let after = after.trim_start();
@@ -185,6 +252,7 @@ pub async fn compile_typst_html(
     let source = style_injection::inject_cite_tagging(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state).await;
+    let source = escape_non_bib_citations(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
     let compiler = guard

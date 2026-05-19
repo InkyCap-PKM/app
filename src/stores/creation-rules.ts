@@ -6,6 +6,7 @@ import { createSignal } from "solid-js";
 import type { CreationRule, CreationResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { promptText } from "./prompt";
+import { settings } from "./settings";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -45,6 +46,11 @@ export async function triggerCreationRule(
   // first load), just call through — the backend will resolve it.
   const pattern = rule?.filename_pattern.trim() ?? "?";
   if (pattern === "") {
+    // Blank pattern: fall back to ZID if enabled, otherwise prompt
+    if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
+      const zidName = await ipc.generateZid();
+      return ipc.executeCreationRule(ruleId, zidName);
+    }
     const name = await promptText({
       title: `New note from "${rule?.name ?? "rule"}"`,
       label: "Filename",
