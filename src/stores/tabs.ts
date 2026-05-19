@@ -100,6 +100,14 @@ export interface OpenTabOptions {
   headingLabel?: string;
   /** Match range to select and scroll to after the file loads. */
   match?: { line: number; charStart: number; charEnd: number };
+  /**
+   * Skip the "activate the existing tab with this path" shortcut and always
+   * create a fresh tab. Needed when the caller deliberately wants a second,
+   * independent view of a file that is *already* open — notably opening the
+   * anchor note from inside its own Journal Scroll tab, where the existing
+   * tab with that path IS the scroll itself.
+   */
+  allowDuplicate?: boolean;
 }
 
 /**
@@ -126,10 +134,11 @@ export function openTab(
   tab: Omit<Tab, "id">,
   opts?: OpenTabOptions,
 ): string {
-  // Activate existing tab with same path+type if one exists.
-  const existing = tabs.find(
-    (t) => t.path === tab.path && t.type === tab.type,
-  );
+  // Activate existing tab with same path+type if one exists — unless the
+  // caller explicitly wants a distinct duplicate view.
+  const existing = opts?.allowDuplicate
+    ? undefined
+    : tabs.find((t) => t.path === tab.path && t.type === tab.type);
   if (existing) {
     if (opts?.headingLabel) {
       setTabs(

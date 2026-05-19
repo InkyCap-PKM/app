@@ -190,17 +190,22 @@ impl Default for StartupSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct JournalScrollSettings {
-    /// How dates are determined for Date mode: "created", "modified", or "zid".
+    /// Sort axis for the feed: "created", "modified", "zid", or "note_date".
     pub date_sort: String,
-    /// Tree scope: "folder" (siblings only) or "recursive" (include subfolders).
-    pub tree_scope: String,
+    /// Maximal scope of notes the scroll may show:
+    /// "all" (whole notebox), "daily" (the Daily Note rule's folder), or
+    /// "custom" (the folder named in `custom_scope_folder`).
+    pub anchor_scope: String,
+    /// Notebox-relative folder used when `anchor_scope == "custom"`.
+    pub custom_scope_folder: String,
 }
 
 impl Default for JournalScrollSettings {
     fn default() -> Self {
         Self {
             date_sort: "created".to_string(),
-            tree_scope: "folder".to_string(),
+            anchor_scope: "all".to_string(),
+            custom_scope_folder: String::new(),
         }
     }
 }

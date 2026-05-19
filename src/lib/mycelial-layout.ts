@@ -35,6 +35,10 @@ const PADDING = 120;
 // fit-to-view handles the zoom regardless of absolute size.
 const TARGET_SIZE = 4200;
 const OVERLAP_MARGIN = 44;
+// Hard cap on how long any single edge may be after the force simulation.
+// Past this, an edge reads as a node stranded on empty canvas rather than a
+// meaningful link, so the post-sim `compactLongEdges` pass reels it in.
+const MAX_EDGE = SPRING_LENGTH * 2.2;
 
 export type BoxKind = "center" | "source" | "latent" | "emergent";
 export type ConnectionKind = "anchor" | "latent" | "emergent";
@@ -127,7 +131,16 @@ export function computeMycelialLayout(
   const simIds = new Set(sim.map((n) => n.id));
 
   // ---- 2. Spring connections. ---------------------------------------------
-  interface Spring { a: string; b: string; kind: ConnectionKind; score: number }
+  interface Spring {
+    a: string;
+    b: string;
+    kind: ConnectionKind;
+    score: number;
+    /** A tether is an invisible spring that pulls an otherwise-disconnected
+     *  component back toward the anchor. It shapes the layout but is never
+     *  drawn as a connection. */
+    tether?: boolean;
+  }
   const springs: Spring[] = [];
   for (const e of contextEdges) {
     if (simIds.has(e.source) && simIds.has(e.target)) {
@@ -147,6 +160,54 @@ export function computeMycelialLayout(
       if (simIds.has(m.path)) {
         springs.push({ a: id, b: m.path, kind: "emergent", score: e.score });
       }
+    }
+  }
+
+  // ---- 2b. Tether disconnected components to the anchor. -----------------
+  // The spring graph is frequently disconnected: an emergent concept or
+  // latent link whose source notes never reach the anchor forms its own
+  // island with no spring path back. Such an island feels only gravity and
+  // repulsion — and because repulsion from the main cluster outweighs the
+  // deliberately gentle gravity, it drifts far across the canvas, forcing
+  // fit-to-view to zoom everything down to a tiny, barely usable speck.
+  //
+  // The fix: find each connected component and, for any that excludes the
+  // anchor, add one invisible tether spring from the anchor to a
+  // representative node. Every component is then pulled into a single
+  // cohesive graph. Tethers are flagged so they never render as edges.
+  {
+    const parent = new Map<string, string>();
+    for (const n of sim) parent.set(n.id, n.id);
+    const find = (x: string): string => {
+      let root = x;
+      while (parent.get(root) !== root) root = parent.get(root)!;
+      while (parent.get(x) !== root) {
+        const next = parent.get(x)!;
+        parent.set(x, root);
+        x = next;
+      }
+      return root;
+    };
+    const union = (a: string, b: string) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    };
+    for (const s of springs) union(s.a, s.b);
+    const centerRoot = find(centerId);
+    const tethered = new Set<string>();
+    for (const n of sim) {
+      if (n.id === centerId) continue;
+      const root = find(n.id);
+      if (root === centerRoot || tethered.has(root)) continue;
+      tethered.add(root);
+      springs.push({
+        a: centerId,
+        b: n.id,
+        kind: "anchor",
+        score: 0,
+        tether: true,
+      });
     }
   }
 
@@ -227,6 +288,53 @@ export function computeMycelialLayout(
       p.y += v.vy;
     }
   }
+
+  // ---- 3b. Cap absurdly long edges. ---------------------------------------
+  // A node held by a single weak spring (a lone latent link, a pendant
+  // source note) can still end up stranded far from its cluster: the
+  // cumulative repulsion of every other box shoves it outward faster than
+  // one spring can reel it back within the iteration budget, so it settles
+  // at the far end of a long, empty-canvas-spanning edge. The force sim
+  // expresses that as a soft preference; here we apply it as a hard
+  // constraint. Each spring longer than MAX_EDGE has its endpoints pulled
+  // together until it clears the cap — moving the anchor never (it's
+  // pinned), otherwise splitting the correction between both ends. A few
+  // passes let a node with several long edges settle to a sensible
+  // compromise. Overlaps this introduces are cleaned up by resolveOverlaps.
+  const compactLongEdges = () => {
+    for (let pass = 0; pass < 30; pass++) {
+      let anyLong = false;
+      for (const s of springs) {
+        const a = pos.get(s.a);
+        const b = pos.get(s.b);
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= MAX_EDGE) continue;
+        anyLong = true;
+        const excess = dist - MAX_EDGE;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const movableA = s.a !== centerId;
+        const movableB = s.b !== centerId;
+        if (movableA && movableB) {
+          a.x += (ux * excess) / 2;
+          a.y += (uy * excess) / 2;
+          b.x -= (ux * excess) / 2;
+          b.y -= (uy * excess) / 2;
+        } else if (movableB) {
+          b.x -= ux * excess;
+          b.y -= uy * excess;
+        } else if (movableA) {
+          a.x += ux * excess;
+          a.y += uy * excess;
+        }
+      }
+      if (!anyLong) break;
+    }
+  };
+  compactLongEdges();
 
   // Resolve remaining rectangle overlaps by iteratively pushing pairs apart.
   // Defined here but invoked AFTER normalization (step 4): normalization
@@ -377,7 +485,10 @@ export function computeMycelialLayout(
     seenConn.add(key);
     connections.push({ kind, score, from, to });
   };
-  for (const s of springs) addConn(s.kind, s.score, s.a, s.b);
+  for (const s of springs) {
+    if (s.tether) continue; // layout-only; never drawn
+    addConn(s.kind, s.score, s.a, s.b);
+  }
 
   return {
     boxes,

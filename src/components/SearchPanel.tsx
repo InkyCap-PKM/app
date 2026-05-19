@@ -470,6 +470,38 @@ const SearchPanel: Component = () => {
     return groups;
   });
 
+  // The plain-text core of the query, used to detect an exact filename
+  // match. Returns null whenever the query uses any operator (phrase
+  // quotes aside, which are unwrapped here) — pinning an exact name only
+  // makes sense for a literal query, not a boolean/regex/proximity one.
+  const literalQuery = createMemo((): string | null => {
+    let q = searchQuery().trim();
+    if (!q) return null;
+    // A whole-query phrase search ("…") is still a plain literal — unwrap it.
+    if (q.length >= 2 && q.startsWith('"') && q.endsWith('"')) {
+      q = q.slice(1, -1).trim();
+    }
+    // Bail on any remaining operator syntax (stray quote, regex, truncation,
+    // grouping, boolean, proximity, exclusion, `field:` filter).
+    if (
+      /["()/*]/.test(q) ||
+      /(^|\s)(AND|OR|NOT)(\s|$)/.test(q) ||
+      /\b[WN]\/\d+\b/.test(q) ||
+      /(^|\s)-\S/.test(q) ||
+      /\w+:/.test(q)
+    ) {
+      return null;
+    }
+    return q.toLowerCase();
+  });
+
+  /** True when the query is the note's filename, verbatim (case-insensitive). */
+  function isExactNameMatch(group: GroupedResult): boolean {
+    const q = literalQuery();
+    if (!q) return false;
+    return group.file_name.replace(/\.typ$/i, "").trim().toLowerCase() === q;
+  }
+
   const sortedGroups = createMemo((): GroupedResult[] => {
     const groups = [...groupedResults()];
     const mode = sortMode();
@@ -499,6 +531,16 @@ const SearchPanel: Component = () => {
       }
     })();
     groups.sort(cmp);
+    // A note whose filename is exactly the query jumps to the top of the
+    // Relevance and Filename sorts — the result the user almost certainly
+    // wants. Date sorts stay strictly chronological. The sort is stable, so
+    // this second pass only lifts the exact match and leaves the order of
+    // every other row (and of multiple exact matches) untouched.
+    if (mode === "relevance" || mode === "name-asc" || mode === "name-desc") {
+      groups.sort(
+        (a, b) => Number(isExactNameMatch(b)) - Number(isExactNameMatch(a)),
+      );
+    }
     return groups;
   });
 

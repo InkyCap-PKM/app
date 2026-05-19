@@ -1,18 +1,24 @@
 // ---------------------------------------------------------------------------
 // Journal Scroll store — per-tab state for the scrolling note review surface.
 //
-// Pagination model:
-//   * Anchor lives at offset 0 in the sorted query result.
-//   * Initial load fetches HALF_BATCH entries before the anchor and
-//     HALF_BATCH + 1 entries from the anchor forward (two parallel
-//     requests). The view then pins the anchor to the top of the viewport
-//     (see `anchorPinNonce`) so the user starts on the note they entered
-//     scroll mode on, while still being able to scroll up into the
-//     entries loaded before it.
-//   * `loadMoreBefore` / `loadMoreAfter` extend `firstOffset` / `lastOffset`
-//     by BATCH each call. The backend's strict-offset slice semantics mean
-//     a `result.length < limit` response unambiguously indicates "this
-//     direction is exhausted" — no leak-through from the other side.
+// Pagination model — *one-directional*:
+//   * The anchor lives at offset 0 in the sorted result and is always the
+//     first (top) row. The feed only ever unfolds *downward* from it; there
+//     is no loading of entries above the anchor. This is deliberate: an
+//     entry compiling above the viewport would shove the reader's content
+//     down (the feed "jumps back"), and there is no reliable scroll gesture
+//     to trigger an upward load anyway. To see notes on the other temporal
+//     side of the anchor, the user flips `dateDirection` (the pill's
+//     date-direction toggle) or re-anchors.
+//   * `loadMoreAfter` extends `lastOffset` by BATCH each call. The backend's
+//     strict-offset slice semantics mean a `result.length < limit` response
+//     unambiguously indicates the feed is exhausted.
+//   * `dateDirection` chooses whether downward = older (`desc`, the default
+//     "recent → past") or newer (`asc`, "past → recent"). It is the sort
+//     direction handed to every `ScrollQuery`.
+//   * Merges dedupe by path: a sort property that mutates between paginated
+//     queries (e.g. `file.mtime` after an edit) can otherwise shift the
+//     sorted list so a later page re-returns an already-loaded note.
 //
 // `visibleEntries` is a signal updated by JournalScrollView's
 // IntersectionObserver. The right-panel "Scroll Context" tab subscribes to
@@ -23,34 +29,28 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import { settings } from "./settings";
+import { creationRules } from "./creation-rules";
 import type {
-  PropertyValueJson,
   ScrollEntry,
   ScrollFilter,
   ScrollQuery,
   ScrollSort,
+  SortDir,
 } from "../lib/types";
-
-export type ScrollMode = "date" | "tree" | "properties";
-
-export type PropertyFilter =
-  | { kind: "any"; name: string }
-  | { kind: "eq"; name: string; value: PropertyValueJson };
 
 export interface JournalScrollState {
   enabled: boolean;
-  mode: ScrollMode;
-  /** Only meaningful when `mode === "properties"`. */
-  propertyFilter: PropertyFilter | null;
   anchorPath: string;
   entries: ScrollEntry[];
-  /** Most-negative offset (relative to anchor) we've issued a request for. */
-  firstOffset: number;
-  /** Most-positive offset we've issued a request for. */
+  /** Most-positive offset (relative to anchor) we've issued a request for.
+   *  The feed is one-directional, so the cursor only ever moves forward. */
   lastOffset: number;
-  hasMoreBefore: boolean;
   hasMoreAfter: boolean;
   loading: boolean;
+  /** Sort direction of the date feed. `desc` = recent→past (downward scroll
+   *  shows older notes, the default); `asc` = past→recent. Toggled per-tab
+   *  by the pill's date-direction button. */
+  dateDirection: SortDir;
   /** Notebox paths of currently in-view entries; updated by an
    *  IntersectionObserver on each entry frame. */
   visibleEntries: string[];
@@ -75,8 +75,10 @@ export interface JournalScrollState {
   anchorPinNonce: number;
 }
 
-const HALF_BATCH = 5;
 const BATCH = 10;
+// Entries fetched from the anchor forward on the initial (anchor-first)
+// load — the anchor row plus BATCH rows after it.
+const INITIAL_FORWARD = BATCH + 1;
 
 // Monotonic counter feeding `JournalScrollState.anchorPinNonce` — one bump
 // per result-set rebuild so the view can observe each as a distinct event.
@@ -85,24 +87,42 @@ let anchorPinCounter = 0;
 // Per-tab last-known scroll position. Survives tab-switch unmounts so that
 // when the user returns to a Journal Scroll tab they land where they left
 // off — switching tabs unmounts the entire <TypstEditor>, taking the scroll
-// container's `scrollTop` with it. The map is non-reactive on purpose: the
-// view writes via `saveScrollPosition` on every scroll, but no component
-// re-renders when this changes. The store resets the entry to 0 whenever
-// the loaded result set is rebuilt (mode change, filter change, anchor
-// move), so the user doesn't land at an offset that no longer maps onto
-// the same content.
-const savedScrollByTab = new Map<string, number>();
-
-export function saveScrollPosition(tabId: string, top: number) {
-  savedScrollByTab.set(tabId, top);
+// container's `scrollTop` with it.
+//
+// The position is stored *entry-anchored*, not as a raw pixel `scrollTop`:
+// the path of the entry at the top of the viewport plus the pixel offset of
+// that entry's top edge relative to the viewport top. A raw pixel value is
+// unrestorable on remount — entries compile asynchronously, so entries above
+// the restore point may still be short placeholders and the same `scrollTop`
+// would land somewhere else entirely. An entry + offset can be re-pinned
+// precisely once that one entry's frame exists, regardless of what is or
+// isn't rendered above it.
+//
+// The map is non-reactive on purpose: the view writes on every scroll, but
+// no component re-renders when it changes. The store clears the entry
+// whenever the result set is rebuilt (sort/scope change, anchor move).
+export interface SavedScrollPosition {
+  /** Notebox path of the entry pinned to the top of the viewport. */
+  path: string;
+  /** Pixel offset of that entry's top edge from the viewport's top edge
+   *  (≤ 0 when the entry is scrolled partly above the top). */
+  offset: number;
 }
 
-export function getSavedScrollPosition(tabId: string): number {
-  return savedScrollByTab.get(tabId) ?? 0;
+const savedScrollByTab = new Map<string, SavedScrollPosition>();
+
+export function saveScrollPosition(tabId: string, pos: SavedScrollPosition) {
+  savedScrollByTab.set(tabId, pos);
+}
+
+export function getSavedScrollPosition(
+  tabId: string,
+): SavedScrollPosition | null {
+  return savedScrollByTab.get(tabId) ?? null;
 }
 
 function resetSavedScroll(tabId: string) {
-  savedScrollByTab.set(tabId, 0);
+  savedScrollByTab.delete(tabId);
 }
 
 const [scrollStates, setScrollStates] = createStore<
@@ -128,16 +148,6 @@ export function isEnabled(tabId: string): boolean {
   return scrollStates[tabId]?.enabled ?? false;
 }
 
-export function getMode(tabId: string): ScrollMode {
-  scrollVersion();
-  return scrollStates[tabId]?.mode ?? "date";
-}
-
-export function getPropertyFilter(tabId: string): PropertyFilter | null {
-  scrollVersion();
-  return scrollStates[tabId]?.propertyFilter ?? null;
-}
-
 export function getEntries(tabId: string): ScrollEntry[] {
   scrollVersion();
   return scrollStates[tabId]?.entries ?? [];
@@ -153,14 +163,15 @@ export function isLoading(tabId: string): boolean {
   return scrollStates[tabId]?.loading ?? false;
 }
 
-export function hasMoreBefore(tabId: string): boolean {
-  scrollVersion();
-  return scrollStates[tabId]?.hasMoreBefore ?? false;
-}
-
 export function hasMoreAfter(tabId: string): boolean {
   scrollVersion();
   return scrollStates[tabId]?.hasMoreAfter ?? false;
+}
+
+/** Current date-feed direction for a tab (`desc` = recent→past). */
+export function getScrollDirection(tabId: string): SortDir {
+  scrollVersion();
+  return scrollStates[tabId]?.dateDirection ?? "desc";
 }
 
 export function getVisibleEntries(tabId: string): string[] {
@@ -170,47 +181,62 @@ export function getVisibleEntries(tabId: string): string[] {
 
 // === Query construction ===
 
-function buildSort(): ScrollSort {
+// `date_sort` (a user setting) picks the sort *key*; `direction` (the
+// per-tab date-direction toggle) picks the *order*. Every sort variant
+// carries the direction — `desc` is recent-first, `asc` reverses it.
+function buildSort(direction: SortDir): ScrollSort {
   switch (settings.journal_scroll.date_sort) {
     case "modified":
-      return { kind: "property", name: "file.mtime", direction: "desc" };
+      return { kind: "property", name: "file.mtime", direction };
     case "zid":
-      return { kind: "zid" };
+      return { kind: "zid", direction };
     case "note_date":
       // The `date` property authored in `#note(date: ...)`. Datetime values
       // are stringified to ISO `YYYY-MM-DD` by lib.typ, so a lexicographic
-      // descending compare yields most-recent-first.
-      return { kind: "property", name: "date", direction: "desc" };
+      // compare orders them chronologically.
+      return { kind: "property", name: "date", direction };
     case "created":
     default:
-      return { kind: "property", name: "file.ctime", direction: "desc" };
+      return { kind: "property", name: "file.ctime", direction };
   }
 }
 
-function buildFilter(state: JournalScrollState): ScrollFilter {
-  switch (state.mode) {
-    case "date":
-      return { kind: "all" };
-    case "tree": {
-      const parts = state.anchorPath.split("/");
-      parts.pop();
-      const folder = parts.join("/");
-      return {
-        kind: "folder",
-        path: folder,
-        recursive: settings.journal_scroll.tree_scope === "recursive",
-      };
+/** The folder the Daily Note creation rule writes into. The rule's
+ *  `target_folder` may interpolate date variables (e.g. `daily/{{date:YYYY}}`);
+ *  the scope is the static prefix before the first variable. Empty when no
+ *  daily-note rule is present or it has a fully dynamic target. */
+export function dailyNotesFolder(): string {
+  const rule = creationRules().find((r) => r.id === "daily-note");
+  if (!rule) return "";
+  const target = rule.target_folder;
+  const varIdx = target.indexOf("{{");
+  const prefix = varIdx >= 0 ? target.slice(0, varIdx) : target;
+  return prefix.replace(/\/+$/, "");
+}
+
+/** Resolve the notebox-relative folder the scroll is scoped to, or `null`
+ *  for the whole notebox. Driven entirely by the user's "Anchor scope"
+ *  setting — the scroll itself no longer has per-tab modes. */
+function scopeFolder(): string | null {
+  switch (settings.journal_scroll.anchor_scope) {
+    case "daily": {
+      const folder = dailyNotesFolder();
+      return folder || null;
     }
-    case "properties": {
-      const f = state.propertyFilter;
-      // No filter yet → fall through to All so the view shows something
-      // (the pill UI normally requires the user to pick a filter before
-      // committing to Properties mode; this is a safety net).
-      if (!f) return { kind: "all" };
-      if (f.kind === "any") return { kind: "property_any", name: f.name };
-      return { kind: "property_eq", name: f.name, value: f.value };
+    case "custom": {
+      const folder = settings.journal_scroll.custom_scope_folder.trim();
+      return folder || null;
     }
+    case "all":
+    default:
+      return null;
   }
+}
+
+function buildFilter(): ScrollFilter {
+  const folder = scopeFolder();
+  if (folder === null) return { kind: "all" };
+  return { kind: "folder", path: folder, recursive: true };
 }
 
 function buildQuery(
@@ -219,8 +245,8 @@ function buildQuery(
   limit: number,
 ): ScrollQuery {
   return {
-    filter: buildFilter(state),
-    sort: buildSort(),
+    filter: buildFilter(),
+    sort: buildSort(state.dateDirection),
     anchor: state.anchorPath,
     offset,
     limit,
@@ -240,8 +266,8 @@ export async function findOffsetForTarget(
   if (!state) return null;
   try {
     return await ipc.findOffsetInScrollQuery({
-      filter: buildFilter(state),
-      sort: buildSort(),
+      filter: buildFilter(),
+      sort: buildSort(state.dateDirection),
       anchor: state.anchorPath,
       target: targetPath,
     });
@@ -251,12 +277,9 @@ export async function findOffsetForTarget(
   }
 }
 
-/** Read-only accessors for the pagination cursors. The wikilink-click
- *  loader needs these to decide which direction to page in. */
-export function getFirstOffset(tabId: string): number {
-  scrollVersion();
-  return scrollStates[tabId]?.firstOffset ?? 0;
-}
+/** Read-only accessor for the forward pagination cursor — the most-positive
+ *  offset loaded so far. The wikilink-click loader uses it to know how far
+ *  the feed must extend to reach a target. */
 export function getLastOffset(tabId: string): number {
   scrollVersion();
   return scrollStates[tabId]?.lastOffset ?? 0;
@@ -284,9 +307,7 @@ async function loadInitial(tabId: string) {
     produce((s) => {
       s[tabId].loading = true;
       s[tabId].entries = [];
-      s[tabId].firstOffset = -HALF_BATCH;
-      s[tabId].lastOffset = HALF_BATCH;
-      s[tabId].hasMoreBefore = true;
+      s[tabId].lastOffset = INITIAL_FORWARD - 1;
       s[tabId].hasMoreAfter = true;
       s[tabId].visibleEntries = [];
       // The result set is being rebuilt — within-scroll navigation history
@@ -301,28 +322,24 @@ async function loadInitial(tabId: string) {
   bump();
   bumpVisible();
 
-  // Two parallel unidirectional requests. The split avoids ambiguous
-  // clipping at the anchor boundary that a single centered request would
-  // introduce — we'd be unable to tell whether "got fewer than asked for"
-  // meant we hit the start or the end of the sorted list.
+  // One unidirectional request for the anchor and the rows after it.
+  // Nothing is ever loaded above the anchor — it sits at the top of the
+  // viewport with no asynchronously-growing content to displace it.
   try {
-    const [before, fromAnchor] = await Promise.all([
-      ipc.runScrollQuery(buildQuery(state, -HALF_BATCH, HALF_BATCH)),
-      ipc.runScrollQuery(buildQuery(state, 0, HALF_BATCH + 1)),
-    ]);
+    const fromAnchor = await ipc.runScrollQuery(
+      buildQuery(state, 0, INITIAL_FORWARD),
+    );
 
     // It's possible the state was cleaned up while loading; re-check.
     if (!scrollStates[tabId]) return;
 
     setScrollStates(
       produce((s) => {
-        s[tabId].entries = [...before, ...fromAnchor];
-        s[tabId].hasMoreBefore = before.length === HALF_BATCH;
-        s[tabId].hasMoreAfter = fromAnchor.length === HALF_BATCH + 1;
+        s[tabId].entries = fromAnchor;
+        s[tabId].hasMoreAfter = fromAnchor.length === INITIAL_FORWARD;
         s[tabId].loading = false;
-        // Signal the view to pin the anchor to the top of the viewport
-        // (entries before the anchor were just loaded above it). The
-        // nonce makes every rebuild a distinct, observable event.
+        // Signal the view to reset the viewport to the top (the anchor).
+        // The nonce makes every rebuild a distinct, observable event.
         s[tabId].anchorPinNonce = ++anchorPinCounter;
       }),
     );
@@ -357,7 +374,13 @@ export async function loadMoreAfter(tabId: string) {
     if (!scrollStates[tabId]) return;
     setScrollStates(
       produce((s) => {
-        s[tabId].entries = [...s[tabId].entries, ...newEntries];
+        // Dedupe against already-loaded paths: if the sort property
+        // mutated between pages the slice can re-return a loaded note.
+        // `hasMoreAfter` still keys off the raw response length — that is
+        // the backend's strict-offset edge signal, independent of dupes.
+        const loaded = new Set(s[tabId].entries.map((e) => e.path));
+        const fresh = newEntries.filter((e) => !loaded.has(e.path));
+        s[tabId].entries = [...s[tabId].entries, ...fresh];
         s[tabId].lastOffset = nextOffset + BATCH - 1;
         s[tabId].hasMoreAfter = newEntries.length === BATCH;
         s[tabId].loading = false;
@@ -366,43 +389,6 @@ export async function loadMoreAfter(tabId: string) {
     bump();
   } catch (err) {
     console.error("Journal scroll loadMoreAfter failed:", err);
-    setScrollStates(
-      produce((s) => {
-        if (s[tabId]) s[tabId].loading = false;
-      }),
-    );
-    bump();
-  }
-}
-
-export async function loadMoreBefore(tabId: string) {
-  const state = scrollStates[tabId];
-  if (!state || state.loading || !state.hasMoreBefore) return;
-
-  setScrollStates(
-    produce((s) => {
-      s[tabId].loading = true;
-    }),
-  );
-  bump();
-
-  const requestOffset = state.firstOffset - BATCH;
-  try {
-    const newEntries = await ipc.runScrollQuery(
-      buildQuery(state, requestOffset, BATCH),
-    );
-    if (!scrollStates[tabId]) return;
-    setScrollStates(
-      produce((s) => {
-        s[tabId].entries = [...newEntries, ...s[tabId].entries];
-        s[tabId].firstOffset = requestOffset;
-        s[tabId].hasMoreBefore = newEntries.length === BATCH;
-        s[tabId].loading = false;
-      }),
-    );
-    bump();
-  } catch (err) {
-    console.error("Journal scroll loadMoreBefore failed:", err);
     setScrollStates(
       produce((s) => {
         if (s[tabId]) s[tabId].loading = false;
@@ -430,15 +416,12 @@ export async function toggleScroll(tabId: string, anchorPath: string) {
     produce((s) => {
       s[tabId] = {
         enabled: true,
-        mode: "date",
-        propertyFilter: null,
         anchorPath,
         entries: [],
-        firstOffset: 0,
-        lastOffset: HALF_BATCH,
-        hasMoreBefore: true,
+        lastOffset: 0,
         hasMoreAfter: true,
         loading: true,
+        dateDirection: "desc",
         visibleEntries: [],
         navBack: [],
         navForward: [],
@@ -446,52 +429,6 @@ export async function toggleScroll(tabId: string, anchorPath: string) {
         scrollNavRequest: null,
         anchorPinNonce: 0,
       };
-    }),
-  );
-  bump();
-  await loadInitial(tabId);
-}
-
-export async function setMode(tabId: string, mode: ScrollMode) {
-  const state = scrollStates[tabId];
-  if (!state || state.mode === mode) return;
-  setScrollStates(
-    produce((s) => {
-      s[tabId].mode = mode;
-      // Clear property filter when leaving Properties mode; setPropertyFilter
-      // is the authority for setting it when entering.
-      if (mode !== "properties") s[tabId].propertyFilter = null;
-    }),
-  );
-  bump();
-  await loadInitial(tabId);
-}
-
-export async function setPropertyFilter(
-  tabId: string,
-  filter: PropertyFilter,
-) {
-  const state = scrollStates[tabId];
-  if (!state) return;
-  setScrollStates(
-    produce((s) => {
-      s[tabId].mode = "properties";
-      s[tabId].propertyFilter = filter;
-    }),
-  );
-  bump();
-  await loadInitial(tabId);
-}
-
-export async function clearPropertyFilter(tabId: string) {
-  const state = scrollStates[tabId];
-  if (!state || !state.propertyFilter) return;
-  // Clearing the property filter while in Properties mode falls back to
-  // Date mode — the only mode that doesn't require any extra configuration.
-  setScrollStates(
-    produce((s) => {
-      s[tabId].propertyFilter = null;
-      s[tabId].mode = "date";
     }),
   );
   bump();
@@ -506,6 +443,21 @@ export async function updateAnchor(tabId: string, newAnchorPath: string) {
   setScrollStates(
     produce((s) => {
       s[tabId].anchorPath = newAnchorPath;
+    }),
+  );
+  bump();
+  await loadInitial(tabId);
+}
+
+/** Flip the date-feed direction (recent→past ⇄ past→recent) and rebuild.
+ *  The anchor stays put; only which temporal side unfolds downward changes. */
+export async function toggleScrollDirection(tabId: string) {
+  const state = scrollStates[tabId];
+  if (!state || !state.enabled) return;
+  setScrollStates(
+    produce((s) => {
+      s[tabId].dateDirection =
+        s[tabId].dateDirection === "desc" ? "asc" : "desc";
     }),
   );
   bump();
@@ -574,6 +526,25 @@ export function scrollNavForward(tabId: string) {
       s[tabId].navBack.push(s[tabId].navCurrent);
       s[tabId].navCurrent = next;
       s[tabId].scrollNavRequest = { path: next, nonce: ++navNonce };
+    }),
+  );
+  bump();
+}
+
+/** Reposition the scroll viewport at the anchor entry — the note the scroll
+ *  was originally opened from. Issues a `scrollNavRequest` the view consumes
+ *  (paging the loaded window toward the anchor first if it has scrolled out
+ *  of range). This is a pure viewport jump: it deliberately does *not* touch
+ *  the within-scroll back/forward history. */
+export function scrollToAnchor(tabId: string) {
+  const state = scrollStates[tabId];
+  if (!state || !state.anchorPath) return;
+  setScrollStates(
+    produce((s) => {
+      s[tabId].scrollNavRequest = {
+        path: s[tabId].anchorPath,
+        nonce: ++navNonce,
+      };
     }),
   );
   bump();

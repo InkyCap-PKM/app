@@ -288,7 +288,10 @@ export interface StartupSettings {
 
 export interface JournalScrollSettings {
   date_sort: "created" | "modified" | "zid" | "note_date";
-  tree_scope: "folder" | "recursive";
+  /** Maximal scope of notes the scroll may show. */
+  anchor_scope: "all" | "daily" | "custom";
+  /** Notebox-relative folder used when `anchor_scope === "custom"`. */
+  custom_scope_folder: string;
 }
 
 export interface ExportSettings {
@@ -350,9 +353,10 @@ export interface UserSettings {
 // ============================================================================
 // Journal Scroll — ScrollQuery primitive.
 //
-// Mirrors `src-tauri/src/commands/journal_scroll.rs`. The pill exposes a
-// curated subset (Date / Tree / Properties); LinkedFrom, LinkedTo, and
-// PropertyAny are used by the right-panel sub-panes and wikilink routing.
+// Mirrors `src-tauri/src/commands/journal_scroll.rs`. The Journal Scroll
+// feed itself only ever uses `all` and `folder` (driven by the "Anchor
+// scope" setting); the remaining variants are used by the right-panel
+// sub-panes and wikilink routing.
 // ============================================================================
 
 export type PropertyValueJson =
@@ -375,7 +379,7 @@ export type ScrollFilter =
 export type ScrollSort =
   | { kind: "property"; name: string; direction: SortDir }
   | { kind: "title"; direction: SortDir }
-  | { kind: "zid" };
+  | { kind: "zid"; direction: SortDir };
 
 export interface ScrollQuery {
   filter: ScrollFilter;

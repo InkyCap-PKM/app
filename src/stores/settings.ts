@@ -55,7 +55,8 @@ const DEFAULTS: UserSettings = {
   },
   journal_scroll: {
     date_sort: "created",
-    tree_scope: "folder",
+    anchor_scope: "all",
+    custom_scope_folder: "",
   },
   citations: {
     source: "file",

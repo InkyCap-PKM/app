@@ -26,11 +26,7 @@ import {
 } from "solid-js";
 import { ChevronDown, ChevronRight } from "lucide-solid";
 import * as ipc from "../lib/ipc";
-import {
-  getEntries,
-  getVisibleEntries,
-  setPropertyFilter,
-} from "../stores/journal-scroll";
+import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import CitationRow from "./CitationRow";
 import type { HeadingInfo } from "../lib/ipc";
@@ -403,14 +399,6 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     );
   }
 
-  function narrowByTag(tag: string) {
-    void setPropertyFilter(props.tabId, {
-      kind: "eq",
-      name: "tags",
-      value: tag,
-    });
-  }
-
   return (
     <div class="scroll-context">
       <Show when={visible().length === 0}>
@@ -536,15 +524,15 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
             <div class="scroll-context__tag-chips">
               <For each={tagConcentration() ?? []}>
                 {(row) => (
-                  <button
-                    type="button"
+                  <span
                     class="scroll-context__tag-chip"
-                    onClick={() => narrowByTag(row.tag)}
-                    title={`Narrow scroll to notes tagged ${row.tag}`}
+                    title={`${row.tag} — appears on ${row.count} visible ${
+                      row.count === 1 ? "entry" : "entries"
+                    }`}
                   >
                     {row.tag}
                     <span class="scroll-context__tag-count">{row.count}</span>
-                  </button>
+                  </span>
                 )}
               </For>
             </div>

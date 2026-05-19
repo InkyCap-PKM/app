@@ -18,6 +18,7 @@ import {
 import { Info } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
+import { settings } from "../stores/settings";
 import { Dropdown } from "./Dropdown";
 import {
   contextNotes,
@@ -613,8 +614,20 @@ export default function MycelialView(props: MycelialViewProps) {
     const bullets = concept.mentions
       .map((m) => `- #wikilink(${JSON.stringify(m.name)})`)
       .join("\n");
+    // Mirror the new-note scaffold: when Zettelkasten IDs are enabled, stamp
+    // the freshly created concept page with its own zid so it's a first-class
+    // notebox citizen, not a property-poor page born outside the normal flow.
+    const noteProps = [`title: ${JSON.stringify(title)}`];
+    if (settings.files.zettelkasten_enabled) {
+      try {
+        const zid = await ipc.generateZid();
+        noteProps.push(`zid: ${JSON.stringify(zid)}`);
+      } catch (err) {
+        console.error("Mycelial View: failed to generate zid", err);
+      }
+    }
     const body =
-      `#note(title: ${JSON.stringify(title)})\n\n` +
+      `#note(${noteProps.join(", ")})\n\n` +
       `= ${title}\n\n` +
       `== Emerged from\n\n` +
       `This page emerged from a concept recurring across these notes:\n\n` +

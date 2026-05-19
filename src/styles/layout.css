@@ -1837,7 +1837,7 @@ svg.lucide {
   border: 1px solid var(--modal-border-color);
   border-radius: var(--modal-radius);
   width: 500px;
-  max-height: 400px;
+  max-height: 520px;
   display: flex;
   flex-direction: column;
   box-shadow: var(--modal-shadow);
@@ -4303,6 +4303,17 @@ svg.lucide {
   background: var(--bg-highlight);
 }
 
+/* A non-interactive marker (not a real tab button) — used to show the
+   Journal Scroll state in the tab bar without offering a pressable target. */
+.right-panel__tab--indicator {
+  cursor: default;
+}
+
+.right-panel__tab--indicator:hover {
+  color: var(--fg-muted);
+  background: none;
+}
+
 .right-panel__tab:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -6016,6 +6027,18 @@ svg.lucide {
   align-items: center;
   gap: 8px;
   justify-self: center;
+  min-width: 0;
+}
+
+/* Journal Scroll status line — a quiet, mixed-case reminder of the feed's
+   direction and anchor, centred in the editor header. Not a heading. */
+.editor-header__scroll-status {
+  color: var(--fg-dim);
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .editor-header__right-group {
@@ -6770,266 +6793,17 @@ svg.lucide {
   height: 1.15em;
 }
 
-.journal-scroll-pill__modes {
-  display: inline-flex;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-control);
-  overflow: hidden;
-  background: var(--bg-secondary);
-}
+/* "Return to anchor" button — shares the toggle's bordered-button look so
+   the two read as one pill. Shown only while the scroll is on. */
+/* The Journal Scroll's date-direction and return-to-anchor controls live in
+   the right panel (reusing `.right-panel__tab`), not on this pill — so the
+   pill needs only the on/off toggle rule above.
 
-.journal-scroll-pill__mode {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  font-size: var(--text-base);
-  padding: 4px 10px;
-  transition: background 0.12s, color 0.12s;
-  white-space: nowrap;
-}
-
-.journal-scroll-pill__mode + .journal-scroll-pill__mode {
-  border-left: 1px solid var(--border-primary);
-}
-
-.journal-scroll-pill__mode:hover {
-  background: var(--bg-hover);
-  color: var(--fg-secondary);
-}
-
-.journal-scroll-pill__mode.is-active {
-  background: var(--bg-active);
-  color: var(--fg-primary);
-}
-
-/* Anchor-connection decoration has no pill control — it is always on.
+   Anchor-connection decoration has no pill control — it is always on.
    See `.journal-scroll__entry--*` accent strips and
    `.journal-scroll__entry-connection` header icons below. */
 
-/* Active-filter label — center slot of the editor header. Deliberately
-   plain text (no border/background) so it reads as a status label rather
-   than another toolbar button; the × matches the label's text size. */
-.journal-scroll-filter-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-base);
-  color: var(--fg-secondary);
-  white-space: nowrap;
-}
 
-.journal-scroll-filter-text__label {
-  font-weight: 500;
-}
-
-.journal-scroll-filter-text__clear {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  /* A comfortable click target — the bare × glyph alone is a 1–2px-wide
-     hit area. A fixed square box with centered glyph makes it easy to
-     hit without enlarging the visible mark. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-control);
-  padding: 0;
-  font-size: 1.05em;
-  line-height: 1;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.journal-scroll-filter-text__clear:hover {
-  color: var(--fg-primary);
-  background: var(--bg-hover);
-}
-
-/* ─── Properties dropdown (filter picker, opens from Properties pill) ─── */
-
-.properties-dropdown {
-  position: fixed;
-  z-index: var(--z-menu);
-  min-width: 280px;
-  max-width: 360px;
-  max-height: 60vh;
-  overflow-y: auto;
-  background: var(--popup-bg);
-  border: 1px solid var(--popup-border-color);
-  border-radius: var(--popup-radius);
-  box-shadow: var(--popup-shadow);
-  /* Richer dropdown (chips, filters) — keeps its own 8px content
-     padding rather than the standard --popup-padding-block. */
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.properties-dropdown__section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.properties-dropdown__section + .properties-dropdown__section {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
-}
-
-.properties-dropdown__section-label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--fg-muted);
-  letter-spacing: 0.3px;
-}
-
-.properties-dropdown__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.properties-dropdown__chip {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-control);
-  color: var(--fg-primary);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  padding: 2px 8px;
-}
-
-.properties-dropdown__chip:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-
-.properties-dropdown__keys,
-.properties-dropdown__values {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.properties-dropdown__key,
-.properties-dropdown__value {
-  background: none;
-  border: none;
-  text-align: left;
-  color: var(--fg-primary);
-  cursor: pointer;
-  font-size: var(--text-base);
-  padding: 4px 8px;
-  border-radius: 3px;
-}
-
-.properties-dropdown__key:hover,
-.properties-dropdown__value:hover {
-  background: var(--bg-hover);
-}
-
-.properties-dropdown__key.is-selected,
-.properties-dropdown__value.is-selected {
-  background: var(--bg-active);
-  color: var(--fg-primary);
-}
-
-.properties-dropdown__value--any {
-  font-style: italic;
-  color: var(--fg-secondary);
-}
-
-.properties-dropdown__empty {
-  font-size: var(--text-sm);
-  color: var(--fg-dim);
-  font-style: italic;
-  padding: 4px 8px;
-}
-
-.properties-dropdown__chip.is-selected {
-  background: var(--bg-active);
-  border-color: var(--accent);
-}
-
-/* Text filter input — narrows the property / value list. */
-.properties-dropdown__filter {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-control);
-  color: var(--fg-primary);
-  font-size: var(--text-base);
-  padding: 4px 8px;
-  width: 100%;
-}
-
-.properties-dropdown__filter:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-/* Value-view header: back arrow + "Value of <key>" label. */
-.properties-dropdown__view-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.properties-dropdown__back {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 2px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 3px;
-}
-
-.properties-dropdown__back:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
-/* Currently-selected value, shown as a removable chip above the list. */
-.properties-dropdown__selected {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.properties-dropdown__selected-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--bg-active);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-control);
-  padding: 2px 4px 2px 8px;
-  font-size: var(--text-sm);
-  color: var(--fg-primary);
-}
-
-.properties-dropdown__selected-clear {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 0 4px;
-  font-size: 1.1em;
-  line-height: 1;
-  border-radius: 3px;
-}
-
-.properties-dropdown__selected-clear:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
 
 /* ─── Journal Scroll view (continuous file scroll) ─── */
 
@@ -7346,6 +7120,8 @@ svg.lucide {
   gap: 4px;
 }
 
+/* Informational chip — shows which tags concentrate on the visible
+   entries. Not interactive: the scroll has no per-tab filter to narrow to. */
 .scroll-context__tag-chip {
   display: inline-flex;
   align-items: center;
@@ -7354,14 +7130,8 @@ svg.lucide {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-control);
   color: var(--fg-primary);
-  cursor: pointer;
   font-size: var(--text-sm);
   padding: 2px 8px;
-}
-
-.scroll-context__tag-chip:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
 }
 
 .scroll-context__tag-count {
