@@ -466,13 +466,6 @@ export async function getAllTags(): Promise<[string, number][]> {
 
 // File operations
 
-export async function createFile(
-  name: string,
-  folder: string,
-): Promise<string> {
-  return invoke<string>("create_file", { name, folder });
-}
-
 export async function createFolder(
   name: string,
   parent: string,
@@ -636,14 +629,22 @@ export async function deleteCreationRule(ruleId: string): Promise<void> {
  * non-empty, the override is ignored. Calling without a `titleOverride`
  * for a blank-pattern rule produces a BadRequest("filename-required")
  * error so the UI can prompt the user and retry.
+ *
+ * Pass `targetFolderOverride` (a notebox-root-relative path; empty string
+ * means notebox root) to redirect the rule into a specific folder,
+ * regardless of its own `target_folder` or the user's "New note location"
+ * preference. This is what the file tree context menu uses to create a
+ * note in the right-clicked folder via the New Note rule.
  */
 export async function executeCreationRule(
   ruleId: string,
   titleOverride?: string,
+  targetFolderOverride?: string,
 ): Promise<CreationResult> {
   return invoke<CreationResult>("execute_creation_rule", {
     ruleId,
     titleOverride: titleOverride ?? null,
+    targetFolderOverride: targetFolderOverride ?? null,
   });
 }
 

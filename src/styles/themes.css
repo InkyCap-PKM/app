@@ -146,6 +146,7 @@
   --toolbar-float-hover-bg: rgba(255, 255, 255, 0.13);
   --toolbar-float-border: rgba(0, 0, 0, 0.4);
   --toolbar-float-sep: rgba(255, 255, 255, 0.18);
+  --toolbar-float-highlight: transparent;
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);
@@ -269,14 +270,19 @@
 
   /* Floating selection toolbar — see the light block. Dark themes can't
      invert to a light surface (a bright rectangle glares against a dark
-     page), so the toolbar is an *elevated* surface instead: --bg-primary
-     lifted toward white. */
-  --toolbar-float-bg: color-mix(in srgb, var(--bg-primary) 82%, #ffffff);
-  --toolbar-float-fg: var(--fg-secondary);
+     page), so the toolbar sits on the same --popup-bg as the file-tree
+     context menu (no lift, no chroma tint — earlier attempts produced
+     either a washed-out grey or an over-saturated panel). What gives the
+     toolbar its identity is a slightly *clearer* border than the menu's
+     --border-subtle, so the edge reads sharply against the page without
+     resorting to a translucent ring. */
+  --toolbar-float-bg: var(--popup-bg);
+  --toolbar-float-fg: var(--fg-primary);
   --toolbar-float-fg-strong: var(--fg-primary);
-  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.10);
-  --toolbar-float-border: rgba(255, 255, 255, 0.14);
-  --toolbar-float-sep: rgba(255, 255, 255, 0.14);
+  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.06);
+  --toolbar-float-border: color-mix(in srgb, var(--border-subtle) 55%, #ffffff);
+  --toolbar-float-sep: rgba(255, 255, 255, 0.10);
+  --toolbar-float-highlight: transparent;
 
   /* Accents — Deep Ocean as primary accent */
   --accent: var(--accent-color, #1D7874);

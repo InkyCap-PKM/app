@@ -36,10 +36,19 @@ pub async fn get_default_creation_rule(
 }
 
 /// Save a creation rule (create or update).
+///
+/// The new-note rule backs the file tree's New Note button and Ctrl+N, so
+/// it can never be persisted in a disabled state — any attempt is forced
+/// back to enabled before the write.
 #[tauri::command]
 pub async fn save_creation_rule(
     rule: CreationRule,
 ) -> Result<(), InkyCapError> {
+    let mut rule = rule;
+    if rule.id == "new-note" {
+        rule.disabled = false;
+    }
+
     let mut rules = creation_rules::load_rules();
 
     if let Some(existing) = rules.iter_mut().find(|r| r.id == rule.id) {
@@ -79,10 +88,19 @@ pub async fn delete_creation_rule(
 /// `filename_pattern` is empty — in that case the frontend opens a prompt
 /// dialog first and passes the user-entered name through. When the
 /// pattern is non-empty, this argument is ignored.
+///
+/// `target_folder_override` is supplied by callers that need to redirect
+/// the rule into a specific folder regardless of its own `target_folder`
+/// or the user's "New note location" preference (e.g. the file tree
+/// context menu's "New File" entry, which targets the right-clicked
+/// folder). The override is a path relative to the notebox root; an empty
+/// string is treated as "notebox root". When `None`, the rule's own
+/// folder logic (and fallback) applies unchanged.
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
     title_override: Option<String>,
+    target_folder_override: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<CreationResult, InkyCapError> {
     let storage = state.get_storage().await?;
@@ -111,8 +129,24 @@ pub async fn execute_creation_rule(
         )
     };
 
+    // The override wins over both the rule's own target_folder and the
+    // user-pref fallback. We model this by cloning the rule and rewriting
+    // its target_folder — `execute_rule` then sees the override as the
+    // rule's authoritative target.
+    let effective_rule;
+    let rule_for_exec: &CreationRule = match target_folder_override.as_deref() {
+        Some(folder) => {
+            effective_rule = CreationRule {
+                target_folder: folder.to_string(),
+                ..rule.clone()
+            };
+            &effective_rule
+        }
+        None => rule,
+    };
+
     let (file_path, mut content, mut cursor_offset) = creation_rules::execute_rule(
-        rule,
+        rule_for_exec,
         root,
         title_override.as_deref(),
         &fallback_folder,

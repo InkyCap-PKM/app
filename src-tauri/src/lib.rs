@@ -247,7 +247,6 @@ pub fn run() {
             commands::search::notebox_search,
             commands::search::search_and_replace,
             commands::search::get_all_tags,
-            commands::file_ops::create_file,
             commands::file_ops::create_folder,
             commands::file_ops::rename_file,
             commands::file_ops::rename_and_update_links,

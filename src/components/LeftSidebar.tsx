@@ -56,7 +56,7 @@ import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
-import { registerCommand, unregisterCommand } from "../lib/command-registry";
+import { triggerCreationRule, creationRules } from "../stores/creation-rules";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -945,39 +945,46 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setFileContextMenu({ x, y, node });
   }
 
-  async function createNewFile(parentFolder: string) {
+  /**
+   * Create a new note via the built-in `new-note` creation rule.
+   *
+   * `targetFolder`, when provided, is the absolute path of the folder
+   * that should host the new note (used by the file-tree context menu
+   * "New File" entry). It's converted to a notebox-root-relative path
+   * and passed to the rule as an override. When omitted, the rule's own
+   * folder logic (and the user's "New note location" preference) apply
+   * — that's the path used by the file tree's New Note icon button and
+   * the global Ctrl+N hotkey.
+   */
+  async function createNewNote(targetFolder?: string) {
     setFileContextMenu(null);
-    let name: string | null;
-    if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
-      try {
-        name = await ipc.generateZid();
-      } catch (e) {
-        toastError("Failed to generate Zettelkasten ID", e);
-        return;
-      }
-    } else {
-      name = await promptText({
-        title: "New simple file",
-        label: "File name",
-        confirmLabel: "Create",
-      });
-      if (!name?.trim()) return;
-      name = name.trim();
+    const info = noteboxInfo();
+    if (!info) return;
+    let folderOverride: string | undefined;
+    if (targetFolder && targetFolder !== info.path) {
+      const rootWithSep = info.path.endsWith("/") ? info.path : `${info.path}/`;
+      folderOverride = targetFolder.startsWith(rootWithSep)
+        ? targetFolder.slice(rootWithSep.length)
+        : targetFolder;
+    } else if (targetFolder === info.path) {
+      folderOverride = "";
     }
     try {
-      const newPath = await ipc.createFile(name, parentFolder);
+      const result = await triggerCreationRule("new-note", {
+        targetFolder: folderOverride,
+      });
+      if (!result) return;
       refresh();
-      const title = newPath.split(/[/\\]/).pop() ?? name;
+      const title = result.path.split(/[/\\]/).pop() ?? "New Note";
       openTab(
+        { type: "file", title, path: result.path },
         {
-          type: "file",
-          title,
-          path: newPath,
+          forceNewTab: true,
+          cursorOffset: result.cursor_offset ?? undefined,
         },
-        { forceNewTab: true },
       );
     } catch (e) {
-      toastError("Failed to create file", e);
+      toastError("Failed to create note", e);
     }
   }
 
@@ -1064,25 +1071,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
     }
   }
-
-  async function createNewNoteAtRoot() {
-    const info = noteboxInfo();
-    if (!info) return;
-    await createNewFile(info.path);
-  }
-
-  // Register the "New Simple File" command in the registry. The global
-  // dispatcher in keyboard.ts reads its `keybinding` ("Ctrl+N") to fire
-  // this same action from a keystroke. Owned here so the local
-  // file-tree refresh signal stays consistent with the trigger.
-  registerCommand({
-    id: "file:new-simple-file",
-    title: "New Simple File",
-    category: "File",
-    keybinding: "Ctrl+N",
-    execute: createNewNoteAtRoot,
-  });
-  onCleanup(() => unregisterCommand("file:new-simple-file"));
 
   async function createNewFolderAtRoot() {
     setShowNewMenu(false);
@@ -1390,9 +1378,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               >
                 <button
                   class="left-sidebar__split-btn__main"
-                  onClick={createNewNoteAtRoot}
-                  title="New simple file (Ctrl+N)"
-                  aria-label="New simple file"
+                  onClick={() => createNewNote()}
+                  title={(() => {
+                    const rule = creationRules().find((r) => r.id === "new-note");
+                    const hotkey = rule?.hotkey ?? "Ctrl+N";
+                    return `New note (${hotkey})`;
+                  })()}
+                  aria-label="New note"
                 >
                   <FilePlus2 size={14} />
                 </button>
@@ -1969,9 +1961,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </Show>
               <button
                 class="context-menu__item"
-                onClick={() => createNewFile(folderPath)}
+                onClick={() => createNewNote(folderPath)}
               >
-                New File
+                New Note
               </button>
               <button
                 class="context-menu__item"

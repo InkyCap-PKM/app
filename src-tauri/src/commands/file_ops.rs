@@ -500,60 +500,6 @@ async fn write_to_attachments(
     Ok(saved_relative)
 }
 
-/// Create a new `.typ` file with the inkycap-notebox import.
-#[tauri::command]
-pub async fn create_file(
-    name: String,
-    folder: String,
-    state: State<'_, AppState>,
-) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
-
-    let dir = if folder.is_empty() {
-        root.clone()
-    } else {
-        root.join(&folder)
-    };
-
-    let filename = if name.ends_with(".typ") {
-        name.clone()
-    } else {
-        format!("{}.typ", name)
-    };
-
-    let file_path = dir.join(&filename);
-    if storage.exists(&file_path).await {
-        return Err(InkyCapError::InvalidPath(format!(
-            "File already exists: {}",
-            file_path.display()
-        )));
-    }
-
-    let mut content = format!("{}\n#note()\n\n", crate::notebox_package::import_line());
-
-    // Auto-set zid property when zettelkasten is enabled
-    let settings = state.settings.read().await;
-    if settings.files.zettelkasten_enabled && !settings.files.zid_pattern.is_empty() {
-        let zid_value = crate::scaffolds::generate_zid(&settings.files.zid_pattern);
-        let pv = if let Ok(num) = zid_value.parse::<f64>() {
-            crate::models::note::PropertyValue::Number(num)
-        } else {
-            crate::models::note::PropertyValue::String(zid_value)
-        };
-        content = crate::typst_pipeline::note_rewriter::update_note_property(&content, "zid", &pv);
-    }
-    drop(settings);
-
-    storage.write_file(&file_path, &content).await?;
-
-    // Index the new note
-    reindex_note(&file_path, &content, &state).await;
-
-    Ok(file_path.display().to_string())
-}
-
 /// Create a new folder.
 #[tauri::command]
 pub async fn create_folder(

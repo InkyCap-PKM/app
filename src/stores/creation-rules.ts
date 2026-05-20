@@ -40,7 +40,9 @@ export function activeRules(): CreationRule[] {
  */
 export async function triggerCreationRule(
   ruleId: string,
+  options?: { targetFolder?: string },
 ): Promise<CreationResult | null> {
+  const folderOverride = options?.targetFolder;
   const rule = creationRules().find((r) => r.id === ruleId);
   // If we don't have the rule cached (rare; the store may be empty before
   // first load), just call through — the backend will resolve it.
@@ -49,7 +51,7 @@ export async function triggerCreationRule(
     // Blank pattern: fall back to ZID if enabled, otherwise prompt
     if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
       const zidName = await ipc.generateZid();
-      return ipc.executeCreationRule(ruleId, zidName);
+      return ipc.executeCreationRule(ruleId, zidName, folderOverride);
     }
     const name = await promptText({
       title: `New note from "${rule?.name ?? "rule"}"`,
@@ -61,9 +63,9 @@ export async function triggerCreationRule(
         v.trim() === "" ? "Filename cannot be empty" : null,
     });
     if (name === null) return null;
-    return ipc.executeCreationRule(ruleId, name.trim());
+    return ipc.executeCreationRule(ruleId, name.trim(), folderOverride);
   }
-  return ipc.executeCreationRule(ruleId);
+  return ipc.executeCreationRule(ruleId, undefined, folderOverride);
 }
 
 export { creationRules };
