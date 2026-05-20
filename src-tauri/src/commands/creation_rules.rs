@@ -8,6 +8,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::scaffolds;
 use crate::state::AppState;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
 
@@ -187,7 +188,7 @@ pub async fn execute_creation_rule(
     // If file already exists (e.g. daily note), just return the path
     if storage.exists(&file_path).await {
         return Ok(CreationResult {
-            path: file_path.display().to_string(),
+            path: to_frontend_string(&file_path),
             cursor_offset: None,
         });
     }
@@ -262,7 +263,7 @@ pub async fn execute_creation_rule(
     state.reindex_note(&file_path, &content).await;
 
     Ok(CreationResult {
-        path: file_path.display().to_string(),
+        path: to_frontend_string(&file_path),
         cursor_offset,
     })
 }
@@ -287,7 +288,7 @@ pub async fn list_scaffolds(
         .filter_map(|p| {
             p.strip_prefix(&scaffold_dir)
                 .ok()
-                .map(|rel| rel.display().to_string())
+                .map(|rel| to_frontend_string(rel))
         })
         .collect();
 
@@ -332,7 +333,7 @@ pub async fn list_scaffold_entries(
             let name = p.file_stem()?.to_string_lossy().to_string();
             Some(TemplateEntry {
                 name,
-                path: p.display().to_string(),
+                path: to_frontend_string(p),
                 kind: "scaffold".to_string(),
             })
         })
@@ -398,7 +399,7 @@ pub async fn prepare_scaffold_insert(
     };
     let scaffold_path = crate::notebox_package::scaffolds_dir(root).join(&filename);
     if !storage.exists(&scaffold_path).await {
-        return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string()));
+        return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string())); // path-stringification-ok: error message, not IPC
     }
 
     let expanded =
@@ -601,6 +602,6 @@ pub async fn create_scaffold(
         {{cursor}}\n";
     storage.write_file(&file_path, starter).await?;
 
-    Ok(file_path.display().to_string())
+    Ok(to_frontend_string(&file_path))
 }
 

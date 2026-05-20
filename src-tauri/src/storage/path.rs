@@ -26,16 +26,71 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::errors::{InkyCapError, Result};
 
+/// Render a `Path` as a string for the frontend in a cross-platform-stable
+/// shape: strip the Windows `\\?\` UNC verbatim prefix that
+/// `std::fs::canonicalize` introduces, then flip backslashes to forward
+/// slashes so JS string operations (`startsWith`, `split("/")`, etc.) behave
+/// identically on Windows and Unix.
+///
+/// All path strings that cross the IPC boundary outbound — `NoteboxInfo`,
+/// `FileTreeNode.path`, file-watcher events, graph node IDs — flow through
+/// here so the frontend can assume a single canonical shape. Rust on Windows
+/// accepts forward-slash paths in `PathBuf::from`, so a round-trip through
+/// the frontend stays valid for filesystem I/O on the way back in.
+///
+/// Per CLAUDE.md's path-normalization guidance for Windows: every outbound
+/// stringification of a `Path` goes through this helper, not
+/// `Path::display().to_string()`.
+pub fn to_frontend_string(path: &Path) -> String {
+    let s = path.display().to_string(); // path-stringification-ok: this *is* the canonical-shape helper
+
+    let trimmed = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        // \\?\UNC\server\share\... → \\server\share\...
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s
+    };
+    trimmed.replace('\\', "/")
+}
+
 /// Canonicalize the notebox root once, up-front. Fails if the root does not
 /// exist or cannot be resolved (e.g. permission denied).
+///
+/// On Windows the result is stripped of the `\\?\` verbatim prefix that
+/// `std::fs::canonicalize` introduces. This is purely a representational
+/// concern — the prefix is functionally invisible to filesystem syscalls but
+/// causes `Path` equality to diverge from the same path without the prefix
+/// (Components carry distinct `Prefix::Verbatim*` vs `Prefix::Disk` variants).
+/// Stripping it here keeps every notebox-derived `PathBuf` in one canonical
+/// shape so the link index, property index, and `starts_with` containment
+/// checks all line up regardless of whether the caller round-tripped through
+/// the frontend.
 pub fn canonicalize_root(root: &Path) -> Result<PathBuf> {
-    std::fs::canonicalize(root).map_err(|e| {
-        InkyCapError::InvalidPath(format!(
-            "cannot canonicalize notebox root {}: {}",
-            root.display(),
-            e
-        ))
-    })
+    std::fs::canonicalize(root)
+        .map(strip_verbatim_prefix)
+        .map_err(|e| {
+            InkyCapError::InvalidPath(format!(
+                "cannot canonicalize notebox root {}: {}",
+                root.display(),
+                e
+            ))
+        })
+}
+
+/// Strip the Windows `\\?\` verbatim-namespace prefix from a path, leaving a
+/// regular drive-letter or UNC path. No-op on non-Windows or on paths that
+/// don't carry the prefix.
+fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p
+    }
 }
 
 /// Lightweight command-boundary validation for path arguments from the frontend.
@@ -101,7 +156,7 @@ pub fn validate_notebox_path(canonical_root: &Path, path: &Path) -> Result<PathB
 fn canonicalize_with_nonexistent_tail(path: &Path) -> Result<PathBuf> {
     // Fast path: the target already exists.
     if let Ok(c) = std::fs::canonicalize(path) {
-        return Ok(c);
+        return Ok(strip_verbatim_prefix(c));
     }
 
     let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
@@ -109,7 +164,7 @@ fn canonicalize_with_nonexistent_tail(path: &Path) -> Result<PathBuf> {
     let canon_ancestor = loop {
         // Try to canonicalize the current ancestor.
         if let Ok(c) = std::fs::canonicalize(ancestor) {
-            break c;
+            break strip_verbatim_prefix(c);
         }
 
         // Move one segment up.

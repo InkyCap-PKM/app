@@ -4,6 +4,7 @@ use crate::config;
 use crate::errors::InkyCapError;
 use crate::models::notebox::NoteboxInfo;
 use crate::state::AppState;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::watcher::file_watcher;
 
@@ -92,7 +93,7 @@ pub async fn open_notebox(
                     match &event {
                         crate::events::AppEvent::FileChanged { path, change } => {
                             let _ = handle.emit("notebox:file-changed", serde_json::json!({
-                                "path": path.display().to_string(),
+                                "path": to_frontend_string(path),
                                 "change": match change {
                                     crate::events::ChangeKind::Content => "Content",
                                     crate::events::ChangeKind::Metadata => "Metadata",
@@ -102,13 +103,13 @@ pub async fn open_notebox(
                         }
                         crate::events::AppEvent::FileCreated { path } => {
                             let _ = handle.emit("notebox:file-created", serde_json::json!({
-                                "path": path.display().to_string()
+                                "path": to_frontend_string(path)
                             }));
                             sync_cache_for_changed_file(&handle, path.clone());
                         }
                         crate::events::AppEvent::FileDeleted { path } => {
                             let _ = handle.emit("notebox:file-deleted", serde_json::json!({
-                                "path": path.display().to_string()
+                                "path": to_frontend_string(path)
                             }));
                             sync_cache_for_deleted_file(&handle, path.clone());
                         }
@@ -121,14 +122,14 @@ pub async fn open_notebox(
                             // listeners that want to follow the move (e.g.
                             // an open editor tab transferring to the new path).
                             let _ = handle.emit("notebox:file-deleted", serde_json::json!({
-                                "path": from.display().to_string()
+                                "path": to_frontend_string(from)
                             }));
                             let _ = handle.emit("notebox:file-created", serde_json::json!({
-                                "path": to.display().to_string()
+                                "path": to_frontend_string(to)
                             }));
                             let _ = handle.emit("notebox:file-renamed", serde_json::json!({
-                                "from": from.display().to_string(),
-                                "to": to.display().to_string()
+                                "from": to_frontend_string(from),
+                                "to": to_frontend_string(to)
                             }));
                             sync_cache_for_renamed_file(&handle, from.clone(), to.clone());
                         }
@@ -180,7 +181,7 @@ pub async fn open_notebox(
     });
 
     Ok(NoteboxInfo {
-        path: notebox_path,
+        path: to_frontend_string(&notebox_path),
         name,
         file_count: note_count,
         collection_count,
@@ -242,7 +243,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
                 use tauri::Emitter;
                 let _ = handle.emit(
                     "notebox:index-updated",
-                    serde_json::json!({ "path": path.display().to_string() }),
+                    serde_json::json!({ "path": to_frontend_string(&path) }),
                 );
             }
             Err(err) => {
@@ -336,8 +337,8 @@ fn sync_cache_for_renamed_file(
         let _ = handle.emit(
             "notebox:index-updated",
             serde_json::json!({
-                "from": from.display().to_string(),
-                "to": to.display().to_string(),
+                "from": to_frontend_string(&from),
+                "to": to_frontend_string(&to),
             }),
         );
     });
@@ -356,7 +357,7 @@ fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, path: std::path::PathB
         use tauri::Emitter;
         let _ = handle.emit(
             "notebox:index-updated",
-            serde_json::json!({ "path": path.display().to_string() }),
+            serde_json::json!({ "path": to_frontend_string(&path) }),
         );
     });
 }
@@ -380,7 +381,7 @@ pub async fn get_notebox_info(
         .unwrap_or_else(|| "Notebox".to_string());
 
     Ok(Some(NoteboxInfo {
-        path: path.clone(),
+        path: to_frontend_string(path),
         name,
         file_count: index.note_count(),
         collection_count: collection_files.len(),

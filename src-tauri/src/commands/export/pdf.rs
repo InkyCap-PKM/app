@@ -298,7 +298,7 @@ pub async fn export_collection_batch_pdf(
             errors.push(format!("{}: {}", pdf_name, e));
             continue;
         }
-        exported.push(pdf_path.display().to_string());
+        exported.push(crate::storage::to_frontend_string(&pdf_path));
     }
 
     if exported.is_empty() && !errors.is_empty() {

@@ -10,6 +10,7 @@ import {
   createEmptyTab,
 } from "../stores/tabs";
 import { t } from "../lib/i18n";
+import { modifierKey } from "../lib/platform";
 import CollectionTable from "./CollectionTable";
 import TypstEditor from "./TypstEditor";
 import MycelialView from "./MycelialView";
@@ -25,6 +26,25 @@ function displayTabTitle(tab: { type: string; title: string }): string {
   if (tab.type !== "file") return tab.title;
   return tab.title.replace(/^(.+)\.[^.]+$/, "$1");
 }
+
+/// Tabula-rasa view shown when no tab is open (or the active tab is the
+/// `empty` placeholder). Headline plus two shortcut hints; the modifier
+/// glyph adapts to the host OS so Mac users see `⌘` and everyone else
+/// sees `Ctrl`.
+const EmptyState: Component = () => {
+  const modifier = modifierKey();
+  return (
+    <div class="empty-state">
+      <p class="empty-state__primary">{t("mainContent.emptyState")}</p>
+      <p class="empty-state__hint">
+        {t("mainContent.emptyState.openFileHint", { modifier })}
+      </p>
+      <p class="empty-state__hint">
+        {t("mainContent.emptyState.commandsHint", { modifier })}
+      </p>
+    </div>
+  );
+};
 
 const MainContent: Component = () => {
   // Track dirty state per tab
@@ -173,7 +193,7 @@ const MainContent: Component = () => {
         <Show
           when={getActiveTab()}
           fallback={
-            <p class="empty-state">Open a file or collection to get started</p>
+            <EmptyState />
           }
         >
           {(tab) => (
@@ -185,21 +205,23 @@ const MainContent: Component = () => {
             // path), so the new tab wrongly renders as a Journal Scroll.
             <Show when={`${tab().id}::${tab().type}::${tab().path}`} keyed>
               {(_key: string) => {
-                const t = tab();
-                if (t.type === "empty" || !t.path) {
-                  return <p class="empty-state">Open a file or collection to get started</p>;
+                // Named `currentTab` (not `t`) so it doesn't shadow the
+                // imported `t` i18n helper used in this block.
+                const currentTab = tab();
+                if (currentTab.type === "empty" || !currentTab.path) {
+                  return <p class="empty-state">{t("mainContent.emptyState")}</p>;
                 }
-                if (t.type === "collection") {
-                  return <CollectionTable path={t.path} />;
+                if (currentTab.type === "collection") {
+                  return <CollectionTable path={currentTab.path} />;
                 }
-                if (t.type === "mycelial") {
-                  return <MycelialView path={t.path} />;
+                if (currentTab.type === "mycelial") {
+                  return <MycelialView path={currentTab.path} />;
                 }
                 return (
                   <TypstEditor
-                    path={t.path}
-                    tabId={t.id}
-                    onDirtyChange={(dirty) => handleDirtyChange(t.id, dirty)}
+                    path={currentTab.path}
+                    tabId={currentTab.id}
+                    onDirtyChange={(dirty) => handleDirtyChange(currentTab.id, dirty)}
                   />
                 );
               }}

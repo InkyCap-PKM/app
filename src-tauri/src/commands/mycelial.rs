@@ -30,7 +30,7 @@ use crate::corpus_stats::MycelialConfig;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::local::LocalNoteboxStorage;
-use crate::storage::sanitize_notebox_arg;
+use crate::storage::{sanitize_notebox_arg, to_frontend_string};
 use crate::storage::traits::NoteboxStorage;
 
 /// Maximum characters in a context snippet shown inside a mycelial box.
@@ -131,7 +131,7 @@ pub async fn get_mycelial_data(
             }
         };
         for (note_path, meta) in &prop_index.notes {
-            let path_str = note_path.display().to_string();
+            let path_str = to_frontend_string(note_path);
             if let Some(stem) = note_path.file_stem() {
                 // Decode any leftover `%XX` URL-escapes (a `%20` in a file
                 // name would otherwise never match the plain-text concept).
@@ -145,7 +145,7 @@ pub async fn get_mycelial_data(
         }
         for (alias, ids) in prop_index.aliases_iter() {
             if let Some(first) = ids.first() {
-                add(alias, &first.display().to_string());
+                add(alias, &to_frontend_string(first));
             }
         }
         map
@@ -389,7 +389,7 @@ async fn resolve_mention(
             .map(|l| trim_snippet(l))
             .unwrap_or_default();
         return Some(SourceMention {
-            path: path.display().to_string(),
+            path: to_frontend_string(path),
             name: stem_name(path),
             snippet,
             line: first.line + 1,

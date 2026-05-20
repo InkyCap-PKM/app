@@ -3,6 +3,7 @@
 
 import { Component, createResource, createSignal, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { pathEquals } from "../lib/paths";
 import { openTab } from "../stores/tabs";
 import type { Bookmark } from "../lib/types";
 import { FileText, Search } from "lucide-solid";
@@ -81,7 +82,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
   const [collections] = createResource(() => ipc.listCollections());
 
   function collectionIcon(path: string): string {
-    const col = collections()?.find((c) => c.path === path || c.name === path);
+    const col = collections()?.find((c) => pathEquals(c.path, path) || c.name === path);
     return col?.icon ?? "lucide:folder-pen";
   }
 

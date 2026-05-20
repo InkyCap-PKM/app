@@ -646,7 +646,7 @@ impl CorpusStats {
                 sets.get(path.as_path())
                     .map_or(false, |s| s.contains(&term_owned))
             })
-            .map(|path| path.display().to_string())
+            .map(|path| crate::storage::to_frontend_string(path))
             .collect();
         // `neighborhood` is a HashSet — iteration order varies per call.
         // Sort so the same notebox always yields the same result, and the

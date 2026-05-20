@@ -10,6 +10,7 @@ use crate::models::collection::{CollectionData, CollectionInfo, CollectionRow, V
 use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::notebox_package;
 
@@ -56,7 +57,7 @@ pub async fn list_collections(
 
         collections.push(CollectionInfo {
             name,
-            path: path.display().to_string(),
+            path: to_frontend_string(path),
             view_count,
             icon,
             modified_time,
@@ -176,7 +177,7 @@ pub async fn get_collection_data(
         }
 
         matching_rows.push(CollectionRow {
-            file_path: note.path.display().to_string(),
+            file_path: to_frontend_string(&note.path),
             file_name,
             cells,
         });
@@ -236,7 +237,7 @@ pub async fn create_collection_file(
     }
     let rel = std::path::PathBuf::from(notebox_package::collections_relpath())
         .join(format!("{}.collection", trimmed));
-    let path = sanitize_notebox_arg(&rel.display().to_string())?;
+    let path = sanitize_notebox_arg(&rel.display().to_string())?; // path-stringification-ok: round-tripped immediately through sanitize_notebox_arg
 
     if storage.exists(&path).await {
         return Err(InkyCapError::InvalidPath(format!(
@@ -256,7 +257,7 @@ pub async fn create_collection_file(
 
     Ok(CollectionInfo {
         name: trimmed.to_string(),
-        path: path.display().to_string(),
+        path: to_frontend_string(&path),
         view_count: base.views.len(),
         icon: base.icon,
         modified_time,
@@ -333,7 +334,7 @@ pub async fn rename_collection_file(
 
     Ok(CollectionInfo {
         name: new_name,
-        path: new_path.display().to_string(),
+        path: to_frontend_string(&new_path),
         view_count: base.views.len(),
         icon: base.icon,
         modified_time,
@@ -630,7 +631,7 @@ pub async fn get_collection_data_internal(
         }
 
         matching_rows.push(CollectionRow {
-            file_path: note.path.display().to_string(),
+            file_path: to_frontend_string(&note.path),
             file_name,
             cells,
         });

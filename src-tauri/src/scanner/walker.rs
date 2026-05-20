@@ -194,10 +194,14 @@ fn cached_to_note(
         .extension()
         .map(|e| e.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // `file.path` is a notebox-relative path exposed to collection filters,
+    // queries, and the property panel — flow it through the frontend-shape
+    // helper so Windows callers don't trip on `\` separators when the same
+    // value is matched against forward-slash paths from the file tree.
     let rel_path = abs_path
         .strip_prefix(notebox_root)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| abs_path.display().to_string());
+        .map(|p| crate::storage::to_frontend_string(p))
+        .unwrap_or_else(|_| crate::storage::to_frontend_string(abs_path));
 
     properties.insert("file.name".to_string(), PropertyValue::String(name));
     properties.insert("file.folder".to_string(), PropertyValue::String(folder));

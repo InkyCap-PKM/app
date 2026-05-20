@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { pathEquals } from "../lib/paths";
 import { settings } from "./settings";
 
 export type EditingMode = "source" | "live" | "reading";
@@ -52,7 +53,7 @@ const editorStateCache = new Map<string, CachedEditorState>();
 
 export function getCachedEditorState(tabId: string, path: string): unknown | undefined {
   const entry = editorStateCache.get(tabId);
-  if (!entry || entry.path !== path) return undefined;
+  if (!entry || !pathEquals(entry.path, path)) return undefined;
   return entry.json;
 }
 
@@ -150,7 +151,7 @@ export function openTab(
   // caller explicitly wants a distinct duplicate view.
   const existing = opts?.allowDuplicate
     ? undefined
-    : tabs.find((t) => t.path === tab.path && t.type === tab.type);
+    : tabs.find((t) => t.type === tab.type && pathEquals(t.path, tab.path));
   if (existing) {
     if (opts?.headingLabel) {
       setTabs(
@@ -186,7 +187,7 @@ export function openTab(
 
     // Navigating in-place changes the file backing the tab, so any cached
     // editor state belongs to the previous file and must be discarded.
-    if (active.path !== tab.path || active.type !== tab.type) {
+    if (active.type !== tab.type || !pathEquals(active.path, tab.path)) {
       editorStateCache.delete(active.id);
     }
 
@@ -336,12 +337,12 @@ export function switchToTabByIndex(index: number) {
  * title is the basename of its path.
  */
 export function renameTabPath(from: string, to: string) {
-  if (from === to) return;
+  if (pathEquals(from, to)) return;
 
   const newTitle = to.split("/").pop() ?? to;
 
   setTabs(
-    (t) => t.path === from,
+    (t) => pathEquals(t.path, from),
     produce((t) => {
       t.path = to;
       t.title = newTitle;
@@ -353,7 +354,7 @@ export function renameTabPath(from: string, to: string) {
   // navigates to a different file. Migrate matching entries so the
   // cached undo history isn't thrown away on rename.
   for (const [tabId, entry] of editorStateCache.entries()) {
-    if (entry.path === from) {
+    if (pathEquals(entry.path, from)) {
       editorStateCache.set(tabId, { path: to, json: entry.json });
     }
   }
@@ -363,14 +364,14 @@ export function renameTabPath(from: string, to: string) {
   let historyChanged = false;
   for (const h of historyMap.values()) {
     for (const entry of h.back) {
-      if (entry.path === from) {
+      if (pathEquals(entry.path, from)) {
         entry.path = to;
         entry.title = newTitle;
         historyChanged = true;
       }
     }
     for (const entry of h.forward) {
-      if (entry.path === from) {
+      if (pathEquals(entry.path, from)) {
         entry.path = to;
         entry.title = newTitle;
         historyChanged = true;

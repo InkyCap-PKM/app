@@ -19,6 +19,7 @@ use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::scanner::property_index::PropertyIndex;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ScrollQuery {
@@ -111,8 +112,8 @@ pub async fn find_offset_in_scroll_query(
     let anchor_path = sanitize_notebox_arg(&query.anchor)?;
     let target_path = sanitize_notebox_arg(&query.target)?;
     let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
-    let anchor_str = anchor_path.display().to_string();
-    let target_str = target_path.display().to_string();
+    let anchor_str = to_frontend_string(&anchor_path);
+    let target_str = to_frontend_string(&target_path);
     let anchor_idx = sorted.iter().position(|e| e.path == anchor_str);
     let target_idx = sorted.iter().position(|e| e.path == target_str);
     match (anchor_idx, target_idx) {
@@ -186,7 +187,7 @@ fn sort_candidates(candidates: Vec<&NoteMetadata>, sort: &ScrollSort) -> Vec<Scr
         .into_iter()
         .map(|note| {
             let entry = ScrollEntry {
-                path: note.path.display().to_string(),
+                path: to_frontend_string(&note.path),
                 title: get_title(note),
             };
             let key = match sort_key(note, sort) {
@@ -489,7 +490,7 @@ fn slice_around_anchor(
     offset: i32,
     limit: usize,
 ) -> Vec<ScrollEntry> {
-    let anchor_str = anchor.display().to_string();
+    let anchor_str = to_frontend_string(anchor);
     let anchor_idx = sorted
         .iter()
         .position(|e| e.path == anchor_str)

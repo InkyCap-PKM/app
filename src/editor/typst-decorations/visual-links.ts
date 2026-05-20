@@ -2,6 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { type EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { modifierKey } from "../../lib/platform";
 
 /** Extract the first quoted string argument from a Typst function call text. */
 function extractFirstStringArg(text: string): string | null {
@@ -63,8 +64,7 @@ export const linkClickHandler = EditorView.domEventHandlers({
     if (link) {
       view.contentDOM.classList.add("cm-link-hover");
       const el = event.target as HTMLElement;
-      const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-      el.title = `${isMac ? "⌘" : "Ctrl"}+Click to follow link`;
+      el.title = `${modifierKey()}+Click to follow link`;
     } else {
       view.contentDOM.classList.remove("cm-link-hover");
     }

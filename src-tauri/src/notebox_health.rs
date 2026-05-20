@@ -62,7 +62,7 @@ async fn run(app: AppHandle, notebox_root: PathBuf) {
             );
             let _ = app.emit(
                 NOTEBOX_LOST_EVENT,
-                serde_json::json!({ "path": notebox_root.display().to_string() }),
+                serde_json::json!({ "path": crate::storage::to_frontend_string(&notebox_root) }),
             );
             return;
         }

@@ -8,6 +8,7 @@ use tauri::{Emitter, State};
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::storage::validate_notebox_path;
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
@@ -482,7 +483,7 @@ async fn write_to_attachments(
     // own. Emit the event directly so the frontend file tree updates.
     let _ = app.emit(
         "notebox:file-created",
-        serde_json::json!({ "path": target.display().to_string() }),
+        serde_json::json!({ "path": to_frontend_string(&target) }),
     );
 
     // Return the notebox-root-relative path (e.g. `assets/Screenshot.png`)
@@ -530,7 +531,7 @@ pub async fn create_folder(
     }
 
     storage.create_dir(&folder_path).await?;
-    Ok(folder_path.display().to_string())
+    Ok(to_frontend_string(&folder_path))
 }
 
 /// Rename a file (simple rename, no link updates).
@@ -575,7 +576,7 @@ pub async fn rename_file(
         reindex_note(&new_path, &content, &state).await;
     }
 
-    Ok(new_path.display().to_string())
+    Ok(to_frontend_string(&new_path))
 }
 
 /// Rename a file or folder and update all wikilinks that reference it.
@@ -635,7 +636,7 @@ pub async fn rename_and_update_links(
         reindex_note(&new_path, &content, &state).await;
     }
 
-    Ok(new_path.display().to_string())
+    Ok(to_frontend_string(&new_path))
 }
 
 /// Move a file to a different folder.
@@ -686,7 +687,7 @@ pub async fn move_file(
     remove_from_indices(&old, &state).await;
     reindex_note(&new_path, &content, &state).await;
 
-    Ok(new_path.display().to_string())
+    Ok(to_frontend_string(&new_path))
 }
 
 /// Move a folder (and everything inside it) to a different parent folder.
@@ -760,7 +761,7 @@ pub async fn move_folder(
 
     reindex_directory(&old, &new_path, &storage, &state).await;
 
-    Ok(new_path.display().to_string())
+    Ok(to_frontend_string(&new_path))
 }
 
 /// Delete a file by moving it to the system trash.

@@ -32,6 +32,7 @@ import {
   untrack,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { pathEquals } from "../lib/paths";
 import { onFileChanged } from "../lib/events";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import {
@@ -361,7 +362,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     if (!req) return;
     untrack(() => {
       consumeScrollNavRequest(props.tabId);
-      if (req.path === getAnchorPath(props.tabId)) {
+      if (pathEquals(req.path, getAnchorPath(props.tabId))) {
         activeHoldStop?.();
         if (containerRef) containerRef.scrollTop = 0;
         return;
@@ -493,7 +494,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
   // the current query result (caller decides the fallback). Shared by
   // wikilink clicks and the header back/forward arrows.
   async function navigateScrollTo(targetPath: string): Promise<boolean> {
-    if (getEntries(props.tabId).some((e) => e.path === targetPath)) {
+    if (getEntries(props.tabId).some((e) => pathEquals(e.path, targetPath))) {
       scrollToLoadedEntry(targetPath);
       return true;
     }
@@ -504,7 +505,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     // and loads a fresh window starting from the target note, preserving
     // the back/forward nav stack.
     await reanchorForNavigation(props.tabId, targetPath);
-    return getEntries(props.tabId).some((e) => e.path === targetPath);
+    return getEntries(props.tabId).some((e) => pathEquals(e.path, targetPath));
   }
 
   function scrollToLoadedEntry(path: string) {

@@ -7,6 +7,7 @@
 
 import { createSignal } from "solid-js";
 import type { NoteboxRegistryEntry } from "../lib/types";
+import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import { toastError, toastWarning } from "./toasts";
 
@@ -81,7 +82,7 @@ export async function maybeSeedNotebox(
   }
   if (!fresh) return;
 
-  const sources = registry.filter((e) => e.path !== targetPath);
+  const sources = registry.filter((e) => !pathEquals(e.path, targetPath));
   if (sources.length === 0) return;
 
   // Most-recently-opened first — the most likely source.

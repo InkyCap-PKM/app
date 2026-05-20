@@ -28,9 +28,17 @@ fn open_zotero_readonly(db_path: &Path) -> Result<Connection, String> {
 }
 
 /// Auto-detect the default Zotero database location.
+///
+/// On Windows the user-facing default is `%USERPROFILE%\Zotero\zotero.sqlite`
+/// (the Zotero installer's standard data-directory layout). Older `dirs`
+/// versions resolved `data_dir()` to `%APPDATA%\Zotero\Zotero\zotero.sqlite`
+/// which Zotero itself doesn't write to, so we now check the userprofile
+/// path first and fall back to the APPDATA layout for installs that diverge.
 pub fn auto_detect_path() -> Option<PathBuf> {
     let candidates = if cfg!(target_os = "windows") {
         vec![
+            dirs::home_dir().map(|d| d.join("Zotero").join("zotero.sqlite")),
+            dirs::document_dir().map(|d| d.join("Zotero").join("zotero.sqlite")),
             dirs::data_dir().map(|d| d.join("Zotero").join("Zotero").join("zotero.sqlite")),
         ]
     } else if cfg!(target_os = "macos") {
