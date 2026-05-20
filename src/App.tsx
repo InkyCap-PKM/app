@@ -27,11 +27,19 @@ import ExportDialog from "./components/ExportDialog";
 import ToastHost from "./components/ToastHost";
 import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
+import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initNotebox } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
-import { initSettings, onSettingsChange, settings, updateSetting, flushSettingsSave } from "./stores/settings";
+import {
+  initSettings,
+  onSettingsChange,
+  settings,
+  noteboxSettings,
+  updateNoteboxSetting,
+  flushSettingsSave,
+} from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
@@ -41,67 +49,6 @@ import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
 import * as ipc from "./lib/ipc";
-
-async function applyStartupBehavior() {
-  const { behavior, target, last_active_file } = settings.startup;
-
-  switch (behavior) {
-    case "default":
-      break;
-
-    case "last-file":
-      if (last_active_file) {
-        try {
-          await ipc.readFileContent(last_active_file);
-          const name = last_active_file.split("/").pop() ?? last_active_file;
-          openTab({ type: "file", title: name, path: last_active_file });
-        } catch {
-          updateSetting("startup", "last_active_file", null);
-        }
-      }
-      break;
-
-    case "creation-rule":
-      if (target) {
-        try {
-          const result = await triggerCreationRule(target);
-          if (result) {
-            const name = result.path.split("/").pop() ?? "New Note";
-            openTab(
-              { type: "file", title: name, path: result.path },
-              { cursorOffset: result.cursor_offset ?? undefined },
-            );
-          }
-        } catch (e) {
-          console.error("Startup creation rule failed:", e);
-        }
-      }
-      break;
-
-    case "specific-page":
-      if (target) {
-        try {
-          await ipc.readFileContent(target);
-          const name = target.split("/").pop() ?? target;
-          openTab({ type: "file", title: name, path: target });
-        } catch {
-          // Target no longer exists — start with empty state
-        }
-      }
-      break;
-
-    case "specific-collection":
-      if (target) {
-        try {
-          const name = target.split("/").pop()?.replace(/\.collection$/, "") ?? target;
-          openTab({ type: "collection", title: name, path: target });
-        } catch {
-          // Collection no longer exists — start with empty state
-        }
-      }
-      break;
-  }
-}
 
 const App: Component = () => {
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
@@ -123,7 +70,7 @@ const App: Component = () => {
     if (!id) return;
     const tab = tabs.find((t) => t.id === id);
     if (tab && tab.type === "file" && tab.path) {
-      updateSetting("startup", "last_active_file", tab.path);
+      updateNoteboxSetting("startup", "last_active_file", tab.path);
     }
   });
 
@@ -150,8 +97,10 @@ const App: Component = () => {
     await applyFontSettings(settings.fonts);
     onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
+    // openNotebox now runs applyStartupBehavior internally on every
+    // successful open (initial launch and subsequent switches alike),
+    // so we don't need to call it separately here.
     await initNotebox();
-    await applyStartupBehavior();
     // Register every built-in command with the registry. The global
     // keyboard dispatcher (initKeyboard, called below) reads keybindings
     // straight off the registry, so anything with a `keybinding` field
@@ -172,7 +121,7 @@ const App: Component = () => {
     initKeyboard();
 
     // Register the user's creation rules with the registry as well —
-    // this is what gives e.g. "New Note" its Ctrl+Shift+N binding.
+    // this is what gives e.g. "New Note" its Ctrl+N binding.
     // Done after `initKeyboard` so newly-added rule hotkeys take effect
     // without needing a relaunch (the dispatcher reads live from the
     // registry on every keydown).
@@ -326,6 +275,7 @@ const App: Component = () => {
         <ToastHost />
         <PromptHost />
         <FolderPickerHost />
+        <NoteboxSeedHost />
       </div>
     </ErrorBoundary>
   );

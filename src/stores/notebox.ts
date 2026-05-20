@@ -1,14 +1,24 @@
 import { createSignal } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { homeDir } from "@tauri-apps/api/path";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { NoteboxInfo, NoteboxRegistryEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import { onFileCreated, onFileDeleted, onFileRenamed } from "../lib/events";
-import { renameTabPath } from "./tabs";
+import { renameTabPath, closeAllTabs, openTab } from "./tabs";
 import { reloadPropertyTypes } from "./propertyTypes";
+import {
+  loadNoteboxSettings,
+  noteboxSettings,
+  settings,
+  updateNoteboxSetting,
+} from "./settings";
+import { triggerCreationRule } from "./creation-rules";
 import { refreshAliases, bumpAliasGeneration } from "./aliases";
 import { startLsp, stopLsp } from "./lsp";
+import { maybeSeedNotebox } from "./notebox-seed";
+import { awaitAllPendingWrites } from "./editor-writes";
 
 const [noteboxInfo, setNoteboxInfo] = createSignal<NoteboxInfo | null>(null);
 const [noteboxRegistry, setNoteboxRegistry] = createSignal<NoteboxRegistryEntry[]>([]);
@@ -169,9 +179,82 @@ export async function loadNoteboxRegistry(): Promise<void> {
   }
 }
 
+/** Open the contents the user's startup-behaviour preference asks for —
+ *  the last-active file, a creation-rule trigger, a specific page, or a
+ *  specific collection. Reads `behavior` from the user-global settings
+ *  and the target / last-active pointer from the *current notebox's*
+ *  settings, so each notebox restores its own state on switch. */
+async function applyStartupBehavior(): Promise<void> {
+  const { behavior } = settings.startup;
+  const { target, last_active_file } = noteboxSettings.startup;
+
+  switch (behavior) {
+    case "default":
+      break;
+    case "last-file":
+      if (last_active_file) {
+        try {
+          await ipc.readFileContent(last_active_file);
+          const name = last_active_file.split("/").pop() ?? last_active_file;
+          openTab({ type: "file", title: name, path: last_active_file });
+        } catch {
+          updateNoteboxSetting("startup", "last_active_file", null);
+        }
+      }
+      break;
+    case "creation-rule":
+      if (target) {
+        try {
+          const result = await triggerCreationRule(target);
+          if (result) {
+            const name = result.path.split("/").pop() ?? "New Note";
+            openTab(
+              { type: "file", title: name, path: result.path },
+              { cursorOffset: result.cursor_offset ?? undefined },
+            );
+          }
+        } catch (e) {
+          console.error("Startup creation rule failed:", e);
+        }
+      }
+      break;
+    case "specific-page":
+      if (target) {
+        try {
+          await ipc.readFileContent(target);
+          const name = target.split("/").pop() ?? target;
+          openTab({ type: "file", title: name, path: target });
+        } catch {
+          // Target no longer exists — leave the new notebox with no
+          // pre-opened tab rather than surface a confusing error.
+        }
+      }
+      break;
+    case "specific-collection":
+      if (target) {
+        const name = target.split("/").pop()?.replace(/\.collection$/, "") ?? target;
+        openTab({ type: "collection", title: name, path: target });
+      }
+      break;
+  }
+}
+
 export async function openNotebox(path: string) {
   setIsLoading(true);
   setIndexReady(false);
+
+  // Tear down any tabs from the previous notebox before we switch the
+  // backend's active notebox. Closing each tab unmounts its TypstEditor,
+  // which fires a flush of any pending save. We then await every
+  // in-flight write so it lands in the OLD notebox — `write_file_content`
+  // routes through whatever notebox is currently active, so a write that
+  // overlaps the switch would otherwise land in the new one.
+  const switchingNoteboxes = noteboxInfo() !== null && noteboxInfo()?.path !== path;
+  if (switchingNoteboxes) {
+    closeAllTabs();
+    await awaitAllPendingWrites();
+  }
+
   // A fresh successful open clears any previous "notebox missing" state.
   // (If the new notebox is also missing the health monitor will set it
   // again within one tick.)
@@ -193,11 +276,20 @@ export async function openNotebox(path: string) {
     // Load per-notebox property type registry so PropertyEditor sees
     // the right types from the first render onward.
     reloadPropertyTypes().catch(console.error);
+    // Load this notebox's settings (folder paths, citation source,
+    // journal-scroll prefs, etc.). Awaited so subsequent components
+    // render against the new notebox's settings, not the previous one.
+    await loadNoteboxSettings();
     // Pre-warm Tinymist LSP so completions/hover are ready by the
     // time the user opens a file (~425ms cold start).
     startLsp(path).catch(console.error);
     // Refresh the notebox registry since open_notebox upserts the entry
     loadNoteboxRegistry().catch(console.error);
+    // Apply the user's startup preference (last file, creation rule,
+    // specific page, etc.) so the new notebox opens into a useful tab
+    // instead of empty. Runs on every successful open — including the
+    // initial app launch and subsequent switches.
+    await applyStartupBehavior();
     return info;
   } finally {
     setIsLoading(false);
@@ -205,14 +297,28 @@ export async function openNotebox(path: string) {
 }
 
 export async function pickAndOpenNotebox(): Promise<NoteboxInfo | null> {
-  const current = noteboxInfo();
+  // Default to the user's home directory regardless of OS — the previous
+  // "default to the current notebox path" felt confusing because adding
+  // a notebox is conceptually a fresh task, not navigation from the
+  // currently-open one. `homeDir()` works cross-platform via Tauri.
+  let defaultPath: string | undefined;
+  try {
+    defaultPath = await homeDir();
+  } catch {
+    defaultPath = undefined;
+  }
   const selected = await open({
     directory: true,
     multiple: false,
     title: "Select InkyCap Notebox Folder",
-    defaultPath: current?.path ?? undefined,
+    defaultPath,
   });
   if (!selected) return null;
+
+  // Offer the seed-from-existing prompt before opening. Skips silently
+  // when the folder isn't fresh or there are no other noteboxes.
+  await maybeSeedNotebox(selected, noteboxRegistry());
+
   return openNotebox(selected);
 }
 

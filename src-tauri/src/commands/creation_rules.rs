@@ -18,10 +18,14 @@ pub struct CreationResult {
     pub cursor_offset: Option<usize>,
 }
 
-/// List all creation rules.
+/// List all creation rules for the currently open notebox.
 #[tauri::command]
-pub async fn list_creation_rules() -> Result<Vec<CreationRule>, InkyCapError> {
-    Ok(creation_rules::load_rules())
+pub async fn list_creation_rules(
+    state: State<'_, AppState>,
+) -> Result<Vec<CreationRule>, InkyCapError> {
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+    Ok(creation_rules::load_rules(root))
 }
 
 /// Look up the built-in default for a rule id. Returns the seeded default
@@ -43,13 +47,17 @@ pub async fn get_default_creation_rule(
 #[tauri::command]
 pub async fn save_creation_rule(
     rule: CreationRule,
+    state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
     let mut rule = rule;
     if rule.id == "new-note" {
         rule.disabled = false;
     }
 
-    let mut rules = creation_rules::load_rules();
+    let mut rules = creation_rules::load_rules(root);
 
     if let Some(existing) = rules.iter_mut().find(|r| r.id == rule.id) {
         *existing = rule;
@@ -57,7 +65,7 @@ pub async fn save_creation_rule(
         rules.push(rule);
     }
 
-    creation_rules::save_rules(&rules)?;
+    creation_rules::save_rules(root, &rules)?;
     Ok(())
 }
 
@@ -65,8 +73,12 @@ pub async fn save_creation_rule(
 #[tauri::command]
 pub async fn delete_creation_rule(
     rule_id: String,
+    state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
-    let mut rules = creation_rules::load_rules();
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let mut rules = creation_rules::load_rules(root);
 
     if let Some(rule) = rules.iter().find(|r| r.id == rule_id) {
         if rule.builtin {
@@ -77,7 +89,7 @@ pub async fn delete_creation_rule(
     }
 
     rules.retain(|r| r.id != rule_id);
-    creation_rules::save_rules(&rules)?;
+    creation_rules::save_rules(root, &rules)?;
     Ok(())
 }
 
@@ -107,26 +119,29 @@ pub async fn execute_creation_rule(
     let notebox_root = state.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let rules = creation_rules::load_rules();
+    let rules = creation_rules::load_rules(root);
     let rule = rules
         .iter()
         .find(|r| r.id == rule_id)
         .ok_or_else(|| InkyCapError::InvalidPath(format!("Rule not found: {}", rule_id)))?;
 
-    // Read ZID settings for {{zid}} expansion and auto-property, plus the
-    // user's "New note location" preference — that's the fallback when the
-    // rule itself has no target folder set (e.g. the built-in New Note).
-    let (zid_enabled, zid_pattern, fallback_folder) = {
+    // Read ZID settings (user-global) for {{zid}} expansion and
+    // auto-property, plus this notebox's "New note location" preference —
+    // that's the fallback when the rule itself has no target folder set
+    // (e.g. the built-in New Note).
+    let (zid_enabled, zid_pattern) = {
         let settings = state.settings.read().await;
-        let fallback = match settings.files.new_note_location.as_str() {
-            "specified" => settings.files.new_note_folder.clone(),
-            _ => String::new(),
-        };
         (
             settings.files.zettelkasten_enabled,
             settings.files.zid_pattern.clone(),
-            fallback,
         )
+    };
+    let fallback_folder = {
+        let notebox = state.notebox_settings.read().await;
+        match notebox.files.new_note_location.as_str() {
+            "specified" => notebox.files.new_note_folder.clone(),
+            _ => String::new(),
+        }
     };
 
     // The override wins over both the rule's own target_folder and the

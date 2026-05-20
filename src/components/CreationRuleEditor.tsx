@@ -16,7 +16,7 @@ import { fileList } from "../stores/filelist";
 import { findCommandByKeybinding } from "../lib/command-registry";
 import { formatKeyCombo } from "../lib/keybindings";
 import { loadCreationRules } from "../stores/creation-rules";
-import { settings } from "../stores/settings";
+import { noteboxSettings } from "../stores/settings";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
 import { Dropdown } from "./Dropdown";
@@ -80,8 +80,8 @@ const CreationRuleEditor: Component = () => {
    *  "Current folder" this resolves to an empty string, which the executor
    *  treats as "use the notebox root". */
   function defaultTargetFolder(): string {
-    if (settings.files.new_note_location === "specified") {
-      return settings.files.new_note_folder;
+    if (noteboxSettings.files.new_note_location === "specified") {
+      return noteboxSettings.files.new_note_folder;
     }
     return "";
   }

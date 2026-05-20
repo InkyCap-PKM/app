@@ -75,22 +75,22 @@ pub async fn compile_typst_svg(
     Ok(result)
 }
 
-/// Resolve the user's chosen citation style from settings. Returns `None`
-/// when no style is configured (Typst's built-in default will apply).
+/// Resolve the user's chosen citation style. The per-notebox
+/// `custom_csl_path` overrides the user-global named style; otherwise the
+/// global style applies. Returns `None` when nothing is configured (Typst's
+/// built-in default will apply).
 async fn resolve_citation_style(state: &AppState) -> Option<String> {
+    let notebox = state.notebox_settings.read().await;
+    if let Some(p) = notebox.citations.custom_csl_path.clone() {
+        return Some(p);
+    }
     let settings = state.settings.read().await;
     settings
         .citations
-        .custom_csl_path
-        .clone()
-        .or_else(|| {
-            settings
-                .citations
-                .citation_style
-                .as_deref()
-                .filter(|s| !s.is_empty() && *s != "custom")
-                .map(String::from)
-        })
+        .citation_style
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "custom")
+        .map(String::from)
 }
 
 /// Ensure the source has a bibliography call that resolves citations and
@@ -272,9 +272,7 @@ pub async fn compile_typst_html(
 /// `#set` rules later in the document win over both.
 pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
     let settings = state.settings.read().await;
-    let defaults_rules = style_injection::build_defaults_show_call_resolved(
-        &settings,
-    );
+    let defaults_rules = style_injection::build_defaults_show_call_resolved(&settings);
 
     let collection_rules = resolve_collection_style(note_path, state).await;
 
@@ -395,8 +393,8 @@ async fn ensure_system_fonts_if_needed(
 /// the expected file already exists on disk.
 async fn resolve_preview_bib_path(state: &AppState) -> Option<String> {
     let notebox_root = state.notebox_root.read().await.clone()?;
-    let settings = state.settings.read().await;
-    match settings.citations.source.as_str() {
+    let notebox = state.notebox_settings.read().await;
+    match notebox.citations.source.as_str() {
         "zotero" => {
             let export_path = notebox_root.join(".inkycap/zotero-export.bib");
             if export_path.exists() {
@@ -406,7 +404,7 @@ async fn resolve_preview_bib_path(state: &AppState) -> Option<String> {
             }
         }
         _ => {
-            let bib = settings.citations.bibliography_path.as_ref()?;
+            let bib = notebox.citations.bibliography_path.as_ref()?;
             let abs = notebox_root.join(bib);
             if abs.exists() {
                 if bib.starts_with('/') { Some(bib.clone()) } else { Some(format!("/{bib}")) }

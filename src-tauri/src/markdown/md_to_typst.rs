@@ -83,7 +83,7 @@ impl Default for MarkdownToTypstOptions {
             convert_frontmatter: true,
             // Mirrors `FileSettings::default().attachment_folder` so a
             // bare-options conversion still emits a sensible path.
-            attachment_folder: "assets".to_string(),
+            attachment_folder: "Assets".to_string(),
             dialect: MarkdownDialect::default(),
         }
     }
@@ -440,14 +440,6 @@ fn frontmatter_to_note(yaml: &str) -> String {
                 }
                 "description" | "summary" => {
                     fields.push(("description".into(), format_string_value(value)));
-                }
-                "status" => {
-                    let statuses = parse_yaml_list_inline(value);
-                    if !statuses.is_empty() {
-                        let formatted: Vec<String> =
-                            statuses.iter().map(|s| format_string_value(s)).collect();
-                        fields.push(("status".into(), format!("({})", formatted.join(", "))));
-                    }
                 }
                 "collection" | "collections" => {
                     let collections = parse_yaml_list_inline(value);
@@ -1077,7 +1069,7 @@ mod tests {
         // configured attachment folder so it matches where the
         // importer routes the file.
         let opts = MarkdownToTypstOptions {
-            attachment_folder: "assets".to_string(),
+            attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
         };
         let result = markdown_to_typst(
@@ -1085,7 +1077,7 @@ mod tests {
             &opts,
         );
         assert!(
-            result.contains("#image(\"/assets/Pasted image 20240412113956.png\")"),
+            result.contains("#image(\"/Assets/Pasted image 20240412113956.png\")"),
             "expected #image() call, got:\n{result}"
         );
         assert!(
@@ -1105,12 +1097,12 @@ mod tests {
         // use). Without this special-case the wikilink regex would
         // turn it into `!#wikilink(\"name.png\", display: \"alt\")`.
         let opts = MarkdownToTypstOptions {
-            attachment_folder: "assets".to_string(),
+            attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
         };
         let result = markdown_to_typst("![[photo.png|My caption]]", &opts);
         assert!(
-            result.contains("#image(\"/assets/photo.png\")"),
+            result.contains("#image(\"/Assets/photo.png\")"),
             "expected #image() ignoring alt, got:\n{result}"
         );
     }
@@ -1244,7 +1236,7 @@ mod tests {
             "wikilink preserved: {result}"
         );
         assert!(
-            result.contains("#image(\"/assets/pic.png\")"),
+            result.contains("#image(\"/Assets/pic.png\")"),
             "image preserved: {result}"
         );
         assert!(

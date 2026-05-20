@@ -102,7 +102,11 @@ fn format_font_value(families: &[String]) -> Option<String> {
 /// actual `set` rules). Page geometry is emitted as a direct
 /// `#set page(...)` because `set page` inside a show-rule wrapper is a
 /// no-op for document-level layout in Typst.
-pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) -> String {
+pub fn build_defaults_show_call(
+    doc: &DocumentDefaults,
+    text_font: Option<&str>,
+    monospace_font: &str,
+) -> String {
     let mut lines: Vec<String> = Vec::new();
 
     // Page geometry: direct #set rule (required for document-level effect)
@@ -117,7 +121,7 @@ pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) ->
 
     // Text/font defaults: delegate to lib.typ via #show:
     let mut show_args: Vec<String> = Vec::new();
-    if let Some(ref font) = doc.text_font {
+    if let Some(font) = text_font {
         if !font.is_empty() {
             show_args.push(format!("text-font: \"{}\"", sanitize_typst_string(font)));
         }
@@ -139,21 +143,19 @@ pub fn build_defaults_show_call(doc: &DocumentDefaults, monospace_font: &str) ->
     lines.join("\n")
 }
 
-/// Build defaults rules by resolving the user's `FontSettings` to
-/// concrete family names, then delegating to [`build_defaults_show_call`].
-/// This is the entry point new code should use; callers pass the full
-/// `UserSettings` and we resolve text + monospace internally.
-pub fn build_defaults_show_call_resolved(settings: &UserSettings) -> String {
-    let resolved_text = font_resolver::resolve_role(FontRole::Text, &settings.fonts);
-    let resolved_mono = font_resolver::resolve_role(FontRole::Monospace, &settings.fonts);
-
-    let doc = DocumentDefaults {
-        text_font: resolved_text,
-        text_size: settings.document.text_size,
-        page_size: settings.document.page_size.clone(),
-    };
+/// Build defaults rules by resolving the user's `FontSettings` to a
+/// concrete text + monospace family, paired with the user-global
+/// `DocumentDefaults` (text size and page size). This is the entry
+/// point new code should use.
+pub fn build_defaults_show_call_resolved(user: &UserSettings) -> String {
+    let resolved_text = font_resolver::resolve_role(FontRole::Text, &user.fonts);
+    let resolved_mono = font_resolver::resolve_role(FontRole::Monospace, &user.fonts);
     let mono_str = resolved_mono.unwrap_or_default();
-    build_defaults_show_call(&doc, &mono_str)
+    build_defaults_show_call(
+        &user.document,
+        resolved_text.as_deref(),
+        &mono_str,
+    )
 }
 
 /// Inject style rules into the source after the inkycap-notebox import line.
@@ -265,18 +267,17 @@ mod tests {
     #[test]
     fn empty_defaults_no_injection() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_show_call(&doc, "");
+        let rules = build_defaults_show_call(&doc, None, "");
         assert!(rules.is_empty());
     }
 
     #[test]
     fn font_and_page_size_emit_hybrid_rules() {
         let doc = DocumentDefaults {
-            text_font: Some("Inter".to_string()),
             text_size: Some(12.0),
             page_size: Some("us-letter".to_string()),
         };
-        let rules = build_defaults_show_call(&doc, "");
+        let rules = build_defaults_show_call(&doc, Some("Inter"), "");
         // Page geometry: direct #set rule
         assert!(rules.contains("#set page(paper: \"us-letter\")"));
         // Text settings: delegated to lib.typ
@@ -292,6 +293,7 @@ mod tests {
         let doc = DocumentDefaults::default();
         let rules = build_defaults_show_call(
             &doc,
+            None,
             "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", monospace",
         );
         assert!(rules.contains(
@@ -302,7 +304,7 @@ mod tests {
     #[test]
     fn monospace_single_family_emits_string_arg() {
         let doc = DocumentDefaults::default();
-        let rules = build_defaults_show_call(&doc, "Adwaita Mono");
+        let rules = build_defaults_show_call(&doc, None, "Adwaita Mono");
         assert!(rules.contains("monospace-font: \"Adwaita Mono\""));
     }
 
@@ -357,11 +359,10 @@ mod tests {
         let note_path = root.join("note.typ");
 
         let doc = DocumentDefaults {
-            text_font: Some("Linux Libertine".to_string()),
             text_size: Some(12.0),
             page_size: Some("us-letter".to_string()),
         };
-        let rules = build_defaults_show_call(&doc, "");
+        let rules = build_defaults_show_call(&doc, Some("Linux Libertine"), "");
 
         let source = format!(
             "{}\n{}\n\n= Hello\n\nBody text.\n",

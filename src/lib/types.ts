@@ -259,11 +259,18 @@ export interface AppearanceSettings {
   folder_grouping: FolderGrouping;
 }
 
+/** Typst-facing document defaults — text size and page size. User-global
+ *  because typography is tuned to the device the user is writing on; a
+ *  notebox or collection can override locally with Typst markup or a
+ *  collection style. */
+export interface DocumentDefaults {
+  text_size: number | null;
+  page_size: string | null;
+}
+
+/** User-global file workflow toggles. Folder paths and notebox-specific
+ *  exclusions live in `NoteboxFileSettings`. */
 export interface FileSettings {
-  new_note_location: "root" | "current" | "specified";
-  new_note_folder: string;
-  attachment_folder: string;
-  excluded_files_regex: string[];
   auto_update_links_on_rename: boolean;
   confirm_before_delete: boolean;
   zettelkasten_enabled: boolean;
@@ -272,26 +279,18 @@ export interface FileSettings {
   show_file_extensions: boolean;
 }
 
+/** User-global citation defaults. The notebox-specific source choice,
+ *  bibliography file path, and CSL override live in
+ *  `NoteboxCitationSettings`. */
 export interface CitationSettings {
-  source: "file" | "zotero";
-  bibliography_path: string | null;
   citation_style: string | null;
-  custom_csl_path: string | null;
   zotero_database_path: string | null;
 }
 
+/** User-global startup behaviour. The notebox-specific target and
+ *  last-active file pointer live in `NoteboxStartupSettings`. */
 export interface StartupSettings {
   behavior: "default" | "last-file" | "creation-rule" | "specific-page" | "specific-collection";
-  target: string;
-  last_active_file: string | null;
-}
-
-export interface JournalScrollSettings {
-  date_sort: "created" | "modified" | "zid" | "note_date";
-  /** Maximal scope of notes the scroll may show. */
-  anchor_scope: "all" | "daily" | "custom";
-  /** Notebox-relative folder used when `anchor_scope === "custom"`. */
-  custom_scope_folder: string;
 }
 
 export interface ExportSettings {
@@ -303,13 +302,6 @@ export interface BehaviourSettings {
    *  "open in new tab" action), switch the content focus to that tab
    *  immediately. When false, the tab opens in the background. */
   switch_to_new_tab: boolean;
-}
-
-export interface DocumentDefaults {
-  /** Legacy text-font field. Migrated into `UserSettings.fonts.text` on load. */
-  text_font: string | null;
-  text_size: number | null;
-  page_size: string | null;
 }
 
 export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
@@ -337,17 +329,64 @@ export interface SystemFontDefaults {
   mono: string;
 }
 
+/** User-global settings — preferences that follow the user across every
+ *  notebox. Notebox-specific settings live in `NoteboxSettings`. */
 export interface UserSettings {
   editor: EditorSettings;
   appearance: AppearanceSettings;
   files: FileSettings;
   startup: StartupSettings;
-  journal_scroll: JournalScrollSettings;
   citations: CitationSettings;
   export: ExportSettings;
   document: DocumentDefaults;
   fonts: FontSettings;
   behaviour: BehaviourSettings;
+}
+
+// ============================================================================
+// Per-notebox settings — preferences scoped to a single notebox.
+// Mirrors src-tauri/src/notebox_settings.rs.
+// ============================================================================
+
+/** Notebox-coupled folder paths and exclusion patterns. */
+export interface NoteboxFileSettings {
+  new_note_location: "root" | "current" | "specified";
+  new_note_folder: string;
+  attachment_folder: string;
+  excluded_files_regex: string[];
+}
+
+/** Notebox-specific startup state. */
+export interface NoteboxStartupSettings {
+  /** Target: creation rule ID or file/base path (depends on the
+   *  user-global startup `behavior`). */
+  target: string;
+  last_active_file: string | null;
+}
+
+/** Journal Scroll settings — entirely per-notebox. */
+export interface JournalScrollSettings {
+  date_sort: "created" | "modified" | "zid" | "note_date";
+  /** Maximal scope of notes the scroll may show. */
+  anchor_scope: "all" | "daily" | "custom";
+  /** Notebox-relative folder used when `anchor_scope === "custom"`. */
+  custom_scope_folder: string;
+}
+
+/** Notebox-specific citation source. The global `citation_style` and Zotero
+ *  install path live in `CitationSettings`. */
+export interface NoteboxCitationSettings {
+  source: "file" | "zotero";
+  bibliography_path: string | null;
+  /** Per-notebox CSL override. Wins over the user-global `citation_style`. */
+  custom_csl_path: string | null;
+}
+
+export interface NoteboxSettings {
+  files: NoteboxFileSettings;
+  startup: NoteboxStartupSettings;
+  journal_scroll: JournalScrollSettings;
+  citations: NoteboxCitationSettings;
 }
 
 // ============================================================================
@@ -428,8 +467,6 @@ export interface AgendaItem {
   /** ISO `YYYY-MM-DD` file creation date. */
   created: string | null;
   done: boolean;
-  /** The host note's `status` values. */
-  status: string[];
   tags: string[];
   zid: string | null;
 }

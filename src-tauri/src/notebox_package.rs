@@ -92,7 +92,6 @@ pub const DEFAULT_NEW_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ": 
   aliases: (),
   description: "",
 )
-
 = {{title}}
 {{cursor}}
 "#;
@@ -107,7 +106,6 @@ pub const DEFAULT_DAILY_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ"
   zid: "{{zid}}",
   tags: (),
 )
-
 = {{title}}
 {{cursor}}
 "#;

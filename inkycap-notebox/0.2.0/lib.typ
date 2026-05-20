@@ -274,7 +274,7 @@
   //   separator (currently just `aliases`). Tag-style fields are kept
   //   off this list so tag values containing commas aren't silently
   //   shredded.
-  let list_fields = ("tags", "status", "collection", "aliases")
+  let list_fields = ("tags", "collection", "aliases")
   let comma_list_fields = ("aliases",)
   let data = (:)
   for (k, v) in args.named() {

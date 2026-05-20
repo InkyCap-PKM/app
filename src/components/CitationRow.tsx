@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { Component, Show } from "solid-js";
-import { settings } from "../stores/settings";
+import { noteboxSettings } from "../stores/settings";
 import { openZoteroItem } from "../lib/zotero";
 import { t } from "../lib/i18n";
 
@@ -62,7 +62,7 @@ export function ZoteroIcon() {
 }
 
 const CitationRow: Component<CitationRowProps> = (props) => {
-  const zoteroOn = () => settings.citations.source === "zotero";
+  const zoteroOn = () => noteboxSettings.citations.source === "zotero";
   return (
     <div
       class="citation-row"

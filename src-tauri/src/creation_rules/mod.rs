@@ -1,9 +1,11 @@
 // Creation rules: configurable note creation presets.
 // Each rule defines a scaffold, target folder, filename pattern, and optional hotkey.
-// Rules are persisted at $CONFIG_DIR/inkycap/creation_rules.json.
+// Rules are persisted at `<notebox>/.inkycap/creation_rules.json` — they belong
+// to the notebox because they reference notebox-local scaffolds and folder paths,
+// and different noteboxes legitimately want different creation rule sets.
 // Two built-in rules are always present: "New Note" (Zettelkasten) and "Daily Note".
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -102,34 +104,43 @@ pub fn default_rule_for_id(id: &str) -> Option<CreationRule> {
 
 // ── Persistence ──
 
-fn rules_path() -> PathBuf {
-    crate::app_paths::config_dir().join("creation_rules.json")
+/// Storage path for a notebox's creation rules.
+fn rules_path(notebox_root: &Path) -> PathBuf {
+    notebox_root.join(".inkycap").join("creation_rules.json")
 }
 
-/// Load creation rules from disk, merging with built-in defaults.
+/// Load creation rules from the notebox, merging with built-in defaults.
 ///
 /// If a built-in rule is missing (e.g. the user deleted the rules file),
 /// the default is restored and the file is rewritten so the safety net
 /// runs at most once per session.
-pub fn load_rules() -> Vec<CreationRule> {
-    let path = rules_path();
+pub fn load_rules(notebox_root: &Path) -> Vec<CreationRule> {
+    let path = rules_path(notebox_root);
     let mut user_rules: Vec<CreationRule> = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
     let defaults = default_rules();
-    let mut mutated = false;
+    let missing: Vec<CreationRule> = defaults
+        .iter()
+        .filter(|d| !user_rules.iter().any(|r| r.id == d.id))
+        .cloned()
+        .collect();
 
-    for default in &defaults {
-        if !user_rules.iter().any(|r| r.id == default.id) {
-            user_rules.insert(0, default.clone());
-            mutated = true;
-        }
+    let mutated = !missing.is_empty();
+    if mutated {
+        // Prepend the missing builtins as a block so they stay above any
+        // user-defined rules AND keep their canonical order
+        // (`default_rules()` returns New Note before Daily Note —
+        // inserting one-by-one with `insert(0, ...)` would reverse that).
+        let mut combined = missing;
+        combined.extend(user_rules);
+        user_rules = combined;
     }
 
     if mutated {
-        if let Err(err) = save_rules(&user_rules) {
+        if let Err(err) = save_rules(notebox_root, &user_rules) {
             log::warn!("creation_rules: failed to persist seeded rules: {err}");
         }
     }
@@ -137,9 +148,9 @@ pub fn load_rules() -> Vec<CreationRule> {
     user_rules
 }
 
-/// Save creation rules to disk.
-pub fn save_rules(rules: &[CreationRule]) -> Result<()> {
-    let path = rules_path();
+/// Save creation rules to the notebox.
+pub fn save_rules(notebox_root: &Path, rules: &[CreationRule]) -> Result<()> {
+    let path = rules_path(notebox_root);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -373,7 +384,10 @@ mod tests {
 
     #[test]
     fn test_load_rules_returns_defaults() {
-        let rules = load_rules();
+        // Use a temp dir as the notebox root so the test doesn't read or
+        // mutate the developer's real config.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let rules = load_rules(tmp.path());
         assert!(rules.len() >= 2);
         assert!(rules.iter().any(|r| r.id == "new-note"));
         assert!(rules.iter().any(|r| r.id == "daily-note"));

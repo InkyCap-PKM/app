@@ -20,21 +20,23 @@ pub(super) async fn resolve_effective_bib(
         }
     }
     let notebox_root = notebox_root?;
-    let settings = state.settings.read().await;
-    crate::state::configure_bibliography(notebox_root, &settings.citations)
+    let global = state.settings.read().await.citations.clone();
+    let notebox = state.notebox_settings.read().await.citations.clone();
+    crate::state::configure_bibliography(notebox_root, &global, &notebox)
 }
 
-/// Resolve the user's preferred citation style from settings. Returns the
-/// custom CSL path when the user picked "custom"; otherwise the named
-/// style (e.g. `"chicago-notes"`). `None` when no style is configured.
+/// Resolve the effective citation style. The per-notebox `custom_csl_path`
+/// override wins; otherwise the user-global named style (e.g.
+/// `"chicago-notes"`) applies. `None` when neither is configured.
 pub(super) async fn resolve_user_bib_style(state: &State<'_, AppState>) -> Option<String> {
-    let settings = state.settings.read().await;
-    settings
+    let notebox = state.notebox_settings.read().await;
+    let global = state.settings.read().await;
+    notebox
         .citations
         .custom_csl_path
         .clone()
         .or_else(|| {
-            settings
+            global
                 .citations
                 .citation_style
                 .as_deref()

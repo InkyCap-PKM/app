@@ -134,7 +134,10 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
     <>
       <div class="settings__row">
         <div class="settings__row-info">
-          <label class="settings__label">Attachment folder</label>
+          <label class="settings__label">
+            Attachment folder
+            <span class="settings__scope-badge">this notebox</span>
+          </label>
           <span class="settings__description">
             Where images and files are stored (relative to notebox root).
             Renaming moves existing files and rewrites references across

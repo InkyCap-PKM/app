@@ -3,7 +3,7 @@
 //
 // Two sources feed an agenda item:
 //   1. Document-level — a note's own `#note(...)` properties: `task`,
-//      `due`, `status`. The note itself becomes one item.
+//      `due`. The note itself becomes one item.
 //   2. Inline — `#task(...)` / `#due(...)` calls in a note body, surfaced
 //      as `AgendaMarker`s via the `<inkycap-agenda>` label.
 //
@@ -51,10 +51,8 @@ pub struct AgendaItem {
     /// File creation date (ISO `YYYY-MM-DD`), when the filesystem knows it.
     pub created: Option<String>,
     /// Completion state. `#task` markers carry their own; document-level
-    /// items are considered done when their `status` reads done/complete.
+    /// items use the `task` property's boolean value.
     pub done: bool,
-    /// The host note's `status` values, for status-based filtering.
-    pub status: Vec<String>,
     /// Tags — the host note's tags, unioned with any `#task`-local tags.
     pub tags: Vec<String>,
     /// The host note's `zid`, when present.
@@ -79,19 +77,6 @@ fn note_title(note: &NoteMetadata) -> String {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default()
     })
-}
-
-/// The host note's `status` values as a flat string list.
-fn status_values(note: &NoteMetadata) -> Vec<String> {
-    match note.properties.get("status") {
-        Some(PropertyValue::List(items)) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .filter(|s| !s.is_empty())
-            .collect(),
-        Some(PropertyValue::String(s)) if !s.is_empty() => vec![s.clone()],
-        _ => Vec::new(),
-    }
 }
 
 fn note_zid(note: &NoteMetadata) -> Option<String> {
@@ -141,7 +126,6 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
     for note in notes {
         let path = note.path.display().to_string();
         let title = note_title(note);
-        let status = status_values(note);
         let zid = note_zid(note);
 
         // File creation date — surfaced as `file.ctime` (RFC3339) by the
@@ -157,8 +141,7 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
         //    `due` date. The generic `date` property is *not* a qualifier —
         //    many notes use it as a creation/authoring date and would
         //    otherwise flood the agenda. A `task` property's value is the
-        //    canonical done-state (true = done, false = to do); the
-        //    `status` property is metadata only and does not drive `done`.
+        //    canonical done-state (true = done, false = to do).
         let task_state = note_task_state(note);
         let is_task = task_state.is_some();
         let note_date = prop_str(note, "due");
@@ -173,7 +156,6 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
                 date: note_date,
                 created: created.clone(),
                 done: task_state.unwrap_or(false),
-                status: status.clone(),
                 tags: note.tags.clone(),
                 zid: zid.clone(),
             });
@@ -203,7 +185,6 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
                 date: marker.due.clone(),
                 created: created.clone(),
                 done: marker.done,
-                status: status.clone(),
                 tags,
                 zid: zid.clone(),
             });

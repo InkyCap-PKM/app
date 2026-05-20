@@ -52,8 +52,11 @@ pub fn import_from_directory(
     target: &Path,
     dialect: MarkdownDialect,
 ) -> ImportResult {
-    let settings = crate::settings::load_settings();
-    let attachment_folder = settings.files.attachment_folder.clone();
+    // Import creates a fresh notebox at `target` with no settings yet, so
+    // attachment-folder routing uses the per-notebox default. The new
+    // notebox's settings file will be seeded at first open.
+    let attachment_folder = crate::notebox_settings::NoteboxFileSettings::default()
+        .attachment_folder;
     let options = MarkdownToTypstOptions {
         attachment_folder: attachment_folder.clone(),
         dialect,
@@ -205,8 +208,8 @@ pub fn import_from_zip(
     target: &Path,
     dialect: MarkdownDialect,
 ) -> ImportResult {
-    let settings = crate::settings::load_settings();
-    let attachment_folder = settings.files.attachment_folder.clone();
+    let attachment_folder = crate::notebox_settings::NoteboxFileSettings::default()
+        .attachment_folder;
     let options = MarkdownToTypstOptions {
         attachment_folder: attachment_folder.clone(),
         dialect,
@@ -780,7 +783,7 @@ mod tests {
         //   2. Route the source file (wherever it lives in the source
         //      notebox) into `<target>/<attachment_folder>/`, NOT preserve
         //      its original relative path.
-        // The default attachment folder is "assets" (FileSettings::
+        // The default attachment folder is "Assets" (FileSettings::
         // default), which is what load_settings() returns absent a
         // saved user setting.
         let source = TempDir::new().unwrap();
@@ -809,7 +812,7 @@ mod tests {
         // source's "Obsidian Attachments/…" location.
         let note = fs::read_to_string(target.path().join("note.typ")).unwrap();
         assert!(
-            note.contains("#image(\"/assets/Pasted image 20240412113956.png\")"),
+            note.contains("#image(\"/Assets/Pasted image 20240412113956.png\")"),
             "expected #image() at attachment folder, got:\n{note}"
         );
         assert!(
@@ -822,7 +825,7 @@ mod tests {
         assert!(
             target
                 .path()
-                .join("assets/Pasted image 20240412113956.png")
+                .join("Assets/Pasted image 20240412113956.png")
                 .exists(),
             "file should have been routed into the attachment folder"
         );
@@ -853,7 +856,7 @@ mod tests {
                 .write_all(b"# Hello\n\nWorld.")
                 .unwrap();
             zip_writer
-                .start_file("notebox/assets/pic.jpg", options)
+                .start_file("notebox/Assets/pic.jpg", options)
                 .unwrap();
             zip_writer.write_all(b"fake jpg").unwrap();
             zip_writer.finish().unwrap();
@@ -869,6 +872,6 @@ mod tests {
         // The root prefix "notebox/" should be stripped.
         let note = fs::read_to_string(import_target.path().join("hello.typ")).unwrap();
         assert!(note.contains("= Hello"));
-        assert!(import_target.path().join("assets/pic.jpg").exists());
+        assert!(import_target.path().join("Assets/pic.jpg").exists());
     }
 }

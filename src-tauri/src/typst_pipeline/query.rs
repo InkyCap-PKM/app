@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn extracts_note_metadata() {
         let (_dir, root) = setup_notebox_with_package(
-            r#"#note(title: "Test Note", status: "draft", tags: ("research", "typst"))"#,
+            r#"#note(title: "Test Note", tags: ("research", "typst"))"#,
         );
         let note_path = root.join("test.typ");
         let source = fs::read_to_string(&note_path).unwrap();
@@ -452,10 +452,6 @@ mod tests {
         assert_eq!(
             result.properties.get("title"),
             Some(&PropertyValue::String("Test Note".to_string()))
-        );
-        assert_eq!(
-            result.properties.get("status"),
-            Some(&PropertyValue::List(vec![PropertyValue::String("draft".to_string())]))
         );
         assert!(result.tags.contains(&"research".to_string()));
         assert!(result.tags.contains(&"typst".to_string()));

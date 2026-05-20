@@ -28,7 +28,7 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import * as ipc from "../lib/ipc";
-import { settings } from "./settings";
+import { noteboxSettings } from "./settings";
 import { creationRules } from "./creation-rules";
 import type {
   ScrollEntry,
@@ -185,7 +185,7 @@ export function getVisibleEntries(tabId: string): string[] {
 // per-tab date-direction toggle) picks the *order*. Every sort variant
 // carries the direction — `desc` is recent-first, `asc` reverses it.
 function buildSort(direction: SortDir): ScrollSort {
-  switch (settings.journal_scroll.date_sort) {
+  switch (noteboxSettings.journal_scroll.date_sort) {
     case "modified":
       return { kind: "property", name: "file.mtime", direction };
     case "zid":
@@ -218,13 +218,13 @@ export function dailyNotesFolder(): string {
  *  for the whole notebox. Driven entirely by the user's "Anchor scope"
  *  setting — the scroll itself no longer has per-tab modes. */
 function scopeFolder(): string | null {
-  switch (settings.journal_scroll.anchor_scope) {
+  switch (noteboxSettings.journal_scroll.anchor_scope) {
     case "daily": {
       const folder = dailyNotesFolder();
       return folder || null;
     }
     case "custom": {
-      const folder = settings.journal_scroll.custom_scope_folder.trim();
+      const folder = noteboxSettings.journal_scroll.custom_scope_folder.trim();
       return folder || null;
     }
     case "all":

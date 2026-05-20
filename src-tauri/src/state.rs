@@ -14,6 +14,7 @@ use crate::property_types::PropertyTypeRegistry;
 use crate::recovery::SnapshotManager;
 use crate::scanner::property_index::PropertyIndex;
 use crate::search::engine::{PersistedSearchIndex, SearchEngine};
+use crate::notebox_settings::{NoteboxCitationSettings, NoteboxSettings};
 use crate::settings::{CitationSettings, UserSettings};
 use crate::storage::local::LocalNoteboxStorage;
 use crate::storage::traits::NoteboxStorage;
@@ -57,8 +58,12 @@ pub struct AppState {
     /// Owned here so opening a new notebox can cancel the previous monitor
     /// before spawning its replacement.
     pub health_monitor: RwLock<Option<tokio::task::AbortHandle>>,
-    /// User-configurable settings, persisted to disk.
+    /// User-global settings, persisted at `$CONFIG_DIR/inkycap/settings.json`.
     pub settings: RwLock<UserSettings>,
+    /// Per-notebox settings, persisted at `<notebox>/.inkycap/settings.json`.
+    /// Reset to defaults until a notebox is opened; loaded in
+    /// `open_notebox_fast`.
+    pub notebox_settings: RwLock<NoteboxSettings>,
     /// Full-text search engine with inverted index.
     pub search_engine: RwLock<SearchEngine>,
     /// Corpus statistics for the Mycelial View (TF-IDF + PMI).
@@ -119,6 +124,7 @@ impl AppState {
             watcher: RwLock::new(None),
             health_monitor: RwLock::new(None),
             settings: RwLock::new(settings),
+            notebox_settings: RwLock::new(NoteboxSettings::default()),
             search_engine: RwLock::new(SearchEngine::new()),
             corpus_stats: RwLock::new(CorpusStats::new(None)),
             bookmarks: RwLock::new(bookmarks::load_bookmarks().unwrap_or_default()),
@@ -216,6 +222,12 @@ impl AppState {
         *self.collection_files.write().await = collection_files;
         *self.property_types.write().await = PropertyTypeRegistry::load(&canonical_path);
 
+        // Load this notebox's settings so subsequent reads (folder paths,
+        // citation source, journal scroll preferences, etc.) reflect what
+        // travels with the notebox, not the previous one.
+        *self.notebox_settings.write().await =
+            crate::notebox_settings::load_settings(&canonical_path);
+
         // (Scaffold already ran above so the notebox library is on disk
         // before the compiler is constructed.)
 
@@ -225,9 +237,13 @@ impl AppState {
         // work that adds system fonts may want to spawn this off-thread.
         let mut compiler = TypstCompiler::new(canonical_path.clone());
         {
-            let settings = self.settings.read().await;
-            let style = settings.citations.custom_csl_path.clone()
-                .or_else(|| settings.citations.citation_style.as_deref()
+            let global = self.settings.read().await;
+            let notebox = self.notebox_settings.read().await;
+            // Per-notebox `custom_csl_path` overrides the user-global default
+            // style. If no override, fall back to the user-global named
+            // style (unless it's "custom" with no path — treat as no style).
+            let style = notebox.citations.custom_csl_path.clone()
+                .or_else(|| global.citations.citation_style.as_deref()
                     .filter(|s| *s != "custom")
                     .map(String::from));
             compiler.set_bibliography_style(style);
@@ -739,13 +755,17 @@ fn extract_search_meta(
 /// exports them to `.inkycap/zotero-export.bib` so the Typst compiler can
 /// resolve `@key` citations. Returns the notebox-relative path to use as the
 /// bibliography override.
+///
+/// Takes both the user-global citations (for the system Zotero install path)
+/// and the notebox-specific citations (source choice, bibliography path).
 pub fn configure_bibliography(
     notebox_root: &Path,
-    citations: &CitationSettings,
+    global: &CitationSettings,
+    notebox: &NoteboxCitationSettings,
 ) -> Option<String> {
-    match citations.source.as_str() {
+    match notebox.source.as_str() {
         "zotero" => {
-            let db = citations
+            let db = global
                 .zotero_database_path
                 .as_ref()
                 .map(PathBuf::from)
@@ -767,6 +787,6 @@ pub fn configure_bibliography(
                 }
             }
         }
-        _ => citations.bibliography_path.clone(),
+        _ => notebox.bibliography_path.clone(),
     }
 }

@@ -2351,6 +2351,23 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* "this notebox" badge — small inline tag next to per-notebox setting
+   labels, so users can see at a glance which settings are scoped to
+   the current notebox vs. user-global. */
+.settings__scope-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--fg-dim);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  vertical-align: middle;
+  letter-spacing: 0.2px;
+}
+
 /* Toggle switch */
 .settings__toggle {
   position: relative;
