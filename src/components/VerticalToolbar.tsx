@@ -16,6 +16,7 @@ import { toastError } from "../stores/toasts";
 
 export type SidebarMode =
   | "collections"
+  | "agenda"
   | "filetree"
   | "tags"
   | "properties"

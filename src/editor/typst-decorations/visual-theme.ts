@@ -355,6 +355,36 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.85em",
     cursor: "pointer",
   },
+  ".cm-typst-task": {
+    display: "inline-flex",
+    alignItems: "baseline",
+    gap: "4px",
+  },
+  ".cm-typst-task__box": {
+    cursor: "pointer",
+    userSelect: "none",
+    fontSize: "1.05em",
+    lineHeight: "1",
+  },
+  ".cm-typst-task--done .cm-typst-task__body": {
+    textDecoration: "line-through",
+    color: "var(--fg-dim)",
+  },
+  ".cm-typst-task__due": {
+    backgroundColor: "var(--accent-purple-bg)",
+    color: "var(--accent-text)",
+    borderRadius: "3px",
+    padding: "0 5px",
+    fontSize: "0.8em",
+  },
+  ".cm-typst-due": {
+    display: "inline-block",
+    backgroundColor: "var(--accent-purple-bg)",
+    color: "var(--accent-text)",
+    borderRadius: "3px",
+    padding: "1px 6px",
+    fontSize: "0.85em",
+  },
   ".cm-typst-wikilink": {
     display: "inline",
     color: "var(--syntax-link)",
@@ -465,7 +495,7 @@ export const visualTheme = EditorView.theme({
     padding: "var(--popup-padding-block) 0",
     boxShadow: "var(--popup-shadow)",
     zIndex: "var(--z-menu)",
-    minWidth: "200px",
+    minWidth: "320px",
     fontSize: "0.9em",
     // UI chrome (a menu popup), so it follows the interface font.
     fontFamily: "var(--interface-font, inherit)",

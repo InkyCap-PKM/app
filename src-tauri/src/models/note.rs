@@ -68,6 +68,24 @@ impl PropertyValue {
     }
 }
 
+/// One inline agenda construct found in a note body — a `#task(...)` or
+/// `#due(...)` call, surfaced via the `<inkycap-agenda>` label. Aggregated
+/// by the Agenda pane alongside document-level `#note(...)` properties.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgendaMarker {
+    /// `"task"` (a `#task` checkbox) or `"date"` (a `#due` reminder).
+    pub kind: String,
+    /// The task body, or a `#due` label. `None` when a `#due` has no label.
+    pub body: Option<String>,
+    /// Due date as an ISO `YYYY-MM-DD` string, or `None`.
+    pub due: Option<String>,
+    /// Completion state. Always `false` for `kind == "date"`.
+    pub done: bool,
+    /// Tags attached directly to a `#task` call (note tags are unioned in
+    /// later by the aggregator).
+    pub tags: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteMetadata {
     pub path: PathBuf,
@@ -75,6 +93,9 @@ pub struct NoteMetadata {
     /// Wikilinks found in the note body
     pub links: Vec<String>,
     pub tags: Vec<String>,
+    /// Inline `#task` / `#due` markers found in the note body.
+    #[serde(default)]
+    pub agenda_markers: Vec<AgendaMarker>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -79,7 +79,7 @@ pub fn default_rules() -> Vec<CreationRule> {
         CreationRule {
             id: "daily-note".to_string(),
             name: "Daily Note".to_string(),
-            icon_emoji: "lucide:calendar-plus".to_string(),
+            icon_emoji: "lucide:file-heart".to_string(),
             scaffold_path: crate::notebox_package::DAILY_NOTE_SCAFFOLD_FILE.to_string(),
             target_folder: "daily/{{date:YYYY}}".to_string(),
             filename_pattern: "{{date:YYYY-MM-DD}}".to_string(),
@@ -98,6 +98,21 @@ pub fn default_rules() -> Vec<CreationRule> {
 /// in the rule editor to reset a built-in rule to its seeded state.
 pub fn default_rule_for_id(id: &str) -> Option<CreationRule> {
     default_rules().into_iter().find(|r| r.id == id)
+}
+
+/// Icons that *were* the default for a given built-in rule at some prior
+/// release. When `load_rules` finds a built-in rule whose stored
+/// `icon_emoji` still matches one of these, it's a strong signal the user
+/// never customized the icon, so the migration rolls them forward to the
+/// current default. A user who picked their own icon is left alone — their
+/// value won't appear in this list.
+fn legacy_default_icons(rule_id: &str) -> &'static [&'static str] {
+    match rule_id {
+        // Daily Note shipped with `calendar-plus`; renamed to `file-heart`
+        // 2026-05-19 to free up calendar iconography for the Agenda pane.
+        "daily-note" => &["lucide:calendar-plus"],
+        _ => &[],
+    }
 }
 
 // ── Persistence ──
@@ -148,6 +163,15 @@ pub fn load_rules() -> Vec<CreationRule> {
         };
         if rule.scaffold_path.is_empty() && !default.scaffold_path.is_empty() {
             rule.scaffold_path = default.scaffold_path.clone();
+            mutated = true;
+        }
+        // Roll the icon forward when it still matches a known previous
+        // default. A user-picked icon won't be in `legacy_default_icons`
+        // so this is a no-op for customized rules.
+        if rule.icon_emoji != default.icon_emoji
+            && legacy_default_icons(&rule.id).contains(&rule.icon_emoji.as_str())
+        {
+            rule.icon_emoji = default.icon_emoji.clone();
             mutated = true;
         }
     }

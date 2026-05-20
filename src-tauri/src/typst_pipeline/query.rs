@@ -14,7 +14,7 @@ use typst::layout::PagedDocument;
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 use typst::utils::PicoStr;
 
-use crate::models::note::PropertyValue;
+use crate::models::note::{AgendaMarker, PropertyValue};
 use crate::typst_pipeline::compiler::TypstCompiler;
 
 /// Extracted metadata from a single `.typ` file.
@@ -28,6 +28,8 @@ pub struct QueryResult {
     pub links: Vec<String>,
     /// Heading labels referenced by wikilinks with `label:` parameter.
     pub heading_labels: Vec<String>,
+    /// Inline `#task` / `#due` markers from `<inkycap-agenda>`.
+    pub agenda: Vec<AgendaMarker>,
 }
 
 /// Query a compiled document for all InkyCap metadata.
@@ -38,6 +40,7 @@ pub fn query_document(document: &PagedDocument) -> QueryResult {
     extract_note_metadata(introspector, &mut result);
     extract_tags(introspector, &mut result);
     extract_links(introspector, &mut result);
+    extract_agenda_markers(introspector, &mut result);
 
     result
 }
@@ -89,7 +92,7 @@ pub fn compile_and_query(
     // they have a stable surface syntax we can read without depending
     // on evaluation, and CLAUDE.md's Typst-first principle steers us
     // here (typst::syntax is the supported parsing surface).
-    let (ast_links, ast_tags) = extract_body_metadata_via_syntax(&source);
+    let (ast_links, ast_tags, ast_agenda) = extract_body_metadata_via_syntax(&source);
     for link in ast_links {
         if !result.links.contains(&link) {
             result.links.push(link);
@@ -100,6 +103,12 @@ pub fn compile_and_query(
             result.tags.push(tag);
         }
     }
+    // Only `#task` bodies are recoverable from the AST — a `#due` date is
+    // typically a `datetime(...)` call that can't be formatted without
+    // evaluation. Broken files therefore surface their tasks (sans due
+    // date) but not their bare date markers; the cache holds the full
+    // result from the last successful compile.
+    result.agenda = ast_agenda;
     result
 }
 
@@ -109,19 +118,23 @@ pub fn compile_and_query(
 /// `wikilink(...)` and `tag(...)` call shapes the `inkycap-notebox`
 /// package exports — anything else would require evaluation to be
 /// trusted.
-fn extract_body_metadata_via_syntax(source: &str) -> (Vec<String>, Vec<String>) {
+fn extract_body_metadata_via_syntax(
+    source: &str,
+) -> (Vec<String>, Vec<String>, Vec<AgendaMarker>) {
     let root = parse(source);
     let node = LinkedNode::new(&root);
     let mut links = Vec::new();
     let mut tags = Vec::new();
-    walk_for_body_calls(&node, &mut links, &mut tags);
-    (links, tags)
+    let mut agenda = Vec::new();
+    walk_for_body_calls(&node, &mut links, &mut tags, &mut agenda);
+    (links, tags, agenda)
 }
 
 fn walk_for_body_calls(
     node: &LinkedNode<'_>,
     links: &mut Vec<String>,
     tags: &mut Vec<String>,
+    agenda: &mut Vec<AgendaMarker>,
 ) {
     if node.kind() == SyntaxKind::FuncCall {
         if let Some(call) = node.cast::<ast::FuncCall>() {
@@ -137,13 +150,24 @@ fn walk_for_body_calls(
                             tags.push(s);
                         }
                     }
+                    "task" => {
+                        if let Some(s) = first_string_positional_arg(node) {
+                            agenda.push(AgendaMarker {
+                                kind: "task".to_string(),
+                                body: Some(s),
+                                due: None,
+                                done: false,
+                                tags: Vec::new(),
+                            });
+                        }
+                    }
                     _ => {}
                 }
             }
         }
     }
     for child in node.children() {
-        walk_for_body_calls(&child, links, tags);
+        walk_for_body_calls(&child, links, tags, agenda);
     }
 }
 
@@ -298,6 +322,58 @@ fn extract_links(introspector: &Introspector, result: &mut QueryResult) {
         if let Some(Value::Str(label)) = dict_get(dict, "label") {
             result.heading_labels.push(label.as_str().to_string());
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// <inkycap-agenda> — inline #task / #due markers
+// ---------------------------------------------------------------------------
+
+fn extract_agenda_markers(introspector: &Introspector, result: &mut QueryResult) {
+    let Some(selector) = label_selector("inkycap-agenda") else {
+        return;
+    };
+    let elements = introspector.query(&selector);
+
+    for elem in elements.iter() {
+        let Some(meta) = elem.to_packed::<MetadataElem>() else {
+            continue;
+        };
+        let Value::Dict(dict) = &meta.value else {
+            continue;
+        };
+
+        let kind = match dict_get(dict, "kind") {
+            Some(Value::Str(s)) => s.as_str().to_string(),
+            _ => continue,
+        };
+        let body = match dict_get(dict, "body") {
+            Some(Value::Str(s)) => Some(s.as_str().to_string()),
+            _ => None,
+        };
+        let due = match dict_get(dict, "due") {
+            Some(Value::Str(s)) => Some(s.as_str().to_string()),
+            _ => None,
+        };
+        let done = matches!(dict_get(dict, "done"), Some(Value::Bool(true)));
+        let tags = match dict_get(dict, "tags") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| match v {
+                    Value::Str(s) => Some(s.as_str().to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        result.agenda.push(AgendaMarker {
+            kind,
+            body,
+            due,
+            done,
+            tags,
+        });
     }
 }
 
@@ -571,6 +647,50 @@ Reference to #wikilink("Target Note") here.
         assert!(collection.contains("my-paper"));
         assert!(collection.contains("thesis-ch3"));
         assert!(!collection.contains("other"));
+    }
+
+    #[test]
+    fn extracts_agenda_markers() {
+        let (_dir, root) = setup_notebox_with_package(
+            r#"#task("Draft abstract", due: datetime(year: 2026, month: 6, day: 23))
+
+#task("Email co-author", done: true, tags: ("work",))
+
+Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conference")
+"#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        assert_eq!(result.agenda.len(), 3, "agenda: {:?}", result.agenda);
+
+        let abstract_task = result
+            .agenda
+            .iter()
+            .find(|m| m.body.as_deref() == Some("Draft abstract"))
+            .expect("draft abstract task");
+        assert_eq!(abstract_task.kind, "task");
+        assert_eq!(abstract_task.due.as_deref(), Some("2026-06-23"));
+        assert!(!abstract_task.done);
+
+        let email_task = result
+            .agenda
+            .iter()
+            .find(|m| m.body.as_deref() == Some("Email co-author"))
+            .expect("email task");
+        assert!(email_task.done);
+        assert_eq!(email_task.tags, vec!["work".to_string()]);
+
+        let date_marker = result
+            .agenda
+            .iter()
+            .find(|m| m.kind == "date")
+            .expect("date marker");
+        assert_eq!(date_marker.due.as_deref(), Some("2026-07-01"));
+        assert_eq!(date_marker.body.as_deref(), Some("Conference"));
     }
 
     #[test]

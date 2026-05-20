@@ -460,6 +460,7 @@ mod tests {
             properties,
             links: vec![],
             tags: vec![],
+            agenda_markers: vec![],
         }
     }
 

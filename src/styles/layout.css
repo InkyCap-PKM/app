@@ -440,6 +440,85 @@ svg.lucide {
   padding: 8px;
 }
 
+/* Agenda panel — flat task/date list with Sort, Task List, and Tags
+   dropdown filters. Reuses `.sidebar-item` for rows. */
+.agenda__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px 6px;
+}
+
+.agenda__controls-left {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.agenda__dropdown {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.agenda__dropdown:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.agenda__dropdown-label {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.agenda__tag-menu {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.agenda__tag-check {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.agenda__tag-check--hidden {
+  visibility: hidden;
+}
+
+.agenda__item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenda__item--done .agenda__item-text {
+  text-decoration: line-through;
+  color: var(--fg-dim);
+}
+
+.agenda__date {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.agenda__date--overdue {
+  color: var(--accent-danger);
+  font-weight: 500;
+}
+
 /* Tabs */
 .tab {
   display: flex;
@@ -635,6 +714,34 @@ svg.lucide {
 
 .collection-table__export-wrapper {
   position: relative;
+}
+
+/* "+ add view" type picker (Table / Agenda). */
+.collection-table__add-view-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.collection-table__add-view-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--z-menu);
+  min-width: 140px;
+  margin-top: 2px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+}
+
+/* Agenda view body — a scrollable flat list in place of the table grid. */
+.collection-table__agenda {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
 }
 
 .collection-table__export-menu {

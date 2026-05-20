@@ -27,6 +27,7 @@ import {
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
+  CalendarCheck,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
@@ -50,6 +51,7 @@ import {
 import SearchPanel from "./SearchPanel";
 import BookmarksPanel from "./BookmarksPanel";
 import TemplatesPanel from "./TemplatesPanel";
+import AgendaPanel from "./AgendaPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -1145,6 +1147,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           <LibraryBig size={18} />
         </button>
         <button
+          class={`left-sidebar__mode-btn ${mode() === "agenda" ? "left-sidebar__mode-btn--active" : ""}`}
+          onClick={() => setMode("agenda")}
+          title="Agenda"
+          aria-label="Agenda"
+        >
+          <CalendarCheck size={18} />
+        </button>
+        <button
           class={`left-sidebar__mode-btn ${mode() === "properties" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("properties")}
           title="Properties"
@@ -1311,6 +1321,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               )}
             </For>
           </Show>
+        </Show>
+
+        <Show when={mode() === "agenda"}>
+          <AgendaPanel refreshTick={refreshTick()} />
         </Show>
 
         <Show when={mode() === "filetree"}>

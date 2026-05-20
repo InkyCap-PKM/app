@@ -2,7 +2,7 @@ import { Component, Show, For, createSignal, createMemo } from "solid-js";
 import { ArchiveRestore, Archive, Check, TextCursorInput } from "lucide-solid";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
-import { getActiveTab, closeTab, openTab } from "../stores/tabs";
+import { getActiveTab, renameTabPath } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
 import { toastError } from "../stores/toasts";
 
@@ -100,12 +100,13 @@ const StatusBar: Component = () => {
     const newName = renameDraft().trim();
     if (!newName || newName === oldName) return;
     try {
-      const newPath = await ipc.renameAndUpdateLinks(tab.path, newName);
-      closeTab(tab.id);
-      openTab(
-        { type: "file", title: newName, path: newPath },
-        { forceNewTab: true },
-      );
+      const oldPath = tab.path;
+      const newPath = await ipc.renameAndUpdateLinks(oldPath, newName);
+      // `renameTabPath` updates the active tab's path + title in place
+      // and migrates the cached editor state and history. The previous
+      // close+open dance lost editor state and could race with the file
+      // watcher's rename event leaving the tab heading on the old name.
+      renameTabPath(oldPath, newPath);
     } catch (err) {
       toastError("Rename failed", err);
     }

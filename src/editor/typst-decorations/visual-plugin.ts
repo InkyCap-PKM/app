@@ -18,6 +18,8 @@ import {
   BlockquoteBlockWidget,
   BibliographyBlockWidget,
   TagWidget,
+  TaskWidget,
+  DueWidget,
   WikilinkWidget,
   LinkWidget,
   CitationWidget,
@@ -573,7 +575,27 @@ const BLOCK_FUNCS = new Set([
 
 // These funcs always render as widgets even on cursor line — click navigates,
 // edit via source mode or cursor-adjacent positioning.
+// `task` and `due` are NOT in INTERACTIVE_FUNCS: they render as widgets,
+// but on cursor-line they also surface a `FuncPillWidget` so the user can
+// edit body/due/done/label through the standard pill menu (see
+// pill-options.ts taskOptions / dueOptions). Their case branches handle
+// both decorations explicitly, mirroring how `cite` combines a pill with
+// the citation widget.
 const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link"]);
+
+/** Best-effort extraction of an ISO `YYYY-MM-DD` date from a snippet of
+ *  Typst source — recognizes a `datetime(...)` call (positional or named
+ *  args) and a quoted `"YYYY-MM-DD"` string. Returns null when neither. */
+function extractDateLiteral(s: string): string | null {
+  const dt = s.match(
+    /datetime\(\s*(?:year\s*:\s*)?(\d{1,4})\s*,\s*(?:month\s*:\s*)?(\d{1,2})\s*,\s*(?:day\s*:\s*)?(\d{1,2})/,
+  );
+  if (dt) {
+    return `${dt[1].padStart(4, "0")}-${dt[2].padStart(2, "0")}-${dt[3].padStart(2, "0")}`;
+  }
+  const str = s.match(/"(\d{4}-\d{2}-\d{2})"/);
+  return str ? str[1] : null;
+}
 
 // Block widgets that collapse to pill + editable value when cursor is on line.
 const BLOCK_WIDGET_FUNCS = new Set(["image", "embed"]);
@@ -758,6 +780,50 @@ function handleFuncCall(
       if (name) {
         decos.push(
           Decoration.replace({ widget: new TagWidget(name), inclusiveStart: false, inclusiveEnd: false }).range(from, to),
+        );
+      }
+      return false;
+    }
+    case "task": {
+      const body = extractFirstStringArg(text);
+      if (body !== null && body !== undefined) {
+        const done = /\bdone\s*:\s*true\b/.test(text);
+        // Look for the due date only after the `due:` keyword so a date
+        // inside the body string can't be mistaken for it.
+        const dueIdx = text.search(/\bdue\s*:/);
+        const due = dueIdx >= 0 ? extractDateLiteral(text.slice(dueIdx)) : null;
+        if (showPill) {
+          decos.push(
+            Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
+          );
+        }
+        decos.push(
+          Decoration.replace({
+            widget: new TaskWidget(body, done, due, from),
+            inclusiveStart: false,
+            inclusiveEnd: false,
+          }).range(from, to),
+        );
+      }
+      return false;
+    }
+    case "due": {
+      const date = extractDateLiteral(text);
+      const label = extractNamedStringArg(text, "label");
+      // Pill shows even when the date is missing — that's how the user
+      // fills one in via the menu after a slash-inserted `#due()`.
+      if (showPill) {
+        decos.push(
+          Decoration.widget({ widget: new FuncPillWidget(from, "due"), side: -1 }).range(from),
+        );
+      }
+      if (date) {
+        decos.push(
+          Decoration.replace({
+            widget: new DueWidget(date, label ?? ""),
+            inclusiveStart: false,
+            inclusiveEnd: false,
+          }).range(from, to),
         );
       }
       return false;

@@ -82,7 +82,7 @@ import {
 } from "../stores/linksPanel";
 
 const KNOWN_FIELDS_ORDERED = [
-  "title", "aliases", "description", "tags", "date", "date-due",
+  "title", "aliases", "description", "tags", "date", "due",
   "task", "status", "disposition", "source", "zid", "collection",
 ];
 const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
@@ -93,7 +93,7 @@ const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   description: "text",
   tags: "list",
   date: "date",
-  "date-due": "date",
+  due: "date",
   task: "checkbox",
   status: "list",
   disposition: "list",

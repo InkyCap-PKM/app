@@ -3,6 +3,8 @@
 // Public API:
 //   #note(...)            document-level metadata
 //   #tag("name")          inline tag
+//   #task("body", ...)    inline checkbox task (emits <inkycap-agenda>)
+//   #due(date, label: ...) inline dated reminder (emits <inkycap-agenda>)
 //   #wikilink("Name", display: ...)
 //   link-ref("Name")      link reference value (use inside note() fields)
 //   #embed("Name")        transclude another note (emits link)
@@ -11,10 +13,12 @@
 //                         markup (eval'd per line)
 //   #set-notebox(...)       per-document rendering toggles + verse-font
 //
-// Three queryable labels:
-//   <inkycap-note>  — at most one per file, attached to a metadata dict
-//   <inkycap-tag>   — one per #tag(...) call, dict (name:)
-//   <inkycap-link>  — one per outgoing link (body wikilinks + link-refs in metadata)
+// Four queryable labels:
+//   <inkycap-note>   — at most one per file, attached to a metadata dict
+//   <inkycap-tag>    — one per #tag(...) call, dict (name:)
+//   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
+//   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
+//                      (kind, body, due, done, tags)
 
 // ---------------------------------------------------------------------------
 // apply-notebox-defaults / apply-collection-style: document-level styling hooks.
@@ -319,6 +323,64 @@
       )
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// _fmt-date: normalize a date argument to a stable `[year]-[month]-[day]`
+// string. Accepts a `datetime` (the native, recommended form) or a string
+// (tolerated when hand-authored). Returns `none` for `none`.
+// ---------------------------------------------------------------------------
+
+#let _fmt-date(v) = {
+  if v == none { none }
+  else if type(v) == datetime { v.display("[year]-[month]-[day]") }
+  else if type(v) == str { v }
+  else { str(v) }
+}
+
+// ---------------------------------------------------------------------------
+// task: an inline checkbox item. Always emits <inkycap-agenda> (kind "task")
+// so the Agenda pane can aggregate it; always renders (a task is real
+// content, unlike a tag). `due` accepts a datetime or string; `done` toggles
+// the checkbox glyph and strikethrough.
+// ---------------------------------------------------------------------------
+
+#let task(body, due: none, done: false, tags: ()) = {
+  assert(type(body) == str, message: "task: body must be a string")
+  assert(type(done) == bool, message: "task: done must be a boolean")
+  let tag-list = if type(tags) == array { tags } else if type(tags) == str and tags != "" { (tags,) } else { () }
+  [#metadata((
+    kind: "task",
+    body: body,
+    due: _fmt-date(due),
+    done: done,
+    tags: tag-list,
+  )) <inkycap-agenda>]
+  let mark = if done { "\u{2611}" } else { "\u{2610}" }
+  box[#mark #(if done { strike(body) } else { body })]
+}
+
+// ---------------------------------------------------------------------------
+// due: an inline dated reminder, attachable next to prose. Always emits
+// <inkycap-agenda> (kind "date"); renders a small date badge. `label` is the
+// text the Agenda pane shows for this item (the surrounding prose is not
+// captured); without it the Agenda falls back to the note title.
+// ---------------------------------------------------------------------------
+
+#let due(date, label: none) = {
+  [#metadata((
+    kind: "date",
+    body: label,
+    due: _fmt-date(date),
+    done: false,
+    tags: (),
+  )) <inkycap-agenda>]
+  box(
+    fill: rgb("#eef2ff"),
+    inset: (x: 4pt, y: 1pt),
+    radius: 2pt,
+    text(size: 0.85em, _fmt-date(date)),
+  )
 }
 
 // ---------------------------------------------------------------------------

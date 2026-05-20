@@ -1,3 +1,4 @@
+pub mod agenda;
 pub mod attachment_migration;
 pub mod bibliography;
 pub mod bookmarks;

@@ -1,6 +1,7 @@
 import {
   Component,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   For,
@@ -21,8 +22,10 @@ import type {
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import { propertyVersion } from "../stores/notebox";
+import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText } from "../stores/prompt";
+import { t } from "../lib/i18n";
+import AgendaList from "./AgendaList";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import LucideIconPicker from "./LucideIconPicker";
@@ -1110,6 +1113,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   const [busyDetail, setBusyDetail] = createSignal<string | undefined>(undefined);
   // Counter to force refetch
   const [refreshTick, setRefreshTick] = createSignal(0);
+  // Whether the "+ add view" type picker (Table / Agenda) is open.
+  const [showAddViewMenu, setShowAddViewMenu] = createSignal(false);
 
   const [data, { refetch }] = createResource(
     () => ({ path: props.path, view: activeView(), tick: refreshTick(), pv: propertyVersion() }),
@@ -1119,6 +1124,31 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   const [allKeys] = createResource(
     () => props.path,
     async () => ipc.getAllPropertyKeys(),
+  );
+
+  /** `view_type` of the active view — `"table"` (default) or `"agenda"`. */
+  const activeViewType = createMemo(() => {
+    const d = data();
+    if (!d) return "table";
+    const vn = activeView();
+    const v = vn ? d.views.find((x) => x.name === vn) : d.views[0];
+    return v?.view_type ?? "table";
+  });
+
+  // Agenda rows for an "agenda" view — resolved from the collection's
+  // member notes' #task/#due markers and dated properties. Only fetched
+  // when the active view is actually an agenda view.
+  const [agendaItems] = createResource(
+    () => ({
+      path: props.path,
+      view: activeView(),
+      type: activeViewType(),
+      tick: refreshTick(),
+      pv: propertyVersion(),
+      fv: fileTreeVersion(),
+    }),
+    async ({ path, view, type }) =>
+      type === "agenda" ? ipc.getCollectionAgenda(path, view) : [],
   );
 
   const [collectionFile, { refetch: refetchCollection }] = createResource(
@@ -1148,6 +1178,25 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   });
 
   // ── Filter handling ──
+  //
+  // A collection carries filters at two scopes — `base.filters` (applies to
+  // every view) and `view.filters` (additional, per-view). The Filter
+  // panel surfaces whichever is set so it can be edited or removed. When
+  // both exist the view's wins for display (and is the one saved back).
+  // Without this fallback a filter stored at the global scope would be
+  // invisible in the builder even though it was actively filtering rows.
+
+  function currentFilterScope(): "view" | "global" {
+    const bf = collectionFile();
+    if (!bf) return "view";
+    const viewName = activeView();
+    const view = viewName
+      ? bf.views.find((v) => v.name === viewName)
+      : bf.views[0];
+    if (view?.filters) return "view";
+    if (bf.filters) return "global";
+    return "view";
+  }
 
   function currentFilters(): FilterGroup | null {
     const bf = collectionFile();
@@ -1156,11 +1205,15 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     const view = viewName
       ? bf.views.find((v) => v.name === viewName)
       : bf.views[0];
-    return view?.filters ?? null;
+    return view?.filters ?? bf.filters ?? null;
   }
 
   async function handleFilterSave(filters: FilterGroup | null) {
-    const viewName = activeView() || null;
+    // Save back to the same scope the builder showed — editing a global
+    // filter writes to `base.filters`, not a brand-new view filter that
+    // shadows it.
+    const viewName =
+      currentFilterScope() === "global" ? null : activeView() || null;
     await ipc.updateCollectionFilters(props.path, viewName, filters);
     setShowFilterBuilder(false);
     refresh();
@@ -1210,14 +1263,15 @@ const CollectionTable: Component<{ path: string }> = (props) => {
 
   // ── View management ──
 
-  async function addNewView() {
+  async function addNewView(viewType: "table" | "agenda") {
+    setShowAddViewMenu(false);
     const name = await promptText({
-      title: "New view",
+      title: viewType === "agenda" ? "New agenda view" : "New view",
       label: "View name",
       confirmLabel: "Create",
     });
     if (!name?.trim()) return;
-    await ipc.addView(props.path, name.trim());
+    await ipc.addView(props.path, name.trim(), viewType);
     refresh();
     setActiveView(name.trim());
   }
@@ -1486,13 +1540,34 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     </Show>
                   )}
                 </For>
-                <button
-                  class="collection-table__view-tab collection-table__view-tab--add"
-                  onClick={addNewView}
-                  title="Add view"
-                >
-                  +
-                </button>
+                <div class="collection-table__add-view-wrap">
+                  <button
+                    class="collection-table__view-tab collection-table__view-tab--add"
+                    onClick={() => setShowAddViewMenu((v) => !v)}
+                    title="Add view"
+                  >
+                    +
+                  </button>
+                  <Show when={showAddViewMenu()}>
+                    <div
+                      class="collection-table__add-view-menu"
+                      onMouseLeave={() => setShowAddViewMenu(false)}
+                    >
+                      <button
+                        class="context-menu__item"
+                        onClick={() => addNewView("table")}
+                      >
+                        Table view
+                      </button>
+                      <button
+                        class="context-menu__item"
+                        onClick={() => addNewView("agenda")}
+                      >
+                        Agenda view
+                      </button>
+                    </div>
+                  </Show>
+                </div>
               </div>
               <div class="collection-table__toolbar">
                 <button
@@ -1607,7 +1682,26 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               )}
             </Show>
 
+            {/* Agenda view — tasks & dated items instead of a table grid. */}
+            <Show when={activeViewType() === "agenda"}>
+              <div class="collection-table__agenda">
+                <AgendaList
+                  items={agendaItems() ?? []}
+                  loading={agendaItems.loading}
+                  emptyMessage={t("agenda.emptyView")}
+                  onOpen={(it) =>
+                    openTab({
+                      type: "file",
+                      title: it.note_title,
+                      path: it.note_path,
+                    })
+                  }
+                />
+              </div>
+            </Show>
+
             {/* Table */}
+            <Show when={activeViewType() !== "agenda"}>
             <div class="collection-table__scroll">
               <table class="collection-table__table">
                 <thead>
@@ -1656,6 +1750,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
             <div class="collection-table__footer">
               {d().rows.length} {d().rows.length === 1 ? "file" : "files"}
             </div>
+            </Show>
           </>
         )}
       </Show>

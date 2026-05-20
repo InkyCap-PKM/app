@@ -69,6 +69,8 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   align:     alignOptions,
   figure:    figureOptions,
   cite:      citeOptions,
+  task:      taskOptions,
+  due:       dueOptions,
 };
 
 /** Returns option sections for the named pill, or an empty array if the
@@ -494,4 +496,226 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
       };
     }),
   }];
+}
+
+// ── #task ───────────────────────────────────────────────────────────
+//
+// Body input + due-date input + Done toggle. Dates are written as quoted
+// ISO strings (`due: "2026-06-23"`) — lib.typ's `_fmt-date` accepts both
+// quoted strings and `datetime(...)` calls, and the quoted form is what
+// any editing UI (this menu, a future date picker) writes back, keeping
+// hand-edited source and pill-edited source visually identical.
+
+/** Read a date from a Typst-source literal, returning `YYYY-MM-DD`. Handles
+ *  both `datetime(year: ..., month: ..., day: ...)` and `"YYYY-MM-DD"`. */
+function readDateLiteral(literal: string | null): string {
+  if (literal == null) return "";
+  const dt = literal.match(
+    /datetime\(\s*(?:year\s*:\s*)?(\d{1,4})\s*,\s*(?:month\s*:\s*)?(\d{1,2})\s*,\s*(?:day\s*:\s*)?(\d{1,2})/,
+  );
+  if (dt) {
+    return `${dt[1].padStart(4, "0")}-${dt[2].padStart(2, "0")}-${dt[3].padStart(2, "0")}`;
+  }
+  const s = literal.trim().match(/^"(\d{4}-\d{2}-\d{2})"$/);
+  return s ? s[1] : "";
+}
+
+/** Validate a free-text date input as ISO `YYYY-MM-DD`. Returns the
+ *  normalized string, or null if it can't be parsed. */
+function normalizeDateInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "";
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(trimmed);
+  if (!m) return null;
+  const y = m[1];
+  const mo = m[2].padStart(2, "0");
+  const d = m[3].padStart(2, "0");
+  // Sanity-check ranges so the user doesn't accidentally save `2026-13-99`.
+  if (+mo < 1 || +mo > 12 || +d < 1 || +d > 31) return null;
+  return `${y}-${mo}-${d}`;
+}
+
+function taskOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const body = readFirstPositionalString(src) ?? "";
+  const dueRaw = readNamedArg(src, "due");
+  const dueIso = readDateLiteral(dueRaw);
+  const isDone = /\bdone\s*:\s*true\b/.test(src);
+
+  return [
+    {
+      heading: "Task",
+      items: [{
+        label: "Task",
+        input: {
+          value: body,
+          placeholder: "What needs doing?",
+          onCommit: (v) =>
+            applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, v)),
+        },
+      }],
+    },
+    {
+      heading: "Due date",
+      items: [{
+        label: "Due",
+        input: {
+          value: dueIso,
+          placeholder: "YYYY-MM-DD",
+          onCommit: (v) => {
+            const norm = normalizeDateInput(v);
+            if (norm === null) return; // invalid: leave source alone
+            applyCallTransform(view, from, (s) =>
+              upsertNamedArg(s, "due", norm === "" ? null : quote(norm)),
+            );
+          },
+        },
+      }],
+    },
+    {
+      items: [{
+        label: isDone ? "Mark as not done" : "Mark as done",
+        isActive: isDone,
+        onSelect: () =>
+          applyCallTransform(view, from, (s) =>
+            // `done: false` is the default — drop the arg entirely on
+            // un-check so the source stays minimal.
+            upsertNamedArg(s, "done", isDone ? "false" : "true", {
+              defaultValue: "false",
+            }),
+          ),
+      }],
+    },
+  ];
+}
+
+// ── #due ────────────────────────────────────────────────────────────
+//
+// Date input (positional) + label input (named string). Same date-string
+// convention as `#task`.
+
+function dueOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  // The date is the first positional. It can be either a string or a
+  // `datetime(...)` expression — read the raw arg-list snippet and run
+  // `readDateLiteral` against it.
+  const args = findArgListInSource(src) ?? "";
+  // First arg up to the first top-level comma (skipping commas inside
+  // nested parens — datetime(...)'s commas would otherwise trip us up).
+  const firstArg = (() => {
+    let depth = 0;
+    let inStr = false;
+    for (let i = 0; i < args.length; i++) {
+      const ch = args[i];
+      if (ch === '"' && args[i - 1] !== "\\") { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      else if (ch === "," && depth === 0) return args.slice(0, i).trim();
+    }
+    return args.trim();
+  })();
+  const dateIso = readDateLiteral(firstArg);
+  const labelArg = unquote(readNamedArg(src, "label")) ?? "";
+
+  return [
+    {
+      heading: "Due date",
+      items: [{
+        label: "Date",
+        input: {
+          value: dateIso,
+          placeholder: "YYYY-MM-DD",
+          onCommit: (v) => {
+            const norm = normalizeDateInput(v);
+            if (norm === null || norm === "") return; // #due requires a date
+            applyCallTransform(view, from, (s) =>
+              replaceFirstPositional(s, quote(norm)),
+            );
+          },
+        },
+      }],
+    },
+    {
+      heading: "Description",
+      items: [{
+        label: "Description",
+        input: {
+          value: labelArg,
+          placeholder: "Optional caption",
+          onCommit: (v) =>
+            applyCallTransform(view, from, (s) =>
+              upsertNamedArg(s, "label", v.trim() === "" ? null : quote(v)),
+            ),
+        },
+      }],
+    },
+  ];
+}
+
+/** Replace (or insert) the first positional argument inside a call's
+ *  `(...)` list with `literal`. Used for non-string positionals like
+ *  `#due("2026-07-01")` where `replaceFirstPositionalString` would
+ *  double-quote the already-quoted input. */
+function replaceFirstPositional(callSource: string, literal: string): string {
+  const open = callSource.indexOf("(");
+  const firstBracket = callSource.indexOf("[");
+  if (open < 0 || (firstBracket >= 0 && firstBracket < open)) {
+    // No arg list — insert one.
+    const insertAt = firstBracket >= 0 ? firstBracket : callSource.length;
+    return callSource.slice(0, insertAt) + `(${literal})` + callSource.slice(insertAt);
+  }
+  // Find matching `)`.
+  let depth = 0;
+  let inStr = false;
+  let close = -1;
+  for (let i = open; i < callSource.length; i++) {
+    const ch = callSource[i];
+    if (ch === '"' && callSource[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) { close = i; break; }
+    }
+  }
+  if (close < 0) return callSource;
+
+  const args = callSource.substring(open + 1, close);
+  // Find the end of the first top-level arg.
+  let argEnd = args.length;
+  depth = 0; inStr = false;
+  for (let i = 0; i < args.length; i++) {
+    const ch = args[i];
+    if (ch === '"' && args[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) { argEnd = i; break; }
+  }
+
+  // If the first arg is named (contains a `:` at depth 0 before argEnd),
+  // there is no positional to replace — prepend the new positional.
+  let colonAtDepth0 = -1;
+  depth = 0; inStr = false;
+  for (let i = 0; i < argEnd; i++) {
+    const ch = args[i];
+    if (ch === '"' && args[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === ":" && depth === 0) { colonAtDepth0 = i; break; }
+  }
+
+  let newArgs: string;
+  if (colonAtDepth0 >= 0 || args.trim().length === 0) {
+    // No positional currently — prepend.
+    newArgs = args.trim().length === 0
+      ? literal
+      : `${literal}, ${args.trimStart()}`;
+  } else {
+    newArgs = literal + args.substring(argEnd);
+  }
+
+  return callSource.substring(0, open + 1) + newArgs + callSource.substring(close);
 }

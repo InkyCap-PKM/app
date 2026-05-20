@@ -75,6 +75,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
+  { label: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
+  { label: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
 
   { label: "Page size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
   { label: "Page margins", category: "Style", insert: '#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))', cursorOffset: 24 },

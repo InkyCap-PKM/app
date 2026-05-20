@@ -34,6 +34,7 @@ pub fn parse_note(
         properties: std::collections::HashMap::new(),
         links: Vec::new(),
         tags: Vec::new(),
+        agenda_markers: Vec::new(),
     };
 
     if let Some(compiler) = compiler {
@@ -107,6 +108,7 @@ async fn parse_note_from_disk(
         properties,
         links: Vec::new(),
         tags: Vec::new(),
+        agenda_markers: Vec::new(),
     };
 
     Ok((note, content))
@@ -117,6 +119,7 @@ async fn parse_note_from_disk(
 fn enrich_with_query(note: &mut NoteMetadata, qr: QueryResult) {
     note.links = qr.links;
     note.tags = qr.tags;
+    note.agenda_markers = qr.agenda;
     for (key, value) in qr.properties {
         note.properties.insert(key, value);
     }
@@ -158,6 +161,7 @@ pub(crate) fn note_to_cached_file(
         title,
         tags: note.tags.clone(),
         links: note.links.clone(),
+        agenda_markers: note.agenda_markers.clone(),
         content: Some(content.to_string()),
     }
 }
@@ -219,6 +223,7 @@ fn cached_to_note(
         properties,
         links: cached.links.clone(),
         tags: cached.tags.clone(),
+        agenda_markers: cached.agenda_markers.clone(),
     }
 }
 
