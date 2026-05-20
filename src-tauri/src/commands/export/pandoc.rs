@@ -28,7 +28,7 @@ pub async fn detect_pandoc() -> Result<Option<String>, InkyCapError> {
     }
 
     match which::which("pandoc") {
-        Ok(path) => Ok(Some(path.display().to_string())),
+        Ok(path) => Ok(Some(path.display().to_string())), // path-stringification-ok: subprocess argv for Command::new, not IPC
         Err(_) => Ok(None),
     }
 }

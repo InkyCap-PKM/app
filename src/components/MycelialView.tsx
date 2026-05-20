@@ -17,6 +17,7 @@ import {
 } from "solid-js";
 import { Info } from "lucide-solid";
 import * as ipc from "../lib/ipc";
+import { pathEquals } from "../lib/paths";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import { Dropdown } from "./Dropdown";
@@ -534,7 +535,7 @@ export default function MycelialView(props: MycelialViewProps) {
     const h = hoveredBox();
     const panelHover = hoveredContextNote();
     if (panelHover !== null) {
-      const ctx = contextNotes().find((n) => n.path === panelHover);
+      const ctx = contextNotes().find((n) => pathEquals(n.path, panelHover));
       if (ctx) return !ctx.linkedInnerIds.includes(id) && id !== panelHover;
       return false;
     }
@@ -547,7 +548,7 @@ export default function MycelialView(props: MycelialViewProps) {
     const h = hoveredBox();
     const panelHover = hoveredContextNote();
     if (panelHover !== null) {
-      const ctx = contextNotes().find((n) => n.path === panelHover);
+      const ctx = contextNotes().find((n) => pathEquals(n.path, panelHover));
       if (ctx) return ctx.linkedInnerIds.includes(from) || ctx.linkedInnerIds.includes(to);
       return false;
     }

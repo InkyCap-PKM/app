@@ -29,6 +29,7 @@ import {
   Info,
 } from "lucide-solid";
 import type { SearchResult } from "../lib/types";
+import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { indexReady } from "../stores/notebox";
@@ -181,9 +182,9 @@ const SearchPanel: Component = () => {
       const savedPath = (e as CustomEvent<{ path?: string }>).detail?.path;
       if (!savedPath) return;
       const current = searchResults();
-      const had = current.some((r) => r.path === savedPath);
+      const had = current.some((r) => pathEquals(r.path, savedPath));
       if (!had) return;
-      const filtered = current.filter((r) => r.path !== savedPath);
+      const filtered = current.filter((r) => !pathEquals(r.path, savedPath));
       setSearchResults(filtered);
       setSearchResultCount(filtered.length);
     };

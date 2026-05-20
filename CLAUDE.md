@@ -196,6 +196,36 @@ InkyCap is built to be picked up and extended by future human contributors who h
   integration test `src-tauri/tests/utf8_safety.rs` greps the source tree for
   `as char` and fails CI if it reappears; if you have a genuinely safe use,
   append `// utf8-safe: <one-line reason>` to the line.
+- **Path stringification across the IPC boundary.** Every `Path` that crosses
+  from Rust to the frontend — `FileTreeNode.path`, `NoteboxInfo.path`, file
+  watcher event payloads, mycelial graph node IDs, collection rows,
+  property values like `file.path`, link/backlink/alias lists, anything the
+  webview will eventually compare with `===` or `startsWith` — must flow
+  through [`crate::storage::to_frontend_string`](src-tauri/src/storage/path.rs).
+  Plain `path.display().to_string()` produces OS-native output:
+  `std::fs::canonicalize` on Windows prepends a `\\?\` UNC verbatim prefix,
+  and `Display` preserves `\` separators. The frontend then silently
+  mis-compares those paths against other path sources that don't carry the
+  same shape, and you get the kind of cross-platform bug where everything
+  works on Linux/macOS but the status bar, "Reveal in file tree", and
+  Mycelial View all silently misbehave on Windows. `to_frontend_string`
+  strips the verbatim prefix and normalizes to forward slashes — one
+  canonical shape, identical on every OS. `canonicalize_root` and
+  `validate_notebox_path` strip the same prefix internally so all
+  `PathBuf`s the backend derives from the notebox root stay consistent
+  too. The integration test `src-tauri/tests/path_safety.rs` greps for
+  `.display().to_string()` and fails CI if it reappears; legitimate
+  non-IPC uses (error messages, subprocess `argv`, the helper itself)
+  opt out with `// path-stringification-ok: <one-line reason>`.
+
+  On the frontend, comparisons that mix paths from different sources
+  (tabs, file tree, search hits, mycelial nodes) should run through
+  [`normalizePath` / `pathEquals` / `pathStartsWith`](src/lib/paths.ts).
+  Calling them on already-canonical paths is a no-op, so wrapping
+  comparisons in them costs nothing and immunizes the frontend against
+  a future regression on either side of the IPC boundary. They are
+  read-only helpers — do not rewrite paths for round-tripping back to
+  Rust; the backend accepts either separator via `PathBuf::from`.
 
 ### TypeScript / Frontend
 - TypeScript strict mode

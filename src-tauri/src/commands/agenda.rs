@@ -25,6 +25,7 @@ use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 
 /// One row in the Agenda pane.
@@ -124,7 +125,7 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
     let mut items = Vec::new();
 
     for note in notes {
-        let path = note.path.display().to_string();
+        let path = to_frontend_string(&note.path);
         let title = note_title(note);
         let zid = note_zid(note);
 

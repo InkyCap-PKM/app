@@ -314,12 +314,18 @@ mod tests {
             execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
                 .expect("daily-note default executes");
         let year = chrono::Local::now().format("%Y").to_string();
-        let path_str = path.to_string_lossy();
+        // Use `Path::starts_with` rather than a stringified substring search:
+        // `PathBuf::join` uses `\` on Windows, so a literal `"daily/<year>/"`
+        // substring would never match there even though the path structure
+        // is correct. `Path::starts_with` compares components and treats
+        // both separators as equivalent, so the same assertion works
+        // cross-platform.
+        let expected_prefix = Path::new("/notebox/daily").join(&year);
         assert!(
-            path_str.contains(&format!("daily/{}/", year)),
-            "Expected daily/{}/ in path, got: {}",
-            year,
-            path_str
+            path.starts_with(&expected_prefix),
+            "Expected path to start with {}, got: {}",
+            expected_prefix.display(),
+            path.display(),
         );
     }
 
@@ -364,7 +370,13 @@ mod tests {
             "YYYYMMDDHHmmss",
         )
         .expect("executes");
-        assert!(path.to_string_lossy().contains("/notebox/Inbox/"));
+        // Component-wise containment, not string substring — see the
+        // year-subfolder test above for why this matters on Windows.
+        assert!(
+            path.starts_with("/notebox/Inbox"),
+            "Expected path under /notebox/Inbox, got: {}",
+            path.display(),
+        );
     }
 
     #[test]

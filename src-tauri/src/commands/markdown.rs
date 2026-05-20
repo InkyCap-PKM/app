@@ -105,13 +105,69 @@ async fn read_clipboard_text(app: &tauri::AppHandle) -> Result<Option<String>, S
     #[cfg(target_os = "windows")]
     {
         let _ = app;
-        return Ok(None);
+        return Ok(tokio::task::spawn_blocking(read_clipboard_text_win32)
+            .await
+            .map_err(|e| format!("clipboard task panicked: {}", e))?);
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
         Ok(None)
+    }
+}
+
+/// Read CF_UNICODETEXT from the Win32 clipboard. Mirrors the CF_HDROP reader
+/// in [`crate::commands::file_ops::win32`]: open clipboard with a null HWND,
+/// pull the handle, lock the global memory, copy bytes out, then unlock and
+/// close so other apps don't see a stale clipboard owner. Returns `None` when
+/// the clipboard has no text payload (e.g. an image was copied).
+#[cfg(target_os = "windows")]
+fn read_clipboard_text_win32() -> Option<String> {
+    use windows_sys::Win32::Foundation::{HGLOBAL, HWND};
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, OpenClipboard,
+    };
+    use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+
+    const CF_UNICODETEXT: u32 = 13;
+
+    unsafe {
+        let null_hwnd: HWND = std::ptr::null_mut();
+        if OpenClipboard(null_hwnd) == 0 {
+            log::debug!("[clipboard] OpenClipboard failed (text)");
+            return None;
+        }
+        let result = (|| {
+            let handle = GetClipboardData(CF_UNICODETEXT);
+            if handle.is_null() {
+                return None;
+            }
+            let hglobal: HGLOBAL = handle as HGLOBAL;
+            let locked = GlobalLock(hglobal);
+            if locked.is_null() {
+                return None;
+            }
+            // CF_UNICODETEXT is a null-terminated UTF-16LE string. Walk
+            // until we find the terminator rather than relying on the
+            // global handle size, which can be padded.
+            let ptr = locked as *const u16;
+            let mut len = 0usize;
+            while *ptr.add(len) != 0 {
+                len += 1;
+                // Hard cap so a malformed (un-terminated) payload doesn't
+                // walk the heap. 16 MiB of text is far past any sane paste.
+                if len > 16 * 1024 * 1024 {
+                    break;
+                }
+            }
+            let slice = std::slice::from_raw_parts(ptr, len);
+            let s = String::from_utf16_lossy(slice);
+            GlobalUnlock(hglobal);
+            if s.is_empty() { None } else { Some(s) }
+        })();
+        CloseClipboard();
+        result
     }
 }
 
@@ -316,7 +372,7 @@ pub async fn export_collection_batch_markdown(
         let output_file = output_dir_buf.join(format!("{}.md", md_name));
 
         match tokio::fs::write(&output_file, &markdown).await {
-            Ok(()) => exported.push(output_file.display().to_string()),
+            Ok(()) => exported.push(crate::storage::to_frontend_string(&output_file)),
             Err(e) => log::error!("Failed to write {}: {}", output_file.display(), e),
         }
     }

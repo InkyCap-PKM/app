@@ -70,9 +70,14 @@
   "readingFormat.svg": "SVG",
   "readingFormat.html": "HTML",
   "readingFormat.svg.title": "Render as SVG (paginated)",
-  "readingFormat.html.title": "Render as HTML (continuous)",
+  "readingFormat.html.title": "Render as HTML (copyable)",
 
   "common.loading": "Loading…",
+
+  "mainContent.emptyState": "Open a file or collection to get started",
+  "mainContent.emptyState.openFileHint": "Shortcut to open a file by name: {modifier} + O",
+  "mainContent.emptyState.commandsHint": "Shortcut to quickly access commands: {modifier} + P",
+
 
   "agenda.title": "Agenda",
   "agenda.tab.title": "Agenda",

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::path::{canonicalize_root, validate_notebox_path};
+use super::path::{canonicalize_root, to_frontend_string, validate_notebox_path};
 use super::traits::{FileTreeNode, NoteboxStorage};
 use crate::errors::{InkyCapError, Result};
 use crate::models::note::FileMetadata;
@@ -66,7 +66,7 @@ impl NoteboxStorage for LocalNoteboxStorage {
             .await
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    InkyCapError::FileNotFound(full.display().to_string())
+                    InkyCapError::FileNotFound(full.display().to_string()) // path-stringification-ok: error message, not IPC
                 } else {
                     InkyCapError::Io(e)
                 }
@@ -116,10 +116,8 @@ impl NoteboxStorage for LocalNoteboxStorage {
         let folder = full
             .parent()
             .map(|p| {
-                p.strip_prefix(&self.canonical_root)
-                    .unwrap_or(p)
-                    .display()
-                    .to_string()
+                let rel = p.strip_prefix(&self.canonical_root).unwrap_or(p);
+                to_frontend_string(rel)
             })
             .unwrap_or_default();
         let ext = full
@@ -128,8 +126,8 @@ impl NoteboxStorage for LocalNoteboxStorage {
             .unwrap_or_default();
         let path_str = full
             .strip_prefix(&self.canonical_root)
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| full.display().to_string());
+            .map(|p| to_frontend_string(p))
+            .unwrap_or_else(|_| to_frontend_string(&full));
 
         let ctime = meta
             .created()
@@ -177,7 +175,7 @@ impl NoteboxStorage for LocalNoteboxStorage {
         let full = self.resolve(path)?;
         tokio::fs::remove_file(&full).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                InkyCapError::FileNotFound(full.display().to_string())
+                InkyCapError::FileNotFound(full.display().to_string()) // path-stringification-ok: error message, not IPC
             } else {
                 InkyCapError::Io(e)
             }
@@ -192,7 +190,7 @@ impl NoteboxStorage for LocalNoteboxStorage {
         }
         tokio::fs::rename(&full_from, &full_to).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                InkyCapError::FileNotFound(full_from.display().to_string())
+                InkyCapError::FileNotFound(full_from.display().to_string()) // path-stringification-ok: error message, not IPC
             } else {
                 InkyCapError::Io(e)
             }
@@ -291,7 +289,7 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
 
         let node = FileTreeNode {
             name,
-            path: path.display().to_string(),
+            path: to_frontend_string(&path),
             is_dir,
             children: if is_dir { Some(Vec::new()) } else { None },
             modified_time,
@@ -305,7 +303,8 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         if let Some(kids) = children_map.remove(&dir_path) {
             let parent = dir_path.parent().unwrap_or(root).to_path_buf();
             if let Some(siblings) = children_map.get_mut(&parent) {
-                if let Some(dir_node) = siblings.iter_mut().find(|n| n.path == dir_path.display().to_string()) {
+                let dir_path_str = to_frontend_string(&dir_path);
+                if let Some(dir_node) = siblings.iter_mut().find(|n| n.path == dir_path_str) {
                     dir_node.children = Some(kids);
                 }
             }

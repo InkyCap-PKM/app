@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::link_index::LinkIndex;
+use crate::storage::to_frontend_string;
 
 /// A node in the link graph (used by the Mycelial View for BFS neighborhood seeding).
 #[derive(Debug, Clone, Serialize)]
@@ -54,10 +55,10 @@ pub fn bfs_link_graph(
         }
         let backlinks = link_index.get_backlinks(&current);
         for bl in backlinks {
-            let bl_str = bl.display().to_string();
+            let bl_str = to_frontend_string(&bl);
             edges.push(FlowEdge {
                 source: bl_str.clone(),
-                target: current.display().to_string(),
+                target: to_frontend_string(&current),
             });
 
             if !visited.contains(&bl_str) {
@@ -85,9 +86,9 @@ pub fn bfs_link_graph(
         }
         let forward = link_index.get_forward_links(&current);
         for fl in forward {
-            let fl_str = fl.display().to_string();
+            let fl_str = to_frontend_string(&fl);
             edges.push(FlowEdge {
-                source: current.display().to_string(),
+                source: to_frontend_string(&current),
                 target: fl_str.clone(),
             });
 

@@ -76,7 +76,7 @@ pub async fn install_typst_package_by_spec(
 
     Ok(InstalledPackage {
         spec: parsed.canonical(),
-        install_dir: install_dir.display().to_string(),
+        install_dir: crate::storage::to_frontend_string(&install_dir),
         files_written: written,
     })
 }
@@ -162,7 +162,7 @@ pub async fn install_typst_package_from_file(
 
     Ok(InstalledPackage {
         spec: spec.canonical(),
-        install_dir: install_dir.display().to_string(),
+        install_dir: crate::storage::to_frontend_string(&install_dir),
         files_written: written,
     })
 }
@@ -243,7 +243,7 @@ pub async fn list_installed_packages(
                     name: name.clone(),
                     version: version.clone(),
                     spec: format!("@{}/{}:{}", namespace, name, version),
-                    install_dir: ver_path.display().to_string(),
+                    install_dir: crate::storage::to_frontend_string(&ver_path),
                     kind: kind.to_string(),
                     description,
                 });
@@ -279,7 +279,7 @@ pub async fn uninstall_typst_package(
 
     let install_dir = parsed.install_dir(&root);
     if !install_dir.exists() {
-        return Err(InkyCapError::FileNotFound(install_dir.display().to_string()));
+        return Err(InkyCapError::FileNotFound(install_dir.display().to_string())); // path-stringification-ok: error message, not IPC
     }
     std::fs::remove_dir_all(&install_dir).map_err(InkyCapError::Io)?;
 
@@ -375,8 +375,8 @@ pub async fn create_local_package(
 
     Ok(CreatedPackage {
         spec: parsed.canonical(),
-        install_dir: install_dir.display().to_string(),
-        entrypoint_path: entrypoint_path.display().to_string(),
+        install_dir: crate::storage::to_frontend_string(&install_dir),
+        entrypoint_path: crate::storage::to_frontend_string(&entrypoint_path),
     })
 }
 

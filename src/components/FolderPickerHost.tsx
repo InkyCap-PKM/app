@@ -17,6 +17,7 @@ import {
 import { activeFolderPicker, resolveFolderPicker } from "../stores/folderPicker";
 import { noteboxInfo } from "../stores/notebox";
 import * as ipc from "../lib/ipc";
+import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import type { FileTreeNode } from "../lib/types";
 
 /** A selectable destination folder. */
@@ -44,14 +45,21 @@ const FolderPickerHost: Component = () => {
     setSelectedIndex(0);
 
     const root = noteboxInfo()?.path ?? "";
+    const rootNorm = normalizePath(root);
     ipc.getFileTree().then((tree) => {
       const entries: FolderEntry[] = [];
       const walk = (nodes: FileTreeNode[]) => {
         for (const n of nodes) {
           if (!n.is_dir || n.name === ".inkycap") continue;
-          const rel = n.path.startsWith(root + "/")
-            ? n.path.slice(root.length + 1)
-            : n.name;
+          // Derive the notebox-relative path via canonical-shape comparison
+          // so a stray separator difference between root and node.path
+          // doesn't silently strand every folder under "<top-level name>"
+          // (the `n.name` fallback).
+          const nodeNorm = normalizePath(n.path);
+          const rel =
+            nodeNorm.startsWith(rootNorm + "/")
+              ? nodeNorm.slice(rootNorm.length + 1)
+              : n.name;
           entries.push({ abs: n.path, rel, label: rel });
           if (n.children) walk(n.children);
         }
@@ -62,14 +70,10 @@ const FolderPickerHost: Component = () => {
       // its descendants (can't move into self), and the current parent
       // (moving there would be a no-op).
       const filtered = entries.filter((e) => {
-        if (
-          p.disallowPrefix &&
-          (e.abs === p.disallowPrefix ||
-            e.abs.startsWith(p.disallowPrefix + "/"))
-        ) {
+        if (p.disallowPrefix && pathStartsWith(e.abs, p.disallowPrefix)) {
           return false;
         }
-        if (p.currentParent && e.abs === p.currentParent) return false;
+        if (p.currentParent && pathEquals(e.abs, p.currentParent)) return false;
         return true;
       });
       filtered.sort((a, b) => a.label.localeCompare(b.label));
@@ -78,7 +82,7 @@ const FolderPickerHost: Component = () => {
       // move an item to the top of the notebox, unless the root itself is
       // the item's current parent (moving there would be a no-op).
       const rootEntry: FolderEntry = { abs: root, rel: "", label: "Notebox root" };
-      const showRoot = p.currentParent !== root;
+      const showRoot = !pathEquals(p.currentParent, root);
       setFolders(showRoot ? [rootEntry, ...filtered] : filtered);
     });
 

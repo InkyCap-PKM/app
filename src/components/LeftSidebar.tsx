@@ -32,6 +32,7 @@ import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
+import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { settings } from "../stores/settings";
 import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
@@ -2077,17 +2078,20 @@ const TreeNode: Component<{
   };
   const isDropTarget = () => props.dragOverDir() === props.node.path;
 
-  // Auto-expand directory if it's an ancestor of the reveal target
+  // Auto-expand directory if it's an ancestor of the reveal target.
+  // Path comparisons go through the canonical-shape helpers so a stray
+  // separator difference from any one path source (file tree, tab path,
+  // search result) doesn't strand "Reveal in file tree" on Windows.
   const isAncestorOfReveal = () => {
     const rp = props.revealPath;
-    return props.node.is_dir && rp != null && rp.startsWith(props.node.path + "/");
+    return props.node.is_dir && rp != null && pathStartsWith(rp, props.node.path);
   };
 
   // When revealPath changes and this dir is an ancestor, expand it.
   // Toggles through the hoisted setter so the parent's set stays in sync.
   createEffect(() => {
     if (isAncestorOfReveal() && !expanded()) {
-      props.onToggleDir(props.node.path);
+      props.onToggleDir(normalizePath(props.node.path));
     }
   });
 
@@ -2095,7 +2099,7 @@ const TreeNode: Component<{
 
   // Scroll into view when this node is the reveal target
   createEffect(() => {
-    if (props.revealPath === props.node.path && itemRef) {
+    if (pathEquals(props.revealPath, props.node.path) && itemRef) {
       itemRef.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   });

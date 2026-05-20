@@ -3,6 +3,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 
 /// Merge multiple notes into a single target file.
@@ -166,7 +167,7 @@ pub async fn split_note(
     super::files::reindex_note_public(&source_path, &remaining_content, &state).await;
     super::files::reindex_note_public(&new_path, &extracted_content, &state).await;
 
-    Ok(new_path.display().to_string())
+    Ok(to_frontend_string(&new_path))
 }
 
 /// Sanitize a string for use as a filename.

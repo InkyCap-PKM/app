@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { homeDir } from "@tauri-apps/api/path";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { NoteboxInfo, NoteboxRegistryEntry } from "../lib/types";
+import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import { onFileCreated, onFileDeleted, onFileRenamed } from "../lib/events";
@@ -249,7 +250,7 @@ export async function openNotebox(path: string) {
   // in-flight write so it lands in the OLD notebox — `write_file_content`
   // routes through whatever notebox is currently active, so a write that
   // overlaps the switch would otherwise land in the new one.
-  const switchingNoteboxes = noteboxInfo() !== null && noteboxInfo()?.path !== path;
+  const switchingNoteboxes = noteboxInfo() !== null && !pathEquals(noteboxInfo()?.path, path);
   if (switchingNoteboxes) {
     closeAllTabs();
     await awaitAllPendingWrites();

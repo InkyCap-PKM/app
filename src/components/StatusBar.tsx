@@ -4,6 +4,7 @@ import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { getActiveTab, renameTabPath } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
+import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 
 const StatusBar: Component = () => {
@@ -13,7 +14,7 @@ const StatusBar: Component = () => {
   const displayName = createMemo(() => {
     const info = noteboxInfo();
     if (!info) return null;
-    const entry = noteboxRegistry().find((e) => e.path === info.path);
+    const entry = noteboxRegistry().find((e) => pathEquals(e.path, info.path));
     return entry?.display_name ?? info.name;
   });
 
@@ -51,8 +52,15 @@ const StatusBar: Component = () => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file" || !tab.path) return null;
     const root = noteboxInfo()?.path;
-    if (root && tab.path.startsWith(root + "/")) {
-      return tab.path.slice(root.length + 1);
+    if (!root) return null;
+    // Normalize through the canonical-shape helper so a regression on
+    // either side of the IPC boundary (e.g. a stray Windows `\\?\` UNC
+    // prefix sneaking in) doesn't silently blank the status bar.
+    const tabNorm = normalizePath(tab.path);
+    const rootNorm = normalizePath(root);
+    const prefix = rootNorm.endsWith("/") ? rootNorm : rootNorm + "/";
+    if (tabNorm.startsWith(prefix)) {
+      return tabNorm.slice(prefix.length);
     }
     return null;
   });
@@ -230,7 +238,7 @@ const StatusBar: Component = () => {
                   onClick={() => switchToNotebox(entry.path)}
                 >
                   <span class="notebox-switcher__name">{entry.display_name}</span>
-                  <Show when={entry.path === noteboxInfo()?.path}>
+                  <Show when={pathEquals(entry.path, noteboxInfo()?.path)}>
                     <Check size={14} class="context-menu__check" />
                   </Show>
                 </button>

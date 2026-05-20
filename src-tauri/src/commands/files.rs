@@ -6,6 +6,7 @@ use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::typst_pipeline::note_rewriter;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 
 pub use crate::storage::traits::FileTreeNode;
@@ -111,7 +112,7 @@ pub async fn get_backlinks(
                 .unwrap_or_default();
             let (mtime, ctime) = file_times(&p);
             LinkInfo {
-                path: p.display().to_string(),
+                path: to_frontend_string(&p),
                 name,
                 modified_time: mtime,
                 created_time: ctime,
@@ -139,7 +140,7 @@ pub async fn get_forward_links(
                 .unwrap_or_default();
             let (mtime, ctime) = file_times(&p);
             LinkInfo {
-                path: p.display().to_string(),
+                path: to_frontend_string(&p),
                 name,
                 modified_time: mtime,
                 created_time: ctime,
@@ -253,7 +254,7 @@ pub async fn get_outbound_links(
         let (mtime, ctime) = file_times(&resolved_path);
         out.push(OutboundLink {
             target: raw,
-            path: resolved_path.display().to_string(),
+            path: to_frontend_string(&resolved_path),
             name,
             resolved: true,
             modified_time: mtime,
@@ -334,7 +335,7 @@ pub async fn resolve_embed_path(
         let candidate = root.join(stripped);
         if let Ok(resolved) = crate::storage::path::validate_notebox_path(root, &candidate) {
             if resolved.is_file() {
-                return Ok(Some(resolved.display().to_string()));
+                return Ok(Some(to_frontend_string(&resolved)));
             }
         }
         return Ok(None);
@@ -373,7 +374,7 @@ pub async fn resolve_embed_path(
         }
     }
 
-    Ok(best.map(|p: PathBuf| p.display().to_string()))
+    Ok(best.map(|p: PathBuf| to_frontend_string(&p)))
 }
 
 /// Resolve a wikilink target string to a file path.
@@ -411,7 +412,7 @@ pub async fn resolve_wikilink(
     }
 
     matches.sort_by_key(|p| p.components().count());
-    Ok(Some(matches[0].display().to_string()))
+    Ok(Some(to_frontend_string(matches[0])))
 }
 
 /// Create a new note file. Returns the full path of the created file.
@@ -470,7 +471,7 @@ pub async fn create_note(
     // Index the new note
     reindex_note(&file_path, &content, &state).await;
 
-    Ok(file_path.display().to_string())
+    Ok(to_frontend_string(&file_path))
 }
 
 /// Get a text preview of a note (first N characters, preamble stripped).
@@ -639,7 +640,7 @@ pub async fn get_all_aliases(
             entries.push(AliasEntry {
                 alias: alias.to_string(),
                 note_name: name,
-                note_path: id.display().to_string(),
+                note_path: to_frontend_string(id),
             });
         }
     }
@@ -830,7 +831,7 @@ pub async fn get_potential_links(
             .map(|s| trim_snippet(s, MAX_SNIPPET))
             .collect();
         out.push(PotentialLink {
-            path: p.display().to_string(),
+            path: to_frontend_string(&p),
             name,
             line,
             context_before,

@@ -334,11 +334,11 @@ fn resolve_property(prop: &PropertyRef, note: &NoteMetadata, self_path: &Path) -
                 "folder" => {
                     let folder = self_path
                         .parent()
-                        .map(|p| p.display().to_string())
+                        .map(crate::storage::to_frontend_string)
                         .unwrap_or_default();
                     PropertyValue::String(folder)
                 }
-                "path" => PropertyValue::String(self_path.display().to_string()),
+                "path" => PropertyValue::String(crate::storage::to_frontend_string(self_path)),
                 _ => PropertyValue::Null,
             }
         }

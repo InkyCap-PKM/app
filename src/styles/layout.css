@@ -594,9 +594,28 @@ svg.lucide {
 /* Empty state */
 .empty-state {
   color: var(--fg-dim);
-  font-size: var(--text-lg);
   text-align: center;
   margin-top: 40px;
+}
+
+.empty-state > p {
+  margin: 0;
+}
+
+/* Headline. Same visual weight the empty state used to have. */
+.empty-state__primary {
+  font-size: var(--text-lg);
+}
+
+/* Shortcut hints. Smaller and pushed down slightly so they read as
+   supporting text rather than competing with the headline. */
+.empty-state__hint {
+  font-size: var(--text-sm);
+  margin-top: 16px;
+}
+
+.empty-state__hint + .empty-state__hint {
+  margin-top: 4px;
 }
 
 /* Collection table */
@@ -7654,7 +7673,14 @@ svg.lucide {
 /* Reading format toggle (SVG / HTML segmented control).
    Reuses .editor-header__mode-toggle / __mode-seg and tints the active
    segment with a format-specific accent so the control reads as a picker
-   rather than a status badge. */
+   rather than a status badge. Text is downsized relative to the mode
+   toggle next to it — the format pick is secondary to source/visual/
+   reading and shouldn't shout. */
+.editor-header__format-seg {
+  font-size: var(--text-sm);
+  padding: 3px 8px;
+}
+
 .editor-header__format-seg.is-format-svg.is-active {
   background: color-mix(in srgb, var(--accent-green) 14%, transparent);
   color: var(--accent-green);
