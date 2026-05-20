@@ -780,7 +780,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         <div class="editor-header__right-group">
         <button
           type="button"
-          class="editor-header__reading-format-btn"
+          class="editor-header__icon-btn"
           onClick={() => {
             const tab = tabs.find((t) => t.id === props.tabId);
             if (!tab) return;
@@ -797,29 +797,43 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </button>
         <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
-          <button
-            type="button"
-            class="editor-header__reading-format-btn"
-            classList={{ "is-html": readingFormat() === "html" }}
-            onClick={() => setReadingFormat(readingFormat() === "svg" ? "html" : "svg")}
-            title={readingFormat() === "svg" ? t("readingFormat.svg") : t("readingFormat.html")}
+          <div
+            class="editor-header__mode-toggle editor-header__format-toggle"
+            role="group"
             aria-label={t("readingFormat.toggle")}
           >
-            <Show when={readingFormat() === "svg"} fallback={
+            <button
+              type="button"
+              class="editor-header__mode-seg editor-header__format-seg is-format-svg"
+              classList={{ "is-active": readingFormat() === "svg" }}
+              onClick={() => setReadingFormat("svg")}
+              title={t("readingFormat.svg.title")}
+              aria-pressed={readingFormat() === "svg"}
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
                 <path d="m8 13 4-7 4 7" />
                 <path d="M9.1 11h5.7" />
               </svg>
-            }>
+              <span>{t("readingFormat.svg")}</span>
+            </button>
+            <button
+              type="button"
+              class="editor-header__mode-seg editor-header__format-seg is-format-html"
+              classList={{ "is-active": readingFormat() === "html" }}
+              onClick={() => setReadingFormat("html")}
+              title={t("readingFormat.html.title")}
+              aria-pressed={readingFormat() === "html"}
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
                 <path d="M14 2v5a1 1 0 0 0 1 1h5" />
                 <path d="M10 12.5 8 15l2 2.5" />
                 <path d="m14 12.5 2 2.5-2 2.5" />
               </svg>
-            </Show>
-          </button>
+              <span>{t("readingFormat.html")}</span>
+            </button>
+          </div>
         </Show>
         <Show when={!isScrollEnabled(props.tabId)}>
         <div class="editor-header__mode-toggle" role="group" aria-label="Editing mode">
