@@ -66,9 +66,11 @@
   "search.tip.regexp": "Treat the search term as a regular expression",
   "search.tip.byWord": "Match whole words only, not partial words",
 
-  "readingFormat.toggle": "Toggle reading format",
-  "readingFormat.svg": "Viewing as SVG (paginated) — click for HTML (continuous)",
-  "readingFormat.html": "Viewing as HTML (continuous) — click for SVG (paginated)",
+  "readingFormat.toggle": "Reading format",
+  "readingFormat.svg": "SVG",
+  "readingFormat.html": "HTML",
+  "readingFormat.svg.title": "Render as SVG (paginated)",
+  "readingFormat.html.title": "Render as HTML (continuous)",
 
   "common.loading": "Loading…",
 

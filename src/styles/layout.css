@@ -7624,8 +7624,9 @@ svg.lucide {
   height: auto;
 }
 
-/* Reading format toggle button */
-.editor-header__reading-format-btn {
+/* Generic icon-only button in the editor header right group
+   (e.g. the Mycelial View button). */
+.editor-header__icon-btn {
   background: none;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-control);
@@ -7638,21 +7639,30 @@ svg.lucide {
   transition: background 0.12s ease, color 0.12s ease;
 }
 
-.editor-header__reading-format-btn:hover {
+.editor-header__icon-btn:hover {
   background: var(--bg-hover);
   color: var(--fg-secondary);
 }
 
-.editor-header__reading-format-btn.is-html {
-  background: var(--bg-active);
-  color: var(--fg-primary);
-}
-
-.editor-header__reading-format-btn svg {
+.editor-header__icon-btn svg {
   display: block;
   flex-shrink: 0;
   width: 1.15em;
   height: 1.15em;
+}
+
+/* Reading format toggle (SVG / HTML segmented control).
+   Reuses .editor-header__mode-toggle / __mode-seg and tints the active
+   segment with a format-specific accent so the control reads as a picker
+   rather than a status badge. */
+.editor-header__format-seg.is-format-svg.is-active {
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+  color: var(--accent-green);
+}
+
+.editor-header__format-seg.is-format-html.is-active {
+  background: color-mix(in srgb, var(--accent-orange) 16%, transparent);
+  color: var(--accent-orange);
 }
 
 /* Slash command palette (/ key in visual editor) */
