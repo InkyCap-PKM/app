@@ -259,6 +259,18 @@ export function closeTab(id: string) {
   }
 }
 
+/** Close every open tab. Used when switching noteboxes so notes from the
+ *  previous notebox don't linger as zombie tabs in the new one. The
+ *  closed-tab stack is also cleared — reopening a tab from a different
+ *  notebox would resolve the wrong file. */
+export function closeAllTabs() {
+  setTabs([]);
+  setActiveTabId(null);
+  historyMap.clear();
+  editorStateCache.clear();
+  closedTabs.length = 0;
+}
+
 /** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
  *  closed-tab stack is empty. Opens in a fresh tab; if a tab with the
  *  same path is already open, that tab is focused instead. */

@@ -83,7 +83,7 @@ import {
 
 const KNOWN_FIELDS_ORDERED = [
   "title", "aliases", "description", "tags", "date", "due",
-  "task", "status", "disposition", "source", "zid", "collection",
+  "task", "disposition", "source", "zid", "collection",
 ];
 const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
 
@@ -95,7 +95,6 @@ const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   date: "date",
   due: "date",
   task: "checkbox",
-  status: "list",
   disposition: "list",
   source: "text",
   zid: "number",

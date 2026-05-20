@@ -24,6 +24,7 @@ pub mod typst_packages;
 pub mod typst_pipeline;
 pub mod notebox_health;
 pub mod notebox_package;
+pub mod notebox_settings;
 pub mod watcher;
 pub mod window_state;
 
@@ -199,6 +200,8 @@ pub fn run() {
             commands::notebox::update_notebox_entry,
             commands::notebox::remove_notebox_from_registry,
             commands::notebox::move_notebox,
+            commands::notebox::notebox_has_user_settings,
+            commands::notebox::seed_notebox_from_source,
             commands::collections::list_collections,
             commands::collections::get_collection_data,
             commands::collections::create_collection_file,
@@ -233,6 +236,8 @@ pub fn run() {
             commands::files::get_all_aliases,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::get_notebox_settings,
+            commands::settings::update_notebox_settings,
             commands::settings::generate_zid,
             commands::properties::get_property_types,
             commands::properties::set_property_type,

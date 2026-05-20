@@ -37,6 +37,7 @@ import { getLspClient, lspReady } from "../stores/lsp";
 import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
 import { noteboxInfo } from "../stores/notebox";
 import { setActiveEditorView } from "../stores/editor";
+import { trackWrite, awaitPendingWrite } from "../stores/editor-writes";
 import { readingFormat, setReadingFormat } from "../stores/reading-format";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
@@ -139,13 +140,24 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       setDirty(false);
       return;
     }
-    try {
-      await ipc.writeFileContent(currentPath, text);
-      lastSaved = text;
-      setDirty(false);
-    } catch (err) {
-      console.error("[TypstEditor] flush save failed:", err);
-    }
+    const targetPath = currentPath;
+    const writePromise = (async () => {
+      try {
+        await ipc.writeFileContent(targetPath, text);
+        if (targetPath === currentPath) {
+          lastSaved = text;
+          setDirty(false);
+        }
+        document.dispatchEvent(
+          new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }),
+        );
+      } catch (err) {
+        console.error("[TypstEditor] flush save failed:", err);
+        toastError("Save failed", err);
+      }
+    })();
+    trackWrite(targetPath, writePromise);
+    await writePromise;
   }
 
   function scheduleSave(text: string) {
@@ -155,19 +167,26 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     }
     cancelPendingSave();
     const targetPath = currentPath;
-    saveTimer = setTimeout(async () => {
+    saveTimer = setTimeout(() => {
       saveTimer = null;
       if (!targetPath || targetPath !== currentPath) return;
-      try {
-        await ipc.writeFileContent(targetPath, text);
-        lastSaved = text;
-        setDirty(false);
-        // Notify the sidebar that metadata may have changed (reindex
-        // happens inside writeFileContent on the backend).
-        document.dispatchEvent(new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }));
-      } catch (err) {
-        toastError("Auto-save failed", err);
-      }
+      const writePromise = (async () => {
+        try {
+          await ipc.writeFileContent(targetPath, text);
+          if (targetPath === currentPath) {
+            lastSaved = text;
+            setDirty(false);
+          }
+          // Notify the sidebar that metadata may have changed (reindex
+          // happens inside writeFileContent on the backend).
+          document.dispatchEvent(
+            new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }),
+          );
+        } catch (err) {
+          toastError("Auto-save failed", err);
+        }
+      })();
+      trackWrite(targetPath, writePromise);
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
@@ -274,7 +293,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   });
 
   onCleanup(() => {
-    cancelPendingSave();
+    // Fire any pending edit to disk before unmounting. flushSave()
+    // registers the write in `pendingWrites` keyed by path, so a
+    // subsequent mount of the same path (via createResource below)
+    // awaits this completion before reading — preventing the
+    // stale-read-then-overwrite race that loses in-progress edits.
+    void flushSave();
     cleanupDiagnostics?.();
     lspCloseDocument();
     destroyEditor();
@@ -392,6 +416,11 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   const [content] = createResource(
     () => props.path,
     async (path) => {
+      // If a previous editor instance for this path is still flushing
+      // an in-progress save, wait for it before reading from disk —
+      // otherwise we'd read the pre-flush content and a subsequent edit
+      // would clobber the just-written changes.
+      await awaitPendingWrite(path);
       try {
         return await ipc.readFileContent(path);
       } catch (err) {

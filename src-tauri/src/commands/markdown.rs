@@ -17,6 +17,7 @@ use crate::storage::traits::NoteboxStorage;
 #[tauri::command]
 pub async fn paste_markdown_as_typst(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
     let text = read_clipboard_text(&app).await.map_err(|e| {
         log::warn!("[paste-as-markdown] clipboard read error: {e}");
@@ -33,7 +34,13 @@ pub async fn paste_markdown_as_typst(
         }
     };
 
-    let attachment_folder = crate::settings::load_settings().files.attachment_folder;
+    let attachment_folder = state
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
     // Paste-from-clipboard has no source notebox to inspect for dialect;
     // default to Standard so prices like `$3000`, version refs like
     // `#42`, and other literal hashes survive intact.
@@ -113,8 +120,15 @@ async fn read_clipboard_text(app: &tauri::AppHandle) -> Result<Option<String>, S
 pub async fn convert_markdown_to_typst(
     markdown: String,
     include_preamble: bool,
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let attachment_folder = crate::settings::load_settings().files.attachment_folder;
+    let attachment_folder = state
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
     // Same reasoning as `paste_markdown_as_typst`: Standard dialect by
     // default for clipboard / programmatic conversion.
     let options = MarkdownToTypstOptions {

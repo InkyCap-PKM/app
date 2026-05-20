@@ -120,18 +120,12 @@ impl Default for AppearanceSettings {
     }
 }
 
-/// File and link handling settings.
+/// File and link handling settings — workflow toggles that follow the user,
+/// not the notebox. Folder paths and notebox-specific exclusions live in
+/// `NoteboxFileSettings` instead (see `notebox_settings.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FileSettings {
-    /// Where new notes are created: "root", "current", or "specified".
-    pub new_note_location: String,
-    /// Folder path (relative to notebox root) for new notes when location is "specified".
-    pub new_note_folder: String,
-    /// Folder path (relative to notebox root) for attachments (images, files).
-    pub attachment_folder: String,
-    /// Regex patterns for files to exclude from search and quick-open.
-    pub excluded_files_regex: Vec<String>,
     /// Automatically update wikilinks when a file is renamed or moved.
     pub auto_update_links_on_rename: bool,
     /// Show a confirmation dialog before deleting files.
@@ -154,10 +148,6 @@ pub struct FileSettings {
 impl Default for FileSettings {
     fn default() -> Self {
         Self {
-            new_note_location: "root".to_string(),
-            new_note_folder: String::new(),
-            attachment_folder: "assets".to_string(),
-            excluded_files_regex: Vec::new(),
             auto_update_links_on_rename: true,
             confirm_before_delete: true,
             zettelkasten_enabled: true,
@@ -168,48 +158,20 @@ impl Default for FileSettings {
     }
 }
 
-/// Startup behavior settings.
+/// Startup behavior settings — the user's "how should the app open"
+/// preference. The notebox-specific target (file path / rule id) and the
+/// last-active-file pointer live in `NoteboxStartupSettings`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StartupSettings {
     /// What to open on launch: "default", "last-file", "creation-rule", "specific-page", or "specific-collection".
     pub behavior: String,
-    /// Target: creation rule ID or file/base path (depends on behavior).
-    pub target: String,
-    /// Notebox-relative path of the last active file, persisted by the frontend.
-    pub last_active_file: Option<String>,
 }
 
 impl Default for StartupSettings {
     fn default() -> Self {
         Self {
             behavior: "last-file".to_string(),
-            target: String::new(),
-            last_active_file: None,
-        }
-    }
-}
-
-/// Journal Scroll settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct JournalScrollSettings {
-    /// Sort axis for the feed: "created", "modified", "zid", or "note_date".
-    pub date_sort: String,
-    /// Maximal scope of notes the scroll may show:
-    /// "all" (whole notebox), "daily" (the Daily Note rule's folder), or
-    /// "custom" (the folder named in `custom_scope_folder`).
-    pub anchor_scope: String,
-    /// Notebox-relative folder used when `anchor_scope == "custom"`.
-    pub custom_scope_folder: String,
-}
-
-impl Default for JournalScrollSettings {
-    fn default() -> Self {
-        Self {
-            date_sort: "created".to_string(),
-            anchor_scope: "all".to_string(),
-            custom_scope_folder: String::new(),
         }
     }
 }
@@ -232,18 +194,30 @@ impl Default for BehaviourSettings {
     }
 }
 
-/// Citation and bibliography settings.
+/// Typst-facing document defaults that affect compilation, reading view,
+/// and export. User-global because typography is tuned to the device the
+/// user is writing on (display size, eye comfort); a notebox or collection
+/// can still override locally with Typst markup or a collection style.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DocumentDefaults {
+    /// Text size in points (e.g. 11.0). None = Typst default (11pt).
+    pub text_size: Option<f64>,
+    /// Paper name (e.g. "a4", "us-letter"). None = Typst default ("a4").
+    pub page_size: Option<String>,
+}
+
+/// Citation and bibliography settings — the user-global subset (system
+/// install paths and a global style default). The notebox-specific source
+/// selection, bibliography file path, and custom CSL override live in
+/// `NoteboxCitationSettings`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CitationSettings {
-    /// Citation source: "file" or "zotero".
-    pub source: String,
-    /// Notebox-relative path to bibliography file (.bib, .yml, .json).
-    pub bibliography_path: Option<String>,
-    /// Citation style name (e.g. "chicago-author-date", "apa").
+    /// Citation style name (e.g. "chicago-author-date", "apa"). Global
+    /// default — a notebox can override via its own settings or a
+    /// collection-level style.
     pub citation_style: Option<String>,
-    /// Path to a custom .csl file for citation formatting.
-    pub custom_csl_path: Option<String>,
     /// Absolute path to the Zotero SQLite database.
     pub zotero_database_path: Option<String>,
 }
@@ -251,38 +225,8 @@ pub struct CitationSettings {
 impl Default for CitationSettings {
     fn default() -> Self {
         Self {
-            source: "file".to_string(),
-            bibliography_path: None,
             citation_style: Some("chicago-author-date".to_string()),
-            custom_csl_path: None,
             zotero_database_path: None,
-        }
-    }
-}
-
-/// Document defaults — Typst-facing settings that affect compilation,
-/// reading view, and export.
-///
-/// Note: `text_font` is migrated into `UserSettings.fonts.text` at load
-/// time but kept on the struct so older settings.json files still
-/// deserialize. New code should consult `UserSettings.fonts` instead.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DocumentDefaults {
-    /// Legacy text font field. Migrated into `UserSettings.fonts.text`.
-    pub text_font: Option<String>,
-    /// Text size in points (e.g. 11.0). None = Typst default (11pt).
-    pub text_size: Option<f64>,
-    /// Paper name (e.g. "a4", "us-letter"). None = Typst default ("a4").
-    pub page_size: Option<String>,
-}
-
-impl Default for DocumentDefaults {
-    fn default() -> Self {
-        Self {
-            text_font: None,
-            text_size: None,
-            page_size: None,
         }
     }
 }
@@ -368,7 +312,10 @@ impl Default for ExportSettings {
     }
 }
 
-/// Top-level user settings struct.
+/// Top-level user-global settings — preferences that follow the user across
+/// every notebox. Notebox-specific settings (folder paths, journal scroll
+/// preferences, bibliography source, etc.) live in
+/// [`crate::notebox_settings::NoteboxSettings`].
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct UserSettings {
@@ -376,7 +323,6 @@ pub struct UserSettings {
     pub appearance: AppearanceSettings,
     pub files: FileSettings,
     pub startup: StartupSettings,
-    pub journal_scroll: JournalScrollSettings,
     pub citations: CitationSettings,
     pub export: ExportSettings,
     pub document: DocumentDefaults,
@@ -448,22 +394,6 @@ pub fn load_settings() -> UserSettings {
     // editor font stays the same across the upgrade.
     if settings.fonts.editor.mode == FontChoice::FOLLOW {
         settings.fonts.editor = settings.fonts.interface.clone();
-    }
-
-    // Migrate the legacy `document.text_font` field into structured
-    // FontSettings. Only fires when the new `fonts` block was absent
-    // from the file; a file that already carries the block is respected
-    // verbatim.
-    let has_fonts_block = parsed_raw
-        .as_ref()
-        .and_then(|v| v.get("fonts"))
-        .is_some();
-    if !has_fonts_block {
-        if let Some(ref f) = settings.document.text_font {
-            if !f.is_empty() {
-                settings.fonts.text = FontChoice::custom(f);
-            }
-        }
     }
 
     settings

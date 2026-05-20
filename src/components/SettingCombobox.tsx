@@ -10,6 +10,9 @@ interface SettingComboboxProps {
   step?: number;
   onChange: (v: number) => void;
   placeholder?: string;
+  /** When "notebox", a small "this notebox" badge renders next to the
+   *  label to show this setting is scoped to the current notebox. */
+  scope?: "user" | "notebox";
 }
 
 export function SettingCombobox(props: SettingComboboxProps) {
@@ -47,7 +50,12 @@ export function SettingCombobox(props: SettingComboboxProps) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <label class="settings__label">
+          {props.label}
+          <Show when={props.scope === "notebox"}>
+            <span class="settings__scope-badge">this notebox</span>
+          </Show>
+        </label>
         <span class="settings__description">{props.description}</span>
       </div>
       <div

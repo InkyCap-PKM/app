@@ -23,11 +23,12 @@ pub async fn get_bibliography_entries(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let settings = state.settings.read().await;
+        let notebox = state.notebox_settings.read().await;
+        let global = state.settings.read().await;
         (
-            settings.citations.source.clone(),
-            settings.citations.bibliography_path.clone(),
-            settings.citations.zotero_database_path.clone(),
+            notebox.citations.source.clone(),
+            notebox.citations.bibliography_path.clone(),
+            global.citations.zotero_database_path.clone(),
         )
     };
 
@@ -100,11 +101,12 @@ pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let settings = state.settings.read().await;
+        let notebox = state.notebox_settings.read().await;
+        let global = state.settings.read().await;
         (
-            settings.citations.source.clone(),
-            settings.citations.bibliography_path.clone(),
-            settings.citations.zotero_database_path.clone(),
+            notebox.citations.source.clone(),
+            notebox.citations.bibliography_path.clone(),
+            global.citations.zotero_database_path.clone(),
         )
     };
 
@@ -142,11 +144,9 @@ pub async fn refresh_bibliography(
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    let citations = {
-        let settings = state.settings.read().await;
-        settings.citations.clone()
-    };
-    Ok(crate::state::configure_bibliography(&notebox_root, &citations))
+    let global = state.settings.read().await.citations.clone();
+    let notebox = state.notebox_settings.read().await.citations.clone();
+    Ok(crate::state::configure_bibliography(&notebox_root, &global, &notebox))
 }
 
 /// Return the count of entries skipped during the most recent BibTeX parse
@@ -180,11 +180,12 @@ pub async fn get_reference_notes(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let settings = state.settings.read().await;
+        let notebox = state.notebox_settings.read().await;
+        let global = state.settings.read().await;
         (
-            settings.citations.source.clone(),
-            settings.citations.bibliography_path.clone(),
-            settings.citations.zotero_database_path.clone(),
+            notebox.citations.source.clone(),
+            notebox.citations.bibliography_path.clone(),
+            global.citations.zotero_database_path.clone(),
         )
     };
 

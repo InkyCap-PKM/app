@@ -1,6 +1,7 @@
 //! Phase C of the portable-paths plan: migrate the notebox's attachment
-//! folder. When the user changes `settings.files.attachment_folder`
-//! from old → new, three things must happen atomically:
+//! folder. When the user changes the per-notebox
+//! `files.attachment_folder` from old → new, three things must happen
+//! atomically:
 //!
 //! 1. Move every file under `<notebox>/<old>/` to `<notebox>/<new>/`.
 //! 2. Across every `.typ` note in the notebox, rewrite path-bearing
@@ -74,7 +75,7 @@ pub async fn preview_attachment_folder_migration(
     drop(notebox_root);
 
     let current_folder = {
-        let s = state.settings.read().await;
+        let s = state.notebox_settings.read().await;
         s.files.attachment_folder.clone()
     };
 
@@ -137,7 +138,7 @@ pub async fn migrate_attachment_folder(
 
     let new_folder = validate_folder_segment(&new_folder)?;
     let current_folder = {
-        let s = state.settings.read().await;
+        let s = state.notebox_settings.read().await;
         s.files.attachment_folder.clone()
     };
 
@@ -253,11 +254,11 @@ pub async fn migrate_attachment_folder(
     // every subsequent compile would see broken absolute references
     // until the rewrite was retried.
     {
-        let mut s = state.settings.write().await;
+        let mut s = state.notebox_settings.write().await;
         s.files.attachment_folder = new_folder.clone();
         let snapshot = s.clone();
         drop(s);
-        crate::settings::save_settings(&snapshot)?;
+        crate::notebox_settings::save_settings(&root, &snapshot)?;
     }
 
     Ok(MigrationResult {

@@ -511,3 +511,158 @@ pub async fn move_notebox(
         was_active,
     })
 }
+
+/// Result of copying notebox setup files from a source notebox.
+#[derive(Debug, serde::Serialize)]
+pub struct NoteboxSeedResult {
+    pub copied_files: usize,
+    pub copied_scaffolds: usize,
+    /// Non-fatal issues — e.g. an absolute `bibliography_path` in the
+    /// source that didn't resolve in the destination, so it was cleared.
+    pub warnings: Vec<String>,
+}
+
+/// Returns `true` if the directory has no per-notebox settings file yet —
+/// i.e. it's a fresh notebox where the seed-from-existing flow would apply.
+/// Used by the frontend to decide whether to offer the copy prompt.
+#[tauri::command]
+pub async fn notebox_has_user_settings(path: String) -> Result<bool, InkyCapError> {
+    let dir = std::path::PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Not a directory: {}",
+            path
+        )));
+    }
+    let settings_path =
+        crate::notebox_settings::settings_path(&dir);
+    Ok(settings_path.exists())
+}
+
+/// Seed a fresh notebox's `.inkycap/` from another notebox: copies the
+/// per-notebox settings file, the creation rules file, the scaffolds
+/// folder, and the property-types registry. Absolute paths inside the
+/// copied settings (`citations.bibliography_path`,
+/// `citations.custom_csl_path`) are sanitized — any path that doesn't
+/// resolve in the destination is cleared and a warning is surfaced so the
+/// user can fix it later.
+///
+/// Refuses to run if the target already has a `.inkycap/settings.json`
+/// (assume the user opened the wrong notebox). Both paths must exist as
+/// directories.
+#[tauri::command]
+pub async fn seed_notebox_from_source(
+    target_path: String,
+    source_path: String,
+) -> Result<NoteboxSeedResult, InkyCapError> {
+    let target = std::path::PathBuf::from(&target_path);
+    let source = std::path::PathBuf::from(&source_path);
+
+    if !target.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Target notebox not a directory: {}",
+            target_path
+        )));
+    }
+    if !source.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Source notebox not a directory: {}",
+            source_path
+        )));
+    }
+    if target == source {
+        return Err(InkyCapError::InvalidPath(
+            "Source and target must be different noteboxes".to_string(),
+        ));
+    }
+
+    let target_inkycap = target.join(".inkycap");
+    let source_inkycap = source.join(".inkycap");
+    if !source_inkycap.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Source has no .inkycap folder: {}",
+            source_path
+        )));
+    }
+
+    let target_settings = crate::notebox_settings::settings_path(&target);
+    if target_settings.exists() {
+        return Err(InkyCapError::BadRequest(
+            "Target notebox already has settings — refusing to overwrite".to_string(),
+        ));
+    }
+
+    std::fs::create_dir_all(&target_inkycap)?;
+
+    let mut copied_files = 0usize;
+    let mut copied_scaffolds = 0usize;
+    let mut warnings = Vec::new();
+
+    // Settings — load, sanitize absolute paths, write.
+    let src_settings_path = crate::notebox_settings::settings_path(&source);
+    if src_settings_path.is_file() {
+        let mut nb_settings = crate::notebox_settings::load_settings(&source);
+        // Bibliography path: if absolute, only keep it when it resolves
+        // on disk. Notebox-relative paths are kept as-is — they'll
+        // resolve (or not) inside the new notebox.
+        if let Some(ref bib) = nb_settings.citations.bibliography_path {
+            if std::path::Path::new(bib).is_absolute() && !std::path::Path::new(bib).exists() {
+                warnings.push(format!(
+                    "Cleared citations.bibliography_path (no longer resolves): {bib}"
+                ));
+                nb_settings.citations.bibliography_path = None;
+            }
+        }
+        // Custom CSL path: same rule.
+        if let Some(ref csl) = nb_settings.citations.custom_csl_path {
+            if std::path::Path::new(csl).is_absolute() && !std::path::Path::new(csl).exists() {
+                warnings.push(format!(
+                    "Cleared citations.custom_csl_path (no longer resolves): {csl}"
+                ));
+                nb_settings.citations.custom_csl_path = None;
+            }
+        }
+        crate::notebox_settings::save_settings(&target, &nb_settings)?;
+        copied_files += 1;
+    }
+
+    // Creation rules — copy verbatim. `scaffold_path` and `target_folder`
+    // are notebox-relative; the copied scaffolds below preserve them.
+    let src_rules = source_inkycap.join("creation_rules.json");
+    if src_rules.is_file() {
+        std::fs::copy(&src_rules, target_inkycap.join("creation_rules.json"))?;
+        copied_files += 1;
+    }
+
+    // Property type registry.
+    let src_props = source_inkycap.join("property-types.json");
+    if src_props.is_file() {
+        std::fs::copy(&src_props, target_inkycap.join("property-types.json"))?;
+        copied_files += 1;
+    }
+
+    // Scaffolds folder — copy every `.typ` file (creation rules reference
+    // these by name, so the rules-copy above won't make sense without
+    // them).
+    let src_scaffolds = source_inkycap.join("scaffolds");
+    if src_scaffolds.is_dir() {
+        let dst_scaffolds = target_inkycap.join("scaffolds");
+        std::fs::create_dir_all(&dst_scaffolds)?;
+        for entry in std::fs::read_dir(&src_scaffolds)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name() {
+                    std::fs::copy(&path, dst_scaffolds.join(name))?;
+                    copied_scaffolds += 1;
+                }
+            }
+        }
+    }
+
+    Ok(NoteboxSeedResult {
+        copied_files,
+        copied_scaffolds,
+        warnings,
+    })
+}

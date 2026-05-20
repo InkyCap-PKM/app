@@ -1,11 +1,26 @@
-// Settings store — reactive state for user settings.
-// Loads from Rust backend on init, persists changes via IPC with debounce.
+// Settings stores.
+//
+// Two parallel reactive stores, mirroring the Rust split:
+//
+//   - `settings` — user-global preferences, backed by
+//     `$CONFIG_DIR/inkycap/settings.json`. Loaded on app init via
+//     `initSettings()`, persisted via `update_settings` with debounce.
+//   - `noteboxSettings` — per-notebox preferences, backed by
+//     `<notebox>/.inkycap/settings.json`. Loaded on notebox open via
+//     `loadNoteboxSettings()`, persisted via `update_notebox_settings`
+//     with debounce.
+//
+// The split is by what the field describes — the user's environment vs.
+// the structure of one specific notebox. Components should read from the
+// store that matches the field's scope; this file groups the helpers so
+// the routing is obvious at the call site.
 
 import { createStore, produce } from "solid-js/store";
-import type { UserSettings } from "../lib/types";
+import type { UserSettings, NoteboxSettings } from "../lib/types";
 import * as ipc from "../lib/ipc";
 
-// Default settings (must match Rust defaults)
+// ── User-global defaults ─────────────────────────────────────────────
+
 const DEFAULTS: UserSettings = {
   editor: {
     font_size: 15,
@@ -37,10 +52,6 @@ const DEFAULTS: UserSettings = {
     folder_grouping: "before",
   },
   files: {
-    new_note_location: "root",
-    new_note_folder: "",
-    attachment_folder: "assets",
-    excluded_files_regex: [],
     auto_update_links_on_rename: true,
     confirm_before_delete: true,
     zettelkasten_enabled: true,
@@ -50,26 +61,15 @@ const DEFAULTS: UserSettings = {
   },
   startup: {
     behavior: "last-file",
-    target: "",
-    last_active_file: null,
-  },
-  journal_scroll: {
-    date_sort: "created",
-    anchor_scope: "all",
-    custom_scope_folder: "",
   },
   citations: {
-    source: "file",
-    bibliography_path: null,
     citation_style: "chicago-author-date",
-    custom_csl_path: null,
     zotero_database_path: null,
   },
   export: {
     pandoc_path: null,
   },
   document: {
-    text_font: null,
     text_size: null,
     page_size: null,
   },
@@ -85,16 +85,42 @@ const DEFAULTS: UserSettings = {
   },
 };
 
+// ── Per-notebox defaults ─────────────────────────────────────────────
+
+const NOTEBOX_DEFAULTS: NoteboxSettings = {
+  files: {
+    new_note_location: "root",
+    new_note_folder: "",
+    attachment_folder: "Assets",
+    excluded_files_regex: [],
+  },
+  startup: {
+    target: "",
+    last_active_file: null,
+  },
+  journal_scroll: {
+    date_sort: "created",
+    anchor_scope: "all",
+    custom_scope_folder: "",
+  },
+  citations: {
+    source: "file",
+    bibliography_path: null,
+    custom_csl_path: null,
+  },
+};
+
+// ── User-global store ────────────────────────────────────────────────
+
 const [settings, setSettings] = createStore<UserSettings>(structuredClone(DEFAULTS));
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Persist current settings to backend with debounce. */
+/** Persist current global settings to backend with debounce. */
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
-      // Read the plain object from the store for serialization
       await ipc.updateSettings(JSON.parse(JSON.stringify(settings)));
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -102,7 +128,7 @@ function scheduleSave() {
   }, 500);
 }
 
-/** Flush any pending debounced save immediately. Call on app close. */
+/** Flush any pending debounced global save immediately. Call on app close. */
 export async function flushSettingsSave() {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -113,9 +139,18 @@ export async function flushSettingsSave() {
       console.error("Failed to flush settings save:", err);
     }
   }
+  if (noteboxSaveTimer) {
+    clearTimeout(noteboxSaveTimer);
+    noteboxSaveTimer = null;
+    try {
+      await ipc.updateNoteboxSettings(JSON.parse(JSON.stringify(noteboxSettings)));
+    } catch (err) {
+      console.error("Failed to flush notebox settings save:", err);
+    }
+  }
 }
 
-/** Load settings from backend. Call once during app init. */
+/** Load global settings from backend. Call once during app init. */
 export async function initSettings() {
   try {
     const loaded = await ipc.getSettings();
@@ -125,15 +160,10 @@ export async function initSettings() {
   }
 }
 
-/**
- * Listener invoked whenever settings change. Used by the editor to
- * reconfigure compartments live without requiring the editor module to
- * import this store (which would create a cycle through stores/editor).
- */
 type SettingsListener = (s: UserSettings) => void;
 const listeners: SettingsListener[] = [];
 
-/** Register a listener; returns an unsubscribe function. */
+/** Register a listener for global settings changes; returns an unsubscribe function. */
 export function onSettingsChange(fn: SettingsListener): () => void {
   listeners.push(fn);
   return () => {
@@ -143,8 +173,6 @@ export function onSettingsChange(fn: SettingsListener): () => void {
 }
 
 function notifyListeners() {
-  // Snapshot the listeners array so a listener that unsubscribes
-  // mid-iteration doesn't skip its neighbours.
   for (const fn of listeners.slice()) {
     try {
       fn(settings);
@@ -154,10 +182,7 @@ function notifyListeners() {
   }
 }
 
-/**
- * Update a nested settings value.
- * Usage: updateSetting("editor", "font_size", 16)
- */
+/** Update a nested user-global settings value. */
 export function updateSetting<
   G extends keyof UserSettings,
   K extends keyof UserSettings[G],
@@ -171,14 +196,14 @@ export function updateSetting<
   notifyListeners();
 }
 
-/** Replace all settings at once (e.g. after reset). */
+/** Replace all global settings at once (e.g. after reset). */
 export function replaceSettings(newSettings: UserSettings) {
   setSettings(newSettings);
   scheduleSave();
   notifyListeners();
 }
 
-/** Reset one or more setting groups to their defaults. */
+/** Reset one or more global setting groups to their defaults. */
 export function resetSettingGroups(groups: (keyof UserSettings)[]) {
   setSettings(
     produce((s) => {
@@ -192,3 +217,94 @@ export function resetSettingGroups(groups: (keyof UserSettings)[]) {
 }
 
 export { settings };
+
+// ── Per-notebox store ────────────────────────────────────────────────
+
+const [noteboxSettings, setNoteboxSettings] =
+  createStore<NoteboxSettings>(structuredClone(NOTEBOX_DEFAULTS));
+
+let noteboxSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleNoteboxSave() {
+  if (noteboxSaveTimer) clearTimeout(noteboxSaveTimer);
+  noteboxSaveTimer = setTimeout(async () => {
+    try {
+      await ipc.updateNoteboxSettings(JSON.parse(JSON.stringify(noteboxSettings)));
+    } catch (err) {
+      console.error("Failed to save notebox settings:", err);
+    }
+  }, 500);
+}
+
+/** Load per-notebox settings from the backend. Call after a notebox open
+ *  completes (otherwise the backend returns defaults). */
+export async function loadNoteboxSettings() {
+  try {
+    const loaded = await ipc.getNoteboxSettings();
+    setNoteboxSettings(loaded);
+  } catch (err) {
+    console.error("Failed to load notebox settings, using defaults:", err);
+    setNoteboxSettings(structuredClone(NOTEBOX_DEFAULTS));
+  }
+}
+
+type NoteboxSettingsListener = (s: NoteboxSettings) => void;
+const noteboxListeners: NoteboxSettingsListener[] = [];
+
+/** Register a listener for per-notebox settings changes; returns an
+ *  unsubscribe function. */
+export function onNoteboxSettingsChange(
+  fn: NoteboxSettingsListener,
+): () => void {
+  noteboxListeners.push(fn);
+  return () => {
+    const i = noteboxListeners.indexOf(fn);
+    if (i >= 0) noteboxListeners.splice(i, 1);
+  };
+}
+
+function notifyNoteboxListeners() {
+  for (const fn of noteboxListeners.slice()) {
+    try {
+      fn(noteboxSettings);
+    } catch (err) {
+      console.error("notebox settings listener failed:", err);
+    }
+  }
+}
+
+/** Update a nested per-notebox settings value. */
+export function updateNoteboxSetting<
+  G extends keyof NoteboxSettings,
+  K extends keyof NoteboxSettings[G],
+>(group: G, key: K, value: NoteboxSettings[G][K]) {
+  setNoteboxSettings(
+    produce((s) => {
+      (s[group] as NoteboxSettings[G])[key] = value;
+    }),
+  );
+  scheduleNoteboxSave();
+  notifyNoteboxListeners();
+}
+
+/** Replace all per-notebox settings at once. */
+export function replaceNoteboxSettings(newSettings: NoteboxSettings) {
+  setNoteboxSettings(newSettings);
+  scheduleNoteboxSave();
+  notifyNoteboxListeners();
+}
+
+/** Reset one or more per-notebox setting groups to their defaults. */
+export function resetNoteboxSettingGroups(groups: (keyof NoteboxSettings)[]) {
+  setNoteboxSettings(
+    produce((s) => {
+      for (const g of groups) {
+        (s as any)[g] = structuredClone((NOTEBOX_DEFAULTS as any)[g]);
+      }
+    }),
+  );
+  scheduleNoteboxSave();
+  notifyNoteboxListeners();
+}
+
+export { noteboxSettings };

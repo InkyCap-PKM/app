@@ -15,6 +15,7 @@ import type {
   FilterGroup,
   NoteboxIndex,
   UserSettings,
+  NoteboxSettings,
   SearchResult,
   SearchResponse,
   ReplaceResult,
@@ -77,6 +78,34 @@ export async function moveNotebox(
   newPath: string,
 ): Promise<NoteboxMoveResult> {
   return invoke<NoteboxMoveResult>("move_notebox", { oldPath, newPath });
+}
+
+/** Result of seeding a new notebox's `.inkycap/` from an existing one. */
+export interface NoteboxSeedResult {
+  copied_files: number;
+  copied_scaffolds: number;
+  /** Non-fatal issues (e.g. an absolute path that no longer resolves was
+   *  cleared). Surface these to the user so they can fix them. */
+  warnings: string[];
+}
+
+/** True when the path has no per-notebox settings yet — used by the "Add
+ *  notebox" flow to decide whether to offer the seed-from-existing prompt. */
+export async function noteboxHasUserSettings(path: string): Promise<boolean> {
+  return invoke<boolean>("notebox_has_user_settings", { path });
+}
+
+/** Copy `.inkycap/{settings.json, creation_rules.json, scaffolds/,
+ *  property-types.json}` from `sourcePath` into `targetPath`. Refuses if
+ *  the target already has a settings file. */
+export async function seedNoteboxFromSource(
+  targetPath: string,
+  sourcePath: string,
+): Promise<NoteboxSeedResult> {
+  return invoke<NoteboxSeedResult>("seed_notebox_from_source", {
+    targetPath,
+    sourcePath,
+  });
 }
 
 export async function listCollections(): Promise<CollectionInfo[]> {
@@ -409,6 +438,14 @@ export async function getSettings(): Promise<UserSettings> {
 
 export async function updateSettings(settings: UserSettings): Promise<void> {
   return invoke<void>("update_settings", { settings });
+}
+
+export async function getNoteboxSettings(): Promise<NoteboxSettings> {
+  return invoke<NoteboxSettings>("get_notebox_settings");
+}
+
+export async function updateNoteboxSettings(settings: NoteboxSettings): Promise<void> {
+  return invoke<void>("update_notebox_settings", { settings });
 }
 
 export async function generateZid(): Promise<string> {

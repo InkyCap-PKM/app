@@ -2,12 +2,28 @@
 // Organized into tabs.
 
 import { Component, Show, createSignal, createEffect, createResource, For, onMount } from "solid-js";
-import { settings, updateSetting, resetSettingGroups } from "../stores/settings";
+import {
+  settings,
+  updateSetting,
+  resetSettingGroups,
+  noteboxSettings,
+  updateNoteboxSetting,
+  resetNoteboxSettingGroups,
+} from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPaletteLight, setBgPaletteDark } from "../stores/theme";
 import { noteboxInfo, noteboxRegistry, loadNoteboxRegistry, openNotebox } from "../stores/notebox";
-import type { UserSettings, AccentSource, BgPalette, NoteboxRegistryEntry, FileTreeNode } from "../lib/types";
+import { maybeSeedNotebox } from "../stores/notebox-seed";
+import type {
+  UserSettings,
+  NoteboxSettings,
+  AccentSource,
+  BgPalette,
+  NoteboxRegistryEntry,
+  FileTreeNode,
+} from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { open } from "@tauri-apps/plugin-dialog";
+import { homeDir } from "@tauri-apps/api/path";
 import { Pencil, Check, X } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
@@ -55,16 +71,39 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "behaviour", label: "Behaviour" },
 ];
 
-const TAB_SETTING_GROUPS: Record<SettingsTab, (keyof UserSettings)[]> = {
-  overview: [],
-  editor: ["editor"],
-  appearance: ["appearance", "document"],
-  files: ["files"],
-  citations: ["citations"],
-  export: ["export"],
-  "creation-rules": [],
-  behaviour: ["startup", "behaviour", "journal_scroll"],
+/** Which settings groups a tab's "Reset to defaults" button resets.
+ *  Tabs can span both user-global and per-notebox groups (e.g. the
+ *  Files tab resets both user-global file-workflow toggles and the
+ *  notebox's folder paths). */
+type TabSettingGroups = {
+  user: (keyof UserSettings)[];
+  notebox: (keyof NoteboxSettings)[];
 };
+
+const TAB_SETTING_GROUPS: Record<SettingsTab, TabSettingGroups> = {
+  overview: { user: [], notebox: [] },
+  editor: { user: ["editor"], notebox: [] },
+  appearance: { user: ["appearance", "document"], notebox: [] },
+  files: { user: ["files"], notebox: ["files"] },
+  citations: { user: ["citations"], notebox: ["citations"] },
+  export: { user: ["export"], notebox: [] },
+  "creation-rules": { user: [], notebox: [] },
+  behaviour: {
+    user: ["startup", "behaviour"],
+    notebox: ["startup", "journal_scroll"],
+  },
+};
+
+function tabHasResettableGroups(tab: SettingsTab): boolean {
+  const g = TAB_SETTING_GROUPS[tab];
+  return g.user.length > 0 || g.notebox.length > 0;
+}
+
+function resetTabSettings(tab: SettingsTab) {
+  const g = TAB_SETTING_GROUPS[tab];
+  if (g.user.length > 0) resetSettingGroups(g.user);
+  if (g.notebox.length > 0) resetNoteboxSettingGroups(g.notebox);
+}
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
@@ -157,10 +196,10 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 
               {/* Footer */}
               <div class="settings__footer">
-                <Show when={TAB_SETTING_GROUPS[activeTab()].length > 0}>
+                <Show when={tabHasResettableGroups(activeTab())}>
                   <button
                     class="settings__reset-btn"
-                    onClick={() => resetSettingGroups(TAB_SETTING_GROUPS[activeTab()])}
+                    onClick={() => resetTabSettings(activeTab())}
                   >
                     Reset to Defaults
                   </button>
@@ -296,10 +335,20 @@ function NoteboxManagementSection() {
   }
 
   async function browseForNewNotebox() {
+    // Default to the user's home directory regardless of OS — adding a
+    // notebox is a fresh task, not navigation from wherever InkyCap was
+    // launched.
+    let defaultPath: string | undefined;
+    try {
+      defaultPath = await homeDir();
+    } catch {
+      defaultPath = undefined;
+    }
     const selected = await open({
       directory: true,
       multiple: false,
       title: "Select notebox folder",
+      defaultPath,
     });
     if (!selected) return;
     setAddPath(selected);
@@ -314,6 +363,10 @@ function NoteboxManagementSection() {
       showToast("error", "Please select a notebox folder.");
       return;
     }
+    // Offer the seed-from-existing prompt before registering so the new
+    // notebox starts with the user's chosen base settings/rules. Skips
+    // silently when no source is available.
+    await maybeSeedNotebox(path, noteboxRegistry());
     try {
       await ipc.registerNotebox(path, name || undefined);
       await loadNoteboxRegistry();
@@ -820,30 +873,32 @@ function FileSettingsSection() {
       <SettingSelect
         label="New note location"
         description="Where new notes are created"
-        value={settings.files.new_note_location}
+        value={noteboxSettings.files.new_note_location}
         options={[
           { value: "root", label: "Notebox root" },
           { value: "current", label: "Current folder" },
           { value: "specified", label: "Specified folder" },
         ]}
         onChange={(v) =>
-          updateSetting(
+          updateNoteboxSetting(
             "files",
             "new_note_location",
             v as "root" | "current" | "specified",
           )
         }
+        scope="notebox"
       />
-      <Show when={settings.files.new_note_location === "specified"}>
+      <Show when={noteboxSettings.files.new_note_location === "specified"}>
         <SettingPathText
           label="New note folder"
           description="Folder path relative to notebox root"
-          value={settings.files.new_note_folder}
-          onChange={(v) => updateSetting("files", "new_note_folder", v)}
+          value={noteboxSettings.files.new_note_folder}
+          onChange={(v) => updateNoteboxSetting("files", "new_note_folder", v)}
           suggestions={folderSuggestions}
+          scope="notebox"
         />
       </Show>
-      <AttachmentFolderField value={settings.files.attachment_folder} />
+      <AttachmentFolderField value={noteboxSettings.files.attachment_folder} />
       <SettingToggle
         label="Auto-update links on rename"
         description="Automatically update wikilinks when a file is renamed"
@@ -937,7 +992,7 @@ function CitationsSettingsSection() {
 
   const styleValue = () => {
     const style = settings.citations.citation_style;
-    if (style === "custom" || settings.citations.custom_csl_path) return "custom";
+    if (style === "custom" || noteboxSettings.citations.custom_csl_path) return "custom";
     return style ?? "chicago-author-date";
   };
 
@@ -946,7 +1001,7 @@ function CitationsSettingsSection() {
       updateSetting("citations", "citation_style", "custom");
     } else {
       updateSetting("citations", "citation_style", v);
-      updateSetting("citations", "custom_csl_path", null);
+      updateNoteboxSetting("citations", "custom_csl_path", null);
     }
   }
 
@@ -955,18 +1010,22 @@ function CitationsSettingsSection() {
       <SettingSelect
         label="Citation source"
         description="Where to load bibliography entries from"
-        value={settings.citations.source}
+        value={noteboxSettings.citations.source}
         options={[
           { value: "file", label: "Bibliography file (.bib, .yml, .json)" },
           { value: "zotero", label: "Zotero database" },
         ]}
-        onChange={(v) => updateSetting("citations", "source", v as "file" | "zotero")}
+        onChange={(v) => updateNoteboxSetting("citations", "source", v as "file" | "zotero")}
+        scope="notebox"
       />
 
-      <Show when={settings.citations.source === "file"}>
+      <Show when={noteboxSettings.citations.source === "file"}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">Bibliography file</label>
+            <label class="settings__label">
+              Bibliography file
+              <span class="settings__scope-badge">this notebox</span>
+            </label>
             <span class="settings__description">
               Notebox-relative path (e.g. references.bib). Leave empty for auto-detection.
             </span>
@@ -975,9 +1034,9 @@ function CitationsSettingsSection() {
             <input
               type="text"
               class="settings__text-input settings__text-input--path"
-              value={settings.citations.bibliography_path ?? ""}
+              value={noteboxSettings.citations.bibliography_path ?? ""}
               onInput={(e) =>
-                updateSetting("citations", "bibliography_path", e.currentTarget.value || null)
+                updateNoteboxSetting("citations", "bibliography_path", e.currentTarget.value || null)
               }
             />
             <button
@@ -992,9 +1051,9 @@ function CitationsSettingsSection() {
                   const root = noteboxInfo()?.path;
                   if (root && selected.startsWith(root)) {
                     const rel = selected.slice(root.length).replace(/^[/\\]/, "");
-                    updateSetting("citations", "bibliography_path", rel);
+                    updateNoteboxSetting("citations", "bibliography_path", rel);
                   } else {
-                    updateSetting("citations", "bibliography_path", selected);
+                    updateNoteboxSetting("citations", "bibliography_path", selected);
                   }
                 }
               }}
@@ -1005,7 +1064,7 @@ function CitationsSettingsSection() {
         </div>
       </Show>
 
-      <Show when={settings.citations.source === "zotero"}>
+      <Show when={noteboxSettings.citations.source === "zotero"}>
         <div class="settings__row">
           <div class="settings__row-info">
             <label class="settings__label">Zotero database path</label>
@@ -1044,15 +1103,18 @@ function CitationsSettingsSection() {
       <Show when={styleValue() === "custom"}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">Custom CSL file</label>
+            <label class="settings__label">
+              Custom CSL file
+              <span class="settings__scope-badge">this notebox</span>
+            </label>
             <span class="settings__description">Path to a .csl citation style file</span>
           </div>
           <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
             <input
               type="text"
               class="settings__text-input"
-              value={settings.citations.custom_csl_path ?? ""}
-              onInput={(e) => updateSetting("citations", "custom_csl_path", e.currentTarget.value || null)}
+              value={noteboxSettings.citations.custom_csl_path ?? ""}
+              onInput={(e) => updateNoteboxSetting("citations", "custom_csl_path", e.currentTarget.value || null)}
               placeholder="Path to .csl file"
             />
             <button
@@ -1065,7 +1127,7 @@ function CitationsSettingsSection() {
                   filters: [{ name: "CSL Files", extensions: ["csl"] }],
                 });
                 if (result) {
-                  updateSetting("citations", "custom_csl_path", result as string);
+                  updateNoteboxSetting("citations", "custom_csl_path", result as string);
                 }
               }}
             >
@@ -1305,8 +1367,8 @@ function BehaviourSettingsSection() {
     if (settings.startup.behavior !== "creation-rule") return;
     const opts = ruleOptions();
     if (opts.length === 0) return;
-    if (!opts.some((o) => o.value === settings.startup.target)) {
-      updateSetting("startup", "target", opts[0].value);
+    if (!opts.some((o) => o.value === noteboxSettings.startup.target)) {
+      updateNoteboxSetting("startup", "target", opts[0].value);
     }
   });
 
@@ -1350,9 +1412,10 @@ function BehaviourSettingsSection() {
           <SettingSelect
             label="Rule"
             description="The creation rule to execute on startup."
-            value={settings.startup.target}
+            value={noteboxSettings.startup.target}
             options={ruleOptions()}
-            onChange={(v) => updateSetting("startup", "target", v)}
+            onChange={(v) => updateNoteboxSetting("startup", "target", v)}
+            scope="notebox"
           />
         </Show>
       </Show>
@@ -1360,9 +1423,10 @@ function BehaviourSettingsSection() {
         <SettingPathText
           label="Target"
           description={targetDescription()}
-          value={settings.startup.target}
-          onChange={(v) => updateSetting("startup", "target", v)}
+          value={noteboxSettings.startup.target}
+          onChange={(v) => updateNoteboxSetting("startup", "target", v)}
           suggestions={targetSuggestions}
+          scope="notebox"
         />
       </Show>
 
@@ -1389,7 +1453,7 @@ function BehaviourSettingsSection() {
       <SettingSelect
         label="Sort by"
         description="The axis the feed is ordered along. Notes missing the chosen property are placed at the end, ordered by file creation date."
-        value={settings.journal_scroll.date_sort}
+        value={noteboxSettings.journal_scroll.date_sort}
         options={[
           { value: "created", label: "File creation date" },
           { value: "modified", label: "File modification date" },
@@ -1397,33 +1461,35 @@ function BehaviourSettingsSection() {
           { value: "note_date", label: "Note's date property" },
         ]}
         onChange={(v) =>
-          updateSetting(
+          updateNoteboxSetting(
             "journal_scroll",
             "date_sort",
             v as "created" | "modified" | "zid" | "note_date",
           )
         }
+        scope="notebox"
       />
       <SettingSelect
         label="Anchor scope"
         description="The largest set of notes the feed may show. 'All' spans the whole notebox; the others confine it to a folder."
-        value={settings.journal_scroll.anchor_scope}
+        value={noteboxSettings.journal_scroll.anchor_scope}
         options={[
           { value: "all", label: "All notes" },
           { value: "daily", label: "Daily Notes folder" },
           { value: "custom", label: "Custom folder" },
         ]}
         onChange={(v) =>
-          updateSetting(
+          updateNoteboxSetting(
             "journal_scroll",
             "anchor_scope",
             v as "all" | "daily" | "custom",
           )
         }
+        scope="notebox"
       />
       <Show
         when={
-          settings.journal_scroll.anchor_scope === "daily" &&
+          noteboxSettings.journal_scroll.anchor_scope === "daily" &&
           dailyNotesFolder() !== ""
         }
       >
@@ -1435,7 +1501,7 @@ function BehaviourSettingsSection() {
       </Show>
       <Show
         when={
-          settings.journal_scroll.anchor_scope === "daily" &&
+          noteboxSettings.journal_scroll.anchor_scope === "daily" &&
           dailyNotesFolder() === ""
         }
       >
@@ -1446,15 +1512,16 @@ function BehaviourSettingsSection() {
           until then the feed falls back to all notes.
         </p>
       </Show>
-      <Show when={settings.journal_scroll.anchor_scope === "custom"}>
+      <Show when={noteboxSettings.journal_scroll.anchor_scope === "custom"}>
         <SettingPathText
           label="Custom scope folder"
           description="Folder path relative to notebox root. The feed is confined to this folder and its subfolders."
-          value={settings.journal_scroll.custom_scope_folder}
+          value={noteboxSettings.journal_scroll.custom_scope_folder}
           onChange={(v) =>
-            updateSetting("journal_scroll", "custom_scope_folder", v)
+            updateNoteboxSetting("journal_scroll", "custom_scope_folder", v)
           }
           suggestions={folderSuggestions}
+          scope="notebox"
         />
       </Show>
     </div>
@@ -1463,16 +1530,36 @@ function BehaviourSettingsSection() {
 
 // --- Reusable Setting Widgets ---
 
+/** Scope of a setting field. When "notebox", a small "this notebox" badge
+ *  renders next to the label so users can see at a glance that the
+ *  setting is scoped to the current notebox rather than user-global. */
+type SettingScope = "user" | "notebox";
+
+/** Inline label render: the field's display name plus an optional
+ *  scope badge. All setting helpers go through this so the badge
+ *  placement and styling stay consistent. */
+function SettingLabel(props: { label: string; scope?: SettingScope }) {
+  return (
+    <label class="settings__label">
+      {props.label}
+      <Show when={props.scope === "notebox"}>
+        <span class="settings__scope-badge">this notebox</span>
+      </Show>
+    </label>
+  );
+}
+
 function SettingToggle(props: {
   label: string;
   description: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  scope?: SettingScope;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <label class="settings__toggle">
@@ -1494,11 +1581,12 @@ function SettingNumber(props: {
   min: number;
   max: number;
   onChange: (v: number) => void;
+  scope?: SettingScope;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <input
@@ -1522,11 +1610,12 @@ function SettingText(props: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  scope?: SettingScope;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <input
@@ -1547,6 +1636,7 @@ function SettingPathText(props: {
   onChange: (v: string) => void;
   placeholder?: string;
   suggestions: () => string[];
+  scope?: SettingScope;
 }) {
   const [open, setOpen] = createSignal(false);
   const [flipUp, setFlipUp] = createSignal(false);
@@ -1584,7 +1674,7 @@ function SettingPathText(props: {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <div
@@ -1653,11 +1743,12 @@ function SettingSelect(props: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
+  scope?: SettingScope;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{props.label}</label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <Dropdown

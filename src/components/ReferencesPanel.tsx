@@ -1,7 +1,7 @@
 import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
 import CitationRow from "./CitationRow";
 import { getActiveTab } from "../stores/tabs";
-import { settings } from "../stores/settings";
+import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
@@ -120,7 +120,7 @@ const ReferencesPanel: Component = () => {
   const [citations, { refetch: refetchCitations }] = createResource(
     () => {
       const path = activeFileTab()?.path;
-      const _source = settings.citations.source;
+      const _source = noteboxSettings.citations.source;
       return path;
     },
     async (path) => {
@@ -138,8 +138,8 @@ const ReferencesPanel: Component = () => {
 
   const [allEntries] = createResource(
     () => {
-      const _source = settings.citations.source;
-      const _bibPath = settings.citations.bibliography_path;
+      const _source = noteboxSettings.citations.source;
+      const _bibPath = noteboxSettings.citations.bibliography_path;
       return showAll();
     },
     async (all) => {
@@ -242,7 +242,7 @@ const ReferencesPanel: Component = () => {
     );
   }
 
-  const isZoteroSource = () => settings.citations.source === "zotero";
+  const isZoteroSource = () => noteboxSettings.citations.source === "zotero";
 
   async function handleRefresh() {
     setRefreshing(true);

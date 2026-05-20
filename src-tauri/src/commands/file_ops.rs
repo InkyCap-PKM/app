@@ -443,9 +443,13 @@ async fn write_to_attachments(
         )));
     }
 
-    let settings = state.settings.read().await;
-    let attachment_folder = settings.files.attachment_folder.clone();
-    drop(settings);
+    let attachment_folder = state
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
 
     let attach_dir = root.join(&attachment_folder);
     // Validate the attachment folder is inside the notebox — protects against a
