@@ -12,6 +12,66 @@ export const smartIndentListsFacet = Facet.define<boolean, boolean>({
   combine: (values) => (values.length ? values[0] : false),
 });
 
+/**
+ * When true, pressing Enter at the end of a paragraph line inserts a
+ * Typst linebreak (`\`) before the newline, so that the next line wraps
+ * as a new visual line in the rendered output instead of being collapsed
+ * into a space. A second consecutive Enter still produces a paragraph
+ * break — the dangling `\` from the first Enter is stripped automatically
+ * before the blank line is inserted.
+ *
+ * Suppressed inside lists, raw/code blocks, math, and verse calls.
+ */
+export const enterInsertsLineBreakFacet = Facet.define<boolean, boolean>({
+  combine: (values) => (values.length ? values[0] : false),
+});
+
+/**
+ * Decide whether the auto-`\` linebreak should be inserted before the
+ * newline produced by an Enter keypress at `pos`. Returns `false` when
+ * the cursor is inside a context where a literal `\` would be wrong or
+ * redundant:
+ *   - raw / code blocks (`` `…` ``, ``` ```…``` ```) — `\` is literal
+ *   - math `$…$` — `\` has its own meaning
+ *   - inside a `#verse[…]` call — verse already preserves linebreaks
+ *   - lists (`- `, `+ `) — the list-continuation keymap handles Enter
+ *
+ * Pure tree inspection — no DOM, no doc mutation.
+ */
+function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
+  const line = state.doc.lineAt(pos);
+  if (/^\s*[-+]\s/.test(line.text)) return false;
+  // If the line already ends with an unescaped trailing `\`, don't double up.
+  const trimmedEnd = line.text.replace(/\s+$/, "");
+  if (trimmedEnd.endsWith("\\") && !trimmedEnd.endsWith("\\\\")) return false;
+  // Don't insert when the cursor is not at the end of the line content.
+  // Pressing Enter mid-line is a deliberate split; the user's intent there
+  // is "break this paragraph here", not "soft-wrap the rest as a new line".
+  const lineEnd = line.to;
+  const trailing = state.doc.sliceString(pos, lineEnd);
+  if (trailing.trim().length > 0) return false;
+
+  const tree = syntaxTree(state);
+  // Resolve just before `pos` so the inner-most enclosing node is found
+  // even when the cursor sits at a node boundary.
+  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, -1);
+  while (node) {
+    const name = node.name;
+    if (name === "Raw" || name === "Equation" || name === "Math") return false;
+    if (name === "FuncCall") {
+      // Read the function identifier from the source (the first child of
+      // a FuncCall is the callee Ident / FieldAccess). Match the bare name
+      // "verse" — qualified imports like `notebox.verse` would still match
+      // on the trailing segment.
+      const callee = state.doc.sliceString(node.from, Math.min(node.from + 32, node.to));
+      if (/^#?(?:[\w.-]+\.)?verse\b/.test(callee)) return false;
+    }
+    if (!node.parent) break;
+    node = node.parent;
+  }
+  return true;
+}
+
 function wrapSelection(
   state: EditorState,
   before: string,
@@ -324,9 +384,52 @@ export const typstKeymap: KeyBinding[] = [
           }
         }
       }
-      const result = continueList(view.state);
-      if (!result) return false;
-      view.dispatch({ changes: result.changes, selection: result.selection });
+      const listResult = continueList(view.state);
+      if (listResult) {
+        view.dispatch({ changes: listResult.changes, selection: listResult.selection });
+        return true;
+      }
+
+      // Auto-linebreak: when enabled, transform Enter at the end of a
+      // paragraph line into `\␤` so the rendered output gets an actual
+      // line break. A second consecutive Enter is detected via the empty-
+      // current-line + previous-line-ends-with-`\` heuristic, in which
+      // case we strip the dangling `\` and insert a plain newline — the
+      // resulting blank line becomes Typst's paragraph break.
+      const enabled = view.state.facet(enterInsertsLineBreakFacet);
+      if (!enabled) return false;
+      const { from: selFrom, to: selTo } = view.state.selection.main;
+      // Non-empty selections: let default Enter handle the replacement.
+      if (selFrom !== selTo) return false;
+      const cursor = selFrom;
+
+      const curLine = view.state.doc.lineAt(cursor);
+
+      // Second-Enter detection: cursor sits on an empty line whose
+      // previous line ends with `\` (likely inserted by us on the
+      // previous Enter). Strip that `\` and let CM insert the newline
+      // normally — the now-blank line forms a paragraph break.
+      if (curLine.text.length === 0 && curLine.number > 1) {
+        const prevLine = view.state.doc.line(curLine.number - 1);
+        const prev = prevLine.text;
+        if (prev.endsWith("\\") && !prev.endsWith("\\\\")) {
+          const slashFrom = prevLine.from + prev.length - 1;
+          view.dispatch({
+            changes: { from: slashFrom, to: slashFrom + 1, insert: "" },
+            selection: { anchor: cursor - 1 },
+            userEvent: "input",
+          });
+          // Fall through so the default Enter handler appends the newline.
+          return false;
+        }
+      }
+
+      if (!shouldInsertAutoLineBreak(view.state, cursor)) return false;
+      view.dispatch({
+        changes: { from: cursor, insert: "\\\n" },
+        selection: { anchor: cursor + 2 },
+        userEvent: "input",
+      });
       return true;
     },
   },

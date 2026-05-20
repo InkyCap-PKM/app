@@ -116,7 +116,7 @@ import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { importLineGuard } from "./typst-decorations/import-line-guard";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
-import { typstKeymap, smartIndentListsFacet } from "./typst-decorations/keymaps";
+import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "./typst-decorations/keymaps";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { citationSuggest } from "./typst-decorations/citation-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
@@ -137,6 +137,7 @@ export interface TypstEditorHandle {
   setAutoExpand(enabled: boolean): void;
   setFocusMode(mode: FocusMode, dim: boolean): void;
   setSmartIndentLists(enabled: boolean): void;
+  setEnterInsertsLineBreak(enabled: boolean): void;
   setSelectionToolbar(enabled: boolean): void;
   setCommandPalette(enabled: boolean): void;
   ensureParsed(timeout?: number): void;
@@ -159,6 +160,7 @@ export interface TypstEditorOptions {
   readOnly?: boolean;
   visualMode?: boolean;
   smartIndentLists?: boolean;
+  enterInsertsLineBreak?: boolean;
   selectionToolbar?: boolean;
   commandPalette?: boolean;
   lspClient?: LspClient | null;
@@ -554,6 +556,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const focusModeCompartment = new Compartment();
   const activeLineCompartment = new Compartment();
   const smartIndentCompartment = new Compartment();
+  const enterLineBreakCompartment = new Compartment();
   // history() lives in a compartment so setText() can reset the undo stack
   // when loading new file content — otherwise prior edits' offsets persist
   // against a freshly-replaced doc and Ctrl-Z eventually empties the file.
@@ -580,6 +583,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       focusModeCompartment.of([]),
       activeLineCompartment.of(activeLineExts),
       smartIndentCompartment.of(smartIndentListsFacet.of(!!options.smartIndentLists)),
+      enterLineBreakCompartment.of(enterInsertsLineBreakFacet.of(options.enterInsertsLineBreak !== false)),
       selectionToolbarCompartment.of(options.selectionToolbar !== false && options.visualMode ? selectionToolbar : []),
       commandPaletteCompartment.of(options.commandPalette !== false && options.visualMode ? commandPalette : []),
       historyCompartment.of(history()),
@@ -695,6 +699,11 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     setSmartIndentLists(enabled: boolean) {
       view.dispatch({
         effects: smartIndentCompartment.reconfigure(smartIndentListsFacet.of(enabled)),
+      });
+    },
+    setEnterInsertsLineBreak(enabled: boolean) {
+      view.dispatch({
+        effects: enterLineBreakCompartment.reconfigure(enterInsertsLineBreakFacet.of(enabled)),
       });
     },
     setSelectionToolbar(enabled: boolean) {

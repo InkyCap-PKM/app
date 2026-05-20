@@ -32,8 +32,12 @@ pub struct EditorSettings {
     pub auto_pair_typst: bool,
     /// Smart list indentation on Enter/Tab.
     pub smart_indent_lists: bool,
-    /// Require blank line for paragraph breaks.
-    pub strict_line_breaks: bool,
+    /// When true, pressing Enter at the end of a line inserts a Typst
+    /// linebreak (`\`) so the next line wraps as a new visual line in
+    /// the rendered output, instead of being collapsed into a space
+    /// (Typst's default behaviour for single newlines). A second
+    /// consecutive Enter still produces a paragraph break.
+    pub enter_inserts_line_break: bool,
     /// Default editing mode: "source" or "live-preview".
     pub default_editing_mode: String,
     /// Default reading format: "svg" (paginated) or "html" (flowing).
@@ -65,7 +69,7 @@ impl Default for EditorSettings {
             auto_pair_brackets: true,
             auto_pair_typst: true,
             smart_indent_lists: true,
-            strict_line_breaks: false,
+            enter_inserts_line_break: true,
             default_editing_mode: "live-preview".to_string(),
             default_reading_format: "svg".to_string(),
             show_inline_wikilinks: true,

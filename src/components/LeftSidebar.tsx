@@ -21,8 +21,6 @@ import {
   X,
   ChevronRight,
   ChevronDown,
-  FileText,
-  File,
   NotebookTabs,
   ArrowDownNarrowWide,
   ListChevronsUpDown,
@@ -2175,18 +2173,17 @@ const TreeNode: Component<{
             onClick={(e) => props.onNodeClick(props.node, e)}
             onContextMenu={(e) => props.onContext(e, props.node)}
           >
-            <span class="sidebar-item__icon">
-              {props.node.is_dir ? (
-                expanded() ? (
+            <span
+              class="sidebar-item__icon"
+              classList={{ "sidebar-item__icon--placeholder": !props.node.is_dir }}
+              aria-hidden={!props.node.is_dir || undefined}
+            >
+              {props.node.is_dir &&
+                (expanded() ? (
                   <ChevronDown size={14} />
                 ) : (
                   <ChevronRight size={14} />
-                )
-              ) : isAppEditable(props.node.name) ? (
-                <FileText size={14} />
-              ) : (
-                <File size={14} />
-              )}
+                ))}
             </span>
             <span
               class="sidebar-item__label"

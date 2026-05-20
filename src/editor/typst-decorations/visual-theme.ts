@@ -120,7 +120,7 @@ export const visualTheme = EditorView.theme({
     color: "inherit",
   },
   ".cm-typst-list-bullet": {
-    color: "var(--accent)",
+    color: "inherit",
     display: "inline-block",
     width: "1.2em",
     textAlign: "center",
