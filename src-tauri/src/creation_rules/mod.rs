@@ -64,14 +64,14 @@ pub fn default_rules() -> Vec<CreationRule> {
         CreationRule {
             id: "new-note".to_string(),
             name: "New Note".to_string(),
-            icon_emoji: "lucide:file".to_string(),
+            icon_emoji: "lucide:file-plus-2".to_string(),
             scaffold_path: crate::notebox_package::NEW_NOTE_SCAFFOLD_FILE.to_string(),
             target_folder: String::new(),
-            filename_pattern: "{{date:YYYYMMDDHHmmss}}".to_string(),
+            filename_pattern: String::new(),
             creation_mode: "create_and_open".to_string(),
-            hotkey: Some("Ctrl+Shift+N".to_string()),
-            show_in_toolbar: true,
-            description: "Create a new Zettelkasten note with a timestamp ID".to_string(),
+            hotkey: Some("Ctrl+N".to_string()),
+            show_in_toolbar: false,
+            description: "Create a new note. This rule is used by the file tree's New Note button and Ctrl+N.".to_string(),
             builtin: true,
             typst_template: String::new(),
             disabled: false,
@@ -100,21 +100,6 @@ pub fn default_rule_for_id(id: &str) -> Option<CreationRule> {
     default_rules().into_iter().find(|r| r.id == id)
 }
 
-/// Icons that *were* the default for a given built-in rule at some prior
-/// release. When `load_rules` finds a built-in rule whose stored
-/// `icon_emoji` still matches one of these, it's a strong signal the user
-/// never customized the icon, so the migration rolls them forward to the
-/// current default. A user who picked their own icon is left alone — their
-/// value won't appear in this list.
-fn legacy_default_icons(rule_id: &str) -> &'static [&'static str] {
-    match rule_id {
-        // Daily Note shipped with `calendar-plus`; renamed to `file-heart`
-        // 2026-05-19 to free up calendar iconography for the Agenda pane.
-        "daily-note" => &["lucide:calendar-plus"],
-        _ => &[],
-    }
-}
-
 // ── Persistence ──
 
 fn rules_path() -> PathBuf {
@@ -123,20 +108,9 @@ fn rules_path() -> PathBuf {
 
 /// Load creation rules from disk, merging with built-in defaults.
 ///
-/// Two safety nets run on every load:
-///
-/// 1. **Missing built-ins are re-inserted** — if a user deleted the rules
-///    file or it predates a new built-in, the default is restored.
-/// 2. **Empty `scaffold_path` on a built-in is backfilled** from the
-///    current default. This is a one-shot migration for users upgrading
-///    from a version that shipped before the seeded scaffolds existed —
-///    their old `creation_rules.json` has `scaffold_path: ""` for the
-///    built-in rules, and without this backfill the rule editor shows
-///    "Scaffold file: None" indefinitely. Any non-empty value the user
-///    chose is left alone.
-///
-/// If anything changes, the migrated rules are persisted back to disk so
-/// the migration runs at most once per upgrade.
+/// If a built-in rule is missing (e.g. the user deleted the rules file),
+/// the default is restored and the file is rewritten so the safety net
+/// runs at most once per session.
 pub fn load_rules() -> Vec<CreationRule> {
     let path = rules_path();
     let mut user_rules: Vec<CreationRule> = std::fs::read_to_string(&path)
@@ -154,31 +128,9 @@ pub fn load_rules() -> Vec<CreationRule> {
         }
     }
 
-    for rule in user_rules.iter_mut() {
-        if !rule.builtin {
-            continue;
-        }
-        let Some(default) = defaults.iter().find(|d| d.id == rule.id) else {
-            continue;
-        };
-        if rule.scaffold_path.is_empty() && !default.scaffold_path.is_empty() {
-            rule.scaffold_path = default.scaffold_path.clone();
-            mutated = true;
-        }
-        // Roll the icon forward when it still matches a known previous
-        // default. A user-picked icon won't be in `legacy_default_icons`
-        // so this is a no-op for customized rules.
-        if rule.icon_emoji != default.icon_emoji
-            && legacy_default_icons(&rule.id).contains(&rule.icon_emoji.as_str())
-        {
-            rule.icon_emoji = default.icon_emoji.clone();
-            mutated = true;
-        }
-    }
-
     if mutated {
         if let Err(err) = save_rules(&user_rules) {
-            log::warn!("creation_rules: failed to persist migrated rules: {err}");
+            log::warn!("creation_rules: failed to persist seeded rules: {err}");
         }
     }
 
@@ -308,16 +260,27 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_new_note_rule() {
+    fn test_execute_new_note_rule_requires_title() {
+        // The new-note rule ships with an empty filename_pattern so the UI
+        // prompts the user (or supplies a ZID) — no auto-generated stem.
         let rules = default_rules();
-        let (path, content, cursor) =
-            execute_rule(&rules[0], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
-                .expect("new-note default executes");
+        let err = execute_rule(&rules[0], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
+            .expect_err("empty pattern with no override must signal");
+        match err {
+            InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+
+        let (path, content, cursor) = execute_rule(
+            &rules[0],
+            Path::new("/notebox"),
+            Some("Hello"),
+            "",
+            "YYYYMMDDHHmmss",
+        )
+        .expect("new-note executes with override");
         let filename = path.file_name().unwrap().to_string_lossy();
-        assert!(filename.ends_with(".typ"));
-        let stem = filename.trim_end_matches(".typ");
-        assert_eq!(stem.len(), 14);
-        assert!(stem.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(filename, "Hello.typ");
         assert!(content.is_empty());
         assert!(cursor.is_none());
     }
@@ -385,7 +348,7 @@ mod tests {
         let (path, _, _) = execute_rule(
             &rule,
             Path::new("/notebox"),
-            None,
+            Some("note"),
             "Inbox",
             "YYYYMMDDHHmmss",
         )
@@ -423,64 +386,4 @@ mod tests {
         assert!(default_rule_for_id("nonsense").is_none());
     }
 
-    #[test]
-    fn test_backfill_empty_scaffold_path_on_builtins() {
-        // Direct unit-level test of the migration shape: take a rule list
-        // that mimics the legacy on-disk format (empty scaffold_path on
-        // built-ins), run the same backfill the loader does, and verify
-        // the scaffold_path was filled from the current defaults.
-        let defaults = default_rules();
-        let mut rules = vec![
-            CreationRule {
-                scaffold_path: String::new(),
-                ..defaults[0].clone()
-            },
-            CreationRule {
-                scaffold_path: String::new(),
-                ..defaults[1].clone()
-            },
-            // A user rule with an intentionally-empty scaffold_path must
-            // be left alone — only built-ins are backfilled.
-            CreationRule {
-                id: "user-rule".to_string(),
-                builtin: false,
-                scaffold_path: String::new(),
-                ..defaults[0].clone()
-            },
-        ];
-
-        for rule in rules.iter_mut() {
-            if !rule.builtin {
-                continue;
-            }
-            if let Some(default) = defaults.iter().find(|d| d.id == rule.id) {
-                if rule.scaffold_path.is_empty() && !default.scaffold_path.is_empty() {
-                    rule.scaffold_path = default.scaffold_path.clone();
-                }
-            }
-        }
-
-        assert_eq!(rules[0].scaffold_path, defaults[0].scaffold_path);
-        assert_eq!(rules[1].scaffold_path, defaults[1].scaffold_path);
-        assert_eq!(rules[2].scaffold_path, ""); // user rule untouched
-    }
-
-    #[test]
-    fn test_backfill_preserves_user_chosen_scaffold() {
-        // If the user has explicitly chosen a custom scaffold for a
-        // built-in rule, the backfill must not clobber it.
-        let defaults = default_rules();
-        let mut rule = defaults[0].clone();
-        rule.scaffold_path = "my-custom.typ".to_string();
-
-        if rule.builtin {
-            if let Some(default) = defaults.iter().find(|d| d.id == rule.id) {
-                if rule.scaffold_path.is_empty() && !default.scaffold_path.is_empty() {
-                    rule.scaffold_path = default.scaffold_path.clone();
-                }
-            }
-        }
-
-        assert_eq!(rule.scaffold_path, "my-custom.typ");
-    }
 }

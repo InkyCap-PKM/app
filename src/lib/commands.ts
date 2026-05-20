@@ -50,11 +50,12 @@ export function registerBuiltinCommands(callbacks: {
     execute: callbacks.toggleQuickOpen,
   });
 
-  // Note: "New Simple File" (Ctrl+N) is registered by LeftSidebar so it
-  // can share the file-tree refresh signal with the button that triggers
-  // the same action. "New Note" (the creation rule) is registered by
-  // `registerCreationRuleCommands` with whatever hotkey the user has on
-  // the rule — default Ctrl+Shift+N.
+  // Note: "New Note" is registered by `registerCreationRuleCommands` as
+  // a creation rule (id "new-note") with whatever hotkey the user has on
+  // the rule — default Ctrl+N. It is the rule that backs the file tree's
+  // New Note icon button and the context menu's "New Note" entry; the
+  // legacy "New Simple File" command was removed when those call sites
+  // were unified onto the rule.
 
   registerCommand({
     id: "file:close-tab",

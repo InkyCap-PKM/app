@@ -294,6 +294,17 @@ const CreationRuleEditor: Component = () => {
                 </span>
               </div>
               <div class="creation-rules__icon-field">
+                <span
+                  class="creation-rules__icon-preview"
+                  aria-hidden="true"
+                  title="Current icon"
+                >
+                  <RuleIcon
+                    iconEmoji={rule().icon_emoji}
+                    name={rule().name}
+                    size={18}
+                  />
+                </span>
                 <input
                   type="text"
                   class="settings__text-input"
@@ -564,30 +575,35 @@ const CreationRuleEditor: Component = () => {
                   >
                     Edit
                   </button>
-                  <Show
-                    when={rule.builtin}
-                    fallback={
-                      <button
-                        class="creation-rules__delete-btn"
-                        onClick={() => deleteRule(rule.id)}
-                        disabled={editingRule() !== null}
-                      >
-                        Delete
-                      </button>
-                    }
-                  >
-                    <button
-                      class="creation-rules__disable-btn"
-                      onClick={() => toggleDisabled(rule)}
-                      disabled={editingRule() !== null}
-                      title={
-                        rule.disabled
-                          ? "Re-enable this built-in rule"
-                          : "Hide this built-in rule from the toolbar, command palette, and hotkeys"
+                  {/* The new-note rule backs the file tree's New Note button
+                      and Ctrl+N — disabling or deleting it would leave those
+                      affordances dangling, so neither action is offered. */}
+                  <Show when={rule.id !== "new-note"}>
+                    <Show
+                      when={rule.builtin}
+                      fallback={
+                        <button
+                          class="creation-rules__delete-btn"
+                          onClick={() => deleteRule(rule.id)}
+                          disabled={editingRule() !== null}
+                        >
+                          Delete
+                        </button>
                       }
                     >
-                      {rule.disabled ? "Enable" : "Disable"}
-                    </button>
+                      <button
+                        class="creation-rules__disable-btn"
+                        onClick={() => toggleDisabled(rule)}
+                        disabled={editingRule() !== null}
+                        title={
+                          rule.disabled
+                            ? "Re-enable this built-in rule"
+                            : "Hide this built-in rule from the toolbar, command palette, and hotkeys"
+                        }
+                      >
+                        {rule.disabled ? "Enable" : "Disable"}
+                      </button>
+                    </Show>
                   </Show>
                 </div>
               </div>

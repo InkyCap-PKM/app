@@ -4040,6 +4040,19 @@ svg.lucide {
   flex: 0 0 auto;
 }
 
+.creation-rules__icon-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--fg);
+  flex: 0 0 auto;
+}
+
 .rule-icon {
   display: inline-flex;
   align-items: center;
@@ -7724,7 +7737,12 @@ svg.lucide {
   background: var(--toolbar-float-bg);
   border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
-  box-shadow: var(--popup-shadow);
+  /* Inset top highlight defines the toolbar edge on dark themes without
+     having to brighten the whole surface. Light themes pass `transparent`,
+     so the highlight is a no-op there. */
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
   padding: 3px;
   z-index: var(--z-menu);
 }
@@ -7779,7 +7797,9 @@ svg.lucide {
   background: var(--toolbar-float-bg);
   border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
-  box-shadow: var(--popup-shadow);
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
   padding: var(--popup-padding-block) 0;
   z-index: var(--z-menu);
 }
@@ -7831,7 +7851,9 @@ svg.lucide {
   background: var(--toolbar-float-bg);
   border: 1px solid var(--toolbar-float-border);
   border-radius: var(--popup-radius);
-  box-shadow: var(--popup-shadow);
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
   padding: 3px;
   z-index: var(--z-menu);
 }
