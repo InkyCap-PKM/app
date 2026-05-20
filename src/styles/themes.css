@@ -268,19 +268,16 @@
   --fg-gutter: #7a9490;
   --fg-separator: #1a4045;
 
-  /* Floating selection toolbar — see the light block. Dark themes can't
-     invert to a light surface (a bright rectangle glares against a dark
-     page), so the toolbar sits on the same --popup-bg as the file-tree
-     context menu (no lift, no chroma tint — earlier attempts produced
-     either a washed-out grey or an over-saturated panel). What gives the
-     toolbar its identity is a slightly *clearer* border than the menu's
-     --border-subtle, so the edge reads sharply against the page without
-     resorting to a translucent ring. */
-  --toolbar-float-bg: var(--popup-bg);
-  --toolbar-float-fg: var(--fg-primary);
-  --toolbar-float-fg-strong: var(--fg-primary);
-  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.06);
-  --toolbar-float-border: color-mix(in srgb, var(--border-subtle) 55%, #ffffff);
+  /* Floating selection toolbar — flat near-black panel that sits *below*
+     either dark page palette, so the page itself provides the visual
+     separation and the border just defines the rounded edge. Defined
+     once here and inherited by warm dark (its selector matches the same
+     element via [data-theme="dark"], so no override is needed). */
+  --toolbar-float-bg: #171717;
+  --toolbar-float-fg: #c0c0c0;
+  --toolbar-float-fg-strong: #e0e0e0;
+  --toolbar-float-hover-bg: rgba(255, 255, 255, 0.08);
+  --toolbar-float-border: #333333;
   --toolbar-float-sep: rgba(255, 255, 255, 0.10);
   --toolbar-float-highlight: transparent;
 
