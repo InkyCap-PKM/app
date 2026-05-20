@@ -409,6 +409,31 @@ export interface ConnectionFlags {
   shares_tags: boolean;
 }
 
+// Agenda — aggregated tasks & dated reminders.
+
+/** One row in the Agenda pane. Mirrors the Rust `AgendaItem`. */
+export interface AgendaItem {
+  /** Stable per-item id (`<note-path>#note` or `<note-path>#m<idx>`). */
+  id: string;
+  /** `"note"` (document-level), `"task"` or `"date"` (inline marker). */
+  source: "note" | "task" | "date";
+  /** Whether this item is a task (has a checkbox) or a pure dated reminder. */
+  is_task: boolean;
+  note_path: string;
+  note_title: string;
+  /** Marker body, or the note title for a document-level item. */
+  text: string;
+  /** ISO `YYYY-MM-DD` due date, when known. */
+  date: string | null;
+  /** ISO `YYYY-MM-DD` file creation date. */
+  created: string | null;
+  done: boolean;
+  /** The host note's `status` values. */
+  status: string[];
+  tags: string[];
+  zid: string | null;
+}
+
 // Search types
 
 export interface SearchResult {

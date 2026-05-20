@@ -68,5 +68,31 @@
 
   "readingFormat.toggle": "Toggle reading format",
   "readingFormat.svg": "Viewing as SVG (paginated) — click for HTML (continuous)",
-  "readingFormat.html": "Viewing as HTML (continuous) — click for SVG (paginated)"
+  "readingFormat.html": "Viewing as HTML (continuous) — click for SVG (paginated)",
+
+  "common.loading": "Loading…",
+
+  "agenda.title": "Agenda",
+  "agenda.tab.title": "Agenda",
+  "agenda.modeLabel": "Agenda",
+  "agenda.filterPlaceholder": "Filter agenda items…",
+  "agenda.noItems": "No agenda items found",
+  "agenda.emptyView": "No tasks or dated items in this collection",
+  "agenda.sort.label": "Sort",
+  "agenda.sort.dueAsc": "Due (Sooner – Later)",
+  "agenda.sort.dueDesc": "Due (Later – Sooner)",
+  "agenda.sort.createdAsc": "Created (Old – New)",
+  "agenda.sort.createdDesc": "Created (New – Old)",
+  "agenda.sort.zidAsc": "ZID (Old – New)",
+  "agenda.sort.zidDesc": "ZID (New – Old)",
+  "agenda.sort.nameAsc": "Name (A – Z)",
+  "agenda.sort.nameDesc": "Name (Z – A)",
+  "agenda.task.label": "Task List",
+  "agenda.task.all": "All",
+  "agenda.task.todo": "To do",
+  "agenda.task.done": "Done",
+  "agenda.task.dates": "Dates only",
+  "agenda.tags.label": "Tags",
+  "agenda.tags.all": "All",
+  "agenda.tags.nSelected": "{n} selected"
 }

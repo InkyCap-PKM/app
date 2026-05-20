@@ -25,6 +25,7 @@ import type {
   SnapshotInfo,
   MycelialData,
   PropertyType,
+  AgendaItem,
   ConnectionFlags,
   ScrollEntry,
   ScrollFilter,
@@ -192,8 +193,9 @@ export async function updateCollectionFilters(
 export async function addView(
   collectionPath: string,
   viewName: string,
+  viewType?: string,
 ): Promise<void> {
-  return invoke<void>("add_view", { collectionPath, viewName });
+  return invoke<void>("add_view", { collectionPath, viewName, viewType });
 }
 
 export async function removeView(
@@ -1211,4 +1213,22 @@ export async function findOffsetInScrollQuery(query: {
   target: string;
 }): Promise<number | null> {
   return invoke<number | null>("find_offset_in_scroll_query", { query });
+}
+
+// Agenda
+
+/** Notebox-wide agenda — every task / dated item across all notes. */
+export async function getAgendaItems(): Promise<AgendaItem[]> {
+  return invoke<AgendaItem[]>("get_agenda_items");
+}
+
+/** Collection-scoped agenda — tasks / dated items for one collection view. */
+export async function getCollectionAgenda(
+  collectionPath: string,
+  viewName: string,
+): Promise<AgendaItem[]> {
+  return invoke<AgendaItem[]>("get_collection_agenda", {
+    collectionPath,
+    viewName,
+  });
 }

@@ -3,7 +3,7 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
 import { highlightCodeInto } from "./code-highlight";
-import { buildPillButton, findCallEnd, type PillMenuSection } from "./pill";
+import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
 import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 
@@ -685,6 +685,87 @@ export class TagWidget extends WidgetType {
     pill.className = "cm-typst-tag";
     pill.textContent = `#${this.name}`;
     return pill;
+  }
+
+  ignoreEvent() { return false; }
+}
+
+/** Inline `#task(...)` — a checkbox + body. Clicking the checkbox toggles
+ *  the call's `done:` argument; clicking the body routes to source editing
+ *  (the func is interactive, so the cursor-adjacent path reveals raw markup). */
+export class TaskWidget extends WidgetType {
+  constructor(
+    readonly body: string,
+    readonly done: boolean,
+    readonly due: string | null,
+    readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: TaskWidget) {
+    return this.body === other.body && this.done === other.done
+      && this.due === other.due && this.from === other.from;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-typst-task";
+    if (this.done) wrap.classList.add("cm-typst-task--done");
+
+    const box = document.createElement("span");
+    box.className = "cm-typst-task__box";
+    box.textContent = this.done ? "☑" : "☐";
+    box.title = this.done ? "Mark as not done" : "Mark as done";
+    box.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Set `done: true` when checking; drop the arg (→ default false)
+      // when unchecking, so a freshly-unchecked task reads cleanly.
+      applyCallTransform(view, this.from, (s) =>
+        upsertNamedArg(s, "done", this.done ? "false" : "true", {
+          defaultValue: "false",
+        }),
+      );
+    });
+    wrap.appendChild(box);
+
+    const text = document.createElement("span");
+    text.className = "cm-typst-task__body";
+    text.textContent = this.body;
+    wrap.appendChild(text);
+
+    if (this.due) {
+      const badge = document.createElement("span");
+      badge.className = "cm-typst-task__due";
+      badge.textContent = this.due;
+      wrap.appendChild(badge);
+    }
+    return wrap;
+  }
+
+  ignoreEvent() { return true; }
+}
+
+/** Inline `#due(date, label: ...)` — a small date badge. */
+export class DueWidget extends WidgetType {
+  constructor(
+    readonly date: string,
+    readonly label: string,
+  ) {
+    super();
+  }
+
+  eq(other: DueWidget) {
+    return this.date === other.date && this.label === other.label;
+  }
+
+  toDOM() {
+    const badge = document.createElement("span");
+    badge.className = "cm-typst-due";
+    badge.textContent = this.label ? `${this.label} · ${this.date}` : this.date;
+    badge.title = this.label ? `${this.label} (${this.date})` : this.date;
+    return badge;
   }
 
   ignoreEvent() { return false; }

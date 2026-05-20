@@ -27,6 +27,8 @@ pub struct CachedFile {
     pub tags: Vec<String>,
     /// Wikilink targets in their original (unresolved) form.
     pub links: Vec<String>,
+    /// Inline `#task` / `#due` markers from the note body.
+    pub agenda_markers: Vec<crate::models::note::AgendaMarker>,
     /// Full file content, cached so subsequent notebox opens can skip disk reads
     /// for unchanged files. `None` for legacy cache entries created before
     /// content caching was added.
@@ -121,7 +123,7 @@ impl MetadataCache {
         // Pull all `files` rows for this notebox.
         {
             let mut stmt = conn.prepare(
-                "SELECT path, mtime, size, properties_json, title, content \
+                "SELECT path, mtime, size, properties_json, title, content, agenda_json \
                  FROM files WHERE notebox_id = ?1",
             )?;
             let rows = stmt.query_map(params![notebox_id], |row| {
@@ -131,17 +133,22 @@ impl MetadataCache {
                 let properties_json: String = row.get(3)?;
                 let title: Option<String> = row.get(4)?;
                 let content: Option<String> = row.get(5)?;
-                Ok((path, mtime, size, properties_json, title, content))
+                let agenda_json: String = row.get(6)?;
+                Ok((path, mtime, size, properties_json, title, content, agenda_json))
             })?;
 
             for row in rows {
-                let (path, mtime, size, properties_json, title, content) = row?;
+                let (path, mtime, size, properties_json, title, content, agenda_json) = row?;
                 let properties: HashMap<String, PropertyValue> =
                     serde_json::from_str(&properties_json).map_err(|e| {
                         InkyCapError::Cache(format!(
                             "corrupt properties_json for {path}: {e}"
                         ))
                     })?;
+                // A corrupt agenda blob degrades to "no markers" rather than
+                // failing the whole cache read — the markers are rebuilt on
+                // the next compile of that file anyway.
+                let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
                 files.insert(
                     PathBuf::from(&path),
                     CachedFile {
@@ -152,6 +159,7 @@ impl MetadataCache {
                         title,
                         tags: Vec::new(),
                         links: Vec::new(),
+                        agenda_markers,
                         content,
                     },
                 );
@@ -214,14 +222,15 @@ impl MetadataCache {
         let tx = conn.transaction()?;
         {
             let mut upsert_file = tx.prepare(
-                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
                  ON CONFLICT(notebox_id, path) DO UPDATE SET \
                     mtime = excluded.mtime, \
                     size = excluded.size, \
                     properties_json = excluded.properties_json, \
                     title = excluded.title, \
-                    content = excluded.content",
+                    content = excluded.content, \
+                    agenda_json = excluded.agenda_json",
             )?;
             let mut delete_tags = tx.prepare(
                 "DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2",
@@ -240,6 +249,7 @@ impl MetadataCache {
             for file in files {
                 let path_str = file.path.to_string_lossy().to_string();
                 let properties_json = serde_json::to_string(&file.properties)?;
+                let agenda_json = serde_json::to_string(&file.agenda_markers)?;
 
                 upsert_file.execute(params![
                     notebox_id,
@@ -249,6 +259,7 @@ impl MetadataCache {
                     properties_json,
                     file.title,
                     file.content,
+                    agenda_json,
                 ])?;
 
                 delete_tags.execute(params![notebox_id, &path_str])?;

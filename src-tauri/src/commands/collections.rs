@@ -91,6 +91,37 @@ fn collection_file_times(
     }
 }
 
+/// Resolve the notes belonging to a collection view — the single source of
+/// membership truth. A note belongs because it matches the collection's
+/// global `FilterGroup` *and* the view's own `FilterGroup` (each absent
+/// group is a pass-through). Shared by the table renderer
+/// ([`get_collection_data`]) and the Agenda view ([`get_collection_agenda`])
+/// so the two can never drift.
+pub(crate) fn resolve_collection_members<'a>(
+    base: &CollectionFile,
+    view: &ViewDef,
+    index: &'a crate::scanner::property_index::PropertyIndex,
+    collection_path: &std::path::Path,
+) -> Vec<&'a crate::models::note::NoteMetadata> {
+    index
+        .notes
+        .values()
+        .filter(|note| {
+            if let Some(ref g) = base.filters {
+                if !evaluate_filter_group(g, note, collection_path) {
+                    return false;
+                }
+            }
+            if let Some(ref vf) = view.filters {
+                if !evaluate_filter_group(vf, note, collection_path) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
 /// Load a collection's data for a specific view, applying its filters and sorts. Requires an open notebox.
 #[tauri::command]
 pub async fn get_collection_data(
@@ -122,24 +153,12 @@ pub async fn get_collection_data(
         .clone()
         .unwrap_or_else(|| vec!["file.name".to_string()]);
 
-    // Filter notes
+    // Filter notes — membership is resolved through the shared helper so
+    // the table and the Agenda view (`get_collection_agenda`) can never
+    // disagree about which notes belong to a collection view.
     let mut matching_rows: Vec<CollectionRow> = Vec::new();
 
-    for note in index.notes.values() {
-        // Apply global filters
-        if let Some(ref global_filters) = base.filters {
-            if !evaluate_filter_group(global_filters, note, &collection_path_buf) {
-                continue;
-            }
-        }
-
-        // Apply view-specific filters
-        if let Some(ref view_filters) = view.filters {
-            if !evaluate_filter_group(view_filters, note, &collection_path_buf) {
-                continue;
-            }
-        }
-
+    for note in resolve_collection_members(&base, view, &index, &collection_path_buf) {
         let file_name = note
             .path
             .file_name()
@@ -413,11 +432,13 @@ pub async fn update_collection_filters(
     Ok(())
 }
 
-/// Add a new view to a .collection file.
+/// Add a new view to a .collection file. `view_type` defaults to `"table"`;
+/// pass `"agenda"` for a task/deadline view.
 #[tauri::command]
 pub async fn add_view(
     collection_path: String,
     view_name: String,
+    view_type: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -425,11 +446,18 @@ pub async fn add_view(
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
 
-    // Copy column order from first view if available
-    let order = base.views.first().and_then(|v| v.order.clone());
+    let view_type = view_type.unwrap_or_else(|| "table".to_string());
+
+    // An agenda view derives its rows from #task/#due markers, so it has no
+    // user-facing columns; a table view inherits the first view's columns.
+    let order = if view_type == "agenda" {
+        None
+    } else {
+        base.views.first().and_then(|v| v.order.clone())
+    };
 
     base.views.push(ViewDef {
-        view_type: "table".to_string(),
+        view_type,
         name: view_name,
         filters: None,
         order,

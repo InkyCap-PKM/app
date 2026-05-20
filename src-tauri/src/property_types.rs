@@ -42,6 +42,7 @@ pub enum PropertyType {
 pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
     "title",
     "date",
+    "due",
     "tags",
     "status",
     "source",
@@ -69,6 +70,7 @@ fn builtin_property_type(key: &str) -> PropertyType {
     match key {
         "title" => PropertyType::Text,
         "date" => PropertyType::Date,
+        "due" => PropertyType::Date,
         "tags" => PropertyType::List,
         "status" => PropertyType::List,
         "source" => PropertyType::Text,
@@ -92,6 +94,7 @@ fn builtin_property_types() -> HashMap<String, PropertyType> {
         ("source", PropertyType::Text),
         ("zid", PropertyType::Number),
         ("date", PropertyType::Date),
+        ("due", PropertyType::Date),
         ("collection", PropertyType::List),
     ]
     .into_iter()

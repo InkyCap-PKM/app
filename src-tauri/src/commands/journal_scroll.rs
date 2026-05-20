@@ -521,6 +521,7 @@ mod tests {
             properties,
             links: Vec::new(),
             tags: tags.iter().map(|t| (*t).to_string()).collect(),
+            agenda_markers: Vec::new(),
         }
     }
 

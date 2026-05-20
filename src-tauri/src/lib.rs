@@ -287,6 +287,8 @@ pub fn run() {
             commands::recovery::preview_snapshot,
             commands::mycelial::get_mycelial_data,
             commands::mycelial::add_mycelial_stopword,
+            commands::agenda::get_agenda_items,
+            commands::agenda::get_collection_agenda,
             commands::journal_scroll::run_scroll_query,
             commands::journal_scroll::compute_connection_flags,
             commands::journal_scroll::find_offset_in_scroll_query,
