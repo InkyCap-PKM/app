@@ -512,10 +512,10 @@ function EditorSettingsSection() {
         onChange={(v) => updateSetting("editor", "smart_indent_lists", v)}
       />
       <SettingToggle
-        label="Strict line breaks"
-        description="Require blank line for paragraph breaks"
-        value={settings.editor.strict_line_breaks}
-        onChange={(v) => updateSetting("editor", "strict_line_breaks", v)}
+        label="Enter inserts a line break"
+        description="Typst normally treats a single Enter as a space on the same line and two Enters as a new paragraph. When this is on, pressing Enter inserts a Typst line break so your next line wraps as a new line in the rendered output; pressing Enter twice still starts a new paragraph."
+        value={settings.editor.enter_inserts_line_break}
+        onChange={(v) => updateSetting("editor", "enter_inserts_line_break", v)}
       />
       <SettingSelect
         label="Default editing mode"

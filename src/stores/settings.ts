@@ -16,7 +16,7 @@ const DEFAULTS: UserSettings = {
     auto_pair_brackets: true,
     auto_pair_typst: true,
     smart_indent_lists: true,
-    strict_line_breaks: false,
+    enter_inserts_line_break: true,
     default_editing_mode: "live-preview",
     default_reading_format: "svg",
     show_inline_wikilinks: true,

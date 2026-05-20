@@ -532,6 +532,25 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
     }
   }
 
+  // Hide trailing `\` linebreak markers in visual mode. The visual editor's
+  // job is to make authoring feel natural — the `\` is meaningful in source
+  // mode and the compiled output, but at the cursor's eye level the line
+  // break itself is the feedback. We hide the marker when the cursor is
+  // away from the line; when the cursor is on the line, we leave it visible
+  // so editing it (e.g. backspacing the `\` to undo the break) is not
+  // hidden state.
+  for (const i of escScanLines) {
+    const line = state.doc.line(i);
+    if (isOnCursorLine(state, line.from, line.to, focused)) continue;
+    const text = line.text;
+    if (text.length === 0) continue;
+    if (text[text.length - 1] !== "\\") continue;
+    // Don't hide an escaped backslash (`\\` at end of line).
+    if (text.length >= 2 && text[text.length - 2] === "\\") continue;
+    const from = line.from + text.length - 1;
+    decos.push(hide.range(from, from + 1));
+  }
+
   if (!onlyRanges) {
     // Detect bare HTML-like tags (e.g. <script>) that are ambiguous in Typst
     const docText = state.doc.toString();

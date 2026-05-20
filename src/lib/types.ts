@@ -209,7 +209,7 @@ export interface EditorSettings {
   auto_pair_brackets: boolean;
   auto_pair_typst: boolean;
   smart_indent_lists: boolean;
-  strict_line_breaks: boolean;
+  enter_inserts_line_break: boolean;
   default_editing_mode: "source" | "live-preview";
   default_reading_format: "svg" | "html";
   show_inline_wikilinks: boolean;
