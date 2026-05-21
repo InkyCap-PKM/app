@@ -83,7 +83,7 @@ pub fn default_rules() -> Vec<CreationRule> {
             name: "Daily Note".to_string(),
             icon_emoji: "lucide:file-heart".to_string(),
             scaffold_path: crate::notebox_package::DAILY_NOTE_SCAFFOLD_FILE.to_string(),
-            target_folder: "daily/{{date:YYYY}}".to_string(),
+            target_folder: "Daily/{{date:YYYY}}".to_string(),
             filename_pattern: "{{date:YYYY-MM-DD}}".to_string(),
             creation_mode: "create_and_open".to_string(),
             hotkey: Some("Ctrl+D".to_string()),

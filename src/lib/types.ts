@@ -297,6 +297,32 @@ export interface ExportSettings {
   pandoc_path: string | null;
 }
 
+/** Notebox backup settings. Controls scheduling, destination, retention,
+ *  and encryption of zip snapshots of the currently-open notebox. The
+ *  password itself is stored in the OS keychain, not in this struct;
+ *  `password_protected` is the persisted "feature on" toggle. */
+export interface BackupSettings {
+  /** Destination folder. `null` disables the feature. */
+  path: string | null;
+  /** Hours between scheduled backups. `0` disables the scheduler
+   *  (the command-palette entry still works). */
+  interval_hours: number;
+  /** How many archives to keep in the destination. */
+  keep_count: number;
+  /** Skip scheduled backups when nothing has changed since the last one. */
+  only_on_change: boolean;
+  /** Include `~/.config/inkycap/` in the archive. */
+  include_user_config: boolean;
+  /** True when a password is set in the OS keychain — the actual secret
+   *  is fetched at archive-write time, not stored here. */
+  password_protected: boolean;
+  /** Filename template with `{notebox}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`,
+   *  `{mm}`, `{ss}` tokens. Substituted values are sanitized against
+   *  Windows-reserved characters and reserved names before the final
+   *  path is assembled. */
+  filename_pattern: string;
+}
+
 export interface BehaviourSettings {
   /** When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
    *  "open in new tab" action), switch the content focus to that tab
@@ -341,6 +367,7 @@ export interface UserSettings {
   document: DocumentDefaults;
   fonts: FontSettings;
   behaviour: BehaviourSettings;
+  backup: BackupSettings;
 }
 
 // ============================================================================

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use notify::RecommendedWatcher;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::bookmarks::{self, Bookmark};
 use crate::cache::MetadataCache;
@@ -93,6 +93,17 @@ pub struct AppState {
     /// future plugin from invoking the command with arbitrary paths.
     /// Entries auto-expire after `DROP_ALLOWLIST_TTL`.
     drop_allowlist: StdMutex<HashMap<PathBuf, Instant>>,
+    /// Serialises backup runs so a manual command-palette trigger and a
+    /// scheduled tick can't overlap and corrupt each other's archives.
+    /// Held only for the duration of one run; the unit type is a marker
+    /// — we just need exclusion, not shared state.
+    pub backup_run_lock: Mutex<()>,
+    /// Wakes the backup scheduler when settings change so it can
+    /// recompute the next-due time. Without this, switching the
+    /// interval from 24h to 1h would only take effect at the next
+    /// natural wake (up to 24h later) — surprising for the user.
+    /// Fired from `update_settings` after any successful save.
+    pub backup_scheduler_wake: Arc<Notify>,
 }
 
 /// How long a dropped-path entry remains valid before it's pruned. Long
@@ -134,6 +145,8 @@ impl AppState {
             typst_compiler: Mutex::new(None),
             last_search_save: AtomicI64::new(0),
             drop_allowlist: StdMutex::new(HashMap::new()),
+            backup_run_lock: Mutex::new(()),
+            backup_scheduler_wake: Arc::new(Notify::new()),
         }
     }
 

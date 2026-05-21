@@ -1270,3 +1270,114 @@ export async function getCollectionAgenda(
     viewName,
   });
 }
+
+// Backup
+
+/** Persisted "last run" info for the backup feature. Mirrors the
+ *  Rust `BackupState`. All fields optional/zero when no backup has
+ *  ever run. */
+export interface BackupState {
+  /** Unix-epoch seconds of the last successful backup, or 0 if never. */
+  last_success_unix: number;
+  /** Frontend-canonical path of the most recent archive. */
+  last_archive_path: string | null;
+  /** Human-readable summary of the most recent attempt. */
+  last_status: string | null;
+}
+
+/** Summary returned on a successful backup run. */
+export interface BackupReport {
+  archive_path: string;
+  file_count: number;
+  uncompressed_bytes: number;
+  pruned: number;
+  encrypted: boolean;
+  timestamp_unix: number;
+}
+
+/** Run a backup immediately. Throws if no notebox is open, the
+ *  destination isn't configured, or the archive write fails. */
+export async function backupNow(): Promise<BackupReport | null> {
+  return invoke<BackupReport | null>("backup_now");
+}
+
+/** Read the persisted "last backup" record. */
+export async function getBackupState(): Promise<BackupState> {
+  return invoke<BackupState>("get_backup_state");
+}
+
+/** Store a password in the OS keychain. Throws on empty input or
+ *  keychain unavailability. */
+export async function setBackupPassword(password: string): Promise<void> {
+  return invoke<void>("set_backup_password", { password });
+}
+
+/** Wipe the stored password from the OS keychain. Idempotent. */
+export async function clearBackupPassword(): Promise<void> {
+  return invoke<void>("clear_backup_password");
+}
+
+/** True when a password is currently in the OS keychain. Used by the
+ *  settings UI to show whether encryption is fully wired up — we never
+ *  fetch the secret itself for display. */
+export async function hasBackupPassword(): Promise<boolean> {
+  return invoke<boolean>("has_backup_password");
+}
+
+/** One archive in the destination folder. */
+export interface BackupEntry {
+  path: string;
+  name: string;
+  size_bytes: number;
+  mtime_unix: number;
+}
+
+/** One file/folder inside a backup archive. */
+export interface BackupContentEntry {
+  path_in_zip: string;
+  is_dir: boolean;
+  size_bytes: number;
+  encrypted: boolean;
+}
+
+/** Conflict resolution when a restored file would land on top of an
+ *  existing one. `skip` is the safe default — the existing file is
+ *  preserved and the restored copy is dropped. */
+export type RestoreConflictPolicy = "skip" | "overwrite" | "rename";
+
+/** Per-file result of a restore operation. `outcome` is one of
+ *  `"written"`, `"skipped"`, or `"renamed"`. */
+export interface RestoreResult {
+  dest_path: string;
+  outcome: string;
+}
+
+/** Enumerate archives in the configured destination folder. Returns
+ *  an empty list when the destination isn't set or doesn't exist. */
+export async function listBackupArchives(): Promise<BackupEntry[]> {
+  return invoke<BackupEntry[]>("list_backup_archives");
+}
+
+/** Open one archive and return its entry list. Encrypted entries
+ *  are surfaced with `encrypted: true`; the password is not needed
+ *  just to list. */
+export async function listBackupContents(archivePath: string): Promise<BackupContentEntry[]> {
+  return invoke<BackupContentEntry[]>("list_backup_contents", { archivePath });
+}
+
+/** Pull selected entries out of an archive into `targetRoot`. The
+ *  password (if needed) is fetched from the OS keychain — callers
+ *  don't pass it through. */
+export async function restoreBackupFiles(
+  archivePath: string,
+  targetRoot: string,
+  entries: string[],
+  conflict: RestoreConflictPolicy,
+): Promise<RestoreResult[]> {
+  return invoke<RestoreResult[]>("restore_backup_files", {
+    archivePath,
+    targetRoot,
+    entries,
+    conflict,
+  });
+}

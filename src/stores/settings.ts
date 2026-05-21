@@ -83,6 +83,15 @@ const DEFAULTS: UserSettings = {
   behaviour: {
     switch_to_new_tab: false,
   },
+  backup: {
+    path: null,
+    interval_hours: 24,
+    keep_count: 7,
+    only_on_change: true,
+    include_user_config: true,
+    password_protected: false,
+    filename_pattern: "inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip",
+  },
 };
 
 // ── Per-notebox defaults ─────────────────────────────────────────────

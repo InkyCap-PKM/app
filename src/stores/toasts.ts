@@ -17,11 +17,27 @@ const [toasts, setToasts] = createSignal<Toast[]>([]);
 
 export { toasts };
 
-export function showToast(level: ToastLevel, message: string, detail?: string) {
+export interface ShowToastOptions {
+  /** Don't auto-dismiss. Used for "work in progress" toasts that
+   *  should remain visible until the caller explicitly dismisses
+   *  them with `dismissToast(id)` — typically by showing a result
+   *  toast in their place. */
+  persistent?: boolean;
+}
+
+export function showToast(
+  level: ToastLevel,
+  message: string,
+  detail?: string,
+  options?: ShowToastOptions,
+): number {
   const id = nextId++;
   setToasts((prev) => [...prev, { id, level, message, detail }]);
-  const ms = level === "error" ? ERROR_DISPLAY_MS : DISPLAY_MS;
-  setTimeout(() => dismissToast(id), ms);
+  if (!options?.persistent) {
+    const ms = level === "error" ? ERROR_DISPLAY_MS : DISPLAY_MS;
+    setTimeout(() => dismissToast(id), ms);
+  }
+  return id;
 }
 
 export function dismissToast(id: number) {

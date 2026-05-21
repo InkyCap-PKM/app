@@ -63,6 +63,14 @@ pub async fn update_settings(
     }
 
     *state.settings.write().await = settings;
+
+    // Backup settings may have changed (interval, path, etc.). Wake
+    // the scheduler so a fresh interval takes effect immediately
+    // instead of at the next natural tick. Cheap and idempotent —
+    // safe to fire on every settings update even when nothing about
+    // backup changed.
+    crate::backup::schedule::wake_now(&state);
+
     Ok(())
 }
 

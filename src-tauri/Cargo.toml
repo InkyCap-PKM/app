@@ -36,8 +36,13 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 bincode = "1"
 tempfile = "3"
 which = "7"
-zip = "2"
+zip = { version = "2", features = ["aes-crypto", "deflate"] }
 tar = "0.4"
+# OS keychain wrapper for the notebox backup password. Each platform
+# uses its native credential store: Secret Service (gnome-keyring,
+# kwallet, KeePassXC, …) on Linux, Keychain on macOS, Credential
+# Manager on Windows. The password is never written to settings.json.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 # Use rustls so the binary doesn't link OS-native TLS — keeps cross-platform
 # behavior identical. Picked over `ureq` because it's already in the
 # dependency graph via tauri.
