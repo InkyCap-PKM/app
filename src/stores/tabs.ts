@@ -258,6 +258,13 @@ export function closeTab(id: string) {
     const newIdx = Math.min(idx, tabs.length - 1);
     setActiveTabId(newIdx >= 0 ? tabs[newIdx]?.id ?? null : null);
   }
+
+  // Invariant: while a notebox is open, the tab strip is never empty.
+  // Closing the last tab spawns a fresh empty tab so the user lands on
+  // the tabula-rasa hints instead of a blank pane with nothing to do.
+  if (tabs.length === 0) {
+    createEmptyTab();
+  }
 }
 
 /** Close every open tab. Used when switching noteboxes so notes from the

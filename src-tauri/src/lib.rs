@@ -1,4 +1,5 @@
 pub mod app_paths;
+pub mod backup;
 pub mod collection_parser;
 pub mod bookmarks;
 pub mod cache;
@@ -188,6 +189,12 @@ pub fn run() {
                 ready_for_thread.store(true, Ordering::Release);
             });
 
+            // Backup scheduler. Polls the configured interval and runs
+            // a backup of the currently-open notebox when due. Cheap
+            // when idle (sleeps until either the next due time or a
+            // settings-change wake) so safe to always-on.
+            backup::schedule::spawn(handle.clone());
+
             Ok(())
         })
         .manage(state::AppState::new())
@@ -331,6 +338,14 @@ pub fn run() {
             commands::system_color::get_os_accent_color,
             commands::fonts::list_system_fonts,
             commands::fonts::system_font_defaults,
+            commands::backup::backup_now,
+            commands::backup::get_backup_state,
+            commands::backup::set_backup_password,
+            commands::backup::clear_backup_password,
+            commands::backup::has_backup_password,
+            commands::backup::list_backup_archives,
+            commands::backup::list_backup_contents,
+            commands::backup::restore_backup_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

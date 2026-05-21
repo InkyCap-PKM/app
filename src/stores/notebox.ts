@@ -7,7 +7,7 @@ import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
 import { onFileCreated, onFileDeleted, onFileRenamed } from "../lib/events";
-import { renameTabPath, closeAllTabs, openTab } from "./tabs";
+import { renameTabPath, closeAllTabs, openTab, createEmptyTab, tabs } from "./tabs";
 import { reloadPropertyTypes } from "./propertyTypes";
 import {
   loadNoteboxSettings,
@@ -291,6 +291,14 @@ export async function openNotebox(path: string) {
     // instead of empty. Runs on every successful open — including the
     // initial app launch and subsequent switches.
     await applyStartupBehavior();
+    // Invariant: a notebox is always presented with at least one tab.
+    // "default" startup, or any of the other modes silently failing
+    // (missing target, etc.), can leave us with no tabs — in that case
+    // surface a fresh empty tab so the user sees the tabula-rasa hints
+    // instead of a blank workspace.
+    if (tabs.length === 0) {
+      createEmptyTab();
+    }
     return info;
   } finally {
     setIsLoading(false);

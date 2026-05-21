@@ -2,6 +2,7 @@
 // Called once on app startup after other systems are initialized.
 
 import { registerCommand } from "./command-registry";
+import { t } from "./i18n";
 import {
   openTab,
   closeTab,
@@ -297,6 +298,49 @@ export function registerBuiltinCommands(callbacks: {
     title: "Audit .typ files for InkyCap compatibility",
     category: "Tools",
     execute: callbacks.openTypAudit,
+  });
+
+  registerCommand({
+    id: "tools:backup-now",
+    title: t("backup.runNow.paletteTitle"),
+    category: "Tools",
+    execute: async () => {
+      // Surface progress + result through the toast system rather
+      // than opening Settings — palette flows shouldn't yank focus
+      // into another UI surface. Errors and the per-run summary go
+      // to the same place so the user has one consistent feedback
+      // channel for ad-hoc backups.
+      const { showToast, dismissToast } = await import("../stores/toasts");
+      // Persistent toast: the backup write is synchronous on the
+      // backend (zip serialization) and may take several seconds on
+      // larger noteboxes, longer than the default 5s auto-dismiss.
+      // Keep the "in progress" toast visible until the result toast
+      // explicitly replaces it.
+      const progressId = showToast("info", t("backup.toast.inProgress"), undefined, { persistent: true });
+      try {
+        const report = await ipc.backupNow();
+        dismissToast(progressId);
+        if (!report) {
+          showToast("info", t("backup.toast.skipped"));
+          return;
+        }
+        const mb = (report.uncompressed_bytes / 1024 / 1024).toFixed(2);
+        showToast(
+          "success",
+          t("backup.toast.success", {
+            files: report.file_count,
+            size: mb,
+            encrypted: report.encrypted ? t("backup.toast.successEncryptedSuffix") : "",
+            pruned: report.pruned > 0
+              ? t("backup.toast.successPrunedSuffix", { n: report.pruned })
+              : "",
+          }),
+        );
+      } catch (e) {
+        dismissToast(progressId);
+        showToast("error", t("backup.toast.failed", { error: String(e) }));
+      }
+    },
   });
 
   registerCommand({

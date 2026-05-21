@@ -312,6 +312,63 @@ impl Default for ExportSettings {
     }
 }
 
+/// Notebox backup settings — controls how, when, and where the backup
+/// runner writes zip snapshots of the currently-open notebox.
+///
+/// User-global because the destination (an external folder, e.g. a backup
+/// volume) is a per-machine concern; the runner picks up whichever notebox
+/// is open at the time it fires. The password itself is *not* stored here
+/// — when `password_protected` is true the actual secret lives in the OS
+/// keychain (Secret Service on Linux, Keychain on macOS, Credential Manager
+/// on Windows). Settings.json only records that a password is set, so a
+/// settings.json leak does not leak the secret.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackupSettings {
+    /// Destination folder for backup archives. `None` disables the feature
+    /// entirely (scheduled runner is dormant, command-palette entry is a
+    /// no-op with a clear error). Stored as the frontend-canonical
+    /// forward-slash string; converted to a `PathBuf` at use-sites.
+    pub path: Option<String>,
+    /// Hours between scheduled backups. `0` disables scheduled backups
+    /// (manual command-palette runs still work).
+    pub interval_hours: u32,
+    /// Number of archives to keep in the destination folder. Older ones
+    /// matching the configured filename pattern are pruned after each
+    /// successful backup.
+    pub keep_count: u32,
+    /// Skip the scheduled backup if no notebox content has changed since
+    /// the last successful backup. Manual runs ignore this flag.
+    pub only_on_change: bool,
+    /// Include the user-global config folder (`~/.config/inkycap/`) in
+    /// the archive. Small but useful when restoring on a new machine.
+    pub include_user_config: bool,
+    /// True when a password is set in the OS keychain. The password
+    /// itself is fetched at archive-write time via `keyring`; this flag
+    /// is the persisted "feature enabled" toggle the settings UI binds
+    /// to so the user can see whether encryption will be applied.
+    pub password_protected: bool,
+    /// Filename template. Supports tokens `{notebox}`, `{YYYY}`, `{MM}`,
+    /// `{DD}`, `{HH}`, `{mm}`, `{ss}`. Substituted values are sanitized
+    /// against Windows-reserved characters and reserved names before the
+    /// final path is assembled.
+    pub filename_pattern: String,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            path: None,
+            interval_hours: 24,
+            keep_count: 7,
+            only_on_change: true,
+            include_user_config: true,
+            password_protected: false,
+            filename_pattern: "inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip".to_string(),
+        }
+    }
+}
+
 /// Top-level user-global settings — preferences that follow the user across
 /// every notebox. Notebox-specific settings (folder paths, journal scroll
 /// preferences, bibliography source, etc.) live in
@@ -328,6 +385,7 @@ pub struct UserSettings {
     pub document: DocumentDefaults,
     pub fonts: FontSettings,
     pub behaviour: BehaviourSettings,
+    pub backup: BackupSettings,
 }
 
 // --- Persistence ---

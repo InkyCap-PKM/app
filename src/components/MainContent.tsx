@@ -36,8 +36,13 @@ const EmptyState: Component = () => {
   return (
     <div class="empty-state">
       <p class="empty-state__primary">{t("mainContent.emptyState")}</p>
+      <p>&nbsp;</p>
+      <p class="empty-state__hint">{t("mainContent.emptyState.shortcuts")}</p>
       <p class="empty-state__hint">
         {t("mainContent.emptyState.openFileHint", { modifier })}
+      </p>
+      <p class="empty-state__hint">
+        {t("mainContent.emptyState.createFileHint", { modifier })}
       </p>
       <p class="empty-state__hint">
         {t("mainContent.emptyState.commandsHint", { modifier })}
@@ -209,7 +214,7 @@ const MainContent: Component = () => {
                 // imported `t` i18n helper used in this block.
                 const currentTab = tab();
                 if (currentTab.type === "empty" || !currentTab.path) {
-                  return <p class="empty-state">{t("mainContent.emptyState")}</p>;
+                  return <EmptyState />;
                 }
                 if (currentTab.type === "collection") {
                   return <CollectionTable path={currentTab.path} />;

@@ -1,0 +1,288 @@
+//! Build a zip archive from a notebox root (and optionally the user-global
+//! config folder). Uses the `zip` crate's AES-256 mode when a password is
+//! supplied — see CLAUDE.md and the planning thread for why ZIP+AES-256
+//! over 7z / tar.gz.
+//!
+//! Path handling notes (per CLAUDE.md's Windows guidance):
+//!
+//!   - **Inside the archive**, all entries use forward slashes — that's
+//!     the zip spec convention and lets the archive round-trip cleanly
+//!     across OSes.
+//!   - **Outside**, callers pass `PathBuf` (`std::path::Path`) so the
+//!     OS-native separator is preserved for filesystem I/O.
+//!   - **Symlinks are followed**, not stored as link entries — Windows
+//!     can't recreate them on restore in the general case, and a
+//!     followed-link archive extracts identically everywhere.
+//!   - **`.git/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`** are skipped —
+//!     `.git/` because it's large and recoverable from the remote, the
+//!     OS files because they're machine-local cruft.
+
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+use walkdir::WalkDir;
+use zip::write::{SimpleFileOptions, ZipWriter};
+use zip::{AesMode, CompressionMethod};
+
+use crate::errors::{InkyCapError, Result};
+
+/// Inputs for one archive build.
+pub struct ArchiveJob<'a> {
+    /// Absolute path to the notebox root. Every file under this folder
+    /// (minus excludes) is added to the archive at the prefix
+    /// `notebox/`. The notebox name (filename of the root) is *not* in
+    /// the interior path — the archive is "this is a notebox", and the
+    /// filename on disk carries the identity via the configured pattern.
+    pub notebox_root: &'a Path,
+    /// Path the archive will be written to. Caller is responsible for
+    /// pre-creating the destination folder.
+    pub destination: &'a Path,
+    /// Optional path to the user-global config folder (typically
+    /// `~/.config/inkycap/`). When `Some`, its contents are added at
+    /// the prefix `user-config/`. `backup_state.json` is excluded
+    /// inside (circular self-reference).
+    pub user_config_root: Option<&'a Path>,
+    /// AES-256 password. `None` produces an unencrypted archive.
+    pub password: Option<&'a str>,
+}
+
+/// One entry added to the archive. Exposed for diagnostics / future
+/// progress reporting; the public `write` returns the count + total
+/// bytes for the settings UI's "Last backup: 1.2 MB" line.
+#[derive(Debug, Default)]
+pub struct ArchiveSummary {
+    pub file_count: u64,
+    pub uncompressed_bytes: u64,
+}
+
+/// Path components that we never include in the archive — applies to
+/// any segment of any path, not just the leaf. `.git/` is excluded
+/// here both because of the directory itself and any nested `.git`
+/// folders under submodules.
+const DIRECTORY_EXCLUDES: &[&str] = &[".git"];
+
+/// Leaf filenames that we never include. OS-specific cruft that bloats
+/// every backup without carrying any user-meaningful state.
+const FILE_EXCLUDES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
+
+/// Build one archive. Returns a summary describing what made it in;
+/// errors bubble up through `Result` and surface to the UI verbatim.
+pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
+    if !job.notebox_root.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "notebox root is not a directory: {}",
+            job.notebox_root.display()
+        )));
+    }
+
+    // Refuse to write the archive into the very tree we're archiving —
+    // recursive backup-inside-notebox would either blow up the archive
+    // (it would try to read the file currently being written) or
+    // succeed with garbled contents. Cheap to detect; spare the user.
+    let dest_canonical = job
+        .destination
+        .parent()
+        .and_then(|p| std::fs::canonicalize(p).ok());
+    let notebox_canonical = std::fs::canonicalize(job.notebox_root).ok();
+    if let (Some(d), Some(n)) = (&dest_canonical, &notebox_canonical) {
+        if d.starts_with(n) {
+            return Err(InkyCapError::BadRequest(
+                "Backup destination must be outside the notebox folder \
+                 (otherwise the backup would try to archive itself)."
+                    .to_string(),
+            ));
+        }
+    }
+
+    let file = std::fs::File::create(job.destination)?;
+    let mut zip = ZipWriter::new(file);
+
+    let mut summary = ArchiveSummary::default();
+
+    add_tree(
+        &mut zip,
+        job.notebox_root,
+        "notebox",
+        job.password,
+        None, // no per-tree extra exclusion
+        &mut summary,
+    )?;
+
+    if let Some(cfg) = job.user_config_root {
+        // Skip backup_state.json inside the user-config snapshot so the
+        // archive's own "last_success" record doesn't end up inside the
+        // archive (a confusing artefact at restore time).
+        add_tree(
+            &mut zip,
+            cfg,
+            "user-config",
+            job.password,
+            Some("backup_state.json"),
+            &mut summary,
+        )?;
+    }
+
+    zip.finish()
+        .map_err(|e| InkyCapError::ExportFailed(format!("finalising zip: {e}")))?;
+
+    Ok(summary)
+}
+
+/// Build the per-entry zip options. AES-256 attaches when a password is
+/// present; otherwise the entry is plain Deflate. Re-built for every
+/// entry because the zip crate consumes the options by value on each
+/// `start_file` / `add_directory` call.
+///
+/// Returned options borrow from `password` (the AES extension keeps a
+/// reference to the password string), so the explicit lifetime is
+/// needed — without it the inferred lifetime is `'static` and the
+/// non-static password reference fails to coerce.
+fn entry_options<'a>(password: Option<&'a str>) -> zip::write::FileOptions<'a, ()> {
+    let opts = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    match password {
+        Some(pw) => opts.with_aes_encryption(AesMode::Aes256, pw),
+        None => opts,
+    }
+}
+
+/// Walk one source tree, adding each file to the zip under `prefix/`.
+/// Directory entries are written for empty folders only — populated
+/// folders are implied by their files' paths, which is how most zip
+/// extractors expect things.
+fn add_tree(
+    zip: &mut ZipWriter<std::fs::File>,
+    src: &Path,
+    prefix: &str,
+    password: Option<&str>,
+    extra_leaf_exclude: Option<&str>,
+    summary: &mut ArchiveSummary,
+) -> Result<()> {
+    // follow_links(true): per CLAUDE.md/our planning thread, symlinks
+    // are stored as their target contents rather than as link entries.
+    // Keeps the archive portable to Windows where symlink restoration
+    // is second-class.
+    let walker = WalkDir::new(src).follow_links(true).into_iter();
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            // Don't fail the whole archive on one bad file — log and
+            // skip. A common cause is a file the OS held a lock on
+            // (anti-virus, indexer), and the right behaviour is to
+            // carry on with the rest of the notebox.
+            Err(e) => {
+                log::warn!("backup walker skipping entry: {e}");
+                continue;
+            }
+        };
+
+        if should_skip(&entry, extra_leaf_exclude) {
+            continue;
+        }
+
+        let abs = entry.path();
+        let rel = abs.strip_prefix(src).unwrap_or(abs);
+
+        // Inside-zip path uses forward slashes regardless of host OS.
+        let mut interior = String::with_capacity(prefix.len() + 1 + rel.as_os_str().len());
+        interior.push_str(prefix);
+        for component in rel.components() {
+            interior.push('/');
+            // Use OsStr lossy conversion; the archive metadata
+            // is best-effort UTF-8 anyway, and the zip spec
+            // doesn't carry per-component encoding intent.
+            interior.push_str(&component.as_os_str().to_string_lossy());
+        }
+
+        if entry.file_type().is_dir() {
+            // We only emit explicit directory entries for empty
+            // folders; non-empty ones are implied by their files.
+            if std::fs::read_dir(abs)
+                .map(|mut it| it.next().is_none())
+                .unwrap_or(false)
+            {
+                zip.add_directory(&interior, entry_options(password))
+                    .map_err(|e| {
+                        InkyCapError::ExportFailed(format!("add_directory {interior}: {e}"))
+                    })?;
+            }
+            continue;
+        }
+
+        if !entry.file_type().is_file() {
+            // Skip sockets, fifos, character devices, etc. — they
+            // can't meaningfully round-trip through a zip.
+            continue;
+        }
+
+        zip.start_file(&interior, entry_options(password))
+            .map_err(|e| InkyCapError::ExportFailed(format!("start_file {interior}: {e}")))?;
+
+        let mut src_file = std::fs::File::open(abs)?;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = src_file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            zip.write_all(&buf[..n])?;
+            summary.uncompressed_bytes += n as u64;
+        }
+        summary.file_count += 1;
+    }
+
+    Ok(())
+}
+
+/// Apply the exclusion rules. Walks the path components so a
+/// `.git/` anywhere in the tree is caught, not just at the root.
+fn should_skip(entry: &walkdir::DirEntry, extra_leaf_exclude: Option<&str>) -> bool {
+    for component in entry.path().components() {
+        let s = component.as_os_str().to_string_lossy();
+        if DIRECTORY_EXCLUDES.iter().any(|x| s == *x) {
+            return true;
+        }
+    }
+
+    let name = entry.file_name().to_string_lossy();
+    if FILE_EXCLUDES.iter().any(|x| name == *x) {
+        return true;
+    }
+
+    if let Some(extra) = extra_leaf_exclude {
+        if name == extra {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// List archive files in `dir` whose names match `pattern`, sorted by
+/// modified time descending (newest first). Used by retention pruning.
+pub fn list_matching_archives(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    let mut out: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let read = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        // Missing destination folder is not a programmer error — it's
+        // a normal pre-first-run state. Return an empty list and let
+        // the runner create the folder if needed.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !super::filename::matches_pattern(pattern, &name) {
+            continue;
+        }
+        let mtime = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        out.push((mtime, entry.path()));
+    }
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(out.into_iter().map(|(_, p)| p).collect())
+}
