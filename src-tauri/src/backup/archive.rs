@@ -16,6 +16,13 @@
 //!   - **`.git/`, `.DS_Store`, `Thumbs.db`, `desktop.ini`** are skipped —
 //!     `.git/` because it's large and recoverable from the remote, the
 //!     OS files because they're machine-local cruft.
+//!   - **`.inkycap/git/`** is skipped — once the git-collaboration
+//!     feature ships, this is where the per-collection mirror worktrees
+//!     live. They're recoverable by re-fetching from the configured
+//!     remotes, and including them would balloon every backup with a
+//!     full duplicate of the working notebox. The rest of `.inkycap/`
+//!     is intentionally *not* excluded — it holds user-authored content
+//!     (templates, scaffolds, settings) that belongs in the archive.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -67,6 +74,15 @@ pub struct ArchiveSummary {
 /// here both because of the directory itself and any nested `.git`
 /// folders under submodules.
 const DIRECTORY_EXCLUDES: &[&str] = &[".git"];
+
+/// Pairs of consecutive path components that, when found adjacent in
+/// the path, mark the subtree for exclusion. Used when a single
+/// segment name would be too broad — e.g. excluding `.inkycap/git/`
+/// (the per-collection git mirror worktrees) without excluding the
+/// rest of `.inkycap/`, which holds user content like templates and
+/// scaffolds. Match order is `(parent, child)` and is detected by
+/// scanning adjacent components anywhere in the path.
+const DIRECTORY_PAIR_EXCLUDES: &[(&str, &str)] = &[(".inkycap", "git")];
 
 /// Leaf filenames that we never include. OS-specific cruft that bloats
 /// every backup without carrying any user-meaningful state.
@@ -263,10 +279,26 @@ fn add_tree(
 /// Apply the exclusion rules. Walks the path components so a
 /// `.git/` anywhere in the tree is caught, not just at the root.
 fn should_skip(entry: &walkdir::DirEntry, extra_leaf_exclude: Option<&str>) -> bool {
-    for component in entry.path().components() {
-        let s = component.as_os_str().to_string_lossy();
+    let components: Vec<String> = entry
+        .path()
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+
+    for s in &components {
         if DIRECTORY_EXCLUDES.iter().any(|x| s == *x) {
             return true;
+        }
+    }
+
+    for window in components.windows(2) {
+        if let [parent, child] = window {
+            if DIRECTORY_PAIR_EXCLUDES
+                .iter()
+                .any(|(p, c)| parent == *p && child == *c)
+            {
+                return true;
+            }
         }
     }
 
