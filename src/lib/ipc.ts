@@ -23,7 +23,6 @@ import type {
   CreationResult,
   Bookmark,
   BookmarkKind,
-  SnapshotInfo,
   MycelialData,
   PropertyType,
   AgendaItem,
@@ -800,40 +799,6 @@ export async function reorderBookmarks(
   return invoke<void>("reorder_bookmarks", { fromIndex, toIndex });
 }
 
-// Snapshots / Recovery
-
-export async function createSnapshot(
-  filePath: string,
-  content: string,
-): Promise<boolean> {
-  return invoke<boolean>("create_snapshot", { filePath, content });
-}
-
-export async function listSnapshots(
-  filePath: string,
-): Promise<SnapshotInfo[]> {
-  return invoke<SnapshotInfo[]>("list_snapshots", { filePath });
-}
-
-export async function restoreSnapshot(
-  filePath: string,
-  hash: string,
-): Promise<string> {
-  return invoke<string>("restore_snapshot", { filePath, hash });
-}
-
-export async function previewSnapshot(
-  filePath: string,
-  hash: string,
-  maxChars?: number,
-): Promise<string> {
-  return invoke<string>("preview_snapshot", {
-    filePath,
-    hash,
-    maxChars: maxChars ?? null,
-  });
-}
-
 // Mycelial View
 
 export async function getMycelialData(
@@ -1301,6 +1266,14 @@ export async function backupNow(): Promise<BackupReport | null> {
   return invoke<BackupReport | null>("backup_now");
 }
 
+/** Cooperatively cancel a backup that's currently in flight. Returns
+ *  immediately; the actual abort happens at the next cancel-poll
+ *  inside the archive writer (between file entries or 64KiB chunks).
+ *  Safe to call when no backup is running. */
+export async function cancelBackup(): Promise<void> {
+  return invoke<void>("cancel_backup");
+}
+
 /** Read the persisted "last backup" record. */
 export async function getBackupState(): Promise<BackupState> {
   return invoke<BackupState>("get_backup_state");
@@ -1365,19 +1338,25 @@ export async function listBackupContents(archivePath: string): Promise<BackupCon
   return invoke<BackupContentEntry[]>("list_backup_contents", { archivePath });
 }
 
-/** Pull selected entries out of an archive into `targetRoot`. The
- *  password (if needed) is fetched from the OS keychain — callers
- *  don't pass it through. */
+/** Pull selected entries out of an archive into `targetRoot`.
+ *
+ *  Pass `passwordOverride` when the user typed a password specifically
+ *  for this restore (e.g. the archive predates the current keychain
+ *  password and needs the older one). Leave it undefined to fall back
+ *  to whatever the OS keychain holds — the historical behaviour and
+ *  what most restores want. */
 export async function restoreBackupFiles(
   archivePath: string,
   targetRoot: string,
   entries: string[],
   conflict: RestoreConflictPolicy,
+  passwordOverride?: string,
 ): Promise<RestoreResult[]> {
   return invoke<RestoreResult[]>("restore_backup_files", {
     archivePath,
     targetRoot,
     entries,
     conflict,
+    passwordOverride: passwordOverride && passwordOverride.length > 0 ? passwordOverride : null,
   });
 }

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use notify::RecommendedWatcher;
 use tokio::sync::{Mutex, Notify, RwLock};
@@ -11,7 +11,6 @@ use crate::cache::MetadataCache;
 use crate::corpus_stats::CorpusStats;
 use crate::link_index::LinkIndex;
 use crate::property_types::PropertyTypeRegistry;
-use crate::recovery::SnapshotManager;
 use crate::scanner::property_index::PropertyIndex;
 use crate::search::engine::{PersistedSearchIndex, SearchEngine};
 use crate::notebox_settings::{NoteboxCitationSettings, NoteboxSettings};
@@ -70,8 +69,6 @@ pub struct AppState {
     pub corpus_stats: RwLock<CorpusStats>,
     /// User bookmarks (notes, searches, headings, collections).
     pub bookmarks: RwLock<Vec<Bookmark>>,
-    /// File recovery snapshot manager.
-    pub snapshot_manager: RwLock<SnapshotManager>,
     /// Persistent metadata cache (SQLite). Optional because cache open is
     /// best-effort — a missing or corrupt cache should never block app launch.
     pub metadata_cache: RwLock<Option<Arc<MetadataCache>>>,
@@ -104,6 +101,13 @@ pub struct AppState {
     /// natural wake (up to 24h later) — surprising for the user.
     /// Fired from `update_settings` after any successful save.
     pub backup_scheduler_wake: Arc<Notify>,
+    /// Cooperative cancellation flag for an in-flight backup run.
+    /// The `cancel_backup` Tauri command sets it; the archive writer
+    /// polls it between entries and aborts cleanly. Cleared at the
+    /// start of every run so a leftover flag from a previous attempt
+    /// can't kill the next one. `Arc` so blocking-thread workers can
+    /// share it without borrowing into the tokio task.
+    pub backup_cancel: Arc<AtomicBool>,
 }
 
 /// How long a dropped-path entry remains valid before it's pruned. Long
@@ -139,7 +143,6 @@ impl AppState {
             search_engine: RwLock::new(SearchEngine::new()),
             corpus_stats: RwLock::new(CorpusStats::new(None)),
             bookmarks: RwLock::new(bookmarks::load_bookmarks().unwrap_or_default()),
-            snapshot_manager: RwLock::new(SnapshotManager::new()),
             metadata_cache: RwLock::new(metadata_cache),
             property_types: RwLock::new(PropertyTypeRegistry::new()),
             typst_compiler: Mutex::new(None),
@@ -147,6 +150,7 @@ impl AppState {
             drop_allowlist: StdMutex::new(HashMap::new()),
             backup_run_lock: Mutex::new(()),
             backup_scheduler_wake: Arc::new(Notify::new()),
+            backup_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 

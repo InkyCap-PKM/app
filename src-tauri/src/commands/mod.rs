@@ -15,7 +15,6 @@ pub mod journal_scroll;
 pub mod markdown;
 pub mod mycelial;
 pub mod properties;
-pub mod recovery;
 pub mod search;
 pub mod settings;
 pub mod system_color;

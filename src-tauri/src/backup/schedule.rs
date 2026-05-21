@@ -22,6 +22,7 @@
 //!   `runner::record_failure` (which the settings UI surfaces) and the
 //!   scheduler keeps going. We never panic the task or stop the loop.
 
+use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager};
@@ -100,6 +101,9 @@ async fn run_loop(app: AppHandle) {
 /// `None` when the scheduler should be dormant (interval is 0, path is
 /// unset, or no notebox is open — the runner would fail anyway).
 fn compute_sleep_secs(settings: &BackupSettings, notebox_open: bool) -> Option<u64> {
+    if !settings.enabled {
+        return None;
+    }
     if !notebox_open {
         return None;
     }
@@ -152,6 +156,11 @@ async fn run_one_tick(app: &AppHandle) {
     // from the command palette parks behind us (or vice versa).
     let _guard = state.backup_run_lock.lock().await;
 
+    // Clear any stale cancel flag from a previous (potentially manual)
+    // run before starting the scheduled one.
+    state.backup_cancel.store(false, Ordering::Release);
+    let cancel = state.backup_cancel.clone();
+
     let user_config_root = crate::app_paths::config_dir();
     let outcome = tokio::task::spawn_blocking(move || {
         runner::run(runner::RunInputs {
@@ -159,6 +168,7 @@ async fn run_one_tick(app: &AppHandle) {
             notebox_root: &notebox_root,
             user_config_root: &user_config_root,
             is_scheduled: true,
+            cancel,
         })
     })
     .await;
@@ -180,6 +190,13 @@ async fn run_one_tick(app: &AppHandle) {
         }
         Ok(Ok(None)) => {
             log::debug!("scheduled backup skipped (no changes since last run)");
+        }
+        Ok(Err(crate::errors::InkyCapError::Cancelled)) => {
+            // Cancel happens through a UI button the user pressed.
+            // Don't persist it as a "Last attempt failed" status —
+            // the user knows; record_failure would spam their
+            // settings panel with a false negative.
+            log::info!("scheduled backup cancelled by user");
         }
         Ok(Err(e)) => {
             log::warn!("scheduled backup failed: {e}");

@@ -19,6 +19,8 @@ import { noteboxInfo } from "../stores/notebox";
 import { showToast } from "../stores/toasts";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
+import { Dropdown } from "./Dropdown";
+import { formatUserDateTime } from "../lib/dates";
 
 interface Props {
   visible: boolean;
@@ -61,6 +63,13 @@ const BackupBrowser: Component<Props> = (props) => {
   // that's what 90% of restores want.
   const [altTarget, setAltTarget] = createSignal<string | null>(null);
   const [restoring, setRestoring] = createSignal(false);
+  // Per-restore password override. Each archive carries the password it
+  // was made with — the keychain only knows the most recent. When this
+  // field is non-empty, it overrides the keychain value for this one
+  // restore. Cleared on session reset and when the user switches to a
+  // different archive (no risk of leaking the previous archive's
+  // password into a different restore).
+  const [pwOverride, setPwOverride] = createSignal("");
 
   // Reset transient state when the dialog closes/reopens so each
   // session starts clean.
@@ -71,6 +80,7 @@ const BackupBrowser: Component<Props> = (props) => {
     setSelected(new Set<string>());
     setAltTarget(null);
     setConflict("skip");
+    setPwOverride("");
   }
 
   // Let the user pick a .zip outside the configured destination
@@ -97,6 +107,7 @@ const BackupBrowser: Component<Props> = (props) => {
     setSelectedArchive(entry);
     setFilter("");
     setSelected(new Set<string>());
+    setPwOverride("");
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -191,7 +202,13 @@ const BackupBrowser: Component<Props> = (props) => {
 
     setRestoring(true);
     try {
-      const results = await ipc.restoreBackupFiles(archive.path, target, entries, conflict());
+      const results = await ipc.restoreBackupFiles(
+        archive.path,
+        target,
+        entries,
+        conflict(),
+        pwOverride() || undefined,
+      );
       const written = results.filter((r) => r.outcome === "written").length;
       const renamed = results.filter((r) => r.outcome === "renamed").length;
       const skipped = results.filter((r) => r.outcome === "skipped").length;
@@ -214,7 +231,7 @@ const BackupBrowser: Component<Props> = (props) => {
   }
 
   function formatMtime(unix: number): string {
-    return new Date(unix * 1000).toLocaleString();
+    return formatUserDateTime(unix * 1000);
   }
 
   // When the dialog opens, refresh the archives list. Done via a
@@ -288,6 +305,7 @@ const BackupBrowser: Component<Props> = (props) => {
                         setSelectedArchive(ext());
                         setFilter("");
                         setSelected(new Set<string>());
+                        setPwOverride("");
                       }}
                     >
                       <div class="backup-browser__archive-label">
@@ -310,6 +328,7 @@ const BackupBrowser: Component<Props> = (props) => {
                         setSelectedArchive(a);
                         setFilter("");
                         setSelected(new Set<string>());
+                        setPwOverride("");
                       }}
                     >
                       <div class="backup-browser__archive-name">{a.name}</div>
@@ -327,9 +346,36 @@ const BackupBrowser: Component<Props> = (props) => {
               <Show when={selectedArchive()}>
                 <div class="settings__label">{t("backup.browse.contentsHeading")}</div>
 
-                <Show when={needsPasswordButMissing()}>
-                  <div class="backup-browser__warning">
-                    {t("backup.browse.noPassword")}
+                {/* Per-archive password override.
+                    Surfaces only when the selected archive is encrypted.
+                    Each archive carries the password it was created
+                    with — the keychain only ever holds the most recent
+                    one — so when the user has changed/cleared their
+                    password since this archive was made, the keychain
+                    value won't decrypt it. The override box lets the
+                    user type the original password without rewriting
+                    the keychain. */}
+                <Show when={anyEncrypted()}>
+                  <div class="backup-browser__password">
+                    <div class="settings__label">
+                      {t("backup.browse.passwordHeading")}
+                    </div>
+                    <Show when={needsPasswordButMissing()}>
+                      <div class="backup-browser__warning">
+                        {t("backup.browse.noPassword")}
+                      </div>
+                    </Show>
+                    <span class="settings__description">
+                      {t("backup.browse.passwordHint")}
+                    </span>
+                    <input
+                      type="password"
+                      class="settings__text-input"
+                      placeholder={t("backup.browse.passwordPlaceholder")}
+                      value={pwOverride()}
+                      onInput={(e) => setPwOverride(e.currentTarget.value)}
+                      autocomplete="off"
+                    />
                   </div>
                 </Show>
 
@@ -429,17 +475,16 @@ const BackupBrowser: Component<Props> = (props) => {
                   <div class="settings__label" style={{ "margin-top": "12px" }}>
                     {t("backup.browse.conflictLabel")}
                   </div>
-                  <select
-                    class="settings__text-input"
+                  <Dropdown<RestoreConflictPolicy>
                     value={conflict()}
-                    onChange={(e) =>
-                      setConflict(e.currentTarget.value as RestoreConflictPolicy)
-                    }
-                  >
-                    <option value="skip">{t("backup.browse.conflictSkip")}</option>
-                    <option value="rename">{t("backup.browse.conflictRename")}</option>
-                    <option value="overwrite">{t("backup.browse.conflictOverwrite")}</option>
-                  </select>
+                    options={[
+                      { value: "skip", label: t("backup.browse.conflictSkip") },
+                      { value: "rename", label: t("backup.browse.conflictRename") },
+                      { value: "overwrite", label: t("backup.browse.conflictOverwrite") },
+                    ]}
+                    onChange={(v) => setConflict(v)}
+                    ariaLabel={t("backup.browse.conflictLabel")}
+                  />
                 </div>
               </Show>
             </div>
@@ -456,7 +501,7 @@ const BackupBrowser: Component<Props> = (props) => {
                 restoring()
                 || selected().size === 0
                 || effectiveTarget() === null
-                || needsPasswordButMissing()
+                || (needsPasswordButMissing() && pwOverride().length === 0)
               }
             >
               {t("backup.browse.restoreBtn")}

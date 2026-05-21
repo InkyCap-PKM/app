@@ -34,7 +34,6 @@ export function registerBuiltinCommands(callbacks: {
   toggleSettings: () => void;
   toggleCommandPalette: () => void;
   toggleComposer: () => void;
-  openFileHistory: () => void;
   openCitationPicker: () => void;
   openRefNotePicker: () => void;
   openSearch: () => void;
@@ -287,13 +286,6 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   registerCommand({
-    id: "tools:file-history",
-    title: "File History (Snapshots)",
-    category: "Tools",
-    execute: callbacks.openFileHistory,
-  });
-
-  registerCommand({
     id: "tools:audit-typ-files",
     title: "Audit .typ files for InkyCap compatibility",
     category: "Tools",
@@ -315,8 +307,22 @@ export function registerBuiltinCommands(callbacks: {
       // backend (zip serialization) and may take several seconds on
       // larger noteboxes, longer than the default 5s auto-dismiss.
       // Keep the "in progress" toast visible until the result toast
-      // explicitly replaces it.
-      const progressId = showToast("info", t("backup.toast.inProgress"), undefined, { persistent: true });
+      // explicitly replaces it. The toast carries an X button wired
+      // to `cancelBackup`, which flips the backend's cancel flag and
+      // the archive writer aborts at its next poll.
+      let cancelRequested = false;
+      const progressId = showToast(
+        "info",
+        t("backup.toast.inProgress"),
+        undefined,
+        {
+          persistent: true,
+          onCancel: () => {
+            cancelRequested = true;
+            void ipc.cancelBackup();
+          },
+        },
+      );
       try {
         const report = await ipc.backupNow();
         dismissToast(progressId);
@@ -338,7 +344,12 @@ export function registerBuiltinCommands(callbacks: {
         );
       } catch (e) {
         dismissToast(progressId);
-        showToast("error", t("backup.toast.failed", { error: String(e) }));
+        const msg = String(e);
+        if (cancelRequested || /\bcancelled\b/i.test(msg)) {
+          showToast("info", t("backup.toast.cancelled"));
+        } else {
+          showToast("error", t("backup.toast.failed", { error: msg }));
+        }
       }
     },
   });

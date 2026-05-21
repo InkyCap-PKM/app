@@ -26,11 +26,31 @@ const ToastHost: Component = () => {
       <For each={toasts()}>
         {(toast) => {
           const { prefix, animated } = splitTrailingEllipsis(toast.message);
+          // Persistent toasts (in-progress indicators) must not
+          // dismiss-on-click: clicking the whole toast away while
+          // the underlying work keeps running is confusing — the
+          // user thinks they cancelled. Non-persistent toasts keep
+          // click-to-dismiss because they auto-dismiss anyway.
+          const allowBodyDismiss = !toast.persistent;
+          // Show an explicit close/cancel button when either:
+          //   - the toast wires `onCancel` (work that can be aborted), or
+          //   - the toast is persistent without `onCancel` (the user
+          //     needs *some* way to clear it manually).
+          const showCloseBtn = toast.onCancel != null || toast.persistent;
+          const closeBtnLabel = toast.onCancel ? "Cancel" : "Dismiss";
+
+          function handleClose(e: MouseEvent) {
+            e.stopPropagation();
+            toast.onCancel?.();
+            dismissToast(toast.id);
+          }
+
           return (
             <div
               class={`toast toast--${toast.level}`}
+              classList={{ "toast--persistent": toast.persistent }}
               role="alert"
-              onClick={() => dismissToast(toast.id)}
+              onClick={allowBodyDismiss ? () => dismissToast(toast.id) : undefined}
             >
               <span class="toast__icon">{LEVEL_ICONS[toast.level]}</span>
               <div class="toast__body">
@@ -48,6 +68,17 @@ const ToastHost: Component = () => {
                   <span class="toast__detail">{toast.detail}</span>
                 </Show>
               </div>
+              <Show when={showCloseBtn}>
+                <button
+                  type="button"
+                  class="toast__close"
+                  onClick={handleClose}
+                  aria-label={closeBtnLabel}
+                  title={closeBtnLabel}
+                >
+                  ×
+                </button>
+              </Show>
             </div>
           );
         }}

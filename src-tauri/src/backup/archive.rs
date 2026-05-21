@@ -19,6 +19,8 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use walkdir::WalkDir;
 use zip::write::{SimpleFileOptions, ZipWriter};
@@ -44,6 +46,11 @@ pub struct ArchiveJob<'a> {
     pub user_config_root: Option<&'a Path>,
     /// AES-256 password. `None` produces an unencrypted archive.
     pub password: Option<&'a str>,
+    /// Cooperative cancellation flag. Polled before each new file
+    /// entry and between 64KiB chunks within a large file, so a
+    /// cancel request on a multi-gigabyte attachment doesn't have to
+    /// wait until the next file boundary.
+    pub cancel: Arc<AtomicBool>,
 }
 
 /// One entry added to the archive. Exposed for diagnostics / future
@@ -106,6 +113,7 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
         job.password,
         None, // no per-tree extra exclusion
         &mut summary,
+        &job.cancel,
     )?;
 
     if let Some(cfg) = job.user_config_root {
@@ -119,6 +127,7 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
             job.password,
             Some("backup_state.json"),
             &mut summary,
+            &job.cancel,
         )?;
     }
 
@@ -158,6 +167,7 @@ fn add_tree(
     password: Option<&str>,
     extra_leaf_exclude: Option<&str>,
     summary: &mut ArchiveSummary,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
     // follow_links(true): per CLAUDE.md/our planning thread, symlinks
     // are stored as their target contents rather than as link entries.
@@ -166,6 +176,14 @@ fn add_tree(
     let walker = WalkDir::new(src).follow_links(true).into_iter();
 
     for entry in walker {
+        // Cancel poll at every directory-entry boundary. Acquire-load
+        // is sufficient — the flag is set on a different thread (the
+        // Tauri command handler) and the worst-case slip is one more
+        // file before we observe it, which is fine.
+        if cancel.load(Ordering::Acquire) {
+            return Err(InkyCapError::Cancelled);
+        }
+
         let entry = match entry {
             Ok(e) => e,
             // Don't fail the whole archive on one bad file — log and
@@ -223,6 +241,12 @@ fn add_tree(
         let mut src_file = std::fs::File::open(abs)?;
         let mut buf = [0u8; 64 * 1024];
         loop {
+            // Poll between 64KiB chunks too, so cancelling during a
+            // very large attachment doesn't have to wait for the next
+            // file boundary.
+            if cancel.load(Ordering::Acquire) {
+                return Err(InkyCapError::Cancelled);
+            }
             let n = src_file.read(&mut buf)?;
             if n == 0 {
                 break;

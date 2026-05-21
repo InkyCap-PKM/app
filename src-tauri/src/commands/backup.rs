@@ -17,6 +17,7 @@
 //! `lib.rs::run`; those don't need IPC bindings.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, State};
 
@@ -43,11 +44,21 @@ pub async fn backup_now(
     // Snapshot settings under the lock, then release before the
     // blocking archive write so the rest of the app stays responsive.
     let settings = state.settings.read().await.backup.clone();
+    if !settings.enabled {
+        return Err(InkyCapError::BadRequest(
+            "Backups are disabled. Enable Notebox backup in Settings before running.".to_string(),
+        ));
+    }
     let user_config_root = crate::app_paths::config_dir();
 
     // Exclusion mutex: a second invocation while the first is in flight
     // will park on this `lock()` rather than racing.
     let _guard = state.backup_run_lock.lock().await;
+
+    // Fresh-start the cancel flag. A leftover `true` from a previous
+    // cancelled run would otherwise abort this one immediately.
+    state.backup_cancel.store(false, Ordering::Release);
+    let cancel = state.backup_cancel.clone();
 
     // The zip writer is synchronous; do it in a blocking task so we
     // don't tie up the tokio reactor on big noteboxes. The cost of one
@@ -58,6 +69,7 @@ pub async fn backup_now(
             notebox_root: &notebox_root,
             user_config_root: &user_config_root,
             is_scheduled: false,
+            cancel,
         })
     })
     .await
@@ -65,8 +77,13 @@ pub async fn backup_now(
 
     // Record the failure into persisted state so the UI's "Last run"
     // line shows the actual error rather than the previous success.
+    // A user-requested cancellation isn't a failure — leave the
+    // persisted state alone so the previous successful run stays the
+    // "Last backup" record.
     if let Err(e) = &result {
-        runner::record_failure(&e.to_string());
+        if !matches!(e, InkyCapError::Cancelled) {
+            runner::record_failure(&e.to_string());
+        }
     }
 
     // Tell the UI to refresh its "Last backup" line. Fires on both
@@ -82,6 +99,17 @@ pub async fn backup_now(
 #[tauri::command]
 pub async fn get_backup_state(_state: State<'_, AppState>) -> Result<state::BackupState> {
     Ok(state::load())
+}
+
+/// Request cancellation of any backup currently in flight. Sets the
+/// shared cancel flag the archive writer polls between entries and
+/// returns immediately — the actual abort happens cooperatively in the
+/// background thread. Idempotent: calling when no backup is running is
+/// harmless (the flag is cleared at the start of every run).
+#[tauri::command]
+pub async fn cancel_backup(state: State<'_, AppState>) -> Result<()> {
+    state.backup_cancel.store(true, Ordering::Release);
+    Ok(())
 }
 
 /// Store a new backup password in the OS keychain. Overwrites any
@@ -155,8 +183,15 @@ pub async fn list_backup_contents(
 }
 
 /// Pull selected entries out of `archive_path` into `target_root`.
-/// When the entries are AES-encrypted, the password is fetched from
-/// the OS keychain — the frontend never has to handle the secret.
+///
+/// Password resolution: each archive is encrypted with whichever password
+/// was in the keychain at the moment that archive was created — the
+/// keychain holds only the *current* password, so the value there may
+/// no longer match an older archive. The frontend can pass an explicit
+/// `password_override` to handle that case (e.g. the user typed the
+/// password the archive was made with). When `password_override` is
+/// `None`, we fall back to the keychain value, mirroring the historical
+/// behaviour.
 ///
 /// `target_root` is the destination *root* (typically the notebox
 /// root or a user-picked alternate folder); interior `notebox/` /
@@ -168,12 +203,16 @@ pub async fn restore_backup_files(
     target_root: String,
     entries: Vec<String>,
     conflict: restore::RestoreConflictPolicy,
+    password_override: Option<String>,
 ) -> Result<Vec<restore::RestoreResult>> {
     let archive = PathBuf::from(archive_path);
     let target = PathBuf::from(target_root);
-    let password = tokio::task::spawn_blocking(password::get)
-        .await
-        .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??;
+    let password = match password_override {
+        Some(p) if !p.is_empty() => Some(p),
+        _ => tokio::task::spawn_blocking(password::get)
+            .await
+            .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??,
+    };
     tokio::task::spawn_blocking(move || {
         restore::extract_files(
             &archive,

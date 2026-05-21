@@ -25,6 +25,7 @@ import type {
 import * as ipc from "../lib/ipc";
 import { t } from "../lib/i18n";
 import { modifierKey } from "../lib/platform";
+import { formatUserDate, formatUserDateTime, DEFAULT_DATE_FORMAT } from "../lib/dates";
 import { open } from "@tauri-apps/plugin-dialog";
 import { homeDir } from "@tauri-apps/api/path";
 import { Pencil, Check, X } from "lucide-solid";
@@ -70,7 +71,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "files", label: "Files & Links" },
   { id: "citations", label: "Citations" },
-  { id: "export", label: "Import & Backup" },
+  { id: "export", label: "Import/Export & Backup" },
   { id: "creation-rules", label: "Creation Rules" },
   { id: "behaviour", label: "Behaviour" },
 ];
@@ -525,14 +526,14 @@ function EditorSettingsSection() {
     <div class="settings__section">
       <SettingToggle
         label="Comfortable line length"
-        description="Limit line width for a more readable display"
+        description="Limit line width for a more readable display."
         value={settings.editor.readable_line_length}
         onChange={(v) => updateSetting("editor", "readable_line_length", v)}
       />
       <Show when={settings.editor.readable_line_length}>
         <SettingNumber
           label="Max line length"
-          description="Maximum characters allowed per line"
+          description="Maximum characters allowed per line."
           value={settings.editor.max_line_width}
           min={40}
           max={200}
@@ -541,43 +542,43 @@ function EditorSettingsSection() {
       </Show>
       <SettingToggle
         label="Spellcheck"
-        description="Enable browser-native spell checking"
+        description="Enable browser-native spell checking."
         value={settings.editor.spellcheck}
         onChange={(v) => updateSetting("editor", "spellcheck", v)}
       />
       <SettingToggle
         label="Auto-pair brackets"
-        description="Automatically close brackets and quotes"
+        description="Automatically close brackets and quotes."
         value={settings.editor.auto_pair_brackets}
         onChange={(v) => updateSetting("editor", "auto_pair_brackets", v)}
       />
       <SettingToggle
         label="Auto-pair Typst markup"
-        description="Automatically close *, _, `, $ formatting delimiters"
+        description="Automatically close *, _, `, $ formatting delimiters."
         value={settings.editor.auto_pair_typst}
         onChange={(v) => updateSetting("editor", "auto_pair_typst", v)}
       />
       <SettingToggle
         label="Auto-expand markup"
-        description="Automatically reveal function source when the cursor enters a pill in visual mode"
+        description="Automatically reveal Typst function source in the Visual Editor when the cursor enters a pill."
         value={settings.editor.auto_expand_markup}
         onChange={(v) => updateSetting("editor", "auto_expand_markup", v)}
       />
       <SettingToggle
-        label="Smart list indentation"
-        description="When indenting a list item with Tab/Shift-Tab, also move its nested children"
+        label="Intuitive list indentation"
+        description="When indenting a list item with Tab/Shift-Tab, also move its nested children."
         value={settings.editor.smart_indent_lists}
         onChange={(v) => updateSetting("editor", "smart_indent_lists", v)}
       />
       <SettingToggle
-        label="Enter inserts a line break"
+        label="Enter key inserts a line break"
         description="Typst normally treats a single Enter as a space on the same line and two Enters as a new paragraph. When this is on, pressing Enter inserts a Typst line break so your next line wraps as a new line in the rendered output; pressing Enter twice still starts a new paragraph."
         value={settings.editor.enter_inserts_line_break}
         onChange={(v) => updateSetting("editor", "enter_inserts_line_break", v)}
       />
       <SettingSelect
-        label="Default editing mode"
-        description="How new notes open by default"
+        label="Editing mode preference"
+        description="How notes open by default."
         value={settings.editor.default_editing_mode}
         options={[
           { value: "live-preview", label: "Visual Edit" },
@@ -593,7 +594,7 @@ function EditorSettingsSection() {
       />
       <SettingSelect
         label="Focus mode"
-        description="Adjust how the Visual Editor presents content"
+        description="Adjust how the Visual Editor presents content."
         value={settings.editor.focus_mode}
         options={[
           { value: "none", label: "Off" },
@@ -604,7 +605,7 @@ function EditorSettingsSection() {
       />
       <SettingToggle
         label="Dim unfocused text"
-        description="Reduce visibility of text outside the focused area"
+        description="Reduce visibility of text outside the focused area."
         value={settings.editor.focus_dim}
         onChange={(v) => updateSetting("editor", "focus_dim", v)}
       />
@@ -615,13 +616,13 @@ function EditorSettingsSection() {
       </div>
       <SettingToggle
         label="Popup toolbar on selected text"
-        description="Show a formatting toolbar when text is selected in visual mode"
+        description="Show a formatting toolbar when text is selected in visual mode."
         value={settings.editor.selection_toolbar}
         onChange={(v) => updateSetting("editor", "selection_toolbar", v)}
       />
       <SettingToggle
         label="Slash / command shortcut"
-        description="Type / to open a quick formatting palette in visual mode"
+        description="Type / to open a quick formatting palette in visual mode."
         value={settings.editor.command_palette}
         onChange={(v) => updateSetting("editor", "command_palette", v)}
       />
@@ -749,7 +750,7 @@ function AppearanceSettingsSection() {
       />
       <SettingCombobox
         label="Editor font size"
-        description="Font size for note content in pixels"
+        description="Font size for note content in pixels."
         value={settings.editor.body_font_size}
         presets={[10, 12, 14, 15, 16, 18, 20, 24]}
         min={8}
@@ -772,7 +773,7 @@ function AppearanceSettingsSection() {
       />
       <SettingCombobox
         label="User interface scale"
-        description="Scale InkyCap's interface"
+        description="Scale InkyCap's interface."
         value={settings.editor.font_size}
         presets={[10, 11, 12, 13, 14, 15, 16, 18, 20]}
         min={10}
@@ -781,7 +782,7 @@ function AppearanceSettingsSection() {
       />
       <SettingSelect
         label="Zoom shortcut target"
-        description="What Ctrl+/Ctrl- adjusts"
+        description="What Ctrl+/Ctrl- adjusts."
         value={settings.appearance.zoom_target}
         options={[
           { value: "content", label: "Content only" },
@@ -792,7 +793,7 @@ function AppearanceSettingsSection() {
       />
       <SettingSelect
         label="File tree folder grouping"
-        description="How folders are placed relative to files when the sidebar's sort mode is applied"
+        description="How folders are placed relative to files when the sidebar's sort mode is applied."
         value={settings.appearance.folder_grouping}
         options={[
           { value: "before", label: "Folders before files" },
@@ -801,22 +802,23 @@ function AppearanceSettingsSection() {
         ]}
         onChange={(v) => updateSetting("appearance", "folder_grouping", v as "before" | "after" | "inline")}
       />
+      <DateFormatSettingRow />
 
       {/* Rendering Defaults */}
       <div class="settings__section-header" style={{ "margin-top": "24px" }}>
         <span class="settings__label" >Rendering Defaults</span>
       </div>
       <p class="settings__section-note">
-        Defaults for compiled output and reading view. Override per collection or per note.
+        Preferences for compiled output and reading view. Override per collection or per note.
       </p>
 
       <SettingSelect
-        label="Default reading view format"
-        description="SVG shows paginated output; HTML shows copyable text"
+        label="Reading view format preference"
+        description="SVG shows paginated, precise output; HTML shows copyable text."
         value={settings.editor.default_reading_format}
         options={[
-          { value: "svg", label: "SVG (paginated)" },
-          { value: "html", label: "HTML (continuous)" },
+          { value: "svg", label: "SVG" },
+          { value: "html", label: "HTML" },
         ]}
         onChange={(v) =>
           updateSetting(
@@ -828,20 +830,20 @@ function AppearanceSettingsSection() {
       />
       <SettingToggle
         label="Show inline wikilinks"
-        description="Display wikilinks in rendered output (reading mode and export)"
+        description="Display wikilinks in rendered output (reading mode and export)."
         value={settings.editor.show_inline_wikilinks}
         onChange={(v) => updateSetting("editor", "show_inline_wikilinks", v)}
       />
       <SettingToggle
         label="Show inline tags"
-        description="Display tags in rendered output (reading mode and export)"
+        description="Display tags in rendered output (reading mode and export)."
         value={settings.editor.show_inline_tags}
         onChange={(v) => updateSetting("editor", "show_inline_tags", v)}
       />
 
       <FontRoleRow
         label="Text font"
-        description="Font for compiled documents (reading view, exports). This setting is for convenience, you can set other fonts for output within the document using standard Typst functions and markup"
+        description="Font for compiled documents (reading view, exports). This setting is for convenience, you can set other fonts for output within the document using standard Typst functions and markup."
         options={textOptions()}
         choice={settings.fonts.text}
         onChange={(c) => updateFontChoice("text", c)}
@@ -849,7 +851,7 @@ function AppearanceSettingsSection() {
       />
       <SettingCombobox
         label="Text size"
-        description="Base text size for compiled documents in points"
+        description="Base text size for compiled documents in points."
         value={settings.document.text_size ?? 11}
         presets={[10, 10.5, 11, 12, 14]}
         min={6}
@@ -860,7 +862,7 @@ function AppearanceSettingsSection() {
       />
       <SettingSelect
         label="Page size"
-        description="Default paper size for compiled documents and exports"
+        description="Default paper size for compiled documents and exports."
         value={settings.document.page_size ?? ""}
         options={PAGE_SIZE_OPTIONS}
         onChange={(v) => updateSetting("document", "page_size", v || null)}
@@ -877,7 +879,7 @@ function FileSettingsSection() {
     <div class="settings__section">
       <SettingSelect
         label="New note location"
-        description="Where new notes are created"
+        description="Where new notes are created."
         value={noteboxSettings.files.new_note_location}
         options={[
           { value: "root", label: "Notebox root" },
@@ -896,7 +898,7 @@ function FileSettingsSection() {
       <Show when={noteboxSettings.files.new_note_location === "specified"}>
         <SettingPathText
           label="New note folder"
-          description="Folder path relative to notebox root"
+          description="Folder path relative to notebox root."
           value={noteboxSettings.files.new_note_folder}
           onChange={(v) => updateNoteboxSetting("files", "new_note_folder", v)}
           suggestions={folderSuggestions}
@@ -906,7 +908,7 @@ function FileSettingsSection() {
       <AttachmentFolderField value={noteboxSettings.files.attachment_folder} />
       <SettingToggle
         label="Auto-update links on rename"
-        description="Automatically update wikilinks when a file is renamed"
+        description="Automatically update wikilinks when a file is renamed."
         value={settings.files.auto_update_links_on_rename}
         onChange={(v) =>
           updateSetting("files", "auto_update_links_on_rename", v)
@@ -914,7 +916,7 @@ function FileSettingsSection() {
       />
       <SettingToggle
         label="Confirm before delete"
-        description="Show a confirmation dialog before deleting files"
+        description="Show a confirmation dialog before deleting files."
         value={settings.files.confirm_before_delete}
         onChange={(v) => updateSetting("files", "confirm_before_delete", v)}
       />
@@ -930,8 +932,8 @@ function FileSettingsSection() {
         <span class="settings__label">Zettelkasten IDs</span>
       </div>
       <SettingToggle
-        label="Enable Zettelkasten IDs (zid)"
-        description="Automatically assign a unique ID to new notes based on the pattern below"
+        label="Enable Zettelkasten IDs"
+        description="Automatically assign a unique ID to a property (zid) in new notes based on the pattern you define."
         value={settings.files.zettelkasten_enabled}
         onChange={(v) => updateSetting("files", "zettelkasten_enabled", v)}
       />
@@ -940,7 +942,7 @@ function FileSettingsSection() {
           <div class="settings__row-info">
             <label class="settings__label">Zettelkasten ID pattern</label>
             <span class="settings__description">
-              Format for auto-generated IDs. Available tokens: YYYY (4-digit year), YY (2-digit year), MMMM (full month name), MMM (short month name), MM (2-digit month), DD (2-digit day), HH (24-hour), mm (minute), ss (second), dddd (full weekday), ddd (short weekday). Any other characters are kept as-is.
+              Format for auto-generated IDs. Available tokens: YYYY (4-digit year), YY (2-digit year), MMMM (full month name), MMM (short month name), MM (2-digit month), DD (2-digit day), HH (24-hour), mm (minute), ss (second), dddd (full weekday), ddd (short weekday). Any other characters remain verbatim.
             </span>
           </div>
           <input
@@ -953,7 +955,7 @@ function FileSettingsSection() {
         </div>
         <SettingToggle
           label="Auto-title new notes as ZID"
-          description="Use the generated ZID as the filename for new notes, skipping the title prompt"
+          description="Use the generated ZID as the filename for new notes, skipping the filename prompt."
           value={settings.files.auto_title_as_zid}
           onChange={(v) => updateSetting("files", "auto_title_as_zid", v)}
         />
@@ -1014,7 +1016,7 @@ function CitationsSettingsSection() {
     <div class="settings__section">
       <SettingSelect
         label="Citation source"
-        description="Where to load bibliography entries from"
+        description="Source to use for loading bibliographic information."
         value={noteboxSettings.citations.source}
         options={[
           { value: "file", label: "Bibliography file (.bib, .yml, .json)" },
@@ -1099,7 +1101,7 @@ function CitationsSettingsSection() {
 
       <SettingSelect
         label="Citation style"
-        description="Style for bibliography formatting"
+        description="Style to use as a default for the bibliography format. This can be overridden in rendered output per file or by collection."
         value={styleValue()}
         options={CITATION_STYLES}
         onChange={handleStyleChange}
@@ -1321,25 +1323,30 @@ function ExportSettingsSection() {
       </Show>
 
       <div class="settings__label" style={{ "margin-top": "24px" }}>Export</div>
-      <SettingText
-        label="Pandoc path"
-        description="Path to the Pandoc binary. Leave empty to auto-detect from PATH."
-        value={settings.export?.pandoc_path ?? ""}
-        onChange={(v) => updateSetting("export", "pandoc_path", v || null)}
-        placeholder="Auto-detect from PATH"
-      />
-      {/* The Pandoc-status hint hugs the row above (negative margin) but
-          needs explicit breathing room below so it doesn't collide with
-          the next section's top border. */}
-      <div
-        class="settings__description"
-        style={{
-          "margin-top": "-8px",
-          "margin-bottom": "16px",
-          "font-size": "var(--text-sm)",
-        }}
-      >
-        Pandoc status: {pandocStatus()}
+      {/* Pandoc path + live-detection status share one settings row.
+          Inlining the status as a second description line keeps it
+          *inside* the row, so the row's bottom border draws below the
+          status (rather than between the input and the status, which
+          made the border look like it ran through the hint text). */}
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <label class="settings__label">Pandoc path</label>
+          <span class="settings__description">
+            In addition to native Typst exports, you can choose to use Pandoc to export files or collections. To use your local Pandoc installation, enter the location of your Pandoc binary. Leave empty to auto-detect from PATH.
+          </span>
+          <span class="settings__description" style={{ "margin-top": "4px" }}>
+            Pandoc status: {pandocStatus()}
+          </span>
+        </div>
+        <input
+          type="text"
+          class="settings__text-input"
+          value={settings.export?.pandoc_path ?? ""}
+          placeholder="Auto-detect from PATH"
+          onInput={(e) =>
+            updateSetting("export", "pandoc_path", e.currentTarget.value || null)
+          }
+        />
       </div>
     </div>
   );
@@ -1400,6 +1407,16 @@ function BackupSettingsSection() {
       setPwStatus(t("backup.password.mismatch"));
       return;
     }
+    // Changing an existing password is destructive in the sense that
+    // existing archives now require the *previous* password to restore.
+    // First-time setup (hasPassword() === false) skips the prompt: there
+    // are no prior archives to invalidate.
+    if (hasPassword()) {
+      const ok = window.confirm(
+        `${t("backup.password.confirmChangeTitle")}\n\n${t("backup.password.confirmChangeBody")}`,
+      );
+      if (!ok) return;
+    }
     try {
       await ipc.setBackupPassword(pwInput());
       // password_protected is the persisted "feature on" flag — the
@@ -1416,6 +1433,12 @@ function BackupSettingsSection() {
   }
 
   async function clearPassword() {
+    // Clearing wipes the keychain only — it does NOT decrypt existing
+    // archives. Confirm so the user doesn't conflate the two.
+    const ok = window.confirm(
+      `${t("backup.password.confirmClearTitle")}\n\n${t("backup.password.confirmClearBody")}`,
+    );
+    if (!ok) return;
     setPwStatus(null);
     try {
       await ipc.clearBackupPassword();
@@ -1432,8 +1455,7 @@ function BackupSettingsSection() {
   function formatLastSuccess(): string {
     const s = lastState();
     if (!s || s.last_success_unix === 0) return t("backup.lastBackup.never");
-    const d = new Date(s.last_success_unix * 1000);
-    return d.toLocaleString();
+    return formatUserDateTime(s.last_success_unix * 1000);
   }
 
   // Same flow as the `tools:backup-now` command — kept inline (rather
@@ -1442,7 +1464,25 @@ function BackupSettingsSection() {
   // command, and the backend's run-lock serialises them.
   async function runBackupNow() {
     setRunning(true);
-    const progressId = showToast("info", t("backup.toast.inProgress"), undefined, { persistent: true });
+    // Track whether the user clicked the toast's Cancel button so we
+    // can distinguish a user-driven abort from a real failure when the
+    // backupNow promise rejects with InkyCapError::Cancelled.
+    let cancelRequested = false;
+    const progressId = showToast(
+      "info",
+      t("backup.toast.inProgress"),
+      undefined,
+      {
+        persistent: true,
+        onCancel: () => {
+          cancelRequested = true;
+          // Fire-and-forget: the command just flips the flag and the
+          // archive writer aborts at its next poll. We don't await it
+          // because we want the toast to dismiss immediately.
+          void ipc.cancelBackup();
+        },
+      },
+    );
     try {
       const report = await ipc.backupNow();
       dismissToast(progressId);
@@ -1464,7 +1504,15 @@ function BackupSettingsSection() {
       }
     } catch (e) {
       dismissToast(progressId);
-      showToast("error", t("backup.toast.failed", { error: String(e) }));
+      const msg = String(e);
+      // Cancellation by the user isn't an error to surface. The
+      // backend returns InkyCapError::Cancelled which Display-prints
+      // as the literal string "Cancelled".
+      if (cancelRequested || /\bcancelled\b/i.test(msg)) {
+        showToast("info", t("backup.toast.cancelled"));
+      } else {
+        showToast("error", t("backup.toast.failed", { error: msg }));
+      }
     } finally {
       setRunning(false);
     }
@@ -1481,6 +1529,16 @@ function BackupSettingsSection() {
         {t("backup.section.intro", { modifier })}
       </span>
 
+      {/* Master toggle. Sits outside the collapse so the user can flip
+          it back on without the section first having to be visible. */}
+      <SettingToggle
+        label={t("backup.enabled.label")}
+        description={t("backup.enabled.description")}
+        value={settings.backup.enabled}
+        onChange={(v) => updateSetting("backup", "enabled", v)}
+      />
+
+      <Show when={settings.backup.enabled}>
       <div class="settings__row" style={{ "margin-top": "12px" }}>
         <div class="settings__row-info">
           <SettingLabel label={t("backup.destination.label")} />
@@ -1552,6 +1610,9 @@ function BackupSettingsSection() {
         <div class="settings__row-info">
           <SettingLabel label={t("backup.password.label")} />
           <span class="settings__description">{t("backup.password.description")}</span>
+          <span class="settings__description" style={{ "margin-top": "6px" }}>
+            {t("backup.password.perArchiveNotice")}
+          </span>
           <Show when={hasPassword()}>
             <span class="settings__description" style={{ color: "var(--accent)", "margin-top": "4px" }}>
               {t("backup.password.isSet")}
@@ -1593,7 +1654,9 @@ function BackupSettingsSection() {
           </Show>
         </div>
         <Show when={pwStatus()}>
-          <span class="settings__description">{pwStatus()}</span>
+          <span class="settings__description" style={{ color: "var(--accent-danger)" }}>
+            {pwStatus()}
+          </span>
         </Show>
       </div>
 
@@ -1637,6 +1700,7 @@ function BackupSettingsSection() {
         </span>
       </div>
       <BackupBrowser visible={browserOpen()} onClose={() => setBrowserOpen(false)} />
+      </Show>
     </div>
   );
 }
@@ -1694,7 +1758,7 @@ function BehaviourSettingsSection() {
     <div class="settings__section">
       <SettingSelect
         label="Startup behaviour"
-        description="InkyCap will do or display your choice upon starting."
+        description="What do you prefer InkyCap to do or display upon starting?"
         value={settings.startup.behavior}
         options={[
           { value: "default", label: "Tabula rasa (file tree)" },
@@ -1748,7 +1812,7 @@ function BehaviourSettingsSection() {
       </div>
       <SettingToggle
         label="Switch to new tabs immediately"
-        description="When you Ctrl/Cmd+click or use a right-click 'open in new tab' action, move focus to the new tab right away. When off, the tab opens in the background and you stay on the current page."
+        description="When on, if you Ctrl/Cmd+click or use a right-click 'open in new tab' action, focus switches to the new tab right away. When off, the new tab opens in the background and you stay on the current note."
         value={settings.behaviour.switch_to_new_tab}
         onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
       />
@@ -1758,13 +1822,13 @@ function BehaviourSettingsSection() {
         <span class="settings__label">Journal Scroll</span>
       </div>
       <p class="settings__section-note">
-        Read your notes as a continuous feed. Switching Journal Scroll on
-        anchors it on the active note; the feed shows notes around it sorted
-        by the axis below, and scrolling moves up and down through them.
+        Read your notes as a continuous timeline feed. Clicking the Journal Scroll button 
+        anchors the view to the active note; the feed shows notes around it, sorted
+        by the axis you set below. Scrolling moves forward or backward through notes in time.
       </p>
       <SettingSelect
         label="Sort by"
-        description="The axis the feed is ordered along. Notes missing the chosen property are placed at the end, ordered by file creation date."
+        description="The axis the feed is ordered along. Notes missing the chosen property are placed at the end, ordered by file creation date. If you imported your notes from another system, the file creation and modification dates will have been reset to the same date."
         value={noteboxSettings.journal_scroll.date_sort}
         options={[
           { value: "created", label: "File creation date" },
@@ -2068,6 +2132,40 @@ function SettingSelect(props: {
         options={props.options}
         onChange={props.onChange}
         ariaLabel={props.label}
+      />
+    </div>
+  );
+}
+
+/**
+ * Date-format row mirroring the Zettelkasten ID pattern row: a text input
+ * for the pattern, the same token-cheatsheet description, and a live
+ * preview of today's date so the user can see the effect before applying.
+ * The setting flows through `lib/dates.ts` to every UI date display
+ * (Agenda, backup archive list, last-backup indicator).
+ */
+function DateFormatSettingRow() {
+  return (
+    <div class="settings__row">
+      <div class="settings__row-info">
+        <label class="settings__label">Date format</label>
+        <span class="settings__description">
+          Your preferred format for how the interface displays dates. Functions on agenda dates, the
+          modification-time line shown next to each archive in the Browse
+          backups dialog, and the "Last backup" indicator. Does not affect
+          backup filenames nor how dates are stored inside notes. Available tokens: YYYY
+          (4-digit year), YY (2-digit year), MMMM (full month name), MMM
+          (short month name), MM (2-digit month), DD (2-digit day), D
+          (day, no padding), HH (24-hour), mm (minute), ss (second), dddd
+          (full weekday), ddd (short weekday). Preview: <strong>{formatUserDate(new Date())}</strong>
+        </span>
+      </div>
+      <input
+        type="text"
+        class="settings__text-input"
+        value={settings.appearance.date_format}
+        onInput={(e) => updateSetting("appearance", "date_format", e.currentTarget.value)}
+        placeholder={DEFAULT_DATE_FORMAT}
       />
     </div>
   );

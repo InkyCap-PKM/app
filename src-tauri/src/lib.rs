@@ -14,7 +14,6 @@ pub mod link_index;
 pub mod markdown;
 pub mod models;
 pub mod property_types;
-pub mod recovery;
 pub mod scanner;
 pub mod search;
 pub mod settings;
@@ -292,10 +291,6 @@ pub fn run() {
             commands::bookmarks::add_bookmark,
             commands::bookmarks::remove_bookmark,
             commands::bookmarks::reorder_bookmarks,
-            commands::recovery::create_snapshot,
-            commands::recovery::list_snapshots,
-            commands::recovery::restore_snapshot,
-            commands::recovery::preview_snapshot,
             commands::mycelial::get_mycelial_data,
             commands::mycelial::add_mycelial_stopword,
             commands::agenda::get_agenda_items,
@@ -339,6 +334,7 @@ pub fn run() {
             commands::fonts::list_system_fonts,
             commands::fonts::system_font_defaults,
             commands::backup::backup_now,
+            commands::backup::cancel_backup,
             commands::backup::get_backup_state,
             commands::backup::set_backup_password,
             commands::backup::clear_backup_password,

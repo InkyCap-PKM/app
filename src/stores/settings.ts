@@ -50,6 +50,7 @@ const DEFAULTS: UserSettings = {
     accent_color: "#1D7874",
     zoom_target: "content",
     folder_grouping: "before",
+    date_format: "D MMM YYYY",
   },
   files: {
     auto_update_links_on_rename: true,
@@ -84,6 +85,7 @@ const DEFAULTS: UserSettings = {
     switch_to_new_tab: false,
   },
   backup: {
+    enabled: true,
     path: null,
     interval_hours: 24,
     keep_count: 7,

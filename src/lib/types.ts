@@ -257,6 +257,14 @@ export interface AppearanceSettings {
    * - "inline" — folders and files are interleaved together under the chosen sort.
    */
   folder_grouping: FolderGrouping;
+  /**
+   * Moment-style format pattern for displaying dates in the UI (Agenda due
+   * dates, backup timestamps, last-backup indicator, etc.). Does not affect
+   * how dates are stored — only their presentation. Tokens match the
+   * Zettelkasten ID pattern: YYYY, YY, MMMM, MMM, MM, M, DD, D, HH, mm,
+   * ss, dddd, ddd. Any non-token characters are kept verbatim.
+   */
+  date_format: string;
 }
 
 /** Typst-facing document defaults — text size and page size. User-global
@@ -302,6 +310,10 @@ export interface ExportSettings {
  *  password itself is stored in the OS keychain, not in this struct;
  *  `password_protected` is the persisted "feature on" toggle. */
 export interface BackupSettings {
+  /** Master on/off for the backup feature. When false, the scheduler is
+   *  dormant and the manual "Back up now" command refuses to run — an
+   *  explicit user opt-out, distinct from "no destination configured". */
+  enabled: boolean;
   /** Destination folder. `null` disables the feature. */
   path: string | null;
   /** Hours between scheduled backups. `0` disables the scheduler
@@ -560,14 +572,6 @@ export interface Bookmark {
   id: string;
   type: string;
   data: Record<string, string>;
-}
-
-// Snapshots / Recovery
-
-export interface SnapshotInfo {
-  hash: string;
-  timestamp: string;
-  size: number;
 }
 
 // Mycelial View — link graph node/edge types are used for BFS neighborhood seeding

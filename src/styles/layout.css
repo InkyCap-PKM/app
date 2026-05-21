@@ -8664,6 +8664,35 @@ svg.lucide {
   word-break: break-word;
 }
 
+/* Persistent toasts (in-progress work) suppress the default body cursor
+   so it doesn't suggest the user can click anywhere to dismiss — the X
+   button is the only intended dismiss surface. */
+.toast--persistent {
+  cursor: default;
+}
+
+/* Close / cancel button on toasts that wire `onCancel` or are
+   persistent. Sits on the right, sized to feel like a control rather
+   than a glyph in the toast body. */
+.toast__close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 4px;
+  margin-left: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
+.toast__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
 /* ── Busy overlay ────────────────────────────────────────────────── */
 
 .busy-overlay {
@@ -9104,6 +9133,20 @@ svg.lucide {
   font-size: var(--text-sm);
 }
 
+/* Per-archive password override block. Keeps the override field and its
+   accompanying hint visually grouped between the contents heading and
+   the filter row. */
+.backup-browser__password {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.backup-browser__password .settings__text-input {
+  width: 100%;
+  max-width: 360px;
+}
+
 .backup-browser__filter-row {
   display: flex;
   align-items: center;
@@ -9164,6 +9207,15 @@ svg.lucide {
   align-items: center;
   gap: 6px;
   font-size: var(--text-sm);
+}
+
+/* Tint native checkboxes/radios in the backup browser with the
+   InkyCap accent so they match the rest of the app rather than the
+   OS default. The browser falls back gracefully when this property
+   is unsupported. */
+.backup-browser input[type="checkbox"],
+.backup-browser input[type="radio"] {
+  accent-color: var(--accent);
 }
 
 .backup-browser__footer {
