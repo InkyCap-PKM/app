@@ -104,6 +104,11 @@ pub struct AppearanceSettings {
     /// How the file tree groups folders relative to files when sorting:
     /// "before" (folders first), "after" (files first), or "inline" (interleaved).
     pub folder_grouping: String,
+    /// Moment-style format pattern for displaying dates in the UI
+    /// (Agenda due dates, backup timestamps, last-backup indicator, etc.).
+    /// Does not affect how dates are stored — only their presentation.
+    /// E.g. "D MMM YYYY" → "8 Nov 2024"; "YYYY-MM-DD" → "2024-11-08".
+    pub date_format: String,
 }
 
 impl Default for AppearanceSettings {
@@ -116,6 +121,7 @@ impl Default for AppearanceSettings {
             accent_color: "#1D7874".to_string(),
             zoom_target: "content".to_string(),
             folder_grouping: "before".to_string(),
+            date_format: "D MMM YYYY".to_string(),
         }
     }
 }
@@ -325,6 +331,14 @@ impl Default for ExportSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BackupSettings {
+    /// Master on/off for the entire backup feature. When `false`, the
+    /// scheduler is dormant and the manual "Back up now" command refuses
+    /// to run — the user has explicitly opted out. Distinct from "no
+    /// destination configured": this is an explicit user choice, not a
+    /// missing configuration step. Defaults to `true` so users who
+    /// upgrade with an already-configured destination keep their
+    /// existing schedule.
+    pub enabled: bool,
     /// Destination folder for backup archives. `None` disables the feature
     /// entirely (scheduled runner is dormant, command-palette entry is a
     /// no-op with a clear error). Stored as the frontend-canonical
@@ -358,6 +372,7 @@ pub struct BackupSettings {
 impl Default for BackupSettings {
     fn default() -> Self {
         Self {
+            enabled: true,
             path: None,
             interval_hours: 24,
             keep_count: 7,

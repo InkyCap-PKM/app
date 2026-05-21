@@ -18,6 +18,7 @@ import {
 import type { AgendaItem } from "../lib/types";
 import { t } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { formatUserDate } from "../lib/dates";
 
 interface AgendaListProps {
   items: AgendaItem[];
@@ -42,18 +43,11 @@ type SortMode =
 
 type TaskListFilter = "all" | "todo" | "done" | "dates";
 
-/** Human-friendly short date (`2026-06-23` → `Jun 23, 2026`). Returns the
- *  raw string unchanged when it isn't a parseable ISO date. */
+/** Human-friendly short date, formatted with the user's configured pattern
+ *  (Settings > Appearance > Date format). Returns the raw string unchanged
+ *  when it isn't a parseable ISO date. */
 function formatDate(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatUserDate(iso);
 }
 
 function todayISO(): string {

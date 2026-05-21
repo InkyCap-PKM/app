@@ -28,7 +28,6 @@ import ToastHost from "./components/ToastHost";
 import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
-import SnapshotViewer from "./components/SnapshotViewer";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initNotebox } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
@@ -48,7 +47,6 @@ import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/com
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
-import * as ipc from "./lib/ipc";
 
 const App: Component = () => {
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
@@ -59,8 +57,6 @@ const App: Component = () => {
   const [composerVisible, setComposerVisible] = createSignal(false);
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
   const [refNotePickerVisible, setRefNotePickerVisible] = createSignal(false);
-  const [snapshotVisible, setSnapshotVisible] = createSignal(false);
-  const [snapshotPath, setSnapshotPath] = createSignal("");
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
   const [scaffoldPickerVisible, setScaffoldPickerVisible] = createSignal(false);
 
@@ -81,13 +77,6 @@ const App: Component = () => {
   const toggleQuickOpen = () => setQuickOpenVisible((v) => !v);
   const toggleCommandPalette = () => setCmdPaletteVisible((v) => !v);
   const toggleComposer = () => setComposerVisible((v) => !v);
-  const openFileHistory = () => {
-    const tab = getActiveTab();
-    if (tab && tab.type === "file") {
-      setSnapshotPath(tab.path);
-      setSnapshotVisible(true);
-    }
-  };
 
   onMount(async () => {
     // Load settings first — theme and other init depends on them
@@ -110,7 +99,6 @@ const App: Component = () => {
       toggleSettings,
       toggleCommandPalette,
       toggleComposer,
-      openFileHistory,
       openCitationPicker: () => setCitationPickerVisible(true),
       openRefNotePicker: () => setRefNotePickerVisible(true),
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
@@ -257,20 +245,6 @@ const App: Component = () => {
         <TypAuditDialog
           open={typAuditVisible()}
           onClose={() => setTypAuditVisible(false)}
-        />
-        <SnapshotViewer
-          filePath={snapshotPath()}
-          visible={snapshotVisible()}
-          onClose={() => setSnapshotVisible(false)}
-          onRestore={async (content) => {
-            const tab = getActiveTab();
-            if (tab && tab.type === "file") {
-              await ipc.writeFileContent(tab.path, content);
-              document.dispatchEvent(
-                new CustomEvent("inkycap:file-restored", { detail: { path: tab.path } })
-              );
-            }
-          }}
         />
         <ToastHost />
         <PromptHost />

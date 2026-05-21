@@ -34,6 +34,13 @@ pub enum InkyCapError {
 
     #[error("{0}")]
     BadRequest(String),
+
+    /// A long-running operation was cancelled cooperatively. Distinct
+    /// from `BadRequest` so the UI can suppress an "error" toast on
+    /// the success path (the user asked for the cancel, it isn't a
+    /// failure to report).
+    #[error("Cancelled")]
+    Cancelled,
 }
 
 impl From<rusqlite::Error> for InkyCapError {

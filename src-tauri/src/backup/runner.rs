@@ -7,6 +7,8 @@
 //! not here — keeps the runner pure and testable.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
@@ -41,6 +43,12 @@ pub struct RunInputs<'a> {
     /// Set when the caller is a *scheduled* tick rather than a manual
     /// run — the only-on-change guard only applies in that case.
     pub is_scheduled: bool,
+    /// Cooperative cancellation flag. Polled between archive entries;
+    /// when set, the run aborts with `InkyCapError::Cancelled` and the
+    /// partially-written archive is removed. Cleared by the caller at
+    /// the start of each run (a stale `true` from a prior cancel would
+    /// otherwise immediately abort the next attempt).
+    pub cancel: Arc<AtomicBool>,
 }
 
 /// Run one backup. Returns `Ok(None)` when the only-on-change guard
@@ -133,12 +141,23 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
         None
     };
 
-    let summary = archive::write(archive::ArchiveJob {
+    let summary = match archive::write(archive::ArchiveJob {
         notebox_root: inputs.notebox_root,
         destination: &archive_path,
         user_config_root: user_config_for_archive,
         password: password_ref,
-    })?;
+        cancel: inputs.cancel.clone(),
+    }) {
+        Ok(s) => s,
+        Err(e) => {
+            // Best-effort cleanup of the partial archive on any error.
+            // Particularly important for `Cancelled`: leaving a corrupt
+            // half-zip lying around in the destination would confuse
+            // both the retention pruner and the restore browser.
+            let _ = std::fs::remove_file(&archive_path);
+            return Err(e);
+        }
+    };
 
     // Retention prune. Keep the N most recent matching archives; the
     // one we just wrote is included in the count, so a keep_count of 7
