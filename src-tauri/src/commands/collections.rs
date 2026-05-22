@@ -280,6 +280,14 @@ pub async fn save_collection_file(
     Ok(())
 }
 
+/// The contributor role vocabularies (CRediT + bibliographic) for the Book
+/// Metadata contributors editor. A frozen standard, served from the backend
+/// so the editor's dropdowns and the export renderer share one source.
+#[tauri::command]
+pub fn contributor_catalogs() -> crate::typst_pipeline::contributors::ContributorCatalogs {
+    crate::typst_pipeline::contributors::catalogs()
+}
+
 /// Delete a .collection file.
 #[tauri::command]
 pub async fn delete_collection_file(

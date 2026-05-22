@@ -544,11 +544,14 @@ pub async fn export_collection_book_pdf(
     let source = apply_bibliography_visibility(source, options.include_bibliography);
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
     check_pdf_standard_requirements(&source, book_pdf_standard)?;
-    let compile_result = compiler
-        .compile_pdf(&synthetic_main, source, book_pdf_standard)
-        .map_err(|e| InkyCapError::ExportFailed(e.to_string()));
+    // Keep a copy to map any compile error's offset back to the note it came
+    // from (the merged source is consumed by the compiler).
+    let source_for_diag = source.clone();
+    let compile_result = compiler.compile_pdf_diagnostics(&synthetic_main, source, book_pdf_standard);
     compiler.set_bibliography_style(None);
-    let pdf_bytes = compile_result?;
+    let pdf_bytes = compile_result.map_err(|diags| {
+        InkyCapError::ExportFailed(book_wrapper::describe_book_diagnostics(&source_for_diag, &diags))
+    })?;
 
     tokio::fs::write(&output_path, &pdf_bytes)
         .await

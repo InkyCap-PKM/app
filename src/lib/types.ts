@@ -188,6 +188,20 @@ export interface CollectionCollaboration {
 
 /// One contributor in the Book Metadata byline / CRediT roster. Mirrors
 /// the Rust `Contributor`. `handle` is the frozen collaboration identity.
+/** One selectable role for the contributors editor: a stored value (CRediT
+ *  URL, or CSL bibliographic-role token) and a human label. Mirrors the Rust
+ *  `CatalogEntry`. */
+export interface CatalogEntry {
+  value: string;
+  label: string;
+}
+
+/** Role vocabularies for the contributors editor. Mirrors `ContributorCatalogs`. */
+export interface ContributorCatalogs {
+  credit_roles: CatalogEntry[];
+  biblio_roles: CatalogEntry[];
+}
+
 export interface Contributor {
   name: string;
   biblio_role?: string | null;
@@ -219,6 +233,9 @@ export interface BookExportConfig {
     | { style: "arabic_from_page"; start_page: number }
     | null;
   include_bibliography?: boolean | null;
+  /** When false, the CRediT contributions statement is omitted from the book
+   *  export (the byline still renders). Defaults to true when unset. */
+  include_credit_statement?: boolean | null;
 }
 
 // User settings (mirrors Rust UserSettings struct)
@@ -790,6 +807,8 @@ export interface ApplyReport {
   deleted: number;
   rejected: number;
   skipped: number;
+  /** Bibliography entries added by union-merging the incoming shared .bib. */
+  bib_added: number;
 }
 
 export type DecisionAction = "accept" | "reject" | "skip";
@@ -797,6 +816,13 @@ export type DecisionAction = "accept" | "reject" | "skip";
 export interface ReviewDecision {
   collabid: string;
   action: DecisionAction;
+}
+
+/** Per-key resolution for a conflicting bibliography entry. Keys omitted
+ *  default to keeping the local entry. Mirrors the Rust `BibDecision`. */
+export interface BibDecision {
+  key: string;
+  take_incoming: boolean;
 }
 
 export interface ImportPackageResult {

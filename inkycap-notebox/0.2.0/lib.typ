@@ -12,6 +12,8 @@
 //   #verse(body, ...)     whitespace-preserving free-form text with inline
 //                         markup (eval'd per line)
 //   #set-notebox(...)       per-document rendering toggles + verse-font
+//   #contributors-byline(roster)  title-page byline grouped by role
+//   #credit-statement(roster)     CRediT contributions statement (book export)
 //
 // Four queryable labels:
 //   <inkycap-note>   — at most one per file, attached to a metadata dict
@@ -174,6 +176,15 @@
 // parameter, not the built-in, so we route built-in calls through this
 // alias instead.
 #let _make-label = label
+
+// Invisible, labeled anchor at a chapter's start, for in-book wikilink
+// resolution in the merged-book export. Built via the `label()` function
+// (`_make-label`) rather than `<...>` markup-label syntax so a chapter stem
+// containing spaces, parens, or other characters illegal in literal labels
+// still yields a valid, resolvable anchor — matching the
+// `_make-label("chap-" + name)` the merged-mode `wikilink` links to. The
+// Rust book wrapper emits `#chapter-anchor("<stem>")` at each chapter top.
+#let chapter-anchor(stem) = [#metadata(none)#_make-label("chap-" + stem)]
 
 #let _show-inline-tags = state("inkycap-show-inline-tags", true)
 #let _show-inline-wikilinks = state("inkycap-show-inline-wikilinks", true)
@@ -756,4 +767,90 @@
       _align(align-to, text(..text-args, rendered))
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// contributors-byline / credit-statement: title-page byline + CRediT
+// contributions statement for the merged book export.
+//
+// The Rust book wrapper emits the roster as an array of dicts:
+//   (name: "Joshua Chalifour", role: "author", credit: ("Conceptualization", …))
+// `role` is a CSL/Hayagriva bibliographic-role token; `credit` holds CRediT
+// labels already resolved host-side. Formatting lives here (Typst-first) so
+// the host only emits data + a single call.
+// ---------------------------------------------------------------------------
+
+// Byline phrasing per bibliographic role. Authors form the leading "by …";
+// every other role gets its own prefixed line. Unknown roles fall back to a
+// title-cased "<Role> by".
+#let _byline-prefix = (
+  editor: "Edited by",
+  translator: "Translated by",
+  "editor-translator": "Edited and translated by",
+  compiler: "Compiled by",
+  "series-editor": "Series editor",
+  illustrator: "Illustrated by",
+  narrator: "Narrated by",
+  annotator: "Annotated by",
+  foreword: "Foreword by",
+  afterword: "Afterword by",
+  holder: "©",
+)
+
+// Join names as "A", "A and B", or "A, B, and C".
+#let _join-names(names) = {
+  let n = names.len()
+  if n == 0 { "" } else if n == 1 {
+    names.at(0)
+  } else if n == 2 {
+    names.at(0) + " and " + names.at(1)
+  } else {
+    names.slice(0, n - 1).join(", ") + ", and " + names.at(n - 1)
+  }
+}
+
+#let contributors-byline(contributors) = {
+  // Group names by role, remembering the order roles first appear.
+  let groups = (:)
+  let order = ()
+  for c in contributors {
+    let role = c.at("role", default: "author")
+    if role == "" { role = "author" }
+    if role not in groups { order.push(role) }
+    groups.insert(role, groups.at(role, default: ()) + (c.at("name"),))
+  }
+
+  let lines = ()
+  if "author" in groups {
+    lines.push("by " + _join-names(groups.at("author")))
+  }
+  for role in order {
+    if role == "author" { continue }
+    let prefix = _byline-prefix.at(
+      role,
+      default: upper(role.slice(0, 1)) + role.slice(1) + " by",
+    )
+    lines.push(prefix + " " + _join-names(groups.at(role)))
+  }
+
+  if lines.len() == 0 { return }
+  align(center, {
+    for (i, line) in lines.enumerate() {
+      text(size: if i == 0 { 1.1em } else { 1em }, line)
+      if i < lines.len() - 1 { linebreak() }
+    }
+  })
+}
+
+#let credit-statement(contributors, title: "Author contributions") = {
+  let rows = contributors.filter(c => c.at("credit", default: ()).len() > 0)
+  if rows.len() == 0 { return }
+  block(width: 100%, {
+    text(weight: "bold", title)
+    v(0.4em)
+    for c in rows {
+      [*#c.at("name"):* #c.at("credit").join(", ").]
+      linebreak()
+    }
+  })
 }

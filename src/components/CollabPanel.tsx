@@ -2,6 +2,7 @@ import { Component, createSignal, createResource, createEffect, onMount, For, Sh
 import { save, open } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import type { CollectionFile, ReviewResult, DecisionAction, ChangeKind } from "../lib/types";
+import type { BibDecision } from "../lib/types";
 import { showToast } from "../stores/toasts";
 import { bumpPropertyVersion } from "../stores/notebox";
 
@@ -25,6 +26,9 @@ const CollabPanel: Component<{
   const [importFolder, setImportFolder] = createSignal("");
   const [review, setReview] = createSignal<ReviewResult | null>(null);
   const [decisions, setDecisions] = createSignal<Record<string, DecisionAction>>({});
+  // Per-key bibliography conflict choices: true ⇒ take incoming, false ⇒ keep
+  // local (the default).
+  const [bibChoices, setBibChoices] = createSignal<Record<string, boolean>>({});
   const [busy, setBusy] = createSignal(false);
 
   // Seed the handle field from the pinned identity once, without clobbering
@@ -50,7 +54,7 @@ const CollabPanel: Component<{
   onMount(async () => {
     try {
       const r = await ipc.collabPendingReview(props.collectionPath);
-      if (r && (r.note_items.length > 0 || r.bib_conflicts.length > 0)) {
+      if (r && reviewHasContent(r)) {
         loadReview(r);
       }
     } catch {
@@ -63,11 +67,32 @@ const CollabPanel: Component<{
     const d: Record<string, DecisionAction> = {};
     for (const it of r.note_items) d[it.collabid] = "accept";
     setDecisions(d);
+    const bc: Record<string, boolean> = {};
+    for (const key of r.bib_conflicts) bc[key] = false; // keep local by default
+    setBibChoices(bc);
   }
 
   function setDecision(collabid: string, action: DecisionAction) {
     setDecisions((d) => ({ ...d, [collabid]: action }));
   }
+
+  function setBibChoice(key: string, takeIncoming: boolean) {
+    setBibChoices((c) => ({ ...c, [key]: takeIncoming }));
+  }
+
+  /// Whether a review has anything for Apply to act on — note decisions, bib
+  /// conflicts to resolve, or bib additions to union-merge.
+  function reviewHasContent(r: ReviewResult): boolean {
+    return (
+      r.note_items.length > 0 ||
+      r.bib_conflicts.length > 0 ||
+      r.bib_auto_merges.length > 0
+    );
+  }
+  const hasReviewContent = () => {
+    const r = review();
+    return !!r && reviewHasContent(r);
+  };
 
   /// Set every reviewable item to one action (sets the target state, not a
   /// toggle).
@@ -150,7 +175,7 @@ const CollabPanel: Component<{
     try {
       const r = await ipc.collabImport(props.collectionPath, pkg);
       loadReview(r);
-      if (r.note_items.length === 0 && r.bib_conflicts.length === 0) {
+      if (!reviewHasContent(r)) {
         showToast("info", "Nothing to review", "No incoming changes.");
       }
     } catch (e) {
@@ -167,13 +192,18 @@ const CollabPanel: Component<{
       collabid: it.collabid,
       action: decisions()[it.collabid] ?? "skip",
     }));
+    const bibList: BibDecision[] = r.bib_conflicts.map((key) => ({
+      key,
+      take_incoming: bibChoices()[key] ?? false,
+    }));
     setBusy(true);
     try {
-      const rep = await ipc.collabReviewApply(props.collectionPath, list);
+      const rep = await ipc.collabReviewApply(props.collectionPath, list, bibList);
+      const bib = rep.bib_added > 0 ? `, ${rep.bib_added} bib entr${rep.bib_added === 1 ? "y" : "ies"} merged` : "";
       showToast(
         "success",
         "Changes applied",
-        `${rep.applied} written, ${rep.deleted} deleted, ${rep.rejected} rejected, ${rep.skipped} skipped.`,
+        `${rep.applied} written, ${rep.deleted} deleted, ${rep.rejected} rejected, ${rep.skipped} skipped${bib}.`,
       );
       setReview(null);
       // Refetch this collection's own status, the collection table rows,
@@ -277,9 +307,11 @@ const CollabPanel: Component<{
       <Show when={review()}>
         {(r) => (
           <div class="collab-panel__review">
-            <div class="collection-meta__section-label">
-              Incoming changes — {r().note_items.length} to review
-            </div>
+            <Show when={r().note_items.length > 0}>
+              <div class="collection-meta__section-label">
+                Incoming changes — {r().note_items.length} to review
+              </div>
+            </Show>
 
             <Show when={r().note_items.length > 1}>
               <div class="collab-panel__bulk">
@@ -307,9 +339,31 @@ const CollabPanel: Component<{
               </div>
             </Show>
             <Show when={r().bib_conflicts.length > 0}>
-              <div class="collection-meta__hint">
-                Bibliography conflicts (kept local for now): {r().bib_conflicts.join(", ")}
+              <div class="collection-meta__section-label">
+                Bibliography conflicts — {r().bib_conflicts.length}
               </div>
+              <For each={r().bib_conflicts}>
+                {(key) => (
+                  <div class="collab-panel__review-row">
+                    <div class="collab-panel__review-info">
+                      <span class="collab-panel__kind" data-kind="conflict">
+                        Conflict
+                      </span>
+                      <span class="collab-panel__path">@{key}</span>
+                    </div>
+                    <select
+                      class="settings__text-input collab-panel__decision"
+                      value={bibChoices()[key] ? "take_incoming" : "keep_local"}
+                      onChange={(e) =>
+                        setBibChoice(key, e.currentTarget.value === "take_incoming")
+                      }
+                    >
+                      <option value="keep_local">Keep mine</option>
+                      <option value="take_incoming">Take theirs</option>
+                    </select>
+                  </div>
+                )}
+              </For>
             </Show>
 
             <For each={r().note_items}>
@@ -342,7 +396,7 @@ const CollabPanel: Component<{
             <div class="collection-meta__row collab-panel__actions">
               <button
                 class="collection-table__toolbar-btn"
-                disabled={busy() || r().note_items.length === 0}
+                disabled={busy() || !hasReviewContent()}
                 onClick={applyDecisions}
               >
                 Apply decisions

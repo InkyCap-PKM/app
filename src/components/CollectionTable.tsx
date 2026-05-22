@@ -16,6 +16,7 @@ import type {
   CollectionFile,
   CollectionData,
   CollectionStyle,
+  Contributor,
   PropertyValue,
   SortRule,
   FilterGroup,
@@ -31,6 +32,7 @@ import FilterBuilder from "./FilterBuilder";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
 import CollabPanel from "./CollabPanel";
+import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
 import { Dropdown } from "./Dropdown";
@@ -492,7 +494,10 @@ const CollectionBookEditor: Component<{
 
   const [title, setTitle] = createSignal(cfg().title ?? "");
   const [subtitle, setSubtitle] = createSignal(cfg().subtitle ?? "");
-  const [author, setAuthor] = createSignal(cfg().author ?? "");
+  const [contributors, setContributors] = createSignal<Contributor[]>(cfg().contributors ?? []);
+  const [includeCreditStatement, setIncludeCreditStatement] = createSignal(
+    cfg().include_credit_statement ?? true,
+  );
   const [date, setDate] = createSignal(cfg().date ?? "");
   const [abstractText, setAbstractText] = createSignal(cfg().abstract ?? "");
 
@@ -535,7 +540,11 @@ const CollectionBookEditor: Component<{
     return {
       title: title() || null,
       subtitle: subtitle() || null,
-      author: author() || null,
+      // The document `author` metadata is derived from the contributor
+      // roster at export time; the stored field is preserved as a fallback
+      // for collections that predate contributors.
+      author: cfg().author ?? null,
+      contributors: contributors(),
       date: date() || null,
       abstract: abstractText() || null,
       toc_depth: tocDepth(),
@@ -546,6 +555,7 @@ const CollectionBookEditor: Component<{
       include_outline: includeOutline(),
       page_numbering: pageNumbering,
       include_bibliography: includeBibliography(),
+      include_credit_statement: includeCreditStatement(),
     };
   }
 
@@ -577,16 +587,16 @@ const CollectionBookEditor: Component<{
           onChange={flush}
         />
       </div>
-      <div class="collection-meta__row">
-        <label class="collection-meta__label">Author</label>
-        <input
-          type="text"
-          class="settings__text-input"
-          value={author()}
-          onInput={(e) => setAuthor(e.currentTarget.value)}
-          onChange={flush}
-        />
-      </div>
+      <div class="collection-meta__section-label">Contributors</div>
+      <ContributorsEditor
+        initial={cfg().contributors ?? []}
+        includeCreditStatement={includeCreditStatement()}
+        onChange={(c, credit) => {
+          setContributors(c);
+          setIncludeCreditStatement(credit);
+          flush();
+        }}
+      />
       <div class="collection-meta__row">
         <label class="collection-meta__label">Date</label>
         <input

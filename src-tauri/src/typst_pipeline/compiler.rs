@@ -285,6 +285,48 @@ impl TypstCompiler {
         }
     }
 
+    /// Like [`compile_pdf`](Self::compile_pdf) but returns the structured
+    /// diagnostics on failure instead of a flattened string. The book
+    /// exporter uses this so it can map each error's source offset back to
+    /// the originating note (see `book_wrapper::describe_book_diagnostics`) —
+    /// a flattened message can't be traced to a chapter. Kept as a sibling of
+    /// `compile_pdf` rather than refactoring it, so the established
+    /// `CompileError` contract every other caller relies on is unchanged.
+    pub fn compile_pdf_diagnostics(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+        pdf_standard: PdfStandardPreset,
+    ) -> Result<Vec<u8>, Vec<TypstDiagnostic>> {
+        if let Err(err) = self.world.set_main(abs_path, source) {
+            return Err(vec![TypstDiagnostic {
+                severity: "error",
+                message: format!("failed to register main file {}: {err:?}", abs_path.display()),
+                primary: None,
+                trace: Vec::new(),
+                hints: Vec::new(),
+            }]);
+        }
+        let warned = typst::compile::<PagedDocument>(&self.world);
+        match warned.output {
+            Ok(document) => {
+                let options = PdfOptions {
+                    standards: pdf_standard.to_pdf_standards(),
+                    ..PdfOptions::default()
+                };
+                typst_pdf::pdf(&document, &options).map_err(|errs| {
+                    errs.iter()
+                        .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+                        .collect::<Vec<_>>()
+                })
+            }
+            Err(errors) => Err(errors
+                .iter()
+                .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+                .collect::<Vec<_>>()),
+        }
+    }
+
     /// Compile with a template import injected. Used for collection-level
     /// export where a journal template is applied at compile time.
     pub fn compile_pdf_with_template(

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::collab::{self, apply, identity, package, review};
+use crate::collab::{self, apply, bibliography, identity, package, review};
 use crate::collab::package::{PackageManifest, PackagedNote};
 use crate::collab::versions::VersionsFile;
 use crate::collection_parser::filter::evaluate_filter_group;
@@ -90,12 +90,24 @@ pub struct ReviewDecision {
     pub action: DecisionAction,
 }
 
+/// The user's resolution for one conflicting bibliography key. Keys with no
+/// decision default to keeping the local entry (the conservative choice).
+#[derive(Debug, Deserialize)]
+pub struct BibDecision {
+    pub key: String,
+    /// `true` ⇒ take the incoming entry; `false` ⇒ keep local.
+    pub take_incoming: bool,
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct ApplyReport {
     pub applied: usize,
     pub deleted: usize,
     pub rejected: usize,
     pub skipped: usize,
+    /// Bibliography entries added by union-merging the incoming shared
+    /// `.bib` (additions only; conflicts are kept-local for now).
+    pub bib_added: usize,
 }
 
 // --- helpers ---
@@ -307,6 +319,18 @@ pub async fn collab_set_identity(
     Ok(())
 }
 
+/// Mint a stable, filename-safe collaborator handle seeded from a display
+/// name, made unique against `taken` (the handles already on other
+/// contributor rows). Used by the contributors editor when a row is first
+/// marked an editing collaborator. Reuses the same `identity` helpers the
+/// collab engine uses, so a handle minted here is identical to one minted at
+/// enable time.
+#[tauri::command]
+pub async fn collab_seed_handle(name: String, taken: Vec<String>) -> Result<String> {
+    let set: HashSet<String> = taken.into_iter().collect();
+    Ok(identity::unique_handle(&identity::seed_handle(&name), &set))
+}
+
 /// Read the local user's pinned handle for this collection (or `None`).
 #[tauri::command]
 pub async fn collab_get_identity(
@@ -352,6 +376,15 @@ pub async fn collab_enable(
     // member, using the existing filter to find them.
     let sync =
         sync_membership(&state, &root, &col_abs, &filters, &name, &handle, &mut versions).await?;
+
+    // Index the shared bibliography from the start, so the first import can
+    // already detect bib additions/conflicts (the section is otherwise empty
+    // until the first package).
+    if let Some(b) = base.bibliography_file.clone() {
+        if let Ok(text) = storage.read_file(&PathBuf::from(&b)).await {
+            bibliography::refresh_bib_versions(&mut versions.bibliography, &text, &handle);
+        }
+    }
 
     // Persist the sidecar and the local identity.
     versions.save(&collab::versions_path(&root, &id))?;
@@ -628,6 +661,21 @@ pub async fn collab_package(
     };
     let collabid_paths = collabid_path_map(&state, &root).await;
     bump_local_edits(&mut versions, &root, &handle, &collabid_paths);
+
+    // Keep the sidecar's bibliography index in step with the shared `.bib`
+    // before it travels, so the receiver can detect added/changed entries
+    // (the bib section is otherwise empty and bib review is a no-op).
+    let bib_rel = base
+        .collaboration
+        .as_ref()
+        .and_then(|c| c.bibliography_file.clone())
+        .or_else(|| base.bibliography_file.clone());
+    if let Some(b) = &bib_rel {
+        if let Ok(text) = storage.read_file(&PathBuf::from(b)).await {
+            bibliography::refresh_bib_versions(&mut versions.bibliography, &text, &handle);
+        }
+    }
+
     // The on-disk sidecar keeps tracking everything (so a note re-added to
     // the collection resumes from its existing history).
     versions.save(&collab::versions_path(&root, &id))?;
@@ -679,11 +727,7 @@ pub async fn collab_package(
     files.push((col_rel.clone(), col_abs.clone()));
     added.insert(col_rel.clone());
 
-    let bib_rel = base
-        .collaboration
-        .as_ref()
-        .and_then(|c| c.bibliography_file.clone())
-        .or_else(|| base.bibliography_file.clone());
+    // `bib_rel` was resolved above (for the sidecar refresh); reuse it.
     if let Some(b) = &bib_rel {
         if let Ok(babs) = storage.resolve_path(&PathBuf::from(b)) {
             if babs.exists() {
@@ -978,15 +1022,29 @@ pub async fn collab_pending_review(
 pub async fn collab_review_apply(
     collection_path: String,
     decisions: Vec<ReviewDecision>,
+    bib_decisions: Vec<BibDecision>,
     state: State<'_, AppState>,
 ) -> Result<ApplyReport> {
     let storage = state.get_storage().await?;
     let (root, col_abs, id) = collection_ids(&state, &collection_path).await?;
     let col_arg = sanitize_notebox_arg(&collection_path)?;
 
+    // Per-key bibliography conflict resolutions (keys absent ⇒ keep local).
+    let bib_choices: HashMap<String, bibliography::ConflictChoice> = bib_decisions
+        .iter()
+        .map(|d| {
+            let c = if d.take_incoming {
+                bibliography::ConflictChoice::TakeIncoming
+            } else {
+                bibliography::ConflictChoice::KeepLocal
+            };
+            (d.key.clone(), c)
+        })
+        .collect();
+
     // Where notes new to this machine land. Existing notes are updated in
     // place (see below), so this only governs first-time arrivals.
-    let base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
+    let mut base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
     let name = collection_membership_name(&col_abs);
     let import_folder = import_folder_for(&base, &name);
 
@@ -996,6 +1054,11 @@ pub async fn collab_review_apply(
     let staging = collab::collab_dir(&root, &id).join(INCOMING_DIR);
     let incoming = VersionsFile::load(&staging.join(INCOMING_VERSIONS))?
         .ok_or_else(|| InkyCapError::BadRequest("No staged import to apply.".to_string()))?;
+    // The manifest names the bundled bib + attachments (read once, used by
+    // both the bib merge and the attachment copy below).
+    let manifest: Option<package::PackageManifest> = std::fs::read(staging.join(INCOMING_MANIFEST))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
 
     // Authoritative "where do I keep this note" map, by collabid. A note's
     // location is purely local, so an incoming change is written to the
@@ -1066,21 +1129,96 @@ pub async fn collab_review_apply(
         }
     }
 
-    // Bring along referenced attachments (assets aren't clock-versioned):
-    // write any that are missing locally. Skip-if-present avoids
-    // clobbering a local edit; a future version could hash-compare. Done
-    // once after the note decisions, since attachments aren't tied to a
+    // Bibliography: union-by-key merge the incoming shared `.bib` into ours.
+    // Additions are taken; same-key/divergent-content conflicts are resolved
+    // per the user's `bib_choices` (default keep-local). Refreshes the
+    // sidecar's bib index from the merged result so the next comparison is
+    // accurate.
+    if let Some(inc_bib_rel) = manifest.as_ref().and_then(|m| m.bibliography_relpath.clone()) {
+        if let Ok(incoming_bib) = std::fs::read_to_string(staging.join(&inc_bib_rel)) {
+            // Where our shared bib lives. If we have none configured, adopt
+            // the sender's relpath so both sides converge on one file.
+            let local_bib_rel = base
+                .collaboration
+                .as_ref()
+                .and_then(|c| c.bibliography_file.clone())
+                .or_else(|| base.bibliography_file.clone())
+                .unwrap_or_else(|| inc_bib_rel.clone());
+            let local_bib = storage
+                .read_file(&PathBuf::from(&local_bib_rel))
+                .await
+                .unwrap_or_default();
+
+            match bibliography::merge_bibtex(&local_bib, &incoming_bib, &bib_choices) {
+                Ok(merged) => {
+                    if merged.bibtex != local_bib {
+                        storage
+                            .write_file(&PathBuf::from(&local_bib_rel), &merged.bibtex)
+                            .await?;
+                    }
+                    // Rebuild the sidecar bib index from the merged hashes,
+                    // preserving `added_by` (local first, then incoming).
+                    let mut next = std::collections::BTreeMap::new();
+                    for (key, hash) in merged.hashes {
+                        let added_by = local
+                            .bibliography
+                            .0
+                            .get(&key)
+                            .or_else(|| incoming.bibliography.0.get(&key))
+                            .map(|m| m.added_by.clone())
+                            .unwrap_or_else(|| "peer".to_string());
+                        next.insert(key, crate::collab::versions::BibEntryMeta { hash, added_by });
+                    }
+                    local.bibliography.0 = next;
+                    report.bib_added = merged.added.len();
+
+                    // First bib to arrive at a collection that had none:
+                    // record where it now lives so future packages carry it.
+                    let needs_adopt = base
+                        .collaboration
+                        .as_ref()
+                        .map(|c| c.bibliography_file.is_none())
+                        .unwrap_or(false)
+                        && base.bibliography_file.is_none();
+                    if needs_adopt {
+                        if let Some(c) = base.collaboration.as_mut() {
+                            c.bibliography_file = Some(local_bib_rel.clone());
+                        }
+                        storage
+                            .write_file(&col_arg, &serialize_collection_file(&base)?)
+                            .await?;
+                    }
+                }
+                Err(e) => {
+                    // A malformed bib on either side shouldn't sink the whole
+                    // apply — the notes are already written. Surface it in
+                    // the log and leave the local bib untouched.
+                    log::warn!("collab: bibliography merge skipped: {e}");
+                }
+            }
+        }
+    }
+
+    // Bring along referenced attachments. Assets aren't clock-versioned, so
+    // we compare bytes: write when the file is missing locally OR its content
+    // differs from the incoming one — so an *updated* attachment propagates
+    // (previously skip-if-present meant edits never travelled). Identical
+    // content is left untouched (no needless rewrite). A genuine local-vs-
+    // incoming divergence is resolved take-incoming; there's no per-attachment
+    // review yet (binary assets, no clock — see the design's open questions).
+    // Done once after the note decisions, since attachments aren't tied to a
     // single note in the manifest.
-    if let Ok(bytes) = std::fs::read(staging.join(INCOMING_MANIFEST)) {
-        if let Ok(manifest) = serde_json::from_slice::<package::PackageManifest>(&bytes) {
-            for att in &manifest.attachments {
-                let dest = PathBuf::from(att);
-                if storage.exists(&dest).await {
-                    continue;
-                }
-                if let Ok(data) = std::fs::read(staging.join(att)) {
-                    storage.write_file_bytes(&dest, &data).await?;
-                }
+    if let Some(manifest) = &manifest {
+        for att in &manifest.attachments {
+            let Ok(incoming) = std::fs::read(staging.join(att)) else {
+                continue;
+            };
+            let differs = match std::fs::read(root.join(att)) {
+                Ok(local) => local != incoming,
+                Err(_) => true, // missing locally
+            };
+            if differs {
+                storage.write_file_bytes(&PathBuf::from(att), &incoming).await?;
             }
         }
     }

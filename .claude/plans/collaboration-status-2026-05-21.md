@@ -34,7 +34,7 @@ running the app.
 
 ```
 cd src-tauri && cargo build --lib                 # backend compiles
-cd src-tauri && cargo test --lib collab           # 76 engine + command tests
+cd src-tauri && cargo test --lib collab           # 77 engine + command tests
 cd src-tauri && cargo test --lib commands::collab::tests   # reconcile, bump, move-follow, sanitize
 cd src-tauri && cargo test --lib storage::local   # 3 atomic-write tests
 npx tsc --noEmit                                   # frontend typecheck
@@ -273,28 +273,171 @@ external-delete propagation is wanted (would need index-gated lazy
 detection in `reconcile_local` with a handle, which `collab_pending_review`
 doesn't currently load).
 
+## DONE — Bibliography merge on apply (2026-05-22)
+
+`merge_bibtex` (union-by-key via `biblatex`) existed but was never wired in,
+and — the real gap — **`versions.bibliography` was never populated**, so the
+review couldn't even detect bib changes. Now end-to-end:
+
+- New `bibliography::refresh_bib_versions(&mut BibVersions, bibtex, handle)`
+  — pure, unit-tested: rebuilds the sidecar's bib index from the `.bib`'s
+  current entries (refresh hashes, attribute new keys to `handle`, preserve
+  `added_by` for persisting keys, drop removed keys). Malformed `.bib` ⇒
+  no-op (don't discard tracking).
+- `collab_enable` and `collab_package` call it (from
+  `collaboration.bibliography_file` ∥ `bibliography_file`), so the index is
+  populated at enable and refreshed before each package — making bib
+  additions/conflicts detectable on the receiver.
+- `collab_review_apply` now union-merges the staged incoming `.bib` into the
+  local one (`merge_bibtex` with empty `choices` ⇒ additions taken,
+  same-key/divergent-content conflicts **kept local** — no per-key UI yet),
+  writes the merged `.bib`, rebuilds `local.bibliography` from the merged
+  hashes (preserving `added_by`: local → incoming → "peer"), and reports
+  `bib_added`. If the receiver's collection had no bib, it **adopts** the
+  sender's relpath and persists `bibliography_file` into the `.collection`.
+- `ApplyReport.bib_added` (Rust + TS) surfaced in the apply toast.
+
+### Per-key bibliography conflict UI (2026-05-22)
+
+Divergent same-key bib entries are now resolvable per key instead of always
+kept-local:
+
+- `collab_review_apply` gained a `bib_decisions: Vec<BibDecision { key,
+  take_incoming }>` parameter, mapped to a `HashMap<String, ConflictChoice>`
+  and threaded into `merge_bibtex` (keys absent ⇒ keep local).
+- Frontend: `BibDecision` type; `collabReviewApply` takes an optional
+  `bibDecisions` (defaults `[]`); CollabPanel renders each `bib_conflicts`
+  key as a row with a **Keep mine / Take theirs** select (defaulting to keep
+  mine) and sends the choices on Apply.
+- Apply is now enabled whenever the review has *any* content (note items,
+  bib conflicts, or bib additions) — previously it required note items, so a
+  bib-only package couldn't be applied. The "Incoming changes — N" header is
+  hidden when there are no note items, and resume/import "nothing to review"
+  uses one shared `reviewHasContent` check.
+
+**Bibliography is now feature-complete for the package loop** except
+Zotero→shared-bib materialization (next).
+
+## DONE — ContributorsEditor + multi-author byline + CRediT (2026-05-22)
+
+Replaced the single `author` field in Book Metadata with a contributors
+table (the long-wanted byline feature; also the collab roster).
+
+- **`typst_pipeline/contributors.rs`** (new) — owns the role vocabularies
+  (14 NISO CRediT roles by canonical URL; CSL/Hayagriva biblio roles),
+  `credit_label` resolution, `document_author_names` (PDF/docx author
+  derived from the roster's bibliographic authors, falling back to all
+  contributors then the legacy `author`), and the Rust→Typst call builders
+  `byline_call` / `credit_statement_call`. `typst_array` gives single-element
+  arrays a trailing comma (the `("x")`-is-a-string gotcha). Unit-tested (8).
+- **`lib.typ`** — `#contributors-byline(roster)` (groups by role: authors →
+  "by …", others → "Edited by …" etc. via `_byline-prefix`) and
+  `#credit-statement(roster)`. Typst-first: Rust emits data + one call.
+- **`book_wrapper.rs`** — `BookExportOptions` gained `contributors` +
+  `include_credit_statement`; `#set document(author:)` is derived from the
+  roster; the title page renders the byline (falling back to the legacy
+  author line) and, when enabled + roles present, a CRediT statement on its
+  own page.
+- **Commands:** `contributor_catalogs()` (frontend dropdowns share the
+  backend vocab — one source of truth) and `collab_seed_handle(name, taken)`
+  (mints a frozen handle for editing-collaborator rows, reusing
+  `identity::seed_handle`/`unique_handle`).
+- **Frontend:** `ContributorsEditor.tsx` (name, biblio-role select, CRediT
+  multi-select disclosure, collaborator checkbox + handle), wired into
+  `CollectionBookEditor` replacing the Author field; `include_credit_statement`
+  toggle; `contributors-editor__*` CSS.
+- **Author handling (per user):** no separate Author input — the document
+  author flows from the roster. The stored `author` field is preserved as a
+  fallback only.
+- **UI polish (2026-05-22, after user feedback):** the editor is backed by a
+  `createStore` array with per-cell `setRows(i, key, val)` updates — a `<For>`
+  over a freshly-mapped array recreated every input each keystroke and stole
+  focus (the reported "cursor leaves the field" bug). The biblio-role picker
+  uses the app `<Dropdown>` (native `<select>` ignores the theme under
+  WebKitGTK); a single app-wide `accent-color: var(--accent)` rule on
+  `.app-shell input[type=checkbox|radio]` tints all native checkboxes teal
+  instead of the desktop's orange; row controls share one metric (default
+  Dropdown + inputs + buttons all at `4px 8px` / `--text-md`).
+- **Wire-shape gotcha (fixed):** `Contributor.credit_roles` is
+  `skip_serializing_if = "Vec::is_empty"`, so an empty roster row arrives at
+  the frontend with `credit_roles` **omitted** (`undefined`, not `[]`) — the
+  editor's `[...c.credit_roles]` crashed the whole Book Metadata tab
+  ("Spread syntax requires …iterable"). The editor now normalizes on init
+  (coerce to `[]`); the TS type stays optimistic but the boundary is safe.
+- **Tests:** `tests/contributors_book.rs` (new) compiles real merged books
+  through Typst (catches `lib.typ` syntax errors; no external tooling, always
+  runs): a mixed-role roster + CRediT, and a single-chapter spaced/paren-stem
+  book (the regression below). The veraPDF test's `BookExportOptions` literal
+  was updated for the new fields.
+
+## DONE — Two pre-existing book-export bugs (2026-05-22)
+
+Both surfaced while testing the contributors byline (book export is how you
+see it) and blocked any real export; both are the single-element-array Typst
+gotcha, fixed in `build_book_source` / `lib.typ`:
+
+1. **"unclosed label" cascade on real note names.** Chapter anchors were
+   emitted as `<chap-{stem}>` *markup-label* syntax. Note stems routinely
+   contain spaces/parens ("Information Technology and Libraries (ITAL)"),
+   illegal in literal labels → the whole merged compile derailed. Fix: a new
+   `chapter-anchor(stem)` in `lib.typ` builds the anchor with the `label()`
+   *function* (`_make-label`), which accepts any string — matching what the
+   merged-mode `wikilink` already links to (`_make-label("chap-" + name)`).
+   `book_wrapper` now emits `#chapter-anchor("<stem>")` + a separate heading.
+2. **Single-chapter crash.** `chapters: ("alpha")` parsed as a string;
+   `set-merged-context` asserts an array. Fix: trailing comma for the
+   one-element case.
+
+## DONE — Book export names the failing note (2a, 2026-05-22)
+
+Book export used to fail with a bare, position-less Typst message
+("expected expression; …") that gave no hint which of N notes was at fault.
+Now it names them:
+
+- `compiler.compile_pdf_diagnostics(...)` — a sibling of `compile_pdf` that
+  returns the structured `Vec<TypstDiagnostic>` (with source offsets) on
+  failure instead of a flattened string. `compile_pdf` is untouched, so
+  every other caller's `CompileError` contract is unchanged.
+- `book_wrapper::chapter_at_offset(source, offset)` maps a byte offset to the
+  containing note by scanning the `#chapter-anchor("<stem>")` markers (now
+  emitted via the shared `chapter_anchor_call` helper);
+  `describe_book_diagnostics(source, diags)` groups errors by note,
+  de-dupes, and yields e.g. *"compilation failed. In "Journal of Academic
+  Librarianship": expected expression. In "Information Technology and
+  Libraries (ITAL)": unclosed delimiter."* The book export command
+  (`commands/export/pdf.rs`) clones the final source for offset-mapping and
+  builds this message on failure. Unit-tested (chapter mapping + grouping).
+
+Note: this reports note-content errors better; it does **not** make book
+export error-*tolerant* (option 2b — render around a broken note via
+`recovery`) — deferred unless wanted.
+
+**Companion data fix (not code):** two notes in the user's `Inky2/Publishers`
+notebox had a markdown `# Heading` jammed mid-paragraph (invalid Typst);
+repaired in place. The same corruption exists in the `InkyCap-Professional`
+copies (not the active notebox — left untouched).
+
 ## Other remaining work (deferred, roughly prioritized)
 
-1. **Bibliography merge on apply** — `bibliography::merge_bibtex` exists
-   but apply doesn't call it; bib conflicts are shown but kept-local only.
-   Wire union-by-key merge into apply + update versions.bibliography.
-2. **Zotero → shared `.bib` materialization on enable** — collaborative
+1. **Zotero → shared `.bib` materialization on enable** — collaborative
    collections should disable Zotero-live and accumulate cited entries
    into the shared `.bib`.
-3. **ContributorsEditor.tsx** — Book Metadata multi-author + CRediT roles
-   table (the user wanted this independently). Replaces the single
-   `author` field. `Contributor` struct + types already exist;
-   bibliographic role vocab (CSL/Hayagriva) + 14 CRediT role IDs; mint a
-   frozen handle for editing-collaborator rows. Render byline + CRediT
-   statement Typst-natively in book export.
-4. **`#review` / `#review-reject` Typst primitives + rejection log** —
+2. **`#review` / `#review-reject` Typst primitives + rejection log** —
    reviewer annotations as Typst metadata (`<inkycap-review>` labels);
    reject decision appends to a per-collection rejection log note.
-5. **Polish:** command-palette entries (Git:/Collab: actions),
+3. **Polish:** command-palette entries (Git:/Collab: actions),
    status-bar badge for pending reviews, a right-panel ReviewPanel
    (review is inline in the collab tab today), conflict resolution UI
-   beyond accept-takes-theirs, attachment hash-compare (currently
-   skip-if-present so an updated attachment won't re-propagate).
+   beyond accept-takes-theirs.
+   - *Attachment hash-compare — DONE 2026-05-22:* `collab_review_apply`
+     byte-compares each incoming attachment against the local copy and writes
+     when missing **or changed** (was skip-if-present, so updated attachments
+     never propagated). Take-incoming on divergence (binary, no clock; no
+     per-attachment review yet).
+4. **Book export error-tolerance (option 2b)** — render *around* a broken
+   note via the `recovery` module (single-note preview already does) so one
+   bad note doesn't fail the whole book. Today export names *which* note
+   failed (2a) but still aborts.
 
 ## Repo state
 
@@ -302,10 +445,16 @@ All work is **uncommitted** (single working tree, branch `typst-pivot`).
 New files: `src-tauri/src/collab/` (mod, clock, versions, identity, review,
 bibliography, package, apply, attachments), `src-tauri/src/commands/collab.rs`,
 `src-tauri/src/storage/zip_archive.rs`, `src/components/CollabPanel.tsx`,
-the two `.claude/plans/collaboration-*.md`. Modified: backup archive/
-restore, collection_parser/model, commands/mod, lib, property_types,
-storage local/mod/traits, path_rebase, backup tests, CollectionTable,
-LeftSidebar, RightPanel, ipc, types, notebox store, layout.css, and (Issue #2
-+ shrink + delete-tombstone, 2026-05-22) `commands/file_ops.rs` (delete hook).
-The atomic-write change to `storage/local.rs` predates collaboration (a
-standalone improvement). No commits made — commit when the user asks.
+the two `.claude/plans/collaboration-*.md`, and (ContributorsEditor, 2026-05-22)
+`src-tauri/src/typst_pipeline/contributors.rs`,
+`src-tauri/tests/contributors_book.rs`, `src/components/ContributorsEditor.tsx`.
+Modified: backup archive/restore, collection_parser/model, commands/mod, lib,
+property_types, storage local/mod/traits, path_rebase, backup tests,
+CollectionTable, LeftSidebar, RightPanel, ipc, types, notebox store,
+layout.css; `commands/file_ops.rs` (delete hook), `collab/bibliography.rs`
+(bib merge); and (ContributorsEditor) `typst_pipeline/{mod,book_wrapper}.rs`,
+`commands/collections.rs`, `inkycap-notebox/0.2.0/lib.typ`,
+`tests/verapdf_pdf_ua.rs`. The atomic-write change to `storage/local.rs`
+predates collaboration. **Committed so far:** Issue #2 / shrink /
+delete-tombstone. **Uncommitted:** bib-merge, per-key bib conflict UI, and
+ContributorsEditor.
