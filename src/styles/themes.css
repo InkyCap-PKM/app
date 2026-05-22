@@ -268,12 +268,13 @@
   --fg-gutter: #7a9490;
   --fg-separator: #1a4045;
 
-  /* Floating selection toolbar — flat near-black panel that sits *below*
-     either dark page palette, so the page itself provides the visual
-     separation and the border just defines the rounded edge. Defined
-     once here and inherited by warm dark (its selector matches the same
-     element via [data-theme="dark"], so no override is needed). */
-  --toolbar-float-bg: #171717;
+  /* Floating selection toolbar — uses the same dark teal as the light
+     theme's toolbar (#162B2F) so the popup reads identically in both modes,
+     sitting *below* either dark page palette while the border defines the
+     rounded edge. Defined once here and inherited by warm dark (its selector
+     matches the same element via [data-theme="dark"], so no override is
+     needed). */
+  --toolbar-float-bg: #162B2F;
   --toolbar-float-fg: #c0c0c0;
   --toolbar-float-fg-strong: #e0e0e0;
   --toolbar-float-hover-bg: rgba(255, 255, 255, 0.08);

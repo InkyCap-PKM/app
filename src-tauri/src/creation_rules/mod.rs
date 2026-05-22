@@ -302,7 +302,9 @@ mod tests {
         let (path, _content, _cursor) =
             execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
                 .expect("daily-note default executes");
-        assert!(path.to_string_lossy().contains("daily"));
+        // The default daily-note rule targets `Daily/{{date:YYYY}}` (capital
+        // D) — match the rule, not a lowercased guess.
+        assert!(path.to_string_lossy().contains("Daily"));
         let filename = path.file_name().unwrap().to_string_lossy();
         assert_eq!(filename.len(), 14); // YYYY-MM-DD.typ
     }
@@ -320,7 +322,7 @@ mod tests {
         // is correct. `Path::starts_with` compares components and treats
         // both separators as equivalent, so the same assertion works
         // cross-platform.
-        let expected_prefix = Path::new("/notebox/daily").join(&year);
+        let expected_prefix = Path::new("/notebox/Daily").join(&year);
         assert!(
             path.starts_with(&expected_prefix),
             "Expected path to start with {}, got: {}",

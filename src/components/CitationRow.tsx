@@ -15,6 +15,7 @@ import { Component, Show } from "solid-js";
 import { noteboxSettings } from "../stores/settings";
 import { openZoteroItem } from "../lib/zotero";
 import { t } from "../lib/i18n";
+import { ZoteroIcon } from "./icons";
 
 export interface CitationRowData {
   key: string;
@@ -45,21 +46,6 @@ export function formatAuthors(authors: string[]): string {
   return `${authors[0]} et al.`;
 }
 
-/** The Zotero "Z" mark, shared by every surface that links into Zotero. */
-export function ZoteroIcon() {
-  return (
-    <svg
-      class="zotero-icon"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      stroke="none"
-    >
-      <path d="M21 3H3v3.6h11.4L3 18.4V21h18v-3.6H9.6L21 5.6z" />
-    </svg>
-  );
-}
 
 const CitationRow: Component<CitationRowProps> = (props) => {
   const zoteroOn = () => noteboxSettings.citations.source === "zotero";
