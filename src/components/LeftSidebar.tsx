@@ -29,6 +29,7 @@ import {
   PackageOpen,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
+import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message, open } from "@tauri-apps/plugin-dialog";
@@ -166,33 +167,6 @@ function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): S
     }
   }
   return acc;
-}
-
-/// "Library +" glyph for the New Collection button. lucide-solid has no
-/// library-plus icon, so this is a local SVG: the lucide `library-big`
-/// book spine with a plus mark in place of the second volume. Stroke
-/// styling matches lucide (currentColor, width 2, round caps) so it
-/// renders identically to the sibling toolbar icons.
-function LibraryPlusIcon(props: { size?: number }) {
-  return (
-    <svg
-      width={props.size ?? 18}
-      height={props.size ?? 18}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <rect width="8" height="18" x="3" y="3" rx="1" />
-      <path d="M7 3v18" />
-      <g transform="translate(5.9452055,5.9937734)">
-        <path d="m12 7v6" />
-        <path d="m9 10h6" />
-      </g>
-    </svg>
-  );
 }
 
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {

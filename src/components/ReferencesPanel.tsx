@@ -7,6 +7,7 @@ import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { t } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { RefreshCw } from "lucide-solid";
 
 const PAGE_SIZE = 50;
 
@@ -281,7 +282,10 @@ const ReferencesPanel: Component = () => {
             disabled={refreshing()}
             title="Refresh bibliography"
           >
-            <RefreshIcon spinning={refreshing()} />
+            <RefreshCw
+              size={14}
+              class={`refresh-icon${refreshing() ? " refresh-icon--spinning" : ""}`}
+            />
           </button>
         </div>
         <Show when={showAll()}>
@@ -458,26 +462,5 @@ const ReferencesPanel: Component = () => {
     </div>
   );
 };
-
-function RefreshIcon(props: { spinning?: boolean }) {
-  return (
-    <svg
-      class={`refresh-icon${props.spinning ? " refresh-icon--spinning" : ""}`}
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M21 2v6h-6" />
-      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-      <path d="M3 22v-6h6" />
-      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-    </svg>
-  );
-}
 
 export default ReferencesPanel;

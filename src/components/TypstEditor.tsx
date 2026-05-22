@@ -50,7 +50,18 @@ import {
   scrollNavBack,
   scrollNavForward,
 } from "../stores/journal-scroll";
-import { BrainCircuit, ArrowUpFromDot, ArrowDownToDot } from "lucide-solid";
+import {
+  BrainCircuit,
+  ArrowUpFromDot,
+  ArrowDownToDot,
+  ArrowLeft,
+  ArrowRight,
+  BookA,
+  FileCode,
+  Code,
+  PenLine,
+  Eye,
+} from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
@@ -732,10 +743,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             title="Go back"
             aria-label="Go back"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 12H5" />
-              <polyline points="12 19 5 12 12 5" />
-            </svg>
+            <ArrowLeft size={14} />
           </button>
           <button
             type="button"
@@ -746,10 +754,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             title="Go forward"
             aria-label="Go forward"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 12h14" />
-              <polyline points="12 5 19 12 12 19" />
-            </svg>
+            <ArrowRight size={14} />
           </button>
         </div>
 
@@ -810,11 +815,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
               title={t("readingFormat.svg.title")}
               aria-pressed={readingFormat() === "svg"}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
-                <path d="m8 13 4-7 4 7" />
-                <path d="M9.1 11h5.7" />
-              </svg>
+              <BookA size={14} />
               <span>{t("readingFormat.svg")}</span>
             </button>
             <button
@@ -825,12 +826,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
               title={t("readingFormat.html.title")}
               aria-pressed={readingFormat() === "html"}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
-                <path d="M14 2v5a1 1 0 0 0 1 1h5" />
-                <path d="M10 12.5 8 15l2 2.5" />
-                <path d="m14 12.5 2 2.5-2 2.5" />
-              </svg>
+              <FileCode size={14} />
               <span>{t("readingFormat.html")}</span>
             </button>
           </div>
@@ -845,10 +841,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             title="Source edit"
             aria-pressed={currentMode() === "source"}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </svg>
+            <Code size={14} />
           </button>
           <button
             type="button"
@@ -858,10 +851,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             title="Visual edit"
             aria-pressed={currentMode() === "live"}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 20h9" />
-              <path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.855z" />
-            </svg>
+            <PenLine size={14} />
           </button>
           <button
             type="button"
@@ -871,10 +861,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             title="Reading view"
             aria-pressed={currentMode() === "reading"}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
+            <Eye size={14} />
           </button>
         </div>
         </Show>

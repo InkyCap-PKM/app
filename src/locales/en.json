@@ -39,6 +39,8 @@
   "mycelial.button.title": "Mycelial View anchored from this note",
   "mycelial.tab.title": "Mycelial View",
 
+  "collection.tab.title": "Collection",
+
   "journalScroll.tab.title": "Journal Scroll",
   "journalScroll.group": "Journal Scroll",
   "journalScroll.toggle.start": "Journal Scroll anchored from this note",

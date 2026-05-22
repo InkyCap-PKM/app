@@ -54,6 +54,7 @@ import {
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import { Anchor, MessageSquareWarning, Tags } from "lucide-solid";
+import { SquareArrowOutUpRight, SquareArrowInDownLeft } from "./icons";
 import { DiagnosticRow } from "./DiagnosticRow";
 import type { ConnectionFlags, ScrollEntry, TypstHtmlResult } from "../lib/types";
 
@@ -655,46 +656,6 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 };
 
 // === Per-entry component ===
-
-// Two of the connection icons aren't in lucide — they're custom variants of
-// lucide's square-arrow family chosen by the user to read as "points out to
-// the anchor" vs. "comes in from the anchor". They mirror lucide's standard
-// SVG frame (24×24, currentColor stroke) so they style and size identically
-// to the lucide icons alongside them.
-const lucideFrame = (size: number) => ({
-  width: size,
-  height: size,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  "stroke-width": 2,
-  "stroke-linecap": "round" as const,
-  "stroke-linejoin": "round" as const,
-});
-
-/** Custom "square-arrow-out-up-right" — an arrow leaving the box toward the
- *  upper right. Used for "links to the anchor". */
-const SquareArrowOutUpRight: Component<{ size?: number }> = (props) => (
-  <svg {...lucideFrame(props.size ?? 24)}>
-    <path d="m 21,13 v 6 a 2,2 0 0 1 -2,2 H 5 A 2,2 0 0 1 3,19 V 5 A 2,2 0 0 1 5,3 h 6" />
-    <g transform="rotate(90,8.953924,11.970112)">
-      <path d="m 3,3 9,9" />
-      <path d="M 3,9 V 3 h 6" />
-    </g>
-  </svg>
-);
-
-/** Custom "square-arrow-in-down-left" — an arrow entering the box from the
- *  lower left. Used for "linked from the anchor". */
-const SquareArrowInDownLeft: Component<{ size?: number }> = (props) => (
-  <svg {...lucideFrame(props.size ?? 24)}>
-    <path d="M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6" />
-    <g transform="rotate(180,9.0080946,9.0379826)">
-      <path d="m 3,3 9,9" />
-      <path d="M 3,9 V 3 h 6" />
-    </g>
-  </svg>
-);
 
 // Connection badges shown in each entry's header. The colored accent strip
 // down the entry's left edge encodes the same relation by color alone; the

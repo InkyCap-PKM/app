@@ -34,13 +34,16 @@ running the app.
 
 ```
 cd src-tauri && cargo build --lib                 # backend compiles
+cd src-tauri && cargo test --lib                  # full lib: 533 pass, 0 fail
 cd src-tauri && cargo test --lib collab           # 77 engine + command tests
-cd src-tauri && cargo test --lib commands::collab::tests   # reconcile, bump, move-follow, sanitize
-cd src-tauri && cargo test --lib storage::local   # 3 atomic-write tests
-npx tsc --noEmit                                   # frontend typecheck
+cd src-tauri && cargo test --test contributors_book   # 3 real-Typst book-compile tests
+cd src-tauri && cargo test --lib typst_pipeline::contributors   # 8 byline/CRediT tests
+npx tsc --noEmit                                   # frontend typecheck (clean)
 npm run tauri dev                                  # run the app (only way to test the async commands/UI)
 ```
-As of 2026-05-21 all of the above are green.
+As of 2026-05-22 all of the above are green — including the two
+`creation_rules` daily-note tests (the long-standing `daily` vs `Daily`
+assertion mismatch is fixed).
 
 ## Architecture map
 
@@ -439,22 +442,47 @@ copies (not the active notebox — left untouched).
    bad note doesn't fail the whole book. Today export names *which* note
    failed (2a) but still aborts.
 
-## Repo state
+## Repo state (as of end of 2026-05-22 session)
 
-All work is **uncommitted** (single working tree, branch `typst-pivot`).
-New files: `src-tauri/src/collab/` (mod, clock, versions, identity, review,
-bibliography, package, apply, attachments), `src-tauri/src/commands/collab.rs`,
-`src-tauri/src/storage/zip_archive.rs`, `src/components/CollabPanel.tsx`,
-the two `.claude/plans/collaboration-*.md`, and (ContributorsEditor, 2026-05-22)
-`src-tauri/src/typst_pipeline/contributors.rs`,
-`src-tauri/tests/contributors_book.rs`, `src/components/ContributorsEditor.tsx`.
-Modified: backup archive/restore, collection_parser/model, commands/mod, lib,
-property_types, storage local/mod/traits, path_rebase, backup tests,
-CollectionTable, LeftSidebar, RightPanel, ipc, types, notebox store,
-layout.css; `commands/file_ops.rs` (delete hook), `collab/bibliography.rs`
-(bib merge); and (ContributorsEditor) `typst_pipeline/{mod,book_wrapper}.rs`,
-`commands/collections.rs`, `inkycap-notebox/0.2.0/lib.typ`,
-`tests/verapdf_pdf_ua.rs`. The atomic-write change to `storage/local.rs`
-predates collaboration. **Committed so far:** Issue #2 / shrink /
-delete-tombstone. **Uncommitted:** bib-merge, per-key bib conflict UI, and
-ContributorsEditor.
+Branch `typst-pivot`, single working tree. **Everything below is COMMITTED**
+as of this session's end:
+- Issue #2 (location decoupling), membership shrink, file-delete→tombstone.
+- Bibliography merge on apply + per-key conflict UI.
+- ContributorsEditor (multi-author byline + CRediT) + `lib.typ`
+  `contributors-byline`/`credit-statement` + `typst_pipeline/contributors.rs`.
+- Book-export fixes: chapter-anchor (unclosed-label), single-chapter array,
+  "name the failing note" (2a).
+- Attachment hash-compare.
+
+**Uncommitted at handoff:** ONLY the `creation_rules` daily-note test fix
+(`src-tauri/src/creation_rules/mod.rs` — `daily` → `Daily` in two assertions).
+Commit it; the full lib suite is then 533 pass / 0 fail.
+
+**Not an app change (user's data):** two notes in `Inky2/Publishers`
+(`Journal of Academic Librarianship.typ`, `Information Technology and
+Libraries (ITAL).typ`) were repaired in place (markdown `# Heading` jammed
+mid-paragraph). The same corruption still exists in the
+`InkyCap-Professional` notebox copies — left untouched.
+
+## ⮕ NEXT SESSION — start here
+
+The collaboration core + ContributorsEditor + bibliography (merge/conflict)
++ book-export fixes are all done and committed. Pick the next item from
+"Other remaining work" above. **User was asked to choose between** (see that
+list for detail):
+1. **Book export error-tolerance (2b)** — recommended if continuing to test
+   book export; builds on the 2a "name the note" reporting.
+2. **Zotero → shared `.bib` materialization** — completes the bibliography
+   arc; larger, and note the bib source is *notebox-wide* not per-collection,
+   so "switch the collection off Zotero-live" doesn't map cleanly — design
+   it as: at enable, materialize the collection's *cited* entries into a
+   collection-owned `.bib` and point `collaboration.bibliography_file` at it
+   (re-sync lazily at package, like `bump_local_edits`). The user's current
+   journal notes may not use `@citations`, so it won't be immediately
+   demonstrable for them.
+3. **`#review` / `#review-reject` Typst primitives + rejection log.**
+4. **Collab UX polish** (command palette, status-bar badge, right-panel
+   ReviewPanel).
+
+The user had not yet chosen when the session ended (they opted to start
+fresh). Re-confirm their pick at the start of the next session.

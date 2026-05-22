@@ -3,6 +3,7 @@ import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { activeEditorView } from "../stores/editor";
 import { t } from "../lib/i18n";
+import { ArrowLeft } from "lucide-solid";
 import CitationPicker from "./CitationPicker";
 
 interface RefNotePickerProps {
@@ -107,10 +108,7 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
           <div class="cmd-palette" onClick={(e) => e.stopPropagation()}>
             <div class="ref-note-picker__header">
               <button class="ref-note-picker__back" onClick={goBack} title={t("refNotes.back")}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 12H5" />
-                  <path d="M12 19l-7-7 7-7" />
-                </svg>
+                <ArrowLeft size={14} />
               </button>
               <span class="ref-note-picker__ref-label">
                 @{selectedEntry()?.key}
