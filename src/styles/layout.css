@@ -4025,6 +4025,87 @@ svg.lucide {
 }
 
 /* ── Collaboration panel ───────────────────────────────────────── */
+/* Collaboration section — the right-panel surface for a Collection View:
+   a handshake heading, the enable question, and the Disable/Pause/Enable
+   lifecycle pill, with the CollabPanel body below when enabled. */
+.collab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.collab-section__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+}
+
+.collab-section__header svg {
+  flex-shrink: 0;
+}
+
+.collab-section__title {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+}
+
+.collab-section__enable-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collab-section__question {
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+}
+
+/* Three-way segmented control mirroring .editor-header__mode-toggle, with the
+   active segment filled with the accent (clearer than bg-active for a
+   deliberate state choice). */
+.collab-state-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.collab-state-pill__seg {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 5px 14px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.collab-state-pill__seg + .collab-state-pill__seg {
+  border-left: 1px solid var(--border-primary);
+}
+
+.collab-state-pill__seg:hover:not(.is-active):not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+}
+
+.collab-state-pill__seg.is-active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.collab-state-pill__seg:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .collab-panel {
   display: flex;
   flex-direction: column;

@@ -798,24 +798,29 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__right-group">
-        <button
-          type="button"
-          class="editor-header__icon-btn"
-          onClick={() => {
-            const tab = tabs.find((t) => t.id === props.tabId);
-            if (!tab) return;
-            const name = tab.title.replace(/\.[^.]+$/, "");
-            openTab(
-              { type: "mycelial", title: name, path: tab.path },
-              { forceNewTab: true },
-            );
-          }}
-          title={t("mycelial.button.title")}
-          aria-label={t("mycelial.button.title")}
-        >
-          <BrainCircuit size={14} />
-        </button>
-        <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+        {/* Mycelial View + Journal Scroll are note-authoring tools that don't
+            apply while reviewing a proposed change — hide them in review mode
+            so the header stays focused on the Accept/Reject decision. */}
+        <Show when={reviewModeCollabidForPath(props.path) === null}>
+          <button
+            type="button"
+            class="editor-header__icon-btn"
+            onClick={() => {
+              const tab = tabs.find((t) => t.id === props.tabId);
+              if (!tab) return;
+              const name = tab.title.replace(/\.[^.]+$/, "");
+              openTab(
+                { type: "mycelial", title: name, path: tab.path },
+                { forceNewTab: true },
+              );
+            }}
+            title={t("mycelial.button.title")}
+            aria-label={t("mycelial.button.title")}
+          >
+            <BrainCircuit size={14} />
+          </button>
+          <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+        </Show>
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <div
             class="editor-header__mode-toggle editor-header__format-toggle"

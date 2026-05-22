@@ -199,13 +199,6 @@ const ReviewPanel: Component = () => {
                   </div>
                 }
               >
-                <textarea
-                  class="settings__text-input review-panel__reason"
-                  rows={2}
-                  value={reasons()[it().collabid] ?? ""}
-                  onInput={(e) => setReason(it().collabid, e.currentTarget.value)}
-                  placeholder="Reason if rejecting (optional — recorded in the rejection log)"
-                />
                 <div class="review-panel__actions" role="group" aria-label="Decision">
                   <button
                     class="collection-table__toolbar-btn review-panel__accept-btn"
@@ -222,6 +215,13 @@ const ReviewPanel: Component = () => {
                     Reject
                   </button>
                 </div>
+                <textarea
+                  class="settings__text-input review-panel__reason"
+                  rows={2}
+                  value={reasons()[it().collabid] ?? ""}
+                  onInput={(e) => setReason(it().collabid, e.currentTarget.value)}
+                  placeholder="Reason if rejecting (optional — recorded in the rejection log)"
+                />
               </Show>
 
               <button class="collection-table__toolbar-btn review-panel__end-btn" onClick={endReview}>

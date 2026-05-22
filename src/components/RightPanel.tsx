@@ -55,6 +55,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import ReviewPanel from "./ReviewPanel";
+import CollaborationSection from "./CollaborationSection";
 import {
   currentReviewCollabid,
   setCurrentReviewCollabid,
@@ -224,6 +225,21 @@ const RightPanel: Component = () => {
   const activeFileTab = () => {
     const tab = getActiveTab();
     return tab?.type === "file" ? tab : undefined;
+  };
+
+  const activeCollectionTab = () => {
+    const tab = getActiveTab();
+    return tab?.type === "collection" ? tab : undefined;
+  };
+
+  /// The collection's file stem (basename minus extension) — the membership
+  /// name the backend uses (`collection_membership_name`) and what
+  /// CollectionTable derives, so the package filename / default import folder
+  /// match across surfaces.
+  const collectionStem = (path: string): string => {
+    const base = path.split(/[\\/]/).pop() ?? path;
+    const dot = base.lastIndexOf(".");
+    return dot > 0 ? base.slice(0, dot) : base;
   };
 
   /** True when the active tab is currently in Journal Scroll mode. */
@@ -1380,10 +1396,30 @@ const RightPanel: Component = () => {
         })()}
       </Show>
 
+      {/* Collaboration — the right-panel surface for a Collection View. Shown
+          when a collection tab is active (not while reviewing a note, which
+          opens a file tab and owns the panel via the Review tab above). */}
+      <Show when={activePanel() !== "review" ? activeCollectionTab() : undefined}>
+        {(tab) => (
+          <div class="right-panel__tab-content">
+            <CollaborationSection
+              collectionPath={tab().path}
+              collectionName={collectionStem(tab().path)}
+            />
+          </div>
+        )}
+      </Show>
+
       <Show
         when={activeFileTab() && activePanel() !== "review"}
         fallback={
-          <Show when={getActiveTab()?.type !== "mycelial" && activePanel() !== "review"}>
+          <Show
+            when={
+              getActiveTab()?.type !== "mycelial" &&
+              getActiveTab()?.type !== "collection" &&
+              activePanel() !== "review"
+            }
+          >
             <p class="sidebar-hint">No file selected</p>
           </Show>
         }

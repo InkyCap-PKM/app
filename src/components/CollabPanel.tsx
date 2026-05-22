@@ -1,7 +1,13 @@
-import { Component, createSignal, createResource, createEffect, onMount, For, Show } from "solid-js";
+import { Component, createSignal, createEffect, onMount, For, Show } from "solid-js";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
-import type { CollectionFile, ReviewResult, DecisionAction, ChangeKind } from "../lib/types";
+import type {
+  CollectionFile,
+  CollabStatus,
+  ReviewResult,
+  DecisionAction,
+  ChangeKind,
+} from "../lib/types";
 import { MessageSquareCheck } from "lucide-solid";
 import { showToast } from "../stores/toasts";
 import {
@@ -22,22 +28,25 @@ import {
 } from "../stores/collab";
 import { setRightCollapsed } from "../stores/layout";
 
-/// The collaboration controls inside Collection Settings: identity, the
-/// enable toggle, package/import buttons, and a review list that drives the
-/// import → accept/reject → apply loop. The per-note diff lives in the
-/// right-panel Review tab (ReviewPanel); this panel owns identity/enable/
-/// package/import and the single Apply. Review session state is shared via
-/// the `stores/collab` module so both surfaces edit one source of truth.
+/// The body of the Collaboration section shown while a collection is actively
+/// collaborative (`state === "enabled"`). The Disable / Pause / Enable pill
+/// and the enable flow live in the parent `CollaborationSection`; this panel
+/// owns the post-enable controls — identity override, import folder,
+/// package/import, and the import → accept/reject → apply loop. The per-note
+/// diff lives in the right-panel Review tab (ReviewPanel); review session
+/// state is shared via `stores/collab` so both surfaces edit one source of
+/// truth.
 const CollabPanel: Component<{
   collectionPath: string;
   collectionName: string;
+  /// Current (enabled) status, owned by the parent so the pill and this body
+  /// read one resource.
+  status: CollabStatus;
   collectionFile: CollectionFile;
-  onSaved: () => void;
+  /// Refetch the parent's status + collection-file resources after a change
+  /// originating here (identity override, import folder, apply).
+  onChanged: () => void;
 }> = (props) => {
-  const [status, { refetch }] = createResource(
-    () => props.collectionPath,
-    (p) => ipc.collabStatus(p),
-  );
   const [handle, setHandle] = createSignal("");
   const [handleTouched, setHandleTouched] = createSignal(false);
   const [importFolder, setImportFolder] = createSignal("");
@@ -50,8 +59,7 @@ const CollabPanel: Component<{
   // Seed the handle field from the pinned identity once, without clobbering
   // an in-progress edit.
   createEffect(() => {
-    const s = status();
-    if (!handleTouched() && s?.handle) setHandle(s.handle);
+    if (!handleTouched() && props.status.handle) setHandle(props.status.handle);
   });
 
   // Seed the import-folder field from the collection file.
@@ -62,8 +70,6 @@ const CollabPanel: Component<{
   // The default landing folder when no override is set, shown as the input's
   // placeholder so the effective behaviour is always visible.
   const defaultImportFolder = () => `Collaboration/${props.collectionName}`;
-
-  const enabled = () => status()?.enabled ?? false;
 
   // Resume a staged-but-unapplied import when the collection is (re)opened
   // — also how the global "Import package" flow surfaces its review here.
@@ -97,7 +103,7 @@ const CollabPanel: Component<{
     if (!h) return;
     try {
       await ipc.collabSetIdentity(props.collectionPath, h);
-      refetch();
+      props.onChanged();
     } catch (e) {
       showToast("error", "Couldn't save identity", String(e));
     }
@@ -106,32 +112,9 @@ const CollabPanel: Component<{
   async function saveImportFolder() {
     try {
       await ipc.collabSetImportFolder(props.collectionPath, importFolder().trim());
-      props.onSaved();
+      props.onChanged();
     } catch (e) {
       showToast("error", "Couldn't save import folder", String(e));
-    }
-  }
-
-  async function doEnable() {
-    const h = handle().trim();
-    if (!h) {
-      showToast("warning", "Enter your collaborator handle first.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const r = await ipc.collabEnable(props.collectionPath, h);
-      showToast(
-        "success",
-        "Collaboration enabled",
-        `${r.members} member notes, ${r.stamped} newly stamped.`,
-      );
-      props.onSaved();
-      refetch();
-    } catch (e) {
-      showToast("error", "Enable failed", String(e));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -177,13 +160,10 @@ const CollabPanel: Component<{
     setBusy(true);
     try {
       // Shared store action does the apply + toast + collection-view refresh
-      // and clears the session. On success, also refresh this panel's own
-      // status + the collection table rows (membership may have changed).
+      // and clears the session. On success, also refresh the parent's status +
+      // collection file (membership may have changed).
       const ok = await applyReview();
-      if (ok) {
-        props.onSaved();
-        refetch();
-      }
+      if (ok) props.onChanged();
     } finally {
       setBusy(false);
     }
@@ -194,50 +174,40 @@ const CollabPanel: Component<{
 
   return (
     <div class="collab-panel">
-      <Show
-        when={enabled()}
-        fallback={
-          <div class="collection-meta__row">
-            <span class="collection-meta__hint">
-              Collaboration shares this collection as a portable package that
-              collaborators exchange and review. The collection needs a
-              membership filter before it can be enabled.
-            </span>
-          </div>
-        }
-      >
-        <div class="collection-meta__row">
-          <span class="collection-meta__hint">
-            Tracked notes: {status()?.note_count ?? 0}
-          </span>
-        </div>
+      <div class="collection-meta__row">
+        <span class="collection-meta__hint">
+          Tracked notes: {props.status.note_count}
+        </span>
+      </div>
 
-        <div class="collection-meta__row">
-          <span class="collection-meta__hint">
-            Membership is defined by each note's collection property, not its
-            folder — so you and your collaborators can organize files however
-            you like. Add or remove notes by setting their collection, not by
-            editing this collection's filter (which is managed automatically
-            while collaborative).
-          </span>
-        </div>
+      <div class="collection-meta__row">
+        <span class="collection-meta__hint">
+          Package this collection to share with collaborators and see each
+          other's changes. Although collections can filter the files they
+          include from across your notebox, when using collaboration packages
+          each file will have its collection property set for the collection.
+          Only files explicitly assigned to the collection through the
+          property will be packaged for collaboration. Each collaborator can
+          organize files wherever they like on their local system; folders do
+          not get packaged.
+        </span>
+      </div>
 
-        <div class="collection-meta__row">
-          <label class="collection-meta__label">Import folder</label>
-          <input
-            type="text"
-            class="settings__text-input"
-            value={importFolder()}
-            onInput={(e) => setImportFolder(e.currentTarget.value)}
-            onBlur={saveImportFolder}
-            placeholder={defaultImportFolder()}
-          />
-          <span class="collection-meta__hint">
-            Where notes new to this machine land on import. Local to you;
-            collaborators each choose their own.
-          </span>
-        </div>
-      </Show>
+      <div class="collection-meta__row">
+        <label class="collection-meta__label">Import folder</label>
+        <input
+          type="text"
+          class="settings__text-input"
+          value={importFolder()}
+          onInput={(e) => setImportFolder(e.currentTarget.value)}
+          onBlur={saveImportFolder}
+          placeholder={defaultImportFolder()}
+        />
+        <span class="collection-meta__hint">
+          Where notes new to this machine are stored on import. Existing notes
+          remain where you have stored them. This does not affect collaborators.
+        </span>
+      </div>
 
       <div class="collection-meta__row">
         <label class="collection-meta__label">Your handle</label>
@@ -258,21 +228,12 @@ const CollabPanel: Component<{
       </div>
 
       <div class="collection-meta__row collab-panel__actions">
-        <Show
-          when={enabled()}
-          fallback={
-            <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doEnable}>
-              Enable collaboration
-            </button>
-          }
-        >
-          <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doPackage}>
-            Package export…
-          </button>
-          <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doImport}>
-            Import package…
-          </button>
-        </Show>
+        <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doPackage}>
+          Export package…
+        </button>
+        <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doImport}>
+          Import package…
+        </button>
       </div>
 
       <Show when={review()}>

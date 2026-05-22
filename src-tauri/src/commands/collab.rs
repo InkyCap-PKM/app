@@ -28,8 +28,7 @@ use crate::collab::clock::VectorClock;
 use crate::collab::versions::{NoteVersion, VersionsFile};
 use crate::collection_parser::filter::evaluate_filter_group;
 use crate::collection_parser::model::{
-    parse_collection_file, serialize_collection_file, CollectionCollaboration, CollectionFile,
-    FilterGroup,
+    parse_collection_file, serialize_collection_file, CollectionFile, FilterGroup,
 };
 use crate::errors::{InkyCapError, Result};
 use crate::models::note::PropertyValue;
@@ -51,9 +50,31 @@ pub struct CollabEnableReport {
     pub stamped: usize,
 }
 
+/// The three-way lifecycle of a collection's collaboration, surfaced as a
+/// Disable / Pause / Enable pill in the UI.
+///
+/// - `Disabled` — no sidecar on disk; the pristine default. Re-enabling sets
+///   up fresh history.
+/// - `Paused` — sidecar present (history/identity preserved) but inactive:
+///   packaging/importing are off and the membership filter is unlocked.
+///   Resuming is lossless.
+/// - `Enabled` — actively collaborative.
+///
+/// The flag (`collaboration.enabled`) only distinguishes Enabled from the
+/// other two; Paused vs Disabled is told apart by whether the sidecar exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollabState {
+    Disabled,
+    Paused,
+    Enabled,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CollabStatus {
     pub enabled: bool,
+    /// Tri-state lifecycle (Disabled / Paused / Enabled) for the pill.
+    pub state: CollabState,
     /// The local user's handle for this collection, if pinned.
     pub handle: Option<String>,
     /// Tracked (non-tombstoned) notes in the sidecar.
@@ -349,19 +370,112 @@ pub async fn collab_get_identity(
     Ok(identity::load_me(&dir)?.map(|m| m.handle))
 }
 
-/// Mark a collection collaborative: stamp a `collabid` on every member
-/// note (minting a ZID where absent), seed `versions.json`, pin the
-/// caller's identity, and flip the `collaboration.enabled` flag in the
-/// `.collection` file.
+/// Move a collection between the three collaboration states (the
+/// Disable / Pause / Enable pill).
+///
+/// - `Enabled` — set up collaboration. From `Disabled` this seeds fresh
+///   history; from `Paused` it resumes the existing history losslessly.
+///   Requires a handle (the `handle` arg, falling back to the pinned
+///   `me.json` identity).
+/// - `Paused` — keep all history but go inactive (cheap flag flip). From
+///   `Disabled` it prepares collaboration inactive (so it also needs a
+///   handle), but the common path is `Enabled → Paused`.
+/// - `Disabled` — tear down the sidecar (history / identity / staging) and
+///   clear the flag. No handle needed; the stamped `collabid` /
+///   `collection` properties on notes are left untouched, so a later
+///   re-enable reuses the same identities.
 #[tauri::command]
-pub async fn collab_enable(
+pub async fn collab_set_state(
     collection_path: String,
-    handle: String,
+    target: CollabState,
+    handle: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<CollabEnableReport> {
     let storage = state.get_storage().await?;
-    let (root, col_abs, id) = collection_ids(&state, &collection_path).await?;
+    let (root, _abs, id) = collection_ids(&state, &collection_path).await?;
     let col_arg = sanitize_notebox_arg(&collection_path)?;
+    let sidecar_exists = collab::versions_path(&root, &id).exists();
+
+    match target {
+        CollabState::Disabled => {
+            // Drop the whole sidecar dir (versions.json, me.json, staging) and
+            // clear the flag. The canonical property filter stays in place —
+            // membership-by-property is still meaningful — and unlocks in the
+            // UI now that `enabled` is false.
+            let dir = collab::collab_dir(&root, &id);
+            if dir.exists() {
+                std::fs::remove_dir_all(&dir)?;
+            }
+            let mut base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
+            if let Some(mut c) = base.collaboration.take() {
+                c.enabled = false;
+                base.collaboration = Some(c);
+            }
+            storage
+                .write_file(&col_arg, &serialize_collection_file(&base)?)
+                .await?;
+            Ok(CollabEnableReport { members: 0, stamped: 0 })
+        }
+        CollabState::Paused if sidecar_exists => {
+            // Lossless pause: keep all history, just flip the flag off.
+            let mut base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
+            let mut c = base.collaboration.take().unwrap_or_default();
+            c.enabled = false;
+            base.collaboration = Some(c);
+            storage
+                .write_file(&col_arg, &serialize_collection_file(&base)?)
+                .await?;
+            Ok(CollabEnableReport { members: 0, stamped: 0 })
+        }
+        // Paused-from-Disabled prepares collaboration inactive; Enabled is the
+        // active path. Both need a handle and run the (fresh ∥ resume) setup.
+        CollabState::Paused | CollabState::Enabled => {
+            let h = resolve_handle(&root, &id, handle)?;
+            let target_enabled = matches!(target, CollabState::Enabled);
+            setup_collaboration(&state, &collection_path, &h, target_enabled, !sidecar_exists).await
+        }
+    }
+}
+
+/// Resolve the handle to attribute edits to: the explicitly-provided one
+/// (trimmed, non-empty) wins, else the collection's pinned `me.json`
+/// identity. Errors if neither is available — collaboration can't be enabled
+/// without an attributable identity.
+fn resolve_handle(root: &Path, id: &str, provided: Option<String>) -> Result<String> {
+    if let Some(h) = provided {
+        let h = h.trim().to_string();
+        if !h.is_empty() {
+            return Ok(h);
+        }
+    }
+    if let Some(me) = identity::load_me(&collab::collab_dir(root, id))? {
+        if !me.handle.trim().is_empty() {
+            return Ok(me.handle);
+        }
+    }
+    Err(InkyCapError::BadRequest(
+        "A collaborator handle is required to enable collaboration.".to_string(),
+    ))
+}
+
+/// Set up (or resume) collaboration for a collection: stamp `collabid` +
+/// `collection` membership on members, seed or load `versions.json`, pin the
+/// caller's identity, index the shared bibliography, canonicalize the filter,
+/// and write `collaboration.enabled = target_enabled`.
+///
+/// `fresh` seeds an empty sidecar (initial enable); otherwise the existing
+/// sidecar is loaded so its clocks/hashes/tombstones survive a pause→resume,
+/// and edits made while paused are folded in (lazy capture, as at package).
+async fn setup_collaboration(
+    state: &AppState,
+    collection_path: &str,
+    handle: &str,
+    target_enabled: bool,
+    fresh: bool,
+) -> Result<CollabEnableReport> {
+    let storage = state.get_storage().await?;
+    let (root, col_abs, id) = collection_ids(state, collection_path).await?;
+    let col_arg = sanitize_notebox_arg(collection_path)?;
 
     let content = storage.read_file(&col_arg).await?;
     let mut base = parse_collection_file(&content)?;
@@ -378,25 +492,51 @@ pub async fn collab_enable(
     })?;
 
     let name = collection_membership_name(&col_abs);
-    let mut versions = VersionsFile::new(id.clone());
-    // Stamp collabid + the `collection` membership property on every current
-    // member, using the existing filter to find them.
-    let sync =
-        sync_membership(&state, &root, &col_abs, &filters, &name, &handle, &mut versions).await?;
+    let mut versions = if fresh {
+        VersionsFile::new(id.clone())
+    } else {
+        VersionsFile::load(&collab::versions_path(&root, &id))?.ok_or_else(|| {
+            InkyCapError::BadRequest(
+                "No collaboration history to resume for this collection.".to_string(),
+            )
+        })?
+    };
 
-    // Index the shared bibliography from the start, so the first import can
-    // already detect bib additions/conflicts (the section is otherwise empty
-    // until the first package).
-    if let Some(b) = base.bibliography_file.clone() {
+    // Stamp collabid + the `collection` membership property on every current
+    // member, using the (canonical, on resume) filter to find them.
+    let sync =
+        sync_membership(state, &root, &col_abs, &filters, &name, handle, &mut versions).await?;
+
+    // On resume, capture edits made while paused so they travel on the next
+    // package — the same lazy, hash-based capture used at package/import time.
+    if !fresh {
+        let collabid_paths = collabid_path_map(state, &root).await;
+        bump_local_edits(&mut versions, &root, handle, &collabid_paths);
+    }
+
+    // Index the shared bibliography so the first import can already detect bib
+    // additions/conflicts (the section is otherwise empty until the first
+    // package).
+    let bib_source = base
+        .collaboration
+        .as_ref()
+        .and_then(|c| c.bibliography_file.clone())
+        .or_else(|| base.bibliography_file.clone());
+    if let Some(b) = bib_source {
         if let Ok(text) = storage.read_file(&PathBuf::from(&b)).await {
-            bibliography::refresh_bib_versions(&mut versions.bibliography, &text, &handle);
+            bibliography::refresh_bib_versions(&mut versions.bibliography, &text, handle);
         }
     }
 
     // Persist the sidecar and the local identity.
     versions.save(&collab::versions_path(&root, &id))?;
     let dir = collab::collab_dir(&root, &id);
-    identity::save_me(&dir, &identity::LocalIdentity { handle })?;
+    identity::save_me(
+        &dir,
+        &identity::LocalIdentity {
+            handle: handle.to_string(),
+        },
+    )?;
 
     // Lock membership to the location-independent property filter. We just
     // stamped `collection: ("<name>")` on exactly the current members, so
@@ -406,13 +546,14 @@ pub async fn collab_enable(
     // reorganization, which is why the user's filter is replaced rather than
     // augmented.
     base.filters = Some(canonical_membership_filter(&name));
-    // Flip the collaboration flag, carrying the existing bibliography as the
-    // shared one and leaving `import_folder` at its default.
-    base.collaboration = Some(CollectionCollaboration {
-        enabled: true,
-        bibliography_file: base.bibliography_file.clone(),
-        ..Default::default()
-    });
+    // Set the flag, preserving any existing import_folder, and carrying the
+    // collection's bibliography as the shared one when none is set yet.
+    let mut collab_cfg = base.collaboration.clone().unwrap_or_default();
+    collab_cfg.enabled = target_enabled;
+    if collab_cfg.bibliography_file.is_none() {
+        collab_cfg.bibliography_file = base.bibliography_file.clone();
+    }
+    base.collaboration = Some(collab_cfg);
     let new_content = serialize_collection_file(&base)?;
     storage.write_file(&col_arg, &new_content).await?;
 
@@ -583,13 +724,26 @@ pub async fn collab_status(
         .map(|c| c.enabled)
         .unwrap_or(false);
 
-    let note_count = VersionsFile::load(&collab::versions_path(&root, &id))?
+    let versions = VersionsFile::load(&collab::versions_path(&root, &id))?;
+    let sidecar_exists = versions.is_some();
+    let note_count = versions
         .map(|v| v.notes.values().filter(|n| !n.is_deleted()).count())
         .unwrap_or(0);
     let handle = identity::load_me(&collab::collab_dir(&root, &id))?.map(|m| m.handle);
 
+    // Paused vs Disabled is told apart by the sidecar's presence — both have
+    // `enabled == false`.
+    let collab_state = if enabled {
+        CollabState::Enabled
+    } else if sidecar_exists {
+        CollabState::Paused
+    } else {
+        CollabState::Disabled
+    };
+
     Ok(CollabStatus {
         enabled,
+        state: collab_state,
         handle,
         note_count,
     })

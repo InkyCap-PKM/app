@@ -264,6 +264,49 @@ function OverviewSection() {
         </div>
       </div>
 
+      {/* Collaboration identity — optional defaults used when sharing a
+          collection as a package and as a default Book Metadata contributor. */}
+      <div class="settings__section-header">
+        <span class="settings__label">Collaboration</span>
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <label class="settings__label">Author name</label>
+          <span class="settings__description">
+            Your display name. Offered as a default contributor in a
+            collection's Book Metadata. Optional.
+          </span>
+        </div>
+        <input
+          type="text"
+          class="settings__text-input"
+          value={settings.collaboration.author_name}
+          onInput={(e) =>
+            updateSetting("collaboration", "author_name", e.currentTarget.value)
+          }
+          placeholder="e.g. Joshua Chalifour"
+        />
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <label class="settings__label">Handle</label>
+          <span class="settings__description">
+            Identifies your edits when collaborating. Used as the default for
+            each collaborative collection (you can override it per collection).
+            Leave blank to be prompted when you enable collaboration.
+          </span>
+        </div>
+        <input
+          type="text"
+          class="settings__text-input"
+          value={settings.collaboration.handle}
+          onInput={(e) =>
+            updateSetting("collaboration", "handle", e.currentTarget.value)
+          }
+          placeholder="e.g. joshua-chalifour"
+        />
+      </div>
+
       <NoteboxManagementSection />
     </div>
   );
