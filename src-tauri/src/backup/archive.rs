@@ -24,16 +24,14 @@
 //!     is intentionally *not* excluded — it holds user-authored content
 //!     (templates, scaffolds, settings) that belongs in the archive.
 
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use walkdir::WalkDir;
-use zip::write::{SimpleFileOptions, ZipWriter};
-use zip::{AesMode, CompressionMethod};
 
 use crate::errors::{InkyCapError, Result};
+use crate::storage::zip_archive::ZipBuilder;
 
 /// Inputs for one archive build.
 pub struct ArchiveJob<'a> {
@@ -117,16 +115,14 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
         }
     }
 
-    let file = std::fs::File::create(job.destination)?;
-    let mut zip = ZipWriter::new(file);
+    let mut builder = ZipBuilder::create(job.destination, job.password.map(str::to_owned))?;
 
     let mut summary = ArchiveSummary::default();
 
     add_tree(
-        &mut zip,
+        &mut builder,
         job.notebox_root,
         "notebox",
-        job.password,
         None, // no per-tree extra exclusion
         &mut summary,
         &job.cancel,
@@ -137,50 +133,30 @@ pub fn write(job: ArchiveJob<'_>) -> Result<ArchiveSummary> {
         // archive's own "last_success" record doesn't end up inside the
         // archive (a confusing artefact at restore time).
         add_tree(
-            &mut zip,
+            &mut builder,
             cfg,
             "user-config",
-            job.password,
             Some("backup_state.json"),
             &mut summary,
             &job.cancel,
         )?;
     }
 
-    zip.finish()
-        .map_err(|e| InkyCapError::ExportFailed(format!("finalising zip: {e}")))?;
+    builder.finish()?;
 
     Ok(summary)
 }
 
-/// Build the per-entry zip options. AES-256 attaches when a password is
-/// present; otherwise the entry is plain Deflate. Re-built for every
-/// entry because the zip crate consumes the options by value on each
-/// `start_file` / `add_directory` call.
-///
-/// Returned options borrow from `password` (the AES extension keeps a
-/// reference to the password string), so the explicit lifetime is
-/// needed — without it the inferred lifetime is `'static` and the
-/// non-static password reference fails to coerce.
-fn entry_options<'a>(password: Option<&'a str>) -> zip::write::FileOptions<'a, ()> {
-    let opts = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .unix_permissions(0o644);
-    match password {
-        Some(pw) => opts.with_aes_encryption(AesMode::Aes256, pw),
-        None => opts,
-    }
-}
-
-/// Walk one source tree, adding each file to the zip under `prefix/`.
+/// Walk one source tree, adding each file to the archive under `prefix/`.
 /// Directory entries are written for empty folders only — populated
 /// folders are implied by their files' paths, which is how most zip
-/// extractors expect things.
+/// extractors expect things. The per-entry mechanics (AES, chunked
+/// streaming, cancellation) live in [`ZipBuilder`]; this function owns
+/// the tree walk, exclusion rules, and interior-path construction.
 fn add_tree(
-    zip: &mut ZipWriter<std::fs::File>,
+    builder: &mut ZipBuilder,
     src: &Path,
     prefix: &str,
-    password: Option<&str>,
     extra_leaf_exclude: Option<&str>,
     summary: &mut ArchiveSummary,
     cancel: &Arc<AtomicBool>,
@@ -192,14 +168,6 @@ fn add_tree(
     let walker = WalkDir::new(src).follow_links(true).into_iter();
 
     for entry in walker {
-        // Cancel poll at every directory-entry boundary. Acquire-load
-        // is sufficient — the flag is set on a different thread (the
-        // Tauri command handler) and the worst-case slip is one more
-        // file before we observe it, which is fine.
-        if cancel.load(Ordering::Acquire) {
-            return Err(InkyCapError::Cancelled);
-        }
-
         let entry = match entry {
             Ok(e) => e,
             // Don't fail the whole archive on one bad file — log and
@@ -237,10 +205,7 @@ fn add_tree(
                 .map(|mut it| it.next().is_none())
                 .unwrap_or(false)
             {
-                zip.add_directory(&interior, entry_options(password))
-                    .map_err(|e| {
-                        InkyCapError::ExportFailed(format!("add_directory {interior}: {e}"))
-                    })?;
+                builder.add_directory(&interior)?;
             }
             continue;
         }
@@ -251,25 +216,9 @@ fn add_tree(
             continue;
         }
 
-        zip.start_file(&interior, entry_options(password))
-            .map_err(|e| InkyCapError::ExportFailed(format!("start_file {interior}: {e}")))?;
-
-        let mut src_file = std::fs::File::open(abs)?;
-        let mut buf = [0u8; 64 * 1024];
-        loop {
-            // Poll between 64KiB chunks too, so cancelling during a
-            // very large attachment doesn't have to wait for the next
-            // file boundary.
-            if cancel.load(Ordering::Acquire) {
-                return Err(InkyCapError::Cancelled);
-            }
-            let n = src_file.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            zip.write_all(&buf[..n])?;
-            summary.uncompressed_bytes += n as u64;
-        }
+        // ZipBuilder polls `cancel` before the file and between chunks.
+        let bytes = builder.add_file(&interior, abs, Some(cancel))?;
+        summary.uncompressed_bytes += bytes;
         summary.file_count += 1;
     }
 

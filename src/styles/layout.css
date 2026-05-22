@@ -4014,6 +4014,84 @@ svg.lucide {
   gap: 6px;
 }
 
+/* ── Collaboration panel ───────────────────────────────────────── */
+.collab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collab-panel__bulk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.collab-panel__review {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.collab-panel__review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.collab-panel__review-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.collab-panel__kind {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.collab-panel__kind[data-kind="added"] {
+  color: var(--accent);
+}
+
+.collab-panel__kind[data-kind="conflict"] {
+  color: var(--fg-danger, #e55);
+  border-color: var(--fg-danger, #e55);
+}
+
+.collab-panel__path {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-panel__decision {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 90px;
+}
+
 .collection-meta__add-key {
   flex: 0 0 110px;
 }
@@ -6644,11 +6722,35 @@ svg.lucide {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Top padding matches the mode-bar's vertical centering so the first
-     button sits at the same y-offset as the FolderTree / mode buttons
-     in the sidebar's 38px tall mode bar. */
-  padding: 5px 0 6px;
   width: var(--toolbar-width);
+}
+
+/* Header band holding the sidebar toggle. Height + bottom border mirror
+   `.left-sidebar__mode-bar` so the toggle lands on the mode-bar row and the
+   horizontal divider runs unbroken across both columns. The action group
+   below begins at the sidebar's content level, letting the first action
+   button (Search) line up with the search input field that opens in the
+   panel to its right. The toolbar/sidebar vertical rule lives on `__body`
+   below, not on the toolbar itself, so it never crosses this band. */
+.vertical-toolbar__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 38px;
+  border-bottom: 1px solid var(--border-primary);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+/* Everything below the header. Carries the vertical rule separating the
+   toolbar from the sidebar, so the rule starts at the header's lower edge
+   rather than running the full height through the header band. */
+.vertical-toolbar__body {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  flex: 1;
   border-right: 1px solid var(--border-primary);
 }
 
@@ -6658,6 +6760,9 @@ svg.lucide {
   align-items: center;
   gap: 2px;
   flex: 1;
+  /* Matches `.left-sidebar__content` padding so the Search button aligns
+     with the first element of the panel content (the search input). */
+  padding-top: 8px;
 }
 
 .vertical-toolbar__bottom {
@@ -6665,6 +6770,7 @@ svg.lucide {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  padding-bottom: 6px;
 }
 
 .vertical-toolbar__btn {

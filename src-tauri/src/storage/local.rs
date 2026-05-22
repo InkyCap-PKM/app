@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::io::AsyncWriteExt;
 use walkdir::WalkDir;
 
 use super::path::{canonicalize_root, to_frontend_string, validate_notebox_path};
@@ -164,10 +166,13 @@ impl NoteboxStorage for LocalNoteboxStorage {
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
         let full = self.resolve(path)?;
-        if let Some(parent) = full.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::write(&full, content).await?;
+        atomic_write(&full, content.as_bytes()).await?;
+        Ok(())
+    }
+
+    async fn write_file_bytes(&self, path: &Path, content: &[u8]) -> Result<()> {
+        let full = self.resolve(path)?;
+        atomic_write(&full, content).await?;
         Ok(())
     }
 
@@ -312,4 +317,118 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
     }
 
     Ok(children_map.remove(&root.to_path_buf()).unwrap_or_default())
+}
+
+/// Process-unique counter used to disambiguate atomic-write tmp files
+/// when multiple writes target the same parent directory in rapid
+/// succession. `AtomicU64::Relaxed` is sufficient — we only need
+/// uniqueness, not any ordering relationship with other memory.
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Write `content` to `target` atomically: stream the bytes to a sibling
+/// `.tmp` file, fsync the data, then rename over the destination.
+///
+/// `tokio::fs::write` truncates `target` immediately and streams bytes
+/// in. A crash, power loss, or an external reader (Syncthing, antivirus,
+/// the file watcher itself) catching the file mid-write sees a truncated
+/// or empty file. The tmp + sync + rename pattern guarantees the
+/// destination is either the old content or the complete new content —
+/// never an intermediate state. POSIX guarantees rename atomicity
+/// within a single filesystem, and `tokio::fs::rename` routes through
+/// `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` on Windows for the
+/// same behaviour there.
+///
+/// The tmp filename uses a `.tmp` extension so the watcher's
+/// `is_editor_scratch_file` filter ignores it; reindex doesn't fire on
+/// every save.
+async fn atomic_write(target: &Path, content: &[u8]) -> std::io::Result<()> {
+    let parent = target.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "atomic_write: target has no parent directory",
+        )
+    })?;
+    tokio::fs::create_dir_all(parent).await?;
+
+    let file_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("write");
+    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp_name = format!(".{file_name}.{pid}.{counter}.inkycap.tmp");
+    let tmp_path = parent.join(&tmp_name);
+
+    let result = async {
+        let mut f = tokio::fs::File::create(&tmp_path).await?;
+        f.write_all(content).await?;
+        f.sync_data().await?;
+        // Drop the handle before rename — on Windows the rename can
+        // otherwise fail with a sharing-violation error.
+        drop(f);
+        tokio::fs::rename(&tmp_path, target).await
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn write_file_persists_content_and_leaves_no_tmp() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LocalNoteboxStorage::new(dir.path().to_path_buf()).unwrap();
+        let rel = Path::new("note.typ");
+
+        storage.write_file(rel, "hello world").await.unwrap();
+        assert_eq!(storage.read_file(rel).await.unwrap(), "hello world");
+
+        // No stray .tmp siblings after a successful write.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s == "tmp")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "atomic_write left {} stray tmp file(s)", leftovers.len());
+    }
+
+    #[tokio::test]
+    async fn overwrite_preserves_existing_until_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LocalNoteboxStorage::new(dir.path().to_path_buf()).unwrap();
+        let rel = Path::new("note.typ");
+
+        storage.write_file(rel, "v1").await.unwrap();
+        assert_eq!(storage.read_file(rel).await.unwrap(), "v1");
+
+        // Overwrite with a larger payload; the destination must either be
+        // the prior content or the new content at every observable moment
+        // — never an empty/truncated intermediate.
+        let big = "v2".repeat(50_000);
+        storage.write_file(rel, &big).await.unwrap();
+        assert_eq!(storage.read_file(rel).await.unwrap(), big);
+    }
+
+    #[tokio::test]
+    async fn write_creates_missing_parent_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LocalNoteboxStorage::new(dir.path().to_path_buf()).unwrap();
+        let rel = Path::new("nested/sub/note.typ");
+
+        storage.write_file(rel, "deep").await.unwrap();
+        assert_eq!(storage.read_file(rel).await.unwrap(), "deep");
+    }
 }

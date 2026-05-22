@@ -231,6 +231,11 @@ pub struct BookExportConfig {
     pub subtitle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    /// Multi-author byline + CRediT roster. Supersedes the single `author`
+    /// field above when non-empty; `author` is retained for backward
+    /// compatibility and the simple single-author case.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contributors: Vec<Contributor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
     #[serde(default, rename = "abstract", skip_serializing_if = "Option::is_none")]
@@ -257,6 +262,58 @@ pub struct BookExportConfig {
     pub include_bibliography: Option<bool>,
 }
 
+/// One contributor to a collection — drives the Book Metadata byline and
+/// CRediT statement, and (when `is_collaborator`) the package-handoff
+/// identity roster.
+///
+/// The two role axes are orthogonal: a person can be a bibliographic
+/// `author` *and* hold CRediT roles like Conceptualization. `handle` is
+/// the frozen identity used in vector clocks — see [`crate::collab::identity`].
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct Contributor {
+    /// Display name. Free to change; identity rides on `handle`, not this.
+    pub name: String,
+    /// CSL/Hayagriva bibliographic role: "author", "editor", "translator",
+    /// etc. `None` means a plain author. Controls byline / citation form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub biblio_role: Option<String>,
+    /// Canonical CRediT role IDs (e.g.
+    /// "https://credit.niso.org/contributor-roles/conceptualization/").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credit_roles: Vec<String>,
+    /// True when this contributor exchanges packages and edits notes.
+    /// Such rows carry a frozen `handle`; pure-byline contributors don't.
+    #[serde(default)]
+    pub is_collaborator: bool,
+    /// Frozen identity handle, set once the row is first used as a
+    /// collaborator. `None` for non-collaborators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+/// Package-handoff collaboration settings for a collection.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct CollectionCollaboration {
+    /// When true, this collection participates in package collaboration:
+    /// notes get a `collabid`, the version sidecar is maintained, and the
+    /// package/import actions are available.
+    pub enabled: bool,
+    /// Shared bibliography file (notebox-root-relative). Materialized when
+    /// collaboration is enabled; the only bibliography source allowed
+    /// while collaborative (Zotero-live can't travel in a package).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bibliography_file: Option<String>,
+    /// Receiver-controlled folder (notebox-root-relative) where notes new to
+    /// this machine are written on import. A note's *location* is purely
+    /// local — identity rides on `collabid`, not the path — so incoming
+    /// notes don't replicate the sender's tree. `None` resolves to
+    /// `Collaboration/<collection-name>` at apply time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_folder: Option<String>,
+}
+
 /// A parsed `.collection` file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectionFile {
@@ -276,6 +333,10 @@ pub struct CollectionFile {
     /// dialog time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<BookExportConfig>,
+    /// Package-handoff collaboration config. None means non-collaborative
+    /// (the default); no YAML noise on collections that never opt in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collaboration: Option<CollectionCollaboration>,
     #[serde(default)]
     pub metadata: Option<HashMap<String, String>>,
     #[serde(default)]
@@ -351,6 +412,7 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
         bibliography_file: None,
         style: None,
         book: None,
+        collaboration: None,
         metadata: None,
         filters: Some(FilterGroup {
             and: Some(vec![
@@ -386,6 +448,7 @@ pub fn default_collection_file() -> CollectionFile {
         bibliography_file: None,
         style: None,
         book: None,
+        collaboration: None,
         metadata: None,
         filters: None,
         formulas: None,

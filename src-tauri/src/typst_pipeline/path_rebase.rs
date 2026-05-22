@@ -59,6 +59,67 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     out
 }
 
+/// Collect the string-literal first arguments of path-bearing calls
+/// (`image`, `read`, `embed`, `bibliography`) in `source`, returning the
+/// raw path values exactly as written — absolute (`/Assets/x.png`),
+/// relative, or otherwise. The caller decides which to keep and how to
+/// resolve them (see `collab::attachments`). Non-string arguments
+/// (variables, function calls) are skipped because their target can't be
+/// known statically.
+///
+/// Used to discover which attachment files a note references so they can
+/// be bundled into a collaboration package.
+pub fn extract_referenced_paths(source: &str) -> Vec<String> {
+    let root = parse(source);
+    let link = LinkedNode::new(&root);
+    let mut out = Vec::new();
+    collect_paths(&link, &mut out);
+    out
+}
+
+fn collect_paths(node: &LinkedNode<'_>, out: &mut Vec<String>) {
+    if node.kind() == SyntaxKind::FuncCall {
+        if let Some(call) = node.cast::<ast::FuncCall>() {
+            if let ast::Expr::Ident(ident) = call.callee() {
+                if PATH_BEARING_CALLS.contains(&ident.as_str()) {
+                    if let Some(p) = first_string_arg_value(node) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+    }
+    for child in node.children() {
+        collect_paths(&child, out);
+    }
+}
+
+/// Read the first positional argument of a FuncCall as a string literal's
+/// value, or `None` if the first positional slot isn't a string literal.
+fn first_string_arg_value(call_node: &LinkedNode<'_>) -> Option<String> {
+    let args_node = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
+    for child in args_node.children() {
+        match child.kind() {
+            SyntaxKind::LeftParen
+            | SyntaxKind::RightParen
+            | SyntaxKind::Comma
+            | SyntaxKind::Space
+            | SyntaxKind::Parbreak
+            | SyntaxKind::LineComment
+            | SyntaxKind::BlockComment => continue,
+            SyntaxKind::Str => {
+                let s = child.cast::<ast::Str>()?;
+                return Some(s.get().to_string());
+            }
+            // First positional slot isn't a string literal — nothing to extract.
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// Recursively walk the AST collecting `(range, replacement)` edits.
 fn collect_edits(
     node: &LinkedNode<'_>,
@@ -469,6 +530,22 @@ mod tests {
         let src = "#{ image(\"daisy.png\") }";
         let out = rebase(src, "notes");
         assert_eq!(out, "#{ image(\"/notes/daisy.png\") }");
+    }
+
+    // ── extract_referenced_paths ───────────────────────────────────
+
+    #[test]
+    fn extract_collects_path_bearing_calls_verbatim() {
+        let src = "#image(\"/Assets/fig.png\")\ntext\n#read(\"data/x.csv\")\n#embed(\"/docs/a.pdf\")";
+        let got = extract_referenced_paths(src);
+        assert_eq!(got, vec!["/Assets/fig.png", "data/x.csv", "/docs/a.pdf"]);
+    }
+
+    #[test]
+    fn extract_skips_non_literal_and_non_path_calls() {
+        let src = "#let p = \"x.png\"\n#image(p)\n#strong(\"hi\")\n#image(\"/ok.png\")";
+        let got = extract_referenced_paths(src);
+        assert_eq!(got, vec!["/ok.png"]);
     }
 
     #[test]
