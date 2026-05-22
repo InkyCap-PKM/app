@@ -31,7 +31,6 @@ import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
-import CollabPanel from "./CollabPanel";
 import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
@@ -785,7 +784,7 @@ const CollectionBookEditor: Component<{
 
 // ── Collection metadata editor ────────────────────────────────────
 
-type SettingsTab = "common" | "style" | "book" | "collab";
+type SettingsTab = "common" | "style" | "book";
 
 const CollectionMetadataEditor: Component<{
   collectionFile: CollectionFile;
@@ -916,16 +915,6 @@ const CollectionMetadataEditor: Component<{
               onClick={() => setActiveTab("book")}
             >
               Book Metadata
-            </button>
-            <button
-              role="tab"
-              type="button"
-              class="collection-meta__tab"
-              classList={{ "is-active": activeTab() === "collab" }}
-              aria-selected={activeTab() === "collab"}
-              onClick={() => setActiveTab("collab")}
-            >
-              Collaboration
             </button>
           </div>
 
@@ -1091,14 +1080,6 @@ const CollectionMetadataEditor: Component<{
             />
           </Show>
 
-          <Show when={activeTab() === "collab"}>
-            <CollabPanel
-              collectionPath={props.collectionPath}
-              collectionName={props.collectionName}
-              collectionFile={props.collectionFile}
-              onSaved={props.onSaved}
-            />
-          </Show>
         </div>
       </Show>
     </div>
@@ -1181,8 +1162,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       type === "agenda" ? ipc.getCollectionAgenda(path, view) : [],
   );
 
+  // `propertyVersion()` is in the key so the file refetches when collaboration
+  // state changes from the right-panel Collaboration section (which bumps the
+  // property version on enable/pause/disable) — that keeps `isCollaborative()`
+  // and the filter lock in sync without a direct callback into this component.
   const [collectionFile, { refetch: refetchCollection }] = createResource(
-    () => ({ path: props.path, tick: refreshTick() }),
+    () => ({ path: props.path, tick: refreshTick(), pv: propertyVersion() }),
     async ({ path }) => ipc.getCollectionFile(path),
   );
 

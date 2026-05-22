@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import type { Contributor } from "../lib/types";
 import { Dropdown } from "./Dropdown";
+import { settings } from "../stores/settings";
 
 /// The Book Metadata contributors table: each row is a contributor with a
 /// display name, a bibliographic role (drives the byline), CRediT roles
@@ -47,9 +48,13 @@ const ContributorsEditor: Component<{
   }
 
   function addRow() {
+    // The first contributor defaults to the user's global Author Name (set in
+    // Settings › Overview › Collaboration) — "you, as first author" is the
+    // common case. Later rows start blank.
+    const defaultName = rows.length === 0 ? settings.collaboration.author_name.trim() : "";
     setRows(
       produce((arr) => {
-        arr.push({ name: "", biblio_role: null, credit_roles: [], is_collaborator: false, handle: null });
+        arr.push({ name: defaultName, biblio_role: null, credit_roles: [], is_collaborator: false, handle: null });
       }),
     );
     flush();
@@ -67,14 +72,24 @@ const ContributorsEditor: Component<{
     // Mint a handle the first time a row becomes a collaborator; thereafter
     // it's frozen (renaming the person doesn't disturb version history).
     if (on && !handle) {
-      const taken = rows
-        .filter((_, idx) => idx !== i)
-        .map((r) => r.handle)
-        .filter((h): h is string => !!h);
-      try {
-        handle = await ipc.collabSeedHandle(rows[i].name, taken);
-      } catch {
-        handle = null;
+      // When this row is "you" (its name matches the global Author Name) and a
+      // global handle is set, reuse it so your contributor row and your collab
+      // identity agree. Otherwise seed a fresh handle from the name.
+      const globalName = settings.collaboration.author_name.trim();
+      const globalHandle = settings.collaboration.handle.trim();
+      const rowName = rows[i].name.trim();
+      if (globalHandle && rowName && rowName === globalName) {
+        handle = globalHandle;
+      } else {
+        const taken = rows
+          .filter((_, idx) => idx !== i)
+          .map((r) => r.handle)
+          .filter((h): h is string => !!h);
+        try {
+          handle = await ipc.collabSeedHandle(rows[i].name, taken);
+        } catch {
+          handle = null;
+        }
       }
     }
     setRows(i, { is_collaborator: on, handle });

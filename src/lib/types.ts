@@ -382,6 +382,15 @@ export interface BehaviourSettings {
   switch_to_new_tab: boolean;
 }
 
+/** User-global collaboration identity. Optional defaults: the handle
+ *  pre-fills a collection's per-collab handle (overridable per collection)
+ *  and the author name is offered as a default Book Metadata contributor.
+ *  A blank handle falls back to prompting when enabling collaboration. */
+export interface CollaborationSettings {
+  author_name: string;
+  handle: string;
+}
+
 export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
 
 export interface FontChoice {
@@ -420,6 +429,7 @@ export interface UserSettings {
   fonts: FontSettings;
   behaviour: BehaviourSettings;
   backup: BackupSettings;
+  collaboration: CollaborationSettings;
 }
 
 // ============================================================================
@@ -797,8 +807,14 @@ export interface ReviewDetail {
   incoming_content: string | null;
 }
 
+/// The three-way collaboration lifecycle (Disable / Pause / Enable pill).
+/// `disabled` = no sidecar (pristine default); `paused` = history kept but
+/// inactive; `enabled` = active. Mirrors the Rust `CollabState`.
+export type CollabState = "disabled" | "paused" | "enabled";
+
 export interface CollabStatus {
   enabled: boolean;
+  state: CollabState;
   handle: string | null;
   note_count: number;
 }

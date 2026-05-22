@@ -347,7 +347,7 @@ pub fn run() {
             commands::collab::collab_set_identity,
             commands::collab::collab_get_identity,
             commands::collab::collab_seed_handle,
-            commands::collab::collab_enable,
+            commands::collab::collab_set_state,
             commands::collab::collab_status,
             commands::collab::collab_set_import_folder,
             commands::collab::collab_package,

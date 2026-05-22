@@ -38,6 +38,7 @@ import type {
   FileCitation,
   AggregatedCitation,
   CollabStatus,
+  CollabState,
   CollabEnableReport,
   PackageReport,
   ReviewResult,
@@ -1398,13 +1399,21 @@ export async function collabGetIdentity(
   return invoke<string | null>("collab_get_identity", { collectionPath });
 }
 
-/** Mark a collection collaborative: stamp collabids, seed the sidecar,
- *  pin identity, flip the enabled flag. Requires a membership filter. */
-export async function collabEnable(
+/** Move a collection between collaboration states (the Disable / Pause /
+ *  Enable pill). `enabled` sets up fresh or resumes losslessly from paused;
+ *  `paused` keeps history but goes inactive; `disabled` tears down the
+ *  sidecar. A handle is required to enable/prepare (falls back to the pinned
+ *  identity when omitted). Enabling requires a membership filter. */
+export async function collabSetState(
   collectionPath: string,
-  handle: string,
+  target: CollabState,
+  handle?: string,
 ): Promise<CollabEnableReport> {
-  return invoke<CollabEnableReport>("collab_enable", { collectionPath, handle });
+  return invoke<CollabEnableReport>("collab_set_state", {
+    collectionPath,
+    target,
+    handle: handle ?? null,
+  });
 }
 
 export async function collabStatus(

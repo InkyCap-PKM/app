@@ -94,6 +94,10 @@ const DEFAULTS: UserSettings = {
     password_protected: false,
     filename_pattern: "inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip",
   },
+  collaboration: {
+    author_name: "",
+    handle: "",
+  },
 };
 
 // ── Per-notebox defaults ─────────────────────────────────────────────
