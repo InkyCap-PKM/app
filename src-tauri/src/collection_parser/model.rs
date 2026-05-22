@@ -260,6 +260,11 @@ pub struct BookExportConfig {
     /// to `true` (bibliography included) when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_bibliography: Option<bool>,
+    /// When `Some(false)`, the CRediT contributions statement is omitted from
+    /// the book export even if contributors carry CRediT roles. The
+    /// multi-author byline still renders. Defaults to `true` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_credit_statement: Option<bool>,
 }
 
 /// One contributor to a collection — drives the Book Metadata byline and

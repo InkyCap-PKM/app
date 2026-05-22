@@ -11,6 +11,7 @@ import type {
   LinkInfo,
   PropertyValue,
   CollectionFile,
+  ContributorCatalogs,
   SortRule,
   FilterGroup,
   NoteboxIndex,
@@ -41,6 +42,7 @@ import type {
   PackageReport,
   ReviewResult,
   ReviewDecision,
+  BibDecision,
   ApplyReport,
   ImportPackageResult,
 } from "./types";
@@ -182,6 +184,16 @@ export async function saveCollectionFile(
 ): Promise<void> {
   assertNoteboxWritable();
   return invoke<void>("save_collection_file", { collectionPath, collectionFile });
+}
+
+/** Role vocabularies (CRediT + bibliographic) for the contributors editor. */
+export async function contributorCatalogs(): Promise<ContributorCatalogs> {
+  return invoke<ContributorCatalogs>("contributor_catalogs");
+}
+
+/** Mint a filename-safe collaborator handle from a name, unique against `taken`. */
+export async function collabSeedHandle(name: string, taken: string[]): Promise<string> {
+  return invoke<string>("collab_seed_handle", { name, taken });
 }
 
 export async function deleteCollectionFile(collectionPath: string): Promise<void> {
@@ -1426,12 +1438,14 @@ export async function collabImport(
   return invoke<ReviewResult>("collab_import", { collectionPath, packagePath });
 }
 
-/** Apply review decisions from the staged import to the working notebox. */
+/** Apply review decisions from the staged import to the working notebox.
+ *  `bibDecisions` resolves conflicting bibliography keys (omitted ⇒ keep local). */
 export async function collabReviewApply(
   collectionPath: string,
   decisions: ReviewDecision[],
+  bibDecisions: BibDecision[] = [],
 ): Promise<ApplyReport> {
-  return invoke<ApplyReport>("collab_review_apply", { collectionPath, decisions });
+  return invoke<ApplyReport>("collab_review_apply", { collectionPath, decisions, bibDecisions });
 }
 
 /** Import a package without a pre-existing collection: creates the bundled

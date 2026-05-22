@@ -21,6 +21,16 @@
   --right-width: 0px;
 }
 
+/* Native checkboxes/radios follow the app accent (teal) instead of the
+   desktop palette (which paints them the OS highlight colour, e.g. orange).
+   themes.css sets `color-scheme` for the same intent; `accent-color` is the
+   piece that actually tints the control. App-wide so every checkbox matches
+   — individual components no longer need their own accent-color rule. */
+.app-shell input[type="checkbox"],
+.app-shell input[type="radio"] {
+  accent-color: var(--accent);
+}
+
 /* Drag handles for resizing the side panels. Positioned absolutely so
    they sit on the column boundary without taking up grid space. */
 .resize-handle {
@@ -4090,6 +4100,93 @@ svg.lucide {
   flex: 0 0 auto;
   width: auto;
   min-width: 90px;
+}
+
+/* Contributors editor (Book Metadata) */
+.contributors-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contributors-editor__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* All row controls share one height/metric so inputs, the dropdown, and the
+   buttons line up. The dropdown trigger and .settings__text-input already use
+   4px 8px / --text-md; the toolbar buttons default to a smaller size, so they
+   are matched here. */
+.contributors-editor__name,
+.contributors-editor__handle {
+  flex: 1 1 160px;
+  min-width: 120px;
+  width: auto;
+}
+
+.contributors-editor__role {
+  flex: 0 0 auto;
+  min-width: 150px;
+}
+
+.contributors-editor__handle {
+  font-family: var(--font-mono, monospace);
+}
+
+.contributors-editor__btn {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: var(--text-md);
+}
+
+.contributors-editor__remove {
+  /* Square-ish, just the glyph. */
+  padding: 4px 9px;
+}
+
+.contributors-editor__collab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+/* Accent tint comes from the app-wide rule near the top; just normalize the
+   box margin so it aligns with the row controls. */
+.contributors-editor input[type="checkbox"] {
+  margin: 0;
+}
+
+.contributors-editor__credit {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 12px;
+  padding: 8px 0 8px 10px;
+  margin: 2px 0 2px 4px;
+  border-left: 2px solid var(--accent);
+}
+
+.contributors-editor__credit-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+}
+
+.contributors-editor__credit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  margin-top: 2px;
 }
 
 .collection-meta__add-key {

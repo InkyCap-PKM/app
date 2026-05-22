@@ -11,6 +11,7 @@
 pub mod bibliography;
 pub mod book_wrapper;
 pub mod compiler;
+pub mod contributors;
 pub mod diagnostic;
 pub mod fonts;
 pub mod note_rewriter;

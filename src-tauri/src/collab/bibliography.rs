@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use biblatex::Bibliography;
 
 use super::content_hash;
+use super::versions::{BibEntryMeta, BibVersions};
 
 /// One parsed entry: its canonical serialized form and a content hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,6 +120,37 @@ pub fn merge_bibtex(
     Ok(MergedBib { bibtex, hashes, conflicts, added })
 }
 
+/// Reconcile a sidecar's bibliography section with the actual `.bib` text:
+/// refresh every entry's hash, attribute keys new to the sidecar to
+/// `handle`, and drop keys no longer in the file (the section is an index of
+/// the file's current contents). `added_by` is preserved for keys that
+/// persist. Returns whether anything changed.
+///
+/// Without this the sidecar's bibliography stays empty and the importer can
+/// never see a bib addition or conflict. A malformed `.bib` leaves the
+/// section untouched (returns false) rather than discarding tracking — the
+/// same don't-lose-data stance as [`parse_entries`].
+pub fn refresh_bib_versions(bib: &mut BibVersions, bibtex: &str, handle: &str) -> bool {
+    let Ok(entries) = parse_entries(bibtex) else {
+        return false;
+    };
+    let mut next = BTreeMap::new();
+    for (key, rec) in entries {
+        let added_by = bib
+            .0
+            .get(&key)
+            .map(|m| m.added_by.clone())
+            .unwrap_or_else(|| handle.to_string());
+        next.insert(key, BibEntryMeta { hash: rec.hash, added_by });
+    }
+    if bib.0 == next {
+        false
+    } else {
+        bib.0 = next;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +233,40 @@ mod tests {
     #[test]
     fn malformed_bib_errors() {
         assert!(merge_bibtex("@@@ not valid {", SMITH, &HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn refresh_indexes_keys_preserves_added_by_and_drops_removed() {
+        let mut bib = BibVersions::default();
+
+        // First sync from a one-entry file: new key attributed to alice.
+        assert!(refresh_bib_versions(&mut bib, SMITH, "alice"));
+        assert_eq!(bib.0["smith2020"].added_by, "alice");
+        let smith_hash = bib.0["smith2020"].hash.clone();
+
+        // Re-sync identical content under a different handle: no change, and
+        // added_by stays alice (preserved for persisting keys).
+        assert!(!refresh_bib_versions(&mut bib, SMITH, "bob"));
+        assert_eq!(bib.0["smith2020"].added_by, "alice");
+
+        // Add a second entry: jones is new (attributed to bob), smith
+        // unchanged.
+        let two = format!("{SMITH}\n\n{JONES}");
+        assert!(refresh_bib_versions(&mut bib, &two, "bob"));
+        assert_eq!(bib.0["smith2020"].added_by, "alice");
+        assert_eq!(bib.0["jones2019"].added_by, "bob");
+        assert_eq!(bib.0["smith2020"].hash, smith_hash, "hash stable across resync");
+
+        // Changed content for smith → hash updates, added_by preserved.
+        assert!(refresh_bib_versions(&mut bib, SMITH_ALT, "carol"));
+        assert_ne!(bib.0["smith2020"].hash, smith_hash);
+        assert_eq!(bib.0["smith2020"].added_by, "alice");
+        // jones no longer in the file → dropped from the index.
+        assert!(!bib.0.contains_key("jones2019"));
+
+        // Malformed input leaves the section untouched.
+        let before = bib.clone();
+        assert!(!refresh_bib_versions(&mut bib, "@@@ bad {", "dave"));
+        assert_eq!(bib, before);
     }
 }

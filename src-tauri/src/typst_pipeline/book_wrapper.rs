@@ -19,9 +19,11 @@
 use std::path::PathBuf;
 
 use crate::collection_parser::model::{
-    BookExportConfig, BookPageNumbering, BookWikilinkMode, InjectChapterHeading,
+    BookExportConfig, BookPageNumbering, BookWikilinkMode, Contributor, InjectChapterHeading,
 };
 use crate::notebox_package::strip_note_preamble;
+use crate::typst_pipeline::contributors;
+use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -45,7 +47,13 @@ pub struct BookNote {
 pub struct BookExportOptions {
     pub title: Option<String>,
     pub subtitle: Option<String>,
+    /// Legacy single-author string. Retained as a fallback for the document
+    /// metadata when there are no `contributors`; the byline prefers the
+    /// roster.
     pub author: Option<String>,
+    /// Multi-author + CRediT roster. Drives the title-page byline and, when
+    /// non-empty, the document `author` metadata.
+    pub contributors: Vec<Contributor>,
     pub date: Option<String>,
     pub abstract_text: Option<String>,
     pub toc_depth: u8,
@@ -56,6 +64,9 @@ pub struct BookExportOptions {
     pub include_outline: bool,
     pub page_numbering: BookPageNumbering,
     pub include_bibliography: bool,
+    /// Render the CRediT contributions statement (when contributors carry
+    /// CRediT roles). The byline renders regardless.
+    pub include_credit_statement: bool,
 }
 
 impl BookExportOptions {
@@ -67,6 +78,7 @@ impl BookExportOptions {
             title: cfg.title,
             subtitle: cfg.subtitle,
             author: cfg.author,
+            contributors: cfg.contributors,
             date: cfg.date,
             abstract_text: cfg.abstract_text,
             toc_depth: cfg.toc_depth.unwrap_or(2),
@@ -77,6 +89,7 @@ impl BookExportOptions {
             include_outline: cfg.include_outline.unwrap_or(true),
             page_numbering: cfg.page_numbering.unwrap_or_default(),
             include_bibliography: cfg.include_bibliography.unwrap_or(true),
+            include_credit_statement: cfg.include_credit_statement.unwrap_or(true),
         }
     }
 }
@@ -501,11 +514,22 @@ pub fn build_book_source(
             typst_escape(title)
         ));
     }
-    if let Some(author) = &options.author {
-        doc_args.push(format!(
-            "author: \"{}\"",
-            typst_escape(author)
-        ));
+    // The document author flows from the contributor roster (its bibliographic
+    // authors), falling back to the legacy single `author` string. Emitted as
+    // a string for one author and an array for several, both of which
+    // `document(author:)` accepts.
+    let authors = contributors::document_author_names(&options.contributors, options.author.as_deref());
+    match authors.len() {
+        0 => {}
+        1 => doc_args.push(format!("author: \"{}\"", typst_escape(&authors[0]))),
+        _ => {
+            let list = authors
+                .iter()
+                .map(|a| format!("\"{}\"", typst_escape(a)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            doc_args.push(format!("author: ({list})"));
+        }
     }
     if !doc_args.is_empty() {
         s.push_str(&format!("#set document({})\n", doc_args.join(", ")));
@@ -518,11 +542,17 @@ pub fn build_book_source(
         BookWikilinkMode::External => "external",
         BookWikilinkMode::Plain => "plain",
     };
-    let chapters_array = notes
+    let stems: Vec<String> = notes
         .iter()
         .map(|n| format!("\"{}\"", typst_escape(&n.stem)))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect();
+    // A single element needs a trailing comma — `("x")` is parenthesized
+    // grouping (a string), not a one-element array, and `set-merged-context`
+    // asserts an array. (Same Typst gotcha as the contributors serializer.)
+    let chapters_array = match stems.len() {
+        1 => format!("{},", stems[0]),
+        _ => stems.join(", "),
+    };
     s.push_str(&format!(
         "#set-merged-context(active: true, mode: \"{}\", chapters: ({}))\n",
         mode_str, chapters_array
@@ -666,23 +696,23 @@ pub fn build_book_source(
             InjectChapterHeading::Fallback => !starts_with_heading,
         };
 
-        let chapter_label = format!("chap-{}", note.stem);
+        // Chapter anchor for in-book wikilink resolution, emitted via the
+        // package's `chapter-anchor` (which builds the label with the
+        // `label()` function). Using the function form — not `<chap-stem>`
+        // markup-label syntax — is essential: note stems routinely contain
+        // spaces and parens (e.g. "Information Technology and Libraries
+        // (ITAL)"), which are illegal in literal `<...>` labels and would
+        // otherwise derail the whole merged compile with "unclosed label".
+        // Placed at the chapter top so a wikilink lands at the start
+        // regardless of the note's own first heading.
+        s.push_str(&chapter_anchor_call(&note.stem));
 
         if inject {
             let title = note
                 .title
                 .clone()
                 .unwrap_or_else(|| humanize_stem(&note.stem));
-            s.push_str(&format!(
-                "= {} <{}>\n",
-                escape_typst_markup(&title),
-                chapter_label
-            ));
-        } else {
-            // Place the chapter label on its own line so wikilinks resolving
-            // to `<chap-stem>` land at the start of the chapter regardless
-            // of the note's own first heading.
-            s.push_str(&format!("#metadata(()) <{}>\n", chapter_label));
+            s.push_str(&format!("= {}\n", escape_typst_markup(&title)));
         }
 
         s.push_str(&body);
@@ -731,10 +761,17 @@ fn render_title_page(options: &BookExportOptions) -> String {
             escape_typst_markup(subtitle)
         ));
     }
-    if options.author.is_some() || options.date.is_some() {
+    // Byline: the contributor roster (grouped by bibliographic role) when
+    // present, else the legacy single-author line.
+    let byline = contributors::byline_call(&options.contributors);
+    let has_byline = byline.is_some() || options.author.is_some();
+    if has_byline || options.date.is_some() {
         s.push_str("  #v(2em)\n");
     }
-    if let Some(author) = &options.author {
+    if let Some(call) = &byline {
+        s.push_str("  ");
+        s.push_str(call); // already newline-terminated
+    } else if let Some(author) = &options.author {
         s.push_str(&format!(
             "  #text(size: 1.1em)[{}]\\ \n",
             escape_typst_markup(author)
@@ -744,11 +781,20 @@ fn render_title_page(options: &BookExportOptions) -> String {
         s.push_str(&format!("  {}\n", escape_typst_markup(date)));
     }
     s.push_str("]\n#pagebreak()\n");
+
+    // CRediT contributions statement on its own page (after the centred
+    // title block), when enabled and any contributor carries CRediT roles.
+    if options.include_credit_statement {
+        if let Some(call) = contributors::credit_statement_call(&options.contributors) {
+            s.push_str(&call); // newline-terminated
+            s.push_str("#pagebreak()\n");
+        }
+    }
     s
 }
 
 /// Escape a string for safe interpolation into a Typst quoted string literal.
-fn typst_escape(s: &str) -> String {
+pub(crate) fn typst_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -769,6 +815,93 @@ fn to_roman_pattern(pattern: &str) -> String {
         return pattern.to_string();
     }
     pattern.replace('1', "i")
+}
+
+/// The marker the wrapper emits at each chapter's start. Used both to emit
+/// the anchor and to map a compile error's source offset back to the note
+/// it occurred in ([`chapter_at_offset`]).
+const CHAPTER_ANCHOR_PREFIX: &str = "#chapter-anchor(\"";
+
+/// The `#chapter-anchor("<stem>")` call emitted at a chapter's start. The
+/// stem is escaped for a Typst string literal.
+fn chapter_anchor_call(stem: &str) -> String {
+    format!("{}{}\")\n", CHAPTER_ANCHOR_PREFIX, typst_escape(stem))
+}
+
+/// Read a Typst string-literal body up to its closing `"`, unescaping `\"`
+/// and `\\`. `s` must start at the first character *after* the opening
+/// quote. Returns the unescaped string, or `None` if unterminated.
+fn read_typst_string_body(s: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => out.push(chars.next()?),
+            '"' => return Some(out),
+            _ => out.push(c),
+        }
+    }
+    None
+}
+
+/// Map a byte offset in a merged book source to the stem of the chapter
+/// (note) that contains it, by locating the `#chapter-anchor("<stem>")`
+/// markers. Returns `None` for offsets before the first chapter — i.e. the
+/// front matter (title page, abstract, outline).
+pub fn chapter_at_offset(source: &str, offset: usize) -> Option<String> {
+    let mut current = None;
+    let mut search = 0usize;
+    while let Some(rel) = source[search..].find(CHAPTER_ANCHOR_PREFIX) {
+        let anchor_at = search + rel;
+        if anchor_at > offset {
+            break; // this chapter begins after the target offset
+        }
+        let stem_start = anchor_at + CHAPTER_ANCHOR_PREFIX.len();
+        if let Some(stem) = read_typst_string_body(&source[stem_start..]) {
+            current = Some(stem);
+        }
+        search = stem_start;
+    }
+    current
+}
+
+/// Turn a failed book export's diagnostics into a message that names the
+/// note each error came from, so the author knows what to fix instead of
+/// getting a bare "expected expression". Errors are grouped by chapter
+/// (located via [`chapter_at_offset`]); duplicate messages within a chapter
+/// are collapsed. Spans outside the merged source (an imported file, e.g.
+/// the package) and front-matter spans are grouped under their own labels.
+pub fn describe_book_diagnostics(source: &str, diagnostics: &[TypstDiagnostic]) -> String {
+    // (label, ordered-unique messages), preserving first-seen label order.
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for d in diagnostics.iter().filter(|d| d.severity == "error") {
+        let label = match &d.primary {
+            Some(p) if p.is_main => chapter_at_offset(source, p.start)
+                .map(|stem| format!("\"{stem}\""))
+                .unwrap_or_else(|| "the book front matter".to_string()),
+            Some(_) => "an imported file".to_string(),
+            None => "the book".to_string(),
+        };
+        let entry = match groups.iter_mut().find(|(l, _)| *l == label) {
+            Some(e) => &mut e.1,
+            None => {
+                groups.push((label, Vec::new()));
+                &mut groups.last_mut().unwrap().1
+            }
+        };
+        if !entry.contains(&d.message) {
+            entry.push(d.message.clone());
+        }
+    }
+
+    if groups.is_empty() {
+        return "compilation failed".to_string();
+    }
+    let parts: Vec<String> = groups
+        .iter()
+        .map(|(label, msgs)| format!("In {label}: {}.", msgs.join("; ")))
+        .collect();
+    format!("compilation failed. {}", parts.join(" "))
 }
 
 /// Escape user-provided text for Typst content/markup context. Backslashes
@@ -1057,7 +1190,10 @@ After
         let mut n = note("methods", "Body without heading.\n");
         n.title = Some("Methods".to_string());
         let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
-        assert!(src.contains("= Methods <chap-methods>"));
+        // Anchor is emitted via the package function (label()-based, so
+        // space/paren stems survive), and the heading is injected separately.
+        assert!(src.contains("#chapter-anchor(\"methods\")"));
+        assert!(src.contains("= Methods"));
     }
 
     #[test]
@@ -1067,11 +1203,15 @@ After
         let mut n = note("intro", "= Introduction\nBody.\n");
         n.title = Some("Introduction".to_string());
         let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
-        // The injected heading variant is the one that puts the title on the
-        // same line as the chapter label. Fallback mode should NOT do that
-        // because the note already has its own `=` heading.
-        assert!(!src.contains("= Introduction <chap-intro>"));
-        assert!(src.contains("<chap-intro>"));
+        // Fallback mode must NOT inject a heading when the note already has
+        // one — so `= Introduction` appears exactly once (the note's own),
+        // not a second injected copy. The anchor is still emitted.
+        assert!(src.contains("#chapter-anchor(\"intro\")"));
+        assert_eq!(
+            src.matches("= Introduction").count(),
+            1,
+            "no second (injected) heading; source:\n{src}"
+        );
     }
 
     #[test]
@@ -1081,7 +1221,65 @@ After
         let mut n = note("intro", "= Author's Heading\nBody.\n");
         n.title = Some("Introduction".to_string());
         let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
-        assert!(src.contains("= Introduction <chap-intro>"));
+        assert!(src.contains("#chapter-anchor(\"intro\")"));
+        // Always-inject adds the title heading even though the note has its
+        // own different heading.
+        assert!(src.contains("= Introduction"));
+    }
+
+    #[test]
+    fn chapter_at_offset_maps_to_containing_note() {
+        let src = format!(
+            "front matter\n{}body A\n{}body B\n",
+            chapter_anchor_call("Note One"),
+            chapter_anchor_call("Note (Two)"),
+        );
+        // Front matter (before the first anchor) → None.
+        assert_eq!(chapter_at_offset(&src, 0), None);
+        let a = src.find("body A").unwrap();
+        assert_eq!(chapter_at_offset(&src, a), Some("Note One".to_string()));
+        // A stem with spaces + parens round-trips through the escaped anchor.
+        let b = src.find("body B").unwrap();
+        assert_eq!(chapter_at_offset(&src, b), Some("Note (Two)".to_string()));
+    }
+
+    #[test]
+    fn describe_groups_errors_by_note_and_dedupes() {
+        use crate::typst_pipeline::diagnostic::{TypstDiagnostic, TypstSpan};
+        let src = format!(
+            "front\n{}body A\n{}body B\n",
+            chapter_anchor_call("Alpha"),
+            chapter_anchor_call("Beta"),
+        );
+        let off_a = src.find("body A").unwrap();
+        let off_b = src.find("body B").unwrap();
+        let span = |start: usize| {
+            Some(TypstSpan { path: None, start, end: start, line: None, column: None, is_main: true })
+        };
+        let diag = |msg: &str, start: usize| TypstDiagnostic {
+            severity: "error",
+            message: msg.to_string(),
+            primary: span(start),
+            trace: vec![],
+            hints: vec![],
+        };
+        let diags = vec![
+            diag("expected expression", off_a),
+            diag("expected expression", off_a), // duplicate in same note → collapsed
+            diag("unclosed delimiter", off_b),
+            TypstDiagnostic {
+                severity: "warning",
+                message: "ignored".to_string(),
+                primary: span(off_a),
+                trace: vec![],
+                hints: vec![],
+            },
+        ];
+        let msg = describe_book_diagnostics(&src, &diags);
+        assert!(msg.contains("In \"Alpha\": expected expression."), "{msg}");
+        assert!(msg.contains("In \"Beta\": unclosed delimiter."), "{msg}");
+        assert_eq!(msg.matches("expected expression").count(), 1, "deduped: {msg}");
+        assert!(!msg.contains("ignored"), "warnings excluded: {msg}");
     }
 
     #[test]
