@@ -9,18 +9,23 @@
 //   link-ref("Name")      link reference value (use inside note() fields)
 //   #embed("Name")        transclude another note (emits link)
 //   #callout("type")[...] styled admonition block
+//   #review(body, ...)    reviewer comment annotation (collaboration)
+//   #review-reject(target, reason, ...)  declined-change record (rejection log)
 //   #verse(body, ...)     whitespace-preserving free-form text with inline
 //                         markup (eval'd per line)
 //   #set-notebox(...)       per-document rendering toggles + verse-font
 //   #contributors-byline(roster)  title-page byline grouped by role
 //   #credit-statement(roster)     CRediT contributions statement (book export)
 //
-// Four queryable labels:
+// Six queryable labels:
 //   <inkycap-note>   — at most one per file, attached to a metadata dict
 //   <inkycap-tag>    — one per #tag(...) call, dict (name:)
 //   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
 //   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
 //                      (kind, body, due, done, tags)
+//   <inkycap-review> — one per #review(...) call, dict (by, on)
+//   <inkycap-review-reject> — one per #review-reject(...) call, dict
+//                      (target, reason, by, on)
 
 // ---------------------------------------------------------------------------
 // apply-notebox-defaults / apply-collection-style: document-level styling hooks.
@@ -521,6 +526,75 @@
     [
       #text(fill: color, weight: "bold", size: 0.95em, heading-text) \
       #body
+    ],
+  )
+}
+
+// ---------------------------------------------------------------------------
+// review / review-reject: collaboration reviewer annotations.
+//
+// `#review[comment]` marks a reviewer's remark on note content — a tinted
+// block that stays visible in the reading view but reads as a distinct
+// annotation, not body text. `#review-reject(target, reason)` records that an
+// incoming change was *declined* with a rationale; these accumulate in a
+// per-collection rejection-log note that the host appends to on a Reject
+// decision (the note itself is local audit and is never packaged back).
+//
+// Both emit queryable metadata (`<inkycap-review>` / `<inkycap-review-reject>`)
+// so a Reviews panel can aggregate them later. `by` is a collaborator handle
+// or display name; `on` accepts a datetime or a date string (normalized via
+// `_fmt-date`). `none` for either omits it from the rendered attribution.
+// ---------------------------------------------------------------------------
+
+#let _review-color = rgb("#8b5cf6")
+#let _review-reject-color = rgb("#ef4444")
+
+// Join the present attribution parts ("by — on") with a separator, or "" when
+// neither is given. Shared by both annotations so they read consistently.
+#let _review-attribution(by, on) = {
+  let parts = ()
+  if by != none { parts.push(by) }
+  let d = _fmt-date(on)
+  if d != none { parts.push(d) }
+  parts.join(" · ")
+}
+
+#let review(body, by: none, on: none) = {
+  [#metadata((by: by, on: _fmt-date(on))) <inkycap-review>]
+  let attribution = _review-attribution(by, on)
+  let heading = "Review" + (if attribution != "" { " — " + attribution } else { "" })
+  block(
+    width: 100%,
+    inset: (left: 10pt, rest: 6pt),
+    stroke: (left: 2pt + _review-color),
+    fill: _review-color.lighten(94%),
+    radius: (right: 3pt),
+    [
+      #text(fill: _review-color, weight: "bold", size: 0.8em, heading) \
+      #body
+    ],
+  )
+}
+
+#let review-reject(target, reason, by: none, on: none) = {
+  assert(type(target) == str, message: "review-reject: target must be a string")
+  assert(type(reason) == str, message: "review-reject: reason must be a string")
+  [#metadata((
+    target: target,
+    reason: reason,
+    by: by,
+    on: _fmt-date(on),
+  )) <inkycap-review-reject>]
+  let attribution = _review-attribution(by, on)
+  block(
+    width: 100%,
+    inset: (left: 10pt, rest: 6pt),
+    stroke: (left: 2pt + _review-reject-color),
+    fill: _review-reject-color.lighten(94%),
+    radius: (right: 3pt),
+    [
+      #text(fill: _review-reject-color, weight: "bold", size: 0.85em, "Rejected: " + target)#if attribution != "" [#h(1fr)#text(fill: luma(50%), size: 0.75em, attribution)] \
+      #text(size: 0.95em, reason)
     ],
   )
 }

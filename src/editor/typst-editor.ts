@@ -549,6 +549,22 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
   return exts;
 }
 
+/// Minimal read-only Typst rendering extensions, for embedding note source in
+/// a non-editing surface (the collaboration review diff's `@codemirror/merge`
+/// panes). Reuses the same parser, highlight style, and theme as the main
+/// editor so the markup reads identically — but with editing disabled. Kept
+/// here so Typst highlighting stays owned by one module.
+export function readOnlyTypstExtensions(): Extension[] {
+  return [
+    typstLanguage(),
+    syntaxHighlighting(inkycapHighlight),
+    inkycapTheme,
+    EditorView.lineWrapping,
+    EditorView.editable.of(false),
+    EditorState.readOnly.of(true),
+  ];
+}
+
 export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandle {
   const visualCompartment = new Compartment();
   const autoExpandCompartment = new Compartment();

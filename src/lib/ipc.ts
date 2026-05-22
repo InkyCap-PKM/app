@@ -41,6 +41,7 @@ import type {
   CollabEnableReport,
   PackageReport,
   ReviewResult,
+  ReviewDetail,
   ReviewDecision,
   BibDecision,
   ApplyReport,
@@ -1462,4 +1463,13 @@ export async function collabPendingReview(
   collectionPath: string,
 ): Promise<ReviewResult | null> {
   return invoke<ReviewResult | null>("collab_pending_review", { collectionPath });
+}
+
+/** Read the local + staged-incoming content for one note in a staged import,
+ *  for the side-by-side review diff. Read-only. */
+export async function collabReviewDetail(
+  collectionPath: string,
+  collabid: string,
+): Promise<ReviewDetail> {
+  return invoke<ReviewDetail>("collab_review_detail", { collectionPath, collabid });
 }

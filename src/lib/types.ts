@@ -786,6 +786,17 @@ export interface ReviewResult {
   bib_auto_merges: string[];
 }
 
+/** Local + staged-incoming content for one note, for the review diff.
+ *  Either side may be null: an Added note has no `local_content`; a Deleted
+ *  change has no `incoming_content`. Mirrors `commands/collab.rs::ReviewDetail`. */
+export interface ReviewDetail {
+  collabid: string;
+  /** Absolute path of the local copy (for opening it in a tab), or null. */
+  local_path: string | null;
+  local_content: string | null;
+  incoming_content: string | null;
+}
+
 export interface CollabStatus {
   enabled: boolean;
   handle: string | null;
@@ -816,6 +827,9 @@ export type DecisionAction = "accept" | "reject" | "skip";
 export interface ReviewDecision {
   collabid: string;
   action: DecisionAction;
+  /** Rationale for a `reject` decision, recorded in the collection's
+   *  rejection-log note. Ignored for accept/skip. */
+  reason?: string;
 }
 
 /** Per-key resolution for a conflicting bibliography entry. Keys omitted

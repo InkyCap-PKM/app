@@ -61,7 +61,9 @@ import {
   Code,
   PenLine,
   Eye,
+  MessageSquareCheck,
 } from "lucide-solid";
+import { reviewModeCollabidForPath, isMerged } from "../stores/collab";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
@@ -759,6 +761,19 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__center">
+          <Show when={reviewModeCollabidForPath(props.path) !== null}>
+            <span
+              class="editor-header__review-status"
+              classList={{
+                "editor-header__review-status--merged": isMerged(
+                  reviewModeCollabidForPath(props.path),
+                ),
+              }}
+            >
+              <MessageSquareCheck size={14} />
+              {isMerged(reviewModeCollabidForPath(props.path)) ? "Merged" : "Reviewing"}
+            </span>
+          </Show>
           <Show when={isScrollEnabled(props.tabId)}>
             <span class="editor-header__scroll-status">
               <Show

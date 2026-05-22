@@ -75,6 +75,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
+  { label: "Review comment", category: "InkyCap", insert: '#review[${sel}]', cursorOffset: 8, expandOnInsert: true },
   { label: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
   { label: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
 
