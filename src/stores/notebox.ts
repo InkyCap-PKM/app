@@ -78,6 +78,7 @@ let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
 let fileRenamedUnlisten: (() => void) | null = null;
 let noteSavedUnlisten: (() => void) | null = null;
+let indexUpdatedUnlisten: UnlistenFn | null = null;
 
 // Debounce file-system-event-driven tree refetches. Bulk operations
 // (copying a folder of notes into the notebox) can fire dozens of
@@ -94,6 +95,21 @@ function scheduleTreeRefresh() {
     } catch (err) {
       console.error("File tree refresh failed:", err);
     }
+  }, 150);
+}
+
+// Debounce collection-view refreshes driven by index updates. The backend
+// emits `notebox:index-updated` *after* it has reindexed a created /
+// changed / deleted note, so bumping `propertyVersion` here makes open
+// collection views refetch against a property index that already reflects
+// the change (no race). Debounced so importing or bulk-creating dozens of
+// notes triggers one refetch, not dozens.
+let collectionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleCollectionRefresh() {
+  if (collectionRefreshTimer !== null) clearTimeout(collectionRefreshTimer);
+  collectionRefreshTimer = setTimeout(() => {
+    collectionRefreshTimer = null;
+    bumpPropertyVersion();
   }, 150);
 }
 
@@ -168,6 +184,16 @@ async function ensureIndexEventListeners() {
     };
     document.addEventListener("inkycap:note-saved", handler);
     noteSavedUnlisten = () => document.removeEventListener("inkycap:note-saved", handler);
+  }
+  // The backend reindexes a created/changed/deleted note and then emits
+  // `notebox:index-updated`. Refresh open collection views off this so a
+  // note that newly matches (or stops matching) a collection's filter —
+  // including notes brought in by a collaboration import — appears without
+  // needing a notebox reopen.
+  if (indexUpdatedUnlisten === null) {
+    indexUpdatedUnlisten = await listen("notebox:index-updated", () =>
+      scheduleCollectionRefresh(),
+    );
   }
 }
 

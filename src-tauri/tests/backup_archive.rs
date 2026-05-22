@@ -32,6 +32,7 @@ fn writes_plain_archive_with_forward_slashes() {
         destination: &dest,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -91,6 +92,7 @@ fn writes_encrypted_archive_refuses_extraction_without_password() {
         destination: &dest,
         user_config_root: None,
         password: Some("hunter2-correct-horse-battery-staple"),
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -138,6 +140,7 @@ fn refuses_destination_inside_notebox() {
         destination: &dest,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     });
     assert!(
         result.is_err(),

@@ -26,11 +26,12 @@ import {
   ListChevronsUpDown,
   ListChevronsDownUp,
   CalendarCheck,
+  PackageOpen,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { ask, message, open } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import { anchorPanelMenu } from "../lib/uiMenu";
@@ -186,7 +187,7 @@ function LibraryPlusIcon(props: { size?: number }) {
     >
       <rect width="8" height="18" x="3" y="3" rx="1" />
       <path d="M7 3v18" />
-      <g transform="translate(5.2876713,6.0535492)">
+      <g transform="translate(5.9452055,5.9937734)">
         <path d="m12 7v6" />
         <path d="m9 10h6" />
       </g>
@@ -873,6 +874,31 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
+  async function importCollabPackage() {
+    if (!noteboxInfo()) return;
+    const pkg = await open({
+      title: "Import collaboration package",
+      filters: [{ name: "InkyCap package", extensions: ["zip"] }],
+    });
+    if (!pkg || Array.isArray(pkg)) return;
+    try {
+      const res = await ipc.collabImportPackage(pkg);
+      refresh();
+      // Open the (possibly newly created) collection; its Collaboration tab
+      // resumes the staged review on mount.
+      openTab({ type: "collection", title: res.collection_name, path: res.collection_path });
+      const n = res.review.note_items.length;
+      const where = res.created
+        ? `Created "${res.collection_name}"`
+        : `Imported into "${res.collection_name}"`;
+      const detail =
+        n > 0 ? ` — ${n} change(s) to review in the Collaboration tab.` : " — no incoming changes.";
+      toastSuccess(where + detail);
+    } catch (e) {
+      toastError("Import failed", e);
+    }
+  }
+
   async function deleteCollection(col: CollectionInfo) {
     setContextMenu(null);
     const confirmed = await ask(`Delete collection "${col.name}"?`, { title: "Delete collection", kind: "warning" });
@@ -1165,14 +1191,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         >
           <BookMarked size={18} />
         </button>
-        <button
-          class={`left-sidebar__mode-btn ${mode() === "search" ? "left-sidebar__mode-btn--active" : ""}`}
-          onClick={() => setMode("search")}
-          title="Search (Ctrl+Shift+F)"
-          aria-label="Search"
-        >
-          <Search size={18} />
-        </button>
       </div>
       <div class="left-sidebar__content">
         <Show when={mode() === "collections"}>
@@ -1230,6 +1248,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 aria-pressed={showCollectionSearch()}
               >
                 <Search size={14} />
+              </button>
+              <button
+                class="left-sidebar__icon-btn"
+                onClick={importCollabPackage}
+                title="Import collaboration package"
+                aria-label="Import collaboration package"
+              >
+                <PackageOpen size={16} />
               </button>
               <button
                 class="left-sidebar__add-btn"

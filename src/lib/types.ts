@@ -167,11 +167,33 @@ export interface CollectionFile {
   bibliography_file?: string | null;
   style?: CollectionStyle | null;
   book?: BookExportConfig | null;
+  collaboration?: CollectionCollaboration | null;
   metadata?: Record<string, string> | null;
   filters?: FilterGroup | null;
   formulas?: Record<string, string> | null;
   summaries?: Record<string, string> | null;
   views: ViewDef[];
+}
+
+/// Package-handoff collaboration config on a collection. Mirrors the Rust
+/// `CollectionCollaboration`.
+export interface CollectionCollaboration {
+  enabled: boolean;
+  bibliography_file?: string | null;
+  /// Receiver-controlled folder where notes new to this machine land on
+  /// import. Local only (never travels in a package); `null` resolves to
+  /// `Collaboration/<name>` at apply time.
+  import_folder?: string | null;
+}
+
+/// One contributor in the Book Metadata byline / CRediT roster. Mirrors
+/// the Rust `Contributor`. `handle` is the frozen collaboration identity.
+export interface Contributor {
+  name: string;
+  biblio_role?: string | null;
+  credit_roles: string[];
+  is_collaborator: boolean;
+  handle?: string | null;
 }
 
 /// Persistent "Export as book" configuration. Mirrors the Rust
@@ -181,6 +203,7 @@ export interface BookExportConfig {
   title?: string | null;
   subtitle?: string | null;
   author?: string | null;
+  contributors?: Contributor[];
   date?: string | null;
   abstract?: string | null;
   toc_depth?: number | null;
@@ -720,4 +743,67 @@ export interface TypstHtmlResult {
   recovered: boolean;
   html: string;
   diagnostics: TypstDiagnostic[];
+}
+
+// Package-handoff collaboration — command results (mirror commands/collab.rs).
+
+export type ChangeKind = "added" | "modified" | "deleted" | "conflict";
+
+export interface ReviewItem {
+  collabid: string;
+  /** Notebox-relative destination path. */
+  path: string;
+  kind: ChangeKind;
+  /** Collaborator handles responsible for the incoming change. */
+  changed_by: string[];
+}
+
+export interface ReviewResult {
+  /** Notes needing a user decision. */
+  note_items: ReviewItem[];
+  /** Collabids auto-merged (identical concurrent edits) — no review needed. */
+  note_auto_merges: string[];
+  /** Citation keys whose content diverged — need review. */
+  bib_conflicts: string[];
+  /** Citation keys added/identical — union-merged silently. */
+  bib_auto_merges: string[];
+}
+
+export interface CollabStatus {
+  enabled: boolean;
+  handle: string | null;
+  note_count: number;
+}
+
+export interface CollabEnableReport {
+  members: number;
+  stamped: number;
+}
+
+export interface PackageReport {
+  path: string;
+  note_count: number;
+}
+
+export interface ApplyReport {
+  applied: number;
+  deleted: number;
+  rejected: number;
+  skipped: number;
+}
+
+export type DecisionAction = "accept" | "reject" | "skip";
+
+export interface ReviewDecision {
+  collabid: string;
+  action: DecisionAction;
+}
+
+export interface ImportPackageResult {
+  /** Frontend-canonical path of the collection the package landed in. */
+  collection_path: string;
+  collection_name: string;
+  /** True when the collection was created by this import. */
+  created: boolean;
+  review: ReviewResult;
 }

@@ -27,6 +27,7 @@ fn list_contents_returns_files_only_paths() {
         destination: &archive_path,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -58,6 +59,7 @@ fn restore_extracts_to_target_root() {
         destination: &archive_path,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -94,6 +96,7 @@ fn restore_skip_policy_preserves_existing() {
         destination: &archive_path,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -128,6 +131,7 @@ fn restore_rename_policy_creates_sibling() {
         destination: &archive_path,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -171,6 +175,7 @@ fn restore_encrypted_archive_roundtrips_with_password() {
         destination: &archive_path,
         user_config_root: None,
         password: Some("test-pw-12345"),
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 
@@ -201,6 +206,7 @@ fn restore_rejects_unsafe_paths() {
         destination: &archive_path,
         user_config_root: None,
         password: None,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
     .unwrap();
 

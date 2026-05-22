@@ -30,6 +30,7 @@ import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
+import CollabPanel from "./CollabPanel";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
 import { Dropdown } from "./Dropdown";
@@ -774,7 +775,7 @@ const CollectionBookEditor: Component<{
 
 // ── Collection metadata editor ────────────────────────────────────
 
-type SettingsTab = "common" | "style" | "book";
+type SettingsTab = "common" | "style" | "book" | "collab";
 
 const CollectionMetadataEditor: Component<{
   collectionFile: CollectionFile;
@@ -905,6 +906,16 @@ const CollectionMetadataEditor: Component<{
               onClick={() => setActiveTab("book")}
             >
               Book Metadata
+            </button>
+            <button
+              role="tab"
+              type="button"
+              class="collection-meta__tab"
+              classList={{ "is-active": activeTab() === "collab" }}
+              aria-selected={activeTab() === "collab"}
+              onClick={() => setActiveTab("collab")}
+            >
+              Collaboration
             </button>
           </div>
 
@@ -1069,6 +1080,15 @@ const CollectionMetadataEditor: Component<{
               }}
             />
           </Show>
+
+          <Show when={activeTab() === "collab"}>
+            <CollabPanel
+              collectionPath={props.collectionPath}
+              collectionName={props.collectionName}
+              collectionFile={props.collectionFile}
+              onSaved={props.onSaved}
+            />
+          </Show>
         </div>
       </Show>
     </div>
@@ -1155,6 +1175,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     () => ({ path: props.path, tick: refreshTick() }),
     async ({ path }) => ipc.getCollectionFile(path),
   );
+
+  // A collaborative collection's membership is property-based and its
+  // filter is managed automatically (canonicalized at enable). Editing it
+  // by hand would reintroduce the property-vs-filter drift the property
+  // model exists to prevent, so the filter UI is locked while collaborative.
+  const isCollaborative = () => collectionFile()?.collaboration?.enabled ?? false;
 
   // Get the current view's sort rules from the collection file
   function currentSortRules(): SortRule[] {
@@ -1572,11 +1598,16 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               <div class="collection-table__toolbar">
                 <button
                   class="collection-table__toolbar-btn"
+                  disabled={isCollaborative()}
                   onClick={() => {
                     setShowFilterBuilder(!showFilterBuilder());
                     setShowColumnPicker(false);
                   }}
-                  title="Edit view filters"
+                  title={
+                    isCollaborative()
+                      ? "Membership is managed by the collection property while collaboration is enabled"
+                      : "Edit view filters"
+                  }
                 >
                   Filter
                 </button>

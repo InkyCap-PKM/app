@@ -83,7 +83,7 @@ import {
 
 const KNOWN_FIELDS_ORDERED = [
   "title", "aliases", "description", "tags", "date", "due",
-  "task", "disposition", "source", "zid", "collection", "gitcollection",
+  "task", "disposition", "source", "zid", "collection", "collabid",
 ];
 const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
 
@@ -99,7 +99,7 @@ const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   source: "text",
   zid: "number",
   collection: "list",
-  gitcollection: "text",
+  collabid: "text",
 };
 
 function defaultForType(ty: PropertyType): PropertyValue {

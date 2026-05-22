@@ -14,9 +14,9 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
-use zip::ZipArchive;
 
 use crate::errors::{InkyCapError, Result};
+use crate::storage::zip_archive;
 
 /// One backup archive in the destination folder.
 #[derive(Debug, Serialize)]
@@ -116,34 +116,18 @@ pub fn list_archives(folder: &Path, pattern: &str) -> Result<Vec<BackupEntry>> {
 /// tells the UI whether the user will need to supply a password to
 /// extract.
 pub fn list_contents(archive_path: &Path) -> Result<Vec<BackupContentEntry>> {
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| InkyCapError::FileNotFound(format!("{}: {e}", archive_path.display())))?;
-    let mut zip = ZipArchive::new(file)
-        .map_err(|e| InkyCapError::BadRequest(format!("not a valid zip: {e}")))?;
-
-    let mut out = Vec::with_capacity(zip.len());
-    for i in 0..zip.len() {
-        // The zip crate exposes per-entry metadata via `by_index_raw`,
-        // which reads from the central directory and does not require
-        // decryption. `by_index` would attempt to seek to the
-        // compressed data and fail on encrypted entries without a
-        // password — that's a worse user experience for what is just
-        // a listing call.
-        let entry = match zip.by_index_raw(i) {
-            Ok(e) => e,
-            Err(e) => {
-                log::warn!("list_contents: skipping entry {i}: {e}");
-                continue;
-            }
-        };
-        out.push(BackupContentEntry {
-            path_in_zip: entry.name().to_string(),
-            is_dir: entry.is_dir(),
-            size_bytes: entry.size(),
-            encrypted: entry.encrypted(),
-        });
-    }
-    Ok(out)
+    // The shared lister reads from the central directory (no decryption),
+    // so encrypted archives still enumerate without a password.
+    let entries = zip_archive::list_entries(archive_path)?;
+    Ok(entries
+        .into_iter()
+        .map(|e| BackupContentEntry {
+            path_in_zip: e.name,
+            is_dir: e.is_dir,
+            size_bytes: e.size,
+            encrypted: e.encrypted,
+        })
+        .collect())
 }
 
 /// Extract selected entries from `archive_path` into `target_root`.
@@ -172,10 +156,7 @@ pub fn extract_files(
         ))
     })?;
 
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| InkyCapError::FileNotFound(format!("{}: {e}", archive_path.display())))?;
-    let mut zip = ZipArchive::new(file)
-        .map_err(|e| InkyCapError::BadRequest(format!("not a valid zip: {e}")))?;
+    let mut zip = zip_archive::open(archive_path)?;
 
     let mut results = Vec::with_capacity(entries.len());
 
@@ -246,23 +227,11 @@ pub fn extract_files(
             }
         }
 
-        // Extract. With a password, `by_name_decrypt` returns a
-        // reader; without one we go through `by_name`. Either way we
-        // stream the contents to disk.
-        let bytes_read = {
-            let entry_result = match password {
-                Some(pw) => zip
-                    .by_name_decrypt(interior, pw.as_bytes())
-                    .map_err(|e| InkyCapError::ExportFailed(format!("decrypt {interior}: {e}"))),
-                None => zip
-                    .by_name(interior)
-                    .map_err(|e| InkyCapError::ExportFailed(format!("read {interior}: {e}"))),
-            };
-            let mut entry = entry_result?;
+        // Extract, streaming the (optionally AES-decrypted) entry to disk.
+        {
             let mut out_file = std::fs::File::create(&final_dest)?;
-            std::io::copy(&mut entry, &mut out_file)?
-        };
-        let _ = bytes_read;
+            zip_archive::read_entry_to_writer(&mut zip, interior, password, &mut out_file)?;
+        }
 
         let outcome = if dest == final_dest {
             "written"

@@ -5,6 +5,7 @@ import {
   Moon,
   Settings,
   LayoutTemplate,
+  Search,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
@@ -49,7 +50,11 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
 
   return (
     <div class="vertical-toolbar">
-      <div class="vertical-toolbar__top">
+      {/* Header band: the sidebar show/hide toggle sits on the same row as
+          the sidebar's mode-bar (matching height + bottom border below).
+          Keeping it here also leaves it reachable when the sidebar is
+          collapsed — it's the only way back. */}
+      <div class="vertical-toolbar__header">
         <button
           class="vertical-toolbar__btn"
           onClick={toggleLeftCollapsed}
@@ -58,51 +63,69 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
         >
           <PanelLeftDashed size={18} />
         </button>
-
-        <Show when={toolbarRules().length > 0}>
-          <div class="vertical-toolbar__divider" />
-          <For each={toolbarRules()}>
-            {(rule) => (
-              <button
-                class="vertical-toolbar__btn vertical-toolbar__creation-btn"
-                onClick={() => executeRule(rule)}
-                title={`${rule.name}${rule.hotkey ? ` (${rule.hotkey})` : ""}`}
-                aria-label={rule.name}
-              >
-                <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={18} />
-              </button>
-            )}
-          </For>
-        </Show>
       </div>
-      <div class="vertical-toolbar__bottom">
-        <button
-          class="vertical-toolbar__btn"
-          onClick={toggleTheme}
-          title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          aria-label="Toggle theme"
-        >
-          {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <button
-          class={`vertical-toolbar__btn${props.mode() === "templates" ? " vertical-toolbar__btn--active" : ""}`}
-          onClick={() => {
-            props.setMode("templates");
-            if (leftCollapsed()) setLeftCollapsed(false);
-          }}
-          title="Scaffolds, Templates, &amp; Packages"
-          aria-label="Open Scaffolds, Templates, &amp; Packages"
-        >
-          <LayoutTemplate size={18} />
-        </button>
-        <button
-          class="vertical-toolbar__btn"
-          onClick={() => props.onOpenSettings?.()}
-          title="Settings (Ctrl+,)"
-          aria-label="Settings"
-        >
-          <Settings size={18} />
-        </button>
+      <div class="vertical-toolbar__body">
+        <div class="vertical-toolbar__top">
+          {/* Search leads the action buttons. The `__top` group starts at
+              the sidebar's content level (see CSS), so this button lines up
+              with the Search panel's input field that opens to its right. */}
+          <button
+            class={`vertical-toolbar__btn${props.mode() === "search" ? " vertical-toolbar__btn--active" : ""}`}
+            onClick={() => {
+              props.setMode("search");
+              if (leftCollapsed()) setLeftCollapsed(false);
+            }}
+            title="Search (Ctrl+Shift+F)"
+            aria-label="Search"
+          >
+            <Search size={18} />
+          </button>
+
+          <Show when={toolbarRules().length > 0}>
+            <div class="vertical-toolbar__divider" />
+            <For each={toolbarRules()}>
+              {(rule) => (
+                <button
+                  class="vertical-toolbar__btn vertical-toolbar__creation-btn"
+                  onClick={() => executeRule(rule)}
+                  title={`${rule.name}${rule.hotkey ? ` (${rule.hotkey})` : ""}`}
+                  aria-label={rule.name}
+                >
+                  <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={18} />
+                </button>
+              )}
+            </For>
+          </Show>
+        </div>
+        <div class="vertical-toolbar__bottom">
+          <button
+            class="vertical-toolbar__btn"
+            onClick={toggleTheme}
+            title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label="Toggle theme"
+          >
+            {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            class={`vertical-toolbar__btn${props.mode() === "templates" ? " vertical-toolbar__btn--active" : ""}`}
+            onClick={() => {
+              props.setMode("templates");
+              if (leftCollapsed()) setLeftCollapsed(false);
+            }}
+            title="Scaffolds, Templates, &amp; Packages"
+            aria-label="Open Scaffolds, Templates, &amp; Packages"
+          >
+            <LayoutTemplate size={18} />
+          </button>
+          <button
+            class="vertical-toolbar__btn"
+            onClick={() => props.onOpenSettings?.()}
+            title="Settings (Ctrl+,)"
+            aria-label="Settings"
+          >
+            <Settings size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );

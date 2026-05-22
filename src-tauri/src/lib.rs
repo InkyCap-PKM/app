@@ -1,5 +1,6 @@
 pub mod app_paths;
 pub mod backup;
+pub mod collab;
 pub mod collection_parser;
 pub mod bookmarks;
 pub mod cache;
@@ -342,6 +343,16 @@ pub fn run() {
             commands::backup::list_backup_archives,
             commands::backup::list_backup_contents,
             commands::backup::restore_backup_files,
+            commands::collab::collab_set_identity,
+            commands::collab::collab_get_identity,
+            commands::collab::collab_enable,
+            commands::collab::collab_status,
+            commands::collab::collab_set_import_folder,
+            commands::collab::collab_package,
+            commands::collab::collab_import,
+            commands::collab::collab_import_package,
+            commands::collab::collab_pending_review,
+            commands::collab::collab_review_apply,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -39,6 +39,10 @@ pub trait NoteboxStorage: Send + Sync {
     /// Write content to a file, creating it if it doesn't exist.
     async fn write_file(&self, path: &Path, content: &str) -> Result<()>;
 
+    /// Write raw bytes to a file (binary content such as attachments).
+    /// Same atomicity guarantees as [`write_file`].
+    async fn write_file_bytes(&self, path: &Path, content: &[u8]) -> Result<()>;
+
     /// Delete a file.
     async fn delete_file(&self, path: &Path) -> Result<()>;
 

@@ -36,6 +36,13 @@ import type {
   BibEntry,
   FileCitation,
   AggregatedCitation,
+  CollabStatus,
+  CollabEnableReport,
+  PackageReport,
+  ReviewResult,
+  ReviewDecision,
+  ApplyReport,
+  ImportPackageResult,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -1359,4 +1366,86 @@ export async function restoreBackupFiles(
     conflict,
     passwordOverride: passwordOverride && passwordOverride.length > 0 ? passwordOverride : null,
   });
+}
+
+// Package-handoff collaboration
+
+/** Pin which collaborator the local user is for this collection. */
+export async function collabSetIdentity(
+  collectionPath: string,
+  handle: string,
+): Promise<void> {
+  return invoke<void>("collab_set_identity", { collectionPath, handle });
+}
+
+/** Read the local user's pinned handle for this collection (or null). */
+export async function collabGetIdentity(
+  collectionPath: string,
+): Promise<string | null> {
+  return invoke<string | null>("collab_get_identity", { collectionPath });
+}
+
+/** Mark a collection collaborative: stamp collabids, seed the sidecar,
+ *  pin identity, flip the enabled flag. Requires a membership filter. */
+export async function collabEnable(
+  collectionPath: string,
+  handle: string,
+): Promise<CollabEnableReport> {
+  return invoke<CollabEnableReport>("collab_enable", { collectionPath, handle });
+}
+
+export async function collabStatus(
+  collectionPath: string,
+): Promise<CollabStatus> {
+  return invoke<CollabStatus>("collab_status", { collectionPath });
+}
+
+/** Set where notes new to this machine land on import. Empty clears the
+ *  override (reverts to `Collaboration/<name>`). Local only — never shared. */
+export async function collabSetImportFolder(
+  collectionPath: string,
+  folder: string,
+): Promise<void> {
+  return invoke<void>("collab_set_import_folder", { collectionPath, folder });
+}
+
+/** Write a package zip for the collection at `outputPath`. */
+export async function collabPackage(
+  collectionPath: string,
+  outputPath: string,
+): Promise<PackageReport> {
+  return invoke<PackageReport>("collab_package", { collectionPath, outputPath });
+}
+
+/** Import a package: extract to staging and classify incoming changes.
+ *  Does not touch the working notebox — call `collabReviewApply` to act. */
+export async function collabImport(
+  collectionPath: string,
+  packagePath: string,
+): Promise<ReviewResult> {
+  return invoke<ReviewResult>("collab_import", { collectionPath, packagePath });
+}
+
+/** Apply review decisions from the staged import to the working notebox. */
+export async function collabReviewApply(
+  collectionPath: string,
+  decisions: ReviewDecision[],
+): Promise<ApplyReport> {
+  return invoke<ApplyReport>("collab_review_apply", { collectionPath, decisions });
+}
+
+/** Import a package without a pre-existing collection: creates the bundled
+ *  collection if absent, stages, and returns the collection + review. */
+export async function collabImportPackage(
+  packagePath: string,
+): Promise<ImportPackageResult> {
+  return invoke<ImportPackageResult>("collab_import_package", { packagePath });
+}
+
+/** Re-classify a staged-but-unapplied import for a collection, or null if
+ *  nothing is staged. Lets the review resume after reopening. */
+export async function collabPendingReview(
+  collectionPath: string,
+): Promise<ReviewResult | null> {
+  return invoke<ReviewResult | null>("collab_pending_review", { collectionPath });
 }
