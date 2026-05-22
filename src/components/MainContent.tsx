@@ -16,7 +16,8 @@ import TypstEditor from "./TypstEditor";
 import MycelialView from "./MycelialView";
 import { executeCommand } from "../lib/command-registry";
 import { isEnabled as isJournalScrollTab } from "../stores/journal-scroll";
-import { BrainCircuit, ChevronLeft, ChevronRight, Scroll, LibraryBig } from "lucide-solid";
+import { reviewModeCollabidForPath } from "../stores/collab";
+import { BrainCircuit, ChevronLeft, ChevronRight, Scroll, LibraryBig, MessageSquareCheck } from "lucide-solid";
 
 /// Render the title for a tab. File tabs show the basename without the
 /// extension; other tab types keep their title verbatim (e.g. "Mycelial:
@@ -166,6 +167,11 @@ const MainContent: Component = () => {
                 <Show when={tab.type === "collection"}>
                   <span class="tab__icon" title={t("collection.tab.title")}>
                     <LibraryBig size={13} />
+                  </span>
+                </Show>
+                <Show when={tab.type === "file" && reviewModeCollabidForPath(tab.path) !== null}>
+                  <span class="tab__icon" title="Reviewing collaboration changes">
+                    <MessageSquareCheck size={13} />
                   </span>
                 </Show>
                 <span class="tab__title">

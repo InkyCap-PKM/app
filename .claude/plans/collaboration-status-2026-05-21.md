@@ -420,15 +420,176 @@ notebox had a markdown `# Heading` jammed mid-paragraph (invalid Typst);
 repaired in place. The same corruption exists in the `InkyCap-Professional`
 copies (not the active notebox — left untouched).
 
+## DONE — `#review` / `#review-reject` primitives + rejection log (2026-05-22)
+
+Reviewer annotations are now Typst-native, and a Reject decision records a
+durable, human-readable audit trail. Typst-first throughout (rendering in
+`lib.typ`; Rust emits data + one call).
+
+- **`lib.typ`** — two new exported functions in `inkycap-notebox/0.2.0/lib.typ`:
+  - `#review(body, by: none, on: none)` — content-bracket reviewer comment;
+    emits `<inkycap-review>` (dict `by`, `on`), renders a violet annotation
+    block (callout-shaped). `on` normalized via `_fmt-date`.
+  - `#review-reject(target, reason, by: none, on: none)` — emits
+    `<inkycap-review-reject>` (dict `target`, `reason`, `by`, `on`), renders a
+    red dated log entry. The header doc-comment now lists **six** query labels.
+- **`typst_pipeline/review.rs`** (new) — `review_reject_call(...)` (single-call
+  builder, reuses `book_wrapper::typst_escape`), `rejection_log_title(name)`,
+  and `append_to_rejection_log(existing, entry, name)` (creates the note with
+  a `#note(title:)` header + `= Rejected changes` on first use — deliberately
+  **no** `collection` property so the log never packages back; appends newest
+  last otherwise). `#review` is authored entirely frontend-side, so no Rust
+  builder for it. 6 unit tests.
+- **`commands/collab.rs`** — `ReviewDecision` gained `reason: Option<String>`
+  (`#[serde(default)]`). `collab_review_apply`'s Reject branch collects
+  `(target, reason)` (target = note filename stem, receiver's copy preferred);
+  after the loop, when any rejections exist, it loads the `me.json` handle +
+  today's date, reads/creates `<import_folder>/<name> — Rejected Changes.typ`,
+  appends one `#review-reject(...)` per reject (single read/append/write), and
+  `reindex_note`s it so it appears without a restart. Best-effort placement in
+  the import folder (same path the accept branch uses, so parent dirs are
+  created). Fully-qualified `crate::typst_pipeline::review::` calls to avoid
+  collision with the imported `collab::review` engine module.
+- **Frontend** — `ReviewDecision.reason?` (types.ts; ipc passes it through
+  unchanged); `CollabPanel` reveals a per-item rationale input when a row is
+  set to Reject and sends it on Apply (`.collab-panel__reject-reason` CSS).
+  `#review` authoring: a "Review comment" `/`-palette entry (`#review[…]`,
+  `expandOnInsert`) + a `ReviewBlockWidget` (visual editor) mirroring
+  `CalloutBlockWidget` — registered everywhere `callout` is (the pill-above-
+  element branch + `case "review"` in visual-plugin.ts, `ALWAYS_EXPAND_PILLS`,
+  `BLOCK_FUNC_NAMES` in block-layer.ts, `REVIEW_COLOR` mirroring lib.typ's
+  `_review-color`). Default-case pill would have worked but goes blank when the
+  cursor leaves; the block widget keeps the comment visually distinct, matching
+  the reading view.
+- **Tests:** `tests/review_primitives.rs` (new, real-Typst, always runs) — both
+  primitives compile to PDF + a `compile_and_query` round-trip. Full lib suite
+  **539 pass / 0 fail** (was 533, +6 review.rs); `tsc` clean; full backend build
+  clean. **Not yet validated in-app** (the reject→log write + reveal UI need a
+  running app like every other collab async command/UI).
+
+**Deferred (clean follow-up, no consumer yet):** scanner indexing of
+`<inkycap-review>` into `QueryResult` + a Reviews aggregation panel.
+
+### Review-diff workflow — right-panel Review tab (2026-05-22, after user feedback)
+
+The inline review list showed only the change *kind* + path — no way to see
+*what* changed. Added a proper in-context diff workflow (user-directed: not
+inline, a right-panel tab; no stopgaps).
+
+- **Backend** `collab_review_detail(collection_path, collabid) -> ReviewDetail
+  { collabid, local_path, local_content, incoming_content }` — read-only; reads
+  the staged incoming file + the receiver's local copy (located by
+  `collabid_path_map`, so moves are followed). `local_path` is an absolute
+  frontend string so the caller can open it as a tab. Registered in lib.rs.
+- **Shared store** `src/stores/collab.ts` (new) — hoists the review session
+  (`review`, `decisions`, `reasons`, `bibChoices`) out of CollabPanel plus
+  `activeReview` (which collection) and `currentReviewCollabid` (the note in
+  the diff; **also gates the Review tab's visibility**). `loadReview` /
+  `clearReview` / `setDecision` / `setReason` / `setBibChoice` /
+  `setAllDecisions` / `stepReview`. CollabPanel now reads/writes this; Apply
+  still lives only in CollabPanel.
+- **Right-panel Review tab** — `"review"` added to `RightPanelTab` (layout.ts,
+  + `setRightCollapsed`). New `src/components/ReviewPanel.tsx`: a **read-only
+  `@codemirror/merge` `unifiedMergeView`** (chosen over two-pane — the panel is
+  narrow) reusing the editor's Typst highlighting via the new
+  `readOnlyTypstExtensions()` export in typst-editor.ts; original = local
+  (mine), doc = incoming (theirs). Decision buttons (Accept/Reject/Skip) +
+  reject reason + Prev/Next nav, all writing to the store. On detail load it
+  opens the local note in a tab for context (Added notes have none → diff shows
+  full incoming, labelled "New note"). The Review **tab is contextual**: a
+  `message-square-check` button shown only while `currentReviewCollabid != null`
+  (a session is active), auto-focused/reverted by an effect mirroring
+  `scroll-context` — never shown for ordinary notes. Lives outside the
+  file-tab `<Show>` so it works for Added notes; the file-tab/mycelial content
+  blocks yield when `activePanel === "review"`.
+- **CollabPanel** — each review row gained a **Review** button
+  (`message-square-check`) → `openReview(collabid)` (sets the session pointer +
+  un-collapses the panel); the active row is highlighted.
+- **Dependency:** `@codemirror/merge` ^6.12.1 (official `@codemirror/*`,
+  read-only display only — the apply path still copies staged bytes verbatim,
+  so Typst markup is untouched). `npm install` pruned 310 *extraneous*
+  node_modules entries (lockfile only grew by the one package — nothing real
+  removed).
+- **Verification:** tsc clean, `cargo build` (full), 539 lib + 77 collab + 2
+  review_primitives tests green, `npm run build` (vite bundle) succeeds.
+
+#### Refinements after first in-app test (2026-05-22)
+User feedback drove four fixes (all frontend):
+1. **Decision buttons felt inert / reject had no submit.** Apply was stranded
+   in Collaboration settings. Moved apply into a shared store action
+   `applyReview()` (builds decisions+bib lists, ipc, toast, `bumpPropertyVersion`,
+   `clearReview`) used by BOTH CollabPanel and a new **"Apply all decisions"**
+   button in ReviewPanel — so the review is drivable entirely from the panel.
+   Accept/Skip now **auto-advance** to the next note (Reject stays so the reason
+   can be typed; reason saves live with an "applied when you apply" hint).
+2. **"Reviewing" status badge** (`message-square-check` + "Reviewing", accent
+   colour) in the editor header centre when the open note is the one under
+   review — driven by a new `currentReviewPath` store signal set by
+   ReviewPanel; compared with `pathEquals`. Mirrors the scroll-status pattern.
+3. **Review button clobbered the active (collection) tab** — `openTab`
+   navigates in-place without `forceNewTab`. Added `forceNewTab: true` (the
+   existing-path check still runs first, so revisits/steps reuse a tab rather
+   than duplicate); the collection view is preserved.
+4. **Closing the collection tab stranded the review** — fixed structurally by
+   #1 (Apply now lives in the panel; the session is a global store
+   independent of any tab/CollabPanel mount) + #3 (collection tab preserved).
+   The right-panel review content already renders independent of the file tab.
+
+tsc clean, `npm run build` succeeds. **Re-test #4 in-app to confirm.**
+
+#### Reworked to whole-file immediate-apply review (2026-05-22, after 2nd in-app test)
+User considered per-change (hunk) merge but **decided against it** (too complex
+— "could've used git"); settled on **whole-file** review with an **immediate**
+per-note apply and a persistent review-mode display. Net changes:
+
+- **Backend (`collab_review_apply`):** Reject now **resolves** — it folds the
+  incoming clock into the local entry (creating a content-less entry for a
+  declined Added note) and keeps local content, so a rejected note no longer
+  re-offers. Applies to both the per-note and batch paths. (`NoteVersion` /
+  `VectorClock` imported.)
+- **Store (`stores/collab.ts`):** added `reviewItemsById` (full set, survives
+  apply), `reviewModeByPath` (normalized local path → collabid; the per-note
+  review-mode set), `mergedCollabids`, `applyNote(collabid, action)` (immediate
+  single-note apply via `collabReviewApply` with a one-item list; drops the
+  note from the pending list but keeps it in review-mode display, marked
+  Merged), `enterReviewMode`/`reviewModeCollabidForPath`/`isMerged`/
+  `endReviewModeFor`. `applyReview` (batch) + `setAllDecisions` kept for the
+  Collaboration-settings path. `stepReview` removed.
+- **ReviewPanel:** removed Skip, Prev/Next, and the in-panel Apply-all.
+  Accept/Reject apply **immediately** (whole file); after a decision the note
+  stays in review display ("Merged — keep editing…"), the diff stays frozen
+  (fetched once), and an optional reject-reason textarea feeds the rejection
+  log. **"End Review Mode"** (neutral, full-width) closes the note tab and
+  reopens the collection. Header reads **"Changes proposed by …"**. On accept
+  it fires `inkycap:note-property-changed` for the note path so the open editor
+  reloads to the merged content.
+- **RightPanel:** an active-tab-follow effect sets `currentReviewCollabid` from
+  the active note's review-mode membership (reopening a note re-enters review
+  mode; ordinary notes show no Review tab; an Added-note review with no tab is
+  kept until ended).
+- **Editor header:** the centred badge reads **"Reviewing"**, flips to
+  **"Merged"** (green) with a brief pulse once the decision is applied, keyed
+  off `reviewModeCollabidForPath(path)` + `isMerged`.
+- **Tab strip (`MainContent`):** a `message-square-check` icon marks file tabs
+  whose note is in review mode.
+- **CollabPanel:** "Package…" → **"Package export…"**; Set-all buttons dropped
+  "all" (now Accept/Reject/Skip under the "Set all:" label); per-row Review +
+  decision grouped in `.collab-panel__review-controls` (right-aligned).
+- **CSS:** single primary action — Accept is the only green button, with a
+  hover that keeps light text (the base toolbar-btn hover set a dark colour →
+  unreadable on the green fill); Reject/End Review Mode are neutral outline;
+  added the Merged pulse + merged-note box.
+
+Verified: tsc clean, `cargo build` (full), 77 collab tests green,
+`npm run build` (vite) succeeds. **All UI/async — needs in-app validation**
+(esp. the editor reload-on-accept and the reopen→review-mode persistence).
+
 ## Other remaining work (deferred, roughly prioritized)
 
 1. **Zotero → shared `.bib` materialization on enable** — collaborative
    collections should disable Zotero-live and accumulate cited entries
    into the shared `.bib`.
-2. **`#review` / `#review-reject` Typst primitives + rejection log** —
-   reviewer annotations as Typst metadata (`<inkycap-review>` labels);
-   reject decision appends to a per-collection rejection log note.
-3. **Polish:** command-palette entries (Git:/Collab: actions),
+2. **Polish:** command-palette entries (Git:/Collab: actions),
    status-bar badge for pending reviews, a right-panel ReviewPanel
    (review is inline in the collab tab today), conflict resolution UI
    beyond accept-takes-theirs.
@@ -444,19 +605,28 @@ copies (not the active notebox — left untouched).
 
 ## Repo state (as of end of 2026-05-22 session)
 
-Branch `typst-pivot`, single working tree. **Everything below is COMMITTED**
-as of this session's end:
-- Issue #2 (location decoupling), membership shrink, file-delete→tombstone.
-- Bibliography merge on apply + per-key conflict UI.
-- ContributorsEditor (multi-author byline + CRediT) + `lib.typ`
-  `contributors-byline`/`credit-statement` + `typst_pipeline/contributors.rs`.
-- Book-export fixes: chapter-anchor (unclosed-label), single-chapter array,
-  "name the failing note" (2a).
-- Attachment hash-compare.
+Branch `typst-pivot`, single working tree. The prior session's work
+(Issue #2, membership shrink, file-delete→tombstone, bibliography
+merge/conflict, ContributorsEditor + byline/CRediT, book-export fixes,
+attachment hash-compare, the `creation_rules` test fix) is all **COMMITTED**.
 
-**Uncommitted at handoff:** ONLY the `creation_rules` daily-note test fix
-(`src-tauri/src/creation_rules/mod.rs` — `daily` → `Daily` in two assertions).
-Commit it; the full lib suite is then 533 pass / 0 fail.
+**Uncommitted at this handoff (2026-05-22, second session):** the
+`#review`/`#review-reject` primitives + rejection log, **and** the right-panel
+review-diff workflow — see the two DONE sections above. Touches:
+- backend: `inkycap-notebox/0.2.0/lib.typ`,
+  `src-tauri/src/typst_pipeline/{mod,review}.rs`,
+  `src-tauri/src/commands/collab.rs`, `src-tauri/src/lib.rs`,
+  `src-tauri/tests/review_primitives.rs`;
+- frontend: `src/lib/{types,ipc}.ts`, `src/stores/{collab,layout}.ts` (new
+  collab store), `src/components/{CollabPanel,RightPanel}.tsx` +
+  `src/components/ReviewPanel.tsx` (new), `src/editor/typst-editor.ts`
+  (`readOnlyTypstExtensions`), `src/editor/typst-decorations/{command-palette,
+  visual-plugin,widgets,block-layer}.ts`, `src/styles/layout.css`,
+  `package.json` + `package-lock.json` (`@codemirror/merge`).
+
+Full lib suite **539 pass / 0 fail**; `tsc` clean; `npm run build` (vite)
+succeeds. Validate the reject→log write and the right-panel review-diff loop
+in-app, then commit.
 
 **Not an app change (user's data):** two notes in `Inky2/Publishers`
 (`Journal of Academic Librarianship.typ`, `Information Technology and
@@ -467,9 +637,9 @@ mid-paragraph). The same corruption still exists in the
 ## ⮕ NEXT SESSION — start here
 
 The collaboration core + ContributorsEditor + bibliography (merge/conflict)
-+ book-export fixes are all done and committed. Pick the next item from
-"Other remaining work" above. **User was asked to choose between** (see that
-list for detail):
++ book-export fixes + the `#review`/`#review-reject` primitives + rejection
+log are all done (the last is uncommitted — validate in-app then commit).
+Pick the next item from "Other remaining work" above:
 1. **Book export error-tolerance (2b)** — recommended if continuing to test
    book export; builds on the 2a "name the note" reporting.
 2. **Zotero → shared `.bib` materialization** — completes the bibliography
@@ -480,9 +650,9 @@ list for detail):
    (re-sync lazily at package, like `bump_local_edits`). The user's current
    journal notes may not use `@citations`, so it won't be immediately
    demonstrable for them.
-3. **`#review` / `#review-reject` Typst primitives + rejection log.**
-4. **Collab UX polish** (command palette, status-bar badge, right-panel
-   ReviewPanel).
+3. **Collab UX polish** (command palette, status-bar badge, right-panel
+   ReviewPanel). Could also surface the deferred Reviews aggregation panel
+   (index `<inkycap-review>` into `QueryResult` + a panel).
 
 The user had not yet chosen when the session ended (they opted to start
 fresh). Re-confirm their pick at the start of the next session.

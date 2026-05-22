@@ -1,7 +1,7 @@
 // Right panel: tabbed view with Properties, Outline, and Links
 // for the active file.
 
-import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js";
 import { getActiveTab, openTab, closeTab } from "../stores/tabs";
 import {
   contextNotes,
@@ -50,9 +50,18 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  MessageSquareCheck,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
+import ReviewPanel from "./ReviewPanel";
+import {
+  currentReviewCollabid,
+  setCurrentReviewCollabid,
+  reviewModeByPath,
+  reviewModeCollabidForPath,
+  reviewItem,
+} from "../stores/collab";
 import { Dropdown } from "./Dropdown";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -149,6 +158,44 @@ const RightPanel: Component = () => {
       if (activePanel() === "scroll-context") setActivePanel(tabBeforeScroll);
     }
     prevScrollOn = scrollOn;
+  });
+
+  // Follow the active note: show the Review diff for whichever open note is in
+  // review mode, and hide it when the active note isn't. This is what makes
+  // reopening a note re-enter review mode, and keeps the Review tab off
+  // ordinary notes. An Added-note review (no local file/tab) is kept until the
+  // user explicitly ends it, since there's no tab to navigate back to.
+  createEffect(() => {
+    reviewModeByPath(); // re-run when the review-mode set changes
+    const tab = activeFileTab();
+    const cidForTab = tab ? reviewModeCollabidForPath(tab.path) : null;
+    if (cidForTab) {
+      setCurrentReviewCollabid(cidForTab);
+      return;
+    }
+    untrack(() => {
+      const cur = currentReviewCollabid();
+      if (!cur) return;
+      const it = reviewItem(cur);
+      if (!it || it.kind !== "added") setCurrentReviewCollabid(null);
+    });
+  });
+
+  // Collaboration review: when a review session starts (a note is picked for
+  // review), focus the Review tab and remember the prior tab; when it ends
+  // (the active note is no longer in review), revert. Mirrors the
+  // scroll-context pattern — the Review tab is contextual.
+  let prevReviewing = false;
+  let tabBeforeReview: RightPanelTab = "outline";
+  createEffect(() => {
+    const reviewing = currentReviewCollabid() !== null;
+    if (reviewing && !prevReviewing) {
+      if (activePanel() !== "review") tabBeforeReview = activePanel();
+      setActivePanel("review");
+    } else if (!reviewing && prevReviewing) {
+      if (activePanel() === "review") setActivePanel(tabBeforeReview);
+    }
+    prevReviewing = reviewing;
   });
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
@@ -1146,10 +1193,33 @@ const RightPanel: Component = () => {
             </button>
           </Show>
         </Show>
+        {/* Review tab — contextual: shown only while a collaboration review
+            session is active (a note has been picked for review), not for
+            ordinary notes. Lives outside the file-tab Show so it also appears
+            for Added notes, which have no local file/tab. */}
+        <Show when={currentReviewCollabid() !== null}>
+          <button
+            class={`right-panel__tab${activePanel() === "review" ? " right-panel__tab--active" : ""}`}
+            onClick={() => setActivePanel("review")}
+            title="Review collaboration changes"
+            aria-label="Review collaboration changes"
+          >
+            <MessageSquareCheck size={18} />
+          </button>
+        </Show>
       </div>
 
+      {/* Review tab content — independent of file-tab state so it renders for
+          Added notes too. The file-tab and mycelial blocks below yield to it
+          (their guards exclude activePanel() === "review"). */}
+      <Show when={activePanel() === "review"}>
+        <div class="right-panel__tab-content">
+          <ReviewPanel />
+        </div>
+      </Show>
+
       {/* Mycelial context notes — shown when a mycelial tab is active */}
-      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && activePanel() !== "review"}>
         {(() => {
           const [contextFilter, setContextFilter] = createSignal("");
           const [contextSort, setContextSort] = createSignal<"name" | "connections">("connections");
@@ -1311,9 +1381,9 @@ const RightPanel: Component = () => {
       </Show>
 
       <Show
-        when={activeFileTab()}
+        when={activeFileTab() && activePanel() !== "review"}
         fallback={
-          <Show when={getActiveTab()?.type !== "mycelial"}>
+          <Show when={getActiveTab()?.type !== "mycelial" && activePanel() !== "review"}>
             <p class="sidebar-hint">No file selected</p>
           </Show>
         }

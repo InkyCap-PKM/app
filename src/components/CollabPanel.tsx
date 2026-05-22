@@ -2,15 +2,32 @@ import { Component, createSignal, createResource, createEffect, onMount, For, Sh
 import { save, open } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import type { CollectionFile, ReviewResult, DecisionAction, ChangeKind } from "../lib/types";
-import type { BibDecision } from "../lib/types";
+import { MessageSquareCheck } from "lucide-solid";
 import { showToast } from "../stores/toasts";
-import { bumpPropertyVersion } from "../stores/notebox";
+import {
+  review,
+  decisions,
+  reasons,
+  bibChoices,
+  currentReviewCollabid,
+  loadReview as loadReviewStore,
+  clearReview,
+  applyReview,
+  setDecision,
+  setReason,
+  setBibChoice,
+  setAllDecisions as setAll,
+  reviewHasContent,
+  setCurrentReviewCollabid,
+} from "../stores/collab";
+import { setRightCollapsed } from "../stores/layout";
 
 /// The collaboration controls inside Collection Settings: identity, the
-/// enable toggle, package/import buttons, and an inline review list that
-/// drives the import → accept/reject → apply loop. This is the minimal
-/// surface that makes the package-handoff backend drivable end to end; a
-/// richer right-panel review experience can layer on later.
+/// enable toggle, package/import buttons, and a review list that drives the
+/// import → accept/reject → apply loop. The per-note diff lives in the
+/// right-panel Review tab (ReviewPanel); this panel owns identity/enable/
+/// package/import and the single Apply. Review session state is shared via
+/// the `stores/collab` module so both surfaces edit one source of truth.
 const CollabPanel: Component<{
   collectionPath: string;
   collectionName: string;
@@ -24,12 +41,11 @@ const CollabPanel: Component<{
   const [handle, setHandle] = createSignal("");
   const [handleTouched, setHandleTouched] = createSignal(false);
   const [importFolder, setImportFolder] = createSignal("");
-  const [review, setReview] = createSignal<ReviewResult | null>(null);
-  const [decisions, setDecisions] = createSignal<Record<string, DecisionAction>>({});
-  // Per-key bibliography conflict choices: true ⇒ take incoming, false ⇒ keep
-  // local (the default).
-  const [bibChoices, setBibChoices] = createSignal<Record<string, boolean>>({});
   const [busy, setBusy] = createSignal(false);
+
+  // Load a staged review into the shared session, scoped to this collection.
+  const loadReview = (r: ReviewResult) =>
+    loadReviewStore(props.collectionPath, props.collectionName, r);
 
   // Seed the handle field from the pinned identity once, without clobbering
   // an in-progress edit.
@@ -62,46 +78,18 @@ const CollabPanel: Component<{
     }
   });
 
-  function loadReview(r: ReviewResult) {
-    setReview(r);
-    const d: Record<string, DecisionAction> = {};
-    for (const it of r.note_items) d[it.collabid] = "accept";
-    setDecisions(d);
-    const bc: Record<string, boolean> = {};
-    for (const key of r.bib_conflicts) bc[key] = false; // keep local by default
-    setBibChoices(bc);
-  }
-
-  function setDecision(collabid: string, action: DecisionAction) {
-    setDecisions((d) => ({ ...d, [collabid]: action }));
-  }
-
-  function setBibChoice(key: string, takeIncoming: boolean) {
-    setBibChoices((c) => ({ ...c, [key]: takeIncoming }));
-  }
-
-  /// Whether a review has anything for Apply to act on — note decisions, bib
-  /// conflicts to resolve, or bib additions to union-merge.
-  function reviewHasContent(r: ReviewResult): boolean {
-    return (
-      r.note_items.length > 0 ||
-      r.bib_conflicts.length > 0 ||
-      r.bib_auto_merges.length > 0
-    );
-  }
   const hasReviewContent = () => {
     const r = review();
     return !!r && reviewHasContent(r);
   };
 
-  /// Set every reviewable item to one action (sets the target state, not a
-  /// toggle).
-  function setAll(action: DecisionAction) {
-    const r = review();
-    if (!r) return;
-    const d: Record<string, DecisionAction> = {};
-    for (const it of r.note_items) d[it.collabid] = action;
-    setDecisions(d);
+  /// Open the right-panel Review diff for one note: point the session at it
+  /// and reveal the (collapsed) panel. RightPanel's effect focuses the Review
+  /// tab when the session pointer is set; ReviewPanel fetches the diff and
+  /// opens the local note in a tab (when it exists) for context.
+  function openReview(collabid: string) {
+    setCurrentReviewCollabid(collabid);
+    setRightCollapsed(false);
   }
 
   async function saveIdentity() {
@@ -186,33 +174,16 @@ const CollabPanel: Component<{
   }
 
   async function applyDecisions() {
-    const r = review();
-    if (!r) return;
-    const list = r.note_items.map((it) => ({
-      collabid: it.collabid,
-      action: decisions()[it.collabid] ?? "skip",
-    }));
-    const bibList: BibDecision[] = r.bib_conflicts.map((key) => ({
-      key,
-      take_incoming: bibChoices()[key] ?? false,
-    }));
     setBusy(true);
     try {
-      const rep = await ipc.collabReviewApply(props.collectionPath, list, bibList);
-      const bib = rep.bib_added > 0 ? `, ${rep.bib_added} bib entr${rep.bib_added === 1 ? "y" : "ies"} merged` : "";
-      showToast(
-        "success",
-        "Changes applied",
-        `${rep.applied} written, ${rep.deleted} deleted, ${rep.rejected} rejected, ${rep.skipped} skipped${bib}.`,
-      );
-      setReview(null);
-      // Refetch this collection's own status, the collection table rows,
-      // and any other open collection views (membership may have changed).
-      props.onSaved();
-      bumpPropertyVersion();
-      refetch();
-    } catch (e) {
-      showToast("error", "Apply failed", String(e));
+      // Shared store action does the apply + toast + collection-view refresh
+      // and clears the session. On success, also refresh this panel's own
+      // status + the collection table rows (membership may have changed).
+      const ok = await applyReview();
+      if (ok) {
+        props.onSaved();
+        refetch();
+      }
     } finally {
       setBusy(false);
     }
@@ -296,7 +267,7 @@ const CollabPanel: Component<{
           }
         >
           <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doPackage}>
-            Package…
+            Package export…
           </button>
           <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doImport}>
             Import package…
@@ -317,13 +288,13 @@ const CollabPanel: Component<{
               <div class="collab-panel__bulk">
                 <span class="collection-meta__hint">Set all:</span>
                 <button class="collection-table__toolbar-btn" onClick={() => setAll("accept")}>
-                  Accept all
+                  Accept
                 </button>
                 <button class="collection-table__toolbar-btn" onClick={() => setAll("reject")}>
-                  Reject all
+                  Reject
                 </button>
                 <button class="collection-table__toolbar-btn" onClick={() => setAll("skip")}>
-                  Skip all
+                  Skip
                 </button>
               </div>
             </Show>
@@ -368,27 +339,54 @@ const CollabPanel: Component<{
 
             <For each={r().note_items}>
               {(item) => (
-                <div class="collab-panel__review-row">
-                  <div class="collab-panel__review-info">
-                    <span class="collab-panel__kind" data-kind={item.kind}>
-                      {kindLabel(item.kind)}
-                    </span>
-                    <span class="collab-panel__path">{item.path}</span>
-                    <Show when={item.changed_by.length > 0}>
-                      <span class="collection-meta__hint">by {item.changed_by.join(", ")}</span>
-                    </Show>
+                <div
+                  class="collab-panel__review-item"
+                  classList={{
+                    "collab-panel__review-item--active":
+                      currentReviewCollabid() === item.collabid,
+                  }}
+                >
+                  <div class="collab-panel__review-row">
+                    <div class="collab-panel__review-info">
+                      <span class="collab-panel__kind" data-kind={item.kind}>
+                        {kindLabel(item.kind)}
+                      </span>
+                      <span class="collab-panel__path">{item.path}</span>
+                      <Show when={item.changed_by.length > 0}>
+                        <span class="collection-meta__hint">by {item.changed_by.join(", ")}</span>
+                      </Show>
+                    </div>
+                    <div class="collab-panel__review-controls">
+                      <button
+                        class="collection-table__toolbar-btn collab-panel__review-btn"
+                        title="View changes in the Review panel"
+                        onClick={() => openReview(item.collabid)}
+                      >
+                        <MessageSquareCheck size={14} />
+                        Review
+                      </button>
+                      <select
+                        class="settings__text-input collab-panel__decision"
+                        value={decisions()[item.collabid] ?? "accept"}
+                        onChange={(e) =>
+                          setDecision(item.collabid, e.currentTarget.value as DecisionAction)
+                        }
+                      >
+                        <option value="accept">Accept</option>
+                        <option value="reject">Reject</option>
+                        <option value="skip">Skip</option>
+                      </select>
+                    </div>
                   </div>
-                  <select
-                    class="settings__text-input collab-panel__decision"
-                    value={decisions()[item.collabid] ?? "accept"}
-                    onChange={(e) =>
-                      setDecision(item.collabid, e.currentTarget.value as DecisionAction)
-                    }
-                  >
-                    <option value="accept">Accept</option>
-                    <option value="reject">Reject</option>
-                    <option value="skip">Skip</option>
-                  </select>
+                  <Show when={(decisions()[item.collabid] ?? "accept") === "reject"}>
+                    <input
+                      type="text"
+                      class="settings__text-input collab-panel__reject-reason"
+                      value={reasons()[item.collabid] ?? ""}
+                      onInput={(e) => setReason(item.collabid, e.currentTarget.value)}
+                      placeholder="Why are you rejecting this? (recorded in the rejection log)"
+                    />
+                  </Show>
                 </div>
               )}
             </For>
@@ -404,7 +402,7 @@ const CollabPanel: Component<{
               <button
                 class="collection-table__toolbar-btn"
                 disabled={busy()}
-                onClick={() => setReview(null)}
+                onClick={() => clearReview()}
               >
                 Cancel
               </button>

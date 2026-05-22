@@ -12,7 +12,8 @@ export type RightPanelTab =
   | "outline"
   | "links"
   | "references"
-  | "scroll-context";
+  | "scroll-context"
+  | "review";
 
 const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "properties",
@@ -20,6 +21,7 @@ const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "links",
   "references",
   "scroll-context",
+  "review",
 ];
 
 interface LayoutState {
@@ -116,6 +118,11 @@ export function setLeftCollapsed(v: boolean) {
 
 export function toggleRightCollapsed() {
   setRightCollapsedInternal((v) => !v);
+  persist();
+}
+
+export function setRightCollapsed(v: boolean) {
+  setRightCollapsedInternal(v);
   persist();
 }
 

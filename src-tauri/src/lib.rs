@@ -354,6 +354,7 @@ pub fn run() {
             commands::collab::collab_import,
             commands::collab::collab_import_package,
             commands::collab::collab_pending_review,
+            commands::collab::collab_review_detail,
             commands::collab::collab_review_apply,
         ])
         .build(tauri::generate_context!())

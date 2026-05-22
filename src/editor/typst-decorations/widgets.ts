@@ -34,7 +34,7 @@ function typstLengthToCss(value: string): string {
 // classifier (multi-line / multi-paragraph callouts are the common
 // case). Other block-row pills (image, embed, figure) stick to the
 // default simple→expand / complex→menu split.
-const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote"]);
+const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "review"]);
 
 function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTMLElement {
   const row = document.createElement("div");
@@ -137,6 +137,10 @@ const CALLOUT_COLORS: Record<string, string> = {
   danger: "#d50000",
   bug: "#f50057",
 };
+
+// Reviewer-comment accent. Mirrors `_review-color` in the notebox package's
+// lib.typ so the visual-editor block and the compiled output read the same.
+const REVIEW_COLOR = "#8b5cf6";
 
 export class CalloutWidget extends WidgetType {
   constructor(
@@ -1666,6 +1670,75 @@ export class CalloutBlockWidget extends WidgetType {
     heading.className = "cm-typst-callout-heading";
     heading.style.color = color;
     heading.textContent = this.title || this.kind.charAt(0).toUpperCase() + this.kind.slice(1);
+    inner.appendChild(heading);
+
+    if (this.bodyText) {
+      const body = document.createElement("div");
+      body.className = "cm-typst-callout-body";
+      renderTypstBody(this.bodyText, body);
+      inner.appendChild(body);
+    }
+
+    wrap.appendChild(inner);
+  }
+
+  ignoreEvent(e: Event) {
+    if (e.type === "mousedown") {
+      return !!(e.target as HTMLElement).closest(".cm-typst-wikilink");
+    }
+    return false;
+  }
+}
+
+// A reviewer comment (`#review[…]`). Renders as a tinted annotation block —
+// the visual-editor sibling of CalloutBlockWidget — so a review stays
+// visually distinct from body text even when the cursor is away, matching how
+// lib.typ renders it in the reading view. Reuses the callout block CSS with
+// the review accent set inline.
+export class ReviewBlockWidget extends WidgetType {
+  constructor(
+    readonly bodyText: string,
+    readonly by: string,
+    readonly on: string,
+    readonly pos: number,
+    readonly withPill: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: ReviewBlockWidget) {
+    return this.bodyText === other.bodyText && this.by === other.by
+      && this.on === other.on && this.pos === other.pos
+      && this.withPill === other.withPill;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-typst-callout-block";
+    wrap.style.overflow = "hidden";
+    this.renderContent(wrap, view);
+    return wrap;
+  }
+
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    dom.innerHTML = "";
+    this.renderContent(dom, view);
+    return true;
+  }
+
+  private renderContent(wrap: HTMLElement, view: EditorView) {
+    if (this.withPill) wrap.appendChild(makeBlockPillRow("review", this.pos, view));
+
+    const inner = document.createElement("div");
+    inner.className = "cm-typst-callout";
+    inner.style.borderLeftColor = REVIEW_COLOR;
+    inner.style.backgroundColor = `color-mix(in srgb, ${REVIEW_COLOR} 8%, transparent)`;
+
+    const heading = document.createElement("div");
+    heading.className = "cm-typst-callout-heading";
+    heading.style.color = REVIEW_COLOR;
+    const attribution = [this.by, this.on].filter(Boolean).join(" · ");
+    heading.textContent = attribution ? `Review — ${attribution}` : "Review";
     inner.appendChild(heading);
 
     if (this.bodyText) {

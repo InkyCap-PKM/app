@@ -24,7 +24,8 @@ use tauri::State;
 
 use crate::collab::{self, apply, bibliography, identity, package, review};
 use crate::collab::package::{PackageManifest, PackagedNote};
-use crate::collab::versions::VersionsFile;
+use crate::collab::clock::VectorClock;
+use crate::collab::versions::{NoteVersion, VersionsFile};
 use crate::collection_parser::filter::evaluate_filter_group;
 use crate::collection_parser::model::{
     parse_collection_file, serialize_collection_file, CollectionCollaboration, CollectionFile,
@@ -88,6 +89,12 @@ pub enum DecisionAction {
 pub struct ReviewDecision {
     pub collabid: String,
     pub action: DecisionAction,
+    /// Rationale for a `Reject` decision, recorded in the collection's
+    /// rejection-log note as a `#review-reject(...)` entry. Ignored for
+    /// `Accept` / `Skip`; absent (or empty) logs the rejection with no
+    /// reason text.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// The user's resolution for one conflicting bibliography key. Keys with no
@@ -1014,6 +1021,56 @@ pub async fn collab_pending_review(
     Ok(Some(review::compute_review(&local, &incoming)))
 }
 
+/// The local + staged-incoming content for one note in a staged import,
+/// powering the side-by-side review diff. Either side may be absent: an
+/// `Added` note has no local copy; a `Deleted` change has no incoming body.
+#[derive(Debug, Serialize)]
+pub struct ReviewDetail {
+    pub collabid: String,
+    /// Notebox-relative path of the local copy, if one exists.
+    pub local_path: Option<String>,
+    /// Current local note content, or `None` for a note new to this machine.
+    pub local_content: Option<String>,
+    /// Incoming (staged) note content, or `None` when the incoming side is a
+    /// deletion tombstone.
+    pub incoming_content: Option<String>,
+}
+
+/// Read the local + staged-incoming content for one note, for the review
+/// diff. Read-only: touches no working files, applies nothing.
+#[tauri::command]
+pub async fn collab_review_detail(
+    collection_path: String,
+    collabid: String,
+    state: State<'_, AppState>,
+) -> Result<ReviewDetail> {
+    let storage = state.get_storage().await?;
+    let (root, _abs, id) = collection_ids(&state, &collection_path).await?;
+    let staging = collab::collab_dir(&root, &id).join(INCOMING_DIR);
+
+    let incoming = VersionsFile::load(&staging.join(INCOMING_VERSIONS))?
+        .ok_or_else(|| InkyCapError::BadRequest("No staged import to review.".to_string()))?;
+
+    // Incoming (staged) content — absent for a tombstone or an unknown entry.
+    let incoming_content = match incoming.notes.get(&collabid) {
+        Some(inc) if !inc.is_deleted() => std::fs::read_to_string(staging.join(&inc.path)).ok(),
+        _ => None,
+    };
+
+    // Local content — the receiver's own copy located by collabid (follows
+    // moves), if any. Absent for an Added note. `rel` is notebox-relative for
+    // the storage read; the returned `local_path` is an absolute frontend
+    // string so the caller can open it as an editor tab directly.
+    let rel = collabid_path_map(&state, &root).await.get(&collabid).cloned();
+    let local_content = match &rel {
+        Some(rel) => storage.read_file(&PathBuf::from(rel)).await.ok(),
+        None => None,
+    };
+    let local_path = rel.map(|r| to_frontend_string(&root.join(r)));
+
+    Ok(ReviewDetail { collabid, local_path, local_content, incoming_content })
+}
+
 /// Apply a set of review decisions from the staged import to the working
 /// notebox. Accepts write through `NoteboxStorage`; rejects/skips leave
 /// the working copy untouched. Updates the local sidecar with the merged
@@ -1066,6 +1123,9 @@ pub async fn collab_review_apply(
     let collabid_paths = collabid_path_map(&state, &root).await;
 
     let mut report = ApplyReport::default();
+    // Declined changes to record in the rejection-log note: (target, reason).
+    // Collected here and written once after the loop.
+    let mut rejections: Vec<(String, String)> = Vec::new();
 
     for decision in &decisions {
         let Some(inc) = incoming.notes.get(&decision.collabid) else {
@@ -1074,7 +1134,34 @@ pub async fn collab_review_apply(
         let existing = collabid_paths.get(&decision.collabid).cloned();
         match decision.action {
             DecisionAction::Skip => report.skipped += 1,
-            DecisionAction::Reject => report.rejected += 1,
+            DecisionAction::Reject => {
+                report.rejected += 1;
+                // The note's display name is its filename stem (titles drive
+                // filenames in InkyCap); prefer the receiver's own copy when
+                // they have one, else the sender's path.
+                let target_path = existing.clone().unwrap_or_else(|| inc.path.clone());
+                let target = Path::new(&target_path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| target_path.clone());
+                rejections.push((target, decision.reason.clone().unwrap_or_default()));
+
+                // Resolve the rejection: fold the incoming clock into our local
+                // entry while keeping our own content. This records that we've
+                // seen — and declined — their version, so it doesn't re-offer
+                // on the next import (a deliberate, final "keep mine"). A note
+                // we never tracked (a declined Added note) gets a content-less
+                // entry carrying just the seen clock, so the same skip applies.
+                let entry = local.notes.entry(decision.collabid.clone()).or_insert_with(|| {
+                    NoteVersion {
+                        clock: VectorClock::new(),
+                        path: existing.clone().unwrap_or_default(),
+                        hash: None,
+                        tombstone: None,
+                    }
+                });
+                entry.clock.merge(&inc.clock);
+            }
             DecisionAction::Accept => {
                 if inc.is_deleted() {
                     // Adopt the deletion: remove the receiver's own copy
@@ -1126,6 +1213,40 @@ pub async fn collab_review_apply(
                     report.applied += 1;
                 }
             }
+        }
+    }
+
+    // Record declined changes in the collection's rejection-log note — a
+    // local-audit note in the import folder (NOT a collection member, so it
+    // never travels back in a package). Each reject appends a Typst-native
+    // `#review-reject(...)` entry; the note is created with a header on the
+    // first rejection. Done once after the loop so multiple rejects share a
+    // single read/append/write, and reindexed so it appears without a restart.
+    if !rejections.is_empty() {
+        let by = identity::load_me(&collab::collab_dir(&root, &id))?.map(|me| me.handle);
+        let on = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+        let log_rel = format!(
+            "{import_folder}/{}.typ",
+            crate::typst_pipeline::review::rejection_log_title(&name)
+        );
+        let log_path = PathBuf::from(&log_rel);
+        let mut content = storage.read_file(&log_path).await.ok();
+        for (target, reason) in &rejections {
+            let entry = crate::typst_pipeline::review::review_reject_call(
+                target,
+                reason,
+                by.as_deref(),
+                Some(&on),
+            );
+            content = Some(crate::typst_pipeline::review::append_to_rejection_log(
+                content.as_deref(),
+                &entry,
+                &name,
+            ));
+        }
+        if let Some(content) = content {
+            storage.write_file(&log_path, &content).await?;
+            state.reindex_note(&root.join(&log_rel), &content).await;
         }
     }
 

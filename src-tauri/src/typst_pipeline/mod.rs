@@ -18,6 +18,7 @@ pub mod note_rewriter;
 pub mod path_rebase;
 pub mod query;
 pub mod recovery;
+pub mod review;
 pub mod style_injection;
 pub mod world;
 pub mod zotero;
