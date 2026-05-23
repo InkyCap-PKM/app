@@ -12,9 +12,9 @@
 //! so each command reads the current truth and there's no in-memory
 //! cache to keep coherent with the file watcher.
 //!
-//! Not yet wired (work-in-progress, tracked in the plan): attachment
-//! discovery into packages, the `#review-reject` rejection log, and
-//! bibliography conflict resolution beyond keep-local.
+//! Reviewer decisions (accept/reject) and bare comments accumulate in a
+//! per-collection **review log** note via the `#review-decision` primitive
+//! (see `crate::typst_pipeline::review`).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -35,6 +35,10 @@ use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 use crate::storage::{sanitize_notebox_arg, to_frontend_string};
+// Aliased to avoid confusion with `collab::review` (the diff/decision engine).
+// `review_log` is the Typst-side glue that renders/accumulates the review-log
+// note.
+use crate::typst_pipeline::review::{self as review_log, ReviewAction};
 
 const INCOMING_DIR: &str = "incoming";
 const INCOMING_VERSIONS: &str = "incoming-versions.json";
@@ -110,12 +114,12 @@ pub enum DecisionAction {
 pub struct ReviewDecision {
     pub collabid: String,
     pub action: DecisionAction,
-    /// Rationale for a `Reject` decision, recorded in the collection's
-    /// rejection-log note as a `#review-reject(...)` entry. Ignored for
-    /// `Accept` / `Skip`; absent (or empty) logs the rejection with no
-    /// reason text.
+    /// Optional reviewer comment, recorded in the collection's review-log note
+    /// as a `#review-decision(...)` entry. A `Reject` is always logged (with
+    /// or without a comment); an `Accept` is logged only when a comment is
+    /// present; `Skip` never logs. Absent (or empty) ⇒ no comment text.
     #[serde(default)]
-    pub reason: Option<String>,
+    pub comment: Option<String>,
 }
 
 /// The user's resolution for one conflicting bibliography key. Keys with no
@@ -1277,28 +1281,31 @@ pub async fn collab_review_apply(
     let collabid_paths = collabid_path_map(&state, &root).await;
 
     let mut report = ApplyReport::default();
-    // Declined changes to record in the rejection-log note: (target, reason).
-    // Collected here and written once after the loop.
-    let mut rejections: Vec<(String, String)> = Vec::new();
+    // Decisions/comments to record in the review-log note:
+    // (target, action, comment). Collected here and written once after the
+    // loop. A reject is always logged; an accept only when commented.
+    let mut log_entries: Vec<(String, ReviewAction, String)> = Vec::new();
 
     for decision in &decisions {
         let Some(inc) = incoming.notes.get(&decision.collabid) else {
             continue;
         };
         let existing = collabid_paths.get(&decision.collabid).cloned();
+        // The note's display name is its filename stem (titles drive filenames
+        // in InkyCap); prefer the receiver's own copy when they have one.
+        let stem_of = |p: &str| {
+            Path::new(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.to_string())
+        };
+        let comment = decision.comment.clone().unwrap_or_default();
         match decision.action {
             DecisionAction::Skip => report.skipped += 1,
             DecisionAction::Reject => {
                 report.rejected += 1;
-                // The note's display name is its filename stem (titles drive
-                // filenames in InkyCap); prefer the receiver's own copy when
-                // they have one, else the sender's path.
                 let target_path = existing.clone().unwrap_or_else(|| inc.path.clone());
-                let target = Path::new(&target_path)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| target_path.clone());
-                rejections.push((target, decision.reason.clone().unwrap_or_default()));
+                log_entries.push((stem_of(&target_path), ReviewAction::Rejected, comment));
 
                 // Resolve the rejection: fold the incoming clock into our local
                 // entry while keeping our own content. This records that we've
@@ -1330,6 +1337,10 @@ pub async fn collab_review_apply(
                     }
                     local.notes.insert(decision.collabid.clone(), inc.clone());
                     report.deleted += 1;
+                    if !comment.is_empty() {
+                        let target_path = existing.clone().unwrap_or_else(|| inc.path.clone());
+                        log_entries.push((stem_of(&target_path), ReviewAction::Accepted, comment));
+                    }
                 } else {
                     // Copy the staged content to the receiver's copy if they
                     // have one (update in place), else to the import folder
@@ -1348,6 +1359,7 @@ pub async fn collab_review_apply(
                         birth,
                         &|p| root.join(p).exists(),
                     );
+                    let dest_stem = stem_of(&dest_rel);
 
                     storage.write_file(&PathBuf::from(&dest_rel), &body).await?;
                     // Reindex now so the collection's filter (evaluated
@@ -1365,43 +1377,25 @@ pub async fn collab_review_apply(
                     entry.hash = inc.hash.clone();
                     entry.tombstone = None;
                     report.applied += 1;
+                    if !comment.is_empty() {
+                        log_entries.push((dest_stem, ReviewAction::Accepted, comment));
+                    }
                 }
             }
         }
     }
 
-    // Record declined changes in the collection's rejection-log note — a
+    // Record decisions/comments in the collection's review-log note — a
     // local-audit note in the import folder (NOT a collection member, so it
-    // never travels back in a package). Each reject appends a Typst-native
-    // `#review-reject(...)` entry; the note is created with a header on the
-    // first rejection. Done once after the loop so multiple rejects share a
-    // single read/append/write, and reindexed so it appears without a restart.
-    if !rejections.is_empty() {
+    // never travels back in a package). Each entry appends a Typst-native
+    // `#review-decision(...)` call; the note is created with a header on first
+    // use. Done once after the loop so a batch shares a single read/append/
+    // write, and reindexed so it appears without a restart.
+    if !log_entries.is_empty() {
         let by = identity::load_me(&collab::collab_dir(&root, &id))?.map(|me| me.handle);
         let on = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
-        let log_rel = format!(
-            "{import_folder}/{}.typ",
-            crate::typst_pipeline::review::rejection_log_title(&name)
-        );
-        let log_path = PathBuf::from(&log_rel);
-        let mut content = storage.read_file(&log_path).await.ok();
-        for (target, reason) in &rejections {
-            let entry = crate::typst_pipeline::review::review_reject_call(
-                target,
-                reason,
-                by.as_deref(),
-                Some(&on),
-            );
-            content = Some(crate::typst_pipeline::review::append_to_rejection_log(
-                content.as_deref(),
-                &entry,
-                &name,
-            ));
-        }
-        if let Some(content) = content {
-            storage.write_file(&log_path, &content).await?;
-            state.reindex_note(&root.join(&log_rel), &content).await;
-        }
+        append_review_log(&state, &root, &name, &import_folder, by.as_deref(), &on, &log_entries)
+            .await?;
     }
 
     // Bibliography: union-by-key merge the incoming shared `.bib` into ours.
@@ -1500,6 +1494,69 @@ pub async fn collab_review_apply(
 
     local.save(&collab::versions_path(&root, &id))?;
     Ok(report)
+}
+
+/// Append `(target, action, comment)` entries to a collection's local
+/// review-log note (creating it on first use) and reindex it so it appears
+/// without a restart. Shared by `collab_review_apply` (decisions) and
+/// `collab_review_comment` (bare comments). `by`/`on` attribute the entries to
+/// the recording collaborator + date. A no-op when `entries` is empty.
+async fn append_review_log(
+    state: &State<'_, AppState>,
+    root: &Path,
+    collection_name: &str,
+    import_folder: &str,
+    by: Option<&str>,
+    on: &str,
+    entries: &[(String, ReviewAction, String)],
+) -> Result<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let storage = state.get_storage().await?;
+    let log_rel = format!("{import_folder}/{}.typ", review_log::review_log_title(collection_name));
+    let log_path = PathBuf::from(&log_rel);
+    let mut content = storage.read_file(&log_path).await.ok();
+    for (target, action, comment) in entries {
+        let call = review_log::review_decision_call(target, *action, comment, by, Some(on));
+        content = Some(review_log::append_to_review_log(content.as_deref(), &call, collection_name));
+    }
+    if let Some(content) = content {
+        storage.write_file(&log_path, &content).await?;
+        state.reindex_note(&root.join(&log_rel), &content).await;
+    }
+    Ok(())
+}
+
+/// Record a free-standing reviewer comment in the collection's review-log note
+/// without applying any change — the "Add comment" affordance in the review
+/// panel. `target` is the note's display name (filename stem). Best-effort
+/// placement in the import folder, reindexed so it shows without a restart.
+#[tauri::command]
+pub async fn collab_review_comment(
+    collection_path: String,
+    target: String,
+    comment: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let storage = state.get_storage().await?;
+    let (root, col_abs, id) = collection_ids(&state, &collection_path).await?;
+    let col_arg = sanitize_notebox_arg(&collection_path)?;
+    let base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
+    let name = collection_membership_name(&col_abs);
+    let import_folder = import_folder_for(&base, &name);
+    let by = identity::load_me(&collab::collab_dir(&root, &id))?.map(|me| me.handle);
+    let on = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
+    append_review_log(
+        &state,
+        &root,
+        &name,
+        &import_folder,
+        by.as_deref(),
+        &on,
+        &[(target, ReviewAction::Commented, comment)],
+    )
+    .await
 }
 
 #[cfg(test)]

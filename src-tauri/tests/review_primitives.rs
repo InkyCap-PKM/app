@@ -1,13 +1,15 @@
-//! Compile-validates the `#review` / `#review-reject` collaboration
+//! Compile-validates the `#review` / `#review-decision` collaboration
 //! primitives in the `inkycap-notebox` Typst package (`lib.typ`).
 //!
 //! Both render a styled annotation block and emit a queryable label
-//! (`<inkycap-review>` / `<inkycap-review-reject>`). A syntax error in either
+//! (`<inkycap-review>` / `<inkycap-review-decision>`). A syntax error in either
 //! `#let` would only surface when a note that uses them is compiled, so this
 //! test runs a real note carrying both — a bare `#review[…]`, a `#review(…)[…]`
-//! with `by:`/`on:` attribution and inline markup, and a `#review-reject(…)`
-//! — through the actual Typst compiler. Needs no external tooling, so it
-//! always runs.
+//! with `by:`/`on:` attribution and inline markup, and the three
+//! `#review-decision(…)` action kinds (accepted / rejected / commented, the
+//! last two with/without a note arg) — through the actual Typst compiler.
+//! Exercises every branch of `_decision-color` / `_decision-label`. Needs no
+//! external tooling, so it always runs.
 
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};
@@ -23,7 +25,11 @@ Some prose under review.\n\
 \n\
 #review(by: \"alice\", on: \"2026-05-22\")[Tighten the intro.]\n\
 \n\
-#review-reject(\"Old Intro\", \"Superseded by the new draft.\", by: \"alice\", on: \"2026-05-22\")\n";
+#review-decision(\"New Section\", \"accepted\", by: \"alice\", on: \"2026-05-22\")\n\
+\n\
+#review-decision(\"Old Intro\", \"rejected\", note: \"Superseded by the new draft.\", by: \"alice\", on: \"2026-05-22\")\n\
+\n\
+#review-decision(\"Methodology\", \"commented\", note: \"Worth expanding later.\", by: \"bob\")\n";
 
 #[test]
 fn review_primitives_compile_to_pdf() {

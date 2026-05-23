@@ -8,14 +8,15 @@ import type { ChangeKind } from "../lib/types";
 import {
   activeReview,
   reviewItem,
-  reasons,
+  comments,
   currentReviewCollabid,
   setCurrentReviewPath,
-  setReason,
+  setComment,
   enterReviewMode,
   endReviewModeFor,
   isMerged,
   applyNote,
+  commentOnly,
 } from "../stores/collab";
 import { openTab, closeTab, tabs } from "../stores/tabs";
 import { pathEquals } from "../lib/paths";
@@ -129,6 +130,18 @@ const ReviewPanel: Component = () => {
     }
   }
 
+  // Record a comment without making a decision (the note stays pending).
+  // Clears the field on success so a follow-up comment starts fresh.
+  async function addComment(collabid: string, target: string) {
+    const text = comments()[collabid] ?? "";
+    setBusy(true);
+    try {
+      if (await commentOnly(target, text)) setComment(collabid, "");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Leave review-mode display for this note, close its tab, and return to the
   // collection the review belongs to.
   function endReview() {
@@ -218,10 +231,18 @@ const ReviewPanel: Component = () => {
                 <textarea
                   class="settings__text-input review-panel__reason"
                   rows={2}
-                  value={reasons()[it().collabid] ?? ""}
-                  onInput={(e) => setReason(it().collabid, e.currentTarget.value)}
-                  placeholder="Reason if rejecting (optional — recorded in the rejection log)"
+                  value={comments()[it().collabid] ?? ""}
+                  onInput={(e) => setComment(it().collabid, e.currentTarget.value)}
+                  placeholder="Comment (optional — recorded in the review log; sent with your decision, or on its own)"
                 />
+                {/* Leave a comment without deciding — keeps the note pending. */}
+                <button
+                  class="collection-table__toolbar-btn review-panel__comment-btn"
+                  disabled={busy() || !(comments()[it().collabid] ?? "").trim()}
+                  onClick={() => addComment(it().collabid, titleFromPath(it().path))}
+                >
+                  Add Comment
+                </button>
               </Show>
 
               <button class="collection-table__toolbar-btn review-panel__end-btn" onClick={endReview}>

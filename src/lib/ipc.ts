@@ -1482,3 +1482,13 @@ export async function collabReviewDetail(
 ): Promise<ReviewDetail> {
   return invoke<ReviewDetail>("collab_review_detail", { collectionPath, collabid });
 }
+
+/** Record a free-standing reviewer comment in the collection's review-log note
+ *  without applying any change. `target` is the note's display name (stem). */
+export async function collabReviewComment(
+  collectionPath: string,
+  target: string,
+  comment: string,
+): Promise<void> {
+  return invoke<void>("collab_review_comment", { collectionPath, target, comment });
+}
