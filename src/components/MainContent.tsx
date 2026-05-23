@@ -16,7 +16,7 @@ import TypstEditor from "./TypstEditor";
 import MycelialView from "./MycelialView";
 import { executeCommand } from "../lib/command-registry";
 import { isEnabled as isJournalScrollTab } from "../stores/journal-scroll";
-import { reviewModeCollabidForPath } from "../stores/collab";
+import { reviewModeCollabidForPath, endReviewModeForNote } from "../stores/collab";
 import { BrainCircuit, ChevronLeft, ChevronRight, Scroll, LibraryBig, MessageSquareCheck } from "lucide-solid";
 
 /// Render the title for a tab. File tabs show the basename without the
@@ -182,7 +182,12 @@ const MainContent: Component = () => {
                   class="tab__close"
                   onClick={(e) => {
                     e.stopPropagation();
+                    // Closing a note that's in review mode ends review mode for
+                    // it (same as the right-panel "End Review Mode" button).
+                    const reviewCollabid =
+                      tab.type === "file" ? reviewModeCollabidForPath(tab.path) : null;
                     closeTab(tab.id);
+                    if (reviewCollabid) endReviewModeForNote(tab.path, reviewCollabid);
                   }}
                 >
                   {"\u00D7"}

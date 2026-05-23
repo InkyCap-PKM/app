@@ -245,6 +245,27 @@
   margin-left: 0;
 }
 
+/* Pending-review badge — a right-aligned call-to-action chip shown when a
+   collaboration review session has changes awaiting a decision. Accent-tinted
+   so it stands out from the muted stats; clicking jumps to the review. */
+.status-bar__review-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--status-btn-bg);
+  border: none;
+  color: var(--accent-text, var(--status-fg));
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.status-bar__review-badge:hover {
+  background: var(--status-btn-bg-hover);
+}
+
 .status-bar__spacer {
   flex: 1;
 }
@@ -4146,6 +4167,12 @@ svg.lucide {
   flex-wrap: wrap;
 }
 
+/* The top "Apply decisions" sits in the Set-all row but pushed to the right
+   edge, set apart from the Accept/Reject/Skip group. */
+.collab-panel__bulk-apply {
+  margin-left: auto;
+}
+
 /* Filter + sort row above the incoming-changes list. */
 .collab-panel__review-tools {
   display: flex;
@@ -7380,23 +7407,24 @@ svg.lucide {
 
 /* ─── Status bar: clickable notebox name ─── */
 
+/* Matches the pending-review badge: an accent-tinted clickable chip. */
 .status-bar__notebox-name {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: none;
+  background: var(--status-btn-bg);
   border: none;
-  color: var(--status-fg);
-  font-size: var(--text-base);
-  font-weight: 600;
+  color: var(--accent-text, var(--status-fg));
+  font-size: var(--text-sm);
+  font-weight: 500;
   cursor: pointer;
-  padding: 0;
+  padding: 1px 8px;
+  border-radius: 3px;
   font-family: inherit;
-  transition: color 0.15s ease;
 }
 
 .status-bar__notebox-name:hover {
-  color: var(--accent-color, #1D7874);
+  background: var(--status-btn-bg-hover);
 }
 
 /* ─── Notebox switcher popup ─── */

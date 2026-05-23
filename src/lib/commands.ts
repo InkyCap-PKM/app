@@ -22,6 +22,8 @@ import { activeEditorView } from "../stores/editor";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
 import { triggerCreationRule } from "../stores/creation-rules";
+import { packageCollection, importNewPackage, revealPendingReview } from "../stores/collab";
+import { showToast } from "../stores/toasts";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
 // mutate Solid.js signals; the editor picks up changes automatically
@@ -395,6 +397,39 @@ export function registerBuiltinCommands(callbacks: {
     title: "Import note text from reference",
     category: "References",
     execute: callbacks.openRefNotePicker,
+  });
+
+  // ── Collaboration ──
+  registerCommand({
+    id: "collab:package",
+    title: "Package this collection",
+    category: "Collaboration",
+    execute: async () => {
+      const tab = getActiveTab();
+      if (tab?.type !== "collection" || !tab.path) {
+        showToast("info", "No collection open", "Open a collection tab to package it.");
+        return;
+      }
+      await packageCollection(tab.path, tab.title);
+    },
+  });
+
+  registerCommand({
+    id: "collab:import",
+    title: "Import collaboration package",
+    category: "Collaboration",
+    execute: () => importNewPackage(),
+  });
+
+  registerCommand({
+    id: "collab:review",
+    title: "Review pending changes",
+    category: "Collaboration",
+    execute: () => {
+      if (!revealPendingReview()) {
+        showToast("info", "No pending reviews", "Import a package to start a review.");
+      }
+    },
   });
 
   registerCommand({

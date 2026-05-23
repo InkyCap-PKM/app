@@ -1007,11 +1007,78 @@ walk descends into `#annotation`/`#suggestion` content). Added scoping on top:
 - Jump-to-exact-offset within the annotation (today lands on the line).
 - A standalone "browse annotations" affordance beyond `annotation:` + the toggle.
 
+## DONE — Zotero → shared `.bib` materialization (2026-05-24, uncommitted)
+
+On enable (and re-synced at package), a collaborative collection now materializes
+a **collection-owned `.bib` of just the entries its member notes cite**, pulled
+from the active citation source — file **or** Zotero (so a Zotero-live source,
+which can't travel in a package, is captured into a real `.bib`). lib **561**
+green; needs in-app validation.
+
+- Path: `.inkycap/collab/<collection-name>.bib` — **name-based** (not id-based)
+  so both collaborators derive the same path and the import merge writes to a
+  matching location; lives *beside* (not inside) the id-keyed sidecar dir, so it
+  survives a Disable→Enable cycle. Hidden under `.inkycap/` (excluded from the
+  note browser + search).
+- **Additive union** — `materialize_shared_bib` merges the cited subset into the
+  *existing* collection `.bib` via `merge_bibtex(existing, cited_subset, {})`, so
+  entries collaborators contributed on a prior import are **never dropped** when
+  re-materializing at enable/package. A malformed existing file is left
+  untouched rather than clobbered.
+- New code: `collab::bibliography::filter_bibtex_to_keys` (deterministic
+  biblatex re-serialize; +unit test); `commands::bibliography::load_source_bibtex`
+  (file → original `.bib` text for full fidelity, Zotero → `export_entries_to_bibtex`);
+  `commands::collab::{shared_bib_relpath, materialize_shared_bib}`.
+- Wiring: `setup_collaboration` replaces the old "point at `base.bibliography_file`"
+  block — materializes, points `collaboration.bibliography_file` at the result,
+  indexes it via `refresh_bib_versions`; falls back to the prior pointer when
+  there are no citations. `collab_package` re-materializes before the bib refresh;
+  `bib_rel` feeds both the sidecar refresh and the package bundle + manifest.
+  Members resolved with `evaluate_filter_group` (the original filter at enable,
+  the canonical one at package).
+- Cited keys come from `typst_pipeline::bibliography::extract_citations` over each
+  member note's source.
+- **Deferred (separate concern):** per-note citation *rendering* still uses the
+  notebox settings `bibliography_path`, not the collection's shared `.bib`. Wiring
+  notes to resolve citations against the shared bib *while collaborative* (so the
+  doc's "only source allowed while collaborative" holds at render time) is a
+  larger change (augment is notebox-global, a note can be in many collections).
+
+## DONE — Collab UX polish (2026-05-24, uncommitted)
+
+- **Status-bar pending-review badge** — `StatusBar.tsx` renders an accent chip
+  "N to review" (`MessageSquareCheck`) when the active review session has
+  pending `note_items`; click → `revealPendingReview()` opens the collection
+  tab, points the right-panel diff at the first pending note, and un-collapses
+  the panel. New `.status-bar__review-badge` CSS. **Scoped to the loaded
+  session** — there's no cross-collection scan, so the badge reflects whatever
+  review is currently staged in `stores/collab` (lights up after an import or
+  when a collaborative collection with a staged review is opened). A global
+  "pending across all collections" indicator would need a new backend scan of
+  every sidecar's `incoming/`.
+- **Command palette "Collaboration" category** (added to `CommandCategory` +
+  `CATEGORY_ORDER`): "Package this collection" (guarded on an active collection
+  tab → `packageCollection`), "Import collaboration package"
+  (`importNewPackage` global flow), "Review pending changes"
+  (`revealPendingReview`, toast when none).
+- **DRY refactor** — the dialog→ipc→toast flows now live once in
+  `stores/collab.ts` (`packageCollection`, `importPackageInto`,
+  `importNewPackage`, plus `pendingReviewCount` / `revealPendingReview`).
+  `CollabPanel.doPackage`/`doImport` and `LeftSidebar.importCollabPackage` were
+  refactored to call them (LeftSidebar's duplicated dialog/ipc/openTab/toast +
+  its now-unused `open` import removed).
+- (Same session, search UX: tips panel moved below the options row +
+  auto-dismiss on results scroll; the search box/controls stay pinned while
+  only results scroll.)
+
 ## Other remaining work (deferred, roughly prioritized)
 
-1. **Zotero → shared `.bib` materialization on enable** — collaborative
-   collections should disable Zotero-live and accumulate cited entries
-   into the shared `.bib`.
+2. **Polish (remaining):** a right-panel ReviewPanel beyond the inline collab
+   tab (largely superseded by the existing right-panel Review diff), conflict
+   resolution UI beyond accept-takes-theirs.
+   - *Attachment hash-compare — DONE 2026-05-22:* `collab_review_apply`
+     byte-compares each incoming attachment against the local copy and writes
+     when missing **or changed** (was skip-if-present, so updated attachments
 2. **Polish:** command-palette entries (Git:/Collab: actions),
    status-bar badge for pending reviews, a right-panel ReviewPanel
    (review is inline in the collab tab today), conflict resolution UI
@@ -1086,9 +1153,11 @@ lost. Grouped by kind. Items link to the section above with the detail.
   in-app validation, then commit.
 - [ ] **Idea 2 — inline `#suggestion` pills** (manual v1; automatic suggesting
   mode deferred). Lives alongside diff review.
-- [ ] **Zotero → shared `.bib` materialization on enable** (note: bib source is
-  notebox-wide, not per-collection — design as "materialize cited entries into a
-  collection-owned `.bib` at enable, re-sync lazily at package").
+- [x] **Zotero → shared `.bib` materialization on enable** — DONE 2026-05-24
+  (uncommitted). Materializes the cited subset into `.inkycap/collab/<name>.bib`
+  (additive union; file + Zotero sources) at enable + package. See "DONE — Zotero
+  → shared `.bib` materialization" section. Deferred: notes rendering against the
+  shared bib while collaborative.
 - [ ] **Book export error-tolerance (option 2b)** — render *around* a broken note
   via `recovery` (2a already names the failing note).
 - [x] **Annotation discovery** — DONE 2026-05-23 (uncommitted). Redone as a
@@ -1096,8 +1165,14 @@ lost. Grouped by kind. Items link to the section above with the detail.
   Search integration ("Annotations" toggle beside Regex + `annotation:` syntax),
   *not* a sidebar pane (that first attempt was reverted). See "DONE —
   Annotations rename + search integration" below.
-- [ ] **Collab UX polish** — command-palette entries (Collab: actions),
-  status-bar badge for pending reviews.
+- [x] **Collab UX polish** — DONE 2026-05-24 (uncommitted): status-bar
+  pending-review badge (`StatusBar.tsx`, click → `revealPendingReview`) +
+  command-palette "Collaboration" category (Package / Import / Review). Shared
+  package/import flows extracted into `stores/collab.ts` (`packageCollection`,
+  `importPackageInto`, `importNewPackage`) and reused by CollabPanel +
+  LeftSidebar (de-duped). Badge is scoped to the loaded review session (no
+  cross-collection scan exists — a global "pending across all collections"
+  indicator would need a new backend scan). See "DONE — Collab UX polish".
 - [ ] **Conflict-resolution UI beyond accept-takes-theirs** — per-attachment review
   (today: binary divergence takes-incoming, no UI); richer bib/note conflict UX.
 

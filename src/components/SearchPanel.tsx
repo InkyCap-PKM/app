@@ -623,33 +623,6 @@ const SearchPanel: Component = () => {
         </button>
       </div>
 
-      <Show when={showTips()}>
-        <div class="search-panel__hints">
-          <div class="search-panel__hints-title">Search Tips</div>
-          <For each={FILTER_HINTS}>
-            {(hint) => (
-              <button
-                class="search-panel__hint"
-                onClick={() => insertHint(hint)}
-                title={hint.description}
-              >
-                <span class="search-panel__hint-prefix">{hint.prefix}</span>
-                <span class="search-panel__hint-desc">{hint.description}</span>
-              </button>
-            )}
-          </For>
-          <div class="search-panel__hints-divider" />
-          <For each={SYNTAX_TIPS}>
-            {(tip) => (
-              <div class="search-panel__hint search-panel__hint--static">
-                <span class="search-panel__hint-prefix">{tip.label}</span>
-                <span class="search-panel__hint-desc">{tip.description}</span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-
       <Show when={showReplace()}>
         <div class="search-panel__replace-row">
           <input
@@ -735,6 +708,33 @@ const SearchPanel: Component = () => {
           >
             <MessagesSquare size={18} />
           </button>
+        </div>
+      </Show>
+
+      <Show when={showTips()}>
+        <div class="search-panel__hints">
+          <div class="search-panel__hints-title">Search Tips</div>
+          <For each={FILTER_HINTS}>
+            {(hint) => (
+              <button
+                class="search-panel__hint"
+                onClick={() => insertHint(hint)}
+                title={hint.description}
+              >
+                <span class="search-panel__hint-prefix">{hint.prefix}</span>
+                <span class="search-panel__hint-desc">{hint.description}</span>
+              </button>
+            )}
+          </For>
+          <div class="search-panel__hints-divider" />
+          <For each={SYNTAX_TIPS}>
+            {(tip) => (
+              <div class="search-panel__hint search-panel__hint--static">
+                <span class="search-panel__hint-prefix">{tip.label}</span>
+                <span class="search-panel__hint-desc">{tip.description}</span>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
 
@@ -844,7 +844,14 @@ const SearchPanel: Component = () => {
         <div class="search-panel__error">{searchError()}</div>
       </Show>
 
-      <div class="search-panel__results">
+      <div
+        class="search-panel__results"
+        onScroll={() => {
+          // Tips are a transient reference overlay — dismiss them as soon as
+          // the user starts scrolling the results.
+          if (showTips()) setShowTips(false);
+        }}
+      >
         <For each={sortedGroups()}>
           {(group) => {
             const expanded = () => isFileExpanded(group.path);

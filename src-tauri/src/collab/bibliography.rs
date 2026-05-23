@@ -14,7 +14,7 @@
 //! InkyCap owns the formatting of this managed file, so the normalization
 //! is acceptable.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use biblatex::Bibliography;
 
@@ -63,6 +63,28 @@ pub fn parse_entries(bibtex: &str) -> Result<BTreeMap<String, BibEntryRecord>, S
         map.insert(entry.key.clone(), BibEntryRecord { serialized, hash });
     }
     Ok(map)
+}
+
+/// Keep only the entries whose citation key is in `keep`, re-serialized
+/// through the same canonical `biblatex` path (and deterministic key order)
+/// as [`merge_bibtex`]. Used to *materialize* a collection-owned bibliography
+/// containing only the entries the collection's notes actually cite, so a
+/// shared collection travels with a self-contained `.bib` instead of the
+/// author's entire library. A malformed source errors rather than shipping
+/// partial data.
+pub fn filter_bibtex_to_keys(bibtex: &str, keep: &HashSet<String>) -> Result<String, String> {
+    let entries = parse_entries(bibtex)?;
+    let body = entries
+        .iter()
+        .filter(|(key, _)| keep.contains(*key))
+        .map(|(_, e)| e.serialized.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    Ok(if body.is_empty() {
+        String::new()
+    } else {
+        format!("{body}\n")
+    })
 }
 
 /// Merge `incoming` into `local` by citation key.
@@ -176,6 +198,25 @@ mod tests {
     #[test]
     fn parse_empty_is_ok_and_empty() {
         assert!(parse_entries("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn filter_keeps_only_cited_keys() {
+        let both = format!("{SMITH}\n\n{JONES}");
+        let keep: HashSet<String> = ["smith2020".to_string()].into_iter().collect();
+        let out = filter_bibtex_to_keys(&both, &keep).unwrap();
+        let reparsed = parse_entries(&out).unwrap();
+        assert_eq!(keys(&reparsed), vec!["smith2020".to_string()]);
+
+        // A key not present in the source is silently skipped.
+        let keep2: HashSet<String> =
+            ["smith2020".to_string(), "ghost1999".to_string()].into_iter().collect();
+        let out2 = filter_bibtex_to_keys(&both, &keep2).unwrap();
+        assert_eq!(keys(&parse_entries(&out2).unwrap()), vec!["smith2020".to_string()]);
+
+        // No overlap → empty string.
+        let keep3: HashSet<String> = ["nobody".to_string()].into_iter().collect();
+        assert!(filter_bibtex_to_keys(&both, &keep3).unwrap().is_empty());
     }
 
     #[test]

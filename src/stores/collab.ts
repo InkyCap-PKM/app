@@ -10,15 +10,19 @@
 // "Review mode" is a per-note display state: a note the user opened for
 // review shows the diff in the right panel and a "Reviewing"/"Merged" badge
 // in its editor header. It persists (reopening the note re-enters it) until
-// the user clicks "End Review Mode" — closing the tab with ✕ does not end it.
+// the user ends it — either via the right-panel "End Review Mode" button or by
+// closing the note's tab with ✕ (both run `endReviewModeForNote`).
 // `reviewModeByPath` (note's local path → collabid) tracks which notes are in
 // review mode; `currentReviewCollabid` is the one shown in the right panel.
 
 import { createSignal } from "solid-js";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import type { ReviewResult, ReviewItem, DecisionAction, ReviewDecision, BibDecision } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { showToast } from "./toasts";
 import { bumpPropertyVersion } from "./notebox";
+import { openTab } from "./tabs";
+import { setRightCollapsed } from "./layout";
 import { normalizePath } from "../lib/paths";
 
 /** Which collection's import is under review. Needed by the right-panel diff
@@ -156,6 +160,16 @@ export function isMerged(collabid: string | null): boolean {
   return !!collabid && !!mergedCollabids()[collabid];
 }
 
+/** End review mode for a note the way the "End Review Mode" button does:
+ *  leave review-mode display and return to the collection the review belongs
+ *  to. The caller closes the note's own tab (the right-panel button finds it;
+ *  the tab-strip ✕ closes it inherently). */
+export function endReviewModeForNote(localPath: string | null, collabid: string | null) {
+  endReviewModeFor(localPath, collabid);
+  const ar = activeReview();
+  if (ar) openTab({ type: "collection", title: ar.collectionName, path: ar.collectionPath });
+}
+
 /** End review-mode display for one note (its local path), and clear the panel
  *  pointer if it was the one showing. Does NOT touch the working files. */
 export function endReviewModeFor(localPath: string | null, collabid: string | null) {
@@ -262,4 +276,100 @@ export async function applyReview(): Promise<boolean> {
     showToast("error", "Apply failed", String(e));
     return false;
   }
+}
+
+// ── Shared package / import flows ─────────────────────────────────────────
+// The dialog → ipc → toast logic lives here so the CollabPanel, the global
+// LeftSidebar button, and the command palette all drive one implementation.
+
+/** Package a collection to a user-chosen `.zip`. Returns true if one was
+ *  written (false on cancel/error). Surfaces its own toasts. */
+export async function packageCollection(
+  collectionPath: string,
+  collectionName: string,
+): Promise<boolean> {
+  const out = await save({
+    title: "Save collaboration package",
+    defaultPath: `${collectionName}.zip`,
+    filters: [{ name: "InkyCap package", extensions: ["zip"] }],
+  });
+  if (!out) return false;
+  try {
+    const r = await ipc.collabPackage(collectionPath, out);
+    showToast("success", "Package written", `${r.note_count} notes`);
+    return true;
+  } catch (e) {
+    showToast("error", "Package failed", String(e));
+    return false;
+  }
+}
+
+/** Import a package into an *existing* collection and stage its review
+ *  session. Returns true if a review with content was staged. Toasts itself. */
+export async function importPackageInto(
+  collectionPath: string,
+  collectionName: string,
+): Promise<boolean> {
+  const pkg = await open({
+    title: "Import collaboration package",
+    filters: [{ name: "InkyCap package", extensions: ["zip"] }],
+  });
+  if (!pkg || Array.isArray(pkg)) return false;
+  try {
+    const r = await ipc.collabImport(collectionPath, pkg);
+    loadReview(collectionPath, collectionName, r);
+    if (!reviewHasContent(r)) {
+      showToast("info", "Nothing to review", "No incoming changes.");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    showToast("error", "Import failed", String(e));
+    return false;
+  }
+}
+
+/** Import a package via the global flow: create the collection if it doesn't
+ *  exist, open it (its Collaboration panel resumes the staged review on
+ *  mount). Toasts itself. */
+export async function importNewPackage(): Promise<void> {
+  const pkg = await open({
+    title: "Import collaboration package",
+    filters: [{ name: "InkyCap package", extensions: ["zip"] }],
+  });
+  if (!pkg || Array.isArray(pkg)) return;
+  try {
+    const res = await ipc.collabImportPackage(pkg);
+    openTab({ type: "collection", title: res.collection_name, path: res.collection_path });
+    bumpPropertyVersion();
+    const n = res.review.note_items.length;
+    const where = res.created
+      ? `Created "${res.collection_name}"`
+      : `Imported into "${res.collection_name}"`;
+    const detail = n > 0 ? ` — ${n} change(s) to review.` : " — no incoming changes.";
+    showToast("success", "Package imported", where + detail);
+  } catch (e) {
+    showToast("error", "Import failed", String(e));
+  }
+}
+
+// ── Pending-review badge ──────────────────────────────────────────────────
+
+/** Number of staged changes still awaiting a decision in the active review
+ *  session (0 when no session is loaded). Drives the status-bar badge. */
+export function pendingReviewCount(): number {
+  return review()?.note_items.length ?? 0;
+}
+
+/** Jump to the active review: open its collection tab, point the right-panel
+ *  diff at the first pending note, and reveal the panel. No-op (returns false)
+ *  when nothing is pending. */
+export function revealPendingReview(): boolean {
+  const ar = activeReview();
+  const r = review();
+  if (!ar || !r || r.note_items.length === 0) return false;
+  openTab({ type: "collection", title: ar.collectionName, path: ar.collectionPath });
+  setCurrentReviewCollabid(r.note_items[0].collabid);
+  setRightCollapsed(false);
+  return true;
 }
