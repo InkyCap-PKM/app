@@ -86,6 +86,23 @@ static HIGHLIGHT_RE: LazyLock<Regex> =
 static FOOTNOTE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#footnote\[([^\]]*)\]"#).unwrap());
 
+// CriticMarkup interop: #suggestion(...) / #review map to the standard
+// CriticMarkup delimiters so a note exported to markdown carries its tracked
+// changes + comments to other CriticMarkup-aware tools (Obsidian, iA Writer).
+// `[^)]*` after the kind absorbs any `by:`/`on:` attribution; bodies use the
+// same single-bracket limitation as the other inline regexes (no nested `]`).
+static SUGGESTION_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"#suggestion\(kind:\s*"replace",\s*old:\s*\[([^\]]*)\][^)]*\)\[([^\]]*)\]"#).unwrap()
+});
+static SUGGESTION_INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"#suggestion\(kind:\s*"insert"[^)]*\)\[([^\]]*)\]"#).unwrap()
+});
+static SUGGESTION_DELETE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"#suggestion\(kind:\s*"delete"[^)]*\)\[([^\]]*)\]"#).unwrap()
+});
+static REVIEW_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#review\[([^\]]*)\]"#).unwrap());
+
 static LINE_RULE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#line\(length:\s*100%\)"#).unwrap());
 
@@ -340,6 +357,24 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         .replace_all(&result, |caps: &regex::Captures| {
             format!("[^{}]", &caps[1])
         })
+        .into_owned();
+
+    // CriticMarkup: tracked-change suggestions + reviewer comments. Replace
+    // must run before insert/delete (they key on distinct `kind` literals, so
+    // order is for clarity, not correctness).
+    result = SUGGESTION_REPLACE_RE
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{{~~{}~>{}~~}}", &caps[1], &caps[2])
+        })
+        .into_owned();
+    result = SUGGESTION_INSERT_RE
+        .replace_all(&result, |caps: &regex::Captures| format!("{{++{}++}}", &caps[1]))
+        .into_owned();
+    result = SUGGESTION_DELETE_RE
+        .replace_all(&result, |caps: &regex::Captures| format!("{{--{}--}}", &caps[1]))
+        .into_owned();
+    result = REVIEW_RE
+        .replace_all(&result, |caps: &regex::Captures| format!("{{>>{}<<}}", &caps[1]))
         .into_owned();
 
     // Typst emphasis: _text_ → *text* (markdown italic)
@@ -846,6 +881,26 @@ mod tests {
         let result = convert_clean(input);
         assert!(!result.contains("#set"));
         assert!(!result.contains("```typst"));
+    }
+
+    #[test]
+    fn suggestions_to_criticmarkup() {
+        assert!(convert(r#"a #suggestion(kind: "insert")[new] b"#).contains("a {++new++} b"));
+        assert!(convert(r#"a #suggestion(kind: "delete")[old] b"#).contains("a {--old--} b"));
+        assert!(convert(r#"a #suggestion(kind: "replace", old: [o])[n] b"#).contains("a {~~o~>n~~} b"));
+    }
+
+    #[test]
+    fn suggestion_attribution_dropped_in_criticmarkup() {
+        // by:/on: don't survive the round-trip to plain CriticMarkup — the
+        // mark itself does.
+        let out = convert(r#"#suggestion(kind: "insert", by: "alice", on: "2026-05-23")[x]"#);
+        assert!(out.contains("{++x++}"), "got: {out}");
+    }
+
+    #[test]
+    fn review_to_criticmarkup_comment() {
+        assert!(convert("see #review[needs a citation] here").contains("{>>needs a citation<<}"));
     }
 
     #[test]

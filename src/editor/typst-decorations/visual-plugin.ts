@@ -26,6 +26,8 @@ import {
   CitationWidget,
   VerseWidget,
   FootnoteWidget,
+  SuggestionWidget,
+  type SuggestionKind,
 } from "./widgets";
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
@@ -601,7 +603,7 @@ const BLOCK_FUNCS = new Set([
 // pill-options.ts taskOptions / dueOptions). Their case branches handle
 // both decorations explicitly, mirroring how `cite` combines a pill with
 // the citation widget.
-const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link"]);
+const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "suggestion"]);
 
 /** Best-effort extraction of an ISO `YYYY-MM-DD` date from a snippet of
  *  Typst source — recognizes a `datetime(...)` call (positional or named
@@ -888,6 +890,24 @@ function handleFuncCall(
           }).range(from, to),
         );
       }
+      return false;
+    }
+    case "suggestion": {
+      // Interactive widget (no pill): the marks render always; cursor-adjacent
+      // reveals raw source for editing the proposed text (handled by the
+      // INTERACTIVE_FUNCS early-return above).
+      const kind = (extractNamedStringArg(text, "kind") ?? "insert") as SuggestionKind;
+      const by = extractNamedStringArg(text, "by") ?? "";
+      const on = extractNamedStringArg(text, "on") ?? "";
+      const body = extractBodyBracket(text) ?? "";
+      const oldText = kind === "replace" ? (extractNamedBracket(text, "old") ?? "") : "";
+      decos.push(
+        Decoration.replace({
+          widget: new SuggestionWidget(kind, body, oldText, by, on, from),
+          inclusiveStart: false,
+          inclusiveEnd: false,
+        }).range(from, to),
+      );
       return false;
     }
     case "cite": {
@@ -1231,6 +1251,56 @@ function extractBracketContent(text: string): string | null {
     }
   }
   return null;
+}
+
+/** Inner content of the first balanced `[...]` at or after `startIdx`. */
+function extractBracketAfter(text: string, startIdx: number): string | null {
+  const open = text.indexOf("[", startIdx);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "[") depth++;
+    else if (text[i] === "]") {
+      depth--;
+      if (depth === 0) return text.substring(open + 1, i);
+    }
+  }
+  return null;
+}
+
+/** Inner content of a named content argument, e.g. `old: [..]`. */
+function extractNamedBracket(text: string, name: string): string | null {
+  const m = new RegExp(`\\b${name}\\s*:\\s*`).exec(text);
+  if (!m) return null;
+  return extractBracketAfter(text, m.index + m[0].length);
+}
+
+/** Inner content of the trailing `[body]` content block — the `[...]` that
+ *  follows the balanced `(...)` argument list (so a `old: [..]` inside the
+ *  args isn't mistaken for it). String-aware so a `)` inside a quoted arg
+ *  doesn't end the arg list early. */
+function extractBodyBracket(text: string): string | null {
+  const parenOpen = text.indexOf("(");
+  let after = 0;
+  if (parenOpen >= 0) {
+    let depth = 0;
+    let inStr = false;
+    for (let i = parenOpen; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '"' && text[i - 1] !== "\\") inStr = !inStr;
+      else if (!inStr) {
+        if (ch === "(") depth++;
+        else if (ch === ")") {
+          depth--;
+          if (depth === 0) {
+            after = i + 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+  return extractBracketAfter(text, after);
 }
 
 const expandedFuncField = StateField.define<number | null>({

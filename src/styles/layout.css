@@ -4125,6 +4125,18 @@ svg.lucide {
   flex-wrap: wrap;
 }
 
+/* Filter + sort row above the incoming-changes list. */
+.collab-panel__review-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.collab-panel__review-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .collab-panel__review {
   display: flex;
   flex-direction: column;
@@ -4296,6 +4308,77 @@ svg.lucide {
   padding: 6px 8px;
   border-radius: var(--radius-sm, 4px);
   background: color-mix(in srgb, var(--accent-green, #2a6a50) 10%, transparent);
+}
+
+/* Inline-suggestion Accept/Reject menu (SuggestionWidget). Portalled to
+   <body> and positioned via anchorPanelMenu, so it uses the --popup-* tokens
+   like every other floating surface. */
+.cm-suggestion-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+}
+
+.cm-suggestion-menu__header {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.cm-suggestion-menu__comment {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 4px 6px;
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.cm-suggestion-menu__comment:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.cm-suggestion-menu__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cm-suggestion-menu__item {
+  flex: 1 1 0;
+  text-align: center;
+  padding: var(--popup-item-padding);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cm-suggestion-menu__item:hover {
+  background: var(--bg-hover);
+}
+
+.cm-suggestion-menu__item.is-accept {
+  color: #16a34a;
+}
+
+.cm-suggestion-menu__item.is-reject {
+  color: #dc2626;
 }
 
 /* Reusable help-button + popover (HelpButton.tsx). A circled "?" trigger that
