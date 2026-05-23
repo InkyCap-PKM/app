@@ -106,6 +106,16 @@ struct DocEntry {
     /// sites, populated from the AST projection so `tag:` filter clicks
     /// land on the actual tag call instead of a heuristic line.
     tag_locations: HashMap<String, Vec<usize>>,
+    /// Source line indices covered by an `#annotation[…]` / `#suggestion[…]`
+    /// call. Drives the "Annotations" search scope and `annotation:` filter
+    /// navigation. `#[serde(default)]` keeps older persisted indexes loadable
+    /// — they simply carry no annotation lines until the note is reindexed.
+    #[serde(default)]
+    annotation_lines: Vec<usize>,
+    /// Concatenated, lowercased body prose of every annotation/suggestion in
+    /// the doc, for the `annotation:` filter's substring match.
+    #[serde(default)]
+    annotation_text: String,
     /// Filesystem modification time, Unix seconds. Defaulted to 0 if the
     /// file's metadata could not be read.
     modified_time: i64,
@@ -248,28 +258,34 @@ impl SearchEngine {
     /// the auto-injected notebox-library import are filtered out so users
     /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
-        let mut results = self.collect_ranked_results(query);
+        let mut results = self.collect_ranked_results(query, false);
         results.truncate(max_results);
         results
     }
 
     /// Like [`search`], but returns the total match count before
-    /// truncation and supports an offset for pagination.
+    /// truncation and supports an offset for pagination. When
+    /// `annotations_only` is set, results are restricted to lines that fall
+    /// within an `#annotation[…]` / `#suggestion[…]` call — the "Annotations"
+    /// search-scope toggle.
     pub fn search_paginated(
         &self,
         query: &QueryNode,
         offset: usize,
         limit: usize,
+        annotations_only: bool,
     ) -> (Vec<SearchResult>, usize) {
-        let results = self.collect_ranked_results(query);
+        let results = self.collect_ranked_results(query, annotations_only);
         let total_count = results.len();
         let page = results.into_iter().skip(offset).take(limit).collect();
         (page, total_count)
     }
 
     /// Core search logic: evaluate query, build scored results, sort by
-    /// relevance descending. Callers decide how to slice the output.
-    fn collect_ranked_results(&self, query: &QueryNode) -> Vec<SearchResult> {
+    /// relevance descending. Callers decide how to slice the output. When
+    /// `annotations_only` is set, only result lines inside an annotation
+    /// survive (mirrors the import-line skip).
+    fn collect_ranked_results(&self, query: &QueryNode, annotations_only: bool) -> Vec<SearchResult> {
         let matches = self.evaluate(query);
         let mut results: Vec<SearchResult> = Vec::new();
 
@@ -317,6 +333,9 @@ impl SearchEngine {
             let mut sorted_lines: Vec<(usize, &Vec<WordPosition>)> = line_matches
                 .iter()
                 .filter(|(line_idx, _)| !doc.import_line_indices.contains(line_idx))
+                .filter(|(line_idx, _)| {
+                    !annotations_only || doc.annotation_lines.contains(line_idx)
+                })
                 .map(|(line, positions)| (*line, positions))
                 .collect();
             sorted_lines.sort_by_key(|(line, _)| *line);
@@ -621,6 +640,16 @@ impl SearchEngine {
                             .any(|k| k.contains(&value_lower))
                     }
                 }
+                FilterKind::Annotation => {
+                    // `annotation:` (empty) → any note with an annotation;
+                    // `annotation:foo` → a note whose annotation body contains
+                    // `foo`.
+                    if value_lower.is_empty() {
+                        !doc.annotation_lines.is_empty()
+                    } else {
+                        doc.annotation_text.contains(&value_lower)
+                    }
+                }
             };
 
             if matches {
@@ -645,6 +674,29 @@ impl SearchEngine {
                                     char_end: 0,
                                 });
                             }
+                        }
+                    }
+                }
+                // `annotation:` filters land on the annotation call line(s) —
+                // those whose source line contains the value (or all of them
+                // for a bare `annotation:`).
+                if let FilterKind::Annotation = kind {
+                    for &line_idx in &doc.annotation_lines {
+                        if doc.import_line_indices.contains(&line_idx) {
+                            continue;
+                        }
+                        let hit = value_lower.is_empty()
+                            || doc
+                                .lines
+                                .get(line_idx)
+                                .map_or(false, |l| l.to_lowercase().contains(&value_lower));
+                        if hit {
+                            lines.entry(line_idx).or_default().push(WordPosition {
+                                line: line_idx,
+                                word_index: 0,
+                                char_start: 0,
+                                char_end: 0,
+                            });
                         }
                     }
                 }
@@ -962,6 +1014,8 @@ fn build_doc(
             headings: projection.headings,
             import_line_indices,
             tag_locations: projection.tag_locations,
+            annotation_lines: projection.annotation_lines,
+            annotation_text: projection.annotation_text,
             modified_time,
             created_time,
         },
@@ -1082,6 +1136,44 @@ mod tests {
         // result rows, two distinct files.
         assert_eq!(results.len(), 3);
         assert_eq!(unique_paths(&results), 2);
+    }
+
+    #[test]
+    fn annotation_filter_and_scope() {
+        // "citation" appears on a plain body line AND inside an annotation.
+        let engine = SearchEngine::build(vec![(
+            PathBuf::from("/notebox/n.md"),
+            "Plain body mentions citation here.\n\n#annotation[please add a citation]\n".to_string(),
+            Vec::new(),
+            None,
+            Vec::new(),
+            HashMap::new(),
+        )]);
+
+        // `annotation:citation` matches the annotation body.
+        let q = parse_query("annotation:citation").unwrap();
+        assert_eq!(unique_paths(&engine.search(&q, 10)), 1);
+
+        // A word only in plain prose isn't an annotation match.
+        let q = parse_query("annotation:mentions").unwrap();
+        assert!(engine.search(&q, 10).is_empty());
+
+        // Bare annotation filter (empty value) → any note with an annotation.
+        let q = QueryNode::Filter {
+            kind: FilterKind::Annotation,
+            value: String::new(),
+        };
+        assert_eq!(unique_paths(&engine.search(&q, 10)), 1);
+
+        // Plain "citation" matches both the body and the annotation line.
+        let q = parse_query("citation").unwrap();
+        let (all, _) = engine.search_paginated(&q, 0, 50, false);
+        assert_eq!(all.len(), 2);
+
+        // With the annotations-only scope, only the annotation line survives.
+        let (scoped, _) = engine.search_paginated(&q, 0, 50, true);
+        assert_eq!(scoped.len(), 1);
+        assert!(scoped[0].line_text.contains("#annotation["));
     }
 
     #[test]

@@ -28,6 +28,9 @@ export const [searchError, setSearchError] = createSignal<string | null>(null);
 // Search options.
 export const [caseSensitive, setCaseSensitive] = createSignal<boolean>(false);
 export const [useRegex, setUseRegex] = createSignal<boolean>(false);
+// Restrict matches to text inside `#annotation[…]` / `#suggestion[…]` marks.
+// With an empty query, browses every annotation in the notebox.
+export const [annotationsOnly, setAnnotationsOnly] = createSignal<boolean>(false);
 
 // Display options.
 export const [collapseResults, setCollapseResults] = createSignal<boolean>(true);

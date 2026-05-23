@@ -60,6 +60,16 @@ pub struct TextProjection {
     /// if any. Used as a fallback signal for the title-match relevance
     /// bonus when a note doesn't set `#note(title: …)`.
     pub first_h1: Option<String>,
+    /// Source line indices (0-based) covered by an `#annotation[…]` or
+    /// `#suggestion[…]` call. Sorted + deduped. Drives the "Annotations"
+    /// search scope (restrict results to these lines) and the `annotation:`
+    /// filter's navigation, mirroring `tag_locations`.
+    pub annotation_lines: Vec<usize>,
+    /// Concatenated, lowercased body text of every `#annotation` / `#suggestion`
+    /// call in the document — the prose a reader wrote inside the marks (not the
+    /// `#annotation[`/`kind:` markup). Backs the `annotation:` filter's
+    /// substring match.
+    pub annotation_text: String,
     /// Transient build state, not output: set when a phrase-separating
     /// character was the last thing seen, so the *next* token emitted —
     /// possibly from a different AST node — is flagged as starting a fresh
@@ -76,6 +86,8 @@ pub fn project(source: &str) -> TextProjection {
 
     let mut out = TextProjection::default();
     walk(&link, source, &line_map, &mut out);
+    out.annotation_lines.sort_unstable();
+    out.annotation_lines.dedup();
     out
 }
 
@@ -220,6 +232,29 @@ fn handle_func_call(
                 let call_range = node.range();
                 emit_string_tokens(&name, call_range.start, line_map, out);
             }
+            return;
+        }
+
+        Some("annotation") | Some("suggestion") => {
+            // `#annotation[…]` / `#suggestion(kind: …)[…]` — record the lines
+            // the call spans (for the Annotations search scope) and the body
+            // prose (for the `annotation:` filter), then descend so the body
+            // still indexes as ordinary searchable text.
+            let range = node.range();
+            let start_line = line_map.line_of(range.start);
+            let end_line = line_map.line_of(range.end.saturating_sub(1).max(range.start));
+            for l in start_line..=end_line {
+                out.annotation_lines.push(l);
+            }
+            let body = collect_text_within(node);
+            let body = body.trim();
+            if !body.is_empty() {
+                if !out.annotation_text.is_empty() {
+                    out.annotation_text.push(' ');
+                }
+                out.annotation_text.push_str(&body.to_lowercase());
+            }
+            descend_into_content_blocks(node, source, line_map, out);
             return;
         }
 
@@ -748,6 +783,24 @@ mod tests {
         for w in ["quick", "brown", "fox"] {
             assert!(!tok(&p, w).phrase_break_before, "`{w}` unexpectedly broke");
         }
+    }
+
+    #[test]
+    fn annotation_and_suggestion_lines_and_body_recorded() {
+        let src = "body line\n\n#annotation[needs a citation]\n\n#suggestion(kind: \"insert\")[new bit]\n";
+        let p = project(src);
+        // Lines 2 and 4 (0-based) carry the annotation/suggestion calls.
+        assert!(p.annotation_lines.contains(&2), "lines: {:?}", p.annotation_lines);
+        assert!(p.annotation_lines.contains(&4), "lines: {:?}", p.annotation_lines);
+        // Body prose is captured for the `annotation:` filter…
+        assert!(p.annotation_text.contains("needs a citation"), "text: {:?}", p.annotation_text);
+        assert!(p.annotation_text.contains("new bit"), "text: {:?}", p.annotation_text);
+        // …but the `kind:` markup keyword is not.
+        assert!(!p.annotation_text.contains("kind"), "text: {:?}", p.annotation_text);
+        // The body still indexes as ordinary searchable prose.
+        let w = words(&p);
+        assert!(w.iter().any(|(_, t)| *t == "citation"));
+        assert!(w.iter().any(|(_, t)| *t == "bit"));
     }
 
     #[test]

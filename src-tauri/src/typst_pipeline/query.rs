@@ -1,9 +1,9 @@
 //! Metadata extraction via Typst's introspector.
 //!
-//! After compiling a document, we query the introspector for the three
-//! InkyCap labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`) and
-//! convert the attached `metadata(...)` values into Rust types that the
-//! scanner and indexes consume.
+//! After compiling a document, we query the introspector for the InkyCap
+//! labels (`<inkycap-note>`, `<inkycap-tag>`, `<inkycap-link>`,
+//! `<inkycap-agenda>`) and convert the attached `metadata(...)` values into
+//! Rust types that the scanner and indexes consume.
 
 use std::collections::HashMap;
 use std::path::Path;

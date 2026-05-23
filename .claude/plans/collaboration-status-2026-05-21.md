@@ -913,6 +913,100 @@ then Idea 2 as *manual* suggestions; defer automatic suggesting mode.
 uncommitted. Still deferred by design: AUTOMATIC "suggesting mode" (intercept
 every keystroke) and multi-message reply threads on a suggestion.**
 
+## DONE — Annotations rename + search integration (2026-05-23, uncommitted)
+
+Supersedes a first attempt at a left-sidebar "Reviews" aggregation pane (built,
+then **fully reverted**). Two reasons it was redone: (1) query-metadata markers
+can't carry an annotation's rich body text or its source line, so they're the
+wrong foundation for *finding text within a comment*; (2) the user wanted
+annotation discovery to live in **Search**, not a separate sidebar pane — and
+wanted the term **"Review" reserved for the collaboration change-review
+workflow**, with the comment primitive renamed to **annotation**.
+
+Full lib **560** pass / 0 fail; review/suggestion-primitive + utf8/path-safety
+integration tests + tsc + vite all green. **Needs in-app validation, then
+commit.**
+
+### Part A — full rename `#review` → `#annotation`
+
+Scope settled with the user: rename the comment primitive everywhere; **keep**
+`#review-decision` and the whole collaboration review/diff workflow named
+"review" (it genuinely *is* reviewing incoming changes). Annotations =
+`#annotation` comments + `#suggestion` marks.
+
+- **`inkycap-notebox/0.2.0/lib.typ`** — `#review`→`#annotation`,
+  `<inkycap-review>`→`<inkycap-annotation>`, rendered heading "Review"→
+  "Annotation", `_review-color`→`_annotation-color`, `_review-attribution`→
+  `_attribution`, `_review-{accept,reject}-color`→`_decision-{accept,reject}-color`.
+  `#review-decision` + `<inkycap-review-decision>` **unchanged**.
+- **Editor** — command palette "Review comment"→**"Annotation"** (inserts
+  `#annotation[`, cursorOffset 12); `ReviewBlockWidget`→`AnnotationBlockWidget`,
+  `REVIEW_COLOR`→`ANNOTATION_COLOR`, "Review"→"Annotation" heading;
+  `ALWAYS_EXPAND_PILLS` / `BLOCK_FUNC_NAMES` / visual-plugin case + import
+  `review`→`annotation`; markdown-shortcuts `{>>…<<}`→`#annotation`; the
+  suggestion accept/reject menu leaves an inline `#annotation[…]`.
+- **md interop** — `typst_to_md` `ANNOTATION_RE` (`#annotation[…]`→`{>>…<<}`),
+  `md_to_typst` (`{>>…<<}`→`#annotation[…]`); tests updated.
+- **`typst_pipeline/review.rs`** doc + `tests/review_primitives.rs` updated
+  (note authors `#annotation[…]` + `#annotation(by:,on:)[…]`, still exercises
+  `#review-decision`).
+- **Existing-note migration** — the package scaffolds **version-lessly** to
+  `<notebox>/.inkycap/notebox.typ` via `write_if_changed` on *every* notebox
+  open (`notebox_package.rs`), so the renamed `lib.typ` auto-propagates and any
+  surviving `#review[…]` note would fail to compile. Migrated the two real
+  occurrences: `InkyCap-Professional` and `Inky2` `Publishers/CAUT Journal.typ`
+  (`#review[`→`#annotation[`). (The `#review-reject(…)` lines in old
+  "Rejected Changes" logs are a *different*, already-removed primitive from the
+  earlier `#review-reject`→`#review-decision` change — left untouched.)
+
+### Part B — annotation search (toggle next to Regex + `annotation:` syntax)
+
+The search engine already indexes annotation body text incidentally (its AST
+walk descends into `#annotation`/`#suggestion` content). Added scoping on top:
+
+- **`search/text_projection.rs`** — `TextProjection` gains `annotation_lines`
+  (Vec<usize>, sorted+deduped: the source lines an `#annotation`/`#suggestion`
+  call spans) and `annotation_text` (lowercased body via `collect_text_within`
+  over those FuncCalls — excludes `kind:`/markup keywords). Body still emits
+  ordinary searchable tokens too. New `handle_func_call` arm for
+  `annotation`/`suggestion`.
+- **`search/engine.rs`** — `DocEntry` gains `annotation_lines` +
+  `annotation_text` (both `#[serde(default)]`; the index persists via **bincode**
+  with no version field, so adding fields changes the layout → old blob fails to
+  deserialize → `load_from_file` returns None → **automatic full rebuild**, no
+  version bump, no data loss). `find_filter` handles `FilterKind::Annotation`
+  (substring match on `annotation_text`; bare `annotation:` = any annotation;
+  navigation lands on the matching annotation line, mirroring `tag:`).
+  `collect_ranked_results` + `search_paginated` gain `annotations_only` — when
+  set, result lines are restricted to `annotation_lines` (mirrors the
+  import-line skip). `search()` is **unchanged** (passes `false`), so the dozen
+  test callers + `commands/files.rs` are untouched.
+- **`search/query.rs`** — `FilterKind::Annotation` + `"annotation"` in
+  `from_prefix` / `to_prefix` (Display) / the tokenizer `PREFIXES` list.
+- **`commands/search.rs`** — `notebox_search` gains `annotations_only`; an empty
+  query + the flag synthesizes a bare `annotation:` filter → **browse every
+  annotation** in the notebox.
+- **Frontend** — `stores/search.ts` `annotationsOnly` signal; `lib/ipc.ts`
+  `noteboxSearch` 6th param; `SearchPanel.tsx` — a `MessagesSquare` **Annotations
+  toggle** beside the Regex toggle in the search settings (re-runs on click;
+  empty query allowed while on), and an `annotation:` entry in `FILTER_HINTS`.
+- **Tests** — engine `annotation_filter_and_scope` (filter match + bare-filter +
+  `annotations_only` line restriction) and projection
+  `annotation_and_suggestion_lines_and_body_recorded`.
+
+### Kept from the reverted pane attempt
+- `NoteMetadata::display_title()` — a reusable title helper the Agenda command
+  was refactored onto (de-duplicated its private `note_title`).
+- `markdown/md_to_typst.rs:279` `// utf8-safe:` annotation — the pre-existing
+  `as char` (from commit `71c0cce`) is guarded by `is_ascii()`, so it's
+  genuinely safe; the annotation un-breaks the `utf8_safety` CI grep.
+
+### Deferred follow-ups
+- A per-annotation result decoration (the result rows show the raw
+  `#annotation[…]` source line, like every other search hit).
+- Jump-to-exact-offset within the annotation (today lands on the line).
+- A standalone "browse annotations" affordance beyond `annotation:` + the toggle.
+
 ## Other remaining work (deferred, roughly prioritized)
 
 1. **Zotero → shared `.bib` materialization on enable** — collaborative
@@ -997,9 +1091,11 @@ lost. Grouped by kind. Items link to the section above with the detail.
   collection-owned `.bib` at enable, re-sync lazily at package").
 - [ ] **Book export error-tolerance (option 2b)** — render *around* a broken note
   via `recovery` (2a already names the failing note).
-- [ ] **Reviews aggregation panel** — index `<inkycap-review>` (and now the
-  generalized decision label) into `QueryResult` + a panel. ("Deferred — no
-  consumer yet.")
+- [x] **Annotation discovery** — DONE 2026-05-23 (uncommitted). Redone as a
+  rename (`#review`→`#annotation`, "review" reserved for collaboration) + a
+  Search integration ("Annotations" toggle beside Regex + `annotation:` syntax),
+  *not* a sidebar pane (that first attempt was reverted). See "DONE —
+  Annotations rename + search integration" below.
 - [ ] **Collab UX polish** — command-palette entries (Collab: actions),
   status-bar badge for pending reviews.
 - [ ] **Conflict-resolution UI beyond accept-takes-theirs** — per-attachment review

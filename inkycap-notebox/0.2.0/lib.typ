@@ -9,7 +9,7 @@
 //   link-ref("Name")      link reference value (use inside note() fields)
 //   #embed("Name")        transclude another note (emits link)
 //   #callout("type")[...] styled admonition block
-//   #review(body, ...)    reviewer comment annotation (collaboration)
+//   #annotation(body, ...)  margin comment on note content (reader/reviewer)
 //   #review-decision(target, action, ...)  review-log entry: an accept /
 //                         reject / comment decision (per-collection review log)
 //   #suggestion(body, kind: ..., ...)  inline tracked-change suggestion
@@ -26,7 +26,7 @@
 //   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
 //   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
 //                      (kind, body, due, done, tags)
-//   <inkycap-review> — one per #review(...) call, dict (by, on)
+//   <inkycap-annotation> — one per #annotation(...) call, dict (by, on)
 //   <inkycap-review-decision> — one per #review-decision(...) call, dict
 //                      (target, action, note, by, on)
 //   <inkycap-suggestion> — one per #suggestion(...) call, dict
@@ -536,34 +536,37 @@
 }
 
 // ---------------------------------------------------------------------------
-// review / review-decision: collaboration reviewer annotations.
+// annotation / review-decision.
 //
-// `#review[comment]` marks a reviewer's remark on note content — a tinted
-// block that stays visible in the reading view but reads as a distinct
-// annotation, not body text. `#review-decision(target, action, note: …)`
-// records one review decision — `action` is "accepted", "rejected", or
-// "commented" — coloured to match (green / red / violet). These accumulate in
-// a per-collection **review-log** note that the host appends to when a
-// decision is made or a bare comment is left (the note itself is local audit
-// and is never packaged back).
+// `#annotation[comment]` marks a reader's or collaborator's remark on note
+// content — a tinted block that stays visible in the reading view but reads as
+// a distinct margin note, not body text. (Distinct from the *collaboration
+// change-review* workflow: that reviews a collaborator's incoming edits as a
+// whole-file diff; an annotation is a comment that lives in the note.)
 //
-// Both emit queryable metadata (`<inkycap-review>` /
-// `<inkycap-review-decision>`) so a Reviews panel can aggregate them later.
-// `by` is a collaborator handle or display name; `on` accepts a datetime or a
-// date string (normalized via `_fmt-date`). `none` for either omits it from
-// the rendered attribution.
+// `#review-decision(target, action, note: …)` records one collaboration review
+// decision — `action` is "accepted", "rejected", or "commented" — coloured to
+// match (green / red / violet). These accumulate in a per-collection
+// **review-log** note that the host appends to when a decision is made or a
+// bare comment is left (the note itself is local audit and is never packaged
+// back).
+//
+// Both emit queryable metadata (`<inkycap-annotation>` /
+// `<inkycap-review-decision>`). `by` is a collaborator handle or display name;
+// `on` accepts a datetime or a date string (normalized via `_fmt-date`).
+// `none` for either omits it from the rendered attribution.
 // ---------------------------------------------------------------------------
 
-#let _review-color = rgb("#8b5cf6")
-#let _review-reject-color = rgb("#ef4444")
-#let _review-accept-color = rgb("#22c55e")
+#let _annotation-color = rgb("#8b5cf6")
+#let _decision-reject-color = rgb("#ef4444")
+#let _decision-accept-color = rgb("#22c55e")
 
 // Colour + label for a #review-decision action. Unknown actions fall back to
-// the neutral review violet so a future action kind still renders.
+// the neutral annotation violet so a future action kind still renders.
 #let _decision-color(action) = {
-  if action == "accepted" { _review-accept-color } else if action == "rejected" {
-    _review-reject-color
-  } else { _review-color }
+  if action == "accepted" { _decision-accept-color } else if action == "rejected" {
+    _decision-reject-color
+  } else { _annotation-color }
 }
 #let _decision-label(action) = {
   if action == "accepted" { "Accepted" } else if action == "rejected" {
@@ -572,8 +575,9 @@
 }
 
 // Join the present attribution parts ("by — on") with a separator, or "" when
-// neither is given. Shared by both annotations so they read consistently.
-#let _review-attribution(by, on) = {
+// neither is given. Shared by annotation + review-decision so they read
+// consistently.
+#let _attribution(by, on) = {
   let parts = ()
   if by != none { parts.push(by) }
   let d = _fmt-date(on)
@@ -581,18 +585,18 @@
   parts.join(" · ")
 }
 
-#let review(body, by: none, on: none) = {
-  [#metadata((by: by, on: _fmt-date(on))) <inkycap-review>]
-  let attribution = _review-attribution(by, on)
-  let heading = "Review" + (if attribution != "" { " — " + attribution } else { "" })
+#let annotation(body, by: none, on: none) = {
+  [#metadata((by: by, on: _fmt-date(on))) <inkycap-annotation>]
+  let attribution = _attribution(by, on)
+  let heading = "Annotation" + (if attribution != "" { " — " + attribution } else { "" })
   block(
     width: 100%,
     inset: (left: 10pt, rest: 6pt),
-    stroke: (left: 2pt + _review-color),
-    fill: _review-color.lighten(94%),
+    stroke: (left: 2pt + _annotation-color),
+    fill: _annotation-color.lighten(94%),
     radius: (right: 3pt),
     [
-      #text(fill: _review-color, weight: "bold", size: 0.8em, heading) \
+      #text(fill: _annotation-color, weight: "bold", size: 0.8em, heading) \
       #body
     ],
   )
@@ -608,7 +612,7 @@
     by: by,
     on: _fmt-date(on),
   )) <inkycap-review-decision>]
-  let attribution = _review-attribution(by, on)
+  let attribution = _attribution(by, on)
   let col = _decision-color(action)
   block(
     width: 100%,

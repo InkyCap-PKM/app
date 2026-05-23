@@ -26,6 +26,7 @@ import {
   ListChevronsDownUp,
   LayersPlus,
   Regex,
+  MessagesSquare,
   Info,
 } from "lucide-solid";
 import type { SearchResult } from "../lib/types";
@@ -50,6 +51,8 @@ import {
   setCaseSensitive,
   useRegex,
   setUseRegex,
+  annotationsOnly,
+  setAnnotationsOnly,
   collapseResults,
   setCollapseResults,
   showMoreContext,
@@ -88,6 +91,11 @@ const FILTER_HINTS: FilterHint[] = [
   },
   { prefix: "file:", insert: "file:", description: "match by file name" },
   { prefix: "path:", insert: "path:", description: "match by the file path" },
+  {
+    prefix: "annotation:",
+    insert: "annotation:",
+    description: "match text inside an annotation or suggestion",
+  },
 ];
 
 /// Informational tips (non-insertable) describing query syntax beyond
@@ -207,7 +215,9 @@ const SearchPanel: Component = () => {
 
   async function executeSearch(offset?: number) {
     const q = buildQuery();
-    if (!q) {
+    // An empty query normally clears results — except in annotations-only
+    // mode, where it means "browse every annotation in the notebox".
+    if (!q && !annotationsOnly()) {
       setSearchResults([]);
       setSearchResultCount(0);
       setSearchTotalCount(0);
@@ -228,7 +238,14 @@ const SearchPanel: Component = () => {
     setReplaceResults(null);
 
     try {
-      const resp = await ipc.noteboxSearch(q, PAGE_SIZE, caseSensitive(), off, useRegex());
+      const resp = await ipc.noteboxSearch(
+        q,
+        PAGE_SIZE,
+        caseSensitive(),
+        off,
+        useRegex(),
+        annotationsOnly(),
+      );
       setSearchResults(resp.results);
       setSearchResultCount(resp.results.length);
       setSearchTotalCount(resp.total_count);
@@ -705,6 +722,18 @@ const SearchPanel: Component = () => {
             aria-pressed={useRegex()}
           >
             <Regex size={18} />
+          </button>
+          <button
+            class={`icon-btn ${annotationsOnly() ? "icon-btn--active" : ""}`}
+            onClick={() => {
+              setAnnotationsOnly(!annotationsOnly());
+              executeSearch();
+            }}
+            title="Annotations — search only within annotations and suggestions (empty query lists them all)"
+            aria-label="Annotations"
+            aria-pressed={annotationsOnly()}
+          >
+            <MessagesSquare size={18} />
           </button>
         </div>
       </Show>

@@ -86,7 +86,7 @@ static HIGHLIGHT_RE: LazyLock<Regex> =
 static FOOTNOTE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#footnote\[([^\]]*)\]"#).unwrap());
 
-// CriticMarkup interop: #suggestion(...) / #review map to the standard
+// CriticMarkup interop: #suggestion(...) / #annotation map to the standard
 // CriticMarkup delimiters so a note exported to markdown carries its tracked
 // changes + comments to other CriticMarkup-aware tools (Obsidian, iA Writer).
 // `[^)]*` after the kind absorbs any `by:`/`on:` attribution; bodies use the
@@ -100,8 +100,8 @@ static SUGGESTION_INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
 static SUGGESTION_DELETE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"#suggestion\(kind:\s*"delete"[^)]*\)\[([^\]]*)\]"#).unwrap()
 });
-static REVIEW_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"#review\[([^\]]*)\]"#).unwrap());
+static ANNOTATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#annotation\[([^\]]*)\]"#).unwrap());
 
 static LINE_RULE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#line\(length:\s*100%\)"#).unwrap());
@@ -373,7 +373,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
     result = SUGGESTION_DELETE_RE
         .replace_all(&result, |caps: &regex::Captures| format!("{{--{}--}}", &caps[1]))
         .into_owned();
-    result = REVIEW_RE
+    result = ANNOTATION_RE
         .replace_all(&result, |caps: &regex::Captures| format!("{{>>{}<<}}", &caps[1]))
         .into_owned();
 
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn review_to_criticmarkup_comment() {
-        assert!(convert("see #review[needs a citation] here").contains("{>>needs a citation<<}"));
+        assert!(convert("see #annotation[needs a citation] here").contains("{>>needs a citation<<}"));
     }
 
     #[test]

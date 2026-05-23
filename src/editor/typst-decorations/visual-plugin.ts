@@ -12,7 +12,7 @@ import { findCallEnd } from "./pill";
 import { syntaxTree } from "@codemirror/language";
 import {
   CalloutBlockWidget,
-  ReviewBlockWidget,
+  AnnotationBlockWidget,
   CodeBlockWidget,
   ImageBlockWidget,
   EmbedBlockWidget,
@@ -647,8 +647,8 @@ function handleFuncCall(
 
   if (INTERACTIVE_FUNCS.has(funcName)) {
     if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
-  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "review") {
-    // image, embed, callout, quote, review use the pill-above-element pattern:
+  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation") {
+    // image, embed, callout, quote, annotation use the pill-above-element pattern:
     // the element stays rendered; a pill is shown above it on cursor
     // entry; clicking the pill exposes the raw markup for editing while
     // the element re-renders as a block widget below. All handled in
@@ -782,13 +782,13 @@ function handleFuncCall(
       );
       return false;
     }
-    case "review": {
+    case "annotation": {
       const bodyText = extractBracketContent(text);
       if (bodyText === null) return false;
       const by = extractNamedStringArg(text, "by");
       const on = extractNamedStringArg(text, "on");
       pushBlockElement((withPill) =>
-        new ReviewBlockWidget(bodyText, by ?? "", on ?? "", from, withPill),
+        new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, withPill),
       );
       return false;
     }
