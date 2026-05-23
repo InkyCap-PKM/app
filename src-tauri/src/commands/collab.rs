@@ -441,6 +441,88 @@ pub async fn collab_set_state(
     }
 }
 
+/// Notebox-relative path of a collection's materialized shared bibliography.
+/// Derived from the collection *name* (not its id) so both collaborators
+/// compute the same path for the same collection — the import merge then
+/// writes to a matching location. Lives under `.inkycap/` so it's excluded
+/// from the note browser and search, and sits alongside (not inside) the
+/// id-keyed sidecar dir, so it survives a Disable→Enable cycle.
+fn shared_bib_relpath(collection_name: &str) -> String {
+    format!(".inkycap/collab/{collection_name}.bib")
+}
+
+/// Materialize the collection's shared `.bib`: gather the citation keys its
+/// member notes use, pull those entries from the active citation source (file
+/// or Zotero), and **union** them into the collection-owned bibliography at
+/// [`shared_bib_relpath`]. The merge is additive — entries already there
+/// (e.g. contributed by collaborators on a prior import) are never dropped, so
+/// re-running at enable/package only ever grows the shared bib. Returns the
+/// relpath when a non-empty bibliography exists, else `None` (no citations, no
+/// source, nothing resolved) so the caller can fall back to an existing
+/// bibliography pointer.
+async fn materialize_shared_bib(
+    state: &AppState,
+    col_abs: &Path,
+    filters: &FilterGroup,
+    collection_name: &str,
+) -> Result<Option<String>> {
+    let storage = state.get_storage().await?;
+    let relpath = shared_bib_relpath(collection_name);
+    let relpath_buf = PathBuf::from(&relpath);
+
+    // Absolute paths of the current members (filter-evaluated under the index
+    // read lock; release before any I/O).
+    let member_abs: Vec<PathBuf> = {
+        let index = state.property_index.read().await;
+        index
+            .notes
+            .values()
+            .filter(|n| evaluate_filter_group(filters, n, col_abs))
+            .map(|n| n.path.clone())
+            .collect()
+    };
+
+    // The collection-owned bib we maintain — may already hold entries merged in
+    // from collaborators, which the union below preserves.
+    let existing = storage.read_file(&relpath_buf).await.unwrap_or_default();
+
+    // Union of every citation key the members use.
+    let mut cited: HashSet<String> = HashSet::new();
+    for abs in &member_abs {
+        if let Ok(body) = storage.read_file(abs).await {
+            for key in crate::typst_pipeline::bibliography::extract_citations(&body) {
+                cited.insert(key);
+            }
+        }
+    }
+    if cited.is_empty() {
+        // Nothing cited; keep an existing collection bib if there is one.
+        return Ok((!existing.trim().is_empty()).then(|| relpath.clone()));
+    }
+
+    let full = crate::commands::bibliography::load_source_bibtex(state).await?;
+    let cited_subset = if full.trim().is_empty() {
+        String::new()
+    } else {
+        bibliography::filter_bibtex_to_keys(&full, &cited).map_err(InkyCapError::Typst)?
+    };
+
+    // Additive union: keep everything already in the collection bib, add any
+    // newly-cited entries. A malformed existing file (hand-edited externally)
+    // is left untouched rather than clobbered.
+    let merged = match bibliography::merge_bibtex(&existing, &cited_subset, &HashMap::new()) {
+        Ok(m) => m.bibtex,
+        Err(_) => return Ok((!existing.trim().is_empty()).then(|| relpath.clone())),
+    };
+    if merged.trim().is_empty() {
+        return Ok(None);
+    }
+    if merged != existing {
+        storage.write_file(&relpath_buf, &merged).await?;
+    }
+    Ok(Some(relpath))
+}
+
 /// Resolve the handle to attribute edits to: the explicitly-provided one
 /// (trimmed, non-empty) wins, else the collection's pinned `me.json`
 /// identity. Errors if neither is available — collaboration can't be enabled
@@ -518,16 +600,24 @@ async fn setup_collaboration(
         bump_local_edits(&mut versions, &root, handle, &collabid_paths);
     }
 
-    // Index the shared bibliography so the first import can already detect bib
-    // additions/conflicts (the section is otherwise empty until the first
-    // package).
-    let bib_source = base
-        .collaboration
-        .as_ref()
-        .and_then(|c| c.bibliography_file.clone())
-        .or_else(|| base.bibliography_file.clone());
-    if let Some(b) = bib_source {
-        if let Ok(text) = storage.read_file(&PathBuf::from(&b)).await {
+    // Materialize a collection-owned bibliography holding just the entries the
+    // members cite — additive, so collaborators' previously-merged entries are
+    // kept. This makes a shared collection self-contained and captures a
+    // Zotero-live source (which can't travel in a package) into a real `.bib`.
+    // Falls back to any existing bibliography pointer when there's nothing to
+    // materialize (e.g. a collection with no citations).
+    let materialized = materialize_shared_bib(state, &col_abs, &filters, &name).await?;
+    let shared_bib = materialized.or_else(|| {
+        base.collaboration
+            .as_ref()
+            .and_then(|c| c.bibliography_file.clone())
+            .or_else(|| base.bibliography_file.clone())
+    });
+    // Index whatever bibliography will travel so the first import can already
+    // detect bib additions/conflicts (the section is otherwise empty until the
+    // first package).
+    if let Some(b) = &shared_bib {
+        if let Ok(text) = storage.read_file(&PathBuf::from(b)).await {
             bibliography::refresh_bib_versions(&mut versions.bibliography, &text, handle);
         }
     }
@@ -550,13 +640,12 @@ async fn setup_collaboration(
     // reorganization, which is why the user's filter is replaced rather than
     // augmented.
     base.filters = Some(canonical_membership_filter(&name));
-    // Set the flag, preserving any existing import_folder, and carrying the
-    // collection's bibliography as the shared one when none is set yet.
+    // Set the flag, preserving any existing import_folder, and point at the
+    // shared bibliography resolved above (the materialized collection-owned
+    // `.bib` when there were citations, else any prior pointer).
     let mut collab_cfg = base.collaboration.clone().unwrap_or_default();
     collab_cfg.enabled = target_enabled;
-    if collab_cfg.bibliography_file.is_none() {
-        collab_cfg.bibliography_file = base.bibliography_file.clone();
-    }
+    collab_cfg.bibliography_file = shared_bib;
     base.collaboration = Some(collab_cfg);
     let new_content = serialize_collection_file(&base)?;
     storage.write_file(&col_arg, &new_content).await?;
@@ -827,14 +916,22 @@ pub async fn collab_package(
     let collabid_paths = collabid_path_map(&state, &root).await;
     bump_local_edits(&mut versions, &root, &handle, &collabid_paths);
 
-    // Keep the sidecar's bibliography index in step with the shared `.bib`
-    // before it travels, so the receiver can detect added/changed entries
-    // (the bib section is otherwise empty and bib review is a no-op).
-    let bib_rel = base
-        .collaboration
-        .as_ref()
-        .and_then(|c| c.bibliography_file.clone())
-        .or_else(|| base.bibliography_file.clone());
+    // Refresh the materialized collection bibliography so entries cited since
+    // enable travel too — additive, so collaborators' previously-merged entries
+    // survive. Then keep the sidecar's bib index in step with the shared `.bib`
+    // before it travels, so the receiver can detect added/changed entries (the
+    // bib section is otherwise empty and bib review is a no-op).
+    let materialized = if let Some(filters) = base.filters.clone() {
+        materialize_shared_bib(&state, &col_abs, &filters, &name).await?
+    } else {
+        None
+    };
+    let bib_rel = materialized.or_else(|| {
+        base.collaboration
+            .as_ref()
+            .and_then(|c| c.bibliography_file.clone())
+            .or_else(|| base.bibliography_file.clone())
+    });
     if let Some(b) = &bib_rel {
         if let Ok(text) = storage.read_file(&PathBuf::from(b)).await {
             bibliography::refresh_bib_versions(&mut versions.bibliography, &text, &handle);

@@ -32,13 +32,14 @@ import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { ask, message, open } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { settings } from "../stores/settings";
 import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
+import { importNewPackage } from "../stores/collab";
 import {
   isEnabled as isScrollEnabled,
   updateAnchor as updateScrollAnchor,
@@ -850,27 +851,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function importCollabPackage() {
     if (!noteboxInfo()) return;
-    const pkg = await open({
-      title: "Import collaboration package",
-      filters: [{ name: "InkyCap package", extensions: ["zip"] }],
-    });
-    if (!pkg || Array.isArray(pkg)) return;
-    try {
-      const res = await ipc.collabImportPackage(pkg);
-      refresh();
-      // Open the (possibly newly created) collection; its Collaboration tab
-      // resumes the staged review on mount.
-      openTab({ type: "collection", title: res.collection_name, path: res.collection_path });
-      const n = res.review.note_items.length;
-      const where = res.created
-        ? `Created "${res.collection_name}"`
-        : `Imported into "${res.collection_name}"`;
-      const detail =
-        n > 0 ? ` — ${n} change(s) to review in the Collaboration tab.` : " — no incoming changes.";
-      toastSuccess(where + detail);
-    } catch (e) {
-      toastError("Import failed", e);
-    }
+    // Shared flow: pick a package, create/open the collection, stage its
+    // review (its Collaboration panel resumes it on mount). Then refresh the
+    // file tree so a newly-created collection appears immediately.
+    await importNewPackage();
+    refresh();
   }
 
   async function deleteCollection(col: CollectionInfo) {

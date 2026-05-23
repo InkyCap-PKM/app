@@ -132,6 +132,55 @@ pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>
     }
 }
 
+/// The full active citation source as a single BibTeX string. For a file
+/// source this is the original `.bib` text (preserving every field). For a
+/// Zotero source it is the live entries re-serialized to BibTeX. Used by the
+/// collaboration "materialize a collection-owned `.bib`" path, which then
+/// filters this down to the keys the collection actually cites. Returns an
+/// empty string when no source is configured/resolvable.
+pub(crate) async fn load_source_bibtex(state: &AppState) -> Result<String, InkyCapError> {
+    let notebox_root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let (source, bib_path, zotero_path) = {
+        let notebox = state.notebox_settings.read().await;
+        let global = state.settings.read().await;
+        (
+            notebox.citations.source.clone(),
+            notebox.citations.bibliography_path.clone(),
+            global.citations.zotero_database_path.clone(),
+        )
+    };
+
+    match source.as_str() {
+        "zotero" => {
+            let db = zotero_path
+                .map(PathBuf::from)
+                .or_else(|| crate::typst_pipeline::zotero::auto_detect_path());
+            match db {
+                Some(p) => {
+                    let entries = crate::typst_pipeline::zotero::read_entries(&p)
+                        .map_err(InkyCapError::Typst)?;
+                    Ok(bibliography::export_entries_to_bibtex(&entries))
+                }
+                None => Ok(String::new()),
+            }
+        }
+        _ => {
+            // File source: hand back the original `.bib` text verbatim so the
+            // materialized subset keeps full field fidelity.
+            match bibliography::detect_default(&notebox_root, bib_path.as_deref()) {
+                Some(p) => Ok(std::fs::read_to_string(&p).unwrap_or_default()),
+                None => Ok(String::new()),
+            }
+        }
+    }
+}
+
 /// Re-export the Zotero bibliography to `.inkycap/zotero-export.bib`.
 /// Called from the "refresh" button in the References panel.
 #[tauri::command]

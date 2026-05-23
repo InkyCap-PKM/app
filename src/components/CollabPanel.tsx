@@ -1,5 +1,4 @@
 import { Component, createSignal, createEffect, onMount, For, Show } from "solid-js";
-import { save, open } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import type {
   CollectionFile,
@@ -24,6 +23,8 @@ import {
   setAllDecisions as setAll,
   reviewHasContent,
   setCurrentReviewCollabid,
+  packageCollection,
+  importPackageInto,
 } from "../stores/collab";
 import { setRightCollapsed } from "../stores/layout";
 import HelpButton from "./HelpButton";
@@ -144,38 +145,18 @@ const CollabPanel: Component<{
   }
 
   async function doPackage() {
-    const out = await save({
-      title: "Save collaboration package",
-      defaultPath: `${props.collectionName}.zip`,
-      filters: [{ name: "InkyCap package", extensions: ["zip"] }],
-    });
-    if (!out) return;
     setBusy(true);
     try {
-      const r = await ipc.collabPackage(props.collectionPath, out);
-      showToast("success", "Package written", `${r.note_count} notes`);
-    } catch (e) {
-      showToast("error", "Package failed", String(e));
+      await packageCollection(props.collectionPath, props.collectionName);
     } finally {
       setBusy(false);
     }
   }
 
   async function doImport() {
-    const pkg = await open({
-      title: "Import collaboration package",
-      filters: [{ name: "InkyCap package", extensions: ["zip"] }],
-    });
-    if (!pkg || Array.isArray(pkg)) return;
     setBusy(true);
     try {
-      const r = await ipc.collabImport(props.collectionPath, pkg);
-      loadReview(r);
-      if (!reviewHasContent(r)) {
-        showToast("info", "Nothing to review", "No incoming changes.");
-      }
-    } catch (e) {
-      showToast("error", "Import failed", String(e));
+      await importPackageInto(props.collectionPath, props.collectionName);
     } finally {
       setBusy(false);
     }
@@ -297,6 +278,15 @@ const CollabPanel: Component<{
                 </button>
                 <button class="collection-table__toolbar-btn" onClick={() => setAll("skip")}>
                   Skip
+                </button>
+                {/* A second Apply (mirrors the one at the bottom of the list)
+                    so a long review can be applied without scrolling down. */}
+                <button
+                  class="collection-table__toolbar-btn collab-panel__bulk-apply"
+                  disabled={busy() || !hasReviewContent()}
+                  onClick={applyDecisions}
+                >
+                  Apply decisions
                 </button>
               </div>
             </Show>

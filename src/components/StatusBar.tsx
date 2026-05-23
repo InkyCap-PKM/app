@@ -1,11 +1,12 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
-import { ArchiveRestore, Archive, Check, TextCursorInput } from "lucide-solid";
+import { ArchiveRestore, Archive, Check, TextCursorInput, MessageSquareCheck } from "lucide-solid";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { getActiveTab, renameTabPath } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
+import { pendingReviewCount, revealPendingReview } from "../stores/collab";
 
 const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
@@ -211,6 +212,17 @@ const StatusBar: Component = () => {
         )}
       </Show>
       <div class="status-bar__spacer" />
+
+      <Show when={pendingReviewCount() > 0}>
+        <button
+          class="status-bar__review-badge"
+          onClick={() => revealPendingReview()}
+          title="Review pending collaboration changes"
+        >
+          <MessageSquareCheck size={14} />
+          {pendingReviewCount()} to review
+        </button>
+      </Show>
 
       <Show when={isFileTab()}>
         <span class="status-bar__stat">

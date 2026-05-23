@@ -13,7 +13,7 @@ import {
   setCurrentReviewPath,
   setComment,
   enterReviewMode,
-  endReviewModeFor,
+  endReviewModeForNote,
   isMerged,
   applyNote,
   commentOnly,
@@ -147,13 +147,13 @@ const ReviewPanel: Component = () => {
   function endReview() {
     const id = currentReviewCollabid();
     const path = currentReviewPathValue();
-    endReviewModeFor(path, id);
+    // Close the reviewed note's own tab, then end review mode + return to the
+    // collection (shared with the tab-strip ✕ via the store action).
     if (path) {
       const tab = tabs.find((t) => t.type === "file" && pathEquals(t.path, path));
       if (tab) closeTab(tab.id);
     }
-    const ar = activeReview();
-    if (ar) openTab({ type: "collection", title: ar.collectionName, path: ar.collectionPath });
+    endReviewModeForNote(path, id);
   }
   // Read the path off the open tab/detail without tracking (used in a handler).
   const currentReviewPathValue = () => detail()?.local_path ?? null;
