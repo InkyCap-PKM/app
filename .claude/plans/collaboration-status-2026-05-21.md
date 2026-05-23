@@ -866,12 +866,52 @@ then Idea 2 as *manual* suggestions; defer automatic suggesting mode.
   all three kinds compile + query round-trip). Full lib **552** green.
   **No Tauri command yet** — deferred to Phase B so its shape (pure-source vs
   disk-path) matches the editor's actual need (no consumer = no guess).
-- **Phase B — Visual editor:** decoration rendering (underline/strike + pill);
-  `/suggestion` palette (3 kinds) + wrap-selection; `{++ ++}` typing shortcuts;
-  click → popup with Accept/Reject (+ optional comment → review log).
-- **Phase C — Interop + review integration:** md↔typst CriticMarkup mapping
-  (incl. comment→`#review`, highlight→`#highlight`); review UI recognizes
-  suggestion markup specially (alongside the whole-file diff).
+- **Phase B — Visual editor: DONE 2026-05-23 (uncommitted; tsc + vite clean).**
+  - `SuggestionWidget` (`widgets.ts`) — renders the marks (insert green-underline,
+    delete red-strike, replace both); click opens a small Accept/Reject menu
+    (portalled, `anchorPanelMenu`, `--popup-*`). Accept/reject =
+    `applyCallTransform(view, from, () => resolution)` unwrapping to clean Typst;
+    the TS resolution table mirrors Rust `resolution_text` (lock-step, commented).
+  - `visual-plugin.ts` — `"suggestion"` added to `INTERACTIVE_FUNCS` (cursor-
+    adjacent reveals raw source for editing; widget otherwise); `case "suggestion"`
+    parses kind/by/on + body + `old`; new extract helpers `extractBracketAfter`,
+    `extractNamedBracket`, `extractBodyBracket` (string-aware: the trailing body
+    `[…]` is found *after* the balanced `(…)`, so `old: […]` isn't mistaken for it).
+  - CSS: marks in `visual-theme.ts` (`.cm-suggestion-ins/-del`, colours match
+    lib.typ #16a34a/#dc2626); menu in `layout.css` (`.cm-suggestion-menu*`).
+  - `command-palette.ts` — 3 InkyCap entries (Suggest insertion/deletion/
+    replacement).
+  - `markdown-shortcuts.ts` — CriticMarkup typing shortcuts completed by `}`:
+    `{++ ++}`/`{-- --}`/`{~~ ~> ~~}` → `#suggestion`; **and** `{>> <<}` → `#review`,
+    `{== ==}` → `#highlight` (the full CriticMarkup input vocabulary; `{` isn't
+    auto-paired so the trigger is clean).
+  - **Folded into Phase C (user wants it):** comment field in the Accept/Reject
+    menu. **Dropped (user: not needed):** selection-toolbar "suggest" buttons.
+  - Also DONE: shortcut hints on the existing Highlight (`{==…==}`) and Review
+    comment (`{>>…<<}`) palette entries advertise the new CriticMarkup triggers.
+- **Phase C — Interop + review integration:**
+  - **md↔CriticMarkup mapping: DONE 2026-05-23 (uncommitted; 558 lib green).**
+    `typst_to_md.rs`: `#suggestion` insert/delete/replace → `{++ ++}`/`{-- --}`/
+    `{~~ ~> ~~}`, `#review[…]` → `{>> <<}` (attribution dropped — the mark
+    survives). `md_to_typst.rs`: the reverse + `{== ==}` → `#highlight`, run
+    **before** the bare `==…==` pass (the braced form embeds it); dialect-
+    agnostic. `#highlight` export kept as `<mark>` (existing round-trip
+    undisturbed); `{== ==}` accepted additively on import. 6 new tests.
+  - **Comment field (C4): DONE 2026-05-23 (uncommitted; tsc+vite clean).** The
+    Accept/Reject menu (`SuggestionWidget`) gained an optional comment textarea;
+    on resolve, a non-empty comment is left as an inline `#review[…]` at the
+    suggestion's site (user's choice — local, Typst-native, no collection
+    context, travels with the note). `replacement(accept, comment)` appends the
+    review note to the clean-Typst resolution. Menu CSS reworked (header +
+    textarea + Accept/Reject row).
+  - **Review-UI-recognizes-suggestions (C5): settled = nothing extra.** With the
+    alongside design, suggestions ride as note content, show in the whole-file
+    diff, and resolve inline in the editor after accept — no special review-UI
+    handling needed. (A per-note suggestion-count badge was offered + declined.)
+
+**⇒ Idea 2 (MANUAL inline suggestions) is FEATURE-COMPLETE (Phases A+B+C),
+uncommitted. Still deferred by design: AUTOMATIC "suggesting mode" (intercept
+every keystroke) and multi-message reply threads on a suggestion.**
 
 ## Other remaining work (deferred, roughly prioritized)
 

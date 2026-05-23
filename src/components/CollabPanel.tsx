@@ -53,6 +53,30 @@ const CollabPanel: Component<{
   const [importFolder, setImportFolder] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
+  // Incoming-changes list: a typing filter + an A–Z / Z–A sort so a specific
+  // note is quick to find in a large review.
+  const [reviewFilter, setReviewFilter] = createSignal("");
+  const [reviewSort, setReviewSort] = createSignal<"az" | "za">("az");
+  // Display name: the basename without `.typ` (the full path is shown on hover).
+  const fileName = (p: string) => (p.split(/[\\/]/).pop() ?? p).replace(/\.typ$/i, "");
+  // The note items to render: filtered by name (matches filename or path) and
+  // sorted by filename in the chosen direction. Reads the filter/sort signals,
+  // so the <For> re-runs when either changes.
+  const visibleItems = (items: ReviewResult["note_items"]) => {
+    const q = reviewFilter().trim().toLowerCase();
+    const out = q
+      ? items.filter(
+          (it) =>
+            fileName(it.path).toLowerCase().includes(q) || it.path.toLowerCase().includes(q),
+        )
+      : items.slice();
+    out.sort((a, b) => {
+      const cmp = fileName(a.path).localeCompare(fileName(b.path), undefined, { sensitivity: "base" });
+      return reviewSort() === "az" ? cmp : -cmp;
+    });
+    return out;
+  };
+
   // Load a staged review into the shared session, scoped to this collection.
   const loadReview = (r: ReviewResult) =>
     loadReviewStore(props.collectionPath, props.collectionName, r);
@@ -244,6 +268,25 @@ const CollabPanel: Component<{
             </Show>
 
             <Show when={r().note_items.length > 1}>
+              <div class="collab-panel__review-tools">
+                <input
+                  type="text"
+                  class="settings__text-input collab-panel__review-filter"
+                  value={reviewFilter()}
+                  onInput={(e) => setReviewFilter(e.currentTarget.value)}
+                  placeholder="Filter by name…"
+                />
+                <button
+                  class="collection-table__toolbar-btn"
+                  title={reviewSort() === "az" ? "Sorted A→Z (click for Z→A)" : "Sorted Z→A (click for A→Z)"}
+                  onClick={() => setReviewSort((s) => (s === "az" ? "za" : "az"))}
+                >
+                  {reviewSort() === "az" ? "A–Z" : "Z–A"}
+                </button>
+              </div>
+            </Show>
+
+            <Show when={r().note_items.length > 1}>
               <div class="collab-panel__bulk">
                 <span class="collection-meta__hint">Set all:</span>
                 <button class="collection-table__toolbar-btn" onClick={() => setAll("accept")}>
@@ -296,7 +339,7 @@ const CollabPanel: Component<{
               </For>
             </Show>
 
-            <For each={r().note_items}>
+            <For each={visibleItems(r().note_items)}>
               {(item) => (
                 <div
                   class="collab-panel__review-item"
@@ -310,7 +353,7 @@ const CollabPanel: Component<{
                       <span class="collab-panel__kind" data-kind={item.kind}>
                         {kindLabel(item.kind)}
                       </span>
-                      <span class="collab-panel__path">{item.path}</span>
+                      <span class="collab-panel__path" title={item.path}>{fileName(item.path)}</span>
                       <Show when={item.changed_by.length > 0}>
                         <span class="collection-meta__hint">by {item.changed_by.join(", ")}</span>
                       </Show>

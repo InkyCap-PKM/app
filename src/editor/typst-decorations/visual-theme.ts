@@ -385,6 +385,20 @@ export const visualTheme = EditorView.theme({
     padding: "1px 6px",
     fontSize: "0.85em",
   },
+  // Inline #suggestion(...) marks. Colours match lib.typ's _suggestion-*-color
+  // (green #16a34a / red #dc2626) so the visual editor reads like the compiled
+  // CriticMarkup idiom rather than the app's theme green/red.
+  ".cm-typst-suggestion": {
+    cursor: "pointer",
+  },
+  ".cm-suggestion-ins": {
+    color: "#16a34a",
+    textDecoration: "underline",
+  },
+  ".cm-suggestion-del": {
+    color: "#dc2626",
+    textDecoration: "line-through",
+  },
   ".cm-typst-wikilink": {
     display: "inline",
     color: "var(--syntax-link)",

@@ -82,11 +82,49 @@ function handlePlus(view: EditorView, from: number): boolean {
   return true;
 }
 
+// CriticMarkup typing shortcuts → InkyCap primitives, completed by the final
+// `}`. Suggestions map to `#suggestion(...)`; CriticMarkup's comment + highlight
+// map to the existing `#review` / `#highlight` (their natural Typst homes), so
+// the whole CriticMarkup input vocabulary expands to native calls. `{` is not
+// auto-paired, so the user types the full delimiter run.
+//
+//   {++ins++}        → #suggestion(kind: "insert")[ins]
+//   {--del--}        → #suggestion(kind: "delete")[del]
+//   {~~old~>new~~}   → #suggestion(kind: "replace", old: [old])[new]
+//   {>>comment<<}    → #review[comment]
+//   {==highlight==}  → #highlight[highlight]
+const CRITIC_PATTERNS: { re: RegExp; build: (m: RegExpMatchArray) => string }[] = [
+  { re: /\{~~([\s\S]*?)~>([\s\S]*?)~~\}$/, build: (m) => `#suggestion(kind: "replace", old: [${m[1]}])[${m[2]}]` },
+  { re: /\{\+\+([\s\S]*?)\+\+\}$/, build: (m) => `#suggestion(kind: "insert")[${m[1]}]` },
+  { re: /\{--([\s\S]*?)--\}$/, build: (m) => `#suggestion(kind: "delete")[${m[1]}]` },
+  { re: /\{>>([\s\S]*?)<<\}$/, build: (m) => `#review[${m[1]}]` },
+  { re: /\{==([\s\S]*?)==\}$/, build: (m) => `#highlight[${m[1]}]` },
+];
+
+function handleBrace(view: EditorView, from: number): boolean {
+  const line = view.state.doc.lineAt(from);
+  const beforeCursor = view.state.doc.sliceString(line.from, from);
+  for (const { re, build } of CRITIC_PATTERNS) {
+    const m = beforeCursor.match(re);
+    if (!m) continue;
+    const start = line.from + (beforeCursor.length - m[0].length);
+    const insert = build(m);
+    view.dispatch({
+      changes: { from: start, to: from, insert } as ChangeSpec,
+      // Cursor after the call so the mark renders and typing continues.
+      selection: { anchor: start + insert.length },
+    });
+    return true;
+  }
+  return false;
+}
+
 export const markdownShortcuts: Extension = EditorView.inputHandler.of(
   (view, from, to, text) => {
     if (from !== to) return false;
     if (text === " ") return handleSpace(view, from);
     if (text === "+") return handlePlus(view, from);
+    if (text === "}") return handleBrace(view, from);
     return false;
   },
 );

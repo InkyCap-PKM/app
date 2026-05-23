@@ -108,6 +108,22 @@ static OBSIDIAN_TAG_RE: LazyLock<Regex> =
 static OBSIDIAN_HIGHLIGHT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"==([^=\n>][^=\n]*)==").unwrap());
 
+// CriticMarkup → InkyCap primitives (interop with Obsidian/iA Writer/etc.).
+// Suggestions map to `#suggestion(...)`; CriticMarkup's comment + highlight map
+// to `#review` / `#highlight`. These run before the bare `==highlight==` pass
+// because `{==x==}` embeds `==x==`. `(?s)`-style `[\s\S]*?` allows multi-word
+// (single-line) content.
+static CRITIC_SUBSTITUTE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{~~([\s\S]*?)~>([\s\S]*?)~~\}").unwrap());
+static CRITIC_INSERT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{\+\+([\s\S]*?)\+\+\}").unwrap());
+static CRITIC_DELETE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{--([\s\S]*?)--\}").unwrap());
+static CRITIC_COMMENT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{>>([\s\S]*?)<<\}").unwrap());
+static CRITIC_HIGHLIGHT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{==([\s\S]*?)==\}").unwrap());
+
 /// Obsidian inline-comment syntax: `%%comment%%`. Renders to nothing in
 /// Obsidian; we strip it pre-parse for the Obsidian dialect only.
 /// `(?s)` makes `.` match newlines so multi-line comments are caught.
@@ -361,6 +377,32 @@ fn preprocess_markdown(
             None => format!("#wikilink(\"{}\")", target),
         }
     }).into_owned();
+
+    // CriticMarkup → InkyCap primitives. Run before the bare `==highlight==`
+    // pass: `{==x==}` embeds `==x==`, so converting the braced form first stops
+    // the highlight pass from clipping it. Substitution before insert/delete is
+    // for clarity (distinct delimiters, so order isn't load-bearing).
+    result = CRITIC_SUBSTITUTE_RE
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("#suggestion(kind: \"replace\", old: [{}])[{}]", &caps[1], &caps[2])
+        })
+        .into_owned();
+    result = CRITIC_INSERT_RE
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("#suggestion(kind: \"insert\")[{}]", &caps[1])
+        })
+        .into_owned();
+    result = CRITIC_DELETE_RE
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("#suggestion(kind: \"delete\")[{}]", &caps[1])
+        })
+        .into_owned();
+    result = CRITIC_COMMENT_RE
+        .replace_all(&result, |caps: &regex::Captures| format!("#review[{}]", &caps[1]))
+        .into_owned();
+    result = CRITIC_HIGHLIGHT_RE
+        .replace_all(&result, |caps: &regex::Captures| format!("#highlight[{}]", &caps[1]))
+        .into_owned();
 
     // Replace Obsidian ==highlight== syntax.
     result = OBSIDIAN_HIGHLIGHT_RE
@@ -1430,6 +1472,31 @@ mod tests {
         assert!(result.contains("#table("));
         assert!(result.contains("Alice"));
         assert!(result.contains("Bob"));
+    }
+
+    #[test]
+    fn criticmarkup_to_suggestions() {
+        assert!(convert("a {++new++} b").contains(r#"#suggestion(kind: "insert")[new]"#));
+        assert!(convert("a {--old--} b").contains(r#"#suggestion(kind: "delete")[old]"#));
+        assert!(
+            convert("a {~~o~>n~~} b").contains(r#"#suggestion(kind: "replace", old: [o])[n]"#)
+        );
+    }
+
+    #[test]
+    fn criticmarkup_comment_and_highlight() {
+        assert!(convert("see {>>fix this<<} here").contains("#review[fix this]"));
+        // Braced CriticMarkup highlight resolves to #highlight (not clipped by
+        // the bare ==…== pass).
+        let out = convert("a {==important==} b");
+        assert!(out.contains("#highlight[important]"), "got: {out}");
+        assert!(!out.contains("=="), "no leftover == delimiters: {out}");
+    }
+
+    #[test]
+    fn standard_criticmarkup_works_across_dialects() {
+        // CriticMarkup is dialect-agnostic — also converts in Standard md.
+        assert!(convert_standard("x {++y++} z").contains(r#"#suggestion(kind: "insert")[y]"#));
     }
 
     #[test]

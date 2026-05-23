@@ -6,6 +6,7 @@ import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
 import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
+import { anchorPanelMenu } from "../../lib/uiMenu";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -773,6 +774,177 @@ export class DueWidget extends WidgetType {
   }
 
   ignoreEvent() { return false; }
+}
+
+export type SuggestionKind = "insert" | "delete" | "replace";
+
+// Only one suggestion menu is open at a time; track it module-side so a new
+// open (or an outside click) tears down the previous one.
+let activeSuggestionMenu: HTMLElement | null = null;
+let suggestionMenuCleanup: (() => void) | null = null;
+function closeSuggestionMenu() {
+  suggestionMenuCleanup?.();
+  suggestionMenuCleanup = null;
+  activeSuggestionMenu?.remove();
+  activeSuggestionMenu = null;
+}
+
+/** Inline `#suggestion(...)` tracked-change mark — the visual face of the
+ *  suggesting-mode primitive. Renders the CriticMarkup idiom (insert = green
+ *  underline, delete = red strike, replace = struck old + underlined new) and,
+ *  on click, opens a small Accept / Reject menu.
+ *
+ *  Accept/reject is a source transform that **unwraps** the call to clean
+ *  Typst (`applyCallTransform`). The resolution table mirrors
+ *  `typst_pipeline::suggestion::resolution_text` in Rust (the authoritative
+ *  transform used for non-editor resolution — md-import, package review); the
+ *  two must stay in lock-step. The func is interactive, so the
+ *  cursor-adjacent path reveals raw markup for editing the proposed text. */
+export class SuggestionWidget extends WidgetType {
+  constructor(
+    readonly kind: SuggestionKind,
+    readonly body: string,
+    readonly oldText: string,
+    readonly by: string,
+    readonly on: string,
+    readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: SuggestionWidget) {
+    return this.kind === other.kind && this.body === other.body
+      && this.oldText === other.oldText && this.by === other.by
+      && this.on === other.on && this.from === other.from;
+  }
+
+  private attribution(): string {
+    const parts: string[] = [];
+    if (this.by) parts.push(this.by);
+    if (this.on) parts.push(this.on);
+    return parts.join(" · ");
+  }
+
+  /** Clean-Typst text this suggestion resolves to. Mirrors Rust
+   *  `resolution_text`: accept = take the proposed change. */
+  private resolution(accept: boolean): string {
+    switch (this.kind) {
+      case "insert": return accept ? this.body : "";
+      case "delete": return accept ? "" : this.body;
+      case "replace": return accept ? this.body : this.oldText;
+    }
+  }
+
+  /** The full replacement on resolve: the clean-Typst resolution, plus an
+   *  inline `#review[…]` at the suggestion's site when the reviewer left a
+   *  comment (so the author sees the rationale). */
+  private replacement(accept: boolean, comment: string): string {
+    const resolved = this.resolution(accept);
+    const c = comment.trim();
+    if (!c) return resolved;
+    const review = `#review[${c}]`;
+    return resolved ? `${resolved} ${review}` : review;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-typst-suggestion";
+    wrap.dataset.kind = this.kind;
+
+    const addMark = (cls: string, txt: string) => {
+      const s = document.createElement("span");
+      s.className = cls;
+      s.textContent = txt;
+      wrap.appendChild(s);
+    };
+    if (this.kind === "insert") addMark("cm-suggestion-ins", this.body);
+    else if (this.kind === "delete") addMark("cm-suggestion-del", this.body);
+    else {
+      addMark("cm-suggestion-del", this.oldText);
+      addMark("cm-suggestion-ins", this.body);
+    }
+
+    const kindLabel =
+      this.kind === "insert" ? "Insertion" : this.kind === "delete" ? "Deletion" : "Replacement";
+    const attr = this.attribution();
+    wrap.title = `Suggested ${kindLabel.toLowerCase()}${attr ? ` by ${attr}` : ""} — click to review`;
+
+    wrap.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openMenu(view, wrap, kindLabel, attr);
+    });
+    return wrap;
+  }
+
+  private openMenu(view: EditorView, anchor: HTMLElement, kindLabel: string, attr: string) {
+    closeSuggestionMenu();
+    const menu = document.createElement("div");
+    menu.className = "cm-suggestion-menu";
+
+    const header = document.createElement("div");
+    header.className = "cm-suggestion-menu__header";
+    header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
+    menu.appendChild(header);
+
+    // Optional comment — recorded as an inline #review[…] at the suggestion's
+    // site when the decision is applied, so the author sees the rationale.
+    const comment = document.createElement("textarea");
+    comment.className = "cm-suggestion-menu__comment";
+    comment.rows = 2;
+    comment.placeholder = "Comment (optional — left as a #review note)";
+    // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
+    for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
+      comment.addEventListener(ev, (e) => e.stopPropagation());
+    }
+    menu.appendChild(comment);
+
+    const row = document.createElement("div");
+    row.className = "cm-suggestion-menu__actions";
+    const mkBtn = (label: string, cls: string, accept: boolean) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `cm-suggestion-menu__item ${cls}`;
+      b.textContent = label;
+      b.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = this.replacement(accept, comment.value);
+        applyCallTransform(view, this.from, () => text);
+        closeSuggestionMenu();
+        view.focus();
+      });
+      row.appendChild(b);
+    };
+    mkBtn("Accept", "is-accept", true);
+    mkBtn("Reject", "is-reject", false);
+    menu.appendChild(row);
+
+    document.body.appendChild(menu);
+    activeSuggestionMenu = menu;
+    anchorPanelMenu(anchor, menu);
+
+    const onDown = (e: PointerEvent) => {
+      if (!menu.contains(e.target as Node)) closeSuggestionMenu();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeSuggestionMenu();
+    };
+    // Defer listener attach by a frame so the opening mousedown doesn't
+    // immediately re-close the menu it just opened.
+    requestAnimationFrame(() => {
+      document.addEventListener("pointerdown", onDown, true);
+      document.addEventListener("keydown", onKey, true);
+    });
+    suggestionMenuCleanup = () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }
+
+  ignoreEvent() {
+    return true;
+  }
 }
 
 export class WikilinkWidget extends WidgetType {
