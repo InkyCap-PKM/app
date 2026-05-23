@@ -98,6 +98,28 @@ pub struct NoteMetadata {
     pub agenda_markers: Vec<AgendaMarker>,
 }
 
+impl NoteMetadata {
+    /// The note's display title — its `#note(title:)` property, falling back
+    /// to the file stem. Tolerates the list-shaped `title: ("...",)` that
+    /// Markdown-imported notes sometimes carry (picks the first non-empty
+    /// string). Shared by every surface that lists notes (Agenda, Reviews).
+    pub fn display_title(&self) -> String {
+        let from_prop = self.properties.get("title").and_then(|v| match v {
+            PropertyValue::String(s) if !s.is_empty() => Some(s.clone()),
+            PropertyValue::List(items) => items
+                .iter()
+                .find_map(|i| i.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string())),
+            _ => None,
+        });
+        from_prop.unwrap_or_else(|| {
+            self.path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
     pub name: String,

@@ -31,11 +31,19 @@ pub async fn notebox_search(
     offset: Option<usize>,
     case_sensitive: Option<bool>,
     use_regex: Option<bool>,
+    annotations_only: Option<bool>,
 ) -> Result<SearchResponse, InkyCapError> {
     let limit = max_results.unwrap_or(100);
     let offset = offset.unwrap_or(0);
+    let annotations_only = annotations_only.unwrap_or(false);
 
-    let parsed = if use_regex.unwrap_or(false) {
+    let parsed = if annotations_only && query.trim().is_empty() {
+        // Annotations scope with no query → browse every annotation.
+        crate::search::query::QueryNode::Filter {
+            kind: crate::search::query::FilterKind::Annotation,
+            value: String::new(),
+        }
+    } else if use_regex.unwrap_or(false) {
         crate::search::query::QueryNode::Regex(query.clone())
     } else {
         parse_query(&query).ok_or_else(|| {
@@ -44,7 +52,8 @@ pub async fn notebox_search(
     };
 
     let engine = state.search_engine.read().await;
-    let (mut results, total_count) = engine.search_paginated(&parsed, offset, limit);
+    let (mut results, total_count) =
+        engine.search_paginated(&parsed, offset, limit, annotations_only);
 
     if case_sensitive.unwrap_or(false) {
         let terms = original_case_terms(&query);

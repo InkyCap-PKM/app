@@ -110,7 +110,7 @@ static OBSIDIAN_HIGHLIGHT_RE: LazyLock<Regex> =
 
 // CriticMarkup → InkyCap primitives (interop with Obsidian/iA Writer/etc.).
 // Suggestions map to `#suggestion(...)`; CriticMarkup's comment + highlight map
-// to `#review` / `#highlight`. These run before the bare `==highlight==` pass
+// to `#annotation` / `#highlight`. These run before the bare `==highlight==` pass
 // because `{==x==}` embeds `==x==`. `(?s)`-style `[\s\S]*?` allows multi-word
 // (single-line) content.
 static CRITIC_SUBSTITUTE_RE: LazyLock<Regex> =
@@ -276,7 +276,7 @@ fn escape_unrecognized_hashes(text: &str) -> String {
         // into the output string for multi-byte chars without care, so
         // walk by char_indices when the byte is non-ASCII.
         if bytes[i].is_ascii() {
-            out.push(bytes[i] as char);
+            out.push(bytes[i] as char); // utf8-safe: guarded by is_ascii() — byte is 0..=127, maps identically to char
             i += 1;
         } else {
             let ch = text[i..].chars().next().unwrap();
@@ -398,7 +398,7 @@ fn preprocess_markdown(
         })
         .into_owned();
     result = CRITIC_COMMENT_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("#review[{}]", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| format!("#annotation[{}]", &caps[1]))
         .into_owned();
     result = CRITIC_HIGHLIGHT_RE
         .replace_all(&result, |caps: &regex::Captures| format!("#highlight[{}]", &caps[1]))
@@ -1485,7 +1485,7 @@ mod tests {
 
     #[test]
     fn criticmarkup_comment_and_highlight() {
-        assert!(convert("see {>>fix this<<} here").contains("#review[fix this]"));
+        assert!(convert("see {>>fix this<<} here").contains("#annotation[fix this]"));
         // Braced CriticMarkup highlight resolves to #highlight (not clipped by
         // the bare ==…== pass).
         let out = convert("a {==important==} b");

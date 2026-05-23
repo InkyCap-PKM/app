@@ -54,6 +54,10 @@ pub enum FilterKind {
     /// `property:name` — notes whose `#note(...)` call contains the named key.
     /// `property:name=value` — notes whose `name` property contains `value`.
     Property,
+    /// `annotation:keyword` — notes that carry an `#annotation[…]` or
+    /// `#suggestion[…]` whose body text contains `keyword`. A bare
+    /// `annotation:` (empty value) matches any note with an annotation.
+    Annotation,
 }
 
 impl FilterKind {
@@ -64,6 +68,7 @@ impl FilterKind {
             "tag" => Some(Self::Tag),
             "section" => Some(Self::Section),
             "property" => Some(Self::Property),
+            "annotation" => Some(Self::Annotation),
             _ => None,
         }
     }
@@ -77,6 +82,7 @@ impl fmt::Display for FilterKind {
             FilterKind::File => "file",
             FilterKind::Section => "section",
             FilterKind::Property => "property",
+            FilterKind::Annotation => "annotation",
         };
         write!(f, "{}", s)
     }
@@ -238,7 +244,7 @@ fn tokenize(input: &str) -> Vec<Token> {
 /// If `chars[i..]` starts with `<prefix>:` for one of the known filter
 /// prefixes (case-insensitive), return `(prefix_len, lowercased_prefix)`.
 fn match_filter_prefix(chars: &[char], i: usize) -> Option<(usize, String)> {
-    const PREFIXES: &[&str] = &["path", "file", "tag", "section", "property"];
+    const PREFIXES: &[&str] = &["path", "file", "tag", "section", "property", "annotation"];
     for prefix in PREFIXES {
         let pl = prefix.len();
         if i + pl + 1 > chars.len() {

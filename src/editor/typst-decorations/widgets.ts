@@ -35,7 +35,7 @@ function typstLengthToCss(value: string): string {
 // classifier (multi-line / multi-paragraph callouts are the common
 // case). Other block-row pills (image, embed, figure) stick to the
 // default simple→expand / complex→menu split.
-const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "review"]);
+const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "annotation"]);
 
 function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTMLElement {
   const row = document.createElement("div");
@@ -139,9 +139,9 @@ const CALLOUT_COLORS: Record<string, string> = {
   bug: "#f50057",
 };
 
-// Reviewer-comment accent. Mirrors `_review-color` in the notebox package's
+// Annotation accent. Mirrors `_annotation-color` in the notebox package's
 // lib.typ so the visual-editor block and the compiled output read the same.
-const REVIEW_COLOR = "#8b5cf6";
+const ANNOTATION_COLOR = "#8b5cf6";
 
 export class CalloutWidget extends WidgetType {
   constructor(
@@ -836,14 +836,14 @@ export class SuggestionWidget extends WidgetType {
   }
 
   /** The full replacement on resolve: the clean-Typst resolution, plus an
-   *  inline `#review[…]` at the suggestion's site when the reviewer left a
+   *  inline `#annotation[…]` at the suggestion's site when the reviewer left a
    *  comment (so the author sees the rationale). */
   private replacement(accept: boolean, comment: string): string {
     const resolved = this.resolution(accept);
     const c = comment.trim();
     if (!c) return resolved;
-    const review = `#review[${c}]`;
-    return resolved ? `${resolved} ${review}` : review;
+    const annotation = `#annotation[${c}]`;
+    return resolved ? `${resolved} ${annotation}` : annotation;
   }
 
   toDOM(view: EditorView) {
@@ -887,12 +887,12 @@ export class SuggestionWidget extends WidgetType {
     header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
     menu.appendChild(header);
 
-    // Optional comment — recorded as an inline #review[…] at the suggestion's
+    // Optional comment — recorded as an inline #annotation[…] at the suggestion's
     // site when the decision is applied, so the author sees the rationale.
     const comment = document.createElement("textarea");
     comment.className = "cm-suggestion-menu__comment";
     comment.rows = 2;
-    comment.placeholder = "Comment (optional — left as a #review note)";
+    comment.placeholder = "Comment (optional — left as an #annotation note)";
     // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
     for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
       comment.addEventListener(ev, (e) => e.stopPropagation());
@@ -1862,12 +1862,12 @@ export class CalloutBlockWidget extends WidgetType {
   }
 }
 
-// A reviewer comment (`#review[…]`). Renders as a tinted annotation block —
-// the visual-editor sibling of CalloutBlockWidget — so a review stays
+// An annotation (`#annotation[…]`). Renders as a tinted block — the
+// visual-editor sibling of CalloutBlockWidget — so an annotation stays
 // visually distinct from body text even when the cursor is away, matching how
 // lib.typ renders it in the reading view. Reuses the callout block CSS with
-// the review accent set inline.
-export class ReviewBlockWidget extends WidgetType {
+// the annotation accent set inline.
+export class AnnotationBlockWidget extends WidgetType {
   constructor(
     readonly bodyText: string,
     readonly by: string,
@@ -1878,7 +1878,7 @@ export class ReviewBlockWidget extends WidgetType {
     super();
   }
 
-  eq(other: ReviewBlockWidget) {
+  eq(other: AnnotationBlockWidget) {
     return this.bodyText === other.bodyText && this.by === other.by
       && this.on === other.on && this.pos === other.pos
       && this.withPill === other.withPill;
@@ -1899,18 +1899,18 @@ export class ReviewBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("review", this.pos, view));
+    if (this.withPill) wrap.appendChild(makeBlockPillRow("annotation", this.pos, view));
 
     const inner = document.createElement("div");
     inner.className = "cm-typst-callout";
-    inner.style.borderLeftColor = REVIEW_COLOR;
-    inner.style.backgroundColor = `color-mix(in srgb, ${REVIEW_COLOR} 8%, transparent)`;
+    inner.style.borderLeftColor = ANNOTATION_COLOR;
+    inner.style.backgroundColor = `color-mix(in srgb, ${ANNOTATION_COLOR} 8%, transparent)`;
 
     const heading = document.createElement("div");
     heading.className = "cm-typst-callout-heading";
-    heading.style.color = REVIEW_COLOR;
+    heading.style.color = ANNOTATION_COLOR;
     const attribution = [this.by, this.on].filter(Boolean).join(" · ");
-    heading.textContent = attribution ? `Review — ${attribution}` : "Review";
+    heading.textContent = attribution ? `Annotation — ${attribution}` : "Annotation";
     inner.appendChild(heading);
 
     if (this.bodyText) {

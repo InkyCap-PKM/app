@@ -6,7 +6,7 @@
 //! a decision to record, and assembles the per-collection **review-log note**
 //! that those calls accumulate in.
 //!
-//! The `#review` (inline reviewer comment) primitive is authored entirely on
+//! The `#annotation` (inline margin comment) primitive is authored entirely on
 //! the frontend via the `/` command palette, so it needs no Rust builder —
 //! only `#review-decision` is host-emitted (when a decision is applied, or a
 //! bare comment is left, in `collab_review_apply` / `collab_review_comment`).

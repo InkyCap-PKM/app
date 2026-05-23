@@ -1,13 +1,13 @@
-//! Compile-validates the `#review` / `#review-decision` collaboration
-//! primitives in the `inkycap-notebox` Typst package (`lib.typ`).
+//! Compile-validates the `#annotation` / `#review-decision` primitives in the
+//! `inkycap-notebox` Typst package (`lib.typ`).
 //!
-//! Both render a styled annotation block and emit a queryable label
-//! (`<inkycap-review>` / `<inkycap-review-decision>`). A syntax error in either
-//! `#let` would only surface when a note that uses them is compiled, so this
-//! test runs a real note carrying both — a bare `#review[…]`, a `#review(…)[…]`
-//! with `by:`/`on:` attribution and inline markup, and the three
-//! `#review-decision(…)` action kinds (accepted / rejected / commented, the
-//! last two with/without a note arg) — through the actual Typst compiler.
+//! Both render a styled block and emit a queryable label
+//! (`<inkycap-annotation>` / `<inkycap-review-decision>`). A syntax error in
+//! either `#let` would only surface when a note that uses them is compiled, so
+//! this test runs a real note carrying both — a bare `#annotation[…]`, an
+//! `#annotation(…)[…]` with `by:`/`on:` attribution and inline markup, and the
+//! three `#review-decision(…)` action kinds (accepted / rejected / commented,
+//! the last two with/without a note arg) — through the actual Typst compiler.
 //! Exercises every branch of `_decision-color` / `_decision-label`. Needs no
 //! external tooling, so it always runs.
 
@@ -21,9 +21,9 @@ const NOTE: &str = "#import \"/.inkycap/notebox.typ\": *\n\
 \n\
 Some prose under review.\n\
 \n\
-#review[This needs a *citation* — see _Smith 2024_.]\n\
+#annotation[This needs a *citation* — see _Smith 2024_.]\n\
 \n\
-#review(by: \"alice\", on: \"2026-05-22\")[Tighten the intro.]\n\
+#annotation(by: \"alice\", on: \"2026-05-22\")[Tighten the intro.]\n\
 \n\
 #review-decision(\"New Section\", \"accepted\", by: \"alice\", on: \"2026-05-22\")\n\
 \n\

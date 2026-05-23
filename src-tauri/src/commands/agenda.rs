@@ -60,26 +60,6 @@ pub struct AgendaItem {
     pub zid: Option<String>,
 }
 
-/// Document-level `#note(...)` title, falling back to the file stem.
-/// Accepts both `title: "..."` (the canonical form) and `title: ("...",)`
-/// (a list — the shape Markdown-imported notes sometimes carry); picks the
-/// first non-empty string from a list.
-fn note_title(note: &NoteMetadata) -> String {
-    let from_prop = note.properties.get("title").and_then(|v| match v {
-        PropertyValue::String(s) if !s.is_empty() => Some(s.clone()),
-        PropertyValue::List(items) => items
-            .iter()
-            .find_map(|i| i.as_str().filter(|s| !s.is_empty()).map(|s| s.to_string())),
-        _ => None,
-    });
-    from_prop.unwrap_or_else(|| {
-        note.path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    })
-}
-
 fn note_zid(note: &NoteMetadata) -> Option<String> {
     match note.properties.get("zid") {
         Some(PropertyValue::String(s)) if !s.is_empty() => Some(s.clone()),
@@ -126,7 +106,7 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
 
     for note in notes {
         let path = to_frontend_string(&note.path);
-        let title = note_title(note);
+        let title = note.display_title();
         let zid = note_zid(note);
 
         // File creation date — surfaced as `file.ctime` (RFC3339) by the
