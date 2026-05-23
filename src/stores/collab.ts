@@ -35,7 +35,9 @@ const [review, setReview] = createSignal<ReviewResult | null>(null);
 // still show the (now-merged) note's header/diff.
 const [reviewItemsById, setReviewItemsById] = createSignal<Record<string, ReviewItem>>({});
 const [decisions, setDecisions] = createSignal<Record<string, DecisionAction>>({});
-const [reasons, setReasons] = createSignal<Record<string, string>>({});
+// Reviewer comments, keyed by collabid. Recorded in the review log: always on
+// reject, on accept only when non-empty.
+const [comments, setComments] = createSignal<Record<string, string>>({});
 // Per-key bibliography conflict choices: true ⇒ take incoming, false ⇒ keep
 // local (the default).
 const [bibChoices, setBibChoices] = createSignal<Record<string, boolean>>({});
@@ -56,7 +58,7 @@ export {
   review,
   reviewItemsById,
   decisions,
-  reasons,
+  comments,
   bibChoices,
   currentReviewCollabid,
   setCurrentReviewCollabid,
@@ -93,7 +95,7 @@ export function loadReview(collectionPath: string, collectionName: string, r: Re
   const bc: Record<string, boolean> = {};
   for (const key of r.bib_conflicts) bc[key] = false; // keep local by default
   setBibChoices(bc);
-  setReasons({});
+  setComments({});
   setMergedCollabids({});
   // Note: review-mode set + currentReviewCollabid are left as-is here so a
   // re-classify (collab_pending_review) doesn't kick the user out of a note
@@ -107,7 +109,7 @@ export function clearReview() {
   setReview(null);
   setReviewItemsById({});
   setDecisions({});
-  setReasons({});
+  setComments({});
   setBibChoices({});
   setCurrentReviewCollabid(null);
   setCurrentReviewPath(null);
@@ -119,8 +121,8 @@ export function setDecision(collabid: string, action: DecisionAction) {
   setDecisions((d) => ({ ...d, [collabid]: action }));
 }
 
-export function setReason(collabid: string, reason: string) {
-  setReasons((m) => ({ ...m, [collabid]: reason }));
+export function setComment(collabid: string, comment: string) {
+  setComments((m) => ({ ...m, [collabid]: comment }));
 }
 
 export function setBibChoice(key: string, takeIncoming: boolean) {
@@ -175,17 +177,16 @@ export function endReviewModeFor(localPath: string | null, collabid: string | nu
 
 /** Apply ONE note's decision immediately (whole-file): accept takes the
  *  incoming version, reject keeps the local one (resolved so it won't
- *  re-offer; rationale logged). Removes it from the pending list but KEEPS it
- *  in review-mode display (marked Merged) so the user can keep the diff open
- *  and continue editing. Returns true on success. */
+ *  re-offer). Any comment is recorded in the review log (always on reject, on
+ *  accept when non-empty). Removes it from the pending list but KEEPS it in
+ *  review-mode display (marked Merged) so the user can keep the diff open and
+ *  continue editing. Returns true on success. */
 export async function applyNote(collabid: string, action: "accept" | "reject"): Promise<boolean> {
   const ar = activeReview();
   if (!ar) return false;
   const d: ReviewDecision = { collabid, action };
-  if (action === "reject") {
-    const reason = (reasons()[collabid] ?? "").trim();
-    if (reason) d.reason = reason;
-  }
+  const comment = (comments()[collabid] ?? "").trim();
+  if (comment) d.comment = comment;
   try {
     await ipc.collabReviewApply(ar.collectionPath, [d], []);
     bumpPropertyVersion();
@@ -203,6 +204,24 @@ export async function applyNote(collabid: string, action: "accept" | "reject"): 
   }
 }
 
+/** Record a free-standing reviewer comment (no decision) in the collection's
+ *  review log. `target` is the note's display name. Leaves the note pending in
+ *  the review. Returns true on success; surfaces its own toast. */
+export async function commentOnly(target: string, comment: string): Promise<boolean> {
+  const ar = activeReview();
+  const text = comment.trim();
+  if (!ar || !text) return false;
+  try {
+    await ipc.collabReviewComment(ar.collectionPath, target, text);
+    bumpPropertyVersion();
+    showToast("success", "Comment recorded", `Added to the ${ar.collectionName} review log.`);
+    return true;
+  } catch (e) {
+    showToast("error", "Couldn't add comment", String(e));
+    return false;
+  }
+}
+
 /** Apply every pending decision in the session at once (the batch path used
  *  by the Collaboration settings panel), then end the session. Returns true
  *  on success. Surfaces its own toast; callers manage busy state / refreshes. */
@@ -214,10 +233,10 @@ export async function applyReview(): Promise<boolean> {
   const list: ReviewDecision[] = r.note_items.map((it) => {
     const action = decisions()[it.collabid] ?? "skip";
     const d: ReviewDecision = { collabid: it.collabid, action };
-    if (action === "reject") {
-      const reason = (reasons()[it.collabid] ?? "").trim();
-      if (reason) d.reason = reason;
-    }
+    // Comment travels on any decision; the backend logs it per the action
+    // (always for reject, only-if-present for accept, never for skip).
+    const comment = (comments()[it.collabid] ?? "").trim();
+    if (comment) d.comment = comment;
     return d;
   });
   const bibList: BibDecision[] = r.bib_conflicts.map((key) => ({

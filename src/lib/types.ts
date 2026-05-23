@@ -843,9 +843,10 @@ export type DecisionAction = "accept" | "reject" | "skip";
 export interface ReviewDecision {
   collabid: string;
   action: DecisionAction;
-  /** Rationale for a `reject` decision, recorded in the collection's
-   *  rejection-log note. Ignored for accept/skip. */
-  reason?: string;
+  /** Optional reviewer comment, recorded in the collection's review-log note.
+   *  A `reject` is always logged (with or without a comment); an `accept` is
+   *  logged only when a comment is present; `skip` never logs. */
+  comment?: string;
 }
 
 /** Per-key resolution for a conflicting bibliography entry. Keys omitted

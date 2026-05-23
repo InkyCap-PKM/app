@@ -584,6 +584,295 @@ Verified: tsc clean, `cargo build` (full), 77 collab tests green,
 `npm run build` (vite) succeeds. **All UI/async — needs in-app validation**
 (esp. the editor reload-on-accept and the reopen→review-mode persistence).
 
+## DONE — Collaboration surfaced in the right panel + tri-state lifecycle (2026-05-23)
+
+Per user feedback that collaboration was "too buried" inside Collection
+Settings, it was moved out and given a clearer lifecycle. **Uncommitted at
+this handoff** (compiles; `tsc`/`npm run build` clean; full lib 539 + collab
+77 tests green; partially validated in-app by the user).
+
+- **Moved out of Collection Settings → right-panel surface for Collection
+  Views.** New `src/components/CollaborationSection.tsx` renders in
+  `RightPanel` whenever a `collection` tab is active (gated to not collide
+  with the Review tab, which shows on the reviewed note's *file* tab):
+  handshake icon + "Collaboration" heading, the question "Enable collaboration
+  for this collection?", and the lifecycle pill. The old `"collab"` tab in
+  `CollectionMetadataEditor` (CollectionTable) is **removed**.
+- **Three-way Disable / Pause / Enable pill** (replaces the on/off enable
+  button + disabled-fallback). Default **Disable**.
+  - Backend: `collab_enable` **replaced** by `collab_set_state(collection_path,
+    target: CollabState, handle: Option<String>)` (`CollabState` =
+    `disabled|paused|enabled`, snake_case serde). `collab_status` gained a
+    `state` field. Registered in `lib.rs` (replacing `collab_enable`).
+  - **Disabled** = no sidecar (pristine; the default). **Paused** = sidecar on
+    disk but `enabled=false` (history kept, filter unlocked, lossless resume).
+    **Enabled** = active. Paused-vs-Disabled is told apart by sidecar presence
+    (both have `enabled=false`).
+  - Refactor: `setup_collaboration(state, path, handle, target_enabled, fresh)`
+    — `fresh` seeds a new `VersionsFile`, else loads the existing one (resume)
+    and folds in edits made while paused via `bump_local_edits`; preserves
+    `import_folder`. `resolve_handle(root, id, provided)` = provided ∥ pinned
+    `me.json` ∥ error. Disable target tears down the sidecar dir
+    (`remove_dir_all`) and clears the flag — note `collabid`/`collection`
+    stamps are left on notes, so re-enable reuses identities.
+  - Frontend handle resolution (CollaborationSection): pinned → global setting
+    → `promptText` dialog (seeded from global author name). Disable shows a
+    destructive `ask()` confirm. After any transition, `bumpPropertyVersion()`
+    so CollectionTable's `collectionFile` resource (now keyed on
+    `propertyVersion()`) refetches and the filter-lock (`isCollaborative`)
+    stays in sync.
+- **`CollabPanel` slimmed to the enabled-body** (import folder, handle
+  override, package/import, review list). Now takes `status` + `collectionFile`
+  + `onChanged` props from CollaborationSection (no more own enable button /
+  disabled fallback / `onSaved`).
+- **Global identity in Settings › Overview › Collaboration** — new
+  `CollaborationSettings { author_name, handle }` on the user-global
+  `UserSettings` (Rust `settings.rs` + TS `types.ts`/`settings.ts` DEFAULTS).
+  Optional; handle pre-fills enabling (overridable per collection), author name
+  pre-fills the **first** Book Metadata contributor and is reused as the handle
+  when "you" (name matches) become a collaborator (`ContributorsEditor`).
+- **Two Reviewing-mode tweaks (from a screenshot):** (a) reject-reason field
+  moved **below** Accept/Reject (above End Review Mode) in `ReviewPanel`;
+  (b) the Mycelial (BrainCircuit) + Journal-Scroll pill buttons are **hidden**
+  in the editor header while a note is in review mode (`TypstEditor`, gated on
+  `reviewModeCollabidForPath(props.path)`).
+- **CSS:** `.collab-section*` + `.collab-state-pill*` (segmented control
+  mirroring `.editor-header__mode-toggle`, active segment accent-filled) in
+  `layout.css`.
+- Files touched: `src-tauri/src/{settings.rs, lib.rs, commands/collab.rs}`;
+  `src/lib/{types.ts, ipc.ts}`, `src/stores/settings.ts`,
+  `src/components/{CollaborationSection.tsx (new), CollabPanel.tsx, RightPanel.tsx,
+  CollectionTable.tsx, SettingsPanel.tsx, ReviewPanel.tsx, TypstEditor.tsx,
+  ContributorsEditor.tsx}`, `src/styles/layout.css`.
+
+**Validate the rest in-app, then commit** (alongside the still-uncommitted
+`#review` primitives + review-diff workflow from the prior session, and the
+earlier CollabPanel hint-wording tweaks).
+
+## OPEN QUESTION — collaboration direction (package vs git vs CRDT) (2026-05-23)
+
+The user has a "shadow of doubt" about the real-world utility of the
+package-handoff model and is **actively reconsidering direction** (no decision
+yet). Analysis done this session, for whoever resumes:
+
+- **The review/apply/membership/UI/Typst-primitives layer is transport-agnostic
+  and is the durable asset.** The vector-clock-over-zip half (`clock.rs`,
+  `versions.rs`, `package.rs`, the clock-based decision matrix in `review.rs`)
+  is one transport.
+- **Git plan** (`.claude/plans/hi-i-would-like-declarative-otter.md`) = a
+  *transport* swap behind the same review UI: ~50% reuse (review panel,
+  `@codemirror/merge` diff, `ReviewResult`/`ChangeKind`, `#review`/
+  `#review-reject` (DONE, plan lists as TODO), bib merge, ContributorsEditor,
+  atomic writes, `collection_id` hashing). **Crucially, the Issue-#2
+  property-based membership decision dissolves the plan's hardest part** — the
+  §2.3 "syndication home" rule, the `gitcollection` property (already
+  repurposed to `collabid`), the §2.6 filter-drift delete footgun. New cost is
+  dominated by `git2`+`keyring`, auth (SSH/PAT), the mirror-worktree, and the
+  §2.8 external-sync-coexistence tar pit.
+- **Automerge / CRDT** = a *philosophy* swap, poor fit: inverts the source of
+  truth (CRDT becomes canonical, `.typ` becomes a projection — breaks "Typst is
+  the source of truth" + plain-files-on-disk + external-tool interop), and
+  auto-merge is the **opposite** of the review-before-apply model the user
+  values (would force fighting the library to reintroduce a review gate).
+  Least reuse of the three. Best for real-time apps that own their doc model;
+  user's workflow is academic turn-taking, where its benefit is lowest and its
+  cost is paid in full.
+- **DiffMate** (the other candidate) = a Next.js *viewer* web app, no license,
+  no per-change approval — not incorporable. The per-hunk approval idea it
+  prompted is reachable by flipping `@codemirror/merge`'s `mergeControls: true`
+  in `ReviewPanel` (currently `false`) + a hunk-aware apply path — but the user
+  previously evaluated per-hunk and **chose whole-file** ("too complex").
+- Recommendation given: don't rip out the working package version; if git is
+  chosen, do it as a *second transport* (the de-risked plan). The user is
+  giving it more thought; their judgement is experience-based (Word / Google
+  Docs), so a literal dry-run isn't decisive for them.
+
+## DONE — Idea 1: commentary on ANY decision + generalized review log (2026-05-23)
+
+The rejection-only log is now a general **review log** capturing accept-with-
+comment, reject-with-rationale, and bare comments alike. **Uncommitted at this
+handoff** (compiles; `tsc`/`npm run build` clean; full lib **540** + collab 77 +
+review_primitives 2 tests green). Needs in-app validation, then commit.
+
+- **Typst (`inkycap-notebox/0.2.0/lib.typ`):** `#review-reject(target, reason,…)`
+  **replaced** by `#review-decision(target, action, note: "", by:, on:)` —
+  `action` ∈ `"accepted"|"rejected"|"commented"`, coloured green/red/violet via
+  new `_decision-color`/`_decision-label`. Emits `<inkycap-review-decision>`
+  (dict `target, action, note, by, on`) — the sixth query label is renamed from
+  `<inkycap-review-reject>`. `#review[…]` (inline reviewer comment) is unchanged.
+  The optional `note` renders on its own line only when present (a bare accept
+  is a one-line row).
+- **Rust glue (`typst_pipeline/review.rs`):** new `ReviewAction` enum (`as_typ`),
+  `review_decision_call(...)`, `review_log_title` ("<name> — Review Log"),
+  `append_to_review_log` (header: `= Review log`, no `collection` prop so it
+  never packages back). Tests rewritten (7, +`action_strings_match_lib_typ_switch`
+  pins the enum strings to lib.typ's switch).
+- **Apply (`commands/collab.rs`):** `ReviewDecision.reason` → `comment`. The loop
+  collects `(target, ReviewAction, comment)` log entries — **reject always logs**
+  (with/without comment), **accept logs only when commented** (both the delete
+  and write branches), **skip never logs**. New shared `append_review_log(...)`
+  helper (DRY: used by apply + the new comment command; re-acquires storage,
+  safe — `get_storage` clones an Arc under a brief read lock). New
+  `collab_review_comment(collection_path, target, comment)` command (bare comment
+  → `commented` entry, no apply; registered in `lib.rs`). Stale module doc-comment
+  ("not yet wired") corrected.
+- **Frontend:** `ReviewDecision.reason` → `comment` (types.ts); `collabReviewComment`
+  ipc wrapper; collab store `reasons`/`setReason` → `comments`/`setComment`,
+  `applyNote`/`applyReview` send `comment` on **any** decision, new `commentOnly`
+  store action. **ReviewPanel:** comment textarea now always shown (not reject-
+  only), "Add comment only" button (records without deciding, keeps note pending),
+  relabelled "review log". **CollabPanel** (batch path): comment input shown for
+  accept **and** reject (not skip), placeholder adapts. New
+  `.review-panel__comment-btn` CSS.
+- **`tests/review_primitives.rs`:** note now exercises all three
+  `#review-decision` actions (accepted bare, rejected w/ note, commented w/ note)
+  through the real Typst compiler — covers every `_decision-color`/`_decision-label`
+  branch.
+
+Files: `inkycap-notebox/0.2.0/lib.typ`,
+`src-tauri/src/{typst_pipeline/review.rs, commands/collab.rs, lib.rs}`,
+`src-tauri/tests/review_primitives.rs`; `src/lib/{types,ipc}.ts`,
+`src/stores/collab.ts`, `src/components/{ReviewPanel,CollabPanel}.tsx`,
+`src/styles/layout.css`.
+
+**Note for Idea 2:** the generalized review log + `ReviewAction::Commented` are
+the reuse hook for inline-suggestion accept/reject logging (sequencing step 2).
+
+### UI refinements after first in-app test of the collab panel (2026-05-23)
+- **New reusable `HelpButton` component** (`src/components/HelpButton.tsx` +
+  `.help-button*` CSS) — a circled `?` that opens a dismissible help popover
+  (Portal + viewport-clamped positioning mirroring `DatePicker`; outside-click /
+  Esc / ✕ dismiss; `--popup-*` tokens). Built to be reused anywhere inline
+  explanatory text would clutter the UI. In CollabPanel it **replaces** the three
+  always-on hint paragraphs (packaging explanation, import folder, your handle)
+  so the panel is terse and the detail is one click away.
+- **Removed the review "Cancel" button** (CollabPanel) — closing the tab / not
+  hitting Apply already abandons the review; Cancel was redundant. (`clearReview`
+  is still used internally by `applyReview`.)
+- **Disable confirm:** the requested "warn + let them cancel" on switching to
+  Disable already exists (`CollaborationSection.setTo` → destructive `ask()`); no
+  change needed.
+- **ReviewPanel buttons (2nd in-app test):** Accept is no longer a green filled
+  button — Accept/Reject now share the neutral base style (the green fill's light
+  text was hard to read; the user wanted two equal choices). This supersedes the
+  earlier "Accept is the only green button" decision. "Add comment only" → "Add
+  Comment".
+- **Themed dropdowns:** the CollabPanel review-decision (`Accept/Reject/Skip`) and
+  bib-conflict (`Keep mine/Take theirs`) native `<select>`s → the app `<Dropdown>`
+  (native selects render an unthemed OS-native popup under WebKitGTK).
+
+## MERGED-IN — Review Commentary + Inline `#suggestion` Pills (captured 2026-05-23)
+
+Two related ideas the user raised after the right-panel / tri-state work. **Nothing
+built yet.** Folded in here from `project_collab_inline_suggestions.md`; full design
+detail (forks, sequencing, prior art) lives in the companion plan
+[collaboration-inline-suggestions-2026-05-23.md](collaboration-inline-suggestions-2026-05-23.md).
+Both layer **on top of any transport** (package today; git/CRDT debate above) — a
+comment or a suggestion is just Typst content that rides any delivery mechanism, so
+neither is blocked by the direction decision.
+
+**Context to reuse:** `#review(body, by:, on:)` / `#review-reject(target, reason,
+by:, on:)` primitives + `<inkycap-review>`/`<inkycap-review-reject>` labels in
+`lib.typ`; `typst_pipeline/review.rs` (call builders + `append_to_rejection_log`);
+the rejection-log note; `FuncPillWidget` + content-bracket pill pattern; `--popup-*`
+tokens + context-menu infra; `note_rewriter` AST source transforms (cf.
+`path_rebase.rs`); `@codemirror/merge` whole-file ReviewPanel (the model these
+augment).
+
+### Idea 1 — Commentary on ANY decision (not just rejection) — SMALL, do first
+
+Today only **rejections** get a stored note (`#review-reject` → rejection log).
+Expand so a reviewer can attach commentary on **accept** too, or leave a bare comment
+without deciding. **Cheap** because `#review[...]` already exists and already travels
+back in the package — it's mostly a UI-flow gap on the accept path. Two shapes to
+choose between: (a) generalize the rejection log into a **review/decisions log**
+recording accept-with-comment / reject-with-rationale / bare comment alike (Typst-
+native cousin of git's `decisions.yaml`); or (b) lighter — any decision optionally
+carries a comment recorded as a `#review[...]` near the note or in the log. Reuses
+everything; ship regardless of Idea 2's fate.
+
+### Idea 2 — Inline `#suggestion` pills = Typst-native suggesting mode — BIG
+
+Build change-tracking **into each note** as Typst markup instead of (or alongside)
+the diff/merge view: a primitive wraps a proposed span → renders as a pill; click =
+see/add a threaded message in a popup; right-click = Accept (unwrap/keep) / Reject
+(delete + log). ≈ CriticMarkup / Google Docs Suggesting / Word Track Changes, stored
+in the document. **May be the real resolution to the package-vs-git-vs-CRDT doubt:**
+the distinctive thing isn't the transport, it's that the review model becomes *inline
+intent* rather than whole-file diffs — more aligned with Typst-first identity than
+git or zip-diff. It does NOT discard membership/identity/packaging (still needed to
+deliver files + know who's who); it changes the *unit of review*.
+
+Design decisions to settle (the hard parts):
+1. **~3 pill variants**, not one: **insert** (accept→unwrap, reject→delete), **delete**
+   (struck; accept→remove, reject→keep), **replace** (= delete+insert).
+2. **Manual vs automatic — the big fork.** Manual (`/suggestion` palette / wrap a
+   selection) fits the pill system today → **realistic v1**. Automatic "suggesting
+   mode" (intercept every keystroke, Google-Docs-style) is a substantial CM6 feature
+   with the full edge-case tax (nested/overlapping suggestions, two reviewers on one
+   span, mode toggle) → **defer**.
+3. **Complements diff-review; doesn't fully replace it.** A `#suggestion` *is* a diff;
+   the clean design has the review UI **recognize suggestion markup specially**
+   (resolvable in-context, not raw "added text"). Diff+transport stays the safety net
+   for edits made without a suggestion wrapper.
+4. **Thread storage = Typst-native, byte-fidelity round-trip** in the function args
+   (`#suggestion(kind:, by:, on:, status:, thread:((by:,text:,on:),…))[content]`),
+   same discipline as the `#note(...)` property round-trip.
+5. **Accept/reject = source transform** of the `.typ` via `note_rewriter`; rejection
+   note flows into the (Idea-1-generalized) review log.
+6. **Rendering in `lib.typ`** (Typst-first): insert = underline/colour, delete =
+   strike, replace = struck-old + colour-new; reading view + visual pill mirror.
+
+**OPEN QUESTION before building Idea 2:** do suggestions **replace** the whole-file
+diff review for prose, or **live alongside** it? → SETTLED 2026-05-23: **alongside**.
+
+**Recommended sequencing:** Idea 1 first (small, independent, generalize the log),
+then Idea 2 as *manual* suggestions; defer automatic suggesting mode.
+
+### Idea 2 — DECISIONS SETTLED (2026-05-23)
+- **Storage = Typst-native `#suggestion(...)`**, NOT literal CriticMarkup in the
+  `.typ`. CriticMarkup isn't valid Typst (would break compiles-anywhere +
+  source-of-truth + need a compile-path preprocessor); the toolkit is
+  Python/Markdown (not embeddable); "won't be published" is handled by
+  resolve-before-export, not by the storage format.
+- **CriticMarkup is the UX layer, three ways (all wanted):** (1) the *visual
+  rendering idiom* — insert = green underline, delete = red strike, replace =
+  both; (2) a `{++ ++}`/`{-- --}`/`{~~ ~> ~~}` *typing shortcut* in the visual
+  editor that expands to `#suggestion(...)`, like `[[ ]]` → `#wikilink`; (3) a
+  *markdown import/export mapping* `#suggestion` ↔ CriticMarkup. Note the elegant
+  full mapping: CriticMarkup comment `{>> <<}` → existing `#review[…]`, highlight
+  `{== ==}` → existing `#highlight[…]`; only ins/del/sub need `#suggestion`.
+- **Accept/reject = AST source transform** (`note_rewriter`/`path_rebase`-style):
+  accept-insert→unwrap to text, reject-insert→remove; accept-delete→remove,
+  reject-delete→unwrap; replace symmetric. Published output is clean Typst.
+- **Threads:** v1 carries creator attribution (`by`/`on`); multi-message reply
+  threads deferred to a follow-up (byte-fidelity arg write-back is the hard part).
+
+### Idea 2 — BUILD PHASES
+- **Phase A — Typst foundation (backend, fully testable): DONE 2026-05-23
+  (uncommitted).** `#suggestion(body, kind:, old:, by:, on:)` in
+  `inkycap-notebox/0.2.0/lib.typ` — insert = green underline, delete = red
+  strike, replace = struck-old + underlined-new; emits `<inkycap-suggestion>`
+  (dict kind/by/on; the **seventh** query label). New
+  `src-tauri/src/typst_pipeline/suggestion.rs`: `SuggestionKind` enum +
+  `suggestion_call(...)` builder; `resolve_suggestion_at(source, offset, accept)`
+  + `resolve_all_suggestions(source, accept)` + `count_suggestions` — AST source
+  transforms (`typst::syntax`, same discipline as `note_rewriter`/`path_rebase`)
+  that **unwrap** a call to clean Typst (accept-insert→keep, reject-insert→drop;
+  accept-delete→drop, reject-delete→keep; replace symmetric). Resolution by the
+  call's hash-extended span containing a byte offset. Registered in
+  `typst_pipeline/mod.rs`. Tests: 12 unit (`suggestion.rs`, incl. multibyte +
+  inline-markup body round-trip) + 2 real-Typst (`tests/suggestion_primitive.rs`,
+  all three kinds compile + query round-trip). Full lib **552** green.
+  **No Tauri command yet** — deferred to Phase B so its shape (pure-source vs
+  disk-path) matches the editor's actual need (no consumer = no guess).
+- **Phase B — Visual editor:** decoration rendering (underline/strike + pill);
+  `/suggestion` palette (3 kinds) + wrap-selection; `{++ ++}` typing shortcuts;
+  click → popup with Accept/Reject (+ optional comment → review log).
+- **Phase C — Interop + review integration:** md↔typst CriticMarkup mapping
+  (incl. comment→`#review`, highlight→`#highlight`); review UI recognizes
+  suggestion markup specially (alongside the whole-file diff).
+
 ## Other remaining work (deferred, roughly prioritized)
 
 1. **Zotero → shared `.bib` materialization on enable** — collaborative
@@ -634,12 +923,81 @@ Libraries (ITAL).typ`) were repaired in place (markdown `# Heading` jammed
 mid-paragraph). The same corruption still exists in the
 `InkyCap-Professional` notebox copies — left untouched.
 
+## OUTSTANDING THREADS — master checklist (consolidated 2026-05-23)
+
+Every not-yet-finished thread from this doc, pulled into one place so none are
+lost. Grouped by kind. Items link to the section above with the detail.
+
+### A. Open decisions (need the user)
+- [ ] **Transport direction** — package (current) vs git-as-second-transport vs
+  CRDT. No decision; re-confirm before building more *transport*. See "OPEN
+  QUESTION — collaboration direction". (The inline-suggestions work below is
+  transport-agnostic and may itself reframe this.)
+- [x] **Idea 2: replace vs alongside diff review** — settled 2026-05-23:
+  **live alongside** (suggestions = intent layer; `@codemirror/merge` = safety net).
+
+### B. Validation debts (code committed in `1b0272a`, but flagged "needs in-app validation")
+- [ ] `#review` / `#review-reject` reject→log write + the reject-reason reveal UI
+  ("Not yet validated in-app").
+- [ ] Whole-file immediate-apply review: **editor reload-on-accept** and
+  **reopen→review-mode persistence** ("All UI/async — needs in-app validation").
+- [ ] Closing the collection tab no longer stranding the review (refinement #4 —
+  "Re-test #4 in-app to confirm").
+- [ ] Tri-state Disable/Pause/Enable pill + right-panel move + global identity —
+  "partially validated in-app; validate the rest".
+
+### C. Unbuilt features (deferred, roughly prioritized)
+- [x] **Idea 1 — commentary on ANY decision** (generalized review/decisions log)
+  — DONE 2026-05-23 (uncommitted; see "DONE — Idea 1" section below). Needs
+  in-app validation, then commit.
+- [ ] **Idea 2 — inline `#suggestion` pills** (manual v1; automatic suggesting
+  mode deferred). Lives alongside diff review.
+- [ ] **Zotero → shared `.bib` materialization on enable** (note: bib source is
+  notebox-wide, not per-collection — design as "materialize cited entries into a
+  collection-owned `.bib` at enable, re-sync lazily at package").
+- [ ] **Book export error-tolerance (option 2b)** — render *around* a broken note
+  via `recovery` (2a already names the failing note).
+- [ ] **Reviews aggregation panel** — index `<inkycap-review>` (and now the
+  generalized decision label) into `QueryResult` + a panel. ("Deferred — no
+  consumer yet.")
+- [ ] **Collab UX polish** — command-palette entries (Collab: actions),
+  status-bar badge for pending reviews.
+- [ ] **Conflict-resolution UI beyond accept-takes-theirs** — per-attachment review
+  (today: binary divergence takes-incoming, no UI); richer bib/note conflict UX.
+
+### D. Known limitations (consciously deferred — revisit only if wanted)
+- [ ] **External (out-of-app) deletions don't tombstone** — fall back to reconcile
+  (note re-offers as `Added`). Would need index-gated lazy detection with a handle.
+- [ ] **Defense-in-depth not taken:** re-canonicalizing the membership filter at
+  package time (UI lock + enable-time canonicalization keep it canonical today).
+
+### E. Data hygiene (not app code)
+- [ ] `InkyCap-Professional` notebox copies still have the markdown-`# Heading`-
+  mid-paragraph corruption (the active `Inky2/Publishers` copies were repaired).
+
 ## ⮕ NEXT SESSION — start here
 
-The collaboration core + ContributorsEditor + bibliography (merge/conflict)
-+ book-export fixes + the `#review`/`#review-reject` primitives + rejection
-log are all done (the last is uncommitted — validate in-app then commit).
-Pick the next item from "Other remaining work" above:
+**Committed since this doc was first written:** all the previously-uncommitted
+work (right-panel Collaboration move + tri-state Disable/Pause/Enable pill +
+global identity settings + the two Reviewing tweaks + `#review` primitives +
+review-diff workflow + CollabPanel hint-wording) landed in commit `1b0272a`
+("collaboration interface improvements, sidebar usage, user settings"). Working
+tree is clean.
+
+**Current focus (2026-05-23 resume):** continue with the **Review Commentary +
+Inline `#suggestion`** ideas now folded into the "MERGED-IN" section above
+(from `project_collab_inline_suggestions.md`). These are **transport-agnostic**,
+so they proceed without resolving the package-vs-git-vs-CRDT direction debate —
+and Idea 2 may itself *be* the resolution (review = inline intent, not whole-file
+diff). Recommended order: **Idea 1 (commentary on any decision) first**, then
+Idea 2 as *manual* suggestions.
+
+**Still pending if you instead resume transport work:** the **direction decision**
+(see "OPEN QUESTION — collaboration direction" above) — keep the package model,
+add git as a second transport behind the existing review UI, or stop. Re-confirm
+before building more transport.
+
+Alternative feature work on the package model, from "Other remaining work" below:
 1. **Book export error-tolerance (2b)** — recommended if continuing to test
    book export; builds on the 2a "name the note" reporting.
 2. **Zotero → shared `.bib` materialization** — completes the bibliography

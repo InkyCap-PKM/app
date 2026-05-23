@@ -20,6 +20,7 @@ pub mod query;
 pub mod recovery;
 pub mod review;
 pub mod style_injection;
+pub mod suggestion;
 pub mod world;
 pub mod zotero;
 

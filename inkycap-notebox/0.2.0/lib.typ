@@ -10,22 +10,27 @@
 //   #embed("Name")        transclude another note (emits link)
 //   #callout("type")[...] styled admonition block
 //   #review(body, ...)    reviewer comment annotation (collaboration)
-//   #review-reject(target, reason, ...)  declined-change record (rejection log)
+//   #review-decision(target, action, ...)  review-log entry: an accept /
+//                         reject / comment decision (per-collection review log)
+//   #suggestion(body, kind: ..., ...)  inline tracked-change suggestion
+//                         (insert/delete/replace) — the suggesting-mode mark
 //   #verse(body, ...)     whitespace-preserving free-form text with inline
 //                         markup (eval'd per line)
 //   #set-notebox(...)       per-document rendering toggles + verse-font
 //   #contributors-byline(roster)  title-page byline grouped by role
 //   #credit-statement(roster)     CRediT contributions statement (book export)
 //
-// Six queryable labels:
+// Seven queryable labels:
 //   <inkycap-note>   — at most one per file, attached to a metadata dict
 //   <inkycap-tag>    — one per #tag(...) call, dict (name:)
 //   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
 //   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
 //                      (kind, body, due, done, tags)
 //   <inkycap-review> — one per #review(...) call, dict (by, on)
-//   <inkycap-review-reject> — one per #review-reject(...) call, dict
-//                      (target, reason, by, on)
+//   <inkycap-review-decision> — one per #review-decision(...) call, dict
+//                      (target, action, note, by, on)
+//   <inkycap-suggestion> — one per #suggestion(...) call, dict
+//                      (kind, by, on)
 
 // ---------------------------------------------------------------------------
 // apply-notebox-defaults / apply-collection-style: document-level styling hooks.
@@ -531,23 +536,40 @@
 }
 
 // ---------------------------------------------------------------------------
-// review / review-reject: collaboration reviewer annotations.
+// review / review-decision: collaboration reviewer annotations.
 //
 // `#review[comment]` marks a reviewer's remark on note content — a tinted
 // block that stays visible in the reading view but reads as a distinct
-// annotation, not body text. `#review-reject(target, reason)` records that an
-// incoming change was *declined* with a rationale; these accumulate in a
-// per-collection rejection-log note that the host appends to on a Reject
-// decision (the note itself is local audit and is never packaged back).
+// annotation, not body text. `#review-decision(target, action, note: …)`
+// records one review decision — `action` is "accepted", "rejected", or
+// "commented" — coloured to match (green / red / violet). These accumulate in
+// a per-collection **review-log** note that the host appends to when a
+// decision is made or a bare comment is left (the note itself is local audit
+// and is never packaged back).
 //
-// Both emit queryable metadata (`<inkycap-review>` / `<inkycap-review-reject>`)
-// so a Reviews panel can aggregate them later. `by` is a collaborator handle
-// or display name; `on` accepts a datetime or a date string (normalized via
-// `_fmt-date`). `none` for either omits it from the rendered attribution.
+// Both emit queryable metadata (`<inkycap-review>` /
+// `<inkycap-review-decision>`) so a Reviews panel can aggregate them later.
+// `by` is a collaborator handle or display name; `on` accepts a datetime or a
+// date string (normalized via `_fmt-date`). `none` for either omits it from
+// the rendered attribution.
 // ---------------------------------------------------------------------------
 
 #let _review-color = rgb("#8b5cf6")
 #let _review-reject-color = rgb("#ef4444")
+#let _review-accept-color = rgb("#22c55e")
+
+// Colour + label for a #review-decision action. Unknown actions fall back to
+// the neutral review violet so a future action kind still renders.
+#let _decision-color(action) = {
+  if action == "accepted" { _review-accept-color } else if action == "rejected" {
+    _review-reject-color
+  } else { _review-color }
+}
+#let _decision-label(action) = {
+  if action == "accepted" { "Accepted" } else if action == "rejected" {
+    "Rejected"
+  } else { "Comment" }
+}
 
 // Join the present attribution parts ("by — on") with a separator, or "" when
 // neither is given. Shared by both annotations so they read consistently.
@@ -576,27 +598,68 @@
   )
 }
 
-#let review-reject(target, reason, by: none, on: none) = {
-  assert(type(target) == str, message: "review-reject: target must be a string")
-  assert(type(reason) == str, message: "review-reject: reason must be a string")
+#let review-decision(target, action, note: "", by: none, on: none) = {
+  assert(type(target) == str, message: "review-decision: target must be a string")
+  assert(type(action) == str, message: "review-decision: action must be a string")
   [#metadata((
     target: target,
-    reason: reason,
+    action: action,
+    note: note,
     by: by,
     on: _fmt-date(on),
-  )) <inkycap-review-reject>]
+  )) <inkycap-review-decision>]
   let attribution = _review-attribution(by, on)
+  let col = _decision-color(action)
   block(
     width: 100%,
     inset: (left: 10pt, rest: 6pt),
-    stroke: (left: 2pt + _review-reject-color),
-    fill: _review-reject-color.lighten(94%),
+    stroke: (left: 2pt + col),
+    fill: col.lighten(94%),
     radius: (right: 3pt),
     [
-      #text(fill: _review-reject-color, weight: "bold", size: 0.85em, "Rejected: " + target)#if attribution != "" [#h(1fr)#text(fill: luma(50%), size: 0.75em, attribution)] \
-      #text(size: 0.95em, reason)
+      #text(fill: col, weight: "bold", size: 0.85em, _decision-label(action) + ": " + target)#if attribution != "" [#h(1fr)#text(fill: luma(50%), size: 0.75em, attribution)]
+      #if note != "" [#linebreak() #text(size: 0.95em, note)]
     ],
   )
+}
+
+// ---------------------------------------------------------------------------
+// suggestion: an inline tracked-change mark — the InkyCap "suggesting mode"
+// primitive. A collaborator proposes a change *inline* (rather than as a
+// whole-file diff): `kind` is "insert" (proposed new text), "delete" (existing
+// text proposed for removal), or "replace" (old → new). The change is rendered
+// in the CriticMarkup / Track-Changes idiom — insertions green-underlined,
+// deletions red-struck — so it reads as intent, not final text.
+//
+// Storage is Typst-native: the source-of-truth stays a `.typ` that compiles
+// anywhere. Accepting/rejecting a suggestion is a source transform (host-side
+// `suggestion_rewriter`) that *unwraps* the call to clean Typst, so a published
+// document never carries suggestion marks. Emits `<inkycap-suggestion>` (dict
+// kind/by/on) for a future Suggestions panel; `by`/`on` attribute the author.
+//
+// `body` (positional) is the inserted/deleted text; `old` (named content) is
+// the replaced text for kind == "replace".
+// ---------------------------------------------------------------------------
+
+#let _suggestion-insert-color = rgb("#16a34a") // green
+#let _suggestion-delete-color = rgb("#dc2626") // red
+
+#let suggestion(body, kind: "insert", old: none, by: none, on: none) = {
+  assert(
+    kind in ("insert", "delete", "replace"),
+    message: "suggestion: kind must be \"insert\", \"delete\", or \"replace\"",
+  )
+  [#metadata((kind: kind, by: by, on: _fmt-date(on))) <inkycap-suggestion>]
+  if kind == "insert" {
+    underline(text(fill: _suggestion-insert-color, body))
+  } else if kind == "delete" {
+    strike(text(fill: _suggestion-delete-color, body))
+  } else {
+    // replace: struck old text immediately followed by the underlined new text
+    let old-content = if old == none { [] } else { old }
+    strike(text(fill: _suggestion-delete-color, old-content))
+    underline(text(fill: _suggestion-insert-color, body))
+  }
 }
 
 // ---------------------------------------------------------------------------

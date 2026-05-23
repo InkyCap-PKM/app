@@ -13,20 +13,21 @@ import { showToast } from "../stores/toasts";
 import {
   review,
   decisions,
-  reasons,
+  comments,
   bibChoices,
   currentReviewCollabid,
   loadReview as loadReviewStore,
-  clearReview,
   applyReview,
   setDecision,
-  setReason,
+  setComment,
   setBibChoice,
   setAllDecisions as setAll,
   reviewHasContent,
   setCurrentReviewCollabid,
 } from "../stores/collab";
 import { setRightCollapsed } from "../stores/layout";
+import HelpButton from "./HelpButton";
+import { Dropdown } from "./Dropdown";
 
 /// The body of the Collaboration section shown while a collection is actively
 /// collaborative (`state === "enabled"`). The Disable / Pause / Enable pill
@@ -178,19 +179,16 @@ const CollabPanel: Component<{
         <span class="collection-meta__hint">
           Tracked notes: {props.status.note_count}
         </span>
-      </div>
-
-      <div class="collection-meta__row">
-        <span class="collection-meta__hint">
+        <HelpButton label="How collaboration packaging works">
           Package this collection to share with collaborators and see each
           other's changes. Although collections can filter the files they
           include from across your notebox, when using collaboration packages
           each file will have its collection property set for the collection.
-          Only files explicitly assigned to the collection through the
-          property will be packaged for collaboration. Each collaborator can
-          organize files wherever they like on their local system; folders do
-          not get packaged.
-        </span>
+          Only files explicitly assigned to the collection through the property
+          will be packaged for collaboration. Each collaborator can organize
+          files wherever they like on their local system; folders do not get
+          packaged.
+        </HelpButton>
       </div>
 
       <div class="collection-meta__row">
@@ -203,10 +201,10 @@ const CollabPanel: Component<{
           onBlur={saveImportFolder}
           placeholder={defaultImportFolder()}
         />
-        <span class="collection-meta__hint">
+        <HelpButton label="About the import folder">
           Where notes new to this machine are stored on import. Existing notes
           remain where you have stored them. This does not affect collaborators.
-        </span>
+        </HelpButton>
       </div>
 
       <div class="collection-meta__row">
@@ -222,9 +220,9 @@ const CollabPanel: Component<{
           onBlur={saveIdentity}
           placeholder="e.g. joshua-chalifour"
         />
-        <span class="collection-meta__hint">
+        <HelpButton label="About your handle">
           Identifies your edits in the version history. Stays on this machine.
-        </span>
+        </HelpButton>
       </div>
 
       <div class="collection-meta__row collab-panel__actions">
@@ -283,16 +281,16 @@ const CollabPanel: Component<{
                       </span>
                       <span class="collab-panel__path">@{key}</span>
                     </div>
-                    <select
-                      class="settings__text-input collab-panel__decision"
+                    <Dropdown<string>
+                      class="collab-panel__decision"
                       value={bibChoices()[key] ? "take_incoming" : "keep_local"}
-                      onChange={(e) =>
-                        setBibChoice(key, e.currentTarget.value === "take_incoming")
-                      }
-                    >
-                      <option value="keep_local">Keep mine</option>
-                      <option value="take_incoming">Take theirs</option>
-                    </select>
+                      options={[
+                        { value: "keep_local", label: "Keep mine" },
+                        { value: "take_incoming", label: "Take theirs" },
+                      ]}
+                      onChange={(v) => setBibChoice(key, v === "take_incoming")}
+                      ariaLabel="Bibliography conflict resolution"
+                    />
                   </div>
                 )}
               </For>
@@ -326,26 +324,30 @@ const CollabPanel: Component<{
                         <MessageSquareCheck size={14} />
                         Review
                       </button>
-                      <select
-                        class="settings__text-input collab-panel__decision"
+                      <Dropdown<DecisionAction>
+                        class="collab-panel__decision"
                         value={decisions()[item.collabid] ?? "accept"}
-                        onChange={(e) =>
-                          setDecision(item.collabid, e.currentTarget.value as DecisionAction)
-                        }
-                      >
-                        <option value="accept">Accept</option>
-                        <option value="reject">Reject</option>
-                        <option value="skip">Skip</option>
-                      </select>
+                        options={[
+                          { value: "accept", label: "Accept" },
+                          { value: "reject", label: "Reject" },
+                          { value: "skip", label: "Skip" },
+                        ]}
+                        onChange={(v) => setDecision(item.collabid, v)}
+                        ariaLabel="Decision"
+                      />
                     </div>
                   </div>
-                  <Show when={(decisions()[item.collabid] ?? "accept") === "reject"}>
+                  <Show when={(decisions()[item.collabid] ?? "accept") !== "skip"}>
                     <input
                       type="text"
                       class="settings__text-input collab-panel__reject-reason"
-                      value={reasons()[item.collabid] ?? ""}
-                      onInput={(e) => setReason(item.collabid, e.currentTarget.value)}
-                      placeholder="Why are you rejecting this? (recorded in the rejection log)"
+                      value={comments()[item.collabid] ?? ""}
+                      onInput={(e) => setComment(item.collabid, e.currentTarget.value)}
+                      placeholder={
+                        (decisions()[item.collabid] ?? "accept") === "reject"
+                          ? "Why are you rejecting this? (recorded in the review log)"
+                          : "Comment (optional — recorded in the review log)"
+                      }
                     />
                   </Show>
                 </div>
@@ -359,13 +361,6 @@ const CollabPanel: Component<{
                 onClick={applyDecisions}
               >
                 Apply decisions
-              </button>
-              <button
-                class="collection-table__toolbar-btn"
-                disabled={busy()}
-                onClick={() => clearReview()}
-              >
-                Cancel
               </button>
             </div>
           </div>
