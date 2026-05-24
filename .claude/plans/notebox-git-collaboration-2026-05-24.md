@@ -141,10 +141,21 @@ once per machine and remembered per-notebook.
 
 # Notebox-level Git Collaboration
 
-## Phase 1 — start here (resume point)
+## Phase 1 — original start-here checklist (HISTORICAL — Phases 1–3 are DONE)
 
-**Where we are:** Phase 0 (remove package-handoff collaboration) is **done and
-committed** as `e1298c8` on branch `notebox-git-collab` (branched off the
+> **Resume point is no longer here.** Phases 1–3 are complete and committed (see
+> the `Phase N — DONE` sections above and the `status:` frontmatter). **Next up:
+> Phase 4 (frontend review surface)** — per-notebox Git setup UI, the staged-note
+> review tab (suggestion pills + incoming-commit banner), status bar, and
+> command-palette entries; wire to the committed commands `git_fetch_review`,
+> `git_consolidate_note`/`git_consolidate_all`, `git_push`, `git_discard_review`,
+> `git_set_identity`/`git_get_identity`, listening for the `notebox:git-*` events.
+> **Also pending: Phase 3b** (binary Keep-mine/Take-theirs/Rename + note
+> Add/Delete decision application — build alongside the Phase 4 UI that drives the
+> choices). The section below is kept as the historical Phase 1 record.
+
+**Where we are (at Phase 1 start):** Phase 0 (remove package-handoff collaboration)
+is **done and committed** as `e1298c8` on branch `notebox-git-collab` (branched off the
 baseline `4c4966e`; `typst-pivot` is untouched). All green at handoff:
 `cargo test --lib` = 500 pass / 0 fail, integration tests compile, `tsc` clean,
 `vite` build succeeds. Two carried-forward notes: the salvageable bits
