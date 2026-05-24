@@ -43,6 +43,37 @@ pub struct GitStatusSummary {
     pub behind: usize,
 }
 
+/// How a path changed between two commits (git rename detection is off, so a
+/// rename appears as a `Deleted` + `Added` pair).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum ChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// One path that differs between two commit trees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedPath {
+    /// Notebox-relative path.
+    pub path: PathBuf,
+    pub status: ChangeStatus,
+}
+
+/// Author + message of a commit — the review-context the loop harvests from
+/// git (incoming = banner; outgoing = decision summary). Carries no note
+/// content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CommitInfo {
+    pub author_name: String,
+    pub author_email: String,
+    /// Commit time, seconds since the Unix epoch (UTC).
+    pub timestamp: i64,
+    pub message: String,
+    /// Short hash (7 hex chars), matching git's default.
+    pub short_hash: String,
+}
+
 /// Open git repository rooted at a notebox.
 pub struct GitBackend {
     repo: Repository,
@@ -174,6 +205,64 @@ impl GitBackend {
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Resolve the tip of a remote-tracking branch
+    /// (`refs/remotes/<remote>/<branch>`) to its commit OID. `None` until a
+    /// fetch has populated it.
+    pub fn remote_tracking_oid(&self, remote_name: &str, branch: &str) -> Result<Option<Oid>> {
+        let refname = format!("refs/remotes/{remote_name}/{branch}");
+        match self.repo.refname_to_id(&refname) {
+            Ok(oid) => Ok(Some(oid)),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Author + message of a commit, for the review banner / decision log.
+    pub fn commit_info(&self, oid: Oid) -> Result<CommitInfo> {
+        let commit = self.repo.find_commit(oid)?;
+        let author = commit.author();
+        Ok(CommitInfo {
+            author_name: author.name().unwrap_or("").to_string(),
+            author_email: author.email().unwrap_or("").to_string(),
+            timestamp: author.when().seconds(),
+            message: commit.message().unwrap_or("").to_string(),
+            short_hash: oid.to_string().chars().take(7).collect(),
+        })
+    }
+
+    /// Paths that differ between two commit trees (`from` → `to`). `from` is
+    /// `None` for an unborn local branch (everything in `to` is an add).
+    /// Rename detection is off, so a rename surfaces as a delete + add.
+    pub fn changed_paths(&self, from: Option<Oid>, to: Oid) -> Result<Vec<ChangedPath>> {
+        let from_tree = match from {
+            Some(oid) => Some(self.repo.find_commit(oid)?.tree()?),
+            None => None,
+        };
+        let to_tree = self.repo.find_commit(to)?.tree()?;
+        let diff = self
+            .repo
+            .diff_tree_to_tree(from_tree.as_ref(), Some(&to_tree), None)?;
+
+        let mut out = Vec::new();
+        for delta in diff.deltas() {
+            let (status, file) = match delta.status() {
+                git2::Delta::Added => (ChangeStatus::Added, delta.new_file()),
+                git2::Delta::Deleted => (ChangeStatus::Deleted, delta.old_file()),
+                git2::Delta::Modified => (ChangeStatus::Modified, delta.new_file()),
+                // Treat anything else with a content change conservatively as a
+                // modification of the new path; skip if it carries no path.
+                _ => (ChangeStatus::Modified, delta.new_file()),
+            };
+            if let Some(path) = file.path() {
+                out.push(ChangedPath {
+                    path: path.to_path_buf(),
+                    status,
+                });
+            }
+        }
+        Ok(out)
     }
 
     /// Read a file's bytes as of a specific commit, by notebox-relative path.
@@ -409,6 +498,62 @@ mod tests {
         assert!(!s.dirty);
         assert!(s.head.is_some());
         assert_eq!((s.ahead, s.behind), (0, 0));
+    }
+
+    #[test]
+    fn commit_info_reports_author_and_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("n.typ"), "x\n").unwrap();
+        b.stage_paths(&[PathBuf::from("n.typ")]).unwrap();
+        let author = git2::Signature::now("Ada", "ada@example.com").unwrap();
+        let oid = b.commit("did a thing", &author).unwrap();
+
+        let info = b.commit_info(oid).unwrap();
+        assert_eq!(info.author_name, "Ada");
+        assert_eq!(info.author_email, "ada@example.com");
+        assert_eq!(info.message, "did a thing");
+        assert_eq!(info.short_hash.len(), 7);
+    }
+
+    #[test]
+    fn changed_paths_classifies_add_modify_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        // c1: a.typ + b.typ
+        std::fs::write(dir.path().join("a.typ"), "a1\n").unwrap();
+        std::fs::write(dir.path().join("b.typ"), "b1\n").unwrap();
+        b.stage_paths(&[PathBuf::from("a.typ"), PathBuf::from("b.typ")]).unwrap();
+        let c1 = b.commit("c1", &sig()).unwrap();
+        // c2: modify a, delete b, add c
+        std::fs::write(dir.path().join("a.typ"), "a2\n").unwrap();
+        std::fs::remove_file(dir.path().join("b.typ")).unwrap();
+        std::fs::write(dir.path().join("c.typ"), "c1\n").unwrap();
+        let mut idx = b.repo.index().unwrap();
+        idx.add_path(Path::new("a.typ")).unwrap();
+        idx.remove_path(Path::new("b.typ")).unwrap();
+        idx.add_path(Path::new("c.typ")).unwrap();
+        idx.write().unwrap();
+        let c2 = b.commit("c2", &sig()).unwrap();
+
+        let mut changed = b.changed_paths(Some(c1), c2).unwrap();
+        changed.sort_by(|x, y| x.path.cmp(&y.path));
+        assert_eq!(changed.len(), 3);
+        assert_eq!(changed[0], ChangedPath { path: PathBuf::from("a.typ"), status: ChangeStatus::Modified });
+        assert_eq!(changed[1], ChangedPath { path: PathBuf::from("b.typ"), status: ChangeStatus::Deleted });
+        assert_eq!(changed[2], ChangedPath { path: PathBuf::from("c.typ"), status: ChangeStatus::Added });
+
+        // Unborn `from` (None) ⇒ every path in `to` is an add.
+        let from_empty = b.changed_paths(None, c1).unwrap();
+        assert_eq!(from_empty.len(), 2);
+        assert!(from_empty.iter().all(|c| c.status == ChangeStatus::Added));
+    }
+
+    #[test]
+    fn remote_tracking_oid_is_none_without_fetch() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        assert!(b.remote_tracking_oid("origin", "main").unwrap().is_none());
     }
 
     #[test]

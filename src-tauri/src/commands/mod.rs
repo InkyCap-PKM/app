@@ -10,6 +10,7 @@ pub mod export;
 pub mod file_ops;
 pub mod files;
 pub mod flow;
+pub mod git;
 pub mod journal_scroll;
 pub mod markdown;
 pub mod mycelial;
