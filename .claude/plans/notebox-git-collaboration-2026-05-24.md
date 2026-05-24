@@ -36,10 +36,21 @@ utf8/path safety + tsc green. Frontend untouched (Phase 4).
   →consolidate-adopts-theirs→fast-forward push→third clone sees it) + a
   diverged-push-rejected case.
 
-**Deferred to Phase 3b** (UI-coupled — decisions come from the Phase 4 review
-surface): binary attachment **Keep-mine/Take-theirs/Rename** and note
-**Add/Delete** decision application. The note-suggestion → consolidate → push
-spine is complete and proven; these are the remaining non-note decision flows.
+**Deferred to Phase 3b — build *with* Phase 4, not before:** binary attachment
+**Keep-mine/Take-theirs/Rename** and note **Add/Delete** decision application.
+
+Why it's coupled to Phase 4 (don't repeat this analysis): consolidate adopts
+*theirs* as the new base via `fast_forward_to` (so pushes fast-forward), which
+**inverts** decision application. After adoption the committed baseline *is*
+theirs, so "take theirs / accept their delete / accept their edit" are **no-ops**;
+the work is the *disagreements* — "keep mine / reject their delete" must
+**re-assert my bytes on top of the adopted theirs** (re-stage my content, re-add
+my file). For notes the resolved staged copy already does this. For binaries and
+add/delete, *whether/when* to re-assert depends on the consolidate-session model
+(batched-all vs per-item) that the Phase 4 review UX defines — so building these
+commands before that model exists would mean guessing it and reworking. The
+note-suggestion → consolidate → push spine is complete and proven; 3b is the
+remaining non-note decision flow, to be designed against the Phase 4 session.
 
 
 
