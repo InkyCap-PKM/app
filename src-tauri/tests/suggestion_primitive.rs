@@ -16,7 +16,7 @@ const NOTE: &str = "#import \"/.inkycap/notebox.typ\": *\n\
 \n\
 = Draft\n\
 \n\
-The team #suggestion(kind: \"insert\", by: \"alice\", on: \"2026-05-23\")[strongly ] recommends this.\n\
+The team #suggestion(kind: \"insert\", by: \"alice\", on: \"2026-05-23\", note: \"tone?\")[strongly ] recommends this.\n\
 \n\
 This sentence is #suggestion(kind: \"delete\")[needlessly ]concise.\n\
 \n\

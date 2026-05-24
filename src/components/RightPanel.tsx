@@ -53,11 +53,14 @@ import {
   ChevronRight,
   MessageSquareCheck,
   MessagesSquare,
+  Handshake,
+  Settings2,
+  Ligature,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import ReviewPanel from "./ReviewPanel";
-import CollaborationSection from "./CollaborationSection";
+import CollectionSettings from "./CollectionSettings";
 import {
   currentReviewCollabid,
   setCurrentReviewCollabid,
@@ -68,7 +71,14 @@ import {
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
-import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
+import {
+  rightPanelTab,
+  setRightPanelTab,
+  type RightPanelTab,
+  collectionPanelTab,
+  setCollectionPanelTab,
+  type CollectionPanelTab,
+} from "../stores/layout";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
@@ -1196,6 +1206,36 @@ const RightPanel: Component = () => {
             </button>
           </Show>
         </Show>
+
+        {/* Collection-view tabs — the right-panel counterpart of the file-note
+            tabs, using the same button interface. Shown when a collection tab
+            is active (not while reviewing a note, which opens a file tab). */}
+        <Show when={activeCollectionTab()}>
+          {(() => {
+            const collTab = (
+              tab: CollectionPanelTab,
+              label: string,
+              icon: Component<{ size?: number }>,
+            ) => (
+              <button
+                class={`right-panel__tab${collectionPanelTab() === tab ? " right-panel__tab--active" : ""}`}
+                onClick={() => setCollectionPanelTab(tab)}
+                title={label}
+                aria-label={label}
+              >
+                <Dynamic component={icon} size={18} />
+              </button>
+            );
+            return (
+              <>
+                {collTab("collab", "Collaboration", Handshake)}
+                {collTab("characteristics", "Characteristics", Settings2)}
+                {collTab("style", "Style Overrides", Ligature)}
+                {collTab("book", "Book Metadata", NotebookTabs)}
+              </>
+            );
+          })()}
+        </Show>
         {/* Review tab — contextual: shown only while a collaboration review
             session is active (a note has been picked for review), not for
             ordinary notes. Lives outside the file-tab Show so it also appears
@@ -1392,15 +1432,18 @@ const RightPanel: Component = () => {
         })()}
       </Show>
 
-      {/* Collaboration — the right-panel surface for a Collection View. Shown
-          when a collection tab is active (not while reviewing a note, which
-          opens a file tab and owns the panel via the Review tab above). */}
+      {/* Collection Settings — the right-panel surface for a Collection View
+          (Collaboration / Characteristics / Style Overrides / Book Metadata,
+          selected via the collection tab bar above). Shown when a collection
+          tab is active (not while reviewing a note, which opens a file tab and
+          owns the panel via the Review tab above). */}
       <Show when={activePanel() !== "review" ? activeCollectionTab() : undefined}>
         {(tab) => (
           <div class="right-panel__tab-content">
-            <CollaborationSection
+            <CollectionSettings
               collectionPath={tab().path}
               collectionName={collectionStem(tab().path)}
+              tab={collectionPanelTab()}
             />
           </div>
         )}

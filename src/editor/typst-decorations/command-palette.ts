@@ -2,12 +2,20 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type ChangeSpec, type Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
+import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
 
 interface PaletteItem {
   label: string;
   category: string;
-  insert: string;
+  /** Static template; `${sel}` is replaced with the selection. Optional when
+   *  `dynamic` is set (annotation/suggestion items build their markup at accept
+   *  time so they can stamp the current author + date). */
+  insert?: string;
   cursorOffset?: number;
+  /** When set, the item's markup is built at accept time from the live
+   *  selection — used by the annotation/suggestion entries so each carries the
+   *  author's `by:`/`on:` attribution. Takes precedence over `insert`. */
+  dynamic?: (sel: string) => { insert: string; cursorOffset: number; expand: boolean };
   /** When set, accepting the item runs the attachment picker instead of
    *  inserting the `insert` template. The picker copies the selected
    *  file(s) into `settings.files.attachment_folder` and emits
@@ -28,6 +36,10 @@ interface PaletteItem {
    *  markdown shortcut for `> ` already uses. */
   expandOnInsert?: boolean;
 }
+
+/** Shorthand for the annotation/suggestion palette entries — builds the markup
+ *  (with author attribution) from the live selection at accept time. */
+const mark = (kind: InsertKind, sel: string) => buildAnnotationInsert(kind, sel);
 
 const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
@@ -75,10 +87,10 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
-  { label: "Annotation", category: "InkyCap", insert: '#annotation[${sel}]', cursorOffset: 12, expandOnInsert: true },
-  { label: "Suggest insertion", category: "InkyCap", insert: '#suggestion(kind: "insert")[${sel}]', cursorOffset: 28 },
-  { label: "Suggest deletion", category: "InkyCap", insert: '#suggestion(kind: "delete")[${sel}]', cursorOffset: 28 },
-  { label: "Suggest replacement", category: "InkyCap", insert: '#suggestion(kind: "replace", old: [${sel}])[]', cursorOffset: 35 },
+  { label: "Annotation", category: "InkyCap", dynamic: (s) => mark("annotation", s) },
+  { label: "Suggest insertion", category: "InkyCap", dynamic: (s) => mark("insert", s) },
+  { label: "Suggest deletion", category: "InkyCap", dynamic: (s) => mark("delete", s) },
+  { label: "Suggest replacement", category: "InkyCap", dynamic: (s) => mark("replace", s) },
   { label: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
   { label: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
 
@@ -237,7 +249,13 @@ function showPopup(view: EditorView, state: PaletteState) {
 function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const cursor = view.state.selection.main;
   const selectedText = view.state.doc.sliceString(cursor.from, cursor.to);
-  const insert = item.insert.replace("${sel}", selectedText);
+  // `dynamic` items (annotation/suggestion) build their markup + caret + expand
+  // at accept time so the author's `by:`/`on:` are stamped; the rest use their
+  // static template with the selection substituted in.
+  const built = item.dynamic?.(selectedText);
+  const insert = built ? built.insert : (item.insert ?? "").replace("${sel}", selectedText);
+  const cursorOffset = built ? built.cursorOffset : item.cursorOffset;
+  const expand = built ? built.expand : item.expandOnInsert;
   const deleteFrom = state.from;
   const deleteTo = view.state.selection.main.from;
 
@@ -254,7 +272,7 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   view.dispatch({
     changes: { from: deleteFrom, to: deleteTo, insert } as ChangeSpec,
     selection: {
-      anchor: deleteFrom + (item.cursorOffset ?? insert.length),
+      anchor: deleteFrom + (cursorOffset ?? insert.length),
     },
     // expandFunc keeps the call's source brackets visible after the
     // visual plugin runs, so the cursor lands inside `[…]` and typing
@@ -263,7 +281,7 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
     // the widget edge — keystrokes then appear outside the call. Same
     // technique [src/editor/typst-decorations/markdown-shortcuts.ts](markdown-shortcuts.ts)
     // uses for the `> ` blockquote shortcut.
-    effects: item.expandOnInsert ? expandFunc.of(deleteFrom) : undefined,
+    effects: expand ? expandFunc.of(deleteFrom) : undefined,
   });
 }
 

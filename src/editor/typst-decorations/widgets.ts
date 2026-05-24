@@ -7,6 +7,7 @@ import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type 
 import { getPillOptions } from "./pill-options";
 import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 import { anchorPanelMenu } from "../../lib/uiMenu";
+import { buildSuggestionCall } from "./annotation-insert";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -808,6 +809,8 @@ export class SuggestionWidget extends WidgetType {
     readonly by: string,
     readonly on: string,
     readonly from: number,
+    /** Optional reviewer comment carried on the open suggestion (`note:`). */
+    readonly note: string = "",
   ) {
     super();
   }
@@ -815,7 +818,8 @@ export class SuggestionWidget extends WidgetType {
   eq(other: SuggestionWidget) {
     return this.kind === other.kind && this.body === other.body
       && this.oldText === other.oldText && this.by === other.by
-      && this.on === other.on && this.from === other.from;
+      && this.on === other.on && this.from === other.from
+      && this.note === other.note;
   }
 
   private attribution(): string {
@@ -864,10 +868,20 @@ export class SuggestionWidget extends WidgetType {
       addMark("cm-suggestion-ins", this.body);
     }
 
+    // A visible comment marker when the suggestion carries a note, so the
+    // reviewer's remark is discoverable without opening the menu.
+    if (this.note.trim()) {
+      const c = document.createElement("span");
+      c.className = "cm-suggestion-note";
+      c.textContent = "💬";
+      wrap.appendChild(c);
+    }
+
     const kindLabel =
       this.kind === "insert" ? "Insertion" : this.kind === "delete" ? "Deletion" : "Replacement";
     const attr = this.attribution();
-    wrap.title = `Suggested ${kindLabel.toLowerCase()}${attr ? ` by ${attr}` : ""} — click to review`;
+    const noteSuffix = this.note.trim() ? `\nComment: ${this.note.trim()}` : "";
+    wrap.title = `Suggested ${kindLabel.toLowerCase()}${attr ? ` by ${attr}` : ""} — click to review${noteSuffix}`;
 
     wrap.addEventListener("mousedown", (e) => {
       e.preventDefault();
@@ -887,17 +901,48 @@ export class SuggestionWidget extends WidgetType {
     header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
     menu.appendChild(header);
 
-    // Optional comment — recorded as an inline #annotation[…] at the suggestion's
-    // site when the decision is applied, so the author sees the rationale.
+    // Comment — pre-filled with the suggestion's saved `note` so reopening the
+    // menu shows the existing remark. "Save comment" persists it onto the open
+    // suggestion (visible in the doc + Annotations pane); Accept/Reject resolve
+    // the change and fold any comment in as an inline #annotation so the
+    // rationale survives once the suggestion mark is gone.
     const comment = document.createElement("textarea");
     comment.className = "cm-suggestion-menu__comment";
     comment.rows = 2;
-    comment.placeholder = "Comment (optional — left as an #annotation note)";
+    comment.placeholder = "Comment — Save to keep it on the open suggestion";
+    comment.value = this.note;
     // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
     for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
       comment.addEventListener(ev, (e) => e.stopPropagation());
     }
     menu.appendChild(comment);
+
+    // Save the comment onto the open suggestion without resolving it: rebuild
+    // the call carrying the updated `note` (kept in the args, byte-preserving
+    // the body/old content). Empty clears the note.
+    const saveRow = document.createElement("div");
+    saveRow.className = "cm-suggestion-menu__actions";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "cm-suggestion-menu__item is-comment";
+    saveBtn.textContent = "Save comment";
+    saveBtn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rebuilt = buildSuggestionCall({
+        kind: this.kind,
+        body: this.body,
+        oldText: this.oldText,
+        by: this.by,
+        on: this.on,
+        note: comment.value.trim() || undefined,
+      });
+      applyCallTransform(view, this.from, () => rebuilt);
+      closeSuggestionMenu();
+      view.focus();
+    });
+    saveRow.appendChild(saveBtn);
+    menu.appendChild(saveRow);
 
     const row = document.createElement("div");
     row.className = "cm-suggestion-menu__actions";
