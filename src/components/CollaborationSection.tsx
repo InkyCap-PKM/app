@@ -136,9 +136,6 @@ const CollaborationSection: Component<{
       </div>
 
       <div class="collab-section__enable-row">
-        <span class="collab-section__question">
-          Enable collaboration for this collection?
-        </span>
         <div class="collab-state-pill" role="group" aria-label="Collaboration state">
           {seg("disabled", "Disable")}
           {seg("paused", "Pause")}

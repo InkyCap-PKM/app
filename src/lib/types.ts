@@ -184,6 +184,10 @@ export interface CollectionCollaboration {
   /// import. Local only (never travels in a package); `null` resolves to
   /// `Collaboration/<name>` at apply time.
   import_folder?: string | null;
+  /// Monotonic package revision (Lamport-style): bumped on export, advanced to
+  /// max(local, incoming) on import, shown in the Collaboration pane so
+  /// collaborators can sanity-check they're on the same package generation.
+  version?: number;
 }
 
 /// One contributor in the Book Metadata byline / CRediT roster. Mirrors
@@ -785,6 +789,16 @@ export interface ReviewItem {
   changed_by: string[];
 }
 
+/** An attachment whose bytes diverged and can't be auto-resolved by clock —
+ *  the user picks keep-mine / take-theirs / rename. Mirrors the Rust
+ *  `AttachmentConflict`. */
+export interface AttachmentConflict {
+  /** Notebox-relative path of the attachment in conflict. */
+  path: string;
+  /** Collaborator handles that contributed the incoming version (best-effort). */
+  changed_by: string[];
+}
+
 export interface ReviewResult {
   /** Notes needing a user decision. */
   note_items: ReviewItem[];
@@ -794,6 +808,8 @@ export interface ReviewResult {
   bib_conflicts: string[];
   /** Citation keys added/identical — union-merged silently. */
   bib_auto_merges: string[];
+  /** Attachments whose bytes diverged — need a keep/take/rename decision. */
+  attachment_conflicts: AttachmentConflict[];
 }
 
 /** Local + staged-incoming content for one note, for the review diff.
@@ -836,6 +852,10 @@ export interface ApplyReport {
   skipped: number;
   /** Bibliography entries added by union-merging the incoming shared .bib. */
   bib_added: number;
+  /** Attachments written (new, one-sided updates, take-theirs / rename). */
+  attachments_written: number;
+  /** Conflicting attachments landed under a collision-proof name (rename). */
+  attachments_renamed: number;
 }
 
 export type DecisionAction = "accept" | "reject" | "skip";
@@ -854,6 +874,18 @@ export interface ReviewDecision {
 export interface BibDecision {
   key: string;
   take_incoming: boolean;
+}
+
+/** How to resolve one conflicting attachment. `rename` lands the incoming
+ *  bytes under a collision-proof name and rewrites the member notes that
+ *  reference it. Mirrors the Rust `AttachmentAction`. */
+export type AttachmentAction = "keep_mine" | "take_theirs" | "rename";
+
+/** Per-path resolution for a conflicting attachment. Paths omitted default to
+ *  keeping the local file. Mirrors the Rust `AttachmentDecision`. */
+export interface AttachmentDecision {
+  path: string;
+  action: AttachmentAction;
 }
 
 export interface ImportPackageResult {

@@ -17,7 +17,16 @@
 
 import { createSignal } from "solid-js";
 import { save, open } from "@tauri-apps/plugin-dialog";
-import type { ReviewResult, ReviewItem, DecisionAction, ReviewDecision, BibDecision } from "../lib/types";
+import { homeDir, join } from "@tauri-apps/api/path";
+import type {
+  ReviewResult,
+  ReviewItem,
+  DecisionAction,
+  ReviewDecision,
+  BibDecision,
+  AttachmentAction,
+  AttachmentDecision,
+} from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { showToast } from "./toasts";
 import { bumpPropertyVersion } from "./notebox";
@@ -45,6 +54,9 @@ const [comments, setComments] = createSignal<Record<string, string>>({});
 // Per-key bibliography conflict choices: true ⇒ take incoming, false ⇒ keep
 // local (the default).
 const [bibChoices, setBibChoices] = createSignal<Record<string, boolean>>({});
+// Per-path attachment conflict choices (keep_mine is the default).
+const [attachmentChoices, setAttachmentChoices] =
+  createSignal<Record<string, AttachmentAction>>({});
 const [currentReviewCollabid, setCurrentReviewCollabid] = createSignal<string | null>(null);
 // Absolute path of the note currently in the diff (its local copy), or null
 // for an Added note / no session. Drives the "Reviewing" badge in that note's
@@ -64,6 +76,7 @@ export {
   decisions,
   comments,
   bibChoices,
+  attachmentChoices,
   currentReviewCollabid,
   setCurrentReviewCollabid,
   currentReviewPath,
@@ -81,7 +94,8 @@ export function reviewHasContent(r: ReviewResult): boolean {
   return (
     r.note_items.length > 0 ||
     r.bib_conflicts.length > 0 ||
-    r.bib_auto_merges.length > 0
+    r.bib_auto_merges.length > 0 ||
+    r.attachment_conflicts.length > 0
   );
 }
 
@@ -99,6 +113,9 @@ export function loadReview(collectionPath: string, collectionName: string, r: Re
   const bc: Record<string, boolean> = {};
   for (const key of r.bib_conflicts) bc[key] = false; // keep local by default
   setBibChoices(bc);
+  const ac: Record<string, AttachmentAction> = {};
+  for (const c of r.attachment_conflicts) ac[c.path] = "keep_mine"; // safe default
+  setAttachmentChoices(ac);
   setComments({});
   setMergedCollabids({});
   // Note: review-mode set + currentReviewCollabid are left as-is here so a
@@ -115,6 +132,7 @@ export function clearReview() {
   setDecisions({});
   setComments({});
   setBibChoices({});
+  setAttachmentChoices({});
   setCurrentReviewCollabid(null);
   setCurrentReviewPath(null);
   setReviewModeByPath({});
@@ -131,6 +149,10 @@ export function setComment(collabid: string, comment: string) {
 
 export function setBibChoice(key: string, takeIncoming: boolean) {
   setBibChoices((c) => ({ ...c, [key]: takeIncoming }));
+}
+
+export function setAttachmentChoice(path: string, action: AttachmentAction) {
+  setAttachmentChoices((c) => ({ ...c, [path]: action }));
 }
 
 /** Set every note item to one action (target state, not a toggle). */
@@ -257,17 +279,27 @@ export async function applyReview(): Promise<boolean> {
     key,
     take_incoming: bibChoices()[key] ?? false,
   }));
+  const attachmentList: AttachmentDecision[] = r.attachment_conflicts.map((c) => ({
+    path: c.path,
+    action: attachmentChoices()[c.path] ?? "keep_mine",
+  }));
 
   try {
-    const rep = await ipc.collabReviewApply(ar.collectionPath, list, bibList);
+    const rep = await ipc.collabReviewApply(ar.collectionPath, list, bibList, attachmentList);
     const bib =
       rep.bib_added > 0
         ? `, ${rep.bib_added} bib entr${rep.bib_added === 1 ? "y" : "ies"} merged`
         : "";
+    const att =
+      rep.attachments_written + rep.attachments_renamed > 0
+        ? `, ${rep.attachments_written} attachment(s) written${
+            rep.attachments_renamed > 0 ? `, ${rep.attachments_renamed} renamed` : ""
+          }`
+        : "";
     showToast(
       "success",
       "Changes applied",
-      `${rep.applied} written, ${rep.deleted} deleted, ${rep.rejected} rejected, ${rep.skipped} skipped${bib}.`,
+      `${rep.applied} written, ${rep.deleted} deleted, ${rep.rejected} rejected, ${rep.skipped} skipped${bib}${att}.`,
     );
     bumpPropertyVersion();
     clearReview();
@@ -282,18 +314,43 @@ export async function applyReview(): Promise<boolean> {
 // The dialog → ipc → toast logic lives here so the CollabPanel, the global
 // LeftSidebar button, and the command palette all drive one implementation.
 
+// Remember where the user last saved/opened a package so the file dialogs
+// reopen there (the dev build otherwise defaults to the app's working dir).
+// Falls back to the user's home directory, never the InkyCap folder.
+const LAST_PACKAGE_DIR_KEY = "inkycap.collab.lastPackageDir";
+
+async function lastPackageDir(): Promise<string | undefined> {
+  const saved = localStorage.getItem(LAST_PACKAGE_DIR_KEY);
+  if (saved) return saved;
+  try {
+    return await homeDir();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Persist the directory of a chosen package path for next time. */
+function rememberPackageDir(filePath: string) {
+  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (slash > 0) localStorage.setItem(LAST_PACKAGE_DIR_KEY, filePath.slice(0, slash));
+}
+
 /** Package a collection to a user-chosen `.zip`. Returns true if one was
  *  written (false on cancel/error). Surfaces its own toasts. */
 export async function packageCollection(
   collectionPath: string,
   collectionName: string,
 ): Promise<boolean> {
+  const dir = await lastPackageDir();
+  const fileName = `${collectionName}.zip`;
+  const defaultPath = dir ? await join(dir, fileName) : fileName;
   const out = await save({
     title: "Save collaboration package",
-    defaultPath: `${collectionName}.zip`,
+    defaultPath,
     filters: [{ name: "InkyCap package", extensions: ["zip"] }],
   });
   if (!out) return false;
+  rememberPackageDir(out);
   try {
     const r = await ipc.collabPackage(collectionPath, out);
     showToast("success", "Package written", `${r.note_count} notes`);
@@ -312,9 +369,11 @@ export async function importPackageInto(
 ): Promise<boolean> {
   const pkg = await open({
     title: "Import collaboration package",
+    defaultPath: await lastPackageDir(),
     filters: [{ name: "InkyCap package", extensions: ["zip"] }],
   });
   if (!pkg || Array.isArray(pkg)) return false;
+  rememberPackageDir(pkg);
   try {
     const r = await ipc.collabImport(collectionPath, pkg);
     loadReview(collectionPath, collectionName, r);
@@ -330,23 +389,34 @@ export async function importPackageInto(
 }
 
 /** Import a package via the global flow: create the collection if it doesn't
- *  exist, open it (its Collaboration panel resumes the staged review on
- *  mount). Toasts itself. */
+ *  exist, open it, and stage its review. Toasts itself. */
 export async function importNewPackage(): Promise<void> {
   const pkg = await open({
     title: "Import collaboration package",
+    defaultPath: await lastPackageDir(),
     filters: [{ name: "InkyCap package", extensions: ["zip"] }],
   });
   if (!pkg || Array.isArray(pkg)) return;
+  rememberPackageDir(pkg);
   try {
     const res = await ipc.collabImportPackage(pkg);
     openTab({ type: "collection", title: res.collection_name, path: res.collection_path });
+    // Load the staged review into the session immediately so the Incoming
+    // Changes list (and the status-bar badge) appear without waiting for the
+    // Collaboration panel to mount and re-fetch on its own.
+    loadReview(res.collection_path, res.collection_name, res.review);
     bumpPropertyVersion();
     const n = res.review.note_items.length;
+    const ac = res.review.attachment_conflicts.length;
     const where = res.created
       ? `Created "${res.collection_name}"`
       : `Imported into "${res.collection_name}"`;
-    const detail = n > 0 ? ` — ${n} change(s) to review.` : " — no incoming changes.";
+    const parts: string[] = [];
+    if (n > 0) parts.push(`${n} change(s)`);
+    if (ac > 0) parts.push(`${ac} attachment conflict(s)`);
+    const detail = parts.length
+      ? ` — ${parts.join(" + ")} to review in the Collaboration pane.`
+      : " — no incoming changes.";
     showToast("success", "Package imported", where + detail);
   } catch (e) {
     showToast("error", "Import failed", String(e));
@@ -356,20 +426,26 @@ export async function importNewPackage(): Promise<void> {
 // ── Pending-review badge ──────────────────────────────────────────────────
 
 /** Number of staged changes still awaiting a decision in the active review
- *  session (0 when no session is loaded). Drives the status-bar badge. */
+ *  session (0 when no session is loaded). Drives the status-bar badge. Counts
+ *  notes AND attachment/bib conflicts, so the badge persists (and the user is
+ *  still directed to resolve) after every note is decided but a collection-level
+ *  conflict — e.g. an attachment clash needing keep/take/rename — remains. */
 export function pendingReviewCount(): number {
-  return review()?.note_items.length ?? 0;
+  const r = review();
+  if (!r) return 0;
+  return r.note_items.length + r.attachment_conflicts.length + r.bib_conflicts.length;
 }
 
 /** Jump to the active review: open its collection tab, point the right-panel
- *  diff at the first pending note, and reveal the panel. No-op (returns false)
- *  when nothing is pending. */
+ *  diff at the first pending note (if any), and reveal the panel. The
+ *  collection's Collaboration pane shows attachment/bib conflicts even when no
+ *  note is pending. No-op (returns false) when nothing is pending. */
 export function revealPendingReview(): boolean {
   const ar = activeReview();
   const r = review();
-  if (!ar || !r || r.note_items.length === 0) return false;
+  if (!ar || !r || pendingReviewCount() === 0) return false;
   openTab({ type: "collection", title: ar.collectionName, path: ar.collectionPath });
-  setCurrentReviewCollabid(r.note_items[0].collabid);
+  if (r.note_items.length > 0) setCurrentReviewCollabid(r.note_items[0].collabid);
   setRightCollapsed(false);
   return true;
 }

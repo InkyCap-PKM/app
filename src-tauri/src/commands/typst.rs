@@ -1,12 +1,18 @@
 //! Typst-related Tauri commands. Exposes `compile_typst_svg` for paginated
 //! reading mode and `compile_typst_html` for the flowing HTML reading mode.
 
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+
 use tauri::State;
 
+use crate::collection_parser::model::parse_collection_file;
 use crate::errors::InkyCapError;
+use crate::models::note::PropertyValue;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
+use crate::typst_pipeline::bibliography::extract_citations;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
 
@@ -60,7 +66,7 @@ pub async fn compile_typst_svg(
     let source = maybe_inject_set_notebox(&source, &state).await;
     let source = inject_style_cascade(&source, &path_arg, &state).await;
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
-    let source = maybe_inject_preview_bibliography(&source, &state).await;
+    let source = maybe_inject_preview_bibliography(&source, &path_arg, &state).await;
     let source = escape_non_bib_citations(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
@@ -103,7 +109,7 @@ async fn resolve_citation_style(state: &AppState) -> Option<String> {
 ///    inject the user's style from settings so they don't get Typst's
 ///    default (IEEE) when they've chosen e.g. Chicago Notes.
 /// 3. Explicit `#bibliography(...)` with `style:` → leave untouched.
-async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> String {
+async fn maybe_inject_preview_bibliography(source: &str, note_path: &Path, state: &AppState) -> String {
     let explicit_bib_line = source.lines().enumerate().find(|(_, line)| {
         let trimmed = line.trim();
         !trimmed.starts_with("//") && trimmed.contains("#bibliography(")
@@ -118,20 +124,37 @@ async fn maybe_inject_preview_bibliography(source: &str, state: &AppState) -> St
         return source.to_string();
     }
 
-    let bib_path = resolve_preview_bib_path(state).await;
-    let Some(bib) = bib_path else {
+    // Resolve which bibliography this note's citations render against. A
+    // member note of a collaborative collection renders against the
+    // collection's shared `.bib` (replace) — so every collaborator sees the
+    // same references — with an in-memory top-up for keys not yet shared
+    // (see `effective_collab_bib_path`). Otherwise the notebox-global source.
+    let collab = resolve_collection_collab_bib(note_path, state).await;
+    let (bib, skip_validity_gate) = match collab {
+        Some((name, rel)) => (
+            effective_collab_bib_path(&rel, &name, source, state).await,
+            true,
+        ),
+        None => (resolve_preview_bib_path(state).await, false),
+    };
+    let Some(bib) = bib else {
         return source.to_string();
     };
 
     // Only inject if at least one extracted citation key actually exists
     // in the bibliography. Prevents false-positives from email addresses
     // like `user@domain.com` where Typst sees `@domain` as a citation.
-    if let Ok(entries) = super::bibliography::load_entries_inner(state).await {
-        let extracted = crate::typst_pipeline::bibliography::extract_citations(source);
-        let has_valid = extracted.iter().any(|k| entries.iter().any(|e| e.key == *k))
-            || source_has_attribution(source);
-        if !has_valid {
-            return source.to_string();
+    // Skipped on the collaborative path: the shared `.bib` (plus top-up) is
+    // authoritative there, and may carry collaborator-contributed keys that
+    // aren't in this user's notebox source.
+    if !skip_validity_gate {
+        if let Ok(entries) = super::bibliography::load_entries_inner(state).await {
+            let extracted = extract_citations(source);
+            let has_valid = extracted.iter().any(|k| entries.iter().any(|e| e.key == *k))
+                || source_has_attribution(source);
+            if !has_valid {
+                return source.to_string();
+            }
         }
     }
 
@@ -251,7 +274,7 @@ pub async fn compile_typst_html(
     // `style_injection::inject_cite_tagging`.
     let source = style_injection::inject_cite_tagging(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
-    let source = maybe_inject_preview_bibliography(&source, &state).await;
+    let source = maybe_inject_preview_bibliography(&source, &path_arg, &state).await;
     let source = escape_non_bib_citations(&source, &state).await;
 
     let mut guard = state.typst_compiler.lock().await;
@@ -286,8 +309,6 @@ pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Pa
 /// Look up which collection a note belongs to and return the collection's
 /// style overrides as Typst `#set` rules, if any.
 async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState) -> Option<String> {
-    let notebox_root = state.notebox_root.read().await.clone()?;
-
     // Find the note's collection property
     let idx = state.property_index.read().await;
     let note = idx.notes.get(note_path)?;
@@ -306,23 +327,15 @@ async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState)
         return None;
     }
 
-    // Find the .collection file for this collection. Convention: the .collection file
-    // is named `<collection>.collection` and can live at the notebox root or in
-    // any subdirectory. We scan known collection paths from the collection list.
-    let storage = match state.get_storage().await {
-        Ok(s) => s,
-        Err(_) => return None,
-    };
-
-    let collection_filename = format!("{}.collection", collection_name);
-    let collection_path = notebox_root.join(&collection_filename);
-    let collection_content = if let Ok(content) = storage.read_file(&collection_path).await {
-        content
-    } else {
-        // Try to find it by scanning — but for now, just return None if the
-        // direct path doesn't work. The collection might be defined elsewhere.
-        return None;
-    };
+    // Resolve the `.collection` file from the authoritative list (collections
+    // live under `.inkycap/collections/`, not the notebox root), matching by
+    // file stem — the same value the `collection` property carries.
+    let storage = state.get_storage().await.ok()?;
+    let collection_files = state.collection_files.read().await.clone();
+    let collection_path = collection_files
+        .iter()
+        .find(|p| p.file_stem().and_then(|s| s.to_str()) == Some(collection_name.as_str()))?;
+    let collection_content = storage.read_file(collection_path).await.ok()?;
 
     let base = crate::collection_parser::model::parse_collection_file(&collection_content).ok()?;
     let style = base.style?;
@@ -412,5 +425,212 @@ async fn resolve_preview_bib_path(state: &AppState) -> Option<String> {
                 None
             }
         }
+    }
+}
+
+/// Normalize a notebox-root-relative path to the leading-`/` form Typst reads
+/// `#bibliography(...)` paths in (the Typst project root is the notebox root).
+fn slashify(rel: &str) -> String {
+    if rel.starts_with('/') {
+        rel.to_string()
+    } else {
+        format!("/{rel}")
+    }
+}
+
+/// If `note_path` belongs to a collaborative collection whose shared `.bib`
+/// is materialized, return `(collection_name, bib_relpath)`. A note that is a
+/// member of several collections resolves to the first collaborative one with
+/// a bibliography — the shared bib is the authority only *while collaborative*.
+///
+/// Mirrors [`resolve_collection_style`]'s note→collection lookup; both read the
+/// `collection` property off the live index and the `.collection` file by name.
+async fn resolve_collection_collab_bib(
+    note_path: &Path,
+    state: &AppState,
+) -> Option<(String, String)> {
+    let collection_names: Vec<String> = {
+        let idx = state.property_index.read().await;
+        let note = idx.notes.get(note_path)?;
+        match note.properties.get("collection")? {
+            PropertyValue::String(s) if !s.is_empty() => vec![s.clone()],
+            PropertyValue::List(list) => list
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+            _ => return None,
+        }
+    };
+    if collection_names.is_empty() {
+        return None;
+    }
+
+    let storage = state.get_storage().await.ok()?;
+    // Resolve the `.collection` file from the authoritative list (collections
+    // live under `.inkycap/collections/`, not the notebox root), matching by
+    // file stem — the same value the `collection` property carries.
+    let collection_files = state.collection_files.read().await.clone();
+    for name in collection_names {
+        let Some(path) = collection_files
+            .iter()
+            .find(|p| p.file_stem().and_then(|s| s.to_str()) == Some(name.as_str()))
+        else {
+            continue;
+        };
+        let Ok(content) = storage.read_file(path).await else {
+            continue;
+        };
+        let Ok(base) = parse_collection_file(&content) else {
+            continue;
+        };
+        if let Some(collab) = base.collaboration {
+            if collab.enabled {
+                if let Some(bib) = collab.bibliography_file {
+                    if !bib.trim().is_empty() {
+                        return Some((name, bib));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Build the bibliography path to inject for a member note rendering against
+/// the collection's shared `.bib` (`collab_bib_rel`).
+///
+/// Returns the shared bib directly when it already contains every cited key.
+/// Otherwise tops it up *in memory*: the cited keys it lacks are pulled from
+/// the notebox source, unioned in, and written to a non-traveling render cache
+/// under `.inkycap/cache/collab-bib/<name>.bib` — so the author's preview never
+/// shows an unresolved citation while drafting. The shared `.bib` artifact
+/// itself is only grown at enable/package (`materialize_shared_bib`), never
+/// here, so what travels to collaborators stays deterministic.
+async fn effective_collab_bib_path(
+    collab_bib_rel: &str,
+    collection_name: &str,
+    source: &str,
+    state: &AppState,
+) -> Option<String> {
+    let storage = state.get_storage().await.ok()?;
+    let shared = storage
+        .read_file(&PathBuf::from(collab_bib_rel))
+        .await
+        .ok()?;
+
+    let cited: HashSet<String> = extract_citations(source).into_iter().collect();
+    if cited.is_empty() {
+        return Some(slashify(collab_bib_rel));
+    }
+
+    // The notebox source can supply keys the shared bib doesn't have yet.
+    let full = crate::commands::bibliography::load_source_bibtex(state)
+        .await
+        .unwrap_or_default();
+
+    match topup_shared_bib(&shared, &cited, &full) {
+        // Shared bib already covers every cited key (or the source can't add
+        // anything) — render against it directly.
+        None => Some(slashify(collab_bib_rel)),
+        // A top-up is needed: write the unioned content to a non-traveling
+        // render cache and point Typst there for this compile.
+        Some(merged) => {
+            let cache_rel = format!(".inkycap/cache/collab-bib/{collection_name}.bib");
+            let cache_path = PathBuf::from(&cache_rel);
+            let existing = storage.read_file(&cache_path).await.unwrap_or_default();
+            if existing != merged {
+                storage.write_file(&cache_path, &merged).await.ok()?;
+            }
+            Some(slashify(&cache_rel))
+        }
+    }
+}
+
+/// Pure core of the shared-bib top-up: given the shared `.bib` text, the keys
+/// a note cites, and the full notebox source bibtex, return the merged bibtex
+/// that adds any cited-but-not-yet-shared entries the source can supply — or
+/// `None` when the shared bib already suffices (no missing keys, or the source
+/// has none of them). Reuses `collab::bibliography` so two semantically-equal
+/// entries don't surface differently. Extracted from `effective_collab_bib_path`
+/// so the decision is unit-testable without filesystem state.
+fn topup_shared_bib(shared: &str, cited: &HashSet<String>, source_full: &str) -> Option<String> {
+    let shared_keys: HashSet<String> = crate::collab::bibliography::parse_entries(shared)
+        .map(|m| m.into_keys().collect())
+        .unwrap_or_default();
+    let missing: HashSet<String> = cited.difference(&shared_keys).cloned().collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let missing_subset =
+        crate::collab::bibliography::filter_bibtex_to_keys(source_full, &missing).unwrap_or_default();
+    if missing_subset.trim().is_empty() {
+        return None;
+    }
+    crate::collab::bibliography::merge_bibtex(shared, &missing_subset, &HashMap::new())
+        .ok()
+        .map(|m| m.bibtex)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SMITH: &str = "@article{smith2020, title = {Alpha}, author = {Smith, J.}, year = {2020}}";
+    const JONES: &str = "@book{jones2019, title = {Beta}, author = {Jones, K.}, year = {2019}}";
+
+    fn keyset(keys: &[&str]) -> HashSet<String> {
+        keys.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn slashify_adds_leading_slash_idempotently() {
+        assert_eq!(slashify(".inkycap/collab/Work.bib"), "/.inkycap/collab/Work.bib");
+        assert_eq!(slashify("/already/abs.bib"), "/already/abs.bib");
+    }
+
+    #[test]
+    fn topup_skips_when_shared_bib_covers_all_cited_keys() {
+        // Shared bib has smith2020; the note only cites smith2020 → no top-up.
+        let cited = keyset(&["smith2020"]);
+        assert_eq!(topup_shared_bib(SMITH, &cited, JONES), None);
+    }
+
+    #[test]
+    fn topup_skips_when_source_cannot_supply_missing_keys() {
+        // Note cites a key absent from both shared bib and source → no top-up
+        // (the key is genuinely unknown; Typst will flag it).
+        let cited = keyset(&["ghost1999"]);
+        assert_eq!(topup_shared_bib(SMITH, &cited, JONES), None);
+    }
+
+    #[test]
+    fn topup_unions_missing_key_from_source() {
+        // Shared bib has smith2020; the note also cites jones2019, which lives
+        // only in the notebox source. The effective bib should carry both.
+        let cited = keyset(&["smith2020", "jones2019"]);
+        let merged = topup_shared_bib(SMITH, &cited, JONES).expect("top-up needed");
+        let parsed = crate::collab::bibliography::parse_entries(&merged).unwrap();
+        let mut got: Vec<&String> = parsed.keys().collect();
+        got.sort();
+        assert_eq!(got, vec!["jones2019", "smith2020"]);
+    }
+
+    #[test]
+    fn topup_keeps_shared_entry_on_key_collision() {
+        // A collaborator-edited entry in the shared bib must win over the
+        // notebox source's version of the same key (the shared bib is
+        // authoritative; the source only fills genuine gaps).
+        let smith_alt = "@article{smith2020, title = {Alpha}, author = {Smith, J.}, year = {2099}}";
+        let cited = keyset(&["smith2020", "jones2019"]);
+        // shared = SMITH (year 2020); source has smith2020 (year 2099) + jones.
+        let source = format!("{smith_alt}\n\n{JONES}");
+        let merged = topup_shared_bib(SMITH, &cited, &source).expect("jones is missing → top-up");
+        let parsed = crate::collab::bibliography::parse_entries(&merged).unwrap();
+        // smith2020 retains the shared bib's content (year 2020), not 2099.
+        let shared_smith = crate::collab::bibliography::parse_entries(SMITH).unwrap()["smith2020"]
+            .serialized
+            .clone();
+        assert_eq!(parsed["smith2020"].serialized, shared_smith);
     }
 }

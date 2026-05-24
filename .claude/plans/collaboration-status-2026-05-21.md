@@ -1467,18 +1467,10 @@ All detailed in "DONE — 2026-05-24 session 2" + the two follow-up paragraphs a
 Triaged 2026-05-24 (see "DECISIONS — user triage 2026-05-24"). Dropped: inline
 `#suggestion` Idea-2 remainder. Remaining, in the user's intended order:
 
-1. **DISCUSS → then build: conflict-resolution UI.** The real gap is
-   **per-attachment binary conflicts** — when both sides change the same
-   image/PDF, import **silently takes incoming** (no prompt). Note conflicts are
-   already whole-file (Accept/Reject diff); bib conflicts already per-key. The
-   decision to settle: add a per-attachment prompt (keep mine / take theirs /
-   keep both as `name (2).ext`)? Then build. Context was delivered to the user.
-2. **DISCUSS → then build: notes rendering against the shared collab `.bib`
-   while collaborative.** Enable materializes `.inkycap/collab/<name>.bib` (the
-   cited subset; travels in packages), but **per-note citation rendering** still
-   uses the notebox/collection bib setting, so a received shared bib sits unused.
-   Decision: wire precedence (collaborative-collection bib > collection bib >
-   notebox bib, only while collaborative). Then build.
+1. **conflict-resolution UI (per-attachment) — DONE 2026-05-25 (uncommitted).**
+   See "DONE — Per-attachment conflict resolution" below.
+2. **notes rendering against the shared collab `.bib` while collaborative —
+   DONE 2026-05-25 (uncommitted).** See "DONE — Shared-`.bib` rendering" below.
 3. **Known limitations (context given; build only if wanted):**
    (a) external (out-of-app) deletes don't tombstone → re-offer as `Added`;
    (b) package-time filter re-canonicalization not done (UI lock + enable-time
@@ -1489,3 +1481,202 @@ Triaged 2026-05-24 (see "DECISIONS — user triage 2026-05-24"). Dropped: inline
    so this isn't blocking, but it's the strategic decision the user wants to
    review **in detail** before more *transport* work. Re-read that section + the
    git plan `hi-i-would-like-declarative-otter.md` before discussing.
+
+---
+
+## DONE — Shared-`.bib` rendering while collaborative (2026-05-25, UNCOMMITTED)
+
+Closes the deferral from the shared-`.bib` materialization work: a member note's
+citations now **render** against the collection's shared `.bib`, not just travel
+in the package. Design settled with the user: **replace** (the shared bib is
+authoritative so every collaborator renders identically) **+ in-memory top-up**
+so the author never sees a broken citation while drafting a not-yet-shared key.
+
+- **`commands/typst.rs`** — `maybe_inject_preview_bibliography` now takes the
+  note path; `resolve_collection_collab_bib(note_path)` (sibling of the existing
+  `resolve_collection_style`) walks note → `collection` property → the
+  `.collection` file and returns the collaborative `bibliography_file` when
+  `collaboration.enabled`. A member note injects `#bibliography` against that
+  shared bib instead of the notebox-global source (the false-positive validity
+  gate is skipped on this path — the shared bib + top-up are authoritative and
+  may carry collaborator-contributed keys absent from this user's source).
+- **In-memory top-up** — `effective_collab_bib_path` checks the cited keys
+  against the shared bib; any missing key is pulled from the notebox source,
+  unioned in (`collab::bibliography::merge_bibtex`), and written to a
+  **non-traveling render cache** at `.inkycap/cache/collab-bib/<name>.bib` that
+  Typst points at for this compile. The shared `.bib` artifact itself is only
+  grown at enable/package (`materialize_shared_bib`), so what travels stays
+  deterministic. Pure core `topup_shared_bib(shared, cited, source_full)` is
+  unit-tested (5 tests, incl. the shared-entry-wins-on-key-collision case).
+- **Resolver uses the authoritative `state.collection_files`** (matched by file
+  stem), NOT a notebox-root path-guess. **Discovered along the way:** the
+  pre-existing `resolve_collection_style` (the collection *style* cascade for
+  preview) DOES guess `notebox_root.join("<name>.collection")`, but collections
+  actually live under `.inkycap/collections/` — so that lookup almost certainly
+  never finds them and collection style overrides silently don't apply in the
+  live preview. **Left untouched** (separate feature, out of this scope) — flag
+  to the user; the one-line fix is the same `state.collection_files` stem lookup.
+- **Multi-collection notes:** a note in several collections resolves to the
+  first collaborative one with a bib (rare; the membership model normally stamps
+  one collection).
+
+## DONE — Per-attachment conflict resolution (2026-05-25, UNCOMMITTED)
+
+Replaces the silent take-incoming for divergent attachments with a tracked,
+reviewable **Keep mine / Take theirs / Rename** decision. Design settled with the
+user: track attachments so one-sided changes still auto-apply; surface only true
+two-sided conflicts (and unrelated local files sharing a path); **Rename** is the
+"keep both done right" — content-addressed name + reference rewrite so nothing
+orphans.
+
+- **`collab/versions.rs`** — new `AttachmentVersion { clock, hash }` +
+  `VersionsFile.attachments: BTreeMap<relpath, AttachmentVersion>`
+  (`#[serde(default)]`, so older sidecars/packages load — their attachments are
+  untracked and reconcile as conservative conflicts, never silent overwrites).
+  `record_attachment_edit` bumps lazily by hash, like notes. `content_hash_bytes`
+  added to `collab/mod.rs` (binary sibling of `content_hash`).
+- **`collab/review.rs`** — `AttachmentVerdict` enum + pure `attachment_verdict(
+  inc_hash, local_hash, local_av, inc_av)`: `New`/`Identical`/`TakeIncoming`
+  (incoming clock dominates = one-sided)/`KeepLocal` (we're ahead)/`Conflict`
+  (concurrent, equal-clock-divergent-bytes, OR a local file that isn't a tracked
+  collaborative attachment — an unrelated file sharing the path). `ReviewResult`
+  gained `attachment_conflicts: Vec<AttachmentConflict{path, changed_by}>`. 6 unit
+  tests.
+- **`commands/collab.rs`** — package versions each traveling attachment (lazy
+  hash bump) and carries them in the package's `versions.json`. Review (staging +
+  pending) computes `attachment_conflicts` disk-side (`compute_attachment_conflicts`,
+  reads staged+local bytes). Apply gained an `attachment_decisions:
+  Vec<AttachmentDecision{path, action}>` param: resolves attachments **before**
+  the note loop so a renamed path is known when notes are written. Auto cases
+  (new / one-sided) apply silently; **a conflict with no explicit decision is
+  left entirely untouched** (so the per-note immediate-apply path never
+  auto-overwrites and a later batch decision still works). Rename →
+  `namespaced_attachment_path` (`photo.png` → `photo-<8hex-content-hash>.png`,
+  deterministic/idempotent) + `path_rebase::rewrite_referenced_path` (new
+  AST-based rewriter, 5 tests) repoints the accepted notes' `#image`/`#read`/
+  `#embed`/`#bibliography` references. `ApplyReport` gained `attachments_written`
+  + `attachments_renamed`. `namespaced_attachment_path` unit-tested.
+- **Frontend** — `AttachmentConflict`/`AttachmentAction`/`AttachmentDecision`
+  types + `attachment_conflicts` on `ReviewResult` + report fields (`types.ts`);
+  `collabReviewApply` 4th param `attachmentDecisions` (`ipc.ts`); collab store
+  `attachmentChoices` + `setAttachmentChoice`, `reviewHasContent` includes
+  attachments, `applyReview` sends them + toast counts (`stores/collab.ts`);
+  CollabPanel renders an **Attachment conflicts** section (Keep mine / Take
+  theirs / Rename `<Dropdown>`, mirroring bib conflicts) with an explanatory hint.
+
+**Known limitation (documented):** a Rename collision self-heals after a
+round-trip (once the rename propagates back, the old path drops out of manifests).
+Until then an unchanged re-send of the old path may re-prompt — safe, never
+silently destructive.
+
+### Verification (both)
+Full lib **591 pass / 0 fail** (was 573; +18: 5 typst topup, 1 versions mutator,
+6 review verdict, 5 path_rebase rename, 1 namespaced-path); all integration tests
+green; `tsc --noEmit` + `npm run build` (vite) clean. **All the async-command /
+UI behaviour needs in-app validation** (the package→import→conflict→keep/take/
+rename loop, the renamed-reference rewrite, and a member note rendering against a
+received shared bib + the top-up cache). Then commit.
+
+---
+
+## DONE — 2026-05-25 session 2: pre-redesign polish + fixes (UNCOMMITTED)
+
+The user tested the collaboration system and is **about to start a new session to
+redesign how collaboration works** (deeming the current implementation "good for
+the time-being"). Before that, they asked for a batch of fixes/polish. All green
+(full lib **591**, `tsc`, `npm run build`); needs in-app validation.
+
+**Done:**
+1. **`resolve_collection_style` fixed** (`commands/typst.rs`) — was guessing
+   `notebox_root.join("<name>.collection")` (collections live under
+   `.inkycap/collections/`), so collection **style overrides never applied in
+   the live preview**. Now resolves from `state.collection_files` by file stem,
+   matching the new bib resolver. (This is the issue flagged in the shared-bib
+   section above.)
+2. **`reindex_note` populates `file.*` from a fresh stat** (`state.rs` +
+   new `scanner::walker::insert_file_properties`). ROOT CAUSE of "imported
+   collaboration notes don't show until restart": `reindex_note` only carried
+   `file.*` forward from an *existing* index entry, so a brand-new applied note
+   had no `file.name`/`file.ext` → the collection filter (`file.ext == "typ"`,
+   `file.name != …`) excluded it until a full rescan. Now every reindexed note
+   gets correct `file.*` (falls back to carry-forward if the stat fails). This
+   eliminates the whole "reindexed-without-file.*" class — also the likely cause
+   of notes **vanishing during an update import** (retest to confirm).
+3. **New-collection import loads the review immediately** (`stores/collab.ts`
+   `importNewPackage` now calls `loadReview(res.…, res.review)`), so the Incoming
+   Changes list + status-bar badge appear without waiting for CollabPanel to
+   mount/re-fetch.
+4. **Review comment button → "Add/View Comment"** (ReviewPanel + CollabPanel
+   tooltip). NOTE: surfacing the *sender's* comment is NOT done — the package
+   carries no per-note sender comment today (comments are local, in the review
+   log). That needs a transport addition (a sender-side "comment to send" +
+   carry it in the manifest) — **best folded into the redesign**; flagged to user.
+5. **HelpButton ✕ removed** (`HelpButton.tsx`) — dismiss via outside-click / Esc
+   only.
+6. **Agenda view auto-added on enable** (`setup_collaboration` in `collab.rs`) —
+   pushes a `ViewDef{type:"agenda", name:"Agenda"}` when enabling, if no agenda
+   view exists (idempotent across pause→resume).
+7. **Export/Import buttons swapped** (Import first) + **dialogs default to the
+   last-used dir, else home** (`stores/collab.ts` `lastPackageDir`/
+   `rememberPackageDir` via `localStorage` + `@tauri-apps/api/path` `homeDir`/
+   `join`) — no longer opens in the InkyCap app folder.
+8. **Active collection highlighted in the Collections sidebar list**
+   (`LeftSidebar.tsx`) — `sidebar-item--active` when the active tab is that
+   collection, mirroring the file tree. **Also:** `.collection-table__toolbar-btn:disabled`
+   CSS so the Filter button reads as disabled while collaborative (was clickable-
+   looking).
+
+**Open / flagged for the next (redesign) session:**
+- **Sender-comment surfacing** (#4 above) — needs transport support; defer to
+  redesign.
+- **Image-on-new-collection-import report** — the user's message was cut off
+  ("…included an image, which was already in my notebox's Assets folder but did
+  not exist in the local files"). Likely the new attachment-conflict detection:
+  an image already in `Assets/` with *different* bytes now surfaces as a conflict
+  instead of silently overwriting. **Needs the user to finish the thought**
+  (expected vs actual) before fixing — don't guess.
+- **Update-import "files vanish until resolved"** — should be retested now that
+  `reindex_note` always sets `file.*`. If it persists, investigate a frontend
+  refetch/race during staging (the collection table is keyed on
+  `propertyVersion()`; staging itself doesn't touch the working notes or index).
+
+**⮕ NEXT SESSION = the collaboration REDESIGN the user will lead.** The current
+package-handoff implementation stays as the baseline. Re-read "OPEN QUESTION —
+collaboration direction" + the transport-direction notes before/while they
+describe their new direction.
+
+### Follow-up (same 2026-05-25, UNCOMMITTED) — image-conflict discoverability + package revision
+
+Two more user-raised items, both green (591 lib, tsc, vite):
+
+1. **Image-on-new-collection-import — diagnosed + discoverability fixed (NOT a
+   data-loss bug).** Traced it: an incoming image whose path collides with an
+   *unrelated* local file IS detected as a `Conflict` (untracked local occupant)
+   and is **never overwritten** — apply leaves a no-decision conflict untouched.
+   The real gap was discoverability: attachment conflicts live in the CollabPanel
+   batch list, but `pendingReviewCount`/the status badge counted only
+   `note_items`, so after the user accepted all notes via the per-note flow the
+   badge vanished and the orphaned attachment conflict (with its **Rename**
+   option) was never surfaced. Fixes (`stores/collab.ts`): `pendingReviewCount`
+   now counts `note_items + attachment_conflicts + bib_conflicts`;
+   `revealPendingReview` fires for any of them (opens the collection → CollabPanel
+   shows the Attachment conflicts section); the new-collection import toast calls
+   out "N attachment conflict(s) to review in the Collaboration pane". Attachment
+   conflicts are still resolved via the CollabPanel batch **Apply** (they're
+   collection-level, not per-note) — Keep mine / Take theirs / **Rename**.
+2. **Package revision counter (user request).** New `CollectionCollaboration.version: u64`
+   (`.collection` YAML, `#[serde(default)]`). Lamport-style: `collab_package`
+   bumps it (+1) and persists *before* bundling so it travels in the packaged
+   `.collection`; `collab_review_apply` advances local to `max(local, incoming)`
+   from the staged incoming `.collection` (consolidated into one `.collection`
+   write via a new `base_dirty` flag shared with first-bib adoption). Shown in
+   the Collaboration pane ("Package revision N" + HelpButton) reading
+   `collectionFile.collaboration.version`; `doPackage` calls `onChanged()` so the
+   exporter sees the bump immediately (import-apply already bumps propertyVersion).
+   Turn-taking collaborators converge on the same number — a sanity check, not a
+   cryptographic state identity (concurrent divergent branches can collide on a
+   number). Files: `collection_parser/model.rs`, `commands/collab.rs`,
+   `src/lib/types.ts`, `src/components/CollabPanel.tsx`, `src/stores/collab.ts`.
+
+**Still flagged for the redesign:** surfacing the *sender's* per-note comment
+(needs transport support — no per-note sender comment travels today).

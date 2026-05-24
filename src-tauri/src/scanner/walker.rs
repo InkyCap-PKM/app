@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::cache::{CachedFile, MetadataCache};
 use crate::errors::Result;
 use crate::link_index::LinkIndex;
-use crate::models::note::{NoteId, NoteMetadata, PropertyValue};
+use crate::models::note::{FileMetadata, NoteId, NoteMetadata, PropertyValue};
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::query::{self, QueryResult};
 use crate::typst_pipeline::TypstCompiler;
@@ -70,6 +70,29 @@ async fn parse_note_from_disk(
 
     // file.* properties — derived from filesystem metadata, not #note(...).
     let file_meta = storage.file_metadata(path).await?;
+    insert_file_properties(&mut properties, &file_meta);
+
+    let note = NoteMetadata {
+        path: path.to_path_buf(),
+        properties,
+        links: Vec::new(),
+        tags: Vec::new(),
+        agenda_markers: Vec::new(),
+    };
+
+    Ok((note, content))
+}
+
+/// Populate the `file.*` properties on `properties` from a storage
+/// [`FileMetadata`]. These are derived from the filesystem (not `#note(...)`),
+/// so every indexed note needs them set — including notes reindexed in memory
+/// after a write (e.g. a collaboration apply), where `parse_note` alone leaves
+/// them empty and collection filters like `file.ext == "typ"` would then
+/// silently exclude the note until a full rescan.
+pub fn insert_file_properties(
+    properties: &mut HashMap<String, PropertyValue>,
+    file_meta: &FileMetadata,
+) {
     properties.insert(
         "file.name".to_string(),
         PropertyValue::String(file_meta.name.clone()),
@@ -102,16 +125,6 @@ async fn parse_note_from_disk(
         "file.size".to_string(),
         PropertyValue::Number(file_meta.size as f64),
     );
-
-    let note = NoteMetadata {
-        path: path.to_path_buf(),
-        properties,
-        links: Vec::new(),
-        tags: Vec::new(),
-        agenda_markers: Vec::new(),
-    };
-
-    Ok((note, content))
 }
 
 /// Merge query results into a NoteMetadata, populating links, tags, and

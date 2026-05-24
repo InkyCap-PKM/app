@@ -61,7 +61,15 @@ pub fn collection_id(notebox_root: &Path, collection_path: &Path) -> String {
 /// sidecar so the importer can collapse no-op fast-forwards and
 /// auto-resolve byte-identical concurrent edits.
 pub fn content_hash(content: &str) -> String {
-    let digest = Sha256::digest(content.as_bytes());
+    content_hash_bytes(content.as_bytes())
+}
+
+/// Content hash of arbitrary bytes (a binary attachment), in `"sha256:<hex>"`
+/// form. The bytes-level sibling of [`content_hash`] — attachments are
+/// versioned by the same scheme as notes so the importer can tell a one-sided
+/// change from a true two-sided conflict.
+pub fn content_hash_bytes(content: &[u8]) -> String {
+    let digest = Sha256::digest(content);
     format!("sha256:{}", hex_encode(&digest))
 }
 

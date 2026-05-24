@@ -28,7 +28,7 @@ use crate::collab::clock::VectorClock;
 use crate::collab::versions::{NoteVersion, VersionsFile};
 use crate::collection_parser::filter::evaluate_filter_group;
 use crate::collection_parser::model::{
-    parse_collection_file, serialize_collection_file, CollectionFile, FilterGroup,
+    parse_collection_file, serialize_collection_file, CollectionFile, FilterGroup, ViewDef,
 };
 use crate::errors::{InkyCapError, Result};
 use crate::models::note::PropertyValue;
@@ -131,6 +131,29 @@ pub struct BibDecision {
     pub take_incoming: bool,
 }
 
+/// How to resolve one conflicting attachment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentAction {
+    /// Keep the local file, discard the incoming bytes.
+    KeepMine,
+    /// Overwrite the local file with the incoming bytes.
+    TakeTheirs,
+    /// Land the incoming bytes under a collision-proof name and rewrite the
+    /// member notes that reference it, so both files coexist.
+    Rename,
+}
+
+/// The user's resolution for one conflicting attachment. Paths with no
+/// decision default to keeping the local file (the conservative choice —
+/// never overwrite without an explicit decision).
+#[derive(Debug, Deserialize)]
+pub struct AttachmentDecision {
+    /// Notebox-relative path of the attachment in conflict.
+    pub path: String,
+    pub action: AttachmentAction,
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct ApplyReport {
     pub applied: usize,
@@ -140,6 +163,11 @@ pub struct ApplyReport {
     /// Bibliography entries added by union-merging the incoming shared
     /// `.bib` (additions only; conflicts are kept-local for now).
     pub bib_added: usize,
+    /// Attachments written to disk (new arrivals, one-sided updates, and
+    /// take-theirs / rename conflict resolutions).
+    pub attachments_written: usize,
+    /// Conflicting attachments landed under a collision-proof name (Rename).
+    pub attachments_renamed: usize,
 }
 
 // --- helpers ---
@@ -213,6 +241,34 @@ fn sanitize_relfolder(folder: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// A collision-proof notebox-relative path for a renamed attachment: the
+/// original name with a short content-hash suffix on the stem
+/// (`img/photo.png` → `img/photo-ab12cd34.png`). Content-addressed so it's
+/// deterministic — the same incoming bytes always map to the same name, so a
+/// re-import never proliferates copies, and two distinct files never collide.
+fn namespaced_attachment_path(rel: &str, content_hash: &str) -> String {
+    let short: String = content_hash
+        .strip_prefix("sha256:")
+        .unwrap_or(content_hash)
+        .chars()
+        .take(8)
+        .collect();
+    let p = Path::new(rel);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| rel.to_string());
+    let ext = p
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let fname = format!("{stem}-{short}{ext}");
+    match p.parent().map(|d| d.to_string_lossy().into_owned()).filter(|d| !d.is_empty()) {
+        Some(parent) => format!("{parent}/{fname}"),
+        None => fname,
+    }
 }
 
 /// Resolve the import folder for a collaborative collection: the
@@ -647,6 +703,28 @@ async fn setup_collaboration(
     collab_cfg.enabled = target_enabled;
     collab_cfg.bibliography_file = shared_bib;
     base.collaboration = Some(collab_cfg);
+
+    // Give a collaborative collection an "Agenda" view that travels with it, so
+    // collaborators share a task/due overview out of the box. Added once (only
+    // when enabling, and only if absent), so a pause→resume or a user-renamed
+    // agenda view isn't duplicated or clobbered.
+    if target_enabled
+        && !base
+            .views
+            .iter()
+            .any(|v| v.view_type == "agenda" || v.name == "Agenda")
+    {
+        base.views.push(ViewDef {
+            view_type: "agenda".to_string(),
+            name: "Agenda".to_string(),
+            filters: None,
+            order: None,
+            sort: None,
+            column_size: None,
+            summaries: None,
+        });
+    }
+
     let new_content = serialize_collection_file(&base)?;
     storage.write_file(&col_arg, &new_content).await?;
 
@@ -879,12 +957,22 @@ pub async fn collab_package(
     let (root, col_abs, id) = collection_ids(&state, &collection_path).await?;
     let col_arg = sanitize_notebox_arg(&collection_path)?;
 
-    let base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
+    let mut base = parse_collection_file(&storage.read_file(&col_arg).await?)?;
     if !base.collaboration.as_ref().map(|c| c.enabled).unwrap_or(false) {
         return Err(InkyCapError::BadRequest(
             "Collaboration isn't enabled for this collection.".to_string(),
         ));
     }
+
+    // Bump the package revision and persist it *before* bundling, so the new
+    // version travels in the packaged `.collection` and shows in the
+    // Collaboration pane. (See `CollectionCollaboration::version`.)
+    if let Some(c) = base.collaboration.as_mut() {
+        c.version += 1;
+    }
+    storage
+        .write_file(&col_arg, &serialize_collection_file(&base)?)
+        .await?;
 
     // Your edits are captured into the clock here (lazily, by content
     // hash) so they actually travel — there's no per-save hook. Requires a
@@ -946,7 +1034,7 @@ pub async fn collab_package(
     // was cleared is no longer a member and is omitted, so it stops sharing
     // without deleting collaborators' copies. Tombstones still travel. With
     // no filter (shouldn't happen once collaborative) we fall back to all.
-    let package_versions = match &members {
+    let mut package_versions = match &members {
         Some(m) => package_versions_view(&versions, m),
         None => versions.clone(),
     };
@@ -1013,6 +1101,25 @@ pub async fn collab_package(
             attachments.push(att);
         }
     }
+
+    // Version each traveling attachment (lazy hash detection, like notes) so
+    // the receiver can tell a one-sided change (take silently) from a genuine
+    // two-sided conflict (ask). Persist the bumps, then carry only the
+    // traveling attachments' versions in the package.
+    let mut att_changed = false;
+    for att in &attachments {
+        if let Ok(bytes) = std::fs::read(root.join(att)) {
+            att_changed |=
+                versions.record_attachment_edit(att, &handle, collab::content_hash_bytes(&bytes));
+        }
+    }
+    if att_changed {
+        versions.save(&collab::versions_path(&root, &id))?;
+    }
+    package_versions.attachments = attachments
+        .iter()
+        .filter_map(|a| versions.attachments.get(a).map(|v| (a.clone(), v.clone())))
+        .collect();
 
     let manifest = PackageManifest {
         schema: package::PACKAGE_SCHEMA,
@@ -1163,7 +1270,55 @@ async fn stage_and_review(
     let manifest_json = serde_json::to_vec_pretty(&staged.manifest)?;
     std::fs::write(staging.join(INCOMING_MANIFEST), manifest_json)?;
 
-    Ok(review::compute_review(&local, &staged.versions))
+    let mut result = review::compute_review(&local, &staged.versions);
+    result.attachment_conflicts = compute_attachment_conflicts(
+        &local,
+        &staged.versions,
+        &staging,
+        root,
+        &staged.manifest.attachments,
+    );
+    Ok(result)
+}
+
+/// Compute the attachment conflicts for a staged import: for each attachment
+/// the package carries, compare its bytes and tracked clock against the local
+/// copy. Only `Conflict` verdicts surface to the user; the clock-resolvable
+/// cases (new / identical / one-sided / locally-ahead) are applied silently at
+/// apply time. Disk-aware (reads staged + local bytes), so it lives here rather
+/// than in the pure `compute_review`.
+fn compute_attachment_conflicts(
+    local: &VersionsFile,
+    incoming: &VersionsFile,
+    staging: &Path,
+    root: &Path,
+    manifest_attachments: &[String],
+) -> Vec<review::AttachmentConflict> {
+    let mut conflicts = Vec::new();
+    for att in manifest_attachments {
+        let Ok(inc_bytes) = std::fs::read(staging.join(att)) else {
+            continue;
+        };
+        let inc_hash = collab::content_hash_bytes(&inc_bytes);
+        let local_hash = std::fs::read(root.join(att))
+            .ok()
+            .map(|b| collab::content_hash_bytes(&b));
+        let verdict = review::attachment_verdict(
+            &inc_hash,
+            local_hash.as_deref(),
+            local.attachments.get(att),
+            incoming.attachments.get(att),
+        );
+        if matches!(verdict, review::AttachmentVerdict::Conflict) {
+            let changed_by = incoming
+                .attachments
+                .get(att)
+                .map(|i| i.clock.iter().map(|(h, _)| h.to_string()).collect())
+                .unwrap_or_default();
+            conflicts.push(review::AttachmentConflict { path: att.clone(), changed_by });
+        }
+    }
+    conflicts
 }
 
 /// Import a package into an existing collection: extract to staging and
@@ -1271,9 +1426,21 @@ pub async fn collab_pending_review(
     };
     let collabid_paths = collabid_path_map(&state, &root).await;
     let local = VersionsFile::load(&collab::versions_path(&root, &id))?
-        .unwrap_or_else(|| VersionsFile::new(id));
+        .unwrap_or_else(|| VersionsFile::new(id.clone()));
     let local = reconcile_local(local, &root, &collabid_paths);
-    Ok(Some(review::compute_review(&local, &incoming)))
+
+    let mut result = review::compute_review(&local, &incoming);
+    // The persisted manifest names the staged attachments; recompute conflicts
+    // against current local bytes so a resumed review reflects the disk now.
+    let staging = collab::collab_dir(&root, &id).join(INCOMING_DIR);
+    if let Some(m) = std::fs::read(staging.join(INCOMING_MANIFEST))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<package::PackageManifest>(&b).ok())
+    {
+        result.attachment_conflicts =
+            compute_attachment_conflicts(&local, &incoming, &staging, &root, &m.attachments);
+    }
+    Ok(Some(result))
 }
 
 /// The local + staged-incoming content for one note in a staged import,
@@ -1335,6 +1502,7 @@ pub async fn collab_review_apply(
     collection_path: String,
     decisions: Vec<ReviewDecision>,
     bib_decisions: Vec<BibDecision>,
+    attachment_decisions: Vec<AttachmentDecision>,
     state: State<'_, AppState>,
 ) -> Result<ApplyReport> {
     let storage = state.get_storage().await?;
@@ -1372,6 +1540,29 @@ pub async fn collab_review_apply(
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok());
 
+    // Tracks whether the local `.collection` needs rewriting at the end — set
+    // by the package-version merge below and by the first-bib adoption later,
+    // so both fold into a single write.
+    let mut base_dirty = false;
+
+    // Advance the local package revision to max(local, incoming) so turn-taking
+    // collaborators converge on the same number (see `version` in the model).
+    // The incoming revision rides in the bundled `.collection`, staged here.
+    if let Some(m) = &manifest {
+        if let Ok(content) = std::fs::read_to_string(staging.join(&m.collection_relpath)) {
+            if let Ok(incoming_base) = parse_collection_file(&content) {
+                let incoming_version =
+                    incoming_base.collaboration.map(|c| c.version).unwrap_or(0);
+                let mut collab = base.collaboration.take().unwrap_or_default();
+                if incoming_version > collab.version {
+                    collab.version = incoming_version;
+                    base_dirty = true;
+                }
+                base.collaboration = Some(collab);
+            }
+        }
+    }
+
     // Authoritative "where do I keep this note" map, by collabid. A note's
     // location is purely local, so an incoming change is written to the
     // receiver's own copy — never to the sender's path.
@@ -1382,6 +1573,110 @@ pub async fn collab_review_apply(
     // (target, action, comment). Collected here and written once after the
     // loop. A reject is always logged; an accept only when commented.
     let mut log_entries: Vec<(String, ReviewAction, String)> = Vec::new();
+
+    // Resolve attachments BEFORE the note loop so a renamed attachment's new
+    // path is known when the notes that reference it are written — their
+    // references are rewritten in lockstep (see `rename_map` below). Auto cases
+    // (new / one-sided update) are applied silently here; conflicts follow the
+    // user's per-attachment decision (default keep-mine).
+    let att_decisions: HashMap<String, AttachmentAction> = attachment_decisions
+        .iter()
+        .map(|d| (d.path.clone(), d.action))
+        .collect();
+    let mut rename_map: HashMap<String, String> = HashMap::new();
+    if let Some(manifest) = &manifest {
+        for att in &manifest.attachments {
+            let Ok(inc_bytes) = std::fs::read(staging.join(att)) else {
+                continue;
+            };
+            let inc_hash = collab::content_hash_bytes(&inc_bytes);
+            let local_bytes = std::fs::read(root.join(att)).ok();
+            let local_hash = local_bytes.as_deref().map(collab::content_hash_bytes);
+            let inc_av = incoming.attachments.get(att);
+
+            // Fold the incoming clock into our record and adopt the incoming
+            // hash — used when we take their bytes (new / one-sided / take-theirs).
+            let take = |local: &mut VersionsFile| {
+                let entry = local.attachments.entry(att.clone()).or_insert_with(|| {
+                    crate::collab::versions::AttachmentVersion {
+                        clock: VectorClock::new(),
+                        hash: String::new(),
+                    }
+                });
+                if let Some(i) = inc_av {
+                    entry.clock.merge(&i.clock);
+                }
+                entry.hash = inc_hash.clone();
+            };
+
+            use review::AttachmentVerdict::*;
+            match review::attachment_verdict(&inc_hash, local_hash.as_deref(), local.attachments.get(att), inc_av) {
+                Identical => {}
+                New | TakeIncoming => {
+                    storage.write_file_bytes(&PathBuf::from(att), &inc_bytes).await?;
+                    take(&mut local);
+                    report.attachments_written += 1;
+                }
+                KeepLocal => {
+                    // We're ahead; keep our bytes but record that we've seen
+                    // theirs so it doesn't re-offer (tracked case only).
+                    if let Some(entry) = local.attachments.get_mut(att) {
+                        if let Some(i) = inc_av {
+                            entry.clock.merge(&i.clock);
+                        }
+                    }
+                }
+                Conflict => {
+                    match att_decisions.get(att).copied() {
+                        // No explicit decision (e.g. the per-note immediate-apply
+                        // path sends none): leave the conflict completely
+                        // untouched — no write, no clock merge — so it persists
+                        // for the batch Apply to resolve. Never auto-overwrite.
+                        None => {}
+                        Some(AttachmentAction::KeepMine) => {
+                            // Keep our file. Only fold in their clock when this
+                            // attachment is already tracked locally — for an
+                            // UNTRACKED local file (an unrelated file sharing the
+                            // path) we leave no record, so it stays protected and
+                            // never silently overwritten on a later import.
+                            if let Some(entry) = local.attachments.get_mut(att) {
+                                if let Some(i) = inc_av {
+                                    entry.clock.merge(&i.clock);
+                                }
+                            }
+                        }
+                        Some(AttachmentAction::TakeTheirs) => {
+                            storage.write_file_bytes(&PathBuf::from(att), &inc_bytes).await?;
+                            take(&mut local);
+                            report.attachments_written += 1;
+                        }
+                        Some(AttachmentAction::Rename) => {
+                            // Land their bytes under a content-addressed name so
+                            // it can't collide with our local file, and rewrite
+                            // the member notes that reference it (below).
+                            let new_rel = namespaced_attachment_path(att, &inc_hash);
+                            storage
+                                .write_file_bytes(&PathBuf::from(&new_rel), &inc_bytes)
+                                .await?;
+                            let entry = local
+                                .attachments
+                                .entry(new_rel.clone())
+                                .or_insert_with(|| crate::collab::versions::AttachmentVersion {
+                                    clock: VectorClock::new(),
+                                    hash: String::new(),
+                                });
+                            if let Some(i) = inc_av {
+                                entry.clock.merge(&i.clock);
+                            }
+                            entry.hash = inc_hash.clone();
+                            rename_map.insert(att.clone(), new_rel);
+                            report.attachments_renamed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     for decision in &decisions {
         let Some(inc) = incoming.notes.get(&decision.collabid) else {
@@ -1444,9 +1739,26 @@ pub async fn collab_review_apply(
                     // (new note), suffixing only to avoid clobbering a
                     // *different* local note.
                     let staged_file = staging.join(&inc.path);
-                    let body = std::fs::read_to_string(&staged_file).map_err(|e| {
+                    let mut body = std::fs::read_to_string(&staged_file).map_err(|e| {
                         InkyCapError::FileNotFound(format!("staged {}: {e}", inc.path))
                     })?;
+
+                    // If any attachment this note references was renamed to
+                    // dodge a collision, repoint the reference in lockstep so it
+                    // still resolves. Anchored at the incoming note's own dir
+                    // (matters only for hand-authored relative refs; InkyCap
+                    // emits absolute ones).
+                    if !rename_map.is_empty() {
+                        let note_dir = Path::new(&inc.path)
+                            .parent()
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_default();
+                        for (old_rel, new_rel) in &rename_map {
+                            body = crate::typst_pipeline::path_rebase::rewrite_referenced_path(
+                                &body, old_rel, new_rel, &note_dir,
+                            );
+                        }
+                    }
 
                     let birth = identity::birth_author(&decision.collabid).unwrap_or("peer");
                     let dest_rel = apply::place_incoming(
@@ -1550,9 +1862,7 @@ pub async fn collab_review_apply(
                         if let Some(c) = base.collaboration.as_mut() {
                             c.bibliography_file = Some(local_bib_rel.clone());
                         }
-                        storage
-                            .write_file(&col_arg, &serialize_collection_file(&base)?)
-                            .await?;
+                        base_dirty = true;
                     }
                 }
                 Err(e) => {
@@ -1565,28 +1875,15 @@ pub async fn collab_review_apply(
         }
     }
 
-    // Bring along referenced attachments. Assets aren't clock-versioned, so
-    // we compare bytes: write when the file is missing locally OR its content
-    // differs from the incoming one — so an *updated* attachment propagates
-    // (previously skip-if-present meant edits never travelled). Identical
-    // content is left untouched (no needless rewrite). A genuine local-vs-
-    // incoming divergence is resolved take-incoming; there's no per-attachment
-    // review yet (binary assets, no clock — see the design's open questions).
-    // Done once after the note decisions, since attachments aren't tied to a
-    // single note in the manifest.
-    if let Some(manifest) = &manifest {
-        for att in &manifest.attachments {
-            let Ok(incoming) = std::fs::read(staging.join(att)) else {
-                continue;
-            };
-            let differs = match std::fs::read(root.join(att)) {
-                Ok(local) => local != incoming,
-                Err(_) => true, // missing locally
-            };
-            if differs {
-                storage.write_file_bytes(&PathBuf::from(att), &incoming).await?;
-            }
-        }
+    // (Attachments were resolved before the note loop so renamed paths could
+    // be rewritten into the notes that reference them.)
+
+    // One consolidated `.collection` write for the package-version advance
+    // and/or first-bib adoption.
+    if base_dirty {
+        storage
+            .write_file(&col_arg, &serialize_collection_file(&base)?)
+            .await?;
     }
 
     local.save(&collab::versions_path(&root, &id))?;
@@ -1659,13 +1956,34 @@ pub async fn collab_review_comment(
 #[cfg(test)]
 mod tests {
     use super::{
-        bump_local_edits, package_versions_view, reconcile_local, sanitize_relfolder,
-        tombstone_in_sidecars,
+        bump_local_edits, namespaced_attachment_path, package_versions_view, reconcile_local,
+        sanitize_relfolder, tombstone_in_sidecars,
     };
     use crate::collab::content_hash;
     use crate::collab::identity::{save_me, LocalIdentity};
     use crate::collab::versions::VersionsFile;
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn namespaced_attachment_path_suffixes_stem_deterministically() {
+        let h = "sha256:ab12cd34ef567890";
+        assert_eq!(
+            namespaced_attachment_path("img/photo.png", h),
+            "img/photo-ab12cd34.png"
+        );
+        // No folder, no extension.
+        assert_eq!(namespaced_attachment_path("readme", h), "readme-ab12cd34");
+        // Same content → same name (content-addressed, idempotent).
+        assert_eq!(
+            namespaced_attachment_path("a/b/c.pdf", h),
+            namespaced_attachment_path("a/b/c.pdf", h)
+        );
+        // Multibyte stem survives.
+        assert_eq!(
+            namespaced_attachment_path("媒体/写真.png", h),
+            "媒体/写真-ab12cd34.png"
+        );
+    }
 
     /// No moves: a collabid→path map that just mirrors the recorded paths,
     /// so the path-follow logic is a no-op and these tests exercise edit

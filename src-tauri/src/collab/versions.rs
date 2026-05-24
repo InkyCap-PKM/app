@@ -64,6 +64,19 @@ pub struct BibEntryMeta {
 #[serde(transparent)]
 pub struct BibVersions(pub BTreeMap<String, BibEntryMeta>);
 
+/// One referenced attachment's version record, keyed by its notebox-relative
+/// path in [`VersionsFile::attachments`]. Binary assets have no clock of their
+/// own in the document, so we attach one here: the per-collaborator counter
+/// lets the importer distinguish a one-sided change (take it silently) from a
+/// genuine two-sided conflict (ask the user), exactly as notes are compared.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentVersion {
+    /// Per-collaborator edit counters for this attachment.
+    pub clock: VectorClock,
+    /// Content hash (`"sha256:…"`) of the bytes as of this clock.
+    pub hash: String,
+}
+
 /// The whole sidecar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VersionsFile {
@@ -78,6 +91,12 @@ pub struct VersionsFile {
     pub notes: BTreeMap<String, NoteVersion>,
     #[serde(default)]
     pub bibliography: BibVersions,
+    /// `notebox-relative attachment path -> AttachmentVersion`. Added after
+    /// the initial schema; `#[serde(default)]` so an older sidecar (or
+    /// package) without it still loads — its attachments are simply untracked
+    /// and reconcile as conservative conflicts rather than silent overwrites.
+    #[serde(default)]
+    pub attachments: BTreeMap<String, AttachmentVersion>,
 }
 
 impl VersionsFile {
@@ -88,6 +107,7 @@ impl VersionsFile {
             collection_id: collection_id.into(),
             notes: BTreeMap::new(),
             bibliography: BibVersions::default(),
+            attachments: BTreeMap::new(),
         }
     }
 
@@ -128,6 +148,29 @@ impl VersionsFile {
         entry.path = path.to_string();
         entry.hash = Some(hash);
         entry.tombstone = None;
+    }
+
+    /// Record an attachment's current bytes: bump `handle`'s counter and
+    /// update the hash, but only when the content actually changed (a fresh
+    /// hash, or a path we weren't tracking). Returns whether anything changed —
+    /// so packaging only re-saves the sidecar when an attachment truly moved.
+    /// Mirrors the lazy, hash-based edit capture used for notes.
+    pub fn record_attachment_edit(&mut self, path: &str, handle: &str, hash: String) -> bool {
+        match self.attachments.get_mut(path) {
+            Some(av) if av.hash == hash => false,
+            Some(av) => {
+                av.clock.bump(handle);
+                av.hash = hash;
+                true
+            }
+            None => {
+                let mut clock = VectorClock::new();
+                clock.bump(handle);
+                self.attachments
+                    .insert(path.to_string(), AttachmentVersion { clock, hash });
+                true
+            }
+        }
     }
 
     /// Mark a note deleted by `handle`. The tombstone captures the note's
@@ -186,6 +229,21 @@ mod tests {
     }
 
     #[test]
+    fn record_attachment_edit_inserts_then_bumps_only_on_change() {
+        let mut v = VersionsFile::new("col-1");
+        // First sight of the attachment: inserts, clock = 1.
+        assert!(v.record_attachment_edit("img/a.png", "alice", "sha256:aaa".into()));
+        assert_eq!(v.attachments["img/a.png"].clock.get("alice"), 1);
+        // Same hash again: no-op, clock unchanged.
+        assert!(!v.record_attachment_edit("img/a.png", "alice", "sha256:aaa".into()));
+        assert_eq!(v.attachments["img/a.png"].clock.get("alice"), 1);
+        // New content: bumps.
+        assert!(v.record_attachment_edit("img/a.png", "alice", "sha256:bbb".into()));
+        assert_eq!(v.attachments["img/a.png"].clock.get("alice"), 2);
+        assert_eq!(v.attachments["img/a.png"].hash, "sha256:bbb");
+    }
+
+    #[test]
     fn save_load_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("versions.json");
@@ -196,6 +254,7 @@ mod tests {
             "smith2020".into(),
             BibEntryMeta { hash: "sha256:zzz".into(), added_by: "alice".into() },
         );
+        v.record_attachment_edit("img/a.png", "alice", "sha256:img".into());
         v.save(&path).unwrap();
 
         let loaded = VersionsFile::load(&path).unwrap().unwrap();

@@ -77,7 +77,7 @@
   "common.loading": "Loading…",
 
   "mainContent.emptyState": "Open a file or collection to get started",
-  "mainContent.emptyState.shortcuts": "Shortcuts:",
+  "mainContent.emptyState.shortcuts": "",
   "mainContent.emptyState.openFileHint": "Open a file by name: {modifier} + O",
   "mainContent.emptyState.createFileHint": "Create a note: {modifier} + N",
   "mainContent.emptyState.commandsHint": "Access commands quickly: {modifier} + P",

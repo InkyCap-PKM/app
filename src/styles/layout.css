@@ -966,6 +966,18 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
+.collection-table__toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Keep a disabled button visually inert — the hover rule above otherwise still
+   lights it up on pointer-over, making it look clickable. */
+.collection-table__toolbar-btn:disabled:hover {
+  border-color: var(--border-primary);
+  color: var(--fg-muted);
+}
+
 .collection-table__export-wrapper {
   position: relative;
 }
@@ -4741,7 +4753,6 @@ svg.lucide {
   box-sizing: border-box;
   max-width: calc(100vw - 16px);
   padding: 10px 12px;
-  padding-right: 26px; /* room for the ✕ */
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
   border-radius: var(--popup-radius);
