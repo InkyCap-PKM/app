@@ -199,6 +199,11 @@ pub fn run() {
         })
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
+            commands::git::git_setup_collaboration,
+            commands::git::git_status,
+            commands::git::git_sign_in,
+            commands::git::git_disable_collaboration,
+            commands::git::git_publish,
             commands::git::git_fetch_review,
             commands::git::git_consolidate_note,
             commands::git::git_consolidate_all,

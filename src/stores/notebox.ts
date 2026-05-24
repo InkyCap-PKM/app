@@ -20,6 +20,7 @@ import { refreshAliases, bumpAliasGeneration } from "./aliases";
 import { startLsp, stopLsp } from "./lsp";
 import { maybeSeedNotebox } from "./notebox-seed";
 import { awaitAllPendingWrites } from "./editor-writes";
+import { ensureGitListeners, resetGitOnOpen } from "./git";
 
 const [noteboxInfo, setNoteboxInfo] = createSignal<NoteboxInfo | null>(null);
 const [noteboxRegistry, setNoteboxRegistry] = createSignal<NoteboxRegistryEntry[]>([]);
@@ -292,6 +293,7 @@ export async function openNotebox(path: string) {
   bumpAliasGeneration();
   try {
     await ensureIndexEventListeners();
+    await ensureGitListeners();
     const info = await ipc.openNotebox(path);
     setNoteboxInfo(info);
     // The sidebar's createResource will fetch the file tree when noteboxInfo
@@ -307,6 +309,10 @@ export async function openNotebox(path: string) {
     // journal-scroll prefs, etc.). Awaited so subsequent components
     // render against the new notebox's settings, not the previous one.
     await loadNoteboxSettings();
+    // Reset the git collaboration review state for the new notebox and, if it
+    // is collaborative, re-query its status. (The backend also emits
+    // `notebox:git-status` on open, which keeps the summary fresh.)
+    resetGitOnOpen().catch(console.error);
     // Pre-warm Tinymist LSP so completions/hover are ready by the
     // time the user opens a file (~425ms cold start).
     startLsp(path).catch(console.error);

@@ -13,6 +13,7 @@ import {
   rightCollapsed,
   setLeftWidth,
   setRightWidth,
+  setLeftCollapsed,
   toggleRightCollapsed,
 } from "./stores/layout";
 import { PanelRightDashed } from "lucide-solid";
@@ -128,6 +129,8 @@ const App: Component = () => {
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
       openTypAudit: () => setTypAuditVisible(true),
       openScaffoldPicker: () => setScaffoldPickerVisible(true),
+      openCollaborationPanel: () =>
+        document.dispatchEvent(new CustomEvent("inkycap:open-collaboration")),
     });
 
     initKeyboard();
@@ -182,6 +185,17 @@ const App: Component = () => {
   };
   document.addEventListener("inkycap:open-settings", onOpenSettings);
   onCleanup(() => document.removeEventListener("inkycap:open-settings", onOpenSettings));
+
+  // Open the Git Collaboration sidebar panel (from Settings' per-notebox entry
+  // point, the status-bar chip, or the command palette). Close Settings,
+  // ensure the sidebar is visible, and switch to the collaboration mode.
+  const onOpenCollaboration = () => {
+    setSettingsVisible(false);
+    if (leftCollapsed()) setLeftCollapsed(false);
+    selectSidebarMode("collaboration");
+  };
+  document.addEventListener("inkycap:open-collaboration", onOpenCollaboration);
+  onCleanup(() => document.removeEventListener("inkycap:open-collaboration", onOpenCollaboration));
 
   onCleanup(() => {
     flushSettingsSave();

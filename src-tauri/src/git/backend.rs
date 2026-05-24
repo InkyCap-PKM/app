@@ -41,6 +41,12 @@ pub struct GitStatusSummary {
     /// Commits the local branch is behind its upstream (incoming). `0` when
     /// there is no upstream tracking branch.
     pub behind: usize,
+    /// Commits present locally but not yet on the remote — what "Publish"
+    /// would send. Unlike [`ahead`], this counts *all* local commits when the
+    /// remote-tracking ref does not exist yet (never pushed/fetched), so the
+    /// first publish is surfaced. Populated by the command layer (which knows
+    /// the configured remote + branch); `0` from a bare [`status_summary`].
+    pub unpushed: usize,
 }
 
 /// How a path changed between two commits (git rename detection is off, so a
@@ -335,6 +341,48 @@ impl GitBackend {
         Ok(())
     }
 
+    /// On an unborn HEAD (a freshly initialized repo with no commits), point
+    /// HEAD at `refs/heads/<branch>` so the first commit lands on the
+    /// *configured* branch rather than libgit2's compiled-in default
+    /// (`master`). No-op once a commit exists (an adopted repo keeps its branch).
+    pub fn ensure_initial_branch(&self, branch: &str) -> Result<()> {
+        if self.current_head()?.is_none() {
+            self.repo.set_head(&format!("refs/heads/{branch}"))?;
+        }
+        Ok(())
+    }
+
+    /// Stage every working-tree change (additions, modifications, deletions),
+    /// honouring `.gitignore` — the index image for a "publish my work" commit.
+    /// `add_all` covers new/modified non-ignored files; `update_all` records
+    /// deletions of tracked files.
+    pub fn stage_all(&self) -> Result<()> {
+        let mut index = self.repo.index()?;
+        index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+        index.update_all(["*"].iter(), None)?;
+        index.write()?;
+        Ok(())
+    }
+
+    /// Count commits present locally but not yet on the remote — what a publish
+    /// would send. When the remote-tracking ref exists, that's the ahead-count
+    /// against it; before the first push/fetch it does not exist, so every
+    /// commit reachable from HEAD is unpushed.
+    pub fn unpushed_count(&self, remote_name: &str, branch: &str) -> Result<usize> {
+        let head = match self.current_head()? {
+            Some((_, oid)) => oid,
+            None => return Ok(0),
+        };
+        match self.remote_tracking_oid(remote_name, branch)? {
+            Some(up) => Ok(self.repo.graph_ahead_behind(head, up)?.0),
+            None => {
+                let mut walk = self.repo.revwalk()?;
+                walk.push(head)?;
+                Ok(walk.count())
+            }
+        }
+    }
+
     /// Commit whatever is currently staged in the index, with `author` as both
     /// author and committer. Parents are the current head (none on the first
     /// commit). Returns the new commit's OID.
@@ -414,6 +462,17 @@ impl GitBackend {
         }
 
         let message = rejection.lock().unwrap().take();
+        if message.is_none() {
+            // Mirror the just-pushed branch into the local remote-tracking ref
+            // so status (unpushed / behind) reflects the push immediately,
+            // without requiring a round-trip fetch. This is what git does for a
+            // tracked push; libgit2's `push` does not do it for us.
+            if let Some((_, head)) = self.current_head()? {
+                let refname = format!("refs/remotes/{remote_name}/{branch}");
+                self.repo
+                    .reference(&refname, head, true, "update tracking after push")?;
+            }
+        }
         Ok(PushResult {
             rejected: message.is_some(),
             message,

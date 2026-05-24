@@ -52,6 +52,7 @@ import {
 import SearchPanel from "./SearchPanel";
 import BookmarksPanel from "./BookmarksPanel";
 import TemplatesPanel from "./TemplatesPanel";
+import GitCollaborationPanel from "./GitCollaborationPanel";
 import AgendaPanel from "./AgendaPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
@@ -1740,6 +1741,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "templates"}>
           <TemplatesPanel />
+        </Show>
+
+        <Show when={mode() === "collaboration"}>
+          <GitCollaborationPanel />
         </Show>
       </div>
 

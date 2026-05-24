@@ -16,7 +16,10 @@ use tauri::{Emitter, State};
 
 use crate::errors::{InkyCapError, Result};
 use crate::git::auth::{self, GitIdentity};
-use crate::git::backend::{ChangeStatus, CommitInfo, GitBackend, PushResult};
+use crate::git::backend::{
+    ensure_collaboration_gitignore, ChangeStatus, CommitInfo, GitBackend, GitStatusSummary,
+    PushResult,
+};
 use crate::git::{staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
@@ -26,7 +29,7 @@ use crate::storage::traits::NoteboxStorage;
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
 /// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
 /// from it on each fetch so the command works without a separate setup step.
-const REMOTE_NAME: &str = "origin";
+pub(crate) const REMOTE_NAME: &str = "origin";
 
 /// What kind of change an incoming note carries. `.typ` notes are rendered as
 /// suggestions (`Modified`) or staged whole (`Added`); non-note files
@@ -303,6 +306,260 @@ fn format_date(secs: i64) -> String {
 fn notebox_relative(root: &Path, path: &str) -> PathBuf {
     let p = PathBuf::from(path);
     p.strip_prefix(root).map(Path::to_path_buf).unwrap_or(p)
+}
+
+// ─────────────────────────── Phase 4: setup, status, sign-in ───────────────
+
+/// Outcome of turning a notebox into a collaborative git repo.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSetupResult {
+    /// A fresh `git init` happened (the notebox was not a repo before). When
+    /// false the existing repo was adopted.
+    pub initialized: bool,
+    /// Status summary right after setup (before any fetch — `behind` is 0).
+    pub status: GitStatusSummary,
+}
+
+/// The git-side of setup, factored out of the Tauri command so it can be tested
+/// against a temp dir without app state: initialize-or-adopt the repo, write the
+/// collaboration `.gitignore`, point the `origin` remote at `remote`, and store
+/// the optional HTTPS token / commit identity. Does **not** touch notebox
+/// settings — the command persists those after this returns.
+fn apply_setup(
+    root: &Path,
+    remote: &str,
+    branch: &str,
+    https_token: Option<&str>,
+    identity: Option<GitIdentity>,
+) -> Result<GitSetupResult> {
+    let initialized = !GitBackend::is_repo(root);
+    let backend = GitBackend::open_or_init(root)?;
+    ensure_collaboration_gitignore(root)?;
+    backend.set_remote(REMOTE_NAME, remote)?;
+    // A freshly init'd repo defaults to `master`; make the first commit land on
+    // the configured branch so the eventual push of `refs/heads/<branch>` has
+    // something to send. No-op when an existing repo (with commits) is adopted.
+    backend.ensure_initial_branch(branch)?;
+
+    if let Some(token) = https_token {
+        if !token.trim().is_empty() {
+            auth::set_https_token(remote, token)?;
+        }
+    }
+    if let Some(identity) = identity {
+        if identity.is_complete() {
+            auth::set_identity_for_remote(remote, identity)?;
+        }
+    }
+
+    Ok(GitSetupResult {
+        initialized,
+        status: backend.status_summary()?,
+    })
+}
+
+/// Turn the open notebox into a collaborative git repo and persist its
+/// [`NoteboxGitConfig`]. Idempotent: re-running adopts the existing repo and
+/// updates the remote/branch. The remote and branch travel in notebox settings;
+/// the HTTPS token (keychain) and commit identity (per-installation store) do
+/// not. The notebox must be open.
+#[tauri::command]
+pub async fn git_setup_collaboration(
+    remote: String,
+    branch: Option<String>,
+    identity_name: Option<String>,
+    identity_email: Option<String>,
+    https_token: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<GitSetupResult> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let remote = remote.trim().to_string();
+    if remote.is_empty() {
+        return Err(InkyCapError::BadRequest("remote URL is required".into()));
+    }
+    let branch = branch
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| "main".to_string());
+
+    let identity = match (identity_name, identity_email) {
+        (Some(name), Some(email)) => Some(GitIdentity { name, email }),
+        _ => None,
+    };
+
+    // Git work (init, gitignore, set-remote, keychain/identity writes) is
+    // synchronous; run it off the async runtime.
+    let setup_root = root.clone();
+    let setup_remote = remote.clone();
+    let setup_branch = branch.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        apply_setup(
+            &setup_root,
+            &setup_remote,
+            &setup_branch,
+            https_token.as_deref(),
+            identity,
+        )
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("setup task failed: {e}")))??;
+
+    // Persist the config into notebox settings (it travels through git) and
+    // mirror it into shared state so the fetch/consolidate commands see it
+    // without a notebox reopen.
+    let mut settings = state.notebox_settings.read().await.clone();
+    settings.git = Some(NoteboxGitConfig { remote, branch });
+    crate::notebox_settings::save_settings(&root, &settings)?;
+    *state.notebox_settings.write().await = settings;
+
+    Ok(result)
+}
+
+/// The current git status summary for the open notebox, or `None` when it is
+/// not collaborative or not yet a repo. Lets the panel/status-bar refresh after
+/// a consolidate, publish, or push without waiting for the next notebox-open
+/// event. Fills in `unpushed` (which needs the configured remote + branch).
+#[tauri::command]
+pub async fn git_status(state: State<'_, AppState>) -> Result<Option<GitStatusSummary>> {
+    let root = match state.notebox_root.read().await.clone() {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let git = match state.notebox_settings.read().await.git.clone() {
+        Some(g) => g,
+        None => return Ok(None),
+    };
+    tokio::task::spawn_blocking(move || -> Result<Option<GitStatusSummary>> {
+        if !GitBackend::is_repo(&root) {
+            return Ok(None);
+        }
+        let backend = GitBackend::open(&root)?;
+        let mut summary = backend.status_summary()?;
+        summary.unpushed = backend.unpushed_count(REMOTE_NAME, &git.branch)?;
+        Ok(Some(summary))
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("status task failed: {e}")))?
+}
+
+/// Store an HTTPS personal-access token for this notebox's remote host
+/// (re-authentication without re-running full setup). The token lives only in
+/// the OS keychain — never in settings or the repo.
+#[tauri::command]
+pub async fn git_sign_in(token: String, state: State<'_, AppState>) -> Result<()> {
+    let git = require_collaborative(&state).await?;
+    auth::set_https_token(&git.remote, &token)
+}
+
+/// Stop collaborating on the open notebox: drop its [`NoteboxGitConfig`] and
+/// clear any pending review staging. The `.git` directory and stored
+/// credentials are left intact — disabling is reversible (re-run setup), and
+/// credentials are keyed by host so other noteboxes may share them.
+#[tauri::command]
+pub async fn git_disable_collaboration(state: State<'_, AppState>) -> Result<()> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let mut settings = state.notebox_settings.read().await.clone();
+    settings.git = None;
+    crate::notebox_settings::save_settings(&root, &settings)?;
+    *state.notebox_settings.write().await = settings;
+
+    let _ = staging::clear(&root);
+    Ok(())
+}
+
+/// Outcome of [`git_publish`] — the outgoing-authoring counterpart to the
+/// incoming review loop. Reports what happened so the frontend can message it.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishResult {
+    /// Working-tree changes were committed (the first publish, or local edits).
+    pub committed: bool,
+    /// Commits were pushed to the remote.
+    pub pushed: bool,
+    /// The push was rejected (the remote moved) — fetch & review, then publish
+    /// again. Never resolved by force-pushing.
+    pub rejected: bool,
+    /// Nothing to commit and nothing to push — already in sync.
+    pub nothing_to_do: bool,
+    /// The commit that was created, when one was.
+    pub commit: Option<CommitInfo>,
+}
+
+/// Publish locally-authored work: commit the working tree (if anything
+/// changed) and push it. This is the outgoing half of the loop — it lands the
+/// first commit when a notebox is freshly set up *and* shares subsequent edits.
+/// Never force-pushes; a non-fast-forward comes back as `rejected` so the
+/// caller fetch-and-reviews before trying again.
+#[tauri::command]
+pub async fn git_publish(
+    message: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<PublishResult> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+
+    let _ = app_handle.emit("notebox:git-push-started", ());
+    let result = tokio::task::spawn_blocking(move || -> Result<PublishResult> {
+        let backend = GitBackend::open(&root)?;
+        backend.set_remote(REMOTE_NAME, &git.remote)?;
+
+        let mut result = PublishResult::default();
+
+        // 1. Commit the working tree if it has changes (new notes, edits,
+        //    deletions). Honours .gitignore via stage_all.
+        if backend.status_summary()?.dirty {
+            let sig = backend.author_signature(&git.remote)?;
+            backend.stage_all()?;
+            let msg = message.unwrap_or_else(|| "Update notes".to_string());
+            let oid = backend.commit(&msg, &sig)?;
+            result.committed = true;
+            result.commit = backend.commit_info(oid).ok();
+        }
+
+        // 2. Push if there is anything the remote doesn't have.
+        if backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
+            let pr = backend.push(REMOTE_NAME, &git.branch)?;
+            if pr.rejected {
+                result.rejected = true;
+            } else {
+                result.pushed = true;
+            }
+        }
+
+        result.nothing_to_do = !result.committed && !result.pushed && !result.rejected;
+        Ok(result)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("publish task failed: {e}")))?;
+
+    match &result {
+        Ok(r) if r.rejected => {
+            let _ = app_handle.emit(
+                "notebox:git-error",
+                "remote has moved; fetch and review before publishing again",
+            );
+        }
+        Ok(_) => {
+            let _ = app_handle.emit("notebox:git-push-completed", ());
+        }
+        Err(err) => {
+            let _ = app_handle.emit("notebox:git-error", err.to_string());
+        }
+    }
+    result
 }
 
 // ─────────────────────────── Phase 3: consolidate & push ───────────────────
@@ -679,6 +936,117 @@ mod tests {
         let res = cgit.push("origin", &branch).unwrap();
         assert!(res.rejected, "second, diverged push is rejected");
         assert!(res.message.is_some());
+    }
+
+    /// Setup initializes a fresh repo, writes the collaboration `.gitignore`,
+    /// and points `origin` at the remote. Token/identity are left `None` so the
+    /// test never touches the real keychain or per-installation identity store.
+    #[test]
+    fn setup_initializes_repo_gitignore_and_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert!(!GitBackend::is_repo(root));
+
+        let url = "https://example.com/owner/repo.git";
+        let result = apply_setup(root, url, "main", None, None).unwrap();
+        assert!(result.initialized, "a non-repo should be git-init'd");
+
+        // It is now a repo, has the managed .gitignore, and origin points at url.
+        assert!(GitBackend::is_repo(root));
+        let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+        assert!(gitignore.contains(".inkycap/incoming/"), "staging ignored");
+        let backend = GitBackend::open(root).unwrap();
+        assert_eq!(backend.remote_url(REMOTE_NAME).as_deref(), Some(url));
+
+        // Re-running adopts the existing repo (no second init) and is idempotent.
+        let again = apply_setup(root, url, "main", None, None).unwrap();
+        assert!(!again.initialized, "an existing repo is adopted, not re-init'd");
+    }
+
+    /// Mirrors the *app's* setup path (a plain folder `init`'d, not a clone): a
+    /// freshly initialized repo must put its first commit on the *configured*
+    /// branch, not libgit2's default `master`, or the push of
+    /// `refs/heads/<branch>` fails with "src refspec ... does not match any
+    /// existing object". Regression test for that bug.
+    #[test]
+    fn setup_then_publish_lands_on_configured_branch() {
+        let bare = tempfile::tempdir().unwrap();
+        let bare_repo = git2::Repository::init_bare(bare.path()).unwrap();
+        // Mirror `git init --bare -b main`: point the remote's HEAD at main so a
+        // later clone checks out the branch we push (libgit2 defaults to master).
+        bare_repo.set_head("refs/heads/main").unwrap();
+        let url = bare.path().to_str().unwrap();
+
+        // A plain notebox folder — set up adopts/inits it (no clone).
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        apply_setup(root, url, "main", None, None).unwrap();
+        set_git_identity(root);
+        let backend = GitBackend::open(root).unwrap();
+
+        std::fs::write(root.join("note.typ"), "hello\n").unwrap();
+        backend.stage_all().unwrap();
+        let sig = backend.author_signature(url).unwrap();
+        backend.commit("init", &sig).unwrap();
+
+        // The first commit is on `main`, not `master`.
+        assert_eq!(backend.current_head().unwrap().unwrap().0, "main");
+        // …so the push succeeds and a fresh clone sees the content.
+        assert!(!backend.push(REMOTE_NAME, "main").unwrap().rejected);
+        let cdir = tempfile::tempdir().unwrap();
+        let cpath = cdir.path().join("c");
+        git2::Repository::clone(url, &cpath).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(cpath.join("note.typ")).unwrap(),
+            "hello\n"
+        );
+    }
+
+    /// The outgoing half: a freshly set-up notebox commits its working tree and
+    /// pushes the initial content (mirrors `git_publish`'s body). After the push
+    /// the local remote-tracking ref is updated, so `unpushed_count` reads 0, and
+    /// a second clone sees the content.
+    #[test]
+    fn publish_commits_working_tree_and_pushes_initial() {
+        let bare = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(bare.path()).unwrap();
+        let url = bare.path().to_str().unwrap();
+
+        // A: clone the empty remote, set up (adopt), author a note in the
+        // working tree — no commit yet.
+        let adir = tempfile::tempdir().unwrap();
+        let apath = adir.path().join("a");
+        git2::Repository::clone(url, &apath).unwrap();
+        set_git_identity(&apath);
+        let a = GitBackend::open(&apath).unwrap();
+        std::fs::write(apath.join("note.typ"), "first\n").unwrap();
+
+        // Publish step 1: working tree is dirty → stage all + commit.
+        assert!(a.status_summary().unwrap().dirty);
+        a.stage_all().unwrap();
+        let sig = a.author_signature(url).unwrap();
+        a.commit("Update notes", &sig).unwrap();
+        assert!(!a.status_summary().unwrap().dirty, "clean after commit");
+
+        // The commit is unpushed (no tracking ref on a fresh clone of an empty
+        // remote), then push and the tracking ref is refreshed to HEAD.
+        let branch = a.current_head().unwrap().unwrap().0;
+        assert_eq!(a.unpushed_count(REMOTE_NAME, &branch).unwrap(), 1);
+        assert!(!a.push(REMOTE_NAME, &branch).unwrap().rejected);
+        assert_eq!(
+            a.unpushed_count(REMOTE_NAME, &branch).unwrap(),
+            0,
+            "tracking ref updated on push ⇒ nothing left to publish"
+        );
+
+        // C: a fresh clone sees the published content.
+        let cdir = tempfile::tempdir().unwrap();
+        let cpath = cdir.path().join("c");
+        git2::Repository::clone(url, &cpath).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(cpath.join("note.typ")).unwrap(),
+            "first\n"
+        );
     }
 
     /// When local has nothing new to pull, the session is `up_to_date`.

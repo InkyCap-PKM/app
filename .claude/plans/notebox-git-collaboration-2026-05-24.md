@@ -5,8 +5,113 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (resolve→consolidate→push) DONE + committed (f064bd6), 536 lib tests green. Remaining: Phase 3b (binary/add/delete decisions) + Phase 4 (frontend review surface)."
+status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (resolve→consolidate→push) DONE + committed (f064bd6). Phase 4 (frontend review surface) + 4.1 (outgoing-authoring half, git_publish) DONE + UNCOMMITTED, 538 lib tests + tsc + vite + utf8/path-safety green. Remaining: Phase 3b (binary/add/delete decision *application*) + in-app validation; clone-into-new-notebox onboarding still TODO."
 ---
+
+## In-app validation — DONE (2026-05-24, uncommitted)
+
+Full 2-repo round-trip exercised in the running app against a local bare remote
+(`/tmp/inkycap-test-remote.git`): set up → publish (initial) → a "collaborator"
+clone edits a note + pushes → Fetch & review (rendered the edit as a clean inline
+`#suggestion`, banner "Proposed by …") → accept pill → Consolidate → Publish.
+Remote tip ends with the consolidation fast-forwarded on top of theirs; no force.
+
+Two bugs found + fixed during validation:
+- **init default branch**: `apply_setup` did `open_or_init`, and libgit2 inits on
+  `master`, so the first commit landed off the configured `main` and the push of
+  `refs/heads/main` failed ("src refspec … does not match any existing object").
+  Fix: `backend.ensure_initial_branch(branch)` points an unborn HEAD at the
+  configured branch during setup. Regression test
+  `setup_then_publish_lands_on_configured_branch`.
+- **configured-but-no-repo**: deleting a notebox's `.git` (or opening a notebox
+  whose settings travelled without a clone) left the panel stuck in the review
+  view with no re-init path. Fix: store `repoMissing` (collaborative && status
+  null), panel shows the setup form (pre-filled, "Re-initialize repository")
+  in that state, and refreshes status on open.
+
+**Open for the user's UX-clarity pass (deferred by user — "let it land first"):**
+consolidate + publish currently yields **two** commits (`Consolidate …` then
+`Update notes`) because the working tree reads dirty after consolidate; ideally
+consolidate leaves a clean tree so Publish is a pure push. General workflow
+wording/affordances also to be reviewed.
+
+## Phase 4.1 — outgoing-authoring half (2026-05-24, uncommitted)
+
+Phase 4 wired the *incoming* review loop but left no in-app way to commit/push
+locally-authored work (the only commit path was consolidate, on incoming
+staged copies). Added the outgoing half so a solo author can seed a remote and
+share edits, and so the whole loop is testable in-app:
+
+- **`backend.rs`:** `stage_all` (add_all+update_all, honours .gitignore),
+  `unpushed_count(remote,branch)` (ahead vs remote-tracking ref; counts *all*
+  commits when no tracking ref exists yet ⇒ first publish is surfaced), and
+  `push` now **refreshes the local remote-tracking ref to HEAD on success** so
+  status/unpushed reflect a push without a round-trip fetch. `GitStatusSummary`
+  gained `unpushed`.
+- **`commands/git.rs`:** `git_publish(message?) -> PublishResult {committed,
+  pushed, rejected, nothingToDo, commit}` — commit the working tree if dirty
+  (handles first commit *and* later edits), then push if anything is unpushed;
+  never force (rejection ⇒ fetch & review). `git_status` now fills `unpushed`;
+  `REMOTE_NAME` made `pub(crate)` and reused by `surface_git_status`. Test
+  `publish_commits_working_tree_and_pushes_initial` (bare remote, +1 → 538).
+- **Frontend:** `GitPublishResult` type, `ipc.gitPublish`, store `publish()`
+  action (replaces the standalone `push()`, now removed — publish subsumes the
+  post-consolidate push too); panel shows a single **Publish** button when
+  `dirty || unpushed>0` ("Commit & push" vs "Push N"); status-bar + panel use
+  `unpushed` for outgoing; command palette **Git: Publish my changes**.
+
+**Test recipe (no GitHub needed):** `git init --bare /tmp/r.git`; open an
+existing notebox → Settings › Overview › Collaboration (remote=`/tmp/r.git`) →
+Publish (first commit + push). `git clone /tmp/r.git` a second folder, open it,
+enable collab (adopts) → edit a note in clone A → Publish → in clone B: Fetch &
+review → resolve pills → Consolidate → Publish. **Still uses CLI git for the
+bare remote + the 2nd clone** (no in-app `git_clone` onboarding yet — next).
+
+## Phase 4 — DONE (2026-05-24, uncommitted)
+
+The frontend review surface. `cargo build` 0 warnings, `cargo test --lib` 537
+(+1), utf8/path-safety, `tsc --noEmit`, and `npm run build` all green.
+
+**UI placement (decided with the user, see memory `feedback_git_collab_ui_placement`):**
+collaboration is **opt-in per notebox from Settings › Overview** (each notebox
+row gets a Handshake "Collaboration" button — `handleCollaboration` switches to
+that notebox if needed, then dispatches `inkycap:open-collaboration`). When a
+notebox is collaborative, a **Handshake button appears in `VerticalToolbar`'s
+`__bottom` group, just above the theme switcher** (gated on `collaborative()`,
+carries a pending-count badge) and opens a **left-sidebar panel** (new
+`SidebarMode "collaboration"`, rendered in `LeftSidebar`, modelled on the
+Templates panel). File-level review reuses the existing suggestion pills + the
+right-panel `AnnotationsPanel` (the staged note opens as a tab).
+
+**Backend (commands/git.rs):** `git_setup_collaboration(remote, branch?,
+identity?, https_token?)` (init-or-adopt repo via `apply_setup` — a testable
+free fn — write `.gitignore`, set `origin`, store keychain token + identity,
+persist `NoteboxGitConfig` through `save_settings` + shared state),
+`git_status` (`Option<GitStatusSummary>`, `None` when not collaborative/not a
+repo — lets the panel/status-bar refresh after ops), `git_sign_in(token)`
+(keychain only), `git_disable_collaboration` (drops config + clears staging;
+leaves `.git` + creds). All registered in `lib.rs`; test
+`setup_initializes_repo_gitignore_and_remote` (no keychain/identity-store
+touch).
+
+**Frontend:** `types.ts` git mirrors (GitStatusSummary/CommitInfo/ReviewItem/
+ReviewSession/PushResult/Identity/SetupResult); `ipc.ts` bindings (camelCase
+wrappers, consolidate guarded by `assertNoteboxWritable`); `events.ts`
+`on*` helpers for the `notebox:git-*` vocabulary; `stores/git.ts` (reactive
+`gitStatus`/`reviewSession`/`gitSyncing`/`gitError`, `collaborative()`,
+`pendingCount()`, actions, `ensureGitListeners`/`resetGitOnOpen` wired into
+`openNotebox`); `GitCollaborationPanel.tsx` (setup form ↔ review view by
+`collaborative()`); status-bar chip; command palette **Git** category
+(setup/fetch-review/consolidate/push/sign-in) via an `openCollaborationPanel`
+callback; full i18n (`git.*`, `command.git.*`) + CSS reusing accent/status
+tokens.
+
+**Still open (Phase 3b — build against this UI):** binary attachment
+Keep-mine/Take-theirs/Rename and note Add/Delete decision *application*. The
+panel currently *shows* `binary`/`deleted` items as read-only (honest: no
+consolidate affordance) — the decision flow that re-asserts mine over the
+adopted-theirs base is the remaining work. Also: Phase 4 needs **in-app
+validation** (the two-clone fetch→review→consolidate→push round-trip).
 
 ## Phase 3 — DONE (2026-05-24, commit f064bd6)
 
