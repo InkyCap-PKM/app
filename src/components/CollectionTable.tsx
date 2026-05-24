@@ -17,7 +17,7 @@ import type {
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
-import { promptText } from "../stores/prompt";
+import { promptText, promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
 import { clickOutside } from "../lib/clickOutside";
 import AgendaList from "./AgendaList";
@@ -572,18 +572,56 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!outputPath) return;
-      setBusyMessage("Compiling merged book…");
-      setBusyDetail(`Output: ${outputPath}`);
-      setExportStatus("Exporting book…");
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
-      const written = await ipc.exportCollectionBookPdf(
-        props.path,
-        activeView(),
-        outputPath,
-        std ? { pdfStandard: std } : undefined,
-      );
-      setExportStatus(`Exported book to ${written}`);
-      setTimeout(() => setExportStatus(null), 4000);
+      const overrides = std ? { pdfStandard: std } : undefined;
+
+      // Retry loop: each round either writes the PDF or reports notes that
+      // failed to compile. The user decides whether to exclude those and retry.
+      // Excluded notes are dropped from the book, so they can't reappear —
+      // the loop terminates on success, a hard error (thrown), or Stop.
+      const excluded: string[] = [];
+      for (;;) {
+        setBusyMessage("Compiling merged book…");
+        setBusyDetail(`Output: ${outputPath}`);
+        setExportStatus("Exporting book…");
+        const result = await ipc.exportCollectionBookPdf(
+          props.path,
+          activeView(),
+          outputPath,
+          overrides,
+          excluded.length > 0 ? excluded : undefined,
+        );
+        if (result.outputPath) {
+          const omitted = excluded.length
+            ? ` (${excluded.length} note${excluded.length === 1 ? "" : "s"} excluded)`
+            : "";
+          setExportStatus(`Exported book to ${result.outputPath}${omitted}`);
+          setTimeout(() => setExportStatus(null), 4000);
+          return;
+        }
+        // Compile failed in specific notes — clear the busy overlay so the
+        // confirm dialog is visible, then ask whether to exclude + retry.
+        setBusyMessage(null);
+        setBusyDetail(undefined);
+        const failing = result.failingNotes;
+        const list = failing.map((n) => `  • ${n}`).join("\n");
+        const proceed = await promptConfirm({
+          title: "Some notes have errors",
+          message:
+            `These note(s) couldn't be compiled and would be left out of the book:\n\n${list}\n\n` +
+            "Continue and export without them, or stop and fix the errors first?",
+          confirmLabel: "Continue (exclude)",
+          cancelLabel: "Stop & fix",
+        });
+        if (!proceed) {
+          reportExportError(
+            `Book export stopped — ${failing.length} note(s) still have errors.` +
+              (result.message ? `\n${result.message}` : ""),
+          );
+          return;
+        }
+        for (const n of failing) if (!excluded.includes(n)) excluded.push(n);
+      }
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
       reportExportError(`Book export failed: ${msg}`);

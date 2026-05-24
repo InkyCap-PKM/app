@@ -2,8 +2,25 @@ import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { pathEquals } from "../lib/paths";
 import { settings } from "./settings";
+import {
+  focusedActiveTabId,
+  focusedLeaf,
+  activateTab,
+  addTabToFocusedLeaf,
+  removeTab,
+  setLeafActiveTab,
+  moveTabWithinLeaf,
+  resetToSingleEmptyLeaf,
+  splitLeaf,
+  leafById,
+  type SplitDirection,
+} from "./panes";
 
 export type EditingMode = "source" | "live" | "reading";
+
+/** Drag-and-drop MIME for dragging a tab (reorder within a pane today;
+ *  move between panes once splits land). The payload is the tab id. */
+export const TAB_DRAG_MIME = "application/x-inkycap-tab";
 
 export interface Tab {
   id: string;
@@ -13,6 +30,10 @@ export interface Tab {
   viewName?: string;
   /** Per-tab live-preview / source toggle. Undefined = follow user default. */
   editingMode?: EditingMode;
+  /** Per-tab reading-view render format override (svg vs html). Undefined =
+   *  follow the user's `default_reading_format` setting. Per-tab so two panes
+   *  showing the same note in reading mode can differ. */
+  readingFormat?: "svg" | "html";
   /** One-shot cursor offset from scaffold {{cursor}}. Consumed by the editor on load. */
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
@@ -34,8 +55,40 @@ interface TabHistory {
   forward: TabHistoryEntry[];
 }
 
+// Flat registry of every open tab across all panes. Lookups (by id/path),
+// "is this file open?" checks, rename migration and search deep-linking all
+// run against this. Display order and which pane shows a tab are owned by
+// the pane tree (`stores/panes.ts`) — this array's order is just insertion
+// order and no longer dictates the tab strip.
 const [tabs, setTabs] = createStore<Tab[]>([]);
-const [activeTabId, setActiveTabId] = createSignal<string | null>(null);
+
+// The app's single "active tab" is the focused pane's active tab. These
+// delegate to the pane store so the existing API — `activeTabId()`,
+// `setActiveTabId()`, `getActiveTab()` — keeps working unchanged for the
+// ~26 modules that consume it.
+const activeTabId = focusedActiveTabId;
+function setActiveTabId(id: string | null): void {
+  if (id === null) {
+    setLeafActiveTab(focusedLeaf().id, null);
+    return;
+  }
+  activateTab(id);
+}
+
+// Per-tab dirty (unsaved-changes) flags, lifted out of MainContent so every
+// pane's tab strip can render the dot for shared tab ids. Keyed by tab id.
+const [dirtyTabIds, setDirtyTabIds] = createSignal<ReadonlySet<string>>(new Set());
+
+/** Mark a tab dirty or clean (called by the editor on edit/save). */
+export function setTabDirty(tabId: string, dirty: boolean): void {
+  setDirtyTabIds((prev) => {
+    if (dirty === prev.has(tabId)) return prev;
+    const next = new Set(prev);
+    if (dirty) next.add(tabId);
+    else next.delete(tabId);
+    return next;
+  });
+}
 
 // Per-tab navigation history, keyed by tab ID.
 const historyMap = new Map<string, TabHistory>();
@@ -207,7 +260,7 @@ export function openTab(
     return active.id;
   }
 
-  // No active tab or forceNewTab — create a new one.
+  // No active tab or forceNewTab — create a new one in the focused pane.
   const id = `tab-${nextId++}`;
   setTabs(produce((t) => t.push({
     ...tab,
@@ -218,9 +271,7 @@ export function openTab(
   })));
   // Always activate when there was no active tab to fall back on, otherwise
   // the new tab would open into an empty content area with nothing focused.
-  if (shouldActivate(opts) || !active) {
-    setActiveTabId(id);
-  }
+  addTabToFocusedLeaf(id, shouldActivate(opts) || !active);
   return id;
 }
 
@@ -229,7 +280,7 @@ export function openTab(
 export function createEmptyTab(): string {
   const id = `tab-${nextId++}`;
   setTabs(produce((t) => t.push({ id, type: "empty", title: "New tab", path: "" })));
-  setActiveTabId(id);
+  addTabToFocusedLeaf(id, true);
   return id;
 }
 
@@ -250,19 +301,22 @@ export function closeTab(id: string) {
     if (closedTabs.length > CLOSED_TAB_LIMIT) closedTabs.shift();
   }
 
-  setTabs(produce((t) => t.splice(idx, 1)));
+  // Remove from the pane tree first — this re-points the owning leaf's
+  // active tab to a neighbour and collapses the pane if it just emptied —
+  // then drop the tab from the registry.
+  const { workspaceEmptied } = removeTab(id);
+  setTabs(produce((t) => {
+    const i = t.findIndex((x) => x.id === id);
+    if (i !== -1) t.splice(i, 1);
+  }));
   historyMap.delete(id);
   editorStateCache.delete(id);
+  setTabDirty(id, false);
 
-  if (activeTabId() === id) {
-    const newIdx = Math.min(idx, tabs.length - 1);
-    setActiveTabId(newIdx >= 0 ? tabs[newIdx]?.id ?? null : null);
-  }
-
-  // Invariant: while a notebox is open, the tab strip is never empty.
-  // Closing the last tab spawns a fresh empty tab so the user lands on
-  // the tabula-rasa hints instead of a blank pane with nothing to do.
-  if (tabs.length === 0) {
+  // Invariant: while a notebox is open, the workspace always has at least
+  // one tab. If closing this tab emptied the sole remaining pane, spawn a
+  // fresh empty tab so the user lands on the tabula-rasa hints.
+  if (workspaceEmptied) {
     createEmptyTab();
   }
 }
@@ -273,10 +327,12 @@ export function closeTab(id: string) {
  *  notebox would resolve the wrong file. */
 export function closeAllTabs() {
   setTabs([]);
-  setActiveTabId(null);
   historyMap.clear();
   editorStateCache.clear();
   closedTabs.length = 0;
+  setDirtyTabIds(new Set<string>());
+  // Collapse any splits and start the new notebox with a single empty pane.
+  resetToSingleEmptyLeaf();
 }
 
 /** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
@@ -293,40 +349,86 @@ export function reopenClosedTab() {
 }
 
 export function getActiveTab(): Tab | undefined {
-  return tabs.find((t) => t.id === activeTabId());
+  const id = activeTabId();
+  return id ? tabs.find((t) => t.id === id) : undefined;
 }
 
-/** Reorder a tab from one index to another. */
+/** Display title for a tab. File tabs drop the extension; other tab types
+ *  keep their title verbatim. The dot must follow at least one character so
+ *  a leading-dot file like ".gitignore" doesn't render blank. */
+export function tabDisplayTitle(tab: Pick<Tab, "type" | "title">): string {
+  if (tab.type !== "file") return tab.title;
+  return tab.title.replace(/^(.+)\.[^.]+$/, "$1");
+}
+
+/** Reorder a tab within the focused pane's strip. */
 export function reorderTab(fromIndex: number, toIndex: number) {
-  if (fromIndex === toIndex) return;
-  setTabs(
-    produce((t) => {
-      const [moved] = t.splice(fromIndex, 1);
-      t.splice(toIndex, 0, moved);
-    }),
-  );
+  moveTabWithinLeaf(focusedLeaf().id, fromIndex, toIndex);
 }
 
-/** Switch to the next tab (wraps around). */
+/**
+ * Split a pane in two. The new sibling opens a second, independent view of
+ * the source pane's active tab (same file, fresh editor instance) — the
+ * common "compare two places in one document" case — or an empty tab when
+ * the source pane has nothing open. Focus moves to the new pane.
+ */
+export function splitPane(leafId: string, direction: SplitDirection): string | null {
+  const leaf = leafById(leafId);
+  const src = leaf?.activeTabId ? tabs.find((t) => t.id === leaf.activeTabId) : undefined;
+  const newId = `tab-${nextId++}`;
+  if (src && src.type !== "empty" && src.path) {
+    setTabs(produce((t) => t.push({
+      id: newId,
+      type: src.type,
+      title: src.title,
+      path: src.path,
+      viewName: src.viewName,
+      editingMode: src.editingMode,
+    })));
+  } else {
+    setTabs(produce((t) => t.push({ id: newId, type: "empty", title: "New tab", path: "" })));
+  }
+  const newLeafId = splitLeaf(leafId, direction, newId);
+  // If the split somehow failed, don't strand the orphan tab in the registry.
+  if (!newLeafId) {
+    setTabs(produce((t) => {
+      const i = t.findIndex((x) => x.id === newId);
+      if (i !== -1) t.splice(i, 1);
+    }));
+  }
+  return newLeafId;
+}
+
+/** Close every tab in a pane, which collapses the pane (or, if it's the only
+ *  pane, leaves a fresh empty tab behind per the always-one-tab invariant). */
+export function closePane(leafId: string): void {
+  const leaf = leafById(leafId);
+  if (!leaf) return;
+  for (const id of [...leaf.tabIds]) closeTab(id);
+}
+
+/** Switch to the next tab in the focused pane (wraps around). */
 export function switchToNextTab() {
-  if (tabs.length === 0) return;
-  const currentIdx = tabs.findIndex((t) => t.id === activeTabId());
-  const nextIdx = (currentIdx + 1) % tabs.length;
-  setActiveTabId(tabs[nextIdx].id);
+  const ids = focusedLeaf().tabIds;
+  if (ids.length === 0) return;
+  const currentIdx = ids.indexOf(activeTabId() ?? "");
+  setActiveTabId(ids[(currentIdx + 1) % ids.length]);
 }
 
-/** Switch to the previous tab (wraps around). */
+/** Switch to the previous tab in the focused pane (wraps around). */
 export function switchToPrevTab() {
-  if (tabs.length === 0) return;
-  const currentIdx = tabs.findIndex((t) => t.id === activeTabId());
-  const prevIdx = (currentIdx - 1 + tabs.length) % tabs.length;
-  setActiveTabId(tabs[prevIdx].id);
+  const ids = focusedLeaf().tabIds;
+  if (ids.length === 0) return;
+  const currentIdx = ids.indexOf(activeTabId() ?? "");
+  setActiveTabId(ids[(currentIdx - 1 + ids.length) % ids.length]);
 }
 
-/** Switch to a tab by its 1-based index (for Ctrl+1 through Ctrl+9). */
+/** Switch to a tab by its 0-based index within the focused pane
+ *  (for Ctrl+1 through Ctrl+9). */
 export function switchToTabByIndex(index: number) {
-  if (index >= 0 && index < tabs.length) {
-    setActiveTabId(tabs[index].id);
+  const ids = focusedLeaf().tabIds;
+  if (index >= 0 && index < ids.length) {
+    setActiveTabId(ids[index]);
   }
 }
 
@@ -395,6 +497,18 @@ export function setTabEditingMode(id: string, mode: EditingMode) {
     "editingMode",
     mode,
   );
+}
+
+/** The reading-view render format for a tab: its per-tab override, else the
+ *  user's default setting. Reactive — reads the tab store and settings. */
+export function tabReadingFormat(tabId: string): "svg" | "html" {
+  const tab = tabs.find((t) => t.id === tabId);
+  return tab?.readingFormat ?? settings.editor.default_reading_format ?? "svg";
+}
+
+/** Set a tab's reading-view render format override (per pane). */
+export function setTabReadingFormat(tabId: string, fmt: "svg" | "html") {
+  setTabs((t) => t.id === tabId, "readingFormat", fmt);
 }
 
 // ── Navigation history ──────────────────────────────────
@@ -496,4 +610,4 @@ export function consumePendingMatch(
   return m;
 }
 
-export { tabs, activeTabId, setActiveTabId };
+export { tabs, activeTabId, setActiveTabId, dirtyTabIds };

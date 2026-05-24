@@ -242,7 +242,7 @@ const CollabPanel: Component<{
             setHandle(e.currentTarget.value);
           }}
           onBlur={saveIdentity}
-          placeholder="e.g. joshua-chalifour"
+          placeholder="e.g. athena-babel"
         />
         <HelpButton label="About your handle">
           Identifies your edits in the version history. Stays on this machine.

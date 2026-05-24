@@ -254,6 +254,18 @@ fn handle_func_call(
                 }
                 out.annotation_text.push_str(&body.to_lowercase());
             }
+            // A `#suggestion`'s `note:` is its reviewer comment — part of the
+            // annotation's content, so index it under the `annotation:` filter
+            // too (the body is markup; the note is a string arg, missed above).
+            if let Some(note) = named_string_arg(node, "note") {
+                let note = note.trim();
+                if !note.is_empty() {
+                    if !out.annotation_text.is_empty() {
+                        out.annotation_text.push(' ');
+                    }
+                    out.annotation_text.push_str(&note.to_lowercase());
+                }
+            }
             descend_into_content_blocks(node, source, line_map, out);
             return;
         }
@@ -314,6 +326,27 @@ fn descend_into_content_blocks(
 /// `None` if the first argument isn't a string literal — which means
 /// either a code expression that we can't see through, or a named arg
 /// in the first slot.
+/// The string value of a named argument `name: "…"` on a call, if present
+/// (e.g. a `#suggestion`'s `note:` reviewer comment).
+fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
+    let args_node = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
+    for child in args_node.children() {
+        if child.kind() != SyntaxKind::Named {
+            continue;
+        }
+        let Some(named) = child.cast::<ast::Named>() else { continue };
+        if named.name().as_str() != name {
+            continue;
+        }
+        if let ast::Expr::Str(s) = named.expr() {
+            return Some(s.get().to_string());
+        }
+    }
+    None
+}
+
 fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
     let args_node = call_node
         .children()
@@ -787,7 +820,7 @@ mod tests {
 
     #[test]
     fn annotation_and_suggestion_lines_and_body_recorded() {
-        let src = "body line\n\n#annotation[needs a citation]\n\n#suggestion(kind: \"insert\")[new bit]\n";
+        let src = "body line\n\n#annotation[needs a citation]\n\n#suggestion(kind: \"insert\", note: \"tighten wording\")[new bit]\n";
         let p = project(src);
         // Lines 2 and 4 (0-based) carry the annotation/suggestion calls.
         assert!(p.annotation_lines.contains(&2), "lines: {:?}", p.annotation_lines);
@@ -795,6 +828,8 @@ mod tests {
         // Body prose is captured for the `annotation:` filter…
         assert!(p.annotation_text.contains("needs a citation"), "text: {:?}", p.annotation_text);
         assert!(p.annotation_text.contains("new bit"), "text: {:?}", p.annotation_text);
+        // …including a suggestion's `note:` reviewer comment…
+        assert!(p.annotation_text.contains("tighten wording"), "text: {:?}", p.annotation_text);
         // …but the `kind:` markup keyword is not.
         assert!(!p.annotation_text.contains("kind"), "text: {:?}", p.annotation_text);
         // The body still indexes as ordinary searchable prose.

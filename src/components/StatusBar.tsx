@@ -2,15 +2,33 @@ import { Component, Show, For, createSignal, createMemo } from "solid-js";
 import { ArchiveRestore, Archive, Check, TextCursorInput, MessageSquareCheck } from "lucide-solid";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
+import { cursorPosition } from "../editor/typst-decorations/cursor-position";
 import { getActiveTab, renameTabPath } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { pendingReviewCount, revealPendingReview } from "../stores/collab";
+import { settings } from "../stores/settings";
 
 const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
   const stats = wordCountStats;
+
+  // Cursor line:column — shown only in Source Edit mode, where it matches the
+  // raw file so the user can jump to a reported error (e.g. the audit's L55:28).
+  // In Live/Reading mode the source positions don't line up with what's shown,
+  // so it's hidden.
+  const sourceCursor = createMemo(() => {
+    const tab = getActiveTab();
+    if (tab?.type !== "file") return null;
+    // Mirror TypstEditor's effective-mode resolution: an explicit per-tab mode,
+    // else the global default. Only Source Edit mode shows the readout.
+    const mode =
+      tab.editingMode ??
+      (settings.editor.default_editing_mode === "source" ? "source" : "live");
+    if (mode !== "source") return null;
+    return cursorPosition();
+  });
 
   const displayName = createMemo(() => {
     const info = noteboxInfo();
@@ -222,6 +240,17 @@ const StatusBar: Component = () => {
           <MessageSquareCheck size={14} />
           {pendingReviewCount()} to review
         </button>
+      </Show>
+
+      <Show when={sourceCursor()}>
+        {(pos) => (
+          <span
+            class="status-bar__stat status-bar__cursor"
+            title="Cursor line and column"
+          >
+            L{pos().line}:{pos().col}
+          </span>
+        )}
       </Show>
 
       <Show when={isFileTab()}>

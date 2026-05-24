@@ -1221,7 +1221,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 <PackageOpen size={16} />
               </button>
               <button
-                class="left-sidebar__add-btn"
+                class="pane-action-btn left-sidebar__add-btn"
                 onClick={createCollection}
                 title="New collection"
                 aria-label="New collection"

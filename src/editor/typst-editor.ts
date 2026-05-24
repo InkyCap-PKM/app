@@ -126,6 +126,7 @@ import { headingTracker } from "./typst-decorations/heading-tracker";
 import { annotationTracker } from "./typst-decorations/annotation-tracker";
 import { headingFold } from "./typst-decorations/heading-fold";
 import { wordCountTracker } from "./typst-decorations/word-count";
+import { cursorPositionTracker } from "./typst-decorations/cursor-position";
 import { lspExtension } from "./lsp";
 import type { LspClient } from "./lsp";
 import { inkycapSearch } from "./search-panel";
@@ -525,6 +526,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     headingTracker,
     annotationTracker,
     wordCountTracker,
+    cursorPositionTracker,
     lintGutter(),
     EditorView.lineWrapping,
   ];

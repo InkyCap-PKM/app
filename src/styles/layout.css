@@ -166,6 +166,195 @@
   padding: 16px;
 }
 
+/* ─── Pane tree (split editor) ─────────────────────────────────────────
+   The editor area holds one PaneView. A leaf pane (.pane--leaf) stacks its
+   tab strip over its body; a split (.pane-split) lays leaves out in a row
+   (side-by-side) or column (stacked) with a resizer between each pair. */
+/* A pane or split fills its container — the editor area at the top level,
+   or a parent split's slot when nested. */
+.pane,
+.pane-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane--leaf {
+  flex-direction: column;
+}
+
+.main-content__tabs {
+  flex-shrink: 0;
+}
+
+.pane-split--row {
+  flex-direction: row;
+}
+
+.pane-split--column {
+  flex-direction: column;
+}
+
+/* Each child occupies a flex slot; flex-grow is set inline from the node's
+   stored size fraction. flex-basis:0 makes the fractions the sole sizing
+   input, so two 0.5 slots are equal regardless of content width. */
+.pane-split__slot {
+  display: flex;
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Drag handle between two split children. Thin, with a wider invisible hit
+   area via padding-box vs. the visible line, and a hover/active accent. */
+.pane-resizer {
+  flex: 0 0 auto;
+  background: var(--border-primary);
+  position: relative;
+  z-index: 1;
+}
+
+.pane-resizer--row {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.pane-resizer--column {
+  height: 1px;
+  cursor: row-resize;
+}
+
+/* Invisible widened hit target so the 1px line is easy to grab. */
+.pane-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.pane-resizer--row::after {
+  left: -3px;
+  right: -3px;
+}
+
+.pane-resizer--column::after {
+  top: -3px;
+  bottom: -3px;
+}
+
+.pane-resizer:hover,
+body.is-resizing-pane .pane-resizer {
+  background: var(--accent);
+}
+
+/* Quiet cue for the active pane: non-focused panes render their active tab
+   like an ordinary tab, so the focused pane's active tab is the only one
+   highlighted. In a single-pane workspace the sole pane is always focused,
+   so this leaves today's appearance unchanged. */
+.pane:not(.pane--focused) .tab--active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+
+/* ─── Tab-strip pane menu (PanelTopOpen dropdown) ─────────────────────── */
+.tab-bar__menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0 4px;
+}
+
+/* Matches the top-bar icon buttons (e.g. the right panel's File Actions,
+   .right-panel__tab): padding-sized around an 18px icon rather than a fixed
+   box, so the hover highlight is the same dimensions as its neighbours. */
+.tab-bar__menu-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-bar__menu-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.tab-bar__menu-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+  z-index: var(--z-menu);
+}
+
+.tab-bar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--popup-item-padding);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  text-align: left;
+}
+
+.tab-bar__menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.tab-bar__menu-divider {
+  height: 1px;
+  background: var(--popup-border-color);
+  margin: 4px 0;
+}
+
+.tab-bar__menu-group-label {
+  padding: 4px 12px 2px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-dim);
+}
+
+.tab-bar__menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.tab-bar__menu-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .right-panel {
   grid-area: right;
   background: var(--bg-secondary);
@@ -274,6 +463,12 @@
   font-size: var(--text-base);
   color: var(--status-fg);
   padding: 0 6px;
+}
+
+/* Cursor line:column readout (Source Edit mode). Tabular figures keep the
+   width steady as the numbers change so the status bar doesn't jitter. */
+.status-bar__cursor {
+  font-variant-numeric: tabular-nums;
 }
 
 .status-bar__separator {
@@ -489,23 +684,32 @@ svg.lucide {
   gap: 4px;
 }
 
-.agenda__dropdown {
+/* Shared chrome for action buttons that live inside sidebar panes
+   (file tree, collections, agenda): a subtle outline at rest that lights
+   up with the same colour highlight as the sidebar mode buttons on hover.
+   Per-pane classes layer on colour, sizing and spacing. The file-tree
+   split button is structurally different (one outline around two halves)
+   and carries its own rules, but mirrors this hover treatment. */
+.pane-action-btn {
   background: none;
   border: 1px solid var(--border-input);
   border-radius: var(--radius-control);
-  color: var(--fg-secondary);
   cursor: pointer;
-  font-size: var(--text-xs);
-  padding: 2px 6px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
 }
 
-.agenda__dropdown:hover {
+.pane-action-btn:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
+}
+
+.agenda__dropdown {
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .agenda__dropdown-label {
@@ -1369,28 +1573,20 @@ svg.lucide {
 }
 
 .left-sidebar__add-btn {
-  background: none;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-control);
   color: var(--fg-muted);
-  cursor: pointer;
   font-size: var(--text-lg);
   padding: 2px 4px;
   line-height: 1;
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
 }
 
-.left-sidebar__add-btn:hover {
-  border-color: var(--fg-muted);
-  color: var(--fg-secondary);
-}
-
 /* Split button: pill that pairs a primary action (New Note) with a
-   caret that opens a menu of related actions. Visually one element
-   at rest; on hover each half shows its own border so the user sees
-   they're independently clickable (AnyType-style). */
+   caret that opens a menu of related actions. The subtle outer outline
+   stays put at all times; on hover the hovered half lights up with the
+   same colour highlight as the sidebar mode buttons, and an inner
+   divider (matching the outline) appears so the two halves read as
+   independently clickable. The buttons keep a transparent border so the
+   divider can colour in without shifting layout. */
 .left-sidebar__split-btn {
   position: relative;
   display: inline-flex;
@@ -1424,22 +1620,18 @@ svg.lucide {
   border-bottom-right-radius: var(--radius-control);
 }
 
-.left-sidebar__split-btn:hover {
-  border-color: transparent;
-}
-
-.left-sidebar__split-btn:hover .left-sidebar__split-btn__main,
+/* Hovering either half reveals the divider between them, matching the
+   outer outline's style. Colours only the caret's reserved left border,
+   so no layout shift. */
 .left-sidebar__split-btn:hover .left-sidebar__split-btn__caret {
-  border-color: var(--border-input);
-  color: var(--fg-secondary);
+  border-left-color: var(--border-input);
 }
 
-.left-sidebar__split-btn__main:hover {
-  border-color: var(--fg-muted) !important;
-}
-
+/* The hovered half gets the mode-button colour highlight. */
+.left-sidebar__split-btn__main:hover,
 .left-sidebar__split-btn__caret:hover {
-  border-color: var(--fg-muted) !important;
+  background: var(--bg-hover);
+  color: var(--fg-primary);
 }
 
 .left-sidebar__header-actions,
@@ -2092,8 +2284,15 @@ svg.lucide {
   opacity: 0.5;
 }
 
-.tab--drop-target {
-  border-left: 2px solid var(--accent);
+/* Insertion line shown on the side of the hovered tab the pointer is
+   nearest. Drawn with an inset box-shadow rather than a border so the
+   tab's content doesn't shift sideways as the cue appears. */
+.tab--drop-before {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.tab--drop-after {
+  box-shadow: inset -2px 0 0 0 var(--accent);
 }
 
 /* Callout rendering */
@@ -8891,6 +9090,17 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* Confirmation-dialog body text. Preserves authored newlines so a bulleted
+   list (e.g. the notes a book export would exclude) reads as written. */
+.app-modal__message {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
 .app-modal__error {
   font-size: var(--text-sm);
   color: var(--error-fg, #e55);
@@ -9558,6 +9768,70 @@ svg.lucide {
 .typ-audit__file-list li {
   padding: 1px 0;
   word-break: break-all;
+}
+
+/* Per-file grouping for the cleanup sections (Markdown fixes / syntax
+   errors): a path heading above its own list of line-level findings. */
+.typ-audit__lint-file {
+  margin-top: 6px;
+}
+
+.typ-audit__lint-path {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+  word-break: break-all;
+}
+
+/* Line/column tag at the start of a finding. */
+.typ-audit__lint-loc {
+  color: var(--fg-muted);
+  margin-right: 6px;
+}
+
+/* A proposed Markdown→Typst line change: [✓] before → after. */
+.typ-audit__md-fix {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Per-change accept toggle. */
+.typ-audit__md-check {
+  flex-shrink: 0;
+  align-self: center;
+  cursor: pointer;
+}
+
+/* A rejected change is dimmed and its proposed replacement de-emphasised, so
+   the kept-as-is rows read as inactive without disappearing. */
+.typ-audit__md-fix--rejected {
+  opacity: 0.5;
+}
+
+.typ-audit__md-fix--rejected .typ-audit__md-before {
+  text-decoration: none;
+}
+
+.typ-audit__md-fix--rejected .typ-audit__md-after,
+.typ-audit__md-fix--rejected .typ-audit__md-arrow {
+  color: var(--fg-muted);
+}
+
+.typ-audit__md-before {
+  color: var(--fg-danger, #e55);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--fg-danger, #e55) 50%, transparent);
+}
+
+.typ-audit__md-after {
+  color: var(--fg-success, #16a34a);
+}
+
+.typ-audit__md-arrow {
+  color: var(--fg-muted);
 }
 
 .typ-audit__error {

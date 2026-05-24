@@ -963,18 +963,58 @@ export interface BookExportOverrides {
   includeBibliography?: boolean;
 }
 
+/// Outcome of a book export. `outputPath` is set when the PDF was written.
+/// Otherwise `failingNotes` (note stems) lists the notes that failed to
+/// compile — the caller can re-export passing them as `excludeNotes` to omit
+/// them — and `message` is the human-readable diagnostic. A failure no
+/// exclusion could fix is thrown as an error instead of returned here.
+export interface BookExportResult {
+  outputPath: string | null;
+  failingNotes: string[];
+  message: string | null;
+}
+
 export async function exportCollectionBookPdf(
   collectionPath: string,
   viewName: string,
   outputPath: string,
   overrides?: BookExportOverrides,
-): Promise<string> {
-  return invoke<string>("export_collection_book_pdf", {
+  excludeNotes?: string[],
+): Promise<BookExportResult> {
+  return invoke<BookExportResult>("export_collection_book_pdf", {
     collectionPath,
     viewName,
     outputPath,
     overrides: overrides ?? null,
+    excludeNotes: excludeNotes ?? null,
   });
+}
+
+/// One proposed Markdown→Typst fix on a source line (`MdFix` on the Rust side).
+export interface MdFix {
+  line: number;
+  /// Transforms that applied (e.g. "heading", "link+bold").
+  kind: string;
+  before: string;
+  after: string;
+}
+
+/// Leftover-Markdown fixes proposed for one file.
+export interface FileMdFixes {
+  path: string;
+  fixes: MdFix[];
+}
+
+/// A Typst syntax error in one file (reported, never auto-fixed).
+export interface SyntaxIssue {
+  line: number;
+  column: number;
+  message: string;
+}
+
+export interface FileSyntaxErrors {
+  path: string;
+  errors: SyntaxIssue[];
 }
 
 /// Result of a notebox-wide audit of `.typ` files for InkyCap compatibility.
@@ -985,6 +1025,10 @@ export interface TypAuditReport {
   missingImport: string[];
   /// Notebox-relative paths missing a top-level `#note(...)` call.
   missingNote: string[];
+  /// Files carrying leftover Markdown markup, with the proposed fixes.
+  markdownFixes: FileMdFixes[];
+  /// Files with Typst syntax errors (reported for manual repair).
+  syntaxErrors: FileSyntaxErrors[];
 }
 
 export interface TypRepairSummary {
@@ -998,6 +1042,27 @@ export async function auditTypFiles(): Promise<TypAuditReport> {
 
 export async function repairTypFiles(paths: string[]): Promise<TypRepairSummary> {
   return invoke<TypRepairSummary>("repair_typ_files", { paths });
+}
+
+/// The Markdown fixes the user accepted for one file — a subset of that file's
+/// audited `fixes` (rejected changes are omitted). Mirrors the Rust
+/// `FileMdEdits`.
+export interface FileMdEdits {
+  path: string;
+  fixes: MdFix[];
+}
+
+/// Apply the user-accepted Markdown→Typst fixes (content-changing). Only the
+/// fixes passed are applied, so the user can reject any they want to keep.
+export async function repairMarkdownFiles(edits: FileMdEdits[]): Promise<TypRepairSummary> {
+  return invoke<TypRepairSummary>("repair_markdown_files", { edits });
+}
+
+/// Write the audit results to a note at the notebox root and return its
+/// absolute path, so the user can open it and work through the findings while
+/// editing files in other tabs.
+export async function saveAuditReport(): Promise<string> {
+  return invoke<string>("save_audit_report");
 }
 
 export async function exportCollectionStaticSite(

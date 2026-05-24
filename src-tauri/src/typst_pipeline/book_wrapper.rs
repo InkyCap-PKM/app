@@ -904,6 +904,30 @@ pub fn describe_book_diagnostics(source: &str, diagnostics: &[TypstDiagnostic]) 
     format!("compilation failed. {}", parts.join(" "))
 }
 
+/// The stems of the notes (chapters) whose source produced compile errors, in
+/// first-seen order and de-duplicated. Only errors whose primary span lands in
+/// the merged source's chapter region are attributable to a removable note;
+/// front-matter, imported-file (package), and span-less errors are excluded —
+/// dropping a note can't fix those, so the export stays a hard failure when
+/// only those occur. Used by book export to offer "continue, excluding these
+/// notes" (cf. [`describe_book_diagnostics`], which renders the same grouping
+/// as prose).
+pub fn book_diagnostic_note_stems(source: &str, diagnostics: &[TypstDiagnostic]) -> Vec<String> {
+    let mut stems: Vec<String> = Vec::new();
+    for d in diagnostics.iter().filter(|d| d.severity == "error") {
+        if let Some(p) = &d.primary {
+            if p.is_main {
+                if let Some(stem) = chapter_at_offset(source, p.start) {
+                    if !stems.contains(&stem) {
+                        stems.push(stem);
+                    }
+                }
+            }
+        }
+    }
+    stems
+}
+
 /// Escape user-provided text for Typst content/markup context. Backslashes
 /// and the small set of markup-active characters are escaped so authored
 /// titles like `# C* algebras` survive verbatim instead of being parsed as
@@ -1280,6 +1304,35 @@ After
         assert!(msg.contains("In \"Beta\": unclosed delimiter."), "{msg}");
         assert_eq!(msg.matches("expected expression").count(), 1, "deduped: {msg}");
         assert!(!msg.contains("ignored"), "warnings excluded: {msg}");
+    }
+
+    #[test]
+    fn diagnostic_note_stems_lists_failing_chapters_only() {
+        use crate::typst_pipeline::diagnostic::{TypstDiagnostic, TypstSpan};
+        let src = format!(
+            "front\n{}body A\n{}body B\n",
+            chapter_anchor_call("Alpha"),
+            chapter_anchor_call("Beta"),
+        );
+        let off_a = src.find("body A").unwrap();
+        let off_b = src.find("body B").unwrap();
+        let diag = |start: usize, is_main: bool| TypstDiagnostic {
+            severity: "error",
+            message: "boom".to_string(),
+            primary: Some(TypstSpan { path: None, start, end: start, line: None, column: None, is_main }),
+            trace: vec![],
+            hints: vec![],
+        };
+        let diags = vec![
+            diag(off_a, true),
+            diag(off_a, true), // same note → de-duped
+            diag(off_b, true),
+            diag(0, true),     // front matter (before any chapter) → not a note
+            diag(off_a, false), // an imported file → not attributable
+            TypstDiagnostic { severity: "warning", message: "w".into(), primary: Some(TypstSpan { path: None, start: off_b, end: off_b, line: None, column: None, is_main: true }), trace: vec![], hints: vec![] },
+        ];
+        let stems = book_diagnostic_note_stems(&src, &diags);
+        assert_eq!(stems, vec!["Alpha".to_string(), "Beta".to_string()]);
     }
 
     #[test]

@@ -28,6 +28,8 @@ import {
   getCachedEditorState,
   setCachedEditorState,
   closeTab,
+  tabReadingFormat,
+  setTabReadingFormat,
 } from "../stores/tabs";
 import { navigateWikilink } from "../lib/wikilink-nav";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
@@ -38,7 +40,6 @@ import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
 import { noteboxInfo } from "../stores/notebox";
 import { setActiveEditorView } from "../stores/editor";
 import { trackWrite, awaitPendingWrite } from "../stores/editor-writes";
-import { readingFormat, setReadingFormat } from "../stores/reading-format";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
 import {
@@ -117,6 +118,13 @@ function scrollToHeadingLabel(handle: TypstEditorHandle, doc: string, label: str
 }
 
 const TypstEditor: Component<TypstEditorProps> = (props) => {
+  // Reading-view render format is a per-tab override (so two panes showing
+  // the same note in reading mode can differ), falling back to the user's
+  // default. Reactive via the tab store.
+  const readingFormat = () => tabReadingFormat(props.tabId);
+  const setReadingFormat = (fmt: "svg" | "html") =>
+    setTabReadingFormat(props.tabId, fmt);
+
   let containerRef: HTMLDivElement | undefined;
   let editorMountRef: HTMLDivElement | undefined;
   let editorHandle: TypstEditorHandle | undefined;

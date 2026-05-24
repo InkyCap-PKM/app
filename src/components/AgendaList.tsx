@@ -203,7 +203,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         <div class="agenda__controls-left">
           <button
             ref={taskBtnRef}
-            class="agenda__dropdown"
+            class="pane-action-btn agenda__dropdown"
             onClick={(e) => {
               e.stopPropagation();
               setShowTaskMenu((v) => !v);
@@ -217,7 +217,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           </button>
           <button
             ref={tagsBtnRef}
-            class="agenda__dropdown"
+            class="pane-action-btn agenda__dropdown"
             onClick={(e) => {
               e.stopPropagation();
               setShowTagsMenu((v) => !v);
