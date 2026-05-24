@@ -19,6 +19,7 @@ import { toggleTheme } from "../stores/theme";
 import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
+import { insertAnnotationMarkup } from "../editor/typst-decorations/annotation-insert";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
 import { triggerCreationRule } from "../stores/creation-rules";
@@ -35,7 +36,6 @@ export function registerBuiltinCommands(callbacks: {
   toggleQuickOpen: () => void;
   toggleSettings: () => void;
   toggleCommandPalette: () => void;
-  toggleComposer: () => void;
   openCitationPicker: () => void;
   openRefNotePicker: () => void;
   openSearch: () => void;
@@ -278,14 +278,39 @@ export function registerBuiltinCommands(callbacks: {
     },
   });
 
-  // ── Tools commands ──
+  // Annotation / suggestion authoring. These mirror the four InkyCap entries
+  // in the `/` slash palette and the Annotations pane toolbar — all three route
+  // through `insertAnnotationMarkup`, which wraps the current selection and
+  // no-ops when no editor is focused, so the templates stay in one place.
+  registerCommand({
+    id: "edit:add-annotation",
+    title: "Add Annotation",
+    category: "Edit",
+    execute: () => insertAnnotationMarkup(activeEditorView()?.view, "annotation"),
+  });
 
   registerCommand({
-    id: "tools:note-composer",
-    title: "Note Composer (Merge/Split/Export)",
-    category: "Tools",
-    execute: callbacks.toggleComposer,
+    id: "edit:suggest-insertion",
+    title: "Suggest Insertion",
+    category: "Edit",
+    execute: () => insertAnnotationMarkup(activeEditorView()?.view, "insert"),
   });
+
+  registerCommand({
+    id: "edit:suggest-deletion",
+    title: "Suggest Deletion",
+    category: "Edit",
+    execute: () => insertAnnotationMarkup(activeEditorView()?.view, "delete"),
+  });
+
+  registerCommand({
+    id: "edit:suggest-replacement",
+    title: "Suggest Replacement",
+    category: "Edit",
+    execute: () => insertAnnotationMarkup(activeEditorView()?.view, "replace"),
+  });
+
+  // ── Tools commands ──
 
   registerCommand({
     id: "tools:audit-typ-files",

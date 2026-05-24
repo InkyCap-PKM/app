@@ -22,7 +22,6 @@ import ScaffoldPicker from "./components/ScaffoldPicker";
 import CommandPalette from "./components/CommandPalette";
 import CitationPicker from "./components/CitationPicker";
 import RefNotePicker from "./components/RefNotePicker";
-import NoteComposer from "./components/NoteComposer";
 import ExportDialog from "./components/ExportDialog";
 import ToastHost from "./components/ToastHost";
 import PromptHost from "./components/PromptHost";
@@ -54,7 +53,6 @@ const App: Component = () => {
   const [settingsVisible, setSettingsVisible] = createSignal(false);
   const [settingsInitialTab, setSettingsInitialTab] = createSignal<string>("overview");
   const [cmdPaletteVisible, setCmdPaletteVisible] = createSignal(false);
-  const [composerVisible, setComposerVisible] = createSignal(false);
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
   const [refNotePickerVisible, setRefNotePickerVisible] = createSignal(false);
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
@@ -70,13 +68,40 @@ const App: Component = () => {
     }
   });
 
+  // The left sidebar follows the active tab's context: a collection tab always
+  // shows the Collections list, while every other tab (note/file/mycelial)
+  // shows the general notebox sidebar. We remember the most recent
+  // non-collection ("browse") mode the user chose so that switching from a
+  // collection back to a note restores Files / Tags / Bookmarks / etc. exactly
+  // as they left it, rather than snapping back to Files each time. Only the
+  // collection-vs-not distinction drives the auto-switch; the cross-cutting
+  // browse modes apply to the whole notebox regardless of which note is open.
+  let lastBrowseMode: SidebarMode = "filetree";
+
+  // User-initiated mode changes (toolbar buttons, the sidebar mode bar,
+  // Ctrl+Shift+F search) route through here so the last browse mode is
+  // recorded. The tab-driven effect below sets the signal directly and is
+  // deliberately NOT recorded, so an auto-forced "collections" never becomes
+  // the remembered browse mode.
+  const selectSidebarMode = (m: SidebarMode) => {
+    if (m !== "collections") lastBrowseMode = m;
+    setSidebarMode(m);
+  };
+
+  createEffect(() => {
+    const id = activeTabId();
+    // Read the type reactively (not just the id) so an in-place type change
+    // is also honoured.
+    const tab = tabs.find((t) => t.id === id);
+    setSidebarMode(tab?.type === "collection" ? "collections" : lastBrowseMode);
+  });
+
   const toggleSettings = () => {
     setSettingsInitialTab("overview");
     setSettingsVisible((v) => !v);
   };
   const toggleQuickOpen = () => setQuickOpenVisible((v) => !v);
   const toggleCommandPalette = () => setCmdPaletteVisible((v) => !v);
-  const toggleComposer = () => setComposerVisible((v) => !v);
 
   onMount(async () => {
     // Load settings first — theme and other init depends on them
@@ -98,7 +123,6 @@ const App: Component = () => {
       toggleQuickOpen,
       toggleSettings,
       toggleCommandPalette,
-      toggleComposer,
       openCitationPicker: () => setCitationPickerVisible(true),
       openRefNotePicker: () => setRefNotePickerVisible(true),
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
@@ -127,7 +151,7 @@ const App: Component = () => {
 
   // Switch to search panel when Ctrl+Shift+F fires
   {
-    const openSearchHandler = () => setSidebarMode("search");
+    const openSearchHandler = () => selectSidebarMode("search");
     document.addEventListener("inkycap:open-search", openSearchHandler);
     onCleanup(() => document.removeEventListener("inkycap:open-search", openSearchHandler));
   }
@@ -187,10 +211,10 @@ const App: Component = () => {
         <NoteboxLostBanner />
         <VerticalToolbar
           mode={sidebarMode}
-          setMode={setSidebarMode}
+          setMode={selectSidebarMode}
           onOpenSettings={toggleSettings}
         />
-        <LeftSidebar mode={sidebarMode} setMode={setSidebarMode} />
+        <LeftSidebar mode={sidebarMode} setMode={selectSidebarMode} />
         <MainContent />
         <RightPanel />
         <button
@@ -236,10 +260,6 @@ const App: Component = () => {
         <RefNotePicker
           visible={refNotePickerVisible()}
           onClose={() => setRefNotePickerVisible(false)}
-        />
-        <NoteComposer
-          visible={composerVisible()}
-          onClose={() => setComposerVisible(false)}
         />
         <ExportDialog />
         <TypAuditDialog

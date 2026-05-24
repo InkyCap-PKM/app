@@ -23,7 +23,11 @@ interface ScoredEntry {
   match: FuzzyMatch;
 }
 
-const MAX_RESULTS = 20;
+/** Rows rendered initially, and added each time the user scrolls (or arrows)
+ *  near the bottom. The full result set is never capped — this only bounds how
+ *  many rows live in the DOM at once, so a notebox of thousands of notes stays
+ *  responsive while the user can still scroll through every match. */
+const PAGE_SIZE = 50;
 
 /** A note's name as shown to the user — without the `.typ` extension. */
 function displayName(name: string): string {
@@ -36,29 +40,42 @@ const PAGE_JUMP = 10;
 const QuickOpen: Component<QuickOpenProps> = (props) => {
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  // How many of the (uncapped) results are currently rendered. Grows as the
+  // user scrolls or arrows toward the end; reset to one page on every query.
+  const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   let resultsEl: HTMLDivElement | undefined;
 
-  // Keep the selected row visible as the selection moves past either edge
-  // of the scroll viewport. `block: "nearest"` scrolls the minimum amount.
+  // Keep the selected row visible as the selection moves past either edge of
+  // the scroll viewport. `block: "nearest"` scrolls the minimum amount. We
+  // track the query (to snap back to the top on a new search) but deliberately
+  // NOT the window size — growing it by scrolling must not yank the view back
+  // to the selected row. `moveSelection` grows the window before setting the
+  // index, so the target row is already rendered when this runs.
   createEffect(() => {
     const idx = selectedIndex();
-    results(); // re-run when the result set changes, not only the index
+    query(); // re-run on a new search so row 0 scrolls into view
     (resultsEl?.children[idx] as HTMLElement | undefined)?.scrollIntoView({
       block: "nearest",
     });
   });
 
-  // Fuzzy match results, sorted by score descending
+  // Full, uncapped result set. Empty query → all notes most-recently-edited
+  // first; non-empty query → fuzzy matches ordered by score.
   const results = createMemo((): ScoredEntry[] => {
     const q = query().trim();
     const files = fileList();
 
     if (q.length === 0) {
-      // Show recent or all files (first N)
-      return files.slice(0, MAX_RESULTS).map((entry) => ({
-        entry,
-        match: { score: 0, ranges: [] },
-      }));
+      // Browse mode: newest edits at the top, oldest at the bottom. A stable
+      // tiebreak on name keeps notes with identical mtimes in a steady order.
+      return files
+        .slice()
+        .sort(
+          (a, b) =>
+            b.modified_time - a.modified_time ||
+            a.name.localeCompare(b.name),
+        )
+        .map((entry) => ({ entry, match: { score: 0, ranges: [] } }));
     }
 
     // Match (and later display) against the extension-less name, so the
@@ -71,7 +88,13 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       }
     }
 
-    scored.sort((a, b) => b.match.score - a.match.score);
+    // Primary: fuzzy score. Tiebreak by recency so equally-good matches list
+    // the more recently edited note first.
+    scored.sort(
+      (a, b) =>
+        b.match.score - a.match.score ||
+        b.entry.modified_time - a.entry.modified_time,
+    );
     // A file whose name (sans extension) is exactly the query jumps to the
     // top — the result the user almost certainly meant. The sort is stable,
     // so this only lifts the exact match; fuzzy order is otherwise kept.
@@ -81,8 +104,33 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
       (a, b) =>
         Number(stem(b.entry.name) === ql) - Number(stem(a.entry.name) === ql),
     );
-    return scored.slice(0, MAX_RESULTS);
+    return scored;
   });
+
+  // Only the first `visibleCount` rows are rendered; the rest load on demand.
+  const visible = createMemo(() => results().slice(0, visibleCount()));
+
+  // Move the selection, clamped to the full result set, and ensure the target
+  // row is within the rendered window so it can scroll into view.
+  function moveSelection(target: number) {
+    const total = results().length;
+    if (total === 0) return;
+    const idx = Math.max(0, Math.min(target, total - 1));
+    if (idx >= visibleCount()) {
+      setVisibleCount(Math.min(total, idx + 1));
+    }
+    setSelectedIndex(idx);
+  }
+
+  // Reveal another page as the user scrolls near the bottom of the list.
+  function onResultsScroll() {
+    if (!resultsEl) return;
+    const remaining =
+      resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight;
+    if (remaining < 200 && visibleCount() < results().length) {
+      setVisibleCount((c) => Math.min(results().length, c + PAGE_SIZE));
+    }
+  }
 
   function selectFile(entry: FileEntry) {
     openTab({
@@ -96,6 +144,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
   function close() {
     setQuery("");
     setSelectedIndex(0);
+    setVisibleCount(PAGE_SIZE);
     props.onClose();
   }
 
@@ -110,37 +159,37 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+      moveSelection(selectedIndex() + 1);
       return;
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
+      moveSelection(selectedIndex() - 1);
       return;
     }
 
     if (e.key === "PageDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + PAGE_JUMP, list.length - 1));
+      moveSelection(selectedIndex() + PAGE_JUMP);
       return;
     }
 
     if (e.key === "PageUp") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - PAGE_JUMP, 0));
+      moveSelection(selectedIndex() - PAGE_JUMP);
       return;
     }
 
     if (e.key === "Home") {
       e.preventDefault();
-      setSelectedIndex(0);
+      moveSelection(0);
       return;
     }
 
     if (e.key === "End") {
       e.preventDefault();
-      setSelectedIndex(list.length - 1);
+      moveSelection(list.length - 1);
       return;
     }
 
@@ -200,12 +249,17 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
             onInput={(e) => {
               setQuery(e.currentTarget.value);
               setSelectedIndex(0);
+              setVisibleCount(PAGE_SIZE);
             }}
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
-          <div class="quick-open__results" ref={resultsEl}>
-            <For each={results()}>
+          <div
+            class="quick-open__results"
+            ref={resultsEl}
+            onScroll={onResultsScroll}
+          >
+            <For each={visible()}>
               {(item, index) => (
                 <div
                   class={`quick-open__result ${index() === selectedIndex() ? "quick-open__result--selected" : ""}`}

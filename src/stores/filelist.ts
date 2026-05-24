@@ -9,6 +9,9 @@ export interface FileEntry {
   name: string;
   /** Folder path relative to notebox root, for display. */
   folder: string;
+  /** Last-modified time in Unix epoch seconds (0 if the backend couldn't
+   *  stat the file). Used by quick-open to surface recently edited notes. */
+  modified_time: number;
 }
 
 const [fileList, setFileList] = createSignal<FileEntry[]>([]);
@@ -28,6 +31,7 @@ export function buildFileList(tree: FileTreeNode[], basePath = "") {
           path: node.path,
           name: node.name,
           folder,
+          modified_time: node.modified_time,
         });
       }
     }

@@ -36,6 +36,7 @@ import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { clickOutside } from "../lib/clickOutside";
 import { settings } from "../stores/settings";
 import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
@@ -1173,7 +1174,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   <div
                     class="context-menu"
                     ref={(el) => anchorPanelMenu(collectionSortBtnRef, el)}
-                    onMouseLeave={() => setShowCollectionSortMenu(false)}
+                    use:clickOutside={{
+                      onDismiss: () => setShowCollectionSortMenu(false),
+                      ignore: collectionSortBtnRef,
+                    }}
                   >
                     <For each={FILE_SORT_OPTIONS}>
                       {(opt) => (
@@ -1320,7 +1324,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   <div
                     class="context-menu"
                     ref={(el) => anchorPanelMenu(fileSortBtnRef, el)}
-                    onMouseLeave={() => setShowFileSortMenu(false)}
+                    use:clickOutside={{
+                      onDismiss: () => setShowFileSortMenu(false),
+                      ignore: fileSortBtnRef,
+                    }}
                   >
                     <For each={FILE_SORT_OPTIONS}>
                       {(opt) => (
@@ -1508,7 +1515,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   <div
                     class="context-menu"
                     ref={(el) => anchorPanelMenu(tagSortBtnRef, el)}
-                    onMouseLeave={() => setShowTagSortMenu(false)}
+                    use:clickOutside={{
+                      onDismiss: () => setShowTagSortMenu(false),
+                      ignore: tagSortBtnRef,
+                    }}
                   >
                     <For each={LIST_SORT_OPTIONS}>
                       {(opt) => (
@@ -1631,7 +1641,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   <div
                     class="context-menu"
                     ref={(el) => anchorPanelMenu(propSortBtnRef, el)}
-                    onMouseLeave={() => setShowPropSortMenu(false)}
+                    use:clickOutside={{
+                      onDismiss: () => setShowPropSortMenu(false),
+                      ignore: propSortBtnRef,
+                    }}
                   >
                     <For each={LIST_SORT_OPTIONS}>
                       {(opt) => (

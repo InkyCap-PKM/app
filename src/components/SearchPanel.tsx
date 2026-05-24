@@ -31,6 +31,7 @@ import {
 } from "lucide-solid";
 import type { SearchResult } from "../lib/types";
 import { pathEquals } from "../lib/paths";
+import { clickOutside } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { indexReady } from "../stores/notebox";
@@ -148,6 +149,10 @@ const SearchPanel: Component = () => {
   const [showTips, setShowTips] = createSignal(false);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
   const [showOverflowMenu, setShowOverflowMenu] = createSignal(false);
+  // Trigger buttons, so click-outside dismissal can ignore clicks on the
+  // toggle itself (otherwise it would close then immediately reopen).
+  let overflowBtnRef: HTMLButtonElement | undefined;
+  let sortBtnRef: HTMLButtonElement | undefined;
   const [resultContextMenu, setResultContextMenu] = createSignal<
     { x: number; y: number; result: SearchResult } | null
   >(null);
@@ -761,6 +766,7 @@ const SearchPanel: Component = () => {
         </Show>
         <Show when={indexReady() && !loading() && searchQuery().trim()}>
           <button
+            ref={overflowBtnRef}
             class="search-panel__overflow-btn"
             title="More actions"
             onClick={() => setShowOverflowMenu(!showOverflowMenu())}
@@ -772,7 +778,10 @@ const SearchPanel: Component = () => {
           <Show when={showOverflowMenu()}>
             <div
               class="context-menu search-panel__menu-anchored search-panel__menu-anchored--left"
-              onMouseLeave={() => setShowOverflowMenu(false)}
+              use:clickOutside={{
+                onDismiss: () => setShowOverflowMenu(false),
+                ignore: overflowBtnRef,
+              }}
             >
               <button
                 class="context-menu__item"
@@ -789,6 +798,7 @@ const SearchPanel: Component = () => {
             </div>
           </Show>
           <button
+            ref={sortBtnRef}
             class="search-panel__sort-btn"
             onClick={() => setShowSortMenu(!showSortMenu())}
             title="Sort order"
@@ -798,7 +808,10 @@ const SearchPanel: Component = () => {
           <Show when={showSortMenu()}>
             <div
               class="context-menu search-panel__menu-anchored search-panel__menu-anchored--right"
-              onMouseLeave={() => setShowSortMenu(false)}
+              use:clickOutside={{
+                onDismiss: () => setShowSortMenu(false),
+                ignore: sortBtnRef,
+              }}
             >
               <For each={SORT_OPTIONS}>
                 {(opt) => (

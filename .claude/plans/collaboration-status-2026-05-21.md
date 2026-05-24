@@ -1071,11 +1071,56 @@ green; needs in-app validation.
   auto-dismiss on results scroll; the search box/controls stay pinned while
   only results scroll.)
 
+## DONE — Annotations right-panel pane (2026-05-24, UNCOMMITTED — the only uncommitted work)
+
+A right-sidebar **Annotations** tab (same `MessagesSquare` icon as the search
+toggle) that, for the active note, lists every `#annotation` comment and
+`#suggestion` tracked change, lets the user click a row to **jump** to it in the
+editor (then accept/reject a suggestion from its inline widget), filters by text
+at the top, and has a **fixed bottom toolbar** (Insertion / Deletion /
+Replacement / Annotation) that injects markup at the editor cursor. The pane is
+a navigator + author — per the user it does *not* resolve in-place (both
+annotations and suggestions are display + jump). lib **561** + tsc + vite green.
+
+- **Always available** for any file tab (the initial "contextual visibility"
+  design — show only when the note has annotations or is in a collab collection
+  — was **reverted** at the user's request: it lost the open-state when
+  switching to a note without annotations. The collab-membership check and a
+  `collab_collection_names` backend command were added then **removed**, netting
+  zero on `collab.rs`/`lib.rs`/`ipc.ts`.) The pane content is gated to
+  `activePanel === "annotations" && activeFileTab()` so it yields to the
+  collection/mycelial blocks on non-file tabs.
+- **Editor:** `annotation-tracker.ts` — a CM6 `ViewPlugin` + `noteAnnotations`
+  signal that walks the syntax tree for `#annotation`/`#suggestion` FuncCalls,
+  reusing the field extractors now `export`ed from `visual-plugin.ts`.
+  **Performance: it only scans while the pane is open** (`paneOpen()` gate on
+  `rightPanelTab`/`rightCollapsed`) so a closed pane costs nothing per keystroke;
+  the panel triggers the initial scan on open/tab-switch via `rescanAnnotations`
+  (a `createEffect` on `activeEditorView`), and the plugin keeps it live during
+  edits while open. `annotation-insert.ts` — `insertAnnotationMarkup(view, kind)`
+  (templates mirror the four command-palette authoring entries). Tracker
+  registered in the editor extension list.
+- **Frontend:** `RightPanelTab += "annotations"` (startup-guarded like
+  `scroll-context`). `AnnotationsPanel.tsx` (filter + list + jump + toolbar).
+  RightPanel: tab button (always shown for file tabs) + a `--fill` tab-content
+  container so the toolbar pins to the bottom while the list scrolls.
+  `.annotations-panel__*` CSS + `annotations.*` i18n.
+- **Double-render fix (visual editor):** `#annotation` was the lone block-pill
+  function that rendered twice while being edited — the callout-style "raw
+  source + `side:1` preview" pattern reads as a duplicate for a plain comment.
+  Fixed in `visual-plugin.ts` `case "annotation"`: render **source-only when
+  expanded** (no preview widget) and a single replace-widget when collapsed, so
+  at most one block ever shows. *(Couldn't fully reproduce by code-reading —
+  annotation shares callout's code path — so confirm in-app; if it persists, a
+  live DOM inspection is the next step.)*
+- **Deferred Idea-2 follow-ups still open:** automatic "suggesting mode"
+  (intercept every keystroke) and multi-message reply threads on a suggestion.
+
 ## Other remaining work (deferred, roughly prioritized)
 
-2. **Polish (remaining):** a right-panel ReviewPanel beyond the inline collab
-   tab (largely superseded by the existing right-panel Review diff), conflict
-   resolution UI beyond accept-takes-theirs.
+2. **Polish (remaining):** conflict resolution UI beyond accept-takes-theirs;
+   wiring notes to render citations against the shared `.bib` while collaborative
+   (deferred from the shared-bib work).
    - *Attachment hash-compare — DONE 2026-05-22:* `collab_review_apply`
      byte-compares each incoming attachment against the local copy and writes
      when missing **or changed** (was skip-if-present, so updated attachments
@@ -1186,42 +1231,38 @@ lost. Grouped by kind. Items link to the section above with the detail.
 - [ ] `InkyCap-Professional` notebox copies still have the markdown-`# Heading`-
   mid-paragraph corruption (the active `Inky2/Publishers` copies were repaired).
 
-## ⮕ NEXT SESSION — start here
+## ⮕ NEXT SESSION — start here (updated 2026-05-24)
 
-**Committed since this doc was first written:** all the previously-uncommitted
-work (right-panel Collaboration move + tri-state Disable/Pause/Enable pill +
-global identity settings + the two Reviewing tweaks + `#review` primitives +
-review-diff workflow + CollabPanel hint-wording) landed in commit `1b0272a`
-("collaboration interface improvements, sidebar usage, user settings"). Working
-tree is clean.
+**Repo state:** branch `typst-pivot`, HEAD **`576c873`** ("citations bib enabled
+for collection collaboration transport. minor aesthetic fixes"). Committed and
+working: the package loop, review/apply, the `#review`→`#annotation` rename +
+`#suggestion` suggesting-mode, **annotation Search** (toggle + `annotation:`),
+**shared-`.bib` materialization** (file+Zotero, additive), **collab UX polish**
+(status-bar pending-review badge + command-palette "Collaboration" category),
+and 3 small tweaks (close-review-tab = End Review Mode, notebox button restyled
+to the review-badge chip, duplicate Apply-decisions in the Set-all row).
 
-**Current focus (2026-05-23 resume):** continue with the **Review Commentary +
-Inline `#suggestion`** ideas now folded into the "MERGED-IN" section above
-(from `project_collab_inline_suggestions.md`). These are **transport-agnostic**,
-so they proceed without resolving the package-vs-git-vs-CRDT direction debate —
-and Idea 2 may itself *be* the resolution (review = inline intent, not whole-file
-diff). Recommended order: **Idea 1 (commentary on any decision) first**, then
-Idea 2 as *manual* suggestions.
+**ONLY uncommitted work = the right-panel Annotations pane** (10 files — see
+"DONE — Annotations right-panel pane"). All green (lib **561**, tsc, vite).
+**FIRST: validate it in-app, then commit.** Specifically verify:
+1. The **double-render fix** — insert an `#annotation` via the pane's toolbar (or
+   `/`-palette) and confirm it shows **once** in the visual editor (source-only
+   while the cursor is in it; one rendered block when away). This was a
+   best-effort fix I couldn't fully reproduce by reading — if it still doubles,
+   inspect the live CM decoration set for the annotation range.
+2. The pane is **always available** for a file tab, and switching to a note
+   without annotations and back **keeps** the pane selected.
+3. The **lightness gate** — the tracker only scans while the pane is open;
+   editing with the pane closed should do no annotation work.
+4. Toolbar inserts land at the editor cursor; jump-on-click scrolls + carets.
 
-**Still pending if you instead resume transport work:** the **direction decision**
-(see "OPEN QUESTION — collaboration direction" above) — keep the package model,
-add git as a second transport behind the existing review UI, or stop. Re-confirm
-before building more transport.
+**Then pick from remaining deferred work** ("Other remaining work" below):
+book-export error-tolerance (2b); per-attachment / richer conflict-resolution UI;
+wiring notes to render citations against the shared `.bib` while collaborative
+(deferred from the shared-bib feature); the big deferred Idea-2 extensions
+(automatic suggesting-mode, multi-message suggestion threads).
 
-Alternative feature work on the package model, from "Other remaining work" below:
-1. **Book export error-tolerance (2b)** — recommended if continuing to test
-   book export; builds on the 2a "name the note" reporting.
-2. **Zotero → shared `.bib` materialization** — completes the bibliography
-   arc; larger, and note the bib source is *notebox-wide* not per-collection,
-   so "switch the collection off Zotero-live" doesn't map cleanly — design
-   it as: at enable, materialize the collection's *cited* entries into a
-   collection-owned `.bib` and point `collaboration.bibliography_file` at it
-   (re-sync lazily at package, like `bump_local_edits`). The user's current
-   journal notes may not use `@citations`, so it won't be immediately
-   demonstrable for them.
-3. **Collab UX polish** (command palette, status-bar badge, right-panel
-   ReviewPanel). Could also surface the deferred Reviews aggregation panel
-   (index `<inkycap-review>` into `QueryResult` + a panel).
-
-The user had not yet chosen when the session ended (they opted to start
-fresh). Re-confirm their pick at the start of the next session.
+**STRATEGIC OPEN (unchanged):** transport direction — package (current) vs
+git-as-2nd-transport vs CRDT (see "OPEN QUESTION — collaboration direction").
+Every feature built is transport-agnostic, so this isn't blocking; re-confirm
+before building more *transport*.

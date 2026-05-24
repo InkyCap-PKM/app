@@ -57,7 +57,7 @@
                   autocomplete popups, hover preview tooltips, the
                   visual-editor pill menu, floating toolbars.
        --modal-*  Centered, backdropped, dismiss-to-continue dialogs:
-                  Settings, Composer, Export, Quick Open, busy overlay.
+                  Settings, Export, Quick Open, busy overlay.
 
      RULE: every such element references these tokens — never hardcode
      a popup/modal background, border, radius, shadow, or z-index.

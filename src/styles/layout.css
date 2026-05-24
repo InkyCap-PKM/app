@@ -5074,6 +5074,130 @@ svg.lucide {
   padding: 8px;
 }
 
+/* A tab-content variant that doesn't scroll as a whole: the pane inside
+   manages its own scroll region (e.g. the Annotations pane, which pins a
+   toolbar to the bottom while its list scrolls). */
+.right-panel__tab-content--fill {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Annotations pane ── */
+.annotations-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.annotations-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.annotations-panel__item {
+  align-items: flex-start;
+}
+
+.annotations-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.annotations-panel__primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.annotations-panel__primary .sidebar-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotations-panel__secondary {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotations-panel__badge {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 0 5px;
+  border-radius: var(--radius-control);
+  background: var(--bg-hover);
+}
+
+/* Tone colours mirror the inline suggestion/annotation idioms. */
+.annotations-panel__icon--insert,
+.annotations-panel__badge--insert {
+  color: var(--accent-green);
+}
+.annotations-panel__icon--delete,
+.annotations-panel__badge--delete {
+  color: var(--accent-danger);
+}
+.annotations-panel__icon--replace,
+.annotations-panel__badge--replace {
+  color: var(--accent-orange);
+}
+.annotations-panel__icon--comment,
+.annotations-panel__badge--comment {
+  color: var(--accent);
+}
+
+/* Fixed bottom toolbar: insert annotation/suggestion markup at the cursor. */
+.annotations-panel__toolbar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.annotations-panel__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 30px;
+  background: var(--bg-hover);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.annotations-panel__tool:hover {
+  border-color: var(--border-input);
+  color: var(--fg-primary);
+}
+
+.annotations-panel__tool--insert:hover {
+  color: var(--accent-green);
+}
+.annotations-panel__tool--delete:hover {
+  color: var(--accent-danger);
+}
+.annotations-panel__tool--replace:hover {
+  color: var(--accent-orange);
+}
+.annotations-panel__tool--comment:hover {
+  color: var(--accent);
+}
+
 /* ── Outline Panel ── */
 
 /* No extra padding on the pane wrapper: the right panel's tab-content
@@ -6585,166 +6709,6 @@ svg.lucide {
 .mycelial-context__chevron-spacer {
   width: 14px;
   flex-shrink: 0;
-}
-
-/* ─── Note Composer ─── */
-
-.composer-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--modal-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-modal);
-}
-
-.composer-modal {
-  background: var(--modal-bg);
-  border: 1px solid var(--modal-border-color);
-  border-radius: var(--modal-radius);
-  width: 550px;
-  max-width: 90vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--modal-shadow);
-}
-
-.composer-modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-primary);
-}
-
-.composer-modal__header h3 {
-  margin: 0;
-  font-size: var(--text-lg);
-  color: var(--fg-primary);
-}
-
-.composer-modal__close {
-  background: none;
-  border: none;
-  color: var(--fg-dim);
-  font-size: var(--text-2xl);
-  cursor: pointer;
-}
-
-.composer-modal__tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border-primary);
-}
-
-.composer-tab {
-  flex: 1;
-  padding: 8px 12px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--fg-secondary);
-  font-size: var(--text-md);
-  cursor: pointer;
-}
-
-.composer-tab:hover {
-  color: var(--fg-primary);
-  background: var(--bg-hover);
-}
-
-.composer-tab--active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.composer-modal__body {
-  padding: 16px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.composer-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.composer-section label {
-  font-size: var(--text-base);
-  color: var(--fg-secondary);
-  font-weight: 500;
-}
-
-.composer-checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 150px;
-  overflow-y: auto;
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  padding: 8px;
-}
-
-.composer-check-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-md);
-  color: var(--fg-primary);
-  cursor: pointer;
-}
-
-.composer-input,
-.composer-textarea {
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  padding: 8px 10px;
-  font-size: var(--text-md);
-  font-family: var(--editor-font-mono, monospace);
-  resize: vertical;
-}
-
-.composer-action-btn {
-  background: var(--accent);
-  color: var(--accent-text, #fff);
-  border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
-  font-size: var(--text-md);
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.composer-action-btn:hover {
-  background: var(--accent-hover, #6b4dae);
-}
-
-.composer-action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.composer-hint {
-  font-size: var(--text-sm);
-  color: var(--fg-dim);
-  margin: 0;
-}
-
-.composer-error {
-  color: #e74c3c;
-  font-size: var(--text-md);
-  margin: 8px 0 0;
-}
-
-.composer-success {
-  color: #2ecc71;
-  font-size: var(--text-md);
-  margin: 8px 0 0;
 }
 
 /* ─── Editor header (per-tab live-preview toggle) ─── */

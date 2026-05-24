@@ -300,8 +300,6 @@ pub fn run() {
             commands::journal_scroll::run_scroll_query,
             commands::journal_scroll::compute_connection_flags,
             commands::journal_scroll::find_offset_in_scroll_query,
-            commands::composer::merge_notes,
-            commands::composer::split_note,
             commands::export::pdf::export_note_pdf,
             commands::export::pdf::export_note_pdf_to_file,
             commands::export::assets::export_self_contained_typ,

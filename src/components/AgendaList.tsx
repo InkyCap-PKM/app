@@ -18,6 +18,7 @@ import {
 import type { AgendaItem } from "../lib/types";
 import { t } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { clickOutside } from "../lib/clickOutside";
 import { formatUserDate } from "../lib/dates";
 
 interface AgendaListProps {
@@ -249,7 +250,10 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         <div
           class="context-menu"
           ref={(el) => anchorPanelMenu(sortBtnRef, el)}
-          onMouseLeave={() => setShowSortMenu(false)}
+          use:clickOutside={{
+            onDismiss: () => setShowSortMenu(false),
+            ignore: sortBtnRef,
+          }}
         >
           <For each={SORT_OPTIONS}>
             {(opt) => (
@@ -274,7 +278,10 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         <div
           class="context-menu"
           ref={(el) => anchorPanelMenu(taskBtnRef, el)}
-          onMouseLeave={() => setShowTaskMenu(false)}
+          use:clickOutside={{
+            onDismiss: () => setShowTaskMenu(false),
+            ignore: taskBtnRef,
+          }}
         >
           <For each={TASK_OPTIONS}>
             {(opt) => (
@@ -299,7 +306,10 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         <div
           class="context-menu agenda__tag-menu"
           ref={(el) => anchorPanelMenu(tagsBtnRef, el)}
-          onMouseLeave={() => setShowTagsMenu(false)}
+          use:clickOutside={{
+            onDismiss: () => setShowTagsMenu(false),
+            ignore: tagsBtnRef,
+          }}
         >
           <button
             classList={{

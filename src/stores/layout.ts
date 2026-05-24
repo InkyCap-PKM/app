@@ -13,7 +13,8 @@ export type RightPanelTab =
   | "links"
   | "references"
   | "scroll-context"
-  | "review";
+  | "review"
+  | "annotations";
 
 const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "properties",
@@ -22,6 +23,7 @@ const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "references",
   "scroll-context",
   "review",
+  "annotations",
 ];
 
 interface LayoutState {
@@ -49,12 +51,14 @@ function load(): LayoutState {
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
     const merged = { ...DEFAULTS, ...parsed };
-    // "scroll-context" is a runtime-only tab — it exists only while Journal
-    // Scroll is on. Never restore it on startup, or its pane shows with no
-    // owning scroll session (and no tab button to leave it).
+    // "scroll-context" and "annotations" are contextual tabs — they exist only
+    // while their condition holds (a scroll session / the active note having
+    // annotations or collab membership). Never restore them on startup, or the
+    // pane shows before the editor is mounted with no owning context.
     if (
       !RIGHT_PANEL_TABS.includes(merged.rightPanelTab) ||
-      merged.rightPanelTab === "scroll-context"
+      merged.rightPanelTab === "scroll-context" ||
+      merged.rightPanelTab === "annotations"
     ) {
       merged.rightPanelTab = DEFAULTS.rightPanelTab;
     }
