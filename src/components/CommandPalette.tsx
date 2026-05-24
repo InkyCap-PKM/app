@@ -27,7 +27,6 @@ const CATEGORY_ORDER: string[] = [
   "Insert",
   "Style",
   "InkyCap",
-  "Collaboration",
   "Creation Rules",
 ];
 

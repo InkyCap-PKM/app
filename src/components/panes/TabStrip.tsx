@@ -12,14 +12,12 @@ import {
 import { focusPane, moveTabWithinLeaf, moveTab, type LeafPane } from "../../stores/panes";
 import { t } from "../../lib/i18n";
 import { isEnabled as isJournalScrollTab } from "../../stores/journal-scroll";
-import { reviewModeCollabidForPath, endReviewModeForNote } from "../../stores/collab";
 import {
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
   Scroll,
   LibraryBig,
-  MessageSquareCheck,
 } from "lucide-solid";
 import TabBarMenu from "./TabBarMenu";
 
@@ -211,11 +209,6 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                     <LibraryBig size={13} />
                   </span>
                 </Show>
-                <Show when={tab.type === "file" && reviewModeCollabidForPath(tab.path) !== null}>
-                  <span class="tab__icon" title="Reviewing collaboration changes">
-                    <MessageSquareCheck size={13} />
-                  </span>
-                </Show>
                 <span class="tab__title">
                   {dirtyTabIds().has(tab.id) ? "● " : ""}
                   {tabDisplayTitle(tab)}
@@ -224,12 +217,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                   class="tab__close"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // Closing a note that's in review mode ends review mode
-                    // for it (same as the right-panel "End Review Mode").
-                    const reviewCollabid =
-                      tab.type === "file" ? reviewModeCollabidForPath(tab.path) : null;
                     closeTab(tab.id);
-                    if (reviewCollabid) endReviewModeForNote(tab.path, reviewCollabid);
                   }}
                 >
                   {"×"}

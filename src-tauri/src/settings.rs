@@ -200,21 +200,6 @@ impl Default for BehaviourSettings {
     }
 }
 
-/// User-global collaboration identity. Both fields are optional: when set
-/// they serve as defaults — the handle pre-fills a collection's per-collab
-/// handle (which can still be overridden per collection) and the author name
-/// is offered as a default contributor in Book Metadata. When the handle is
-/// blank, enabling collaboration falls back to prompting for one.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CollaborationSettings {
-    /// The user's display name, used as a default Book Metadata contributor.
-    pub author_name: String,
-    /// The user's default collaborator handle (filename-safe identity that
-    /// attributes edits). Empty = none set.
-    pub handle: String,
-}
-
 /// Typst-facing document defaults that affect compilation, reading view,
 /// and export. User-global because typography is tuned to the device the
 /// user is writing on (display size, eye comfort); a notebox or collection
@@ -416,7 +401,6 @@ pub struct UserSettings {
     pub fonts: FontSettings,
     pub behaviour: BehaviourSettings,
     pub backup: BackupSettings,
-    pub collaboration: CollaborationSettings,
 }
 
 // --- Persistence ---

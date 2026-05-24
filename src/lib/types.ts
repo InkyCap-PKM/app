@@ -167,7 +167,6 @@ export interface CollectionFile {
   bibliography_file?: string | null;
   style?: CollectionStyle | null;
   book?: BookExportConfig | null;
-  collaboration?: CollectionCollaboration | null;
   metadata?: Record<string, string> | null;
   filters?: FilterGroup | null;
   formulas?: Record<string, string> | null;
@@ -175,23 +174,6 @@ export interface CollectionFile {
   views: ViewDef[];
 }
 
-/// Package-handoff collaboration config on a collection. Mirrors the Rust
-/// `CollectionCollaboration`.
-export interface CollectionCollaboration {
-  enabled: boolean;
-  bibliography_file?: string | null;
-  /// Receiver-controlled folder where notes new to this machine land on
-  /// import. Local only (never travels in a package); `null` resolves to
-  /// `Collaboration/<name>` at apply time.
-  import_folder?: string | null;
-  /// Monotonic package revision (Lamport-style): bumped on export, advanced to
-  /// max(local, incoming) on import, shown in the Collaboration pane so
-  /// collaborators can sanity-check they're on the same package generation.
-  version?: number;
-}
-
-/// One contributor in the Book Metadata byline / CRediT roster. Mirrors
-/// the Rust `Contributor`. `handle` is the frozen collaboration identity.
 /** One selectable role for the contributors editor: a stored value (CRediT
  *  URL, or CSL bibliographic-role token) and a human label. Mirrors the Rust
  *  `CatalogEntry`. */
@@ -210,8 +192,6 @@ export interface Contributor {
   name: string;
   biblio_role?: string | null;
   credit_roles: string[];
-  is_collaborator: boolean;
-  handle?: string | null;
 }
 
 /// Persistent "Export as book" configuration. Mirrors the Rust
@@ -386,15 +366,6 @@ export interface BehaviourSettings {
   switch_to_new_tab: boolean;
 }
 
-/** User-global collaboration identity. Optional defaults: the handle
- *  pre-fills a collection's per-collab handle (overridable per collection)
- *  and the author name is offered as a default Book Metadata contributor.
- *  A blank handle falls back to prompting when enabling collaboration. */
-export interface CollaborationSettings {
-  author_name: string;
-  handle: string;
-}
-
 export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
 
 export interface FontChoice {
@@ -433,7 +404,6 @@ export interface UserSettings {
   fonts: FontSettings;
   behaviour: BehaviourSettings;
   backup: BackupSettings;
-  collaboration: CollaborationSettings;
 }
 
 // ============================================================================
@@ -774,125 +744,4 @@ export interface TypstHtmlResult {
   recovered: boolean;
   html: string;
   diagnostics: TypstDiagnostic[];
-}
-
-// Package-handoff collaboration — command results (mirror commands/collab.rs).
-
-export type ChangeKind = "added" | "modified" | "deleted" | "conflict";
-
-export interface ReviewItem {
-  collabid: string;
-  /** Notebox-relative destination path. */
-  path: string;
-  kind: ChangeKind;
-  /** Collaborator handles responsible for the incoming change. */
-  changed_by: string[];
-}
-
-/** An attachment whose bytes diverged and can't be auto-resolved by clock —
- *  the user picks keep-mine / take-theirs / rename. Mirrors the Rust
- *  `AttachmentConflict`. */
-export interface AttachmentConflict {
-  /** Notebox-relative path of the attachment in conflict. */
-  path: string;
-  /** Collaborator handles that contributed the incoming version (best-effort). */
-  changed_by: string[];
-}
-
-export interface ReviewResult {
-  /** Notes needing a user decision. */
-  note_items: ReviewItem[];
-  /** Collabids auto-merged (identical concurrent edits) — no review needed. */
-  note_auto_merges: string[];
-  /** Citation keys whose content diverged — need review. */
-  bib_conflicts: string[];
-  /** Citation keys added/identical — union-merged silently. */
-  bib_auto_merges: string[];
-  /** Attachments whose bytes diverged — need a keep/take/rename decision. */
-  attachment_conflicts: AttachmentConflict[];
-}
-
-/** Local + staged-incoming content for one note, for the review diff.
- *  Either side may be null: an Added note has no `local_content`; a Deleted
- *  change has no `incoming_content`. Mirrors `commands/collab.rs::ReviewDetail`. */
-export interface ReviewDetail {
-  collabid: string;
-  /** Absolute path of the local copy (for opening it in a tab), or null. */
-  local_path: string | null;
-  local_content: string | null;
-  incoming_content: string | null;
-}
-
-/// The three-way collaboration lifecycle (Disable / Pause / Enable pill).
-/// `disabled` = no sidecar (pristine default); `paused` = history kept but
-/// inactive; `enabled` = active. Mirrors the Rust `CollabState`.
-export type CollabState = "disabled" | "paused" | "enabled";
-
-export interface CollabStatus {
-  enabled: boolean;
-  state: CollabState;
-  handle: string | null;
-  note_count: number;
-}
-
-export interface CollabEnableReport {
-  members: number;
-  stamped: number;
-}
-
-export interface PackageReport {
-  path: string;
-  note_count: number;
-}
-
-export interface ApplyReport {
-  applied: number;
-  deleted: number;
-  rejected: number;
-  skipped: number;
-  /** Bibliography entries added by union-merging the incoming shared .bib. */
-  bib_added: number;
-  /** Attachments written (new, one-sided updates, take-theirs / rename). */
-  attachments_written: number;
-  /** Conflicting attachments landed under a collision-proof name (rename). */
-  attachments_renamed: number;
-}
-
-export type DecisionAction = "accept" | "reject" | "skip";
-
-export interface ReviewDecision {
-  collabid: string;
-  action: DecisionAction;
-  /** Optional reviewer comment, recorded in the collection's review-log note.
-   *  A `reject` is always logged (with or without a comment); an `accept` is
-   *  logged only when a comment is present; `skip` never logs. */
-  comment?: string;
-}
-
-/** Per-key resolution for a conflicting bibliography entry. Keys omitted
- *  default to keeping the local entry. Mirrors the Rust `BibDecision`. */
-export interface BibDecision {
-  key: string;
-  take_incoming: boolean;
-}
-
-/** How to resolve one conflicting attachment. `rename` lands the incoming
- *  bytes under a collision-proof name and rewrites the member notes that
- *  reference it. Mirrors the Rust `AttachmentAction`. */
-export type AttachmentAction = "keep_mine" | "take_theirs" | "rename";
-
-/** Per-path resolution for a conflicting attachment. Paths omitted default to
- *  keeping the local file. Mirrors the Rust `AttachmentDecision`. */
-export interface AttachmentDecision {
-  path: string;
-  action: AttachmentAction;
-}
-
-export interface ImportPackageResult {
-  /** Frontend-canonical path of the collection the package landed in. */
-  collection_path: string;
-  collection_name: string;
-  /** True when the collection was created by this import. */
-  created: boolean;
-  review: ReviewResult;
 }

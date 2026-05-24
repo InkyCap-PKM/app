@@ -16,7 +16,6 @@ export type CommandCategory =
   | "Insert"
   | "Style"
   | "InkyCap"
-  | "Collaboration"
   | "Creation Rules";
 
 export interface Command {

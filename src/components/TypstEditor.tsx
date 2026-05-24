@@ -62,9 +62,7 @@ import {
   Code,
   PenLine,
   Eye,
-  MessageSquareCheck,
 } from "lucide-solid";
-import { reviewModeCollabidForPath, isMerged } from "../stores/collab";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
 import { DiagnosticRow } from "./DiagnosticRow";
@@ -769,19 +767,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__center">
-          <Show when={reviewModeCollabidForPath(props.path) !== null}>
-            <span
-              class="editor-header__review-status"
-              classList={{
-                "editor-header__review-status--merged": isMerged(
-                  reviewModeCollabidForPath(props.path),
-                ),
-              }}
-            >
-              <MessageSquareCheck size={14} />
-              {isMerged(reviewModeCollabidForPath(props.path)) ? "Merged" : "Reviewing"}
-            </span>
-          </Show>
           <Show when={isScrollEnabled(props.tabId)}>
             <span class="editor-header__scroll-status">
               <Show
@@ -806,10 +791,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__right-group">
-        {/* Mycelial View + Journal Scroll are note-authoring tools that don't
-            apply while reviewing a proposed change — hide them in review mode
-            so the header stays focused on the Accept/Reject decision. */}
-        <Show when={reviewModeCollabidForPath(props.path) === null}>
           <button
             type="button"
             class="editor-header__icon-btn"
@@ -828,7 +809,6 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             <BrainCircuit size={14} />
           </button>
           <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
-        </Show>
         <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
           <div
             class="editor-header__mode-toggle editor-header__format-toggle"

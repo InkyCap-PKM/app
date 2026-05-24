@@ -208,8 +208,6 @@ mod tests {
             name: name.into(),
             biblio_role: role.map(|r| r.into()),
             credit_roles: credit.iter().map(|c| c.to_string()).collect(),
-            is_collaborator: false,
-            handle: None,
         }
     }
 

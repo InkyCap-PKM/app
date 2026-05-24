@@ -37,17 +37,6 @@ import type {
   BibEntry,
   FileCitation,
   AggregatedCitation,
-  CollabStatus,
-  CollabState,
-  CollabEnableReport,
-  PackageReport,
-  ReviewResult,
-  ReviewDetail,
-  ReviewDecision,
-  BibDecision,
-  AttachmentDecision,
-  ApplyReport,
-  ImportPackageResult,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -194,10 +183,6 @@ export async function contributorCatalogs(): Promise<ContributorCatalogs> {
   return invoke<ContributorCatalogs>("contributor_catalogs");
 }
 
-/** Mint a filename-safe collaborator handle from a name, unique against `taken`. */
-export async function collabSeedHandle(name: string, taken: string[]): Promise<string> {
-  return invoke<string>("collab_seed_handle", { name, taken });
-}
 
 export async function deleteCollectionFile(collectionPath: string): Promise<void> {
   return invoke<void>("delete_collection_file", { collectionPath });
@@ -1427,122 +1412,4 @@ export async function restoreBackupFiles(
     conflict,
     passwordOverride: passwordOverride && passwordOverride.length > 0 ? passwordOverride : null,
   });
-}
-
-// Package-handoff collaboration
-
-/** Pin which collaborator the local user is for this collection. */
-export async function collabSetIdentity(
-  collectionPath: string,
-  handle: string,
-): Promise<void> {
-  return invoke<void>("collab_set_identity", { collectionPath, handle });
-}
-
-/** Read the local user's pinned handle for this collection (or null). */
-export async function collabGetIdentity(
-  collectionPath: string,
-): Promise<string | null> {
-  return invoke<string | null>("collab_get_identity", { collectionPath });
-}
-
-/** Move a collection between collaboration states (the Disable / Pause /
- *  Enable pill). `enabled` sets up fresh or resumes losslessly from paused;
- *  `paused` keeps history but goes inactive; `disabled` tears down the
- *  sidecar. A handle is required to enable/prepare (falls back to the pinned
- *  identity when omitted). Enabling requires a membership filter. */
-export async function collabSetState(
-  collectionPath: string,
-  target: CollabState,
-  handle?: string,
-): Promise<CollabEnableReport> {
-  return invoke<CollabEnableReport>("collab_set_state", {
-    collectionPath,
-    target,
-    handle: handle ?? null,
-  });
-}
-
-export async function collabStatus(
-  collectionPath: string,
-): Promise<CollabStatus> {
-  return invoke<CollabStatus>("collab_status", { collectionPath });
-}
-
-/** Set where notes new to this machine land on import. Empty clears the
- *  override (reverts to `Collaboration/<name>`). Local only — never shared. */
-export async function collabSetImportFolder(
-  collectionPath: string,
-  folder: string,
-): Promise<void> {
-  return invoke<void>("collab_set_import_folder", { collectionPath, folder });
-}
-
-/** Write a package zip for the collection at `outputPath`. */
-export async function collabPackage(
-  collectionPath: string,
-  outputPath: string,
-): Promise<PackageReport> {
-  return invoke<PackageReport>("collab_package", { collectionPath, outputPath });
-}
-
-/** Import a package: extract to staging and classify incoming changes.
- *  Does not touch the working notebox — call `collabReviewApply` to act. */
-export async function collabImport(
-  collectionPath: string,
-  packagePath: string,
-): Promise<ReviewResult> {
-  return invoke<ReviewResult>("collab_import", { collectionPath, packagePath });
-}
-
-/** Apply review decisions from the staged import to the working notebox.
- *  `bibDecisions` resolves conflicting bibliography keys (omitted ⇒ keep local);
- *  `attachmentDecisions` resolves conflicting attachments (omitted ⇒ keep mine). */
-export async function collabReviewApply(
-  collectionPath: string,
-  decisions: ReviewDecision[],
-  bibDecisions: BibDecision[] = [],
-  attachmentDecisions: AttachmentDecision[] = [],
-): Promise<ApplyReport> {
-  return invoke<ApplyReport>("collab_review_apply", {
-    collectionPath,
-    decisions,
-    bibDecisions,
-    attachmentDecisions,
-  });
-}
-
-/** Import a package without a pre-existing collection: creates the bundled
- *  collection if absent, stages, and returns the collection + review. */
-export async function collabImportPackage(
-  packagePath: string,
-): Promise<ImportPackageResult> {
-  return invoke<ImportPackageResult>("collab_import_package", { packagePath });
-}
-
-/** Re-classify a staged-but-unapplied import for a collection, or null if
- *  nothing is staged. Lets the review resume after reopening. */
-export async function collabPendingReview(
-  collectionPath: string,
-): Promise<ReviewResult | null> {
-  return invoke<ReviewResult | null>("collab_pending_review", { collectionPath });
-}
-
-/** Read the local + staged-incoming content for one note in a staged import,
- *  for the side-by-side review diff. Read-only. */
-export async function collabReviewDetail(
-  collectionPath: string,
-  collabid: string,
-): Promise<ReviewDetail> {
-  return invoke<ReviewDetail>("collab_review_detail", { collectionPath, collabid });
-}
-
-/** Record a free-standing reviewer comment in the collection's review-log note
- *  without applying any change. `target` is the note's display name (stem). */
-export async function collabReviewComment(
-  collectionPath: string,
-  target: string,
-  comment: string,
-): Promise<void> {
-  return invoke<void>("collab_review_comment", { collectionPath, target, comment });
 }

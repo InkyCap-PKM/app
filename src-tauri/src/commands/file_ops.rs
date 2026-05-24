@@ -773,13 +773,6 @@ pub async fn delete_file(
     let storage = state.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
-    // Propagate the deletion to any collaborative collection tracking this
-    // note (records a tombstone) before it leaves the index. Best-effort:
-    // a collab bookkeeping hiccup must never block the user's delete.
-    if let Err(e) = crate::commands::collab::record_note_deletion(&state, &path_buf).await {
-        log::warn!("collab: could not record deletion tombstone for {path}: {e}");
-    }
-
     storage.move_to_trash(&path_buf).await?;
     remove_from_indices(&path_buf, &state).await;
 
@@ -805,14 +798,6 @@ pub async fn delete_folder(
             .collect()
     };
     for note_path in &notes_in_folder {
-        // Tombstone each tracked note before it leaves the index (see
-        // `delete_file`). Best-effort per note.
-        if let Err(e) = crate::commands::collab::record_note_deletion(&state, note_path).await {
-            log::warn!(
-                "collab: could not record deletion tombstone for {}: {e}",
-                note_path.display()
-            );
-        }
         remove_from_indices(note_path, &state).await;
     }
 
