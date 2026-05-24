@@ -51,23 +51,13 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  MessageSquareCheck,
   MessagesSquare,
-  Handshake,
   Settings2,
   Ligature,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
-import ReviewPanel from "./ReviewPanel";
 import CollectionSettings from "./CollectionSettings";
-import {
-  currentReviewCollabid,
-  setCurrentReviewCollabid,
-  reviewModeByPath,
-  reviewModeCollabidForPath,
-  reviewItem,
-} from "../stores/collab";
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -106,7 +96,7 @@ import {
 
 const KNOWN_FIELDS_ORDERED = [
   "title", "aliases", "description", "tags", "date", "due",
-  "task", "disposition", "source", "zid", "collection", "collabid",
+  "task", "disposition", "source", "zid", "collection",
 ];
 const KNOWN_FIELDS = new Set(KNOWN_FIELDS_ORDERED);
 
@@ -122,7 +112,6 @@ const KNOWN_FIELD_TYPES: Record<string, PropertyType> = {
   source: "text",
   zid: "number",
   collection: "list",
-  collabid: "text",
 };
 
 function defaultForType(ty: PropertyType): PropertyValue {
@@ -174,43 +163,6 @@ const RightPanel: Component = () => {
     prevScrollOn = scrollOn;
   });
 
-  // Follow the active note: show the Review diff for whichever open note is in
-  // review mode, and hide it when the active note isn't. This is what makes
-  // reopening a note re-enter review mode, and keeps the Review tab off
-  // ordinary notes. An Added-note review (no local file/tab) is kept until the
-  // user explicitly ends it, since there's no tab to navigate back to.
-  createEffect(() => {
-    reviewModeByPath(); // re-run when the review-mode set changes
-    const tab = activeFileTab();
-    const cidForTab = tab ? reviewModeCollabidForPath(tab.path) : null;
-    if (cidForTab) {
-      setCurrentReviewCollabid(cidForTab);
-      return;
-    }
-    untrack(() => {
-      const cur = currentReviewCollabid();
-      if (!cur) return;
-      const it = reviewItem(cur);
-      if (!it || it.kind !== "added") setCurrentReviewCollabid(null);
-    });
-  });
-
-  // Collaboration review: when a review session starts (a note is picked for
-  // review), focus the Review tab and remember the prior tab; when it ends
-  // (the active note is no longer in review), revert. Mirrors the
-  // scroll-context pattern — the Review tab is contextual.
-  let prevReviewing = false;
-  let tabBeforeReview: RightPanelTab = "outline";
-  createEffect(() => {
-    const reviewing = currentReviewCollabid() !== null;
-    if (reviewing && !prevReviewing) {
-      if (activePanel() !== "review") tabBeforeReview = activePanel();
-      setActivePanel("review");
-    } else if (!reviewing && prevReviewing) {
-      if (activePanel() === "review") setActivePanel(tabBeforeReview);
-    }
-    prevReviewing = reviewing;
-  });
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
   const [newPropType, setNewPropType] = createSignal<PropertyType>("text");
@@ -1228,7 +1180,6 @@ const RightPanel: Component = () => {
             );
             return (
               <>
-                {collTab("collab", "Collaboration", Handshake)}
                 {collTab("characteristics", "Characteristics", Settings2)}
                 {collTab("style", "Style Overrides", Ligature)}
                 {collTab("book", "Book Metadata", NotebookTabs)}
@@ -1236,30 +1187,7 @@ const RightPanel: Component = () => {
             );
           })()}
         </Show>
-        {/* Review tab — contextual: shown only while a collaboration review
-            session is active (a note has been picked for review), not for
-            ordinary notes. Lives outside the file-tab Show so it also appears
-            for Added notes, which have no local file/tab. */}
-        <Show when={currentReviewCollabid() !== null}>
-          <button
-            class={`right-panel__tab${activePanel() === "review" ? " right-panel__tab--active" : ""}`}
-            onClick={() => setActivePanel("review")}
-            title="Review collaboration changes"
-            aria-label="Review collaboration changes"
-          >
-            <MessageSquareCheck size={18} />
-          </button>
-        </Show>
       </div>
-
-      {/* Review tab content — independent of file-tab state so it renders for
-          Added notes too. The file-tab and mycelial blocks below yield to it
-          (their guards exclude activePanel() === "review"). */}
-      <Show when={activePanel() === "review"}>
-        <div class="right-panel__tab-content">
-          <ReviewPanel />
-        </div>
-      </Show>
 
       {/* Annotations tab content — its own fill container so the pane can pin
           its insert toolbar to the bottom while the list scrolls. The file-tab
@@ -1271,7 +1199,7 @@ const RightPanel: Component = () => {
       </Show>
 
       {/* Mycelial context notes — shown when a mycelial tab is active */}
-      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && activePanel() !== "review"}>
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
         {(() => {
           const [contextFilter, setContextFilter] = createSignal("");
           const [contextSort, setContextSort] = createSignal<"name" | "connections">("connections");
@@ -1433,11 +1361,9 @@ const RightPanel: Component = () => {
       </Show>
 
       {/* Collection Settings — the right-panel surface for a Collection View
-          (Collaboration / Characteristics / Style Overrides / Book Metadata,
-          selected via the collection tab bar above). Shown when a collection
-          tab is active (not while reviewing a note, which opens a file tab and
-          owns the panel via the Review tab above). */}
-      <Show when={activePanel() !== "review" ? activeCollectionTab() : undefined}>
+          (Characteristics / Style Overrides / Book Metadata, selected via the
+          collection tab bar above). Shown when a collection tab is active. */}
+      <Show when={activeCollectionTab()}>
         {(tab) => (
           <div class="right-panel__tab-content">
             <CollectionSettings
@@ -1452,7 +1378,6 @@ const RightPanel: Component = () => {
       <Show
         when={
           activeFileTab() &&
-          activePanel() !== "review" &&
           activePanel() !== "annotations"
         }
         fallback={
@@ -1460,7 +1385,6 @@ const RightPanel: Component = () => {
             when={
               getActiveTab()?.type !== "mycelial" &&
               getActiveTab()?.type !== "collection" &&
-              activePanel() !== "review" &&
               activePanel() !== "annotations"
             }
           >

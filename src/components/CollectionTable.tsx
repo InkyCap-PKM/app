@@ -274,20 +274,13 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       type === "agenda" ? ipc.getCollectionAgenda(path, view) : [],
   );
 
-  // `propertyVersion()` is in the key so the file refetches when collaboration
-  // state changes from the right-panel Collaboration section (which bumps the
-  // property version on enable/pause/disable) — that keeps `isCollaborative()`
-  // and the filter lock in sync without a direct callback into this component.
+  // `propertyVersion()` is in the key so the file refetches after any autosave
+  // (the right-panel Collection Settings bumps the property version on save)
+  // without a direct callback into this component.
   const [collectionFile, { refetch: refetchCollection }] = createResource(
     () => ({ path: props.path, tick: refreshTick(), pv: propertyVersion() }),
     async ({ path }) => ipc.getCollectionFile(path),
   );
-
-  // A collaborative collection's membership is property-based and its
-  // filter is managed automatically (canonicalized at enable). Editing it
-  // by hand would reintroduce the property-vs-filter drift the property
-  // model exists to prevent, so the filter UI is locked while collaborative.
-  const isCollaborative = () => collectionFile()?.collaboration?.enabled ?? false;
 
   // Get the current view's sort rules from the collection file
   function currentSortRules(): SortRule[] {
@@ -699,9 +692,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         message={busyMessage() ?? ""}
         detail={busyDetail()}
       />
-      {/* Collection settings (Collaboration / Characteristics / Style /
-          Book) now live in the right panel's collection tab bar — see
-          `CollectionSettings`. This view is the table + views + export only. */}
+      {/* Collection settings (Characteristics / Style / Book) now live in the
+          right panel's collection tab bar — see `CollectionSettings`. This view
+          is the table + views + export only. */}
       <Show when={data()}>
         {(d) => (
           <>
@@ -791,16 +784,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               <div class="collection-table__toolbar">
                 <button
                   class="collection-table__toolbar-btn"
-                  disabled={isCollaborative()}
                   onClick={() => {
                     setShowFilterBuilder(!showFilterBuilder());
                     setShowColumnPicker(false);
                   }}
-                  title={
-                    isCollaborative()
-                      ? "Membership is managed by the collection property while collaboration is enabled"
-                      : "Edit view filters"
-                  }
+                  title="Edit view filters"
                 >
                   Filter
                 </button>

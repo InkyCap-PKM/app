@@ -26,7 +26,6 @@ import {
   ListChevronsUpDown,
   ListChevronsDownUp,
   CalendarCheck,
-  PackageOpen,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
@@ -40,7 +39,6 @@ import { clickOutside } from "../lib/clickOutside";
 import { settings } from "../stores/settings";
 import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
-import { importNewPackage } from "../stores/collab";
 import {
   isEnabled as isScrollEnabled,
   updateAnchor as updateScrollAnchor,
@@ -850,15 +848,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     }
   }
 
-  async function importCollabPackage() {
-    if (!noteboxInfo()) return;
-    // Shared flow: pick a package, create/open the collection, stage its
-    // review (its Collaboration panel resumes it on mount). Then refresh the
-    // file tree so a newly-created collection appears immediately.
-    await importNewPackage();
-    refresh();
-  }
-
   async function deleteCollection(col: CollectionInfo) {
     setContextMenu(null);
     const confirmed = await ask(`Delete collection "${col.name}"?`, { title: "Delete collection", kind: "warning" });
@@ -1211,14 +1200,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 aria-pressed={showCollectionSearch()}
               >
                 <Search size={14} />
-              </button>
-              <button
-                class="left-sidebar__icon-btn"
-                onClick={importCollabPackage}
-                title="Import collaboration package"
-                aria-label="Import collaboration package"
-              >
-                <PackageOpen size={16} />
               </button>
               <button
                 class="pane-action-btn left-sidebar__add-btn"

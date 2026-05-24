@@ -3,7 +3,6 @@ pub mod attachment_migration;
 pub mod backup;
 pub mod bibliography;
 pub mod bookmarks;
-pub mod collab;
 pub mod collections;
 pub mod fonts;
 pub mod creation_rules;

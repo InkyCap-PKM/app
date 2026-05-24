@@ -13,7 +13,6 @@ export type RightPanelTab =
   | "links"
   | "references"
   | "scroll-context"
-  | "review"
   | "annotations";
 
 const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
@@ -22,7 +21,6 @@ const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "links",
   "references",
   "scroll-context",
-  "review",
   "annotations",
 ];
 
@@ -31,10 +29,9 @@ const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
 /// file tab can't be active at the same time, and keeping the two enums apart
 /// means switching between a note and a collection never strands the panel on
 /// an inapplicable tab.
-export type CollectionPanelTab = "collab" | "characteristics" | "style" | "book";
+export type CollectionPanelTab = "characteristics" | "style" | "book";
 
 const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
-  "collab",
   "characteristics",
   "style",
   "book",
@@ -55,7 +52,7 @@ const DEFAULTS: LayoutState = {
   leftCollapsed: false,
   rightCollapsed: false,
   rightPanelTab: "outline",
-  collectionPanelTab: "collab",
+  collectionPanelTab: "characteristics",
 };
 
 const MIN_WIDTH = 160;

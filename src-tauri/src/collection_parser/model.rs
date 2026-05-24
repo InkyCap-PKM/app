@@ -268,12 +268,10 @@ pub struct BookExportConfig {
 }
 
 /// One contributor to a collection — drives the Book Metadata byline and
-/// CRediT statement, and (when `is_collaborator`) the package-handoff
-/// identity roster.
+/// CRediT statement.
 ///
 /// The two role axes are orthogonal: a person can be a bibliographic
-/// `author` *and* hold CRediT roles like Conceptualization. `handle` is
-/// the frozen identity used in vector clocks — see [`crate::collab::identity`].
+/// `author` *and* hold CRediT roles like Conceptualization.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct Contributor {
@@ -287,44 +285,6 @@ pub struct Contributor {
     /// "https://credit.niso.org/contributor-roles/conceptualization/").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub credit_roles: Vec<String>,
-    /// True when this contributor exchanges packages and edits notes.
-    /// Such rows carry a frozen `handle`; pure-byline contributors don't.
-    #[serde(default)]
-    pub is_collaborator: bool,
-    /// Frozen identity handle, set once the row is first used as a
-    /// collaborator. `None` for non-collaborators.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handle: Option<String>,
-}
-
-/// Package-handoff collaboration settings for a collection.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct CollectionCollaboration {
-    /// When true, this collection participates in package collaboration:
-    /// notes get a `collabid`, the version sidecar is maintained, and the
-    /// package/import actions are available.
-    pub enabled: bool,
-    /// Shared bibliography file (notebox-root-relative). Materialized when
-    /// collaboration is enabled; the only bibliography source allowed
-    /// while collaborative (Zotero-live can't travel in a package).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bibliography_file: Option<String>,
-    /// Receiver-controlled folder (notebox-root-relative) where notes new to
-    /// this machine are written on import. A note's *location* is purely
-    /// local — identity rides on `collabid`, not the path — so incoming
-    /// notes don't replicate the sender's tree. `None` resolves to
-    /// `Collaboration/<collection-name>` at apply time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub import_folder: Option<String>,
-    /// Monotonic package revision, surfaced in the Collaboration pane. Bumped on
-    /// each export; on import it advances to `max(local, incoming)`, so
-    /// turn-taking collaborators converge on the same number. A Lamport-style
-    /// counter: a higher number is a later state, and equal numbers are a strong
-    /// hint that two collaborators share the same package generation (not a
-    /// cryptographic guarantee — concurrent divergent edits can collide).
-    #[serde(default)]
-    pub version: u64,
 }
 
 /// A parsed `.collection` file.
@@ -346,10 +306,6 @@ pub struct CollectionFile {
     /// dialog time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<BookExportConfig>,
-    /// Package-handoff collaboration config. None means non-collaborative
-    /// (the default); no YAML noise on collections that never opt in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub collaboration: Option<CollectionCollaboration>,
     #[serde(default)]
     pub metadata: Option<HashMap<String, String>>,
     #[serde(default)]
@@ -425,7 +381,6 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
         bibliography_file: None,
         style: None,
         book: None,
-        collaboration: None,
         metadata: None,
         filters: Some(FilterGroup {
             and: Some(vec![
@@ -461,7 +416,6 @@ pub fn default_collection_file() -> CollectionFile {
         bibliography_file: None,
         style: None,
         book: None,
-        collaboration: None,
         metadata: None,
         filters: None,
         formulas: None,

@@ -1,19 +1,13 @@
-// Build + insert `#annotation` / `#suggestion` markup, stamped with the
-// current user's collaboration identity (`by:`) and today's date (`on:`) so
-// every comment and tracked change carries authorship the moment it's made.
-// Used by the Annotations pane's bottom toolbar and the `/` command palette —
-// the single `buildAnnotationInsert` builder keeps the two surfaces in sync
-// (they used to carry two copies of the same template strings).
+// Build + insert `#annotation` / `#suggestion` markup, stamped with today's
+// date (`on:`). Used by the Annotations pane's bottom toolbar and the `/`
+// command palette — the single `buildAnnotationInsert` builder keeps the two
+// surfaces in sync (they used to carry two copies of the same template strings).
 //
-// Identity is the user's *global* handle (Settings › Overview › Collaboration),
-// not a per-collection pinned handle — the editor has no collection context at
-// the cursor, and the global handle is the author's stable identity. When no
-// handle is set we fall back to a filename-safe seed of the author name, and
-// omit `by:` entirely if neither is set.
+// `by:` (authorship) is omitted for now; it will be sourced from the notebox's
+// git author identity once notebox-level git collaboration lands.
 
 import { EditorView } from "@codemirror/view";
 import { expandFunc } from "./effects";
-import { settings } from "../../stores/settings";
 
 export type InsertKind = "insert" | "delete" | "replace" | "annotation";
 
@@ -31,23 +25,6 @@ function escapeStr(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-/** Filename-safe seed of a display name (mirrors `identity::seed_handle`). */
-function handleSeed(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-/** The author handle to stamp on new annotations/suggestions: the global
- *  collaboration handle, else a seed of the author name, else "" (omit). */
-function authorHandle(): string {
-  const h = settings.collaboration.handle.trim();
-  if (h) return h;
-  return handleSeed(settings.collaboration.author_name);
-}
-
 /** Today's date as `YYYY-MM-DD` (local). */
 function today(): string {
   const d = new Date();
@@ -56,11 +33,11 @@ function today(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** The current author identity to stamp on a fresh mark: the resolved handle
- *  (omitted when none is available) and today's date. */
+/** The author identity to stamp on a fresh mark: today's date. `by:` is
+ *  omitted for now — authorship will come from the notebox's git author
+ *  identity once notebox-level git collaboration lands. */
 function identity(): { by?: string; on: string } {
-  const by = authorHandle();
-  return by ? { by, on: today() } : { on: today() };
+  return { on: today() };
 }
 
 /** Build a full `#suggestion(...)` call, preserving the body/old content

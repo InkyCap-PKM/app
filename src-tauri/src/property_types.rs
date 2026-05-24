@@ -46,7 +46,6 @@ pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
     "tags",
     "source",
     "collection",
-    "collabid",
     "description",
     "task",
     "aliases",
@@ -74,7 +73,6 @@ fn builtin_property_type(key: &str) -> PropertyType {
         "tags" => PropertyType::List,
         "source" => PropertyType::Text,
         "collection" => PropertyType::List,
-        "collabid" => PropertyType::Text,
         "description" => PropertyType::Text,
         "task" => PropertyType::Checkbox,
         "aliases" => PropertyType::CommaList,
@@ -95,7 +93,6 @@ fn builtin_property_types() -> HashMap<String, PropertyType> {
         ("date", PropertyType::Date),
         ("due", PropertyType::Date),
         ("collection", PropertyType::List),
-        ("collabid", PropertyType::Text),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))

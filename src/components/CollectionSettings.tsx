@@ -1,14 +1,13 @@
 // Right-panel Collection Settings — the tabbed editor for a Collection View,
-// mirroring the file-note right-panel tabs. The four tabs (Collaboration /
-// Characteristics / Style Overrides / Book Metadata) are driven by the tab bar
-// in `RightPanel`; this module owns their content.
+// mirroring the file-note right-panel tabs. The three tabs (Characteristics /
+// Style Overrides / Book Metadata) are driven by the tab bar in `RightPanel`;
+// this module owns their content.
 //
 // The Style and Book editors moved here from `CollectionTable` (where they used
-// to live inside a collapsible "Collection Settings" header above the table);
-// the Collaboration tab reuses `CollaborationSection`. All edits autosave to the
-// `.collection` file on field blur/change — there is no Save button — and then
-// `onSaved` bumps the property version so the table's filter lock and member
-// list stay in sync.
+// to live inside a collapsible "Collection Settings" header above the table).
+// All edits autosave to the `.collection` file on field blur/change — there is
+// no Save button — and then `onSaved` bumps the property version so the table
+// and member list stay in sync.
 
 import {
   Component,
@@ -36,7 +35,6 @@ import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
 import { Dropdown } from "./Dropdown";
-import CollaborationSection from "./CollaborationSection";
 
 // ── Collection style editor ───────────────────────────────────────
 
@@ -842,10 +840,8 @@ const CollectionCharacteristicsEditor: Component<{
 // ── Tab content switch ─────────────────────────────────────────────
 
 /// Renders the body of the active Collection Settings tab. Loads the
-/// `.collection` file once (keyed on `propertyVersion` so it refetches after a
-/// collaboration-state change or any autosave) and routes to the matching
-/// editor. The Collaboration tab delegates to `CollaborationSection`, which is
-/// self-contained (it owns the enable lifecycle + its own status resource).
+/// `.collection` file once (keyed on `propertyVersion` so it refetches after
+/// any autosave) and routes to the matching editor.
 const CollectionSettings: Component<{
   collectionPath: string;
   collectionName: string;
@@ -890,12 +886,6 @@ const CollectionSettings: Component<{
 
   return (
     <Switch>
-      <Match when={props.tab === "collab"}>
-        <CollaborationSection
-          collectionPath={props.collectionPath}
-          collectionName={props.collectionName}
-        />
-      </Match>
       <Match when={props.tab === "characteristics"}>
         <Show when={collectionFile()}>
           {(cf) => (

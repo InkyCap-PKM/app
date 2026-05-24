@@ -3,20 +3,17 @@ import { createStore, produce } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import type { Contributor } from "../lib/types";
 import { Dropdown } from "./Dropdown";
-import { settings } from "../stores/settings";
 
 /// The Book Metadata contributors table: each row is a contributor with a
-/// display name, a bibliographic role (drives the byline), CRediT roles
-/// (drive the optional contributions statement), and an "editing
-/// collaborator" flag that mints a frozen identity handle.
+/// display name, a bibliographic role (drives the byline), and CRediT roles
+/// (drive the optional contributions statement).
 ///
 /// Backed by a `createStore` array so per-field edits are fine-grained: a
 /// keystroke updates one cell in place without recreating the row's DOM
 /// (a `<For>` over a freshly-mapped array would tear down and rebuild every
 /// input each keystroke, stealing focus). Text fields commit to the parent
-/// on blur; selects, checkboxes, and add/remove commit immediately. The role
-/// vocabularies come from the backend so they match what the export renderer
-/// understands.
+/// on blur; selects and add/remove commit immediately. The role vocabularies
+/// come from the backend so they match what the export renderer understands.
 const ContributorsEditor: Component<{
   initial: Contributor[];
   includeCreditStatement: boolean;
@@ -25,13 +22,12 @@ const ContributorsEditor: Component<{
   const [catalogs] = createResource(() => ipc.contributorCatalogs());
   // Normalize the wire shape: the backend omits `credit_roles` from JSON when
   // it's empty (serde `skip_serializing_if`), so it can arrive `undefined`.
-  // Coerce to a real array (and default the collaborator flag) so every store
-  // row is well-formed and spreads/`.length`/`.includes` are always safe.
+  // Coerce to a real array so every store row is well-formed and
+  // spreads/`.length`/`.includes` are always safe.
   const [rows, setRows] = createStore<Contributor[]>(
     (props.initial ?? []).map((c) => ({
       ...c,
       credit_roles: Array.isArray(c.credit_roles) ? [...c.credit_roles] : [],
-      is_collaborator: c.is_collaborator ?? false,
     })),
   );
   const [creditOn, setCreditOn] = createSignal(props.includeCreditStatement);
@@ -48,13 +44,9 @@ const ContributorsEditor: Component<{
   }
 
   function addRow() {
-    // The first contributor defaults to the user's global Author Name (set in
-    // Settings › Overview › Collaboration) — "you, as first author" is the
-    // common case. Later rows start blank.
-    const defaultName = rows.length === 0 ? settings.collaboration.author_name.trim() : "";
     setRows(
       produce((arr) => {
-        arr.push({ name: defaultName, biblio_role: null, credit_roles: [], is_collaborator: false, handle: null });
+        arr.push({ name: "", biblio_role: null, credit_roles: [] });
       }),
     );
     flush();
@@ -64,35 +56,6 @@ const ContributorsEditor: Component<{
       arr.splice(i, 1);
     }));
     if (expanded() === i) setExpanded(-1);
-    flush();
-  }
-
-  async function toggleCollaborator(i: number, on: boolean) {
-    let handle = rows[i].handle ?? null;
-    // Mint a handle the first time a row becomes a collaborator; thereafter
-    // it's frozen (renaming the person doesn't disturb version history).
-    if (on && !handle) {
-      // When this row is "you" (its name matches the global Author Name) and a
-      // global handle is set, reuse it so your contributor row and your collab
-      // identity agree. Otherwise seed a fresh handle from the name.
-      const globalName = settings.collaboration.author_name.trim();
-      const globalHandle = settings.collaboration.handle.trim();
-      const rowName = rows[i].name.trim();
-      if (globalHandle && rowName && rowName === globalName) {
-        handle = globalHandle;
-      } else {
-        const taken = rows
-          .filter((_, idx) => idx !== i)
-          .map((r) => r.handle)
-          .filter((h): h is string => !!h);
-        try {
-          handle = await ipc.collabSeedHandle(rows[i].name, taken);
-        } catch {
-          handle = null;
-        }
-      }
-    }
-    setRows(i, { is_collaborator: on, handle });
     flush();
   }
 
@@ -135,14 +98,6 @@ const ContributorsEditor: Component<{
             >
               CRediT ({row.credit_roles.length})
             </button>
-            <label class="contributors-editor__collab" title="Editing collaborator (package handoff)">
-              <input
-                type="checkbox"
-                checked={row.is_collaborator}
-                onChange={(e) => toggleCollaborator(i(), e.currentTarget.checked)}
-              />
-              Collaborator
-            </label>
             <button
               type="button"
               class="collection-table__toolbar-btn contributors-editor__btn contributors-editor__remove"
@@ -151,18 +106,6 @@ const ContributorsEditor: Component<{
             >
               ✕
             </button>
-
-            <Show when={row.is_collaborator}>
-              <input
-                type="text"
-                class="settings__text-input contributors-editor__handle"
-                placeholder="handle"
-                value={row.handle ?? ""}
-                onInput={(e) => setRows(i(), "handle", e.currentTarget.value || null)}
-                onBlur={flush}
-                title="Frozen identity handle used in version history"
-              />
-            </Show>
 
             <Show when={expanded() === i()}>
               <div class="contributors-editor__credit">
