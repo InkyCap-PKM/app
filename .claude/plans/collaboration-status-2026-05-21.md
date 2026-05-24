@@ -1321,3 +1321,171 @@ validation**):
    - **Known gap:** global search (`annotation:` filter) indexes annotation
      *body* text, not the suggestion `note:` string arg (the pane filter does).
      Minor; deferred. md-interop drops `note` (like `by`/`on`).
+
+## DECISIONS — user triage of remaining work (2026-05-24)
+
+The user reviewed the master checklist (everything since the last sessions is
+now COMMITTED at `575ab32`) and decided the disposition of each remaining item:
+
+- **Inline `#suggestion` (rest of Idea 2) — DROPPED.** Will not pursue automatic
+  suggesting-mode or multi-message threads. Manual v1 (pills + attribution +
+  single persistent comment) stays as-is; remove from the active backlog.
+- **Book-export error-tolerance (2b) — BUILD, as a prompt.** When a book export
+  hits a compile error, don't just abort: tell the user it can continue but the
+  unfixable note(s) will be **excluded**, and offer Continue vs Stop-and-fix.
+  Continue re-exports omitting the failing notes; Stop leaves the export
+  untouched so they can repair the source. (Excludes whole notes — simpler and
+  matches "some content will be excluded" — rather than `recovery`-style
+  render-around.)
+- **`annotation:` search — BUILD.** The filter should match text inside the
+  annotation/suggestion's own content, including the suggestion `note:` comment
+  (body prose already indexes; the `note:` string arg did not). Closes the known
+  gap above.
+- **Audit tool enhancement — BUILD.** Extend "Audit .typ files for InkyCap
+  compatibility" (`commands/typ_audit.rs`) beyond the import/`#note` preamble
+  check to also **detect leftover markdown markup** (ATX `#` headings, etc. —
+  reuse the md→typst heuristics where a fix is *safe*) and offer to convert it,
+  and **detect Typst syntax errors** (missing bracket / typo) via the parser and
+  **report** them with location (auto-fixing arbitrary syntax errors isn't
+  reliable, so those are listed for the user to fix, not silently rewritten).
+  Show the full proposed-change list before applying. Same modal, new sections.
+- **Conflict-resolution UI — DISCUSS (scope first).** User wants more info before
+  deciding the approach. See the context written for them this session.
+- **Notes rendering against the shared collaborative `.bib` — DISCUSS.** Same:
+  context provided, approach TBD.
+- **Two known limitations (external-delete tombstone, package-time filter
+  re-canonicalization) — context provided**, no build decision yet.
+- **Transport direction — still deferred;** revisit after the above, with a more
+  detailed review (user's request).
+
+## DONE — 2026-05-24 session 2 (three builds, UNCOMMITTED)
+
+All green: full lib **570 pass**, tsc + vite clean. Needs in-app validation.
+
+1. **`annotation:` search now matches a suggestion's `note:` comment.**
+   `search/text_projection.rs`: new `named_string_arg` helper; the
+   annotation/suggestion branch appends the `note:` string arg to
+   `annotation_text` (body prose already indexed). Test updated.
+2. **Book export prompts instead of aborting on a broken note.**
+   `export_collection_book_pdf` gained `exclude_notes: Option<Vec<String>>` and
+   now returns a structured `BookExportResult { output_path, failing_notes,
+   message }` (InkyCapError serializes to a string, so the failing-note list
+   couldn't ride an Err). New `book_wrapper::book_diagnostic_note_stems` maps
+   error spans → chapter stems (only note-attributable errors; front-matter /
+   package / span-less stay a hard `Err`). Frontend `exportAsBook` runs a retry
+   loop: on `failingNotes` it shows an `ask()` "Continue (exclude) / Stop & fix"
+   dialog; Continue re-exports omitting those notes (monotonic exclude set →
+   terminates). ipc `exportCollectionBookPdf` returns `BookExportResult` + takes
+   `excludeNotes`. Tests: `diagnostic_note_stems_lists_failing_chapters_only`.
+3. **Audit tool gained a cleanup pass.** New `typst_pipeline/source_lint.rs`
+   (8 tests): `detect_md_fixes`/`apply_md_fixes` (ATX headings always;
+   `**bold**`/`[t](u)`/`![a](u)` on backtick-free lines; skips fenced code;
+   multibyte-safe) and `detect_syntax_errors` (via `typst::syntax::parse` +
+   `Source::lines().byte_to_line/column`; reported, never auto-fixed).
+   `commands/typ_audit.rs`: `TypAuditReport` + `markdown_fixes` +
+   `syntax_errors`; `repair_markdown_files` command (registered in lib.rs) takes
+   `Vec<FileMdEdits{path,fixes}>` — the **accepted subset** — and applies via
+   `source_lint::apply_selected_md_fixes` (matched by line + a `before`-guard
+   against drift; `MdFix` is now `Deserialize` too). `TypAuditDialog.tsx`: two
+   new sections (Markdown fixes w/ before→after preview + **per-change accept
+   checkbox**, default-on, rejected rows dimmed; a "Fix Markdown (N accepted)"
+   button; syntax errors read-only) + summary counts; rejected set keyed
+   `path::line` (stable across re-audit, resets on reopen); ipc
+   `MdFix`/`FileMdFixes`/`FileMdEdits`/`SyntaxIssue`/`FileSyntaxErrors` +
+   `repairMarkdownFiles(edits)`. CSS `.typ-audit__lint-*` / `__md-*`. **Scope note:**
+   md auto-fix is the safe set (headings + unambiguous inline); fuzzier patterns
+   (bullets, blockquotes, single-`*` italic) and syntax-error *auto-repair* are
+   deliberately out (corruption risk) — reported, not rewritten.
+
+**Audit report-to-file + per-change accept (2026-05-24, follow-ups):** the
+full-screen audit modal can't be open while editing, so the user couldn't work
+through the 269 syntax-error files. Added **"Save report"** — `save_audit_report`
+command writes an InkyCap note (`InkyCap Audit Report.typ`) at the notebox root
+(shared `collect_audit` helper; `format_audit_report` groups findings, paths in
+inline-code spans, one `===` per file so the outline is a worklist) and the
+dialog opens it in a tab + closes. `TypAuditDialog` "Save report" button (shown
+when there are findings). Test `audit_report_is_valid_typst` (round-trips the
+generated report through `detect_syntax_errors` — caught a real bug: a bare
+`#note(...)` in a heading parses as code, now code-spanned). Also: the Markdown
+section gained **per-change accept checkboxes** (default-on; `repair_markdown_files`
+now takes `Vec<FileMdEdits>` + `apply_selected_md_fixes` with a `before`-guard).
+573 lib green.
+
+**DROPPED:** inline `#suggestion` Idea-2 remainder (automatic suggesting mode +
+multi-message threads), per user.
+
+**STILL TO DISCUSS (context delivered to user 2026-05-24, no build):**
+conflict-resolution UI (the real gap = per-attachment binary conflicts, silent
+take-incoming today; note conflicts already whole-file, bib conflicts per-key);
+notes rendering citations against the shared collab `.bib` while collaborative
+(today per-note rendering uses notebox/collection bib settings, not the
+materialized `.inkycap/collab/<name>.bib`); the two known limitations
+(external-delete tombstone; package-time filter re-canonicalization).
+
+---
+
+## ⮕⮕ RESUME HERE — authoritative entry point (end of 2026-05-24 session 2)
+
+**This supersedes the earlier "⮕ NEXT SESSION — start here" block above.** The
+2026-05-24 work was a **tangent** off the main collaboration thread (it grew out
+of the data-hygiene limitation into book-export + audit-tool UX). The main
+thread to return to is the **collaboration direction review + the two deferred
+collaboration features**, listed under "Still open" below.
+
+### Repo state
+Branch `typst-pivot`, HEAD **`575ab32`** ("re-designed collections functionality
+in UI, aesthetic improvements" — that commit captured the prior sessions:
+collection-settings→right-panel tabs, column reorder, annotation
+attribution/comments, zebra review list). **Everything in the next paragraph is
+UNCOMMITTED** in the working tree. Full lib **573 pass**, `tsc` + `npm run build`
+clean throughout. **Nothing here was validated in-app yet** — do that, then commit.
+
+### Uncommitted this session (the tangent — validate in-app, then commit)
+All detailed in "DONE — 2026-05-24 session 2" + the two follow-up paragraphs above.
+1. `annotation:` search indexes a suggestion's `note:` comment.
+2. **Book export tolerance** — structured `BookExportResult` + `exclude_notes`;
+   on a per-note failure the (now InkyCap-styled, via new `promptConfirm`)
+   dialog offers Continue-excluding / Stop-and-fix.
+3. **Audit-tool cleanup pass** — `source_lint.rs` (md fixes + syntax-error
+   detection); modal shows both, **per-change accept checkboxes** for md fixes,
+   a **"Save report"** button writing `InkyCap Audit Report.typ` (with a
+   `#wikilink` per file) to open and work from, and the editor status bar now
+   shows the **`L:col` cursor position** in Source Edit mode.
+   - New files: `src-tauri/src/typst_pipeline/source_lint.rs`,
+     `src/editor/typst-decorations/cursor-position.ts`.
+   - New commands (registered in `lib.rs`): `repair_markdown_files`,
+     `save_audit_report`.
+   - Touched: `commands/{export/pdf,typ_audit}.rs`, `book_wrapper.rs`,
+     `search/text_projection.rs`; `stores/prompt.ts`, `PromptHost.tsx`,
+     `TypAuditDialog.tsx`, `CollectionTable.tsx`, `StatusBar.tsx`,
+     `typst-editor.ts`, `lib/ipc.ts`, `styles/layout.css`.
+   - *(Note: the working tree also shows `AgendaList.tsx`, `LeftSidebar.tsx`,
+     and a `split-panes-and-tab-reorder-2026-05-24.md` plan that are NOT from
+     this collaboration thread — leave them to their own context.)*
+
+### Still open — the collaboration thread to resume (user wants these next)
+Triaged 2026-05-24 (see "DECISIONS — user triage 2026-05-24"). Dropped: inline
+`#suggestion` Idea-2 remainder. Remaining, in the user's intended order:
+
+1. **DISCUSS → then build: conflict-resolution UI.** The real gap is
+   **per-attachment binary conflicts** — when both sides change the same
+   image/PDF, import **silently takes incoming** (no prompt). Note conflicts are
+   already whole-file (Accept/Reject diff); bib conflicts already per-key. The
+   decision to settle: add a per-attachment prompt (keep mine / take theirs /
+   keep both as `name (2).ext`)? Then build. Context was delivered to the user.
+2. **DISCUSS → then build: notes rendering against the shared collab `.bib`
+   while collaborative.** Enable materializes `.inkycap/collab/<name>.bib` (the
+   cited subset; travels in packages), but **per-note citation rendering** still
+   uses the notebox/collection bib setting, so a received shared bib sits unused.
+   Decision: wire precedence (collaborative-collection bib > collection bib >
+   notebox bib, only while collaborative). Then build.
+3. **Known limitations (context given; build only if wanted):**
+   (a) external (out-of-app) deletes don't tombstone → re-offer as `Added`;
+   (b) package-time filter re-canonicalization not done (UI lock + enable-time
+   canonicalization keep it canonical today).
+4. **THE BIG ONE — transport-direction review (deferred, user will lead).**
+   Package-handoff (current) vs git-as-second-transport vs CRDT. See "OPEN
+   QUESTION — collaboration direction". Everything built is transport-agnostic,
+   so this isn't blocking, but it's the strategic decision the user wants to
+   review **in detail** before more *transport* work. Re-read that section + the
+   git plan `hi-i-would-like-declarative-otter.md` before discussing.

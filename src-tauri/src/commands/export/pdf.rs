@@ -360,11 +360,17 @@ pub async fn export_collection_book_pdf(
     view_name: String,
     output_path: String,
     overrides: Option<BookExportOverrides>,
+    // Note stems to omit from the book (notes the user chose to skip after a
+    // previous attempt reported them as failing to compile). Empty/None on the
+    // first attempt.
+    exclude_notes: Option<Vec<String>>,
     state: State<'_, AppState>,
-) -> Result<String, InkyCapError> {
+) -> Result<BookExportResult, InkyCapError> {
     use crate::typst_pipeline::book_wrapper::{
         self, BookExportOptions, BookNote,
     };
+    let exclude: std::collections::HashSet<String> =
+        exclude_notes.unwrap_or_default().into_iter().collect();
 
     let data = crate::commands::collections::get_collection_data_internal(
         &collection_path, &view_name, &state,
@@ -438,6 +444,18 @@ pub async fn export_collection_book_pdf(
             content: rebased.into(),
             title,
         });
+    }
+
+    // Drop notes the user chose to exclude after a previous attempt flagged
+    // them as failing to compile (matched by chapter stem — the book's chapter
+    // identity). If that empties the book, there's nothing to export.
+    if !exclude.is_empty() {
+        notes.retain(|n| !exclude.contains(&n.stem));
+        if notes.is_empty() {
+            return Err(InkyCapError::ExportFailed(
+                "Every note was excluded — nothing left to export.".to_string(),
+            ));
+        }
     }
 
     let collisions = book_wrapper::scan_label_collisions(&notes);
@@ -549,15 +567,47 @@ pub async fn export_collection_book_pdf(
     let source_for_diag = source.clone();
     let compile_result = compiler.compile_pdf_diagnostics(&synthetic_main, source, book_pdf_standard);
     compiler.set_bibliography_style(None);
-    let pdf_bytes = compile_result.map_err(|diags| {
-        InkyCapError::ExportFailed(book_wrapper::describe_book_diagnostics(&source_for_diag, &diags))
-    })?;
+    let pdf_bytes = match compile_result {
+        Ok(bytes) => bytes,
+        Err(diags) => {
+            let message = book_wrapper::describe_book_diagnostics(&source_for_diag, &diags);
+            let failing = book_wrapper::book_diagnostic_note_stems(&source_for_diag, &diags);
+            // Errors attributable to specific notes → let the caller offer to
+            // exclude them and retry. Otherwise (front-matter, package, or
+            // span-less errors that excluding a note can't fix) it's a hard
+            // failure.
+            if failing.is_empty() {
+                return Err(InkyCapError::ExportFailed(message));
+            }
+            return Ok(BookExportResult {
+                output_path: None,
+                failing_notes: failing,
+                message: Some(message),
+            });
+        }
+    };
 
     tokio::fs::write(&output_path, &pdf_bytes)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write PDF: {}", e)))?;
 
-    Ok(output_path)
+    Ok(BookExportResult {
+        output_path: Some(output_path),
+        failing_notes: Vec::new(),
+        message: None,
+    })
+}
+
+/// Outcome of a book export. Either the PDF was written (`output_path` set), or
+/// the compile failed in one or more notes the caller can choose to exclude and
+/// retry (`failing_notes` — note stems — plus a human-readable `message`).
+/// A failure that no note exclusion could fix comes back as `Err` instead.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookExportResult {
+    pub output_path: Option<String>,
+    pub failing_notes: Vec<String>,
+    pub message: Option<String>,
 }
 
 /// Extract a `title:` value from the leading `#note(...)` call of a note's

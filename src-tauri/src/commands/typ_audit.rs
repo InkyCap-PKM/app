@@ -32,6 +32,25 @@ use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter::note_call_span;
+use serde::Deserialize;
+
+use crate::typst_pipeline::source_lint::{self, MdFix, SyntaxIssue};
+
+/// Proposed Markdown→Typst fixes for one file.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMdFixes {
+    pub path: String,
+    pub fixes: Vec<MdFix>,
+}
+
+/// Typst syntax errors found in one file (reported, never auto-fixed).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSyntaxErrors {
+    pub path: String,
+    pub errors: Vec<SyntaxIssue>,
+}
 
 /// Result of one audit pass over the notebox.
 #[derive(Debug, Clone, Serialize)]
@@ -43,6 +62,10 @@ pub struct TypAuditReport {
     pub missing_import: Vec<String>,
     /// Notebox-relative paths of files missing a `#note(...)` call.
     pub missing_note: Vec<String>,
+    /// Files carrying leftover Markdown markup, with the proposed fixes.
+    pub markdown_fixes: Vec<FileMdFixes>,
+    /// Files with Typst syntax errors (reported for manual repair).
+    pub syntax_errors: Vec<FileSyntaxErrors>,
 }
 
 /// Walk the notebox for `.typ` files and report which ones are missing
@@ -53,6 +76,15 @@ pub struct TypAuditReport {
 pub async fn audit_typ_files(
     state: State<'_, AppState>,
 ) -> Result<TypAuditReport, InkyCapError> {
+    Ok(collect_audit(state.inner()).await?.0)
+}
+
+/// The audit scan, shared by [`audit_typ_files`] and [`save_audit_report`].
+/// Returns the report plus the notebox root (the latter only needed when
+/// writing the report file).
+async fn collect_audit(
+    state: &AppState,
+) -> Result<(TypAuditReport, PathBuf), InkyCapError> {
     let storage = state.get_storage().await?;
     let notebox_root_guard = state.notebox_root.read().await;
     let notebox_root = notebox_root_guard
@@ -69,6 +101,8 @@ pub async fn audit_typ_files(
         total_scanned: 0,
         missing_import: Vec::new(),
         missing_note: Vec::new(),
+        markdown_fixes: Vec::new(),
+        syntax_errors: Vec::new(),
     };
 
     for abs in abs_paths {
@@ -95,14 +129,169 @@ pub async fn audit_typ_files(
         if !has_notebox_import(&content) {
             report.missing_import.push(rel_str.clone());
         }
-        if note_call_span(&content).is_none() {
+        let needs_note = note_call_span(&content).is_none();
+
+        // Cleanup pass: leftover Markdown (auto-fixable) + syntax errors
+        // (reported only). Both are independent of the preamble checks.
+        let md = source_lint::detect_md_fixes(&content);
+        if !md.is_empty() {
+            report.markdown_fixes.push(FileMdFixes {
+                path: rel_str.clone(),
+                fixes: md,
+            });
+        }
+        let syn = source_lint::detect_syntax_errors(&content);
+        if !syn.is_empty() {
+            report.syntax_errors.push(FileSyntaxErrors {
+                path: rel_str.clone(),
+                errors: syn,
+            });
+        }
+
+        if needs_note {
             report.missing_note.push(rel_str);
         }
     }
 
     report.missing_import.sort();
     report.missing_note.sort();
-    Ok(report)
+    report.markdown_fixes.sort_by(|a, b| a.path.cmp(&b.path));
+    report.syntax_errors.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok((report, notebox_root))
+}
+
+/// Filename of the audit report written at the notebox root.
+const REPORT_NAME: &str = "InkyCap Audit Report.typ";
+
+/// Write the audit results to a note at the notebox root and return its
+/// absolute (frontend-shaped) path, so the user can open it in a tab and work
+/// through the findings while editing files in other tabs — the full-screen
+/// audit dialog can't be open at the same time. Re-running regenerates it.
+#[tauri::command]
+pub async fn save_audit_report(
+    state: State<'_, AppState>,
+) -> Result<String, InkyCapError> {
+    let (report, notebox_root) = collect_audit(state.inner()).await?;
+    let content = format_audit_report(&report);
+    let rel = PathBuf::from(REPORT_NAME);
+    let storage = state.get_storage().await?;
+    storage.write_file(&rel, &content).await?;
+    Ok(crate::storage::path::to_frontend_string(
+        &notebox_root.join(&rel),
+    ))
+}
+
+/// Render the audit report as an InkyCap note. Paths go in inline-code spans so
+/// markup characters in filenames are inert; messages are plain text. Grouped
+/// by concern, with one `===` sub-heading per file in the detailed sections so
+/// the report's own outline doubles as a worklist.
+fn format_audit_report(report: &TypAuditReport) -> String {
+    use std::fmt::Write as _;
+    let today = chrono::Local::now().date_naive().format("%Y-%m-%d");
+    let mut s = String::new();
+    s.push_str(&crate::notebox_package::import_line());
+    s.push('\n');
+    s.push_str("#note(title: \"InkyCap Audit Report\")\n\n");
+    s.push_str("= InkyCap audit report\n\n");
+    let _ = writeln!(
+        s,
+        "Generated {today}. Scanned {} .typ file(s). Keep this note open for \
+         reference while you fix each file in its own tab; re-run \"Audit .typ \
+         files\" and Save again to refresh.\n",
+        report.total_scanned
+    );
+
+    if !report.syntax_errors.is_empty() {
+        let _ = writeln!(s, "== Typst syntax errors ({} files)\n", report.syntax_errors.len());
+        s.push_str(
+            "A syntax error (a missing bracket, a stray token, a typo). InkyCap \
+             can't safely auto-fix these — open each file and fix it at the line \
+             shown.\n\n",
+        );
+        for f in &report.syntax_errors {
+            let _ = writeln!(s, "=== {}", code_span(&f.path));
+            let _ = writeln!(s, "\n{}\n", wikilink(&f.path));
+            for e in &f.errors {
+                let _ = writeln!(s, "- L{}:{} — {}", e.line, e.column, e.message);
+            }
+            s.push('\n');
+        }
+    }
+
+    if !report.markdown_fixes.is_empty() {
+        let _ = writeln!(s, "== Leftover Markdown ({} files)\n", report.markdown_fixes.len());
+        s.push_str(
+            "These look like leftover Markdown. The audit dialog's \"Fix \
+             Markdown\" button can rewrite them to Typst (review each first), or \
+             fix them by hand.\n\n",
+        );
+        for f in &report.markdown_fixes {
+            let _ = writeln!(s, "=== {}", code_span(&f.path));
+            let _ = writeln!(s, "\n{}\n", wikilink(&f.path));
+            for fx in &f.fixes {
+                let _ = writeln!(
+                    s,
+                    "- L{} ({}): {} → {}",
+                    fx.line,
+                    fx.kind,
+                    code_span(&fx.before),
+                    code_span(&fx.after)
+                );
+            }
+            s.push('\n');
+        }
+    }
+
+    if !report.missing_import.is_empty() {
+        let _ = writeln!(
+            s,
+            "== Missing inkycap-notebox import ({} files)\n",
+            report.missing_import.len()
+        );
+        for p in &report.missing_import {
+            let _ = writeln!(s, "- {} {}", wikilink(p), code_span(p));
+        }
+        s.push('\n');
+    }
+
+    if !report.missing_note.is_empty() {
+        // `#note(...)` is wrapped in a code span — bare in markup it parses as a
+        // Typst function call (with an empty spread), which is a syntax error.
+        let _ = writeln!(
+            s,
+            "== Missing {} metadata ({} files)\n",
+            code_span("#note(...)"),
+            report.missing_note.len()
+        );
+        for p in &report.missing_note {
+            let _ = writeln!(s, "- {} {}", wikilink(p), code_span(p));
+        }
+        s.push('\n');
+    }
+
+    s
+}
+
+/// The note name for a notebox-relative path (filename minus `.typ`) — what
+/// `resolve_wikilink` matches a `#wikilink(...)` target against.
+fn note_stem(rel_path: &str) -> &str {
+    let file = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    file.strip_suffix(".typ").unwrap_or(file)
+}
+
+/// A `#wikilink("<note name>")` for the given path — clickable in the editor to
+/// open that note. Every scanned `.typ` is in the index (even ones that fail to
+/// compile), so these resolve rather than offering to create a new note.
+fn wikilink(rel_path: &str) -> String {
+    let stem = note_stem(rel_path).replace('\\', "\\\\").replace('"', "\\\"");
+    format!("#wikilink(\"{stem}\")")
+}
+
+/// Wrap text in a Typst inline-code span, so paths/snippets with markup
+/// characters (`*`, `_`, `#`, `@`, …) render literally. A backtick in the text
+/// (vanishingly rare in a path) is dropped to keep the span well-formed.
+fn code_span(text: &str) -> String {
+    format!("`{}`", text.replace('`', ""))
 }
 
 /// Apply the non-destructive preamble fixes to the given files. Each
@@ -143,6 +332,60 @@ pub async fn repair_typ_files(
             continue;
         }
         summary.repaired.push(rel_str);
+    }
+
+    Ok(summary)
+}
+
+/// The Markdown fixes the user accepted for one file. A subset of the audit's
+/// `markdown_fixes[*]` for that path — rejected changes are simply left out, so
+/// the user can keep a line as-is if the tool misread it (or they want it that
+/// way).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMdEdits {
+    pub path: String,
+    pub fixes: Vec<MdFix>,
+}
+
+/// Apply the user-accepted Markdown→Typst fixes. Content-changing, so it's a
+/// distinct action from the additive preamble repair — the caller opts in
+/// explicitly and chooses which fixes to apply per file. Files whose accepted
+/// set produces no change are silently skipped.
+#[tauri::command]
+pub async fn repair_markdown_files(
+    edits: Vec<FileMdEdits>,
+    state: State<'_, AppState>,
+) -> Result<TypRepairSummary, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let mut summary = TypRepairSummary {
+        repaired: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    for file in edits {
+        if file.fixes.is_empty() {
+            continue;
+        }
+        let rel_path = PathBuf::from(&file.path);
+        let original = match storage.read_file(&rel_path).await {
+            Ok(c) => c,
+            Err(e) => {
+                summary.errors.push(format!("{}: read failed: {}", file.path, e));
+                continue;
+            }
+        };
+
+        let fixed = source_lint::apply_selected_md_fixes(&original, &file.fixes);
+        if fixed == original {
+            continue;
+        }
+
+        if let Err(e) = storage.write_file(&rel_path, &fixed).await {
+            summary.errors.push(format!("{}: write failed: {}", file.path, e));
+            continue;
+        }
+        summary.repaired.push(file.path);
     }
 
     Ok(summary)
@@ -234,6 +477,46 @@ mod tests {
 
     fn import_line() -> String {
         crate::notebox_package::import_line()
+    }
+
+    #[test]
+    fn audit_report_is_valid_typst() {
+        // The generated report must itself be syntactically valid Typst — even
+        // when file names / fix snippets contain markup-active characters,
+        // which `code_span` neutralises by wrapping in inline code.
+        let report = TypAuditReport {
+            total_scanned: 3,
+            missing_import: vec!["Notebox/foreign *star*.typ".into()],
+            missing_note: vec!["Indexes/no _meta_ here.typ".into()],
+            markdown_fixes: vec![FileMdFixes {
+                path: "Ephemera/notes #1.typ".into(),
+                fixes: vec![MdFix {
+                    line: 1,
+                    kind: "heading".into(),
+                    before: "# Title".into(),
+                    after: "= Title".into(),
+                }],
+            }],
+            syntax_errors: vec![FileSyntaxErrors {
+                path: "Indexes/People/David Secko.typ".into(),
+                errors: vec![SyntaxIssue {
+                    line: 21,
+                    column: 154,
+                    message: "unclosed delimiter".into(),
+                }],
+            }],
+        };
+        let content = format_audit_report(&report);
+        assert!(content.contains("InkyCap audit report"));
+        assert!(content.contains("Typst syntax errors (1 files)"));
+        // Each file gets a clickable wikilink (by note name, not path).
+        assert!(content.contains("#wikilink(\"David Secko\")"), "missing wikilink:\n{content}");
+        assert!(content.contains("#wikilink(\"notes #1\")"), "missing wikilink:\n{content}");
+        let errs = source_lint::detect_syntax_errors(&content);
+        assert!(
+            errs.is_empty(),
+            "generated report is not valid Typst: {errs:?}\n---\n{content}"
+        );
     }
 
     #[test]

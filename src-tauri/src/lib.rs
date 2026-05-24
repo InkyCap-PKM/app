@@ -309,6 +309,8 @@ pub fn run() {
             commands::export::pdf::export_collection_book_pdf,
             commands::typ_audit::audit_typ_files,
             commands::typ_audit::repair_typ_files,
+            commands::typ_audit::repair_markdown_files,
+            commands::typ_audit::save_audit_report,
             commands::export::site::export_collection_static_site,
             commands::export::csv::export_collection_csv,
             commands::export::csv::export_collection_csv_to_file,

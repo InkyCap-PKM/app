@@ -3,7 +3,12 @@
 // stores/prompt.ts. See that file for the call-site contract.
 
 import { Component, Show, createSignal, createEffect } from "solid-js";
-import { activePrompt, resolvePrompt } from "../stores/prompt";
+import {
+  activePrompt,
+  resolvePrompt,
+  activeConfirm,
+  resolveConfirm,
+} from "../stores/prompt";
 
 const PromptHost: Component = () => {
   const [value, setValue] = createSignal("");
@@ -54,7 +59,61 @@ const PromptHost: Component = () => {
     }
   }
 
+  function onConfirmKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      resolveConfirm(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      resolveConfirm(false);
+    }
+  }
+
   return (
+    <>
+    {/* Yes/no confirmation — same chrome as the text prompt, no input. */}
+    <Show when={activeConfirm()}>
+      {(c) => (
+        <div
+          class="app-modal__backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) resolveConfirm(false);
+          }}
+          onKeyDown={onConfirmKeyDown}
+          tabindex={-1}
+          ref={(el) => queueMicrotask(() => el.focus())}
+        >
+          <div
+            class="app-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-confirm-title"
+          >
+            <div class="app-modal__header">
+              <h3 id="app-confirm-title">{c().title}</h3>
+            </div>
+            <div class="app-modal__body">
+              <p class="app-modal__message">{c().message}</p>
+            </div>
+            <div class="app-modal__footer">
+              <button
+                class="app-modal__btn app-modal__btn--secondary"
+                onClick={() => resolveConfirm(false)}
+              >
+                {c().cancelLabel ?? "Cancel"}
+              </button>
+              <button
+                class="app-modal__btn app-modal__btn--primary"
+                onClick={() => resolveConfirm(true)}
+              >
+                {c().confirmLabel ?? "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Show>
+
     <Show when={activePrompt()}>
       {(p) => (
         <div
@@ -119,6 +178,7 @@ const PromptHost: Component = () => {
         </div>
       )}
     </Show>
+    </>
   );
 };
 

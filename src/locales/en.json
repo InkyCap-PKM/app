@@ -82,6 +82,16 @@
   "mainContent.emptyState.createFileHint": "Create a note: {modifier} + N",
   "mainContent.emptyState.commandsHint": "Access commands quickly: {modifier} + P",
 
+  "pane.menu.title": "Tab options",
+  "pane.splitRight": "Split right",
+  "pane.splitDown": "Split down",
+  "pane.close": "Close this pane",
+  "command.pane.splitRight": "Split editor right",
+  "command.pane.splitDown": "Split editor down",
+  "command.pane.close": "Close editor pane",
+  "command.pane.focusNext": "Focus next pane",
+  "command.pane.focusPrev": "Focus previous pane",
+
 
   "agenda.title": "Agenda",
   "agenda.tab.title": "Agenda",

@@ -2,7 +2,6 @@ import { Component, createResource, createSignal, Show } from "solid-js";
 import { ask } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import type { CollabState } from "../lib/types";
-import { Handshake } from "lucide-solid";
 import { showToast } from "../stores/toasts";
 import { settings } from "../stores/settings";
 import { propertyVersion, bumpPropertyVersion } from "../stores/notebox";
@@ -67,7 +66,7 @@ const CollaborationSection: Component<{
       title: "Your collaborator handle",
       label: "Handle",
       initialValue: seed,
-      placeholder: "e.g. joshua-chalifour",
+      placeholder: "e.g. athena-babel",
       hint: "Identifies your edits when collaborating. Stays on this machine. Set a default in Settings › Overview › Collaboration.",
       confirmLabel: "Enable",
     });
@@ -133,7 +132,6 @@ const CollaborationSection: Component<{
   return (
     <div class="collab-section">
       <div class="collab-section__header">
-        <Handshake size={16} />
         <span class="collab-section__title">Collaboration</span>
       </div>
 

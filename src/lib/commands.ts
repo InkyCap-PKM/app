@@ -12,7 +12,10 @@ import {
   switchToPrevTab,
   setTabEditingMode,
   createEmptyTab,
+  splitPane,
+  closePane,
 } from "../stores/tabs";
+import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/panes";
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
 import { toggleTheme } from "../stores/theme";
@@ -126,6 +129,49 @@ export function registerBuiltinCommands(callbacks: {
     category: "Navigate",
     keybinding: "Ctrl+Shift+Tab",
     execute: switchToPrevTab,
+  });
+
+  // ── Pane (split) commands ──
+
+  registerCommand({
+    id: "pane:split-right",
+    title: t("command.pane.splitRight"),
+    category: "Navigate",
+    execute: () => {
+      splitPane(focusedLeaf().id, "row");
+    },
+  });
+
+  registerCommand({
+    id: "pane:split-down",
+    title: t("command.pane.splitDown"),
+    category: "Navigate",
+    execute: () => {
+      splitPane(focusedLeaf().id, "column");
+    },
+  });
+
+  registerCommand({
+    id: "pane:close",
+    title: t("command.pane.close"),
+    category: "Navigate",
+    execute: () => {
+      if (hasMultiplePanes()) closePane(focusedLeaf().id);
+    },
+  });
+
+  registerCommand({
+    id: "pane:focus-next",
+    title: t("command.pane.focusNext"),
+    category: "Navigate",
+    execute: () => focusAdjacentPane(1),
+  });
+
+  registerCommand({
+    id: "pane:focus-prev",
+    title: t("command.pane.focusPrev"),
+    category: "Navigate",
+    execute: () => focusAdjacentPane(-1),
   });
 
   // ── View commands ──

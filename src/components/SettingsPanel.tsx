@@ -284,7 +284,7 @@ function OverviewSection() {
           onInput={(e) =>
             updateSetting("collaboration", "author_name", e.currentTarget.value)
           }
-          placeholder="e.g. Joshua Chalifour"
+          placeholder="e.g. Athena Babel"
         />
       </div>
       <div class="settings__row">
@@ -303,7 +303,7 @@ function OverviewSection() {
           onInput={(e) =>
             updateSetting("collaboration", "handle", e.currentTarget.value)
           }
-          placeholder="e.g. joshua-chalifour"
+          placeholder="e.g. athena-babel"
         />
       </div>
 

@@ -45,6 +45,28 @@ const [activePrompt, setActivePrompt] = createSignal<PromptState | null>(null);
 
 export { activePrompt };
 
+/** Options for a styled yes/no confirmation modal (the in-app replacement for
+ *  the OS `ask()` dialog, so confirms match the rest of InkyCap's chrome). */
+export interface ConfirmOptions {
+  /** Heading text shown in the modal header. */
+  title: string;
+  /** Body text. Newlines are preserved (rendered with `white-space: pre-wrap`),
+   *  so a bulleted list reads as written. */
+  message: string;
+  /** Confirm button label. Defaults to "OK". */
+  confirmLabel?: string;
+  /** Cancel button label. Defaults to "Cancel". */
+  cancelLabel?: string;
+}
+
+interface ConfirmState extends ConfirmOptions {
+  resolve: (ok: boolean) => void;
+}
+
+const [activeConfirm, setActiveConfirm] = createSignal<ConfirmState | null>(null);
+
+export { activeConfirm };
+
 /**
  * Open the prompt modal. Resolves with the trimmed string the user entered,
  * or null if they cancelled (Esc, backdrop click, or Cancel button).
@@ -65,4 +87,26 @@ export function resolvePrompt(value: string | null) {
   if (!cur) return;
   setActivePrompt(null);
   cur.resolve(value);
+}
+
+/**
+ * Open the confirmation modal. Resolves `true` if the user confirmed, `false`
+ * if they cancelled (Esc, backdrop click, or Cancel). Styled like the rest of
+ * the app rather than the OS dialog. If a confirm is already open, the previous
+ * one is cancelled (`false`) before the new one opens.
+ */
+export function promptConfirm(opts: ConfirmOptions): Promise<boolean> {
+  const existing = activeConfirm();
+  if (existing) existing.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    setActiveConfirm({ ...opts, resolve });
+  });
+}
+
+/** Internal: used by PromptHost to settle the active confirm. */
+export function resolveConfirm(ok: boolean) {
+  const cur = activeConfirm();
+  if (!cur) return;
+  setActiveConfirm(null);
+  cur.resolve(ok);
 }
