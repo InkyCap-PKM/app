@@ -5,10 +5,51 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "approved direction; not yet implemented. Phase 0 (removal) pending final sign-off on borderline calls."
+status: "Phase 0 (removal) DONE + committed e1298c8 on branch notebox-git-collab. Phase 1 (git foundation) is next — see 'Phase 1 — start here' below."
 ---
 
 # Notebox-level Git Collaboration
+
+## Phase 1 — start here (resume point)
+
+**Where we are:** Phase 0 (remove package-handoff collaboration) is **done and
+committed** as `e1298c8` on branch `notebox-git-collab` (branched off the
+baseline `4c4966e`; `typst-pivot` is untouched). All green at handoff:
+`cargo test --lib` = 500 pass / 0 fail, integration tests compile, `tsc` clean,
+`vite` build succeeds. Two carried-forward notes: the salvageable bits
+(`merge_bibtex`, `ChangeKind`/`ReviewResult`) were removed not parked — recover
+from `4c4966e` when needed; and `#annotation`/`#suggestion` currently stamp only
+`on:` (date) — `by:` (authorship) is wired back in this phase via the git author.
+
+**Ordered Phase 1 steps (low-risk first; keep cargo/tsc/vite green at each):**
+
+1. Add `git2` to `src-tauri/Cargo.toml` (`keyring` v3 is already a dep);
+   `cargo build` to confirm it resolves.
+2. Scaffold `src-tauri/src/git/`: `mod.rs` + minimal `backend.rs` / `auth.rs` /
+   `staging.rs` / `suggest.rs` seams; register `pub mod git;` in `lib.rs`. No
+   speculative scaffolding — just the module boundary.
+3. Add `NoteboxGitConfig { remote, branch, author_name, author_email }` to
+   `notebox_settings.rs`, persisted in notebox settings (NOT a `.collection`).
+   This replaces the removed global identity and restores annotation `by:`.
+4. **Settings split (the real design work):** audit `notebox_settings.rs` to
+   separate notebox-*shared* settings (travel) from *per-machine* state (window
+   state, last-opened, caches — ignored). This gates the `.gitignore` design.
+5. Write the collaborative-notebox `.gitignore` (ignore `.inkycap/incoming/`,
+   caches, search index, window state, `.git`; travel notes / `.collection` /
+   `.bib` / bundled package / shared settings).
+6. `GitBackend` over git2: `open_or_init`, `set_remote`, `fetch`, `merge_base`,
+   `read_blob(oid)`, `commit`, `push`. No high-level `pull`/`sync` (review
+   always sits between fetch and apply).
+7. `auth.rs`: keyring-backed SSH-key generate/point + HTTPS PAT; credential
+   prompt modelled as `AppEvent::GitCredentialNeeded` (never a blocking command).
+8. Notebox-open lifecycle (`commands/notebox.rs`): detect `.git`, init the
+   backend when configured, surface status. No auto-fetch by default.
+
+Then **Phase 2** (fetch → 3-way diff → render hunks as inline `#suggestion`s in
+`.inkycap/incoming/`) and **Phase 3** (resolve inline → consolidate → push). The
+per-notebox "Git Collaboration" setup UI placement is deferred — build the
+command/store layer first. Full detail for every step is in the phase sections
+below.
 
 ## Why this exists (the pivot)
 
