@@ -5,8 +5,43 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 DONE (e1298c8). Phase 1 DONE + committed (a84829d). Phase 2 (fetch→diff→#suggestion) DONE + committed (fe2a560), 532 lib tests green. Phase 3 (resolve→consolidate→push) is next."
+status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (resolve→consolidate→push) DONE + committed (f064bd6), 536 lib tests green. Remaining: Phase 3b (binary/add/delete decisions) + Phase 4 (frontend review surface)."
 ---
+
+## Phase 3 — DONE (2026-05-24, commit f064bd6)
+
+The consolidate + push spine. `cargo test --lib` 536 (+4), 0 warnings,
+utf8/path safety + tsc green. Frontend untouched (Phase 4).
+
+- **`commands/git.rs`**: `git_consolidate_note(path, message?)` /
+  `git_consolidate_all(message?)` write the resolved staged copy to the working
+  path **through `NoteboxStorage`** then stage + commit; `git_push` (never
+  force — a non-ff comes back as `PushResult { rejected: true }`, not an error,
+  so the caller fetch-and-reviews); `git_discard_review` (clears staging,
+  working tree untouched); `git_set_identity`/`git_get_identity` (per-remote
+  commit identity — completes Phase 1's identity story; consolidate's commits
+  need an author). All registered; git work in `spawn_blocking`.
+- **Correctness fix — the consolidate model:** a consolidate commit must be
+  parented on the **fetched remote tip (theirs)**, not the stale local HEAD, or
+  the push is a non-fast-forward and gets rejected. `backend.rs::fast_forward_to`
+  does a soft/mixed reset that adopts theirs when it descends from HEAD (leaves
+  the working tree so resolved files survive to be staged); on divergence it
+  does nothing → push rejects → re-review (never a force-move). `commit_staged`
+  adopts theirs before staging.
+- **`backend.push`** returns `PushResult` and detects rejection from *both* the
+  `NotFastForward` error and the `push_update_reference` callback (libgit2 uses
+  either depending on transport — the bare-remote path errors).
+- **`staging.rs`**: `list_staged`/`remove_staged` for the consolidate pass.
+- Tests: end-to-end through a **bare remote + two clones** (fetch→review→resolve
+  →consolidate-adopts-theirs→fast-forward push→third clone sees it) + a
+  diverged-push-rejected case.
+
+**Deferred to Phase 3b** (UI-coupled — decisions come from the Phase 4 review
+surface): binary attachment **Keep-mine/Take-theirs/Rename** and note
+**Add/Delete** decision application. The note-suggestion → consolidate → push
+spine is complete and proven; these are the remaining non-note decision flows.
+
+
 
 ## Phase 2 — DONE (2026-05-24, commit fe2a560)
 
