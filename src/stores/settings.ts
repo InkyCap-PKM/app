@@ -119,6 +119,7 @@ const NOTEBOX_DEFAULTS: NoteboxSettings = {
     bibliography_path: null,
     custom_csl_path: null,
   },
+  git: null,
 };
 
 // ── User-global store ────────────────────────────────────────────────
@@ -284,9 +285,11 @@ function notifyNoteboxListeners() {
   }
 }
 
-/** Update a nested per-notebox settings value. */
+/** Update a nested per-notebox settings value. Operates on the object-valued
+ *  groups only; the nullable `git` group is set wholesale (Phase 4 setup),
+ *  not field-by-field, so it is excluded here. */
 export function updateNoteboxSetting<
-  G extends keyof NoteboxSettings,
+  G extends Exclude<keyof NoteboxSettings, "git">,
   K extends keyof NoteboxSettings[G],
 >(group: G, key: K, value: NoteboxSettings[G][K]) {
   setNoteboxSettings(
