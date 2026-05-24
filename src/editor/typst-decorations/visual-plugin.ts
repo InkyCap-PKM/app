@@ -908,11 +908,12 @@ function handleFuncCall(
       const kind = (extractNamedStringArg(text, "kind") ?? "insert") as SuggestionKind;
       const by = extractNamedStringArg(text, "by") ?? "";
       const on = extractNamedStringArg(text, "on") ?? "";
+      const note = extractNamedStringArg(text, "note") ?? "";
       const body = extractBodyBracket(text) ?? "";
       const oldText = kind === "replace" ? (extractNamedBracket(text, "old") ?? "") : "";
       decos.push(
         Decoration.replace({
-          widget: new SuggestionWidget(kind, body, oldText, by, on, from),
+          widget: new SuggestionWidget(kind, body, oldText, by, on, from, note),
           inclusiveStart: false,
           inclusiveEnd: false,
         }).range(from, to),

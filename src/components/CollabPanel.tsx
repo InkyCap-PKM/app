@@ -7,7 +7,7 @@ import type {
   DecisionAction,
   ChangeKind,
 } from "../lib/types";
-import { MessageSquareCheck } from "lucide-solid";
+import { MessageSquareCheck, MessageSquarePlus } from "lucide-solid";
 import { showToast } from "../stores/toasts";
 import {
   review,
@@ -53,6 +53,25 @@ const CollabPanel: Component<{
   const [handleTouched, setHandleTouched] = createSignal(false);
   const [importFolder, setImportFolder] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+
+  // Which rows have their comment field revealed. The comment stays hidden by
+  // default (it clutters the common Accept case); a per-row toggle reveals it.
+  const [revealedComments, setRevealedComments] = createSignal<Set<string>>(new Set());
+  function toggleComment(id: string) {
+    setRevealedComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  /// A row's comment field shows when the user revealed it, when it already
+  /// holds text (so it doesn't vanish mid-edit), or when the decision is Reject
+  /// (a rationale is expected there).
+  const commentShown = (id: string) =>
+    revealedComments().has(id) ||
+    (comments()[id] ?? "").trim() !== "" ||
+    (decisions()[id] ?? "accept") === "reject";
 
   // Incoming-changes list: a typing filter + an A–Z / Z–A sort so a specific
   // note is quick to find in a large review.
@@ -329,6 +348,7 @@ const CollabPanel: Component<{
               </For>
             </Show>
 
+            <div class="collab-panel__review-list">
             <For each={visibleItems(r().note_items)}>
               {(item) => (
                 <div
@@ -338,39 +358,59 @@ const CollabPanel: Component<{
                       currentReviewCollabid() === item.collabid,
                   }}
                 >
-                  <div class="collab-panel__review-row">
-                    <div class="collab-panel__review-info">
-                      <span class="collab-panel__kind" data-kind={item.kind}>
-                        {kindLabel(item.kind)}
-                      </span>
-                      <span class="collab-panel__path" title={item.path}>{fileName(item.path)}</span>
-                      <Show when={item.changed_by.length > 0}>
-                        <span class="collection-meta__hint">by {item.changed_by.join(", ")}</span>
-                      </Show>
-                    </div>
-                    <div class="collab-panel__review-controls">
-                      <button
-                        class="collection-table__toolbar-btn collab-panel__review-btn"
-                        title="View changes in the Review panel"
-                        onClick={() => openReview(item.collabid)}
-                      >
-                        <MessageSquareCheck size={14} />
-                        Review
-                      </button>
-                      <Dropdown<DecisionAction>
-                        class="collab-panel__decision"
-                        value={decisions()[item.collabid] ?? "accept"}
-                        options={[
-                          { value: "accept", label: "Accept" },
-                          { value: "reject", label: "Reject" },
-                          { value: "skip", label: "Skip" },
-                        ]}
-                        onChange={(v) => setDecision(item.collabid, v)}
-                        ariaLabel="Decision"
-                      />
-                    </div>
+                  {/* Title on its own line. */}
+                  <div class="collab-panel__path" title={item.path}>
+                    {fileName(item.path)}
                   </div>
-                  <Show when={(decisions()[item.collabid] ?? "accept") !== "skip"}>
+                  {/* Status label precedes the attribution. */}
+                  <div class="collab-panel__review-meta">
+                    <span class="collab-panel__kind" data-kind={item.kind}>
+                      {kindLabel(item.kind)}
+                    </span>
+                    <Show when={item.changed_by.length > 0}>
+                      <span class="collection-meta__hint">by {item.changed_by.join(", ")}</span>
+                    </Show>
+                  </div>
+                  {/* Review + decision + comment toggle, underneath. */}
+                  <div class="collab-panel__review-controls">
+                    <button
+                      class="collection-table__toolbar-btn collab-panel__review-btn"
+                      title="View changes in the Review panel"
+                      onClick={() => openReview(item.collabid)}
+                    >
+                      <MessageSquareCheck size={14} />
+                      Review
+                    </button>
+                    <Dropdown<DecisionAction>
+                      class="collab-panel__decision"
+                      value={decisions()[item.collabid] ?? "accept"}
+                      options={[
+                        { value: "accept", label: "Accept" },
+                        { value: "reject", label: "Reject" },
+                        { value: "skip", label: "Skip" },
+                      ]}
+                      onChange={(v) => setDecision(item.collabid, v)}
+                      ariaLabel="Decision"
+                    />
+                    <Show when={(decisions()[item.collabid] ?? "accept") !== "skip"}>
+                      <button
+                        class="collection-table__toolbar-btn collab-panel__comment-toggle"
+                        classList={{ "is-active": commentShown(item.collabid) }}
+                        title={commentShown(item.collabid) ? "Hide comment" : "Add a comment"}
+                        aria-label="Toggle comment"
+                        aria-pressed={commentShown(item.collabid)}
+                        onClick={() => toggleComment(item.collabid)}
+                      >
+                        <MessageSquarePlus size={14} />
+                      </button>
+                    </Show>
+                  </div>
+                  <Show
+                    when={
+                      (decisions()[item.collabid] ?? "accept") !== "skip" &&
+                      commentShown(item.collabid)
+                    }
+                  >
                     <input
                       type="text"
                       class="settings__text-input collab-panel__reject-reason"
@@ -386,6 +426,7 @@ const CollabPanel: Component<{
                 </div>
               )}
             </For>
+            </div>
 
             <div class="collection-meta__row collab-panel__actions">
               <button

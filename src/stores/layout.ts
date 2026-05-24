@@ -26,12 +26,27 @@ const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "annotations",
 ];
 
+/// The right panel's tab set for a Collection View. Distinct from
+/// `RightPanelTab` (which is file-note scoped) because a collection tab and a
+/// file tab can't be active at the same time, and keeping the two enums apart
+/// means switching between a note and a collection never strands the panel on
+/// an inapplicable tab.
+export type CollectionPanelTab = "collab" | "characteristics" | "style" | "book";
+
+const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
+  "collab",
+  "characteristics",
+  "style",
+  "book",
+];
+
 interface LayoutState {
   leftWidth: number;
   rightWidth: number;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
   rightPanelTab: RightPanelTab;
+  collectionPanelTab: CollectionPanelTab;
 }
 
 const DEFAULTS: LayoutState = {
@@ -40,6 +55,7 @@ const DEFAULTS: LayoutState = {
   leftCollapsed: false,
   rightCollapsed: false,
   rightPanelTab: "outline",
+  collectionPanelTab: "collab",
 };
 
 const MIN_WIDTH = 160;
@@ -61,6 +77,9 @@ function load(): LayoutState {
       merged.rightPanelTab === "annotations"
     ) {
       merged.rightPanelTab = DEFAULTS.rightPanelTab;
+    }
+    if (!COLLECTION_PANEL_TABS.includes(merged.collectionPanelTab)) {
+      merged.collectionPanelTab = DEFAULTS.collectionPanelTab;
     }
     return merged;
   } catch {
@@ -89,6 +108,8 @@ const [rightCollapsed, setRightCollapsedInternal] = createSignal(
 const [rightPanelTab, setRightPanelTabInternal] = createSignal<RightPanelTab>(
   initial.rightPanelTab,
 );
+const [collectionPanelTab, setCollectionPanelTabInternal] =
+  createSignal<CollectionPanelTab>(initial.collectionPanelTab);
 
 function persist() {
   save({
@@ -97,6 +118,7 @@ function persist() {
     leftCollapsed: leftCollapsed(),
     rightCollapsed: rightCollapsed(),
     rightPanelTab: rightPanelTab(),
+    collectionPanelTab: collectionPanelTab(),
   });
 }
 
@@ -135,4 +157,16 @@ export function setRightPanelTab(tab: RightPanelTab) {
   persist();
 }
 
-export { leftWidth, rightWidth, leftCollapsed, rightCollapsed, rightPanelTab };
+export function setCollectionPanelTab(tab: CollectionPanelTab) {
+  setCollectionPanelTabInternal(tab);
+  persist();
+}
+
+export {
+  leftWidth,
+  rightWidth,
+  leftCollapsed,
+  rightCollapsed,
+  rightPanelTab,
+  collectionPanelTab,
+};

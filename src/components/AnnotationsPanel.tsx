@@ -70,6 +70,7 @@ const AnnotationsPanel: Component = () => {
       (a) =>
         a.body.toLowerCase().includes(q) ||
         a.oldText.toLowerCase().includes(q) ||
+        a.note.toLowerCase().includes(q) ||
         a.by.toLowerCase().includes(q) ||
         kindLabel(a.kind).toLowerCase().includes(q),
     );
@@ -163,6 +164,11 @@ const AnnotationsPanel: Component = () => {
                   </span>
                   <Show when={attribution(a)}>
                     <span class="annotations-panel__secondary">{attribution(a)}</span>
+                  </Show>
+                  <Show when={a.note.trim()}>
+                    <span class="annotations-panel__note">
+                      <MessageSquare size={11} /> {a.note.trim()}
+                    </span>
                   </Show>
                 </span>
               </div>

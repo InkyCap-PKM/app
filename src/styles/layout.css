@@ -899,6 +899,20 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
+/* Column reorder drag-and-drop feedback. The dragged header dims; the hovered
+   drop target shows an accent bar on the side the column will land. */
+.collection-table__th--dragging {
+  opacity: 0.4;
+}
+
+.collection-table__th--drop-before {
+  box-shadow: inset 2px 0 0 0 var(--accent, var(--fg-primary));
+}
+
+.collection-table__th--drop-after {
+  box-shadow: inset -2px 0 0 0 var(--accent, var(--fg-primary));
+}
+
 .collection-table__sort-indicator {
   font-size: var(--text-xs);
   color: var(--accent-text);
@@ -3975,6 +3989,15 @@ svg.lucide {
   border-top: 1px solid var(--border-primary);
 }
 
+/* Collection Settings tab body in the right panel — the rows reuse the
+   `.collection-meta__*` styles, this just provides the vertical rhythm the
+   old `.collection-meta__body` wrapper gave inside the table. */
+.collection-settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .collection-meta__row {
   display: flex;
   align-items: center;
@@ -4194,6 +4217,33 @@ svg.lucide {
   border-top: 1px solid var(--border-primary);
 }
 
+/* One incoming-change entry: title, then a [kind] + attribution line, then the
+   Review/decision/comment controls, then (when revealed) the comment field —
+   each stacked vertically. Entries are separated by alternating row tints (see
+   `.collab-panel__review-list`), not a rule. */
+.collab-panel__review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Zebra-stripe the entries so each is easy to tell apart. The wrapper exists so
+   :nth-child counts only entries, not the header/tools/bulk siblings above. */
+.collab-panel__review-list > .collab-panel__review-item:nth-child(even) {
+  background: color-mix(in srgb, var(--fg-primary) 5%, transparent);
+}
+
+/* The [Modified]/[Conflict]/… label precedes the "by …" attribution. */
+.collab-panel__review-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The bib-conflict rows keep the original single-line layout. */
 .collab-panel__review-row {
   display: flex;
   align-items: center;
@@ -4258,18 +4308,34 @@ svg.lucide {
   gap: 4px;
 }
 
-/* Per-row controls (Review + decision) grouped so the row's space-between
-   keeps them aligned to the right edge. */
+/* Per-row controls (Review + decision + comment toggle). */
 .collab-panel__review-controls {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* The review row whose diff is currently open in the Review panel. */
-.collab-panel__review-item--active {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+/* Icon-only toggle that reveals the per-row comment field. */
+.collab-panel__comment-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+}
+
+.collab-panel__comment-toggle.is-active {
+  color: var(--accent-text, var(--fg-primary));
+  border-color: var(--border-input);
+  background: var(--bg-highlight);
+}
+
+/* The review entry whose diff is currently open in the Review panel. The
+   second selector ties the zebra rule's specificity and, being later in source,
+   wins so the accent tint shows on even rows too. */
+.collab-panel__review-item--active,
+.collab-panel__review-list > .collab-panel__review-item--active:nth-child(even) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-radius: var(--radius-sm, 4px);
 }
 
@@ -4427,6 +4493,19 @@ svg.lucide {
 
 .cm-suggestion-menu__item.is-reject {
   color: #dc2626;
+}
+
+.cm-suggestion-menu__item.is-comment {
+  color: var(--accent-text, var(--fg-primary));
+}
+
+/* Inline marker shown on a suggestion that carries a reviewer comment, so the
+   note is discoverable without opening the review menu. */
+.cm-suggestion-note {
+  font-size: 0.8em;
+  margin-left: 1px;
+  cursor: pointer;
+  user-select: none;
 }
 
 /* Reusable help-button + popover (HelpButton.tsx). A circled "?" trigger that
@@ -5128,6 +5207,24 @@ svg.lucide {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A suggestion's reviewer comment (`note:`), shown beneath its attribution so
+   the conversation is visible in the pane, not just in the review menu. */
+.annotations-panel__note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotations-panel__note > svg.lucide {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .annotations-panel__badge {

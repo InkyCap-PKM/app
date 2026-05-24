@@ -40,6 +40,8 @@ export interface AnnotationEntry {
   body: string;
   /** For a `replace` suggestion, the struck-out old text; "" otherwise. */
   oldText: string;
+  /** A `#suggestion`'s reviewer comment (`note:`); "" for annotations. */
+  note: string;
 }
 
 const [noteAnnotations, setNoteAnnotations] = createSignal<AnnotationEntry[]>([]);
@@ -88,6 +90,7 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
           on: extractNamedStringArg(text, "on") ?? "",
           body,
           oldText: "",
+          note: "",
         });
       } else if (funcName === "suggestion") {
         const kind = (extractNamedStringArg(text, "kind") ?? "insert") as AnnotationKind;
@@ -99,6 +102,7 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
           on: extractNamedStringArg(text, "on") ?? "",
           body: extractBodyBracket(text) ?? "",
           oldText: kind === "replace" ? (extractNamedBracket(text, "old") ?? "") : "",
+          note: extractNamedStringArg(text, "note") ?? "",
         });
       }
     },

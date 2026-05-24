@@ -1266,3 +1266,58 @@ wiring notes to render citations against the shared `.bib` while collaborative
 git-as-2nd-transport vs CRDT (see "OPEN QUESTION — collaboration direction").
 Every feature built is transport-agnostic, so this isn't blocking; re-confirm
 before building more *transport*.
+
+## DONE — Collection Settings → right-panel tabs + column reorder + annotation attribution/comments (2026-05-23, UNCOMMITTED)
+
+Three user-directed pieces this session (tsc + vite + `cargo test --test
+suggestion_primitive` + `cargo test --lib suggestion` all green; **needs in-app
+validation**):
+
+1. **Collection Settings moved into the right sidebar** as four tabs using the
+   same `right-panel__tab` button interface as file notes:
+   Collaboration (`Handshake`) / Characteristics (`Settings2`, the renamed
+   "Common") / Style Overrides (`Ligature`) / Book Metadata (`NotebookTabs`).
+   - New `src/components/CollectionSettings.tsx` — `CollectionStyleEditor` +
+     `CollectionBookEditor` **moved here** from `CollectionTable.tsx`, new
+     `CollectionCharacteristicsEditor` (former Common body), and a
+     `CollectionSettings` content-switch that loads the `.collection` file once
+     (keyed on `propertyVersion`) and routes by tab. The Collaboration tab
+     delegates to the existing `CollaborationSection`.
+   - `CollectionTable.tsx` — removed the collapsible `CollectionMetadataEditor`
+     (and its inline editor defs + now-unused imports); the table view is
+     table + views + export only.
+   - `RightPanel.tsx` — collection tab-bar buttons (gated on
+     `activeCollectionTab()`) + renders `<CollectionSettings tab={collectionPanelTab()}/>`.
+   - `stores/layout.ts` — new persisted `collectionPanelTab`
+     (`CollectionPanelTab = collab|characteristics|style|book`, default `collab`).
+   - CSS: `.collection-settings__body` (reuses `.collection-meta__*` rows).
+2. **Drag-and-drop column reordering** in the collection table — header `<th>`s
+   are draggable; drop onto another header's left/right half reorders the active
+   view's `columns` and persists via `updateViewColumns`. State +
+   handlers in `CollectionTable`; `.collection-table__th--dragging/--drop-before/
+   --drop-after` CSS (accent edge-bar).
+3. **Annotation/suggestion attribution + persistent comments** (user: comments
+   were "made in a way a user would never see them"). Findings: toolbar/palette
+   inserted bare `#suggestion`/`#annotation` with **no `by:`/`on:`** (anonymous,
+   not collabid-linked), and a suggestion-menu comment only materialized as an
+   inline `#annotation` **on accept/reject** (invisible while open). Fixes:
+   - **Attribution on insert:** `annotation-insert.ts` now stamps `by:` (global
+     `settings.collaboration.handle`, else author-name seed, else omit) + `on:`
+     (today) via one `buildAnnotationInsert` builder; command-palette's 4
+     InkyCap entries call it through a new `dynamic?` PaletteItem hook (so both
+     surfaces share one source). (Per-collection pinned handle NOT consulted —
+     editor has no collection context; global identity is the author.)
+   - **Persistent visible comment:** `#suggestion(..., note: none, ...)` added to
+     `lib.typ` (metadata dict gains `note`; renders a small inline violet remark
+     so it's visible in reading view). `SuggestionWidget` gained a `note` field
+     (plumbed from `visual-plugin`), a 💬 inline marker + tooltip, and a **"Save
+     comment"** menu action that rebuilds the call with the `note` **without
+     resolving** (new `buildSuggestionCall`; menu textarea pre-fills with the
+     saved note). `annotation-tracker` extracts `note`; `AnnotationsPanel` shows
+     it as a comment line + filters on it. Rust `suggestion.rs` parser ignores
+     the unknown `note:` arg (resolution still unwraps to clean Typst — note is
+     dropped on accept/reject, correct). `suggestion_primitive.rs` test note now
+     carries a `note:`.
+   - **Known gap:** global search (`annotation:` filter) indexes annotation
+     *body* text, not the suggestion `note:` string arg (the pane filter does).
+     Minor; deferred. md-interop drops `note` (like `by`/`on`).
