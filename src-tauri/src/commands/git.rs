@@ -9,17 +9,19 @@
 //! and [`GitBackend`] is not `Sync`, so it is created, used, and dropped inside
 //! one `spawn_blocking` closure rather than held in shared state.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::{Emitter, State};
 
 use crate::errors::{InkyCapError, Result};
-use crate::git::backend::{ChangeStatus, CommitInfo, GitBackend};
+use crate::git::auth::{self, GitIdentity};
+use crate::git::backend::{ChangeStatus, CommitInfo, GitBackend, PushResult};
 use crate::git::{staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
+use crate::storage::traits::NoteboxStorage;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
 /// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
@@ -296,6 +298,205 @@ fn format_date(secs: i64) -> String {
         .unwrap_or_default()
 }
 
+/// Normalize a path from the frontend (which may send an absolute path) to a
+/// notebox-relative one for storage + git.
+fn notebox_relative(root: &Path, path: &str) -> PathBuf {
+    let p = PathBuf::from(path);
+    p.strip_prefix(root).map(Path::to_path_buf).unwrap_or(p)
+}
+
+// ─────────────────────────── Phase 3: consolidate & push ───────────────────
+
+/// Set the commit identity for *this* notebox's remote. Stored per-installation
+/// keyed by the remote URL (see [`crate::git::auth`]); never enters the repo.
+#[tauri::command]
+pub async fn git_set_identity(
+    name: String,
+    email: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let git = require_collaborative(&state).await?;
+    auth::set_identity_for_remote(&git.remote, GitIdentity { name, email })
+}
+
+/// The commit identity configured for this notebox's remote, if any (for the
+/// setup UI to display / seed).
+#[tauri::command]
+pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitIdentity>> {
+    let git = require_collaborative(&state).await?;
+    Ok(auth::identity_for_remote(&git.remote))
+}
+
+/// Consolidate one reviewed note: write its resolved staged copy to the working
+/// path (through [`NoteboxStorage`]), stage, and commit. The staged copy is the
+/// user's resolved version — consolidating *is* the merge. Returns the commit.
+#[tauri::command]
+pub async fn git_consolidate_note(
+    path: String,
+    message: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<CommitInfo> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let storage = state
+        .storage
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let rel = notebox_relative(&root, &path);
+    let staged = staging::read_staged(&root, &rel)?
+        .ok_or_else(|| InkyCapError::BadRequest(format!("no staged copy to consolidate: {path}")))?;
+
+    // The one working-tree write goes through the storage interface.
+    storage.write_file(&rel, &staged).await?;
+
+    let msg = message.unwrap_or_else(|| format!("Consolidate {}", rel.display()));
+    let info = commit_staged(root.clone(), git, vec![rel.clone()], msg).await?;
+
+    let _ = staging::remove_staged(&root, &rel);
+    let _ = app_handle.emit(
+        "notebox:git-consolidated",
+        serde_json::json!({ "path": to_frontend_string(&rel) }),
+    );
+    Ok(info)
+}
+
+/// Consolidate every staged note in one commit (the batched option). Writes
+/// each resolved staged copy to its working path, then a single commit.
+#[tauri::command]
+pub async fn git_consolidate_all(
+    message: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<CommitInfo> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let storage = state
+        .storage
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let rels = staging::list_staged(&root);
+    if rels.is_empty() {
+        return Err(InkyCapError::BadRequest("nothing staged to consolidate".into()));
+    }
+
+    for rel in &rels {
+        if let Some(content) = staging::read_staged(&root, rel)? {
+            storage.write_file(rel, &content).await?;
+        }
+    }
+
+    let msg = message.unwrap_or_else(|| format!("Consolidate {} notes", rels.len()));
+    let info = commit_staged(root.clone(), git, rels, msg).await?;
+
+    staging::clear(&root)?;
+    let _ = app_handle.emit("notebox:git-consolidated", serde_json::json!({ "all": true }));
+    Ok(info)
+}
+
+/// Push consolidated commits to the remote. Never force-pushes; a rejection
+/// (the remote moved) comes back as `PushResult { rejected: true }` so the
+/// caller can fetch-and-review rather than force.
+#[tauri::command]
+pub async fn git_push(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<PushResult> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let _ = app_handle.emit("notebox:git-push-started", ());
+
+    let result = tokio::task::spawn_blocking(move || -> Result<PushResult> {
+        let backend = GitBackend::open(&root)?;
+        backend.set_remote(REMOTE_NAME, &git.remote)?;
+        backend.push(REMOTE_NAME, &git.branch)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("push task failed: {e}")))?;
+
+    match &result {
+        Ok(r) if r.rejected => {
+            let _ = app_handle.emit(
+                "notebox:git-error",
+                "remote has moved; fetch and review before pushing again",
+            );
+        }
+        Ok(_) => {
+            let _ = app_handle.emit("notebox:git-push-completed", ());
+        }
+        Err(err) => {
+            let _ = app_handle.emit("notebox:git-error", err.to_string());
+        }
+    }
+    result
+}
+
+/// Abandon the current review session: clear the staging folder. The working
+/// tree is untouched (it never changed during review).
+#[tauri::command]
+pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    staging::clear(&root)
+}
+
+/// Adopt the fetched remote tip, stage the given notebox-relative paths, and
+/// commit them as the remote's author. Adopting theirs first makes the commit a
+/// fast-forward over the remote so it pushes without a rebase. Runs the
+/// blocking git work off the async runtime.
+async fn commit_staged(
+    root: PathBuf,
+    git: NoteboxGitConfig,
+    rels: Vec<PathBuf>,
+    message: String,
+) -> Result<CommitInfo> {
+    tokio::task::spawn_blocking(move || -> Result<CommitInfo> {
+        let backend = GitBackend::open(&root)?;
+        // Lay the resolutions on top of theirs (the fetched tip) so the
+        // consolidate commit fast-forwards the remote rather than diverging.
+        if let Some(theirs) = backend.remote_tracking_oid(REMOTE_NAME, &git.branch)? {
+            backend.fast_forward_to(theirs)?;
+        }
+        let sig = backend.author_signature(&git.remote)?;
+        backend.stage_paths(&rels)?;
+        let oid = backend.commit(&message, &sig)?;
+        backend.commit_info(oid)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("commit task failed: {e}")))?
+}
+
+/// The open notebox's git config, erroring if it is not collaborative.
+async fn require_collaborative(state: &State<'_, AppState>) -> Result<NoteboxGitConfig> {
+    state
+        .notebox_settings
+        .read()
+        .await
+        .git
+        .clone()
+        .ok_or_else(|| InkyCapError::BadRequest("notebox is not collaborative".into()))
+}
+
+/// The open notebox's root + git config, erroring if not open / not collaborative.
+async fn require_collaborative_with_root(
+    state: &State<'_, AppState>,
+) -> Result<(PathBuf, NoteboxGitConfig)> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    Ok((root, require_collaborative(state).await?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +556,129 @@ mod tests {
             "line one\nCHANGED two\n"
         );
         assert_eq!(resolve_all_suggestions(&staged, false), "line one\nline two\n");
+    }
+
+    /// Give a repo a git identity so `author_signature`'s git-config fallback
+    /// works without touching the global identity store.
+    fn set_git_identity(repo_path: &Path) {
+        let r = git2::Repository::open(repo_path).unwrap();
+        let mut c = r.config().unwrap();
+        c.set_str("user.name", "Tester").unwrap();
+        c.set_str("user.email", "tester@example.com").unwrap();
+    }
+
+    /// Full spine through a bare remote and two clones: fetch → review →
+    /// resolve → consolidate (adopting theirs) → push, and a third clone sees
+    /// the consolidated result. The consolidate must fast-forward the remote
+    /// (parented on theirs), not be rejected.
+    #[test]
+    fn consolidate_adopts_theirs_and_push_fast_forwards() {
+        let bare = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(bare.path()).unwrap();
+        let url = bare.path().to_str().unwrap();
+
+        // A: clone, base commit, push.
+        let adir = tempfile::tempdir().unwrap();
+        let apath = adir.path().join("a");
+        git2::Repository::clone(url, &apath).unwrap();
+        set_git_identity(&apath);
+        let a = GitBackend::open(&apath).unwrap();
+        std::fs::write(apath.join("note.typ"), "line one\nline two\n").unwrap();
+        a.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
+        let asig = a.author_signature(url).unwrap();
+        a.commit("base", &asig).unwrap();
+        let branch = a.current_head().unwrap().unwrap().0;
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        // B: clone at base.
+        let bdir = tempfile::tempdir().unwrap();
+        let bpath = bdir.path().join("b");
+        git2::Repository::clone(url, &bpath).unwrap();
+        set_git_identity(&bpath);
+
+        // A advances the note and pushes.
+        std::fs::write(apath.join("note.typ"), "line one\nCHANGED two\n").unwrap();
+        a.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
+        a.commit("change", &asig).unwrap();
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        // B fetches and reviews — the change is clean (B == base).
+        let b = GitBackend::open(&bpath).unwrap();
+        let git = NoteboxGitConfig {
+            remote: url.to_string(),
+            branch: branch.clone(),
+        };
+        b.set_remote(REMOTE_NAME, url).unwrap();
+        b.fetch(REMOTE_NAME, &branch).unwrap();
+        let session = compute_review_after_fetch(&b, &bpath, &git).unwrap();
+        assert_eq!(session.items.len(), 1);
+        assert_eq!(session.items[0].conflicts, 0);
+
+        // B resolves (accept theirs) and consolidates: write resolved working,
+        // adopt theirs, stage, commit — mirroring commit_staged's body.
+        let staged = staging::read_staged(&bpath, Path::new("note.typ")).unwrap().unwrap();
+        let resolved = resolve_all_suggestions(&staged, true);
+        std::fs::write(bpath.join("note.typ"), &resolved).unwrap();
+        let theirs = b.remote_tracking_oid(REMOTE_NAME, &branch).unwrap().unwrap();
+        assert!(b.fast_forward_to(theirs).unwrap(), "B should adopt theirs");
+        b.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
+        let bsig = b.author_signature(url).unwrap();
+        b.commit("Consolidate note.typ", &bsig).unwrap();
+        assert!(
+            !b.push("origin", &branch).unwrap().rejected,
+            "consolidate parented on theirs ⇒ fast-forward push, not rejected"
+        );
+
+        // C: a fresh clone sees the consolidated content.
+        let cdir = tempfile::tempdir().unwrap();
+        let cpath = cdir.path().join("c");
+        git2::Repository::clone(url, &cpath).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(cpath.join("note.typ")).unwrap(),
+            "line one\nCHANGED two\n"
+        );
+    }
+
+    /// A push that diverged from the remote is reported as rejected (not an
+    /// error), so the caller fetch-and-reviews instead of forcing.
+    #[test]
+    fn diverged_push_is_rejected_not_errored() {
+        let bare = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(bare.path()).unwrap();
+        let url = bare.path().to_str().unwrap();
+
+        let adir = tempfile::tempdir().unwrap();
+        let apath = adir.path().join("a");
+        git2::Repository::clone(url, &apath).unwrap();
+        set_git_identity(&apath);
+        let a = GitBackend::open(&apath).unwrap();
+        std::fs::write(apath.join("n.typ"), "base\n").unwrap();
+        a.stage_paths(&[PathBuf::from("n.typ")]).unwrap();
+        let asig = a.author_signature(url).unwrap();
+        a.commit("base", &asig).unwrap();
+        let branch = a.current_head().unwrap().unwrap().0;
+        a.push("origin", &branch).unwrap();
+
+        // Two clones diverge: both commit on top of base, B pushes first.
+        let mk = |name: &str, content: &str| {
+            let d = tempfile::tempdir().unwrap();
+            let p = d.path().join(name);
+            git2::Repository::clone(url, &p).unwrap();
+            set_git_identity(&p);
+            let g = GitBackend::open(&p).unwrap();
+            std::fs::write(p.join("n.typ"), content).unwrap();
+            g.stage_paths(&[PathBuf::from("n.typ")]).unwrap();
+            let s = g.author_signature(url).unwrap();
+            g.commit("edit", &s).unwrap();
+            (d, p, g)
+        };
+        let (_bd, _bp, bgit) = mk("b", "from B\n");
+        let (_cd, _cp, cgit) = mk("c", "from C\n");
+
+        assert!(!bgit.push("origin", &branch).unwrap().rejected, "first push wins");
+        let res = cgit.push("origin", &branch).unwrap();
+        assert!(res.rejected, "second, diverged push is rejected");
+        assert!(res.message.is_some());
     }
 
     /// When local has nothing new to pull, the session is `up_to_date`.

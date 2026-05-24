@@ -61,6 +61,33 @@ pub fn read_staged(notebox_root: &Path, note_rel: &Path) -> Result<Option<String
     }
 }
 
+/// Remove one note's staged copy after it has been consolidated. Idempotent.
+pub fn remove_staged(notebox_root: &Path, note_rel: &Path) -> Result<()> {
+    match std::fs::remove_file(staged_path(notebox_root, note_rel)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Notebox-relative paths of every staged copy currently present, so
+/// "consolidate all" can promote them in one pass. Empty when nothing is
+/// staged.
+pub fn list_staged(notebox_root: &Path) -> Vec<PathBuf> {
+    let dir = incoming_dir(notebox_root);
+    walkdir::WalkDir::new(&dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            e.path()
+                .strip_prefix(&dir)
+                .ok()
+                .map(|rel| rel.to_path_buf())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,6 +109,27 @@ mod tests {
         let path = write_staged(root, rel, "= staged\n").unwrap();
         assert!(path.exists());
         assert_eq!(read_staged(root, rel).unwrap().as_deref(), Some("= staged\n"));
+    }
+
+    #[test]
+    fn list_staged_returns_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_staged(root, Path::new("a/b.typ"), "x").unwrap();
+        write_staged(root, Path::new("c.typ"), "y").unwrap();
+        let mut listed = list_staged(root);
+        listed.sort();
+        assert_eq!(listed, vec![PathBuf::from("a/b.typ"), PathBuf::from("c.typ")]);
+    }
+
+    #[test]
+    fn remove_staged_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_staged(root, Path::new("n.typ"), "x").unwrap();
+        remove_staged(root, Path::new("n.typ")).unwrap();
+        assert!(read_staged(root, Path::new("n.typ")).unwrap().is_none());
+        remove_staged(root, Path::new("n.typ")).unwrap(); // again, no error
     }
 
     #[test]
