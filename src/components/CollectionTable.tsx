@@ -26,6 +26,7 @@ import { openTab } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText } from "../stores/prompt";
 import { t } from "../lib/i18n";
+import { clickOutside } from "../lib/clickOutside";
 import AgendaList from "./AgendaList";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
@@ -1126,6 +1127,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   const [refreshTick, setRefreshTick] = createSignal(0);
   // Whether the "+ add view" type picker (Table / Agenda) is open.
   const [showAddViewMenu, setShowAddViewMenu] = createSignal(false);
+  // The "+" trigger, so click-outside dismissal ignores clicks on it.
+  let addViewBtnRef: HTMLButtonElement | undefined;
 
   const [data, { refetch }] = createResource(
     () => ({ path: props.path, view: activeView(), tick: refreshTick(), pv: propertyVersion() }),
@@ -1563,6 +1566,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 </For>
                 <div class="collection-table__add-view-wrap">
                   <button
+                    ref={addViewBtnRef}
                     class="collection-table__view-tab collection-table__view-tab--add"
                     onClick={() => setShowAddViewMenu((v) => !v)}
                     title="Add view"
@@ -1572,7 +1576,10 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   <Show when={showAddViewMenu()}>
                     <div
                       class="collection-table__add-view-menu"
-                      onMouseLeave={() => setShowAddViewMenu(false)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowAddViewMenu(false),
+                        ignore: addViewBtnRef,
+                      }}
                     >
                       <button
                         class="context-menu__item"

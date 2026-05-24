@@ -7,6 +7,7 @@ import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { t } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { clickOutside } from "../lib/clickOutside";
 import { RefreshCw } from "lucide-solid";
 
 const PAGE_SIZE = 50;
@@ -369,7 +370,10 @@ const ReferencesPanel: Component = () => {
                     <div
                       class="context-menu"
                       ref={(el) => anchorPanelMenu(sortBtnRef, el)}
-                      onMouseLeave={() => setShowSortMenu(false)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowSortMenu(false),
+                        ignore: sortBtnRef,
+                      }}
                     >
                       <For each={SORT_OPTIONS}>
                         {(opt) => (

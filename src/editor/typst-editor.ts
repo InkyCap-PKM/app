@@ -123,6 +123,7 @@ import { dragDropHandler } from "./typst-decorations/drag-drop";
 import { autoPairTypstInput, autoPairTypstBackspace } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
 import { headingTracker } from "./typst-decorations/heading-tracker";
+import { annotationTracker } from "./typst-decorations/annotation-tracker";
 import { headingFold } from "./typst-decorations/heading-fold";
 import { wordCountTracker } from "./typst-decorations/word-count";
 import { lspExtension } from "./lsp";
@@ -522,6 +523,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     inkycapTheme,
     dragDropHandler,
     headingTracker,
+    annotationTracker,
     wordCountTracker,
     lintGutter(),
     EditorView.lineWrapping,

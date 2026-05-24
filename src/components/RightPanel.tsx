@@ -24,6 +24,7 @@ import {
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
+import AnnotationsPanel from "./AnnotationsPanel";
 import ScrollContextPanel from "./ScrollContextPanel";
 import {
   isEnabled as isScrollEnabled,
@@ -51,6 +52,7 @@ import {
   ChevronDown,
   ChevronRight,
   MessageSquareCheck,
+  MessagesSquare,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
@@ -64,11 +66,12 @@ import {
   reviewItem,
 } from "../stores/collab";
 import { Dropdown } from "./Dropdown";
-import { toastError, toastWarning } from "../stores/toasts";
+import { toastError } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { rightPanelTab, setRightPanelTab, type RightPanelTab } from "../stores/layout";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { clickOutside } from "../lib/clickOutside";
 import { activeEditorView } from "../stores/editor";
 import { openEditorFind, openEditorReplace } from "../editor/search-panel";
 import {
@@ -1031,31 +1034,6 @@ const RightPanel: Component = () => {
     }
   }
 
-  async function menuMerge() {
-    setFileMenu(null);
-    const tab = activeFileTab();
-    if (!tab) return;
-    const targetName = await promptText({
-      title: "Merge file",
-      label: "Merge entire file into note",
-      placeholder: "Note name",
-      confirmLabel: "Merge",
-    });
-    if (!targetName) return;
-    try {
-      const targetPath = await ipc.resolveWikilink(targetName);
-      if (!targetPath) {
-        toastWarning("Note not found: " + targetName);
-        return;
-      }
-      await ipc.mergeNotes([tab.path], targetPath);
-      closeTab(tab.id);
-      openTab({ type: "file", title: targetName, path: targetPath }, { forceNewTab: true });
-    } catch (err) {
-      toastError("Merge failed", err);
-    }
-  }
-
   function menuExport() {
     setFileMenu(null);
     const tab = activeFileTab();
@@ -1207,6 +1185,15 @@ const RightPanel: Component = () => {
             >
               <Quote size={18} />
             </button>
+            {/* Annotations — always available for a file note. */}
+            <button
+              class={`right-panel__tab${activePanel() === "annotations" ? " right-panel__tab--active" : ""}`}
+              onClick={() => setActivePanel("annotations")}
+              title="Annotations"
+              aria-label="Annotations"
+            >
+              <MessagesSquare size={18} />
+            </button>
           </Show>
         </Show>
         {/* Review tab — contextual: shown only while a collaboration review
@@ -1231,6 +1218,15 @@ const RightPanel: Component = () => {
       <Show when={activePanel() === "review"}>
         <div class="right-panel__tab-content">
           <ReviewPanel />
+        </div>
+      </Show>
+
+      {/* Annotations tab content — its own fill container so the pane can pin
+          its insert toolbar to the bottom while the list scrolls. The file-tab
+          block below yields when this is active. */}
+      <Show when={activePanel() === "annotations" && activeFileTab()}>
+        <div class="right-panel__tab-content right-panel__tab-content--fill">
+          <AnnotationsPanel />
         </div>
       </Show>
 
@@ -1411,13 +1407,18 @@ const RightPanel: Component = () => {
       </Show>
 
       <Show
-        when={activeFileTab() && activePanel() !== "review"}
+        when={
+          activeFileTab() &&
+          activePanel() !== "review" &&
+          activePanel() !== "annotations"
+        }
         fallback={
           <Show
             when={
               getActiveTab()?.type !== "mycelial" &&
               getActiveTab()?.type !== "collection" &&
-              activePanel() !== "review"
+              activePanel() !== "review" &&
+              activePanel() !== "annotations"
             }
           >
             <p class="sidebar-hint">No file selected</p>
@@ -1614,7 +1615,10 @@ const RightPanel: Component = () => {
                 <div
                   class="context-menu"
                   ref={(el) => anchorPanelMenu(linksSortBtnRef, el)}
-                  onMouseLeave={() => setShowLinksSortMenu(false)}
+                  use:clickOutside={{
+                    onDismiss: () => setShowLinksSortMenu(false),
+                    ignore: linksSortBtnRef,
+                  }}
                 >
                   <For each={LINKS_SORT_OPTIONS}>
                     {(opt) => (
@@ -2039,9 +2043,6 @@ const RightPanel: Component = () => {
             </button>
             <button class="context-menu__item" onClick={menuBookmark}>
               Bookmark...
-            </button>
-            <button class="context-menu__item" onClick={menuMerge}>
-              Merge file with...
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuExport}>

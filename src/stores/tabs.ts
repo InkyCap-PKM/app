@@ -338,7 +338,7 @@ export function switchToTabByIndex(index: number) {
  * becoming a phantom that errors on the next save.
  *
  * The new title is derived from the destination filename, matching how
- * `openTab` callers (App.tsx, MycelialView.tsx, NoteComposer.tsx) compute
+ * `openTab` callers (App.tsx, MycelialView.tsx) compute
  * the title from a path. We don't try to detect "user-customized
  * titles" because the app doesn't currently support them — every tab
  * title is the basename of its path.

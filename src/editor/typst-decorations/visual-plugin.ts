@@ -787,9 +787,18 @@ function handleFuncCall(
       if (bodyText === null) return false;
       const by = extractNamedStringArg(text, "by");
       const on = extractNamedStringArg(text, "on");
-      pushBlockElement((withPill) =>
-        new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, withPill),
-      );
+      // Unlike callout/quote, a comment has nothing to preview while you edit
+      // it, so we don't use the side:1 "source + preview" pattern (which would
+      // show the annotation twice while editing). Expanded ⇒ raw source only;
+      // collapsed ⇒ a single block widget (with a pill on the cursor line).
+      const isExpanded = expandedPos === from || (autoExpand && onCursor);
+      if (!isExpanded) {
+        decos.push(
+          Decoration.replace({
+            widget: new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, onCursor),
+          }).range(from, to),
+        );
+      }
       return false;
     }
     case "image": {
@@ -1197,7 +1206,7 @@ function extractFirstEscapedStringArgRange(
   return null;
 }
 
-function extractNamedStringArg(text: string, name: string): string | null {
+export function extractNamedStringArg(text: string, name: string): string | null {
   const re = new RegExp(`${name}\\s*:\\s*"([^"]*)"`);
   const m = text.match(re);
   return m ? m[1] : null;
@@ -1239,7 +1248,7 @@ function extractAttributionDisplay(text: string): string {
   return "";
 }
 
-function extractBracketContent(text: string): string | null {
+export function extractBracketContent(text: string): string | null {
   const open = text.indexOf("[");
   if (open < 0) return null;
   let depth = 0;
@@ -1269,7 +1278,7 @@ function extractBracketAfter(text: string, startIdx: number): string | null {
 }
 
 /** Inner content of a named content argument, e.g. `old: [..]`. */
-function extractNamedBracket(text: string, name: string): string | null {
+export function extractNamedBracket(text: string, name: string): string | null {
   const m = new RegExp(`\\b${name}\\s*:\\s*`).exec(text);
   if (!m) return null;
   return extractBracketAfter(text, m.index + m[0].length);
@@ -1279,7 +1288,7 @@ function extractNamedBracket(text: string, name: string): string | null {
  *  follows the balanced `(...)` argument list (so a `old: [..]` inside the
  *  args isn't mistaken for it). String-aware so a `)` inside a quoted arg
  *  doesn't end the arg list early. */
-function extractBodyBracket(text: string): string | null {
+export function extractBodyBracket(text: string): string | null {
   const parenOpen = text.indexOf("(");
   let after = 0;
   if (parenOpen >= 0) {

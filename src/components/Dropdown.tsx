@@ -12,9 +12,10 @@
  * it escapes parent `overflow: hidden` regions.
  */
 
-import { createEffect, For, Show, createSignal, onCleanup } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import { Check, ChevronDown } from "lucide-solid";
 import { anchorPanelMenu } from "../lib/uiMenu";
+import { clickOutside } from "../lib/clickOutside";
 
 export interface DropdownOption<T> {
   value: T;
@@ -78,23 +79,9 @@ export function Dropdown<T>(props: DropdownProps<T>) {
     }
   }
 
-  // While open: dismiss on an outside pointer-down or a viewport resize
-  // (the menu is fixed-positioned and would otherwise drift off its anchor).
-  createEffect(() => {
-    if (!open()) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest(".dropdown__menu")) return;
-      if (triggerRef && (t === triggerRef || triggerRef.contains(t))) return;
-      closeMenu();
-    };
-    window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("resize", closeMenu);
-    onCleanup(() => {
-      window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("resize", closeMenu);
-    });
-  });
+  // Dismissal (outside mouse-down, Escape, viewport resize) is handled by the
+  // shared `clickOutside` directive on the menu element below — the same one
+  // the panel sort menus use, so all anchored toggle menus dismiss identically.
 
   function onKeyDown(e: KeyboardEvent) {
     if (props.disabled) return;
@@ -145,6 +132,7 @@ export function Dropdown<T>(props: DropdownProps<T>) {
           class="context-menu dropdown__menu"
           role="listbox"
           ref={(el) => anchorPanelMenu(triggerRef, el)}
+          use:clickOutside={{ onDismiss: closeMenu, ignore: triggerRef }}
         >
           <For each={props.options}>
             {(opt, i) => (

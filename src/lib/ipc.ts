@@ -838,27 +838,6 @@ export async function addMycelialStopword(term: string): Promise<void> {
   return invoke<void>("add_mycelial_stopword", { term });
 }
 
-// Note Composer
-
-export async function mergeNotes(
-  paths: string[],
-  targetPath: string,
-  deleteSources?: boolean,
-): Promise<string> {
-  return invoke<string>("merge_notes", {
-    paths,
-    targetPath,
-    deleteSources: deleteSources ?? false,
-  });
-}
-
-export async function splitNote(
-  path: string,
-  heading: string,
-): Promise<string> {
-  return invoke<string>("split_note", { path, heading });
-}
-
 // Export
 
 export async function exportNotePdf(
