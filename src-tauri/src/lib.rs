@@ -10,6 +10,7 @@ pub mod creation_rules;
 pub mod errors;
 pub mod events;
 pub mod font_resolver;
+pub mod git;
 pub mod link_index;
 pub mod markdown;
 pub mod models;

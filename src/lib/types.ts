@@ -445,11 +445,26 @@ export interface NoteboxCitationSettings {
   custom_csl_path: string | null;
 }
 
+/** Git collaboration config for a notebox. `null` ⇒ the notebox is not
+ *  collaborative. Mirrors `src-tauri/src/notebox_settings.rs::NoteboxGitConfig`.
+ *  Carries only the notebox-shared facts (remote + branch); commit author
+ *  identity is per-user and stored separately (keyed by remote), never here. */
+export interface NoteboxGitConfig {
+  /** Remote URL — SSH (`git@host:owner/repo.git`) or HTTPS. */
+  remote: string;
+  /** Tracked branch (e.g. `"main"`). */
+  branch: string;
+}
+
 export interface NoteboxSettings {
   files: NoteboxFileSettings;
   startup: NoteboxStartupSettings;
   journal_scroll: JournalScrollSettings;
   citations: NoteboxCitationSettings;
+  /** Git collaboration config; `null` when the notebox is not collaborative.
+   *  Round-tripped opaquely until the Phase 4 setup UI; carried here so a
+   *  settings save never drops a configured remote. */
+  git: NoteboxGitConfig | null;
 }
 
 // ============================================================================

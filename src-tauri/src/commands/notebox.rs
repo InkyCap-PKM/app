@@ -143,6 +143,17 @@ pub async fn open_notebox(
         }
     }
 
+    // Notebox-level git collaboration: if this notebox carries a git config
+    // and is already a git repo, refresh its `.gitignore` and surface a
+    // status summary to the frontend. No auto-fetch — review always sits
+    // between fetch and apply, so opening only reads local state.
+    if let Some(canonical_root) = state.notebox_root.read().await.clone() {
+        let git_cfg = state.notebox_settings.read().await.git.clone();
+        if let Some(git_cfg) = git_cfg {
+            surface_git_status(&app_handle, canonical_root, git_cfg);
+        }
+    }
+
     // Persist the notebox path and register in the notebox registry
     let mut cfg = config::load_config();
     cfg.notebox_path = Some(path.clone());
@@ -187,6 +198,72 @@ pub async fn open_notebox(
         collection_count,
         property_keys: Vec::new(),
     })
+}
+
+/// On opening a *collaborative* notebox (one carrying a [`NoteboxGitConfig`]
+/// that is already a git repo), refresh its `.gitignore` and emit a status
+/// summary (`notebox:git-status`) the frontend can show. Runs on a blocking
+/// task because libgit2 calls are synchronous.
+///
+/// Deliberately read-only: it never fetches or commits. A notebox that has a
+/// configured remote but has not been initialized as a repo yet (Phase 4
+/// setup) is skipped with a log line, not auto-`init`ed — turning a notebox
+/// into a repo is an explicit user action, not a side effect of opening it.
+///
+/// [`NoteboxGitConfig`]: crate::notebox_settings::NoteboxGitConfig
+fn surface_git_status(
+    handle: &tauri::AppHandle,
+    root: std::path::PathBuf,
+    git_cfg: crate::notebox_settings::NoteboxGitConfig,
+) {
+    let handle = handle.clone();
+    tokio::task::spawn_blocking(move || {
+        use crate::git::backend::{ensure_collaboration_gitignore, GitBackend};
+
+        if !GitBackend::is_repo(&root) {
+            log::info!(
+                "notebox git: remote configured but notebox is not a git repo yet; \
+                 skipping status (set up collaboration to initialize)"
+            );
+            return;
+        }
+
+        // Keep the ignore rules current (self-heals if the file was deleted);
+        // idempotent, so safe to run on every open.
+        if let Err(err) = ensure_collaboration_gitignore(&root) {
+            log::warn!("notebox git: could not write .gitignore: {err}");
+        }
+
+        let backend = match GitBackend::open(&root) {
+            Ok(b) => b,
+            Err(err) => {
+                log::warn!("notebox git: open failed: {err}");
+                return;
+            }
+        };
+
+        match backend.status_summary() {
+            Ok(status) => {
+                log::info!(
+                    "notebox git: branch={:?} head={:?} dirty={} ahead={} behind={}",
+                    status.branch,
+                    status.head,
+                    status.dirty,
+                    status.ahead,
+                    status.behind
+                );
+                let _ = handle.emit(
+                    "notebox:git-status",
+                    serde_json::json!({
+                        "remote": git_cfg.remote,
+                        "branch": git_cfg.branch,
+                        "status": status,
+                    }),
+                );
+            }
+            Err(err) => log::warn!("notebox git: status failed: {err}"),
+        }
+    });
 }
 
 /// Re-parse a file that the watcher reported as changed/created and push the

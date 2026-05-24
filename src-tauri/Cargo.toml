@@ -50,6 +50,23 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 log = "0.4"
 env_logger = "0.11"
 
+# Notebox-level git collaboration transport. We vendor both libgit2 and
+# openssl (`vendored-libgit2` + `vendored-openssl`) so the binary carries
+# its own copies and does not link the host's libgit2/OpenSSL. This is the
+# same self-contained stance the `reqwest` dep takes with rustls: identical
+# behaviour on every platform and no dependence on a system git or TLS
+# install (the collaboration design requires working with "no system git
+# installed"). libgit2 cannot use rustls, so vendored openssl is the
+# closest equivalent. `ssh`/`https` enable both transports (in-memory SSH
+# keys come with `ssh`); the build needs a C compiler + perl, which the
+# Typst/rusqlite deps already require.
+git2 = { version = "0.21", default-features = false, features = [
+    "vendored-libgit2",
+    "vendored-openssl",
+    "ssh",
+    "https",
+] }
+
 # Typst compile pipeline. Pinned to 0.14.x to match the toolchain validated
 # in the Phase 0 spike (typst-cli v0.14.2). Bumping the minor requires
 # re-running spike-bench/bench-napi.mjs against the new pin.

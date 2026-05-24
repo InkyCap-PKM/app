@@ -5,8 +5,63 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 (removal) DONE + committed e1298c8 on branch notebox-git-collab. Phase 1 (git foundation) is next — see 'Phase 1 — start here' below."
+status: "Phase 0 DONE (e1298c8). Phase 1 (git foundation) DONE + green, uncommitted on notebox-git-collab — see 'Phase 1 — DONE' below. Phase 2 (fetch→diff→suggestion) is next."
 ---
+
+## Phase 1 — DONE (2026-05-24)
+
+All eight ordered steps landed; `cargo build` (0 warnings), `cargo test --lib`
+(513 pass, +13 new), `utf8_safety`/`path_safety`, `tsc`, and `npm run build`
+all green. **Uncommitted** on `notebox-git-collab`.
+
+What shipped:
+- **`git2` 0.21** vendored (`vendored-libgit2` + `vendored-openssl`) — matches
+  the project's "no OS-native TLS, identical cross-platform" stance and the
+  "no system git installed" verification goal. `InkyCapError::Git` + `From<git2::Error>`.
+- **`src-tauri/src/git/`**: `mod.rs` (loop doc + re-exports), `backend.rs`
+  (`GitBackend`: `open_or_init`/`open`/`is_repo`/`set_remote`/`remote_url`/
+  `current_head`/`status_summary`/`merge_base`/`read_blob_at`/`author_signature`/
+  `stage_paths`/`commit`/`fetch`/`push` + `ensure_collaboration_gitignore`),
+  `auth.rs` (keyring HTTPS-PAT per host, ssh-agent→default-key credentials
+  callback, **remote-keyed author-identity store**), and honest "not built yet"
+  stubs for `staging.rs`/`suggest.rs` (Phase 2/3). Local ops fully unit-tested;
+  fetch/push are foundation, first exercised in Phase 2/3.
+- **Events** (`events/mod.rs`): full Git vocabulary —
+  `GitFetchStarted/Completed`, `GitReviewPending{count}`, `GitConsolidated{path}`,
+  `GitPushStarted/Completed`, `GitCredentialNeeded{remote,transport}` (field is
+  `transport`, not `kind`, which is the serde tag), `GitError{message}`.
+- **`NoteboxGitConfig { remote, branch }`** on `NoteboxSettings.git: Option<…>`
+  (shared, travels). Frontend `types.ts` + defaults updated so a settings save
+  never drops a configured remote.
+- **Settings split**: audit found window-state, metadata cache, and search
+  index already live under OS config/cache dirs (outside the repo), so the only
+  in-repo per-machine field was `startup.last_active_file`. It now routes to a
+  gitignored `.inkycap/local.json` transparently inside `load_settings`/
+  `save_settings` — **frontend `NoteboxSettings` shape unchanged** (the split is
+  a pure persistence concern). The committed `settings.json` always records
+  `last_active_file: null`.
+- **`.gitignore` authoring**: idempotent managed block (markers) ignoring
+  `.inkycap/local.json`, `.inkycap/incoming/`, OS noise; preserves user entries.
+- **Notebox-open lifecycle** (`commands/notebox.rs::surface_git_status`):
+  collaborative + already-a-repo ⇒ refresh `.gitignore`, emit
+  `notebox:git-status` (no UI consumer yet — Phase 4). Read-only: **never**
+  auto-fetches and **never** auto-`init`s (turning a notebox into a repo is an
+  explicit Phase 4 action).
+
+**KEY DECISION — author identity (resolves the step-3/step-4 ambiguity, with
+the user):** identity is **NOT** in `NoteboxGitConfig` (if it travelled in the
+committed settings, every collaborator would commit under one name). It lives in
+a **per-installation store keyed by remote URL** (`auth.rs`,
+`$CONFIG_DIR/inkycap/git-identities.json`): per-notebook (different remote ⇒
+different account, satisfying the user's multi-account need), never leaks to
+collaborators, and auto-applies to any clone of that notebox *on this machine*.
+Commit-time resolution: store-by-remote → git's own `user.name`/`user.email`
+(`repo.signature()`) → prompt. **Known limitation the user flagged:** carrying
+identity to a *second machine* automatically needs InkyCap settings-sync (future
+feature); the store is shaped so sync slots in additively. Until then it is set
+once per machine and remembered per-notebook.
+
+
 
 # Notebox-level Git Collaboration
 

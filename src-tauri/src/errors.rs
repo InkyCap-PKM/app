@@ -32,6 +32,9 @@ pub enum InkyCapError {
     #[error("Export failed: {0}")]
     ExportFailed(String),
 
+    #[error("Git error: {0}")]
+    Git(String),
+
     #[error("{0}")]
     BadRequest(String),
 
@@ -46,6 +49,12 @@ pub enum InkyCapError {
 impl From<rusqlite::Error> for InkyCapError {
     fn from(err: rusqlite::Error) -> Self {
         InkyCapError::Cache(err.to_string())
+    }
+}
+
+impl From<git2::Error> for InkyCapError {
+    fn from(err: git2::Error) -> Self {
+        InkyCapError::Git(err.to_string())
     }
 }
 

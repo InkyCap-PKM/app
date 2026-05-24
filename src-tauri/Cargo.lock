@@ -1823,6 +1823,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "git2"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddddbf932745a6be37109b6112d3ee09696106f848449069d3a57bba937ab82e"
+dependencies = [
+ "bitflags 2.11.0",
+ "libc",
+ "libgit2-sys",
+ "log",
+ "openssl-probe",
+ "openssl-sys",
+ "url",
+]
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2639,6 +2654,7 @@ dependencies = [
  "env_logger",
  "flate2",
  "fontdb",
+ "git2",
  "gtk",
  "hayagriva",
  "keyring",
@@ -3068,6 +3084,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "libgit2-sys"
+version = "0.18.4+1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b26f66f35e1871b22efcf7191564123d2a446ca0538cde63c23adfefa9b15b7"
+dependencies = [
+ "cc",
+ "libc",
+ "libssh2-sys",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+]
+
+[[package]]
 name = "libloading"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3099,6 +3129,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
  "cc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
+name = "libssh2-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "220e4f05ad4a218192533b300327f5150e809b54c4ec83b5a1d91833601811b9"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
+name = "libz-sys"
+version = "1.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc3a226e576f50782b3305c5ccf458698f92798987f551c6a02efe8276721e22"
+dependencies = [
+ "cc",
+ "libc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3627,6 +3683,34 @@ dependencies = [
  "is-wsl",
  "libc",
  "pathdiff",
+]
+
+[[package]]
+name = "openssl-probe"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
+
+[[package]]
+name = "openssl-src"
+version = "300.6.0+3.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8e8cbfd3a4a8c8f089147fd7aaa33cf8c7450c4d09f8f80698a0cf093abeff4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "openssl-sys"
+version = "0.9.116"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
+dependencies = [
+ "cc",
+ "libc",
+ "openssl-src",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
