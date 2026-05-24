@@ -299,6 +299,32 @@ impl GitBackend {
         })
     }
 
+    /// Adopt the fetched remote tip as the new base before consolidating, so a
+    /// consolidate commit lands *on top of theirs* and pushes as a
+    /// fast-forward. Moves HEAD + index to `target` but leaves the working tree
+    /// untouched (a soft/mixed reset), so the resolved working files survive
+    /// and are what gets staged next. Returns whether it advanced.
+    ///
+    /// Only advances when `target` descends from HEAD (a genuine fast-forward).
+    /// When histories have diverged it does nothing and returns `false`: the
+    /// eventual push is then rejected and the caller re-reviews, rather than the
+    /// branch being force-moved (which would drop local commits).
+    pub fn fast_forward_to(&self, target: Oid) -> Result<bool> {
+        match self.current_head()? {
+            Some((_, head)) if head == target => Ok(false),
+            Some((_, head)) => {
+                if self.merge_base(head, target)? == Some(head) {
+                    let obj = self.repo.find_object(target, None)?;
+                    self.repo.reset(&obj, git2::ResetType::Mixed, None)?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            None => Ok(false),
+        }
+    }
+
     /// Stage notebox-relative paths into the index.
     pub fn stage_paths(&self, rels: &[PathBuf]) -> Result<()> {
         let mut index = self.repo.index()?;
@@ -348,18 +374,61 @@ impl GitBackend {
         Ok(())
     }
 
-    /// Push `branch` to the named remote. Never force-pushes; if the remote has
-    /// moved the push is rejected and the caller falls back to fetch-and-review.
+    /// Push `branch` to the named remote. Never force-pushes. Returns whether
+    /// the remote *rejected* the update (it moved since the last fetch) so the
+    /// caller can fall back to fetch-and-review instead of forcing. A rejection
+    /// is a normal outcome, not an error; transport/auth failures are `Err`.
     /// Blocking.
-    pub fn push(&self, remote_name: &str, branch: &str) -> Result<()> {
+    pub fn push(&self, remote_name: &str, branch: &str) -> Result<PushResult> {
+        use std::sync::{Arc, Mutex};
         let mut remote = self.repo.find_remote(remote_name)?;
         let url = remote.url().unwrap_or("").to_string();
+
+        let mut cb = auth::remote_callbacks(&url);
+        // libgit2 reports a per-ref rejection here (e.g. non-fast-forward)
+        // rather than as an error from `push`, so capture it.
+        let rejection: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let sink = rejection.clone();
+        cb.push_update_reference(move |refname, status| {
+            if let Some(msg) = status {
+                *sink.lock().unwrap() = Some(format!("{refname}: {msg}"));
+            }
+            Ok(())
+        });
+
         let mut po = git2::PushOptions::new();
-        po.remote_callbacks(auth::remote_callbacks(&url));
+        po.remote_callbacks(cb);
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        remote.push(&[refspec], Some(&mut po))?;
-        Ok(())
+        // A non-fast-forward is a normal "remote moved" outcome, surfaced
+        // either as a `NotFastForward` error or via the callback above
+        // depending on transport — treat both as a rejection, not a failure.
+        match remote.push(&[refspec], Some(&mut po)) {
+            Ok(()) => {}
+            Err(e) if e.code() == git2::ErrorCode::NotFastForward => {
+                return Ok(PushResult {
+                    rejected: true,
+                    message: Some(e.message().to_string()),
+                })
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        let message = rejection.lock().unwrap().take();
+        Ok(PushResult {
+            rejected: message.is_some(),
+            message,
+        })
     }
+}
+
+/// Outcome of a [`GitBackend::push`].
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PushResult {
+    /// The remote rejected the update because it moved — fetch & review, then
+    /// push again. Never resolved by force-pushing.
+    pub rejected: bool,
+    /// The rejection reason, when `rejected`.
+    pub message: Option<String>,
 }
 
 /// Marker bracketing InkyCap's managed entries in a notebox `.gitignore`, so

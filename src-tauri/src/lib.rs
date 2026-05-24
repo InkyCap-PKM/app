@@ -200,6 +200,12 @@ pub fn run() {
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::git::git_fetch_review,
+            commands::git::git_consolidate_note,
+            commands::git::git_consolidate_all,
+            commands::git::git_push,
+            commands::git::git_discard_review,
+            commands::git::git_set_identity,
+            commands::git::git_get_identity,
             commands::notebox::open_notebox,
             commands::notebox::get_notebox_info,
             commands::notebox::get_saved_notebox_path,
