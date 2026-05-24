@@ -317,6 +317,14 @@ pub struct CollectionCollaboration {
     /// `Collaboration/<collection-name>` at apply time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import_folder: Option<String>,
+    /// Monotonic package revision, surfaced in the Collaboration pane. Bumped on
+    /// each export; on import it advances to `max(local, incoming)`, so
+    /// turn-taking collaborators converge on the same number. A Lamport-style
+    /// counter: a higher number is a later state, and equal numbers are a strong
+    /// hint that two collaborators share the same package generation (not a
+    /// cryptographic guarantee — concurrent divergent edits can collide).
+    #[serde(default)]
+    pub version: u64,
 }
 
 /// A parsed `.collection` file.

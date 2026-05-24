@@ -321,6 +321,92 @@ pub fn count_absolute_prefix_matches(source: &str, segment: &str) -> usize {
     count
 }
 
+/// Rewrite path-bearing calls (`image`/`read`/`embed`/`bibliography`) whose
+/// first string argument references the attachment at notebox-relative
+/// `old_rel`, repointing them at `new_rel`. Used when a collaborative
+/// attachment is renamed on import to dodge a filename collision: every member
+/// note that referenced it is updated in lockstep so it still resolves.
+///
+/// Matching is by *resolved notebox-relative path*: a leading `/` is normalized
+/// off both sides, and a relative argument is first anchored at `note_dir`, so
+/// it catches both the absolute form InkyCap emits (`/dir/file.png`) and a
+/// hand-authored relative one. The replacement is always written in the
+/// leading-`/` absolute form. Non-matching calls are left untouched.
+pub fn rewrite_referenced_path(
+    source: &str,
+    old_rel: &str,
+    new_rel: &str,
+    note_dir: &Path,
+) -> String {
+    let old_norm = old_rel.trim_start_matches('/');
+    if old_norm.is_empty() {
+        return source.to_string();
+    }
+    let new_abs = format!("/{}", new_rel.trim_start_matches('/'));
+
+    let root = parse(source);
+    let link = LinkedNode::new(&root);
+    let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    collect_rename_edits(&link, old_norm, &new_abs, note_dir, &mut edits);
+
+    if edits.is_empty() {
+        return source.to_string();
+    }
+    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    let mut out = source.to_string();
+    for (range, replacement) in edits {
+        out.replace_range(range, &replacement);
+    }
+    out
+}
+
+fn collect_rename_edits(
+    node: &LinkedNode<'_>,
+    old_norm: &str,
+    new_abs: &str,
+    note_dir: &Path,
+    edits: &mut Vec<(std::ops::Range<usize>, String)>,
+) {
+    if node.kind() == SyntaxKind::FuncCall {
+        if let Some(call) = node.cast::<ast::FuncCall>() {
+            if let ast::Expr::Ident(ident) = call.callee() {
+                if PATH_BEARING_CALLS.contains(&ident.as_str()) {
+                    if let Some(edit) = match_rename_arg(node, old_norm, new_abs, note_dir) {
+                        edits.push(edit);
+                    }
+                }
+            }
+        }
+    }
+    for child in node.children() {
+        collect_rename_edits(&child, old_norm, new_abs, note_dir, edits);
+    }
+}
+
+fn match_rename_arg(
+    call_node: &LinkedNode<'_>,
+    old_norm: &str,
+    new_abs: &str,
+    note_dir: &Path,
+) -> Option<(std::ops::Range<usize>, String)> {
+    let (node, value) = first_string_arg(call_node)?;
+    if value.is_empty() || value.contains("://") {
+        return None;
+    }
+    // Resolve the argument to the same notebox-relative shape as `old_norm`.
+    let resolved = match value.strip_prefix('/') {
+        Some(abs) => abs.to_string(),
+        None => rebase_path(&value, note_dir)?
+            .trim_start_matches('/')
+            .to_string(),
+    };
+    if resolved != old_norm {
+        return None;
+    }
+    let escaped = escape_typst_string(new_abs);
+    Some((node.range(), format!("\"{escaped}\"")))
+}
+
 fn collect_prefix_edits(
     node: &LinkedNode<'_>,
     needle: &str,
@@ -636,5 +722,45 @@ mod tests {
         let src = "#image(\"\")";
         let out = rebase(src, "notes");
         assert_eq!(out, src);
+    }
+
+    fn rename(source: &str, old_rel: &str, new_rel: &str, note_dir: &str) -> String {
+        rewrite_referenced_path(source, old_rel, new_rel, &PathBuf::from(note_dir))
+    }
+
+    #[test]
+    fn rename_rewrites_absolute_reference() {
+        let src = "#image(\"/img/photo.png\")";
+        let out = rename(src, "img/photo.png", "img/photo-ab12cd34.png", "");
+        assert_eq!(out, "#image(\"/img/photo-ab12cd34.png\")");
+    }
+
+    #[test]
+    fn rename_matches_old_rel_given_with_leading_slash() {
+        let src = "#image(\"/img/photo.png\")";
+        let out = rename(src, "/img/photo.png", "/img/photo-x.png", "");
+        assert_eq!(out, "#image(\"/img/photo-x.png\")");
+    }
+
+    #[test]
+    fn rename_rewrites_relative_reference_via_note_dir() {
+        // A hand-authored relative reference anchored at the note's folder.
+        let src = "#image(\"photo.png\")";
+        let out = rename(src, "notes/photo.png", "notes/photo-x.png", "notes");
+        assert_eq!(out, "#image(\"/notes/photo-x.png\")");
+    }
+
+    #[test]
+    fn rename_leaves_unrelated_references_untouched() {
+        let src = "#image(\"/img/other.png\")\n#image(\"/img/photo.png\")";
+        let out = rename(src, "img/photo.png", "img/photo-x.png", "");
+        assert_eq!(out, "#image(\"/img/other.png\")\n#image(\"/img/photo-x.png\")");
+    }
+
+    #[test]
+    fn rename_handles_multibyte_and_embed() {
+        let src = "#embed(\"/媒体/写真.png\")";
+        let out = rename(src, "媒体/写真.png", "媒体/写真-x.png", "");
+        assert_eq!(out, "#embed(\"/媒体/写真-x.png\")");
     }
 }

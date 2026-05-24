@@ -6,20 +6,24 @@ import type {
   ReviewResult,
   DecisionAction,
   ChangeKind,
+  AttachmentAction,
 } from "../lib/types";
 import { MessageSquareCheck, MessageSquarePlus } from "lucide-solid";
 import { showToast } from "../stores/toasts";
 import {
   review,
+  activeReview,
   decisions,
   comments,
   bibChoices,
+  attachmentChoices,
   currentReviewCollabid,
   loadReview as loadReviewStore,
   applyReview,
   setDecision,
   setComment,
   setBibChoice,
+  setAttachmentChoice,
   setAllDecisions as setAll,
   reviewHasContent,
   setCurrentReviewCollabid,
@@ -27,6 +31,7 @@ import {
   importPackageInto,
 } from "../stores/collab";
 import { setRightCollapsed } from "../stores/layout";
+import { pathEquals } from "../lib/paths";
 import HelpButton from "./HelpButton";
 import { Dropdown } from "./Dropdown";
 
@@ -129,8 +134,18 @@ const CollabPanel: Component<{
     }
   });
 
+  // The review session is a single global store, but its incoming-changes list
+  // belongs to ONE collection. Only show it here when the active session is
+  // this collection's — otherwise opening a collection with no staged import
+  // would surface another collection's pending changes.
+  const sessionIsThisCollection = () => {
+    const ar = activeReview();
+    return !!ar && pathEquals(ar.collectionPath, props.collectionPath);
+  };
+  const scopedReview = () => (sessionIsThisCollection() ? review() : null);
+
   const hasReviewContent = () => {
-    const r = review();
+    const r = scopedReview();
     return !!r && reviewHasContent(r);
   };
 
@@ -166,7 +181,11 @@ const CollabPanel: Component<{
   async function doPackage() {
     setBusy(true);
     try {
-      await packageCollection(props.collectionPath, props.collectionName);
+      // Refresh on success so the bumped package revision shows immediately
+      // (export increments it server-side but doesn't touch propertyVersion).
+      if (await packageCollection(props.collectionPath, props.collectionName)) {
+        props.onChanged();
+      }
     } finally {
       setBusy(false);
     }
@@ -245,25 +264,37 @@ const CollabPanel: Component<{
           placeholder="e.g. athena-babel"
         />
         <HelpButton label="About your handle">
-          Identifies your edits in the version history. Stays on this machine.
+          Identifies your edits in the version history.
         </HelpButton>
       </div>
 
       <div class="collection-meta__row collab-panel__actions">
-        <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doPackage}>
-          Export package…
-        </button>
         <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doImport}>
           Import package…
         </button>
+        <button class="collection-table__toolbar-btn" disabled={busy()} onClick={doPackage}>
+          Export package…
+        </button>
       </div>
 
-      <Show when={review()}>
+      <div class="collection-meta__row collab-panel__version">
+        <span class="collection-meta__hint">
+          Package revision {props.collectionFile.collaboration?.version ?? 0}
+        </span>
+        <HelpButton label="About the package revision">
+          Increments each time you export, and advances to the highest revision
+          you've imported. Collaborators turn-taking on a collection converge on
+          the same number — a quick check that everyone's working from the same
+          package generation. A higher number is a later state.
+        </HelpButton>
+      </div>
+
+      <Show when={scopedReview()}>
         {(r) => (
           <div class="collab-panel__review">
             <Show when={r().note_items.length > 0}>
               <div class="collection-meta__section-label">
-                Incoming changes — {r().note_items.length} to review
+                Incoming changes: {r().note_items.length} to review
               </div>
             </Show>
 
@@ -348,6 +379,47 @@ const CollabPanel: Component<{
               </For>
             </Show>
 
+            <Show when={r().attachment_conflicts.length > 0}>
+              <div class="collection-meta__section-label">
+                Attachment conflicts — {r().attachment_conflicts.length}
+              </div>
+              <div class="collection-meta__hint">
+                Both sides changed these files (or an unrelated local file shares
+                the path). Rename lands theirs under a new name and repoints the
+                notes that reference it, so nothing is lost.
+              </div>
+              <For each={r().attachment_conflicts}>
+                {(c) => (
+                  <div class="collab-panel__review-row">
+                    <div class="collab-panel__review-info">
+                      <span class="collab-panel__kind" data-kind="conflict">
+                        Conflict
+                      </span>
+                      <span class="collab-panel__path" title={c.path}>
+                        {fileName(c.path)}
+                      </span>
+                      <Show when={c.changed_by.length > 0}>
+                        <span class="collection-meta__hint">
+                          by {c.changed_by.join(", ")}
+                        </span>
+                      </Show>
+                    </div>
+                    <Dropdown<AttachmentAction>
+                      class="collab-panel__decision"
+                      value={attachmentChoices()[c.path] ?? "keep_mine"}
+                      options={[
+                        { value: "keep_mine", label: "Keep mine" },
+                        { value: "take_theirs", label: "Take theirs" },
+                        { value: "rename", label: "Rename" },
+                      ]}
+                      onChange={(v) => setAttachmentChoice(c.path, v)}
+                      ariaLabel="Attachment conflict resolution"
+                    />
+                  </div>
+                )}
+              </For>
+            </Show>
+
             <div class="collab-panel__review-list">
             <For each={visibleItems(r().note_items)}>
               {(item) => (
@@ -396,7 +468,7 @@ const CollabPanel: Component<{
                       <button
                         class="collection-table__toolbar-btn collab-panel__comment-toggle"
                         classList={{ "is-active": commentShown(item.collabid) }}
-                        title={commentShown(item.collabid) ? "Hide comment" : "Add a comment"}
+                        title={commentShown(item.collabid) ? "Hide comment" : "Add/View comment"}
                         aria-label="Toggle comment"
                         aria-pressed={commentShown(item.collabid)}
                         onClick={() => toggleComment(item.collabid)}

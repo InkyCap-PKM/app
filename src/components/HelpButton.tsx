@@ -1,6 +1,6 @@
 import { Component, JSX, Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
-import { CircleHelp, X } from "lucide-solid";
+import { CircleHelp } from "lucide-solid";
 
 // A small circled "?" trigger that toggles a dismissible help popover next to
 // it. Reusable anywhere an inline explanation would otherwise clutter the UI:
@@ -10,8 +10,8 @@ import { CircleHelp, X } from "lucide-solid";
 // through a `Portal` (so it is never clipped by a scrolling/`overflow` panel),
 // is positioned from the trigger's bounding rect — clamped into the viewport
 // and flipped above when it would overflow the bottom — and dismisses on a
-// click outside, on Escape, or via its own ✕. Styling uses the `--popup-*`
-// tokens (see CLAUDE.md "UI surfaces"); add no bespoke popup colours here.
+// click outside or on Escape. Styling uses the `--popup-*` tokens (see
+// CLAUDE.md "UI surfaces"); add no bespoke popup colours here.
 //
 // Mirrors the open/position/outside-click machinery in DatePicker so the two
 // floating surfaces behave identically.
@@ -111,14 +111,6 @@ const HelpButton: Component<HelpButtonProps> = (props) => {
             aria-label={props.label}
             style={{ left: `${pos().left}px`, top: `${pos().top}px`, width: `${POPOVER_WIDTH}px` }}
           >
-            <button
-              type="button"
-              class="help-button__close"
-              aria-label="Close"
-              onClick={() => setOpen(false)}
-            >
-              <X size={12} />
-            </button>
             <div class="help-button__content">{props.children}</div>
           </div>
         </Portal>

@@ -1265,7 +1265,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   when={renamingPath() === col.path}
                   fallback={
                     <div
-                      class="sidebar-item"
+                      classList={{
+                        "sidebar-item": true,
+                        // Highlight the collection whose tab is currently active,
+                        // mirroring how the file tree marks the open file.
+                        "sidebar-item--active":
+                          getActiveTab()?.type === "collection" &&
+                          pathEquals(getActiveTab()?.path, col.path),
+                      }}
                       onClick={() => openCollection(col)}
                       onContextMenu={(e) => handleCollectionContext(e, col)}
                     >

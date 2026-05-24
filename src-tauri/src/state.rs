@@ -531,6 +531,23 @@ impl AppState {
     ///   3. search_engine (write)
     ///   4. metadata cache (via `cache_upsert_note`, acquires its own guard)
     ///   5. property_index (write, last — consumes the parsed note)
+    /// Fallback for [`reindex_note`] when a fresh stat is unavailable: copy the
+    /// `file.*` properties from the note's existing index entry, if any.
+    async fn carry_forward_file_props(
+        &self,
+        path: &std::path::Path,
+        note: &mut crate::models::note::NoteMetadata,
+    ) {
+        let prop_index = self.property_index.read().await;
+        if let Some(old) = prop_index.notes.get(&path.to_path_buf()) {
+            for (k, v) in &old.properties {
+                if k.starts_with("file.") {
+                    note.properties.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+            }
+        }
+    }
+
     pub async fn reindex_note(&self, path: &std::path::Path, content: &str) {
         let notebox_root = self.notebox_root.read().await;
         let Some(root) = notebox_root.as_ref() else {
@@ -551,18 +568,19 @@ impl AppState {
             )
         };
 
-        // parse_note does not populate file.* properties (those come from
-        // the filesystem). Carry forward the existing file.* entries so
-        // filters like `file.ext == "typ"` keep working after reindex.
-        {
-            let prop_index = self.property_index.read().await;
-            if let Some(old) = prop_index.notes.get(&path.to_path_buf()) {
-                for (k, v) in &old.properties {
-                    if k.starts_with("file.") {
-                        note.properties.entry(k.clone()).or_insert_with(|| v.clone());
-                    }
-                }
-            }
+        // parse_note does not populate file.* properties (those come from the
+        // filesystem). Derive them from a fresh stat so filters like
+        // `file.ext == "typ"` work — crucially for a brand-new note (e.g. one
+        // just written by a collaboration apply), which has no prior index
+        // entry to carry forward from and would otherwise be excluded from
+        // every collection until a full rescan (restart). Fall back to the old
+        // entry's file.* if the stat fails for any reason.
+        match self.get_storage().await {
+            Ok(storage) => match storage.file_metadata(path).await {
+                Ok(meta) => crate::scanner::walker::insert_file_properties(&mut note.properties, &meta),
+                Err(_) => self.carry_forward_file_props(path, &mut note).await,
+            },
+            Err(_) => self.carry_forward_file_props(path, &mut note).await,
         }
 
         // 1. Link index: forget the old links, record the new ones, and do a

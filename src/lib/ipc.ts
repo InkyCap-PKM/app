@@ -45,6 +45,7 @@ import type {
   ReviewDetail,
   ReviewDecision,
   BibDecision,
+  AttachmentDecision,
   ApplyReport,
   ImportPackageResult,
 } from "./types";
@@ -1495,13 +1496,20 @@ export async function collabImport(
 }
 
 /** Apply review decisions from the staged import to the working notebox.
- *  `bibDecisions` resolves conflicting bibliography keys (omitted ⇒ keep local). */
+ *  `bibDecisions` resolves conflicting bibliography keys (omitted ⇒ keep local);
+ *  `attachmentDecisions` resolves conflicting attachments (omitted ⇒ keep mine). */
 export async function collabReviewApply(
   collectionPath: string,
   decisions: ReviewDecision[],
   bibDecisions: BibDecision[] = [],
+  attachmentDecisions: AttachmentDecision[] = [],
 ): Promise<ApplyReport> {
-  return invoke<ApplyReport>("collab_review_apply", { collectionPath, decisions, bibDecisions });
+  return invoke<ApplyReport>("collab_review_apply", {
+    collectionPath,
+    decisions,
+    bibDecisions,
+    attachmentDecisions,
+  });
 }
 
 /** Import a package without a pre-existing collection: creates the bundled

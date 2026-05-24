@@ -241,7 +241,7 @@ const ReviewPanel: Component = () => {
                   disabled={busy() || !(comments()[it().collabid] ?? "").trim()}
                   onClick={() => addComment(it().collabid, titleFromPath(it().path))}
                 >
-                  Add Comment
+                  Add/View Comment
                 </button>
               </Show>
 

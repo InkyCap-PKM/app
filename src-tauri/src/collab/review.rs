@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::clock::{ClockOrdering, VectorClock};
-use super::versions::{NoteVersion, VersionsFile};
+use super::versions::{AttachmentVersion, NoteVersion, VersionsFile};
 
 /// The kind of change a review item represents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +48,18 @@ pub struct ReviewItem {
     pub changed_by: Vec<String>,
 }
 
+/// One attachment in conflict, awaiting the user's resolution. Unlike notes,
+/// an attachment carries no whole-file diff — the decision is which binary to
+/// keep (or to land both under distinct names).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentConflict {
+    /// Notebox-relative path of the attachment in conflict.
+    pub path: String,
+    /// Collaborator handles that contributed the incoming version (best-effort;
+    /// empty when the incoming side carried no attachment tracking).
+    pub changed_by: Vec<String>,
+}
+
 /// The full classification of one import.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewResult {
@@ -60,6 +72,69 @@ pub struct ReviewResult {
     pub bib_conflicts: Vec<String>,
     /// Citation keys added or unchanged — union-merged silently.
     pub bib_auto_merges: Vec<String>,
+    /// Attachments whose bytes diverged and can't be auto-resolved by clock —
+    /// the user picks keep-mine / take-theirs / rename. Computed disk-side
+    /// (it needs the staged + local bytes), so `compute_review` leaves it
+    /// empty and the importer fills it in.
+    #[serde(default)]
+    pub attachment_conflicts: Vec<AttachmentConflict>,
+}
+
+/// What to do with one incoming attachment, given how its tracked clock and
+/// on-disk bytes compare to the local copy. The clock-resolvable outcomes
+/// (`New`/`Identical`/`TakeIncoming`/`KeepLocal`) apply silently; only
+/// `Conflict` surfaces to the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachmentVerdict {
+    /// No local file at the path — write the incoming bytes (additive).
+    New,
+    /// Bytes already identical — nothing to do.
+    Identical,
+    /// Incoming clock dominates: a one-sided change → take it silently.
+    TakeIncoming,
+    /// Local clock equal-or-ahead, content unchanged on their side → keep ours.
+    KeepLocal,
+    /// Concurrent divergent edits, or a local file that isn't a tracked
+    /// collaborative attachment (an unrelated file sharing the path) — never
+    /// silently overwritten; the user decides.
+    Conflict,
+}
+
+/// Decide an attachment's fate from the incoming/local content hashes and
+/// their tracked [`AttachmentVersion`]s. Pure (no disk) so the caller reads
+/// bytes once and this stays unit-testable. `local_hash == None` means no
+/// local file exists at the path.
+pub fn attachment_verdict(
+    inc_hash: &str,
+    local_hash: Option<&str>,
+    local_av: Option<&AttachmentVersion>,
+    inc_av: Option<&AttachmentVersion>,
+) -> AttachmentVerdict {
+    let Some(lh) = local_hash else {
+        return AttachmentVerdict::New;
+    };
+    if lh == inc_hash {
+        return AttachmentVerdict::Identical;
+    }
+    match (local_av, inc_av) {
+        // Both sides track this attachment — let the clock arbitrate, exactly
+        // as notes are compared.
+        (Some(l), Some(i)) => {
+            use ClockOrdering::*;
+            match i.clock.compare(&l.clock) {
+                Dominates => AttachmentVerdict::TakeIncoming,
+                DominatedBy => AttachmentVerdict::KeepLocal,
+                // Equal clocks but divergent bytes ⇒ an out-of-band edit broke
+                // tracking; concurrent ⇒ genuine two-sided edits. Either way,
+                // don't guess — ask.
+                Equal | Concurrent => AttachmentVerdict::Conflict,
+            }
+        }
+        // A local file occupies the path but isn't a tracked collaborative
+        // attachment (or the incoming side carried no tracking): we can't prove
+        // a one-sided change, so we never silently overwrite — surface it.
+        _ => AttachmentVerdict::Conflict,
+    }
 }
 
 /// Internal per-note decision.
@@ -368,6 +443,65 @@ mod tests {
         let inc = dead("a.typ", "bob", clock(&[("alice", 1), ("bob", 1)]));
         let cb = super::changed_by(ChangeKind::Deleted, None, &inc);
         assert_eq!(cb, vec!["bob".to_string()]);
+    }
+
+    fn av(pairs: &[(&str, u64)], hash: &str) -> AttachmentVersion {
+        AttachmentVersion { clock: clock(pairs), hash: hash.into() }
+    }
+
+    #[test]
+    fn attachment_new_when_no_local_file() {
+        assert_eq!(attachment_verdict("h1", None, None, None), AttachmentVerdict::New);
+    }
+
+    #[test]
+    fn attachment_identical_when_hashes_match() {
+        assert_eq!(
+            attachment_verdict("h1", Some("h1"), None, None),
+            AttachmentVerdict::Identical
+        );
+    }
+
+    #[test]
+    fn attachment_take_incoming_on_one_sided_change() {
+        // They advanced (alice 1→2), we didn't → take theirs silently.
+        let loc = av(&[("alice", 1)], "h1");
+        let inc = av(&[("alice", 2)], "h2");
+        assert_eq!(
+            attachment_verdict("h2", Some("h1"), Some(&loc), Some(&inc)),
+            AttachmentVerdict::TakeIncoming
+        );
+    }
+
+    #[test]
+    fn attachment_keep_local_when_we_are_ahead() {
+        let loc = av(&[("alice", 2), ("bob", 1)], "h2");
+        let inc = av(&[("alice", 1)], "h1");
+        assert_eq!(
+            attachment_verdict("h1", Some("h2"), Some(&loc), Some(&inc)),
+            AttachmentVerdict::KeepLocal
+        );
+    }
+
+    #[test]
+    fn attachment_conflict_on_concurrent_edits() {
+        let loc = av(&[("alice", 2), ("bob", 1)], "mine");
+        let inc = av(&[("alice", 1), ("bob", 2)], "theirs");
+        assert_eq!(
+            attachment_verdict("theirs", Some("mine"), Some(&loc), Some(&inc)),
+            AttachmentVerdict::Conflict
+        );
+    }
+
+    #[test]
+    fn attachment_conflict_when_local_file_untracked() {
+        // An unrelated local file sits at the incoming path (no local tracking)
+        // — must never be silently overwritten.
+        let inc = av(&[("alice", 1)], "theirs");
+        assert_eq!(
+            attachment_verdict("theirs", Some("unrelated"), None, Some(&inc)),
+            AttachmentVerdict::Conflict
+        );
     }
 
     #[test]
