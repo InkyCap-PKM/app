@@ -199,6 +199,7 @@ pub fn run() {
         })
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
+            commands::git::git_fetch_review,
             commands::notebox::open_notebox,
             commands::notebox::get_notebox_info,
             commands::notebox::get_saved_notebox_path,

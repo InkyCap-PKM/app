@@ -66,6 +66,10 @@ git2 = { version = "0.21", default-features = false, features = [
     "ssh",
     "https",
 ] }
+# Line-level text diffing for the collaboration review renderer (maps a 3-way
+# diff onto inline #suggestion markup). Pure Rust, no C deps; widely vetted
+# (the diff engine behind `insta`). Only the default `text` feature is needed.
+similar = "2"
 
 # Typst compile pipeline. Pinned to 0.14.x to match the toolchain validated
 # in the Phase 0 spike (typst-cli v0.14.2). Bumping the minor requires
