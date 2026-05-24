@@ -5,8 +5,49 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 DONE (e1298c8). Phase 1 (git foundation) DONE + green, uncommitted on notebox-git-collab — see 'Phase 1 — DONE' below. Phase 2 (fetch→diff→suggestion) is next."
+status: "Phase 0 DONE (e1298c8). Phase 1 DONE + committed (a84829d). Phase 2 (fetch→diff→#suggestion) DONE + committed (fe2a560), 532 lib tests green. Phase 3 (resolve→consolidate→push) is next."
 ---
+
+## Phase 2 — DONE (2026-05-24, commit fe2a560)
+
+The one-review-surface core. `cargo test --lib` 532 pass (+19), 0 warnings,
+utf8/path safety green. Frontend untouched (Phase 4).
+
+- **`git/suggest.rs`** (the make-or-break piece): `render_incoming(base, mine,
+  theirs, by, on) -> StagedRender`. Strategy: a line diff of *mine→theirs*
+  drives rendering (insert/delete/replace) so the staged copy = mine with
+  theirs overlaid as `#suggestion`s — giving **accept-all == theirs,
+  reject-all == mine** (the round-trip invariant). The merge base classifies
+  each hunk **clean** (only theirs touched it) vs **conflict** (mine also
+  differs from base); conflict byte-offsets are returned so the review layer
+  can hold them back from bulk-accept. No base ⇒ all clean ("all incoming").
+  Reuses `typst_pipeline::suggestion::{suggestion_call, resolve_all_suggestions}`.
+  Safety per CLAUDE.md: bodies verbatim (markup, not strings); line split scans
+  ASCII `\n` only (UTF-8 safe); **staged copy parsed with the real Typst
+  parser — whole-note fallback to raw-diff if rendering introduced errors**;
+  existing `#suggestion`/`#annotation` hunks pass through (no double-wrap).
+- **`git/staging.rs`**: `.inkycap/incoming/` lifecycle (gitignored + watcher-
+  ignored). Staged copies mirror each note's relative path; cleared per fetch.
+- **`git/backend.rs`** additions: `remote_tracking_oid`, `commit_info`
+  (author/email/timestamp/message/short-hash), `changed_paths(from: Option<Oid>,
+  to)` (HEAD→theirs tree diff; `None` from = unborn HEAD).
+- **`commands/git.rs`**: `git_fetch_review` — set/sync `origin` from the config
+  URL, fetch, diff HEAD→theirs, classify each path (`.typ` Added/Modified/
+  Deleted vs non-note `Binary`), render modified notes as suggestions + stage,
+  return `ReviewSession { items, incoming, up_to_date }`. `by:`/`on:` stamped
+  from the incoming commit. Emits `notebox:git-{fetch-started,fetch-completed,
+  review-pending,error}`. Registered in `lib.rs`. Runs entirely on a
+  `spawn_blocking` task (git2 is sync + `GitBackend` is `!Sync`).
+- **`similar` 2.7** added (line diffing; pure Rust, vetted via `insta`).
+- Tests include an **end-to-end local-clone fetch** (no network) exercising the
+  whole fetch→diff→render→stage→round-trip pipeline.
+
+**Carried to Phase 3:** binary/attachment changes are only *classified*
+(`ChangeKind::Binary`) — the Keep-mine/Take-theirs/Rename decision flow, plus
+note Add/Delete decisions and `consolidate`/`push`, are Phase 3. The conflict
+offsets from `suggest` feed the bulk-accept-excludes-conflicts rule there.
+
+
 
 ## Phase 1 — DONE (2026-05-24)
 
