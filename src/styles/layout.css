@@ -9803,3 +9803,280 @@ svg.lucide {
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-subtle, transparent);
 }
+
+/* ─────────────────────────── Git collaboration ─────────────────────────── */
+
+/* VerticalToolbar handshake button: a normal toolbar button with a small
+   accent count badge for pending reviews. */
+.vertical-toolbar__collab-btn {
+  position: relative;
+}
+
+.vertical-toolbar__badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status-bar git chip: matches the notebox-name chip's accent-tinted look. */
+.status-bar__git {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--status-btn-bg);
+  border: none;
+  color: var(--accent-text, var(--status-fg));
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.status-bar__git:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+@keyframes git-spin {
+  to { transform: rotate(360deg); }
+}
+
+.status-bar__git-spin {
+  animation: git-spin 1s linear infinite;
+}
+
+/* Panel body */
+.git-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  overflow-y: auto;
+}
+
+.git-panel__setup .settings__label {
+  margin-top: 4px;
+}
+
+.git-panel__identity-row {
+  display: flex;
+  gap: 6px;
+}
+
+.git-panel__identity-row .settings__text-input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Primary action button — mirrors the app's accent button convention. */
+.git-panel__primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.git-panel__primary-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.git-panel__primary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.git-panel__danger-btn {
+  background: none;
+  border: 1px solid var(--accent-danger);
+  color: var(--accent-danger);
+  border-radius: var(--radius-control);
+  padding: 5px 10px;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.git-panel__danger-btn:hover {
+  background: var(--accent-danger-bg);
+}
+
+.git-panel__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.git-panel__remote,
+.git-panel__status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.git-panel__remote {
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.git-panel__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Incoming commit context banner */
+.git-panel__banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.git-panel__banner-author {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.git-panel__banner-msg {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.git-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.git-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.git-panel__item--readonly {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.git-panel__item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-panel__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.git-panel__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs, 0.72rem);
+  color: var(--fg-dim);
+}
+
+.git-panel__badge--conflict {
+  color: var(--accent-danger);
+  font-weight: 600;
+}
+
+/* Per-item consolidate button (the check) */
+.git-panel__item-consolidate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.git-panel__item-consolidate:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* Per-kind icon tint, mirroring the inline suggestion tones. */
+.git-panel__icon--added { color: var(--callout-success, var(--accent)); }
+.git-panel__icon--modified { color: var(--accent); }
+.git-panel__icon--deleted { color: var(--accent-danger); }
+.git-panel__icon--binary { color: var(--fg-dim); }
+
+/* Manage (collapsible) */
+.git-panel__manage {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.git-panel__manage-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: inherit;
+}
+
+.git-panel__manage-toggle:hover {
+  color: var(--fg-primary);
+}
+
+.git-panel__manage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.git-panel__inline-form {
+  display: flex;
+  gap: 6px;
+}
+
+.git-panel__inline-form .settings__text-input {
+  min-width: 0;
+  flex: 1;
+}

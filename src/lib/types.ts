@@ -462,9 +462,112 @@ export interface NoteboxSettings {
   journal_scroll: JournalScrollSettings;
   citations: NoteboxCitationSettings;
   /** Git collaboration config; `null` when the notebox is not collaborative.
-   *  Round-tripped opaquely until the Phase 4 setup UI; carried here so a
-   *  settings save never drops a configured remote. */
+   *  Carried here so a settings save never drops a configured remote. The
+   *  Phase 4 setup UI writes it via `gitSetupCollaboration`. */
   git: NoteboxGitConfig | null;
+}
+
+// ============================================================================
+// Git collaboration (Phase 4 review surface).
+//
+// Mirrors the serde shapes in `src-tauri/src/commands/git.rs` and
+// `src-tauri/src/git/backend.rs`. `GitReviewItem`/`GitReviewSession` are
+// camelCase (rename_all); `GitCommitInfo` keeps the backend's snake_case field
+// names, matching how other backend structs cross the IPC boundary here.
+// ============================================================================
+
+/** A short, content-free summary of a collaborative notebox's git state. */
+export interface GitStatusSummary {
+  /** Checked-out branch, or `null` on an unborn head. */
+  branch: string | null;
+  /** Short hash of the head commit, or `null` before the first commit. */
+  head: string | null;
+  /** Working tree has uncommitted changes (gitignored files excluded). */
+  dirty: boolean;
+  /** Commits ahead of upstream (outgoing); `0` with no upstream yet. */
+  ahead: number;
+  /** Commits behind upstream (incoming); `0` with no upstream yet. */
+  behind: number;
+  /** Commits present locally but not yet on the remote — what "Publish" sends.
+   *  Counts all local commits before the first push (unlike `ahead`), so the
+   *  initial publish is surfaced. */
+  unpushed: number;
+}
+
+/** Author + message of a commit — the review context the loop harvests. */
+export interface GitCommitInfo {
+  author_name: string;
+  author_email: string;
+  /** Commit time, seconds since the Unix epoch (UTC). */
+  timestamp: number;
+  message: string;
+  /** Short hash (7 hex chars). */
+  short_hash: string;
+}
+
+/** What kind of change an incoming item carries. `.typ` notes render as
+ *  suggestions (`modified`) or stage whole (`added`); non-note files are
+ *  `binary` (whole-file decision, not suggestion-ized). */
+export type GitChangeKind = "added" | "modified" | "deleted" | "binary";
+
+/** One incoming change in a review session. */
+export interface GitReviewItem {
+  /** Notebox-relative (or absolute) path of the working note. */
+  path: string;
+  kind: GitChangeKind;
+  /** Staged copy to open for review (under `.inkycap/incoming/`), when one was
+   *  written (`modified`/`added`). `null` for deletes and binary files. */
+  stagedPath: string | null;
+  /** Suggestions rendered (`modified` only). */
+  total: number;
+  /** Of those, how many are conflicts needing a hand decision. */
+  conflicts: number;
+  /** The diff could not be rendered as suggestions; show the raw-diff view. */
+  fallback: boolean;
+}
+
+/** The result of a fetch-and-review. */
+export interface GitReviewSession {
+  items: GitReviewItem[];
+  /** Incoming tip commit's author/message, for the review banner. */
+  incoming: GitCommitInfo | null;
+  /** Local already matches the remote tip — nothing to review. */
+  upToDate: boolean;
+}
+
+/** Result of a push: a non-fast-forward comes back as `rejected`, not an
+ *  error, so the caller fetch-and-reviews rather than forcing. */
+export interface GitPushResult {
+  rejected: boolean;
+  message: string | null;
+}
+
+/** A commit author identity (name + email). Stored per-installation, keyed by
+ *  remote — never in the repo. */
+export interface GitIdentity {
+  name: string;
+  email: string;
+}
+
+/** Outcome of `gitSetupCollaboration`. */
+export interface GitSetupResult {
+  /** A fresh `git init` happened (notebox was not a repo before). */
+  initialized: boolean;
+  status: GitStatusSummary;
+}
+
+/** Outcome of `gitPublish` — the outgoing-authoring counterpart to review. */
+export interface GitPublishResult {
+  /** Working-tree changes were committed (first publish, or local edits). */
+  committed: boolean;
+  /** Commits were pushed to the remote. */
+  pushed: boolean;
+  /** The push was rejected (the remote moved) — fetch & review, then retry. */
+  rejected: boolean;
+  /** Nothing to commit and nothing to push — already in sync. */
+  nothingToDo: boolean;
+  /** The commit that was created, when one was. */
+  commit: GitCommitInfo | null;
 }
 
 // ============================================================================

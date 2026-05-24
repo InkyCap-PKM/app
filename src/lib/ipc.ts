@@ -37,6 +37,13 @@ import type {
   BibEntry,
   FileCitation,
   AggregatedCitation,
+  GitStatusSummary,
+  GitCommitInfo,
+  GitReviewSession,
+  GitPushResult,
+  GitPublishResult,
+  GitIdentity,
+  GitSetupResult,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -456,6 +463,102 @@ export async function updateNoteboxSettings(settings: NoteboxSettings): Promise<
 
 export async function generateZid(): Promise<string> {
   return invoke<string>("generate_zid");
+}
+
+// ─────────────────────────── Git collaboration ─────────────────────────────
+// Phase 4 review surface. Setup writes the notebox's `NoteboxGitConfig`;
+// fetch/consolidate/push drive the one-review-surface loop. All git work runs
+// on a blocking task in the backend.
+
+/** Turn the open notebox into a collaborative git repo (init-or-adopt, write
+ *  `.gitignore`, set `origin`, store optional HTTPS token + commit identity)
+ *  and persist its remote/branch. Re-running adopts the existing repo. */
+export async function gitSetupCollaboration(args: {
+  remote: string;
+  branch?: string;
+  identityName?: string;
+  identityEmail?: string;
+  httpsToken?: string;
+}): Promise<GitSetupResult> {
+  return invoke<GitSetupResult>("git_setup_collaboration", {
+    remote: args.remote,
+    branch: args.branch ?? null,
+    identityName: args.identityName ?? null,
+    identityEmail: args.identityEmail ?? null,
+    httpsToken: args.httpsToken ?? null,
+  });
+}
+
+/** Current git status for the open notebox, or `null` when it is not
+ *  collaborative or not yet a repo. */
+export async function gitStatus(): Promise<GitStatusSummary | null> {
+  return invoke<GitStatusSummary | null>("git_status");
+}
+
+/** Store an HTTPS personal-access token for this notebox's remote host (lives
+ *  only in the OS keychain). */
+export async function gitSignIn(token: string): Promise<void> {
+  return invoke<void>("git_sign_in", { token });
+}
+
+/** Stop collaborating: drop the notebox's git config and clear review staging.
+ *  The `.git` dir and stored credentials are left intact. */
+export async function gitDisableCollaboration(): Promise<void> {
+  return invoke<void>("git_disable_collaboration");
+}
+
+/** Fetch the remote and stage every incoming note as inline suggestions.
+ *  Does not touch the working tree. */
+export async function gitFetchReview(): Promise<GitReviewSession> {
+  return invoke<GitReviewSession>("git_fetch_review");
+}
+
+/** Consolidate one reviewed note: write its resolved staged copy to the working
+ *  path, stage, and commit. */
+export async function gitConsolidateNote(
+  path: string,
+  message?: string,
+): Promise<GitCommitInfo> {
+  assertNoteboxWritable();
+  return invoke<GitCommitInfo>("git_consolidate_note", {
+    path,
+    message: message ?? null,
+  });
+}
+
+/** Consolidate every staged note in one commit. */
+export async function gitConsolidateAll(message?: string): Promise<GitCommitInfo> {
+  assertNoteboxWritable();
+  return invoke<GitCommitInfo>("git_consolidate_all", { message: message ?? null });
+}
+
+/** Push consolidated commits. Never force-pushes; a non-fast-forward returns
+ *  `{ rejected: true }` so the caller fetch-and-reviews. */
+export async function gitPush(): Promise<GitPushResult> {
+  return invoke<GitPushResult>("git_push");
+}
+
+/** Abandon the current review session (clear staging). Working tree untouched. */
+export async function gitDiscardReview(): Promise<void> {
+  return invoke<void>("git_discard_review");
+}
+
+/** Publish locally-authored work: commit the working tree (if changed) and
+ *  push. Lands the first commit on a fresh notebox and shares later edits.
+ *  Never force-pushes; a non-fast-forward returns `{ rejected: true }`. */
+export async function gitPublish(message?: string): Promise<GitPublishResult> {
+  assertNoteboxWritable();
+  return invoke<GitPublishResult>("git_publish", { message: message ?? null });
+}
+
+/** Set the commit identity for this notebox's remote (per-installation store). */
+export async function gitSetIdentity(name: string, email: string): Promise<void> {
+  return invoke<void>("git_set_identity", { name, email });
+}
+
+/** The commit identity configured for this notebox's remote, if any. */
+export async function gitGetIdentity(): Promise<GitIdentity | null> {
+  return invoke<GitIdentity | null>("git_get_identity");
 }
 
 /**

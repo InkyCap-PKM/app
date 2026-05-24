@@ -1,5 +1,12 @@
 import { Component, Show, For, createSignal, createMemo } from "solid-js";
-import { ArchiveRestore, Archive, Check, TextCursorInput } from "lucide-solid";
+import {
+  ArchiveRestore,
+  Archive,
+  Check,
+  TextCursorInput,
+  Handshake,
+  RefreshCw,
+} from "lucide-solid";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { cursorPosition } from "../editor/typst-decorations/cursor-position";
@@ -8,6 +15,8 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { settings } from "../stores/settings";
+import { collaborative, gitStatus, gitSyncing, pendingCount } from "../stores/git";
+import { t } from "../lib/i18n";
 
 const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
@@ -138,6 +147,24 @@ const StatusBar: Component = () => {
     }
   }
 
+  // Compact git sync summary for the collaborative-notebox chip. Mirrors the
+  // panel's status line but terse (status bar real estate is tight).
+  const gitSummary = createMemo(() => {
+    const s = gitStatus();
+    const pending = pendingCount();
+    if (pending > 0) return t("git.status.incomingN", { n: pending });
+    if (!s) return "";
+    if (!s.head && !s.dirty) return t("git.status.unborn");
+    if (s.behind > 0) return t("git.status.behind", { n: s.behind });
+    if (s.unpushed > 0) return t("git.status.ahead", { n: s.unpushed });
+    if (s.dirty) return t("git.status.dirty");
+    return t("git.status.synced");
+  });
+
+  function openCollaboration() {
+    document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
+  }
+
   async function switchToNotebox(path: string) {
     setSwitcherMenu(null);
     try {
@@ -171,6 +198,20 @@ const StatusBar: Component = () => {
           </>
         )}
       </Show>
+
+      <Show when={collaborative()}>
+        <button
+          class="status-bar__git"
+          onClick={openCollaboration}
+          title={t("git.toolbar.title")}
+        >
+          <Show when={gitSyncing()} fallback={<Handshake size={13} />}>
+            <RefreshCw size={13} class="status-bar__git-spin" />
+          </Show>
+          <span>{gitSummary()}</span>
+        </button>
+      </Show>
+
       <div class="status-bar__spacer" />
 
       <Show when={activeFilePath()}>

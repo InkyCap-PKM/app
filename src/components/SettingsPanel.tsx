@@ -28,7 +28,7 @@ import { modifierKey } from "../lib/platform";
 import { formatUserDate, formatUserDateTime, DEFAULT_DATE_FORMAT } from "../lib/dates";
 import { open } from "@tauri-apps/plugin-dialog";
 import { homeDir } from "@tauri-apps/api/path";
-import { Pencil, Check, X } from "lucide-solid";
+import { Pencil, Check, X, Handshake } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
@@ -315,6 +315,22 @@ function NoteboxManagementSection() {
     }
   }
 
+  // Open the per-notebox Git Collaboration panel. Collaboration is a property
+  // of a *specific* notebox and its backend commands act on the open one, so
+  // switch to it first if it isn't already active, then route to the sidebar
+  // panel (which shows the setup form or the review surface as appropriate).
+  async function handleCollaboration(entry: NoteboxRegistryEntry) {
+    if (!pathEquals(entry.path, noteboxInfo()?.path)) {
+      try {
+        await openNotebox(entry.path);
+      } catch (err) {
+        showToast("error", `Failed to open notebox: ${err}`);
+        return;
+      }
+    }
+    document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
+  }
+
   async function handleMove(entry: NoteboxRegistryEntry) {
     const selected = await open({
       directory: true,
@@ -460,6 +476,16 @@ function NoteboxManagementSection() {
                 <span class="settings__description">{entry.path}</span>
               </div>
               <div class="notebox-row__actions">
+                <button
+                  class="settings__detect-btn"
+                  onClick={() => handleCollaboration(entry)}
+                  title={t("git.settings.tooltip")}
+                >
+                  <Handshake size={12} />{" "}
+                  {isActive() && noteboxSettings.git
+                    ? t("git.settings.manage")
+                    : t("git.settings.setup")}
+                </button>
                 <button
                   class="settings__detect-btn"
                   onClick={() => handleShowInFilesystem(entry.path)}

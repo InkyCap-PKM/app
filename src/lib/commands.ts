@@ -27,6 +27,12 @@ import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
 import { triggerCreationRule } from "../stores/creation-rules";
 import { showToast } from "../stores/toasts";
+import {
+  collaborative,
+  fetchReview,
+  consolidateAll,
+  publish as gitPublishAction,
+} from "../stores/git";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
 // mutate Solid.js signals; the editor picks up changes automatically
@@ -43,6 +49,7 @@ export function registerBuiltinCommands(callbacks: {
   openSearch: () => void;
   openTypAudit: () => void;
   openScaffoldPicker: () => void;
+  openCollaborationPanel: () => void;
 }): void {
   // ── File commands ──
 
@@ -498,6 +505,55 @@ export function registerBuiltinCommands(callbacks: {
         );
       }
     },
+  });
+
+  // ── Git collaboration commands ──
+  // Fetch / consolidate / push act on the open collaborative notebox. When the
+  // notebox isn't collaborative they fall back to opening the panel (which
+  // shows the setup form) rather than erroring on a missing remote.
+
+  registerCommand({
+    id: "git:setup",
+    title: t("command.git.setup"),
+    category: "Git",
+    execute: callbacks.openCollaborationPanel,
+  });
+
+  registerCommand({
+    id: "git:fetch-review",
+    title: t("command.git.fetchReview"),
+    category: "Git",
+    execute: () => {
+      callbacks.openCollaborationPanel();
+      if (collaborative()) void fetchReview();
+    },
+  });
+
+  registerCommand({
+    id: "git:consolidate",
+    title: t("command.git.consolidate"),
+    category: "Git",
+    execute: () => {
+      if (collaborative()) void consolidateAll();
+      else callbacks.openCollaborationPanel();
+    },
+  });
+
+  registerCommand({
+    id: "git:publish",
+    title: t("command.git.publish"),
+    category: "Git",
+    execute: () => {
+      if (collaborative()) void gitPublishAction();
+      else callbacks.openCollaborationPanel();
+    },
+  });
+
+  registerCommand({
+    id: "git:sign-in",
+    title: t("command.git.signIn"),
+    category: "Git",
+    execute: callbacks.openCollaborationPanel,
   });
 
   // ── Zettelkasten commands ──

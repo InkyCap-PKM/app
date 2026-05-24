@@ -243,7 +243,12 @@ fn surface_git_status(
         };
 
         match backend.status_summary() {
-            Ok(status) => {
+            Ok(mut status) => {
+                // Fill in outgoing commits (needs the configured branch), so the
+                // frontend's Publish affordance is correct from notebox-open.
+                status.unpushed = backend
+                    .unpushed_count(crate::commands::git::REMOTE_NAME, &git_cfg.branch)
+                    .unwrap_or(0);
                 log::info!(
                     "notebox git: branch={:?} head={:?} dirty={} ahead={} behind={}",
                     status.branch,
