@@ -266,6 +266,12 @@
   "git.setup.failed": "Setup failed",
   "git.setup.remoteRequired": "A remote URL is required.",
 
+  "git.reconnect.intro": "This notebox is already linked to a remote ({remote}, branch {branch}) but isn't set up for collaboration here. Reconnect to pick up where you left off.",
+  "git.reconnect.action": "Reconnect collaboration",
+  "git.reconnect.working": "Reconnecting…",
+  "git.reconnect.done": "Collaboration reconnected.",
+  "git.reconnect.failed": "Could not reconnect",
+
   "git.status.synced": "No local changes",
   "git.status.ahead": "{n} to push",
   "git.status.behind": "{n} incoming",

@@ -149,8 +149,13 @@ pub async fn open_notebox(
     // between fetch and apply, so opening only reads local state.
     if let Some(canonical_root) = state.notebox_root.read().await.clone() {
         let git_cfg = state.notebox_settings.read().await.git.clone();
-        if let Some(git_cfg) = git_cfg {
-            surface_git_status(&app_handle, canonical_root, git_cfg);
+        match git_cfg {
+            Some(git_cfg) => surface_git_status(&app_handle, canonical_root, git_cfg),
+            // No collaboration config, but the notebox may still be a git repo
+            // with a remote (an external clone, or a config dropped/not yet
+            // written) — surface a reconnect offer rather than treating it as
+            // plainly non-collaborative.
+            None => surface_reconnectable_git(&app_handle, canonical_root),
         }
     }
 
@@ -272,6 +277,43 @@ fn surface_git_status(
             }
             Err(err) => log::warn!("notebox git: status failed: {err}"),
         }
+    });
+}
+
+/// On opening a notebox that has **no** collaboration config, check whether it
+/// is nonetheless a git repo with an `origin` remote — an external clone, or a
+/// config that was dropped or never written. If so, emit
+/// `notebox:git-reconnectable` so the frontend can offer a one-click reconnect
+/// (deriving the remote/branch from git) instead of presenting a blank setup
+/// form. A plain notebox (no repo, or a repo without a remote) emits nothing.
+fn surface_reconnectable_git(handle: &tauri::AppHandle, root: std::path::PathBuf) {
+    let handle = handle.clone();
+    tokio::task::spawn_blocking(move || {
+        use crate::git::backend::GitBackend;
+
+        if !GitBackend::is_repo(&root) {
+            return;
+        }
+        let backend = match GitBackend::open(&root) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+        let remote = match backend.remote_url(crate::commands::git::REMOTE_NAME) {
+            Some(r) if !r.trim().is_empty() => r,
+            // A repo without an origin remote isn't a collaboration we can rejoin.
+            _ => return,
+        };
+        let branch = backend
+            .current_head()
+            .ok()
+            .flatten()
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| "main".to_string());
+        log::info!("notebox git: reconnectable repo (origin set, no collaboration config)");
+        let _ = handle.emit(
+            "notebox:git-reconnectable",
+            serde_json::json!({ "remote": remote, "branch": branch }),
+        );
     });
 }
 

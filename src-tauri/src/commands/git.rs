@@ -415,6 +415,58 @@ pub async fn git_setup_collaboration(
     Ok(result)
 }
 
+/// Reconnect collaboration for a notebox that is already a git repo with an
+/// `origin` remote but carries no collaboration config (an external clone, or a
+/// config that was dropped/never written). Reads the remote + current branch
+/// from the repo itself and persists them as the notebox's [`NoteboxGitConfig`]
+/// — no user input, no re-`init`. The counterpart to the `notebox:git-reconnectable`
+/// offer surfaced on open.
+#[tauri::command]
+pub async fn git_reconnect_collaboration(
+    state: State<'_, AppState>,
+) -> Result<GitSetupResult> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let probe_root = root.clone();
+    let (remote, branch, status) =
+        tokio::task::spawn_blocking(move || -> Result<(String, String, GitStatusSummary)> {
+            if !GitBackend::is_repo(&probe_root) {
+                return Err(InkyCapError::BadRequest("notebox is not a git repository".into()));
+            }
+            let backend = GitBackend::open(&probe_root)?;
+            let remote = backend
+                .remote_url(REMOTE_NAME)
+                .filter(|r| !r.trim().is_empty())
+                .ok_or_else(|| {
+                    InkyCapError::BadRequest("notebox has no origin remote to reconnect".into())
+                })?;
+            let branch = backend
+                .current_head()?
+                .map(|(b, _)| b)
+                .unwrap_or_else(|| "main".to_string());
+            ensure_collaboration_gitignore(&probe_root)?;
+            Ok((remote, branch, backend.status_summary()?))
+        })
+        .await
+        .map_err(|e| InkyCapError::Git(format!("reconnect task failed: {e}")))??;
+
+    // Persist the derived config (travels through git, like a fresh setup).
+    let mut settings = state.notebox_settings.read().await.clone();
+    settings.git = Some(NoteboxGitConfig { remote, branch });
+    crate::notebox_settings::save_settings(&root, &settings)?;
+    *state.notebox_settings.write().await = settings;
+
+    Ok(GitSetupResult {
+        initialized: false,
+        status,
+    })
+}
+
 /// The current git status summary for the open notebox, or `None` when it is
 /// not collaborative or not yet a repo. Lets the panel/status-bar refresh after
 /// a consolidate, publish, or push without waiting for the next notebox-open

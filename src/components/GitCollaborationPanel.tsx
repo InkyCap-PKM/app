@@ -29,6 +29,7 @@ import { noteboxSettings } from "../stores/settings";
 import {
   collaborative,
   repoMissing,
+  reconnectable,
   gitStatus,
   syncOutcome,
   syncPaused,
@@ -42,6 +43,7 @@ import {
   openDigestEntry,
   refreshStatus,
   setupCollaboration,
+  reconnectCollaboration,
   signIn,
   setIdentity,
   getIdentity,
@@ -120,8 +122,36 @@ const SetupForm: Component = () => {
     }
   }
 
+  const [reconnecting, setReconnecting] = createSignal(false);
+  async function reconnect() {
+    setReconnecting(true);
+    try {
+      await reconnectCollaboration();
+      showToast("success", t("git.reconnect.done"));
+    } catch (err) {
+      toastError(t("git.reconnect.failed"), err);
+    } finally {
+      setReconnecting(false);
+    }
+  }
+
   return (
     <div class="git-panel__body git-panel__setup">
+      {/* This notebox is already a git repo with a remote but has no collab
+          config — offer to adopt it in one click before the manual form. */}
+      <Show when={!repoMissing() && reconnectable()}>
+        {(info) => (
+          <div class="git-panel__reconnect">
+            <p class="sidebar-hint">
+              {t("git.reconnect.intro", { remote: info().remote, branch: info().branch })}
+            </p>
+            <button class="git-panel__primary-btn" onClick={reconnect} disabled={reconnecting()}>
+              {reconnecting() ? t("git.reconnect.working") : t("git.reconnect.action")}
+            </button>
+          </div>
+        )}
+      </Show>
+
       <Show
         when={repoMissing()}
         fallback={<p class="sidebar-hint">{t("git.setup.intro")}</p>}

@@ -495,6 +495,13 @@ export async function gitSetupCollaboration(args: {
   });
 }
 
+/** Reconnect collaboration for a notebox that is already a git repo with an
+ *  `origin` remote but lost (or never wrote) its collaboration config. Reads the
+ *  remote + branch from the repo and persists them — no user input. */
+export async function gitReconnectCollaboration(): Promise<GitSetupResult> {
+  return invoke<GitSetupResult>("git_reconnect_collaboration");
+}
+
 /** Current git status for the open notebox, or `null` when it is not
  *  collaborative or not yet a repo. */
 export async function gitStatus(): Promise<GitStatusSummary | null> {
