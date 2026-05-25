@@ -5,17 +5,65 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-5 DONE + COMMITTED. **Phase 6 (per-note version history + restore) DONE + COMMITTED (2026-05-25, `c83b98d`).** Right-panel pane renamed 'Changes & History' with a Changes|History toggle; History lists a note's past versions from the commit graph (view a version in a read-only scratch tab, Restore = non-destructive new edit). Phase 5 commits: `2ba46cc`+`e09fe27`+`ed1846f`+`38fe1b6` (sync model, editor reload, fetch-prune, discard-abort). 555 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = full in-app validation (Phase 5 sync 2-clone run from a CLEAN remote + Phase 6 history/restore) — rebuild first; then Phase 7 (offline package handoff).** Deferred: opt-in 'review every incoming change' toggle (off by default) + binary-conflict resolution UI (Phase 3b — incl. genuine settings.json conflicts; finalize keeps-mine for binaries)."
+status: "Phase 0-6 DONE + COMMITTED on `notebox-git-collab` (HEAD `800cc01`, 2026-05-25). Sync model (Sync + read-only Check for updates), per-note version history/restore, and 5 rounds of in-app-validation UX fixes all committed. 557 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = rebuild the app, finish the in-app 2-clone validation from a CLEAN remote, then Phase 7 (offline package handoff — see its section; rides the Phase 5 engine).** Deferred: opt-in 'review every incoming change' toggle (off by default); binary / genuine-settings.json conflict resolution UI (Phase 3b — finalize keeps-mine for binaries). Full state + commit map in the ⮕⮕ RESUME HERE block at top."
 ---
 
-## ⮕⮕ RESUME HERE (next session) — commit + validate Phase 5, then Phase 6
+## ⮕⮕ RESUME HERE (next session) — rebuild + validate, then Phase 7
 
-**State at handoff (2026-05-25):** **Phase 5 Sync model is DONE + COMMITTED.**
-Commits on `notebox-git-collab`: `2ba46cc` (sync model + Settings collab toggle),
-`e09fe27` (post-sync editor reload), `ed1846f` (fetch prunes stale tracking
-refs), `38fe1b6` (Discard aborts the merge / restores the working tree). All
-gates green: `cargo test --lib` **550**, 0 warnings, `tsc`, `npm run build`,
-utf8/path-safety.
+**State at handoff (2026-05-25):** **Phases 0–6 are DONE + COMMITTED** on
+`notebox-git-collab` (HEAD `800cc01`). Working tree clean. All gates green:
+`cargo test --lib` **557**, 0 warnings, `tsc`, `npm run build`, utf8/path-safety.
+
+**THE FIRST THING TO DO: rebuild the app** (`npm run tauri dev` or a release
+build). Everything from `e09fe27` onward — i.e. all the validation fixes below —
+is committed but **not in the running instance the user has been testing**, so
+the next validation pass must start from a fresh build.
+
+**Commit map (this collaboration effort, newest last):**
+- `2ba46cc` Phase 5 sync model (git_sync / git_check_updates / git_sync_finalize)
+  + the Settings per-notebox collaboration toggle.
+- `e09fe27` post-sync editor reload (open editors refresh after a pull).
+- `ed1846f` fetch prunes stale remote-tracking refs.
+- `38fe1b6` Discard merge aborts (restores the working tree to HEAD).
+- `c83b98d` **Phase 6** per-note version history + restore ("Changes & History"
+  pane, Changes|History toggle, read-only version tab, non-destructive Restore).
+- `b437fbd` Phase-6 validation: persistent Restore button, live status refresh,
+  dismiss-a-comment, pane-click opens the review menu.
+- `627d701` status reads "No local changes" (not "Up to date") before a fetch.
+- `56cf1f5` dismiss/transform a comment no longer orphans its `#`.
+- `6830f7d` offer to **reconnect** a repo-with-remote whose collab config is
+  missing (vs silently non-collaborative).
+- `58c17d7` Manage section is a full config editor (remote/branch/token/identity);
+  identity pre-filled from `git_default_commit_identity`; honest identity hint.
+- `9d5838e` **Check for updates is read-only** (fetch + report `behind`, no pull);
+  token hint → `?` HelpButton; lighter dark-mode `.sidebar-hint`.
+- `800cc01` Configure opens with Manage expanded; leaving a collab notebox for a
+  non-collab one exits the Collaboration pane.
+
+**NEXT:**
+1. **Rebuild**, then run the in-app 2-clone validation from a CLEAN remote
+   (`rm -rf /tmp/inkycap-test-remote.git && git init --bare -b main …` — the bare
+   remote persists across sessions and `git init` won't wipe it). Exercise:
+   clean-merge, conflict→finalize, ff; the read-only Check (status only, no
+   files pulled); History/Restore; reconnect offer; the Manage config editor;
+   dark-mode hint legibility.
+2. Then **Phase 7 (offline package handoff)** — see its section. It rides the
+   Phase 5 engine: `run_sync`/`run_finalize` are transport-agnostic and git2
+   fetches from a local path, so "import a package" = extract + transient
+   local-path remote + run the existing Sync. Only packaging (export/import zip
+   of `.git`) + package-mode UX is new. Open Qs in that section
+   (bundle vs whole-`.git` zip; how `NoteboxGitConfig` marks a server-less notebox).
+
+**Still deferred (not blockers):** the opt-in "review every incoming change"
+toggle (off by default; render M→merged, not M→theirs, to avoid dropping local
+edits — `git_fetch_review`/`suggest.rs` kept for it); binary / genuine
+both-edited-`settings.json` conflicts dead-end in "resolve manually" (Phase 3b —
+`finalize` keeps-mine unless the user edits the working file first); a
+per-notebox timeline + diff-against-now view + a true read-only version tab.
+
+**Identity note (not a bug):** commits are authored by the system git config
+(`~/.gitconfig` `user.name`) when no InkyCap identity is set; overridable in the
+panel's Manage › identity fields (now pre-filled to make this visible).
 
 **In-app validation findings (2026-05-25, partial run — fixed as found):**
 - **Stale remote-tracking ref** → `ed1846f`. A remote that was reset/re-created
