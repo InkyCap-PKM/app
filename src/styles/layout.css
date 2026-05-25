@@ -10295,6 +10295,18 @@ svg.lucide {
   border-left-color: var(--accent-danger);
 }
 
+/* Reconnect offer: a highlighted box above the manual setup form. */
+.git-panel__reconnect {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
 /* Post-sync digest ("what landed"): a dismissible, non-blocking summary block. */
 .git-panel__digest {
   display: flex;

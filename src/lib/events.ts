@@ -78,6 +78,21 @@ export interface GitReviewPendingPayload {
   count: number;
 }
 
+/** Emitted on opening a notebox that is a git repo with an `origin` remote but
+ *  carries no collaboration config — the frontend offers a one-click reconnect. */
+export interface GitReconnectablePayload {
+  remote: string;
+  branch: string;
+}
+
+export function onGitReconnectable(
+  callback: (payload: GitReconnectablePayload) => void,
+): Promise<() => void> {
+  return listen<GitReconnectablePayload>("notebox:git-reconnectable", (event) => {
+    callback(event.payload);
+  }).then((unlisten) => unlisten);
+}
+
 export function onGitStatus(
   callback: (payload: GitStatusEventPayload) => void,
 ): Promise<() => void> {

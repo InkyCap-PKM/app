@@ -34,10 +34,12 @@ import {
   onGitPushStarted,
   onGitPushCompleted,
   onGitError,
+  onGitReconnectable,
   onFileChanged,
   onFileCreated,
   onFileDeleted,
 } from "../lib/events";
+import type { GitReconnectablePayload } from "../lib/events";
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusSummary | null>(null);
 /** The last completed sync outcome — drives the digest ("what landed") and, when
@@ -55,6 +57,10 @@ const [repoMissing, setRepoMissing] = createSignal(false);
 /** Last background error message (from a `notebox:git-error` event). Cleared
  *  when a new operation starts. Foreground errors are toasted by the action. */
 const [gitError, setGitError] = createSignal<string | null>(null);
+/** Set when the open notebox is a git repo with a remote but carries no
+ *  collaboration config — the panel offers a one-click reconnect (deriving the
+ *  remote/branch from git) instead of a blank setup form. Null otherwise. */
+const [reconnectable, setReconnectable] = createSignal<GitReconnectablePayload | null>(null);
 
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
@@ -117,6 +123,8 @@ export async function ensureGitListeners(): Promise<void> {
     await onFileChanged(() => scheduleStatusRefresh()),
     await onFileCreated(() => scheduleStatusRefresh()),
     await onFileDeleted(() => scheduleStatusRefresh()),
+    // A repo-with-remote that has no collaboration config → offer to reconnect.
+    await onGitReconnectable((p) => setReconnectable(p)),
   );
 }
 
@@ -128,6 +136,9 @@ export async function resetGitOnOpen(): Promise<void> {
   setGitSyncing(false);
   setGitStatus(null);
   setRepoMissing(false);
+  // Cleared here; the backend re-emits notebox:git-reconnectable on open if the
+  // (now non-collaborative) notebox is a repo with a remote.
+  setReconnectable(null);
   if (collaborative()) {
     await refreshStatus();
   }
@@ -164,6 +175,18 @@ export async function setupCollaboration(args: {
   await loadNoteboxSettings();
   setGitStatus(result.status);
   setRepoMissing(false);
+  setReconnectable(null);
+}
+
+/** Reconnect a notebox that's already a git repo with a remote but lost (or
+ *  never wrote) its collaboration config — adopts the remote/branch from git.
+ *  Throws on failure so the caller can surface it. */
+export async function reconnectCollaboration(): Promise<void> {
+  const result = await ipc.gitReconnectCollaboration();
+  await loadNoteboxSettings();
+  setGitStatus(result.status);
+  setRepoMissing(false);
+  setReconnectable(null);
 }
 
 /** Apply a completed sync outcome to the store + surface a non-blocking message
@@ -318,4 +341,4 @@ export async function setIdentity(name: string, email: string): Promise<void> {
   await ipc.gitSetIdentity(name, email);
 }
 
-export { gitStatus, syncOutcome, gitSyncing, gitError, repoMissing };
+export { gitStatus, syncOutcome, gitSyncing, gitError, repoMissing, reconnectable };
