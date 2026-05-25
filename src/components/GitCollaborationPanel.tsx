@@ -44,9 +44,7 @@ import {
   refreshStatus,
   setupCollaboration,
   reconnectCollaboration,
-  signIn,
-  setIdentity,
-  getIdentity,
+  getDefaultIdentity,
   disableCollaboration,
 } from "../stores/git";
 import type { GitReviewItem, GitDigestEntry } from "../lib/types";
@@ -99,6 +97,16 @@ const SetupForm: Component = () => {
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+
+  // Pre-fill the identity from the one InkyCap would use (your git config), so
+  // the author isn't a mystery blank — edit it to use a different name here.
+  onMount(async () => {
+    const id = await getDefaultIdentity();
+    if (id) {
+      if (!name().trim()) setName(id.name);
+      if (!email().trim()) setEmail(id.email);
+    }
+  });
 
   async function submit() {
     if (!remote().trim()) {
@@ -417,34 +425,48 @@ const DigestView: Component = () => {
 
 const ManageSection: Component = () => {
   const [open, setOpen] = createSignal(false);
+  // Pre-filled from the current config so every field the setup form had stays
+  // editable after setup (remote URL + branch were previously unreachable).
+  const [remote, setRemote] = createSignal(noteboxSettings.git?.remote ?? "");
+  const [branch, setBranch] = createSignal(noteboxSettings.git?.branch ?? "main");
   const [token, setToken] = createSignal("");
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
 
+  // Show the identity that will actually be used (per-notebox choice, else git
+  // config), so it's visible/editable rather than a mystery blank.
   onMount(async () => {
-    const id = await getIdentity();
+    const id = await getDefaultIdentity();
     if (id) {
       setName(id.name);
       setEmail(id.email);
     }
   });
 
-  async function saveToken() {
-    try {
-      await signIn(token().trim());
-      setToken("");
-      showToast("success", t("git.manage.signedIn"));
-    } catch (err) {
-      toastError(t("git.manage.signInFailed"), err);
+  // One Save applies the whole config — remote/branch/identity, plus the token
+  // only when re-entered. setupCollaboration is idempotent (adopts the existing
+  // repo), so this just updates the configuration.
+  async function save() {
+    if (!remote().trim()) {
+      toastError(t("git.setup.failed"), t("git.setup.remoteRequired"));
+      return;
     }
-  }
-
-  async function saveIdentity() {
+    setBusy(true);
     try {
-      await setIdentity(name().trim(), email().trim());
-      showToast("success", t("git.manage.identitySaved"));
+      await setupCollaboration({
+        remote: remote().trim(),
+        branch: branch().trim() || "main",
+        identityName: name().trim() || undefined,
+        identityEmail: email().trim() || undefined,
+        httpsToken: token().trim() || undefined,
+      });
+      setToken("");
+      showToast("success", t("git.manage.saved"));
     } catch (err) {
-      toastError(t("git.manage.identityFailed"), err);
+      toastError(t("git.manage.saveFailed"), err);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -474,21 +496,34 @@ const ManageSection: Component = () => {
       </button>
       <Show when={open()}>
         <div class="git-panel__manage-body">
-          <label class="settings__label">{t("git.manage.signInLabel")}</label>
-          <div class="git-panel__inline-form">
-            <input
-              class="settings__text-input"
-              type="password"
-              autocomplete="off"
-              value={token()}
-              onInput={(e) => setToken(e.currentTarget.value)}
-            />
-            <button class="settings__detect-btn" onClick={saveToken} disabled={!token().trim()}>
-              {t("git.manage.signIn")}
-            </button>
-          </div>
+          <label class="settings__label">{t("git.setup.remoteLabel")}</label>
+          <input
+            class="settings__text-input"
+            type="text"
+            placeholder={t("git.setup.remotePlaceholder")}
+            value={remote()}
+            onInput={(e) => setRemote(e.currentTarget.value)}
+          />
 
-          <label class="settings__label">{t("git.manage.identityLabel")}</label>
+          <label class="settings__label">{t("git.setup.branchLabel")}</label>
+          <input
+            class="settings__text-input"
+            type="text"
+            value={branch()}
+            onInput={(e) => setBranch(e.currentTarget.value)}
+          />
+
+          <label class="settings__label">{t("git.setup.tokenLabel")}</label>
+          <input
+            class="settings__text-input"
+            type="password"
+            autocomplete="off"
+            placeholder={t("git.manage.tokenPlaceholder")}
+            value={token()}
+            onInput={(e) => setToken(e.currentTarget.value)}
+          />
+
+          <label class="settings__label">{t("git.setup.identityLabel")}</label>
           <div class="git-panel__identity-row">
             <input
               class="settings__text-input"
@@ -505,8 +540,10 @@ const ManageSection: Component = () => {
               onInput={(e) => setEmail(e.currentTarget.value)}
             />
           </div>
-          <button class="settings__detect-btn" onClick={saveIdentity}>
-            {t("git.manage.saveIdentity")}
+          <p class="sidebar-hint">{t("git.setup.identityHint")}</p>
+
+          <button class="git-panel__primary-btn" onClick={save} disabled={busy()}>
+            {busy() ? t("git.manage.saving") : t("git.manage.save")}
           </button>
 
           <button class="git-panel__danger-btn" onClick={disable}>

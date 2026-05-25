@@ -1108,6 +1108,57 @@ pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitId
     Ok(auth::identity_for_remote(&git.remote))
 }
 
+/// The commit identity InkyCap **would** stamp on this notebox's commits, for
+/// pre-filling the identity fields so the author is never a mystery: the
+/// per-notebox identity chosen for this remote if set, otherwise the git-config
+/// identity (`user.name`/`user.email`) it falls back to. `None` when neither
+/// exists (the user must then enter one). Works before collaboration is set up
+/// (reads the global git config), so the setup form can pre-fill too.
+#[tauri::command]
+pub async fn git_default_commit_identity(
+    state: State<'_, AppState>,
+) -> Result<Option<GitIdentity>> {
+    let root = state.notebox_root.read().await.clone();
+    let remote = state
+        .notebox_settings
+        .read()
+        .await
+        .git
+        .as_ref()
+        .map(|g| g.remote.clone());
+
+    tokio::task::spawn_blocking(move || -> Result<Option<GitIdentity>> {
+        // 1. The identity already chosen for this remote, if complete.
+        if let Some(remote) = &remote {
+            if let Some(id) = auth::identity_for_remote(remote) {
+                if id.is_complete() {
+                    return Ok(Some(id));
+                }
+            }
+        }
+        // 2. The git-config identity InkyCap falls back to — from the repo's
+        //    config (local + global) when it's a repo, else the global config.
+        let from_repo = root
+            .as_ref()
+            .filter(|r| GitBackend::is_repo(r))
+            .and_then(|r| GitBackend::open(r).ok())
+            .and_then(|b| b.config_identity());
+        if let Some((name, email)) = from_repo {
+            return Ok(Some(GitIdentity { name, email }));
+        }
+        if let Ok(cfg) = git2::Config::open_default() {
+            let name = cfg.get_string("user.name").ok().filter(|s| !s.trim().is_empty());
+            let email = cfg.get_string("user.email").ok().filter(|s| !s.trim().is_empty());
+            if let (Some(name), Some(email)) = (name, email) {
+                return Ok(Some(GitIdentity { name, email }));
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("identity task failed: {e}")))?
+}
+
 /// Abort a paused merge: clear the staging folder **and restore the working
 /// tree to HEAD**. A conflicted Sync auto-applies the clean (non-conflicting)
 /// incoming files to the working tree before pausing; without this restore they
