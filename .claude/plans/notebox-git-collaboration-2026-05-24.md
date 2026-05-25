@@ -74,6 +74,20 @@ edits (they merge on the next Sync), and the buffer-equality guard no-ops
 untouched files. Still wants the GUI check (cursor position + visual-mode rebuild
 after reload) during validation.
 
+**In-app validation round 2 (2026-05-25, Phase 6 + status) — fixed as found:**
+- Restore button hover-faded → made persistent. (`b437fbd`)
+- Status read "Up to date"/stale after an edit/restore → the git store now
+  refreshes status (debounced) on file-change events + restore refreshes
+  immediately. (`b437fbd`)
+- A standalone `#annotation` comment couldn't be removed → dismiss (X) on its
+  Changes-pane row. (`b437fbd`)
+- Clicking a tracked change in the pane dropped into raw markup → now opens its
+  Accept/Reject/Comment menu (extracted `openSuggestionMenu`, shared with the
+  inline widget; position-safe via `applyCallTransform`). (`b437fbd`)
+- Status said "Up to date" before any fetch (misleading re: incoming) → **user
+  chose manual-only + reworded to "No local changes"** (no auto-fetch; incoming
+  stays a manual Check for updates / Sync). (`627d701`)
+
 **NEXT (Phase 5 + 6 are built + committed; this is validation + Phase 7):**
 1. **Rebuild the app** (the running instance predates `ed1846f`/`38fe1b6` and all
    of Phase 6).
