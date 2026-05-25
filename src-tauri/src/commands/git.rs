@@ -960,9 +960,14 @@ pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitId
     Ok(auth::identity_for_remote(&git.remote))
 }
 
-/// Abandon a paused review session: clear the staging folder. The working tree
-/// keeps the clean changes already applied by the sync (the merge is simply not
-/// finalized — the conflicted notes stay at the local version).
+/// Abort a paused merge: clear the staging folder **and restore the working
+/// tree to HEAD**. A conflicted Sync auto-applies the clean (non-conflicting)
+/// incoming files to the working tree before pausing; without this restore they
+/// would linger as uncommitted changes and be swept into the *next* Sync's
+/// commit (observed: an abandoned merge against the wrong remote polluting the
+/// notebox). HEAD is the pre-merge commit — Sync commits local edits *before*
+/// merging — so committed work is preserved; the abandoned merge can simply be
+/// re-run later (its incoming changes are still on the remote).
 #[tauri::command]
 pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
     let root = state
@@ -971,7 +976,20 @@ pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    staging::clear(&root)
+    staging::clear(&root)?;
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        if GitBackend::is_repo(&root) {
+            let backend = GitBackend::open(&root)?;
+            // Only meaningful once a commit exists; a forced checkout of an
+            // unborn HEAD has nothing to restore to.
+            if backend.current_head()?.is_some() {
+                backend.checkout_head_force()?;
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("discard task failed: {e}")))?
 }
 
 /// The open notebox's git config, erroring if it is not collaborative.

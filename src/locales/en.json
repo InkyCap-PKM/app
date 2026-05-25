@@ -269,6 +269,9 @@
   "git.conflict.intro": "These notes were edited on both sides. Open each one, resolve the suggestions, then finalize.",
   "git.conflict.binary": "binary — resolve manually",
 
+  "git.discard.title": "Discard merge",
+  "git.discard.confirm": "Discard this merge and restore the notebox to its last committed state? The incoming changes stay on the remote — you can Sync again later. Any unsaved in-progress resolution is lost.",
+
   "git.digest.from": "Changes from {author}",
   "git.digest.dismiss": "Dismiss",
   "git.digest.oneChange": "1 note changed.",
