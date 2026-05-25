@@ -253,6 +253,7 @@
   "git.actions.fetch": "Fetch & review",
   "git.actions.fetching": "Fetching…",
   "git.actions.consolidate": "Consolidate this note",
+  "git.actions.consolidateOne": "Consolidate",
   "git.actions.consolidateAll": "Consolidate all",
   "git.actions.publish": "Commit & push",
   "git.actions.pushN": "Push {n}",

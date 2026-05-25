@@ -10016,23 +10016,35 @@ svg.lucide {
   font-weight: 600;
 }
 
-/* Per-item consolidate button (the check) */
+/* Per-item consolidate button: a clearly-labelled outline action (not a bare
+   icon), so the per-note merge gesture is discoverable alongside "Consolidate
+   all". The note name beside it truncates to make room. */
 .git-panel__item-consolidate {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 3px;
-  color: var(--fg-dim);
-  cursor: pointer;
-  padding: 2px;
+  gap: 3px;
+  white-space: nowrap;
   flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: var(--text-xs, 0.72rem);
+  font-family: inherit;
 }
 
 .git-panel__item-consolidate:hover {
-  color: var(--accent);
-  background: var(--bg-hover);
+  color: #fff;
+  background: var(--accent);
+}
+
+/* Keep the note name from pushing the consolidate button off the row. */
+.git-panel__item .sidebar-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Per-kind icon tint, mirroring the inline suggestion tones. */

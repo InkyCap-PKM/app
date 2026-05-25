@@ -519,7 +519,15 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
         if let Some(ref year) = entry.year {
             out.push_str(&format!("  year = {{{}}},\n", year));
         }
-        for (field, value) in &entry.extra_fields {
+        // `extra_fields` is a HashMap, whose iteration order is randomized per
+        // process run. Emit fields in a stable (alphabetical) order so the
+        // exported .bib is byte-for-byte deterministic — otherwise every
+        // re-export reshuffles every entry, churning the working tree (spurious
+        // "dirty" state, needless commits) and turning the shared bibliography
+        // into a perpetual merge-conflict source under collaboration.
+        let mut fields: Vec<(&String, &String)> = entry.extra_fields.iter().collect();
+        fields.sort_by(|a, b| a.0.cmp(b.0));
+        for (field, value) in fields {
             if !value.is_empty() {
                 out.push_str(&format!("  {} = {{{}}},\n", field, sanitize_bibtex_value(value)));
             }
@@ -696,6 +704,48 @@ mod tests {
 
     fn notebox() -> PathBuf {
         PathBuf::from("/tmp/notebox")
+    }
+
+    /// The exported BibTeX must be byte-for-byte deterministic regardless of the
+    /// (randomized) HashMap iteration order of `extra_fields` — otherwise the
+    /// committed `.inkycap/zotero-export.bib` churns on every re-export, which
+    /// surfaced as spurious extra commits and would be a perpetual merge
+    /// conflict under git collaboration. Fields come out alphabetically sorted.
+    #[test]
+    fn bibtex_export_is_deterministic_and_fields_sorted() {
+        let mut extra = std::collections::HashMap::new();
+        extra.insert("volume".to_string(), "12".to_string());
+        extra.insert("doi".to_string(), "10.1/abc".to_string());
+        extra.insert("journal".to_string(), "Nature".to_string());
+        extra.insert("language".to_string(), "en".to_string());
+        let entry = BibEntry {
+            key: "smith2020".to_string(),
+            title: "A Title".to_string(),
+            authors: vec!["Smith, Jane".to_string()],
+            year: Some("2020".to_string()),
+            entry_type: "journalArticle".to_string(),
+            zotero_item_key: None,
+            has_notes: false,
+            extra_fields: extra,
+        };
+
+        let out = export_entries_to_bibtex(std::slice::from_ref(&entry));
+        // Stable across runs (different HashMap seeds) within this process at
+        // least, and the extra fields are alphabetical: doi, journal, language,
+        // volume — after the fixed title/author/year.
+        assert_eq!(
+            out,
+            "@article{smith2020,\n  \
+             title = {A Title},\n  \
+             author = {Smith, Jane},\n  \
+             year = {2020},\n  \
+             doi = {10.1/abc},\n  \
+             journal = {Nature},\n  \
+             language = {en},\n  \
+             volume = {12},\n}\n\n"
+        );
+        // Re-exporting yields identical bytes.
+        assert_eq!(out, export_entries_to_bibtex(std::slice::from_ref(&entry)));
     }
 
     #[test]

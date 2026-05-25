@@ -302,13 +302,12 @@ const ReviewView: Component = () => {
                     <button
                       class="git-panel__item-consolidate"
                       title={t("git.actions.consolidate")}
-                      aria-label={t("git.actions.consolidate")}
                       onClick={(e) => {
                         e.stopPropagation();
                         void consolidateNote(item.path);
                       }}
                     >
-                      <Check size={14} />
+                      <Check size={13} /> {t("git.actions.consolidateOne")}
                     </button>
                   </Show>
                 </div>
