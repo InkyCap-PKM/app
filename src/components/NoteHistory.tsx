@@ -9,7 +9,7 @@ import { Component, For, Show, createResource, createMemo } from "solid-js";
 import { History, RotateCcw } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import type { GitNoteVersion } from "../lib/types";
-import { collaborative } from "../stores/git";
+import { collaborative, refreshStatus } from "../stores/git";
 import { openTab } from "../stores/tabs";
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
@@ -66,6 +66,7 @@ const NoteHistory: Component<{ path: string }> = (props) => {
         new CustomEvent("inkycap:note-property-changed", { detail: { path: props.path } }),
       );
       showToast("success", t("history.restored", { name: basename() }));
+      void refreshStatus(); // the restore made the working tree dirty
       void refetch();
     } catch (err) {
       toastError(t("history.restoreFailed"), err);

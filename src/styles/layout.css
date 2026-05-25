@@ -5118,11 +5118,6 @@ svg.lucide {
   cursor: pointer;
   padding: 2px;
   border-radius: var(--radius-control);
-  opacity: 0;
-}
-
-.note-history__item:hover .note-history__restore {
-  opacity: 1;
 }
 
 .note-history__restore:hover {
@@ -5138,6 +5133,22 @@ svg.lucide {
 
 .annotations-panel__item {
   align-items: flex-start;
+}
+
+/* Dismiss button on a comment row — muted by default, accents on hover. */
+.annotations-panel__dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-control);
+}
+
+.annotations-panel__dismiss:hover {
+  color: var(--accent-danger);
+  background: var(--bg-hover);
 }
 
 .annotations-panel__body {
