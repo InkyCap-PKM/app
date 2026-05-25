@@ -215,6 +215,7 @@ pub fn run() {
             commands::git::git_restore_note_version,
             commands::git::git_set_identity,
             commands::git::git_get_identity,
+            commands::git::git_default_commit_identity,
             commands::notebox::open_notebox,
             commands::notebox::get_notebox_info,
             commands::notebox::get_saved_notebox_path,

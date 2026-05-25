@@ -361,6 +361,16 @@ impl GitBackend {
 
     // ── Staging & commit (Phase 3) ───────────────────────────────────────
 
+    /// The `user.name` / `user.email` from this repo's git config (local +
+    /// global), for pre-filling the commit-identity fields with what a commit
+    /// would actually use. `None` when either is unset or empty.
+    pub fn config_identity(&self) -> Option<(String, String)> {
+        let cfg = self.repo.config().ok()?;
+        let name = cfg.get_string("user.name").ok().filter(|s| !s.trim().is_empty())?;
+        let email = cfg.get_string("user.email").ok().filter(|s| !s.trim().is_empty())?;
+        Some((name, email))
+    }
+
     /// Resolve the commit author for `remote`: the per-installation identity
     /// keyed by remote first, then git's own `user.name`/`user.email`
     /// (`.git/config` → `~/.gitconfig`). Errors when neither yields a complete

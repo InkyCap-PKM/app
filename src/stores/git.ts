@@ -336,6 +336,17 @@ export async function getIdentity(): Promise<GitIdentity | null> {
   }
 }
 
+/** The identity InkyCap would stamp on commits (the per-notebox choice, else the
+ *  git-config fallback) — for pre-filling the identity fields so the author is
+ *  visible and editable rather than mysteriously blank. */
+export async function getDefaultIdentity(): Promise<GitIdentity | null> {
+  try {
+    return await ipc.gitDefaultCommitIdentity();
+  } catch {
+    return null;
+  }
+}
+
 /** Set the commit identity for this notebox's remote. */
 export async function setIdentity(name: string, email: string): Promise<void> {
   await ipc.gitSetIdentity(name, email);

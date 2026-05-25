@@ -600,6 +600,12 @@ export async function gitGetIdentity(): Promise<GitIdentity | null> {
   return invoke<GitIdentity | null>("git_get_identity");
 }
 
+/** The identity InkyCap would stamp on commits (per-notebox choice, else the
+ *  git-config fallback) — for pre-filling the identity fields. */
+export async function gitDefaultCommitIdentity(): Promise<GitIdentity | null> {
+  return invoke<GitIdentity | null>("git_default_commit_identity");
+}
+
 /**
  * Query the operating system's accent color, returning `#rrggbb` when a
  * reliable source is available and `null` otherwise. The frontend treats
