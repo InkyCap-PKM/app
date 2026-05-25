@@ -100,6 +100,13 @@ after reload) during validation.
 - **"Joshua Chalifour" as commit author = NOT a bug** — it's the system git
   config (`user.name`, from `~/.gitconfig`) fallback when no InkyCap identity is
   set. Surfaced + made editable (next item).
+- **"Check for updates" made read-only** (`9d5838e`): it used to run the full
+  pull+merge (downloaded files into the notebox). Now `git_check_updates` fetches
+  and reports `CheckResult {upToDate, behind, incoming}` without merging/touching
+  the working tree; the panel shows "N updates available — Sync to get them" (via
+  the `incomingCount` store signal) + status chip; Sync brings them in. `run_sync`
+  dropped its now-dead `push=false` path. Also: token hint → `?` HelpButton;
+  `.sidebar-hint` dark-mode color → `--fg-muted` (was a saturated teal).
 - Collaboration config UX (`58c17d7`): (a) remote URL + branch were unreachable
   after setup → **Manage section reworked into a full config editor** (remote/
   branch/token/identity, one Save = idempotent re-setup); (b) the commit identity
