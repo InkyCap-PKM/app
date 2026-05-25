@@ -1147,12 +1147,12 @@ const RightPanel: Component = () => {
             >
               <Quote size={18} />
             </button>
-            {/* Annotations — always available for a file note. */}
+            {/* Changes & History — always available for a file note. */}
             <button
               class={`right-panel__tab${activePanel() === "annotations" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("annotations")}
-              title="Annotations"
-              aria-label="Annotations"
+              title={t("annotations.paneTitle")}
+              aria-label={t("annotations.paneTitle")}
             >
               <MessagesSquare size={18} />
             </button>

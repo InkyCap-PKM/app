@@ -17,13 +17,14 @@ use tauri::{Emitter, State};
 use crate::errors::{InkyCapError, Result};
 use crate::git::auth::{self, GitIdentity};
 use crate::git::backend::{
-    ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, GitBackend,
+    ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, FileVersion, GitBackend,
     GitStatusSummary, MergeOutcome,
 };
-use crate::git::{staging, suggest};
+use crate::git::{history, staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
+use crate::storage::traits::NoteboxStorage;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
 /// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
@@ -936,6 +937,101 @@ fn emit_sync_events(app_handle: &tauri::AppHandle, result: &Result<SyncOutcome>)
             let _ = app_handle.emit("notebox:git-error", err.to_string());
         }
     }
+}
+
+// ─────────────────────────── Phase 6: version history ──────────────────────
+
+/// Normalize a path from the frontend (which may send an absolute path) to a
+/// notebox-relative one for git + storage.
+fn notebox_relative(root: &Path, path: &str) -> PathBuf {
+    let p = PathBuf::from(path);
+    p.strip_prefix(root).map(Path::to_path_buf).unwrap_or(p)
+}
+
+/// Parse a commit hash from the frontend, mapping a bad value to a 400.
+fn parse_commit(commit: &str) -> Result<git2::Oid> {
+    git2::Oid::from_str(commit)
+        .map_err(|e| InkyCapError::BadRequest(format!("invalid version id: {e}")))
+}
+
+/// A note's past versions, newest first (commit author/date/message only). Empty
+/// when the note has no committed history yet.
+#[tauri::command]
+pub async fn git_note_history(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<FileVersion>> {
+    let (root, _git) = require_collaborative_with_root(&state).await?;
+    let rel = notebox_relative(&root, &path);
+    tokio::task::spawn_blocking(move || -> Result<Vec<FileVersion>> {
+        if !GitBackend::is_repo(&root) {
+            return Ok(Vec::new());
+        }
+        GitBackend::open(&root)?.file_history(&rel, 200)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("history task failed: {e}")))?
+}
+
+/// Write a past version of a note to a disposable scratch file (gitignored,
+/// watcher-ignored) and return its path, to open as a read-only view tab.
+/// `commit` is a full hash from [`git_note_history`].
+#[tauri::command]
+pub async fn git_open_note_version(
+    path: String,
+    commit: String,
+    state: State<'_, AppState>,
+) -> Result<String> {
+    let (root, _git) = require_collaborative_with_root(&state).await?;
+    let rel = notebox_relative(&root, &path);
+    let scratch = tokio::task::spawn_blocking(move || -> Result<PathBuf> {
+        let backend = GitBackend::open(&root)?;
+        let content = read_version_text(&backend, parse_commit(&commit)?, &rel)?;
+        let short: String = commit.chars().take(7).collect();
+        history::write_view(&root, &short, &rel, &content)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("open-version task failed: {e}")))??;
+    Ok(to_frontend_string(&scratch))
+}
+
+/// Restore a past version: write its content back to the working note (through
+/// [`NoteboxStorage`]) as a new edit. Non-destructive — history is untouched and
+/// the restore becomes an ordinary change the user then Syncs.
+#[tauri::command]
+pub async fn git_restore_note_version(
+    path: String,
+    commit: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let (root, _git) = require_collaborative_with_root(&state).await?;
+    let storage = state
+        .storage
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let rel = notebox_relative(&root, &path);
+
+    let read_rel = rel.clone();
+    let content = tokio::task::spawn_blocking(move || -> Result<String> {
+        let backend = GitBackend::open(&root)?;
+        read_version_text(&backend, parse_commit(&commit)?, &read_rel)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("restore task failed: {e}")))??;
+
+    // The one working-tree write goes through the storage interface.
+    storage.write_file(&rel, &content).await?;
+    Ok(())
+}
+
+/// Read a note's UTF-8 content at a specific commit, erroring if absent/binary.
+fn read_version_text(backend: &GitBackend, commit: git2::Oid, rel: &Path) -> Result<String> {
+    backend
+        .read_blob_at(commit, rel)?
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or_else(|| InkyCapError::BadRequest("that version of the note could not be read".into()))
 }
 
 // ─────────────────────────── Identity & review session ─────────────────────

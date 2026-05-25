@@ -101,6 +101,22 @@ pub struct CommitInfo {
     pub short_hash: String,
 }
 
+/// One past version of a single file in the commit graph — a row in a note's
+/// version history. Carries commit metadata only (no content); the content is
+/// fetched on demand via [`GitBackend::read_blob_at`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileVersion {
+    /// Full commit hash — the opaque handle for fetching/restoring this version.
+    pub commit: String,
+    /// Short hash (7 hex chars), matching git's default.
+    pub short_hash: String,
+    pub author_name: String,
+    /// Commit time, seconds since the Unix epoch (UTC).
+    pub timestamp: i64,
+    pub message: String,
+}
+
 /// Open git repository rooted at a notebox.
 pub struct GitBackend {
     repo: Repository,
@@ -304,6 +320,43 @@ impl GitBackend {
         };
         let object = entry.to_object(&self.repo)?;
         Ok(object.as_blob().map(|b| b.content().to_vec()))
+    }
+
+    // ── Version history (Phase 6) ─────────────────────────────────────────
+
+    /// The commits that changed `rel`, newest first, up to `limit` — a note's
+    /// version history. Each entry's content is fetched on demand with
+    /// [`Self::read_blob_at`]. Walks the first-parent-relative diff of each
+    /// commit (a merge that altered the note relative to its first parent
+    /// counts as a version). Returns an empty list on an unborn branch.
+    pub fn file_history(&self, rel: &Path, limit: usize) -> Result<Vec<FileVersion>> {
+        if self.current_head()?.is_none() {
+            return Ok(Vec::new());
+        }
+        let mut walk = self.repo.revwalk()?;
+        walk.push_head()?;
+        walk.set_sorting(git2::Sort::TIME)?;
+
+        let mut out = Vec::new();
+        for oid in walk {
+            if out.len() >= limit {
+                break;
+            }
+            let oid = oid?;
+            let commit = self.repo.find_commit(oid)?;
+            if !commit_touched_path(&commit, rel)? {
+                continue;
+            }
+            let author = commit.author();
+            out.push(FileVersion {
+                commit: oid.to_string(),
+                short_hash: oid.to_string().chars().take(7).collect(),
+                author_name: author.name().unwrap_or("").to_string(),
+                timestamp: author.when().seconds(),
+                message: commit.message().unwrap_or("").to_string(),
+            });
+        }
+        Ok(out)
     }
 
     // ── Staging & commit (Phase 3) ───────────────────────────────────────
@@ -640,50 +693,86 @@ pub struct PushResult {
     pub message: Option<String>,
 }
 
-/// Marker bracketing InkyCap's managed entries in a notebox `.gitignore`, so
-/// [`ensure_collaboration_gitignore`] can add them once and leave any
-/// user-authored entries alone.
-const GITIGNORE_MARKER: &str = "# --- InkyCap (managed; do not edit this block) ---";
+/// Header marking InkyCap's managed entries in a notebox `.gitignore`, so a
+/// reader knows why they're there. Written once.
+const GITIGNORE_MARKER: &str = "# --- InkyCap (managed) ---";
 
-/// Ensure a collaborative notebox's `.gitignore` excludes per-machine and
-/// regenerable state. Idempotent: appends a managed block if absent, leaves an
-/// existing one and any user entries untouched.
-///
-/// Only entries InkyCap writes *inside* the notebox need listing here — window
-/// state, the metadata cache and the search index already live under the OS
-/// config/cache dirs, outside the repo. Everything else in the notebox
-/// (`.typ` notes, attachments, `.bib`, `.collection`, the bundled
+/// Notebox-internal paths a collaborative `.gitignore` must exclude, each with a
+/// one-line rationale. Only entries InkyCap writes *inside* the notebox belong
+/// here — window state, the metadata cache and the search index already live
+/// under the OS config/cache dirs, outside the repo. Everything else in the
+/// notebox (`.typ` notes, attachments, `.bib`, `.collection`, the bundled
 /// `inkycap-notebox` package, the shared `.inkycap/settings.json`) is meant to
 /// travel.
+const GITIGNORE_ENTRIES: &[(&str, &str)] = &[
+    (
+        ".inkycap/local.json",
+        "Per-machine state (cursor position) — must not travel to collaborators.",
+    ),
+    (
+        ".inkycap/incoming/",
+        "Incoming-change staging area; rebuilt on each fetch.",
+    ),
+    (
+        ".inkycap/history/",
+        "Version-history scratch copies opened for viewing; disposable.",
+    ),
+    (".DS_Store", "OS file-manager noise."),
+    ("Thumbs.db", ""),
+];
+
+/// Ensure a collaborative notebox's `.gitignore` excludes every managed entry.
+/// Idempotent and **additive**: it appends only the entries not already present
+/// (so a notebox set up by an older version gains new ones without duplication),
+/// writes the header once, and never touches user-authored lines.
 pub fn ensure_collaboration_gitignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    if existing.contains(GITIGNORE_MARKER) {
+    let present: std::collections::HashSet<&str> =
+        existing.lines().map(str::trim).collect();
+
+    let missing: Vec<&(&str, &str)> = GITIGNORE_ENTRIES
+        .iter()
+        .filter(|(pat, _)| !present.contains(*pat))
+        .collect();
+    if missing.is_empty() {
         return Ok(());
     }
-
-    let block = format!(
-        "{GITIGNORE_MARKER}\n\
-         # Per-machine state (cursor position) — must not travel to collaborators.\n\
-         .inkycap/local.json\n\
-         # Incoming-change staging area; rebuilt on each fetch.\n\
-         .inkycap/incoming/\n\
-         # OS file-manager noise.\n\
-         .DS_Store\n\
-         Thumbs.db\n\
-         # --- end InkyCap managed block ---\n"
-    );
 
     let mut out = existing;
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
-    if !out.is_empty() {
+    // Write the header only the first time the managed block is created.
+    if !out.contains(GITIGNORE_MARKER) {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(GITIGNORE_MARKER);
         out.push('\n');
     }
-    out.push_str(&block);
+    for (pat, comment) in missing {
+        if !comment.is_empty() {
+            out.push_str("# ");
+            out.push_str(comment);
+            out.push('\n');
+        }
+        out.push_str(pat);
+        out.push('\n');
+    }
     std::fs::write(&path, out)?;
     Ok(())
+}
+
+/// Whether `commit` changed `rel` relative to its first parent (added, removed,
+/// or modified). A root commit (no parent) counts the file as changed if present.
+fn commit_touched_path(commit: &git2::Commit, rel: &Path) -> Result<bool> {
+    let this = commit.tree()?.get_path(rel).ok().map(|e| e.id());
+    let parent = match commit.parent(0) {
+        Ok(p) => p.tree()?.get_path(rel).ok().map(|e| e.id()),
+        Err(_) => None,
+    };
+    Ok(this != parent)
 }
 
 #[cfg(test)]
@@ -746,6 +835,42 @@ mod tests {
         let bytes = b.read_blob_at(oid, Path::new("note.typ")).unwrap().unwrap();
         assert_eq!(String::from_utf8(bytes).unwrap(), "líne with ünïcode 🌱\n");
         assert!(b.read_blob_at(oid, Path::new("absent.typ")).unwrap().is_none());
+    }
+
+    #[test]
+    fn file_history_lists_only_touching_commits_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        // v1 of the note.
+        std::fs::write(dir.path().join("note.typ"), "one\n").unwrap();
+        b.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
+        b.commit("create note", &sig()).unwrap();
+        // A commit that does NOT touch the note must be excluded.
+        std::fs::write(dir.path().join("other.typ"), "x\n").unwrap();
+        b.stage_paths(&[PathBuf::from("other.typ")]).unwrap();
+        b.commit("unrelated", &sig()).unwrap();
+        // v2 of the note.
+        std::fs::write(dir.path().join("note.typ"), "two\n").unwrap();
+        b.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
+        b.commit("edit note", &sig()).unwrap();
+
+        let hist = b.file_history(Path::new("note.typ"), 10).unwrap();
+        assert_eq!(hist.len(), 2, "only the two commits that changed the note");
+        assert_eq!(hist[0].message, "edit note", "newest first");
+        assert_eq!(hist[1].message, "create note");
+        assert_eq!(hist[0].short_hash.len(), 7);
+
+        // Each version's content is fetchable by its commit hash.
+        let oldest = git2::Oid::from_str(&hist[1].commit).unwrap();
+        let bytes = b.read_blob_at(oldest, Path::new("note.typ")).unwrap().unwrap();
+        assert_eq!(String::from_utf8(bytes).unwrap(), "one\n");
+    }
+
+    #[test]
+    fn file_history_empty_on_unborn_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        assert!(b.file_history(Path::new("note.typ"), 10).unwrap().is_empty());
     }
 
     #[test]
@@ -845,12 +970,33 @@ mod tests {
         assert!(after_first.contains("secrets.txt"), "user entry preserved");
         assert!(after_first.contains(".inkycap/local.json"));
         assert!(after_first.contains(".inkycap/incoming/"));
+        assert!(after_first.contains(".inkycap/history/"));
 
         // Idempotent: a second call does not duplicate the managed block.
         ensure_collaboration_gitignore(root).unwrap();
         let after_second = std::fs::read_to_string(root.join(".gitignore")).unwrap();
         assert_eq!(after_first, after_second);
         assert_eq!(after_second.matches(GITIGNORE_MARKER).count(), 1);
+    }
+
+    /// A `.gitignore` from an older setup (missing a newer entry) gains only the
+    /// missing entry on the next call — additive, no duplication, header once.
+    #[test]
+    fn gitignore_additively_backfills_missing_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Simulate an older managed block without `.inkycap/history/`.
+        std::fs::write(
+            root.join(".gitignore"),
+            format!("{GITIGNORE_MARKER}\n.inkycap/local.json\n.inkycap/incoming/\n.DS_Store\nThumbs.db\n"),
+        )
+        .unwrap();
+
+        ensure_collaboration_gitignore(root).unwrap();
+        let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+        assert!(after.contains(".inkycap/history/"), "missing entry backfilled");
+        assert_eq!(after.matches(".inkycap/local.json").count(), 1, "no duplication");
+        assert_eq!(after.matches(GITIGNORE_MARKER).count(), 1, "header stays single");
     }
 
     // ── Phase 5 merge engine ─────────────────────────────────────────────

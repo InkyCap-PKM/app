@@ -569,6 +569,19 @@ export interface GitSyncOutcome {
   incoming: GitCommitInfo | null;
 }
 
+/** One past version of a note (a row in its version history). Commit metadata
+ *  only — content is fetched on demand. Mirrors `git/backend.rs::FileVersion`. */
+export interface GitNoteVersion {
+  /** Full commit hash — the opaque handle to view/restore this version. */
+  commit: string;
+  /** Short hash (7 hex chars). */
+  shortHash: string;
+  authorName: string;
+  /** Commit time, seconds since the Unix epoch (UTC). */
+  timestamp: number;
+  message: string;
+}
+
 /** A commit author identity (name + email). Stored per-installation, keyed by
  *  remote — never in the repo. */
 export interface GitIdentity {

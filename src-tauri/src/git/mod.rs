@@ -20,16 +20,19 @@
 //! - [`auth`] — credential resolution for fetch/push: keyring-backed SSH keys
 //!   and HTTPS PATs, surfaced to the user via [`crate::events::AppEvent`]
 //!   rather than blocking commands.
-//! - [`staging`] — the `.inkycap/incoming/` staging-folder lifecycle (Phase 2/3;
-//!   stub today).
+//! - [`staging`] — the `.inkycap/incoming/` staging-folder lifecycle for
+//!   incoming-change review.
 //! - [`suggest`] — maps a 3-way diff onto inline `#suggestion` Typst markup
-//!   (Phase 2; the highest-risk component; stub today).
+//!   (the conflict-rendering core).
+//! - [`history`] — the `.inkycap/history/` scratch lifecycle for read-only
+//!   version-view tabs (Phase 6).
 //!
 //! Per-notebox git configuration ([`crate::notebox_settings::NoteboxGitConfig`])
 //! lives in the notebox settings, not globally and not in a `.collection` file.
 
 pub mod auth;
 pub mod backend;
+pub mod history;
 pub mod staging;
 pub mod suggest;
 
