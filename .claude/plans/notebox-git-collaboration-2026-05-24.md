@@ -98,8 +98,16 @@ after reload) during validation.
   `git_reconnect_collaboration` (adopts the remote/branch from git, no typing).
   Externally-managed repos stay quiet until the user opts in. (`6830f7d`)
 - **"Joshua Chalifour" as commit author = NOT a bug** — it's the system git
-  config (`user.name`) fallback when no InkyCap identity is set; override in
-  Manage › Commit identity.
+  config (`user.name`, from `~/.gitconfig`) fallback when no InkyCap identity is
+  set. Surfaced + made editable (next item).
+- Collaboration config UX (`58c17d7`): (a) remote URL + branch were unreachable
+  after setup → **Manage section reworked into a full config editor** (remote/
+  branch/token/identity, one Save = idempotent re-setup); (b) the commit identity
+  was a mystery blank → new `git_default_commit_identity` (`GitBackend::config_identity`)
+  resolves what InkyCap would use (per-notebox choice, else git config) and the
+  setup + Manage forms **pre-fill** Name/Email with it; (c) the hint was wrong
+  ("never shared with collaborators" — the author IS in commits; "keyed by
+  remote" jargon) → rewritten honest.
 
 **NEXT (Phase 5 + 6 are built + committed; this is validation + Phase 7):**
 1. **Rebuild the app** (the running instance predates `ed1846f`/`38fe1b6` and all
