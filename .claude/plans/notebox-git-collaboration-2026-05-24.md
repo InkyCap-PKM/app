@@ -5,15 +5,17 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + UNCOMMITTED (2026-05-24).** `git_sync`/`git_check_updates`/`git_sync_finalize` orchestration built on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest. 549 lib tests green (+5 sync, +1 apply_clean_merge, −1 consolidate), 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = commit + in-app 2-clone validation (watch: open editors reloading after a sync writes notes via git checkout), then Phase 6 (version history/restore).** Deferred: the opt-in 'review every incoming change' toggle (off by default; `git_fetch_review`/suggest.rs kept internal to back it) and binary-conflict resolution UI (Phase 3b — finalize currently keep-mine for binary conflicts unless the user edits the working file first)."
+status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + COMMITTED (2026-05-25): `2ba46cc` (sync model + Settings collab toggle) + `e09fe27` (post-sync editor reload).** `git_sync`/`git_check_updates`/`git_sync_finalize` orchestration on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest; open editors reload from disk after a pull (clean buffers only). 549 lib tests green (+5 sync, +1 apply_clean_merge, −1 consolidate), 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = in-app 2-clone validation, then Phase 6 (version history/restore), then Phase 7 (offline package handoff).** Deferred: the opt-in 'review every incoming change' toggle (off by default; `git_fetch_review`/suggest.rs kept internal to back it) and binary-conflict resolution UI (Phase 3b — finalize currently keep-mine for binary conflicts unless the user edits the working file first)."
 ---
 
 ## ⮕⮕ RESUME HERE (next session) — commit + validate Phase 5, then Phase 6
 
-**State at handoff (2026-05-24):** **Phase 5 Sync model is DONE + UNCOMMITTED.**
-All gates green: `cargo test --lib` **549** (+5 sync, +1 `apply_clean_merge`,
-−1 retired consolidate test), 0 warnings, `tsc`, `npm run build`,
-utf8/path-safety. Working tree dirty with the Phase 5 changes below.
+**State at handoff (2026-05-25):** **Phase 5 Sync model is DONE + COMMITTED.**
+Two commits on `notebox-git-collab`: `2ba46cc` (the sync model + the related
+Settings collaboration toggle that was uncommitted in the tree) and `e09fe27`
+(post-sync editor reload — see below). All gates green: `cargo test --lib`
+**549** (+5 sync, +1 `apply_clean_merge`, −1 retired consolidate test),
+0 warnings, `tsc`, `npm run build`, utf8/path-safety.
 
 **What shipped (Phase 5):**
 - **[git/backend.rs]**: `apply_clean_merge(ours, theirs) -> MergeApplication
@@ -43,13 +45,25 @@ utf8/path-safety. Working tree dirty with the Phase 5 changes below.
   `git.toast.sync*`); CSS (`git-panel__digest*`, `banner--conflict`; removed the
   per-item consolidate button styles).
 
+**Post-sync editor reload — DONE in code (`e09fe27`), pending in-app confirm.**
+The file watcher fires for git-checkout note writes (it ignores `.git`/
+`.inkycap` but watches notes), yet nothing reloaded an *open editor buffer* on a
+content change. Fixed: `stores/git.ts` dispatches `inkycap:notebox-synced` after
+any pull and `awaitAllPendingWrites()` before each gesture; `TypstEditor`'s new
+`reloadFromDisk()` (extracted from the sidebar property-reload path) reloads the
+buffer on that event **only when clean** — a dirty buffer keeps its unsaved
+edits (they merge on the next Sync), and the buffer-equality guard no-ops
+untouched files. Still wants the GUI check (cursor position + visual-mode rebuild
+after reload) during validation.
+
 **NEXT:**
-1. **Commit** the Phase 5 changes.
-2. **In-app 2-clone validation** (harness below). **Watch specifically:** after a
-   Sync/Check writes notes to the working tree via git checkout (ff, clean merge,
-   finalize, or `apply_clean_merge`), do **open editor tabs reload** from the
-   file watcher? If not, wire an explicit reload on the sync-completion events.
-3. Then **Phase 6 (version history / restore)** — see its section below.
+1. **In-app 2-clone validation** (harness below). Confirm: clean-merge,
+   conflict→finalize, and ff all land; the post-sync editor reload behaves (open
+   a note in clone B, Sync in a collaborator's edit, watch it refresh without
+   clobbering an unsaved buffer); the digest + conflict list read right.
+   (Known minor: resolve tabs under `.inkycap/incoming/` are left open after
+   finalize — the user closes them; auto-close is a possible nicety.)
+2. Then **Phase 6 (version history / restore)** — see its section below.
 
 **Known limits to revisit (not blockers):**
 - **Binary conflicts**: `finalize` keeps *mine* for a conflicted non-`.typ` file
