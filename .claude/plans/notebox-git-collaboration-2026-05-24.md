@@ -5,17 +5,35 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + COMMITTED (2026-05-25): `2ba46cc` (sync model + Settings collab toggle) + `e09fe27` (post-sync editor reload).** `git_sync`/`git_check_updates`/`git_sync_finalize` orchestration on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest; open editors reload from disk after a pull (clean buffers only). 549 lib tests green (+5 sync, +1 apply_clean_merge, −1 consolidate), 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = in-app 2-clone validation, then Phase 6 (version history/restore), then Phase 7 (offline package handoff).** Deferred: the opt-in 'review every incoming change' toggle (off by default; `git_fetch_review`/suggest.rs kept internal to back it) and binary-conflict resolution UI (Phase 3b — finalize currently keep-mine for binary conflicts unless the user edits the working file first)."
+status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + COMMITTED (2026-05-25): `2ba46cc` (sync model + Settings collab toggle), `e09fe27` (post-sync editor reload), `ed1846f` (fetch prunes stale tracking refs), `38fe1b6` (Discard aborts the merge).** `git_sync`/`git_check_updates`/`git_sync_finalize` on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest; editors reload after a pull. 550 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **Partial in-app validation done (2026-05-25): fixed fetch-prune + discard-abort; full 2-clone run from a CLEAN remote still pending.** NEXT = finish in-app validation, then Phase 6 (version history/restore), then Phase 7 (offline package handoff). Deferred: opt-in 'review every incoming change' toggle (off by default) + binary-conflict resolution UI (Phase 3b — incl. genuine settings.json conflicts; finalize keeps-mine for binaries)."
 ---
 
 ## ⮕⮕ RESUME HERE (next session) — commit + validate Phase 5, then Phase 6
 
 **State at handoff (2026-05-25):** **Phase 5 Sync model is DONE + COMMITTED.**
-Two commits on `notebox-git-collab`: `2ba46cc` (the sync model + the related
-Settings collaboration toggle that was uncommitted in the tree) and `e09fe27`
-(post-sync editor reload — see below). All gates green: `cargo test --lib`
-**549** (+5 sync, +1 `apply_clean_merge`, −1 retired consolidate test),
-0 warnings, `tsc`, `npm run build`, utf8/path-safety.
+Commits on `notebox-git-collab`: `2ba46cc` (sync model + Settings collab toggle),
+`e09fe27` (post-sync editor reload), `ed1846f` (fetch prunes stale tracking
+refs), `38fe1b6` (Discard aborts the merge / restores the working tree). All
+gates green: `cargo test --lib` **550**, 0 warnings, `tsc`, `npm run build`,
+utf8/path-safety.
+
+**In-app validation findings (2026-05-25, partial run — fixed as found):**
+- **Stale remote-tracking ref** → `ed1846f`. A remote that was reset/re-created
+  left the local `origin/<branch>` ref pointing at deleted content; plain fetch
+  doesn't prune it, so Sync merged against phantom content (recurring
+  `settings.json` conflict + loop). Fetch now prunes. (Surfaced via the standard
+  `/tmp/inkycap-test-remote.git` retaining content across sessions; `git init
+  --bare` over an existing repo doesn't wipe it.)
+- **Discard left auto-applied clean files** → `38fe1b6`. A conflicted Sync
+  auto-applies the clean incoming files to the working tree before pausing;
+  Discard cleared staging but left them, so the next Sync committed them
+  (notebox polluted by an abandoned merge against the wrong remote). Discard now
+  restores the working tree to HEAD.
+- **Still open (low priority):** `settings.json` *travels in git by design*
+  (carries shared config); a genuine both-edited `settings.json` conflict still
+  dead-ends in the unresolvable "binary — resolve manually" path (Phase 3b). Not
+  a blocker. Validation was not fully completed (clean-merge / digest / reload
+  paths still want a proper 2-clone run from a clean remote).
 
 **What shipped (Phase 5):**
 - **[git/backend.rs]**: `apply_clean_merge(ours, theirs) -> MergeApplication
