@@ -645,6 +645,13 @@ svg.lucide {
   padding: 8px;
 }
 
+/* In dark themes `--fg-dim` is a saturated teal that reads like coloured
+   content; the more neutral, lighter `--fg-muted` makes hints clearly
+   secondary text rather than something to act on. */
+[data-theme="dark"] .sidebar-hint {
+  color: var(--fg-muted);
+}
+
 /* Agenda panel — flat task/date list with Sort, Task List, and Tags
    dropdown filters. Reuses `.sidebar-item` for rows. */
 .agenda__controls {
@@ -10293,6 +10300,14 @@ svg.lucide {
 /* A conflict banner reuses the incoming banner, tinted with the danger accent. */
 .git-panel__banner--conflict {
   border-left-color: var(--accent-danger);
+}
+
+/* A field label paired with its ? help trigger (keeps long hint text out of
+   the cramped panel — the detail lives in the popover). */
+.git-panel__label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Reconnect offer: a highlighted box above the manual setup form. */

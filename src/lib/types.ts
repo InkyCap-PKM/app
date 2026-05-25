@@ -569,6 +569,17 @@ export interface GitSyncOutcome {
   incoming: GitCommitInfo | null;
 }
 
+/** Result of a read-only "Check for updates": how far the local branch is
+ *  behind the remote, fetched without pulling. Mirrors `commands/git.rs::CheckResult`. */
+export interface GitCheckResult {
+  /** Local already has everything on the remote. */
+  upToDate: boolean;
+  /** Commits the remote has that local lacks (what a Sync would bring in). */
+  behind: number;
+  /** The incoming tip commit's author/message. */
+  incoming: GitCommitInfo | null;
+}
+
 /** One past version of a note (a row in its version history). Commit metadata
  *  only — content is fetched on demand. Mirrors `git/backend.rs::FileVersion`. */
 export interface GitNoteVersion {

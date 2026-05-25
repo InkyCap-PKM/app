@@ -250,6 +250,20 @@ impl GitBackend {
         }
     }
 
+    /// Commits reachable from `theirs` but not from `head` — what a pull would
+    /// bring in (the "behind" count). Used by the read-only update check.
+    pub fn count_incoming(&self, head: Oid, theirs: Oid) -> Result<usize> {
+        Ok(self.repo.graph_ahead_behind(head, theirs)?.1)
+    }
+
+    /// Total commits reachable from `oid` — used when the local branch is unborn
+    /// (everything on the remote is incoming).
+    pub fn count_reachable(&self, oid: Oid) -> Result<usize> {
+        let mut walk = self.repo.revwalk()?;
+        walk.push(oid)?;
+        Ok(walk.count())
+    }
+
     /// Resolve the tip of a remote-tracking branch
     /// (`refs/remotes/<remote>/<branch>`) to its commit OID. `None` until a
     /// fetch has populated it.

@@ -40,6 +40,7 @@ import type {
   GitStatusSummary,
   GitReviewSession,
   GitSyncOutcome,
+  GitCheckResult,
   GitNoteVersion,
   GitIdentity,
   GitSetupResult,
@@ -544,11 +545,10 @@ export async function gitSync(): Promise<GitSyncOutcome> {
   return invoke<GitSyncOutcome>("git_sync");
 }
 
-/** Check for and pull incoming changes *without* pushing — take a collaborator's
- *  work without broadcasting work-in-progress. Same merge as `gitSync`, no push. */
-export async function gitCheckUpdates(): Promise<GitSyncOutcome> {
-  assertNoteboxWritable();
-  return invoke<GitSyncOutcome>("git_check_updates");
+/** Read-only check for incoming changes: fetches and reports how far behind the
+ *  remote is, **without** pulling files into the notebox. Sync applies them. */
+export async function gitCheckUpdates(): Promise<GitCheckResult> {
+  return invoke<GitCheckResult>("git_check_updates");
 }
 
 /** Finish a paused sync after its conflicts have been resolved in the staged

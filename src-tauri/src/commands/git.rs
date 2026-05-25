@@ -670,7 +670,7 @@ const LOCAL_EDITS_MESSAGE: &str = "Update notes";
 /// changes. `push` distinguishes Sync (`true`) from Check for updates (`false`).
 /// Pure + blocking-safe (no async, no `AppHandle`) so it can be unit-tested
 /// against a bare remote and two clones.
-fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
+fn run_sync(root: &Path, git: &NoteboxGitConfig) -> Result<SyncOutcome> {
     let backend = GitBackend::open(root)?;
     backend.set_remote(REMOTE_NAME, &git.remote)?;
 
@@ -699,7 +699,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
         (None, Some(_)) => true,
     };
     if !incoming_exists {
-        if push && backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
+        if backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
             push_into(&backend, git, &mut out)?;
         }
         out.up_to_date = !out.committed && !out.pushed && !out.rejected;
@@ -738,9 +738,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
             backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
             backend.checkout_head_force()?;
             out.pulled = true;
-            if push {
-                push_into(&backend, git, &mut out)?;
-            }
+            push_into(&backend, git, &mut out)?;
             Ok(out)
         }
         MergeOutcome::Conflicts(_) => {
@@ -925,33 +923,81 @@ pub async fn git_sync(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<SyncOutcome> {
-    sync_command(state, app_handle, true).await
-}
-
-/// Check for and pull incoming changes *without* pushing — lets a writer take a
-/// collaborator's work without broadcasting work-in-progress. Same merge as
-/// [`git_sync`], minus the push.
-#[tauri::command]
-pub async fn git_check_updates(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<SyncOutcome> {
-    sync_command(state, app_handle, false).await
-}
-
-/// Shared body of [`git_sync`] / [`git_check_updates`].
-async fn sync_command(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-    push: bool,
-) -> Result<SyncOutcome> {
     let (root, git) = require_collaborative_with_root(&state).await?;
     let _ = app_handle.emit("notebox:git-fetch-started", ());
-    let result = tokio::task::spawn_blocking(move || run_sync(&root, &git, push))
+    let result = tokio::task::spawn_blocking(move || run_sync(&root, &git))
         .await
         .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
     emit_sync_events(&app_handle, &result);
     result
+}
+
+/// A **read-only** check for incoming changes: fetch the remote and report
+/// whether (and how much) the local branch is behind — **without** merging,
+/// committing, or touching the working tree. Lets a writer see "there are
+/// updates, Sync to get them" without pulling files into the notebox. (`fetch`
+/// downloads git objects into `.git`, but the notebox's files are untouched.)
+#[tauri::command]
+pub async fn git_check_updates(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<CheckResult> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let _ = app_handle.emit("notebox:git-fetch-started", ());
+    let result = tokio::task::spawn_blocking(move || run_check(&root, &git))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("check task failed: {e}")))?;
+    match &result {
+        Ok(_) => {
+            let _ = app_handle.emit("notebox:git-fetch-completed", ());
+        }
+        Err(err) => {
+            let _ = app_handle.emit("notebox:git-error", err.to_string());
+        }
+    }
+    result
+}
+
+/// The result of a read-only [`git_check_updates`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResult {
+    /// Local already has everything on the remote — nothing to pull.
+    pub up_to_date: bool,
+    /// Commits the remote has that local lacks (what a Sync would bring in).
+    pub behind: usize,
+    /// The incoming tip commit's author/message, for the "updates from …" note.
+    pub incoming: Option<CommitInfo>,
+}
+
+/// Fetch and report incoming state without merging. Pure + blocking-safe.
+fn run_check(root: &Path, git: &NoteboxGitConfig) -> Result<CheckResult> {
+    let backend = GitBackend::open(root)?;
+    backend.set_remote(REMOTE_NAME, &git.remote)?;
+    backend.fetch(REMOTE_NAME, &git.branch)?;
+
+    let m = backend.current_head()?.map(|(_, oid)| oid);
+    let t = backend.remote_tracking_oid(REMOTE_NAME, &git.branch)?;
+
+    let mut out = CheckResult::default();
+    match (m, t) {
+        // No remote branch yet, or local already contains the remote tip.
+        (_, None) => out.up_to_date = true,
+        (Some(m), Some(t)) if m == t || backend.merge_base(m, t)? == Some(t) => {
+            out.up_to_date = true;
+        }
+        (Some(m), Some(t)) => {
+            out.behind = backend.count_incoming(m, t)?;
+            out.up_to_date = out.behind == 0;
+            out.incoming = backend.commit_info(t).ok();
+        }
+        // Unborn local branch — everything on the remote is incoming.
+        (None, Some(t)) => {
+            out.behind = backend.count_reachable(t)?;
+            out.incoming = backend.commit_info(t).ok();
+        }
+    }
+    Ok(out)
 }
 
 /// Finish a paused sync after the conflicts have been resolved in their staged
@@ -1542,7 +1588,7 @@ mod tests {
 
         // B edits a *different* file (uncommitted) and syncs.
         std::fs::write(bp.join("y.typ"), "y MINE\n").unwrap();
-        let out = run_sync(&bp, &git, true).unwrap();
+        let out = run_sync(&bp, &git).unwrap();
         assert!(out.committed && out.pulled && out.pushed && !out.paused);
         assert!(out.conflicts.is_empty());
         assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
@@ -1570,7 +1616,7 @@ mod tests {
 
         // B rewrites the same line (uncommitted) and syncs → conflict, pause.
         std::fs::write(bp.join("note.typ"), "BBB one\nline two\n").unwrap();
-        let out = run_sync(&bp, &git, true).unwrap();
+        let out = run_sync(&bp, &git).unwrap();
         assert!(out.paused && !out.pushed);
         assert_eq!(out.conflicts.len(), 1);
         let item = &out.conflicts[0];
@@ -1593,9 +1639,10 @@ mod tests {
         assert_eq!(std::fs::read_to_string(cp.join("note.typ")).unwrap(), "AAA one\nline two\n");
     }
 
-    /// Check for updates fast-forwards a clean local to the remote, without push.
+    /// Sync with no local changes fast-forwards to the remote (a pure pull —
+    /// nothing to push back).
     #[test]
-    fn check_updates_fast_forwards_without_pushing() {
+    fn sync_fast_forwards_on_pure_pull() {
         let (_bare, url) = bare_remote();
         let git = main_cfg(&url);
         let (_ad, ap, a) = clone_at(&url, "a");
@@ -1604,8 +1651,8 @@ mod tests {
 
         commit_push(&a, &ap, &url, "n.typ", "after\n");
 
-        // B is clean; pull via fast-forward, no push.
-        let out = run_sync(&bp, &git, false).unwrap();
+        // B is clean; pull via fast-forward (nothing to push back).
+        let out = run_sync(&bp, &git).unwrap();
         assert!(out.pulled && !out.pushed && !out.committed && !out.paused);
         assert_eq!(std::fs::read_to_string(bp.join("n.typ")).unwrap(), "after\n");
     }
@@ -1619,7 +1666,7 @@ mod tests {
         seed(&a, &ap, &url, &[("n.typ", "stable\n")]);
         let (_bd, bp, _b) = clone_at(&url, "b");
 
-        let out = run_sync(&bp, &git, true).unwrap();
+        let out = run_sync(&bp, &git).unwrap();
         assert!(out.up_to_date && !out.pulled && !out.pushed && !out.committed);
     }
 
@@ -1633,10 +1680,45 @@ mod tests {
         let (_bd, bp, _b) = clone_at(&url, "b");
 
         std::fs::write(bp.join("n.typ"), "B edit\n").unwrap();
-        let out = run_sync(&bp, &git, true).unwrap();
+        let out = run_sync(&bp, &git).unwrap();
         assert!(out.committed && out.pushed && !out.pulled && !out.up_to_date);
 
         let (_cd, cp, _c) = clone_at(&url, "c");
         assert_eq!(std::fs::read_to_string(cp.join("n.typ")).unwrap(), "B edit\n");
+    }
+
+    /// Check for updates reports how far behind the remote is **without** pulling
+    /// — the working tree must be untouched (no files downloaded into the notebox).
+    #[test]
+    fn check_updates_reports_behind_without_touching_working_tree() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("n.typ", "v1\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        commit_push(&a, &ap, &url, "n.typ", "v2\n");
+
+        let res = run_check(&bp, &git).unwrap();
+        assert!(!res.up_to_date && res.behind == 1, "one incoming commit reported");
+        assert!(res.incoming.is_some(), "incoming commit context present");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("n.typ")).unwrap(),
+            "v1\n",
+            "check must not pull — B's working file is unchanged"
+        );
+    }
+
+    /// Nothing incoming ⇒ up to date, zero behind.
+    #[test]
+    fn check_updates_up_to_date_when_current() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("n.typ", "v1\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        let res = run_check(&bp, &git).unwrap();
+        assert!(res.up_to_date && res.behind == 0);
     }
 }

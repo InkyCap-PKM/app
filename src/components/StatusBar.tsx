@@ -15,7 +15,7 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { settings } from "../stores/settings";
-import { collaborative, gitStatus, gitSyncing, pendingCount } from "../stores/git";
+import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 
 const StatusBar: Component = () => {
@@ -153,6 +153,9 @@ const StatusBar: Component = () => {
     const s = gitStatus();
     const pending = pendingCount();
     if (pending > 0) return t("git.status.incomingN", { n: pending });
+    // A read-only "Check for updates" found incoming commits (status_summary's
+    // own `behind` is upstream-tracking-based and often 0 without a fetch).
+    if (incomingCount() > 0) return t("git.status.behind", { n: incomingCount() });
     if (!s) return "";
     if (!s.head && !s.dirty) return t("git.status.unborn");
     if (s.behind > 0) return t("git.status.behind", { n: s.behind });
