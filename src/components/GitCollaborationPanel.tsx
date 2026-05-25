@@ -48,6 +48,8 @@ import {
   reconnectCollaboration,
   getDefaultIdentity,
   disableCollaboration,
+  manageOpen,
+  setManageOpen,
 } from "../stores/git";
 import type { GitReviewItem, GitDigestEntry } from "../lib/types";
 import { showToast, toastError } from "../stores/toasts";
@@ -438,7 +440,6 @@ const DigestView: Component = () => {
 // ─────────────────────────── Manage (collapsible) ──────────────────────────
 
 const ManageSection: Component = () => {
-  const [open, setOpen] = createSignal(false);
   // Pre-filled from the current config so every field the setup form had stays
   // editable after setup (remote URL + branch were previously unreachable).
   const [remote, setRemote] = createSignal(noteboxSettings.git?.remote ?? "");
@@ -503,12 +504,12 @@ const ManageSection: Component = () => {
     <div class="git-panel__manage">
       <button
         class="git-panel__manage-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open()}
+        onClick={() => setManageOpen((v) => !v)}
+        aria-expanded={manageOpen()}
       >
         {t("git.manage.heading")}
       </button>
-      <Show when={open()}>
+      <Show when={manageOpen()}>
         <div class="git-panel__manage-body">
           <label class="settings__label">{t("git.setup.remoteLabel")}</label>
           <input

@@ -66,6 +66,10 @@ const [reconnectable, setReconnectable] = createSignal<GitReconnectablePayload |
  *  pull (0 = up to date / not checked). Drives the "N updates available — Sync"
  *  notice; cleared by a Sync (which brings them in) and on notebox switch. */
 const [incomingCount, setIncomingCount] = createSignal(0);
+/** Whether the collaboration panel's "Manage collaboration" section is expanded.
+ *  Lifted to the store so the Settings › Configure entry point can open the panel
+ *  with it already expanded. Reset (collapsed) on a notebox switch. */
+const [manageOpen, setManageOpen] = createSignal(false);
 
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
@@ -145,6 +149,7 @@ export async function resetGitOnOpen(): Promise<void> {
   // (now non-collaborative) notebox is a repo with a remote.
   setReconnectable(null);
   setIncomingCount(0);
+  setManageOpen(false);
   if (collaborative()) {
     await refreshStatus();
   }
@@ -380,4 +385,6 @@ export {
   repoMissing,
   reconnectable,
   incomingCount,
+  manageOpen,
+  setManageOpen,
 };
