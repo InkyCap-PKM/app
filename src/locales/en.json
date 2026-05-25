@@ -266,7 +266,7 @@
   "git.setup.failed": "Setup failed",
   "git.setup.remoteRequired": "A remote URL is required.",
 
-  "git.status.synced": "Up to date",
+  "git.status.synced": "No local changes",
   "git.status.ahead": "{n} to push",
   "git.status.behind": "{n} incoming",
   "git.status.incomingN": "{n} to resolve",
