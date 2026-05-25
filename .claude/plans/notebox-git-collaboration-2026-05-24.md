@@ -5,7 +5,7 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-4.2 DONE + COMMITTED (Phase 4 = b5745ad, clone = b0ec83f). Deterministic .bib + labelled Consolidate uncommitted. **PIVOT (2026-05-24, with user): replace the consolidate/publish model with a single git-aligned Sync + a pull-only Check for updates (Phase 5), then Version history/restore (Phase 6).** The consolidate/publish split + per-note partial consolidation + mandatory review of clean changes were eased-but-complicated divergences from git; Sync = real atomic merge commit (no rebase-onto-theirs, no partial-merge trap). See the Phase 5/6 section below — that is the active direction."
+status: "Phase 0-4.2 DONE + COMMITTED (Phase 4 = b5745ad, clone = b0ec83f, .bib-determinism+labelled-consolidate = 8b8d3eb). **PIVOT (2026-05-24, with user): replace consolidate/publish with a single git-aligned Sync + pull-only Check for updates (Phase 5), then Version history/restore (Phase 6).** Phase 5 **merge engine committed (da8d05c)** but NOT yet wired into a command — **resume by implementing the `git_sync`/`git_check_updates` orchestration; see the ⮕⮕ RESUME HERE block at the top.** Sync = real atomic merge commit (no rebase-onto-theirs, no partial-merge trap). 544 lib tests green, working tree clean."
 ---
 
 ## ⮕⮕ RESUME HERE (next session) — implement the `git_sync` orchestration
