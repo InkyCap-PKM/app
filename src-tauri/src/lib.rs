@@ -203,6 +203,7 @@ pub fn run() {
             commands::git::git_status,
             commands::git::git_sign_in,
             commands::git::git_disable_collaboration,
+            commands::git::git_clone_notebox,
             commands::git::git_publish,
             commands::git::git_fetch_review,
             commands::git::git_consolidate_note,

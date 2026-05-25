@@ -277,6 +277,16 @@ function NoteboxManagementSection() {
   const [editingPath, setEditingPath] = createSignal<string | null>(null);
   const [editName, setEditName] = createSignal("");
 
+  // "Clone from git remote" — the collaborator-join path (joins a collaborative
+  // notebox entirely in-app, no command-line git).
+  const [showCloneForm, setShowCloneForm] = createSignal(false);
+  const [cloneRemote, setCloneRemote] = createSignal("");
+  const [cloneBranch, setCloneBranch] = createSignal("main");
+  const [cloneParent, setCloneParent] = createSignal("");
+  const [cloneName, setCloneName] = createSignal("");
+  const [cloneToken, setCloneToken] = createSignal("");
+  const [cloning, setCloning] = createSignal(false);
+
   function startEdit(entry: NoteboxRegistryEntry) {
     setEditingPath(entry.path);
     setEditName(entry.display_name);
@@ -407,6 +417,74 @@ function NoteboxManagementSection() {
     setAddName("");
   }
 
+  /** Folder name to clone into, derived from the remote URL's last segment
+   *  (minus a trailing `.git`). */
+  function deriveCloneName(remote: string): string {
+    const seg = remote.trim().replace(/\/+$/, "").split(/[/:]/).pop() ?? "";
+    return seg.replace(/\.git$/, "") || "notebox";
+  }
+
+  async function browseForCloneParent() {
+    let defaultPath: string | undefined;
+    try {
+      defaultPath = await homeDir();
+    } catch {
+      defaultPath = undefined;
+    }
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select parent folder for the cloned notebox",
+      defaultPath,
+    });
+    if (!selected) return;
+    setCloneParent(selected);
+    if (!cloneName()) setCloneName(deriveCloneName(cloneRemote()));
+  }
+
+  function resetCloneForm() {
+    setShowCloneForm(false);
+    setCloneRemote("");
+    setCloneParent("");
+    setCloneName("");
+    setCloneToken("");
+  }
+
+  async function confirmClone() {
+    const remote = cloneRemote().trim();
+    const parent = cloneParent().trim();
+    const name = cloneName().trim() || deriveCloneName(remote);
+    if (!remote) {
+      showToast("error", "Enter a remote URL to clone.");
+      return;
+    }
+    if (!parent) {
+      showToast("error", "Choose a parent folder for the clone.");
+      return;
+    }
+    const dest = parent.endsWith("/") ? parent + name : parent + "/" + name;
+    setCloning(true);
+    try {
+      const path = await ipc.gitCloneNotebox({
+        remote,
+        branch: cloneBranch().trim() || undefined,
+        dest,
+        httpsToken: cloneToken().trim() || undefined,
+      });
+      // Register and open the cloned notebox; it arrives already collaborative
+      // (its committed settings carry the remote + branch).
+      await ipc.registerNotebox(path, name);
+      await loadNoteboxRegistry();
+      resetCloneForm();
+      await openNotebox(path);
+      showToast("success", `Cloned and opened ${name}.`);
+    } catch (err) {
+      showToast("error", `Clone failed: ${err}`);
+    } finally {
+      setCloning(false);
+    }
+  }
+
   return (
     <>
       <div class="settings__section-header">
@@ -417,6 +495,17 @@ function NoteboxManagementSection() {
           disabled={showAddForm()}
         >
           New notebox
+        </button>
+        <button
+          class="settings__detect-btn"
+          onClick={() => {
+            setShowCloneForm(true);
+            setCloneBranch("main");
+          }}
+          disabled={showCloneForm()}
+          title="Join a collaborative notebox by cloning its git remote"
+        >
+          Clone from remote
         </button>
       </div>
 
@@ -539,6 +628,59 @@ function NoteboxManagementSection() {
               Add
             </button>
             <button class="settings__detect-btn" onClick={cancelAdd}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={showCloneForm()}>
+        <div class="settings__row notebox-row notebox-row--add-form">
+          <div class="settings__row-info">
+            <input
+              class="settings__text-input"
+              placeholder="Remote URL (git@host:owner/repo.git or https://…)"
+              value={cloneRemote()}
+              onInput={(e) => setCloneRemote(e.currentTarget.value)}
+            />
+            <input
+              class="settings__text-input"
+              placeholder="Branch (default: main)"
+              value={cloneBranch()}
+              onInput={(e) => setCloneBranch(e.currentTarget.value)}
+            />
+            <input
+              class="settings__text-input"
+              placeholder="Folder name"
+              value={cloneName()}
+              onInput={(e) => setCloneName(e.currentTarget.value)}
+            />
+            <input
+              class="settings__text-input"
+              type="password"
+              autocomplete="off"
+              placeholder="HTTPS access token (optional; SSH uses your key)"
+              value={cloneToken()}
+              onInput={(e) => setCloneToken(e.currentTarget.value)}
+            />
+            <span class="settings__description">
+              {cloneParent()
+                ? `Clones into: ${cloneParent().replace(/\/$/, "")}/${cloneName().trim() || deriveCloneName(cloneRemote())}`
+                : "No parent folder selected"}
+            </span>
+          </div>
+          <div class="notebox-row__actions">
+            <button class="settings__detect-btn" onClick={browseForCloneParent}>
+              Browse
+            </button>
+            <button
+              class="settings__detect-btn"
+              onClick={confirmClone}
+              disabled={cloning() || !cloneRemote().trim() || !cloneParent()}
+            >
+              {cloning() ? "Cloning…" : "Clone & open"}
+            </button>
+            <button class="settings__detect-btn" onClick={resetCloneForm} disabled={cloning()}>
               Cancel
             </button>
           </div>
