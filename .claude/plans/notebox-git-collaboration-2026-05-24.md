@@ -87,6 +87,19 @@ after reload) during validation.
 - Status said "Up to date" before any fetch (misleading re: incoming) → **user
   chose manual-only + reworded to "No local changes"** (no auto-fetch; incoming
   stays a manual Check for updates / Sync). (`627d701`)
+- Dismissing a comment left an orphan `#` (invalid Typst) → the annotation
+  tracker now normalizes a call's `from` to include the leading `#`, so dismiss
+  *and* the pane's Accept/Reject operate on the whole call. (`56cf1f5`)
+- Collaborative state lived only in `settings.json`'s `git` field, so a repo
+  with a remote but no field showed as non-collaborative (lost across a
+  move/re-add; or an external clone — e.g. `InkyCap-Professional` w/ a codeberg
+  remote). → **user chose "offer to reconnect"**: on open, a repo-with-remote-
+  but-no-config emits `notebox:git-reconnectable`; the panel offers a one-click
+  `git_reconnect_collaboration` (adopts the remote/branch from git, no typing).
+  Externally-managed repos stay quiet until the user opts in. (`6830f7d`)
+- **"Joshua Chalifour" as commit author = NOT a bug** — it's the system git
+  config (`user.name`) fallback when no InkyCap identity is set; override in
+  Manage › Commit identity.
 
 **NEXT (Phase 5 + 6 are built + committed; this is validation + Phase 7):**
 1. **Rebuild the app** (the running instance predates `ed1846f`/`38fe1b6` and all
