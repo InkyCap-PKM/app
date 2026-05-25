@@ -5,7 +5,7 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + COMMITTED (2026-05-25): `2ba46cc` (sync model + Settings collab toggle), `e09fe27` (post-sync editor reload), `ed1846f` (fetch prunes stale tracking refs), `38fe1b6` (Discard aborts the merge).** `git_sync`/`git_check_updates`/`git_sync_finalize` on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest; editors reload after a pull. 550 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **Partial in-app validation done (2026-05-25): fixed fetch-prune + discard-abort; full 2-clone run from a CLEAN remote still pending.** NEXT = finish in-app validation, then Phase 6 (version history/restore), then Phase 7 (offline package handoff). Deferred: opt-in 'review every incoming change' toggle (off by default) + binary-conflict resolution UI (Phase 3b — incl. genuine settings.json conflicts; finalize keeps-mine for binaries)."
+status: "Phase 0-5 DONE + COMMITTED. **Phase 6 (per-note version history + restore) DONE + COMMITTED (2026-05-25, `c83b98d`).** Right-panel pane renamed 'Changes & History' with a Changes|History toggle; History lists a note's past versions from the commit graph (view a version in a read-only scratch tab, Restore = non-destructive new edit). Phase 5 commits: `2ba46cc`+`e09fe27`+`ed1846f`+`38fe1b6` (sync model, editor reload, fetch-prune, discard-abort). 555 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = full in-app validation (Phase 5 sync 2-clone run from a CLEAN remote + Phase 6 history/restore) — rebuild first; then Phase 7 (offline package handoff).** Deferred: opt-in 'review every incoming change' toggle (off by default) + binary-conflict resolution UI (Phase 3b — incl. genuine settings.json conflicts; finalize keeps-mine for binaries)."
 ---
 
 ## ⮕⮕ RESUME HERE (next session) — commit + validate Phase 5, then Phase 6
@@ -74,14 +74,18 @@ edits (they merge on the next Sync), and the buffer-equality guard no-ops
 untouched files. Still wants the GUI check (cursor position + visual-mode rebuild
 after reload) during validation.
 
-**NEXT:**
-1. **In-app 2-clone validation** (harness below). Confirm: clean-merge,
-   conflict→finalize, and ff all land; the post-sync editor reload behaves (open
-   a note in clone B, Sync in a collaborator's edit, watch it refresh without
-   clobbering an unsaved buffer); the digest + conflict list read right.
-   (Known minor: resolve tabs under `.inkycap/incoming/` are left open after
-   finalize — the user closes them; auto-close is a possible nicety.)
-2. Then **Phase 6 (version history / restore)** — see its section below.
+**NEXT (Phase 5 + 6 are built + committed; this is validation + Phase 7):**
+1. **Rebuild the app** (the running instance predates `ed1846f`/`38fe1b6` and all
+   of Phase 6).
+2. **Full in-app validation from a CLEAN remote** (`rm -rf` the bare remote
+   first — it persists across sessions). Phase 5: clean-merge / conflict→finalize
+   / ff all land; post-sync editor reload behaves (open a note in clone B, Sync
+   in a collaborator's edit, watch it refresh without clobbering an unsaved
+   buffer); digest + conflict lists read right; Discard truly aborts. Phase 6:
+   the Changes|History toggle; History lists versions; viewing opens a read-only
+   tab; Restore writes a new edit that Syncs. (Known minor: resolve tabs under
+   `.inkycap/incoming/` stay open after finalize — auto-close is a nicety.)
+3. Then **Phase 7 (offline package handoff)** — see its section below.
 
 **Known limits to revisit (not blockers):**
 - **Binary conflicts**: `finalize` keeps *mine* for a conflicted non-`.typ` file
@@ -153,13 +157,35 @@ updates**; conflicts list (only conflicted notes need action) + post-sync digest
 behind/ahead → "updates available" / "changes to share". Retire the
 Consolidate-all / per-note-Consolidate / Publish buttons.
 
-## Phase 6 — Version history / restore
+## Phase 6 — Version history / restore — DONE (2026-05-25, `c83b98d`)
 
-Per-note + per-notebox history from the git commit graph (we already have
-`read_blob_at` + `commit_info`): list versions (author/date/message), view a
-version, diff against now, and **restore** (writes the old content back as a new
-change to Sync — never rewrites history). Friendly "version history" framing, no
-git knowledge required.
+**Per-note** history shipped (per-notebox timeline deferred — not needed yet).
+Hosted in the right-panel pane, **renamed "Changes & History"** with a
+**Changes | History** segmented toggle (default Changes = the existing
+annotations/tracked-changes view). History lists the open note's past versions
+(message / author·date / short hash) from the commit graph; clicking a row opens
+that version in a **read-only scratch tab**; **Restore** (confirmed) writes the
+old content back through `NoteboxStorage` as a new edit the user then Syncs —
+never rewrites history.
+
+- **backend.rs**: `FileVersion` + `file_history(rel, limit)` (walks commits that
+  touched the path, newest first, via `commit_touched_path`); `ensure_collaboration_gitignore`
+  made **additive** (backfills new entries into an older managed block) and now
+  ignores `.inkycap/history/`. Tests: `file_history_lists_only_touching_commits_newest_first`,
+  `file_history_empty_on_unborn_branch`, `gitignore_additively_backfills_missing_entries`.
+- **git/history.rs**: disposable scratch lifecycle for the read-only views
+  (`.inkycap/history/<short-hash>/<note>`), cleared on notebox open
+  (`surface_git_status`).
+- **commands/git.rs**: `git_note_history`, `git_open_note_version` (writes a
+  version to scratch, returns its path), `git_restore_note_version` (writes back
+  via storage). Content fetched on demand with the existing `read_blob_at`.
+- **Frontend**: `NoteHistory.tsx` (gated on `collaborative()`); the toggle in
+  `AnnotationsPanel`; `RightPanel` tab/title rename; `GitNoteVersion` type +
+  ipc; i18n (`history.*`, `annotations.paneTitle`/`view.*`); CSS.
+
+**Possible later:** per-notebox timeline; diff-against-now view (the read-only
+tab is view-only today); a true read-only editor state (the scratch tab is
+technically editable but inconsequential — gitignored, watcher-ignored).
 
 ## Phase 7 — Offline package handoff (server-less transport) — ROADMAP
 
