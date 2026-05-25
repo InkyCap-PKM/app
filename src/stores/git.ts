@@ -3,9 +3,10 @@
 // Holds the reactive state for the per-notebox collaboration surface: the git
 // status summary, the last sync outcome (digest of what landed + any conflicts
 // awaiting resolution), and a syncing flag. The two user gestures are Sync
-// (pull + merge + push) and Check for updates (pull + merge, no push); when a
-// merge conflicts the outcome is `paused` and the conflicted notes are staged
-// as inline suggestions to resolve, then finalized.
+// (pull + merge + push) and Check for updates (a read-only fetch that reports
+// how far behind the remote is, without pulling files in); when a Sync's merge
+// conflicts the outcome is `paused` and the conflicted notes are staged as
+// inline suggestions to resolve, then finalized.
 //
 // Deliberately does NOT import `./notebox` — `notebox.ts` imports this store to
 // reset it on a notebox switch, and a back-import would be a cycle.
@@ -61,6 +62,10 @@ const [gitError, setGitError] = createSignal<string | null>(null);
  *  collaboration config — the panel offers a one-click reconnect (deriving the
  *  remote/branch from git) instead of a blank setup form. Null otherwise. */
 const [reconnectable, setReconnectable] = createSignal<GitReconnectablePayload | null>(null);
+/** Incoming commits the last "Check for updates" found on the remote but did not
+ *  pull (0 = up to date / not checked). Drives the "N updates available — Sync"
+ *  notice; cleared by a Sync (which brings them in) and on notebox switch. */
+const [incomingCount, setIncomingCount] = createSignal(0);
 
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
@@ -139,6 +144,7 @@ export async function resetGitOnOpen(): Promise<void> {
   // Cleared here; the backend re-emits notebox:git-reconnectable on open if the
   // (now non-collaborative) notebox is a repo with a remote.
   setReconnectable(null);
+  setIncomingCount(0);
   if (collaborative()) {
     await refreshStatus();
   }
@@ -193,6 +199,9 @@ export async function reconnectCollaboration(): Promise<void> {
  *  summarizing what happened. Shared by Sync, Check, and finalize. */
 function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
   setSyncOutcome(outcome);
+  // A Sync reconciles with the remote we just fetched, so any "updates
+  // available" notice from an earlier Check is now resolved.
+  setIncomingCount(0);
   // A pull (fast-forward, merge, or finalize) rewrote notes on disk. Tell open
   // editors to reload from disk so their buffers aren't stale — clean buffers
   // pick up the merged content; dirty buffers keep their unsaved edits. (Tree /
@@ -242,16 +251,27 @@ export async function sync(): Promise<void> {
   }
 }
 
-/** Check for updates: pull + merge incoming changes without pushing. */
+/** Check for updates: a read-only peek — fetch and report how far behind the
+ *  remote is, without pulling files into the notebox. Sets the "N updates
+ *  available" notice; the user then Syncs to bring them in. */
 export async function checkUpdates(): Promise<void> {
   setGitSyncing(true);
   try {
-    await awaitAllPendingWrites();
-    const outcome = await ipc.gitCheckUpdates();
-    applyOutcome(outcome, false);
+    const result = await ipc.gitCheckUpdates();
+    setIncomingCount(result.behind);
+    if (result.behind > 0) {
+      showToast(
+        "info",
+        result.behind === 1
+          ? t("git.toast.oneUpdateAvailable")
+          : t("git.toast.updatesAvailable", { n: result.behind }),
+      );
+    } else {
+      showToast("info", t("git.toast.noUpdates"));
+    }
     await refreshStatus();
   } catch (err) {
-    toastError(t("git.toast.syncFailed"), err);
+    toastError(t("git.toast.checkFailed"), err);
   } finally {
     setGitSyncing(false);
   }
@@ -352,4 +372,12 @@ export async function setIdentity(name: string, email: string): Promise<void> {
   await ipc.gitSetIdentity(name, email);
 }
 
-export { gitStatus, syncOutcome, gitSyncing, gitError, repoMissing, reconnectable };
+export {
+  gitStatus,
+  syncOutcome,
+  gitSyncing,
+  gitError,
+  repoMissing,
+  reconnectable,
+  incomingCount,
+};

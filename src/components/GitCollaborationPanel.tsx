@@ -25,6 +25,7 @@ import {
   DownloadCloud,
   X,
 } from "lucide-solid";
+import HelpButton from "./HelpButton";
 import { noteboxSettings } from "../stores/settings";
 import {
   collaborative,
@@ -33,6 +34,7 @@ import {
   gitStatus,
   syncOutcome,
   syncPaused,
+  incomingCount,
   gitSyncing,
   sync,
   checkUpdates,
@@ -186,7 +188,10 @@ const SetupForm: Component = () => {
         onInput={(e) => setBranch(e.currentTarget.value)}
       />
 
-      <label class="settings__label" for="git-token">{t("git.setup.tokenLabel")}</label>
+      <div class="git-panel__label-row">
+        <label class="settings__label" for="git-token">{t("git.setup.tokenLabel")}</label>
+        <HelpButton label={t("git.setup.tokenLabel")}>{t("git.setup.tokenHint")}</HelpButton>
+      </div>
       <input
         id="git-token"
         class="settings__text-input"
@@ -195,7 +200,6 @@ const SetupForm: Component = () => {
         value={token()}
         onInput={(e) => setToken(e.currentTarget.value)}
       />
-      <p class="sidebar-hint">{t("git.setup.tokenHint")}</p>
 
       <label class="settings__label">{t("git.setup.identityLabel")}</label>
       <div class="git-panel__identity-row">
@@ -280,6 +284,16 @@ const SyncView: Component = () => {
             <DownloadCloud size={13} /> {t("git.actions.checkUpdates")}
           </button>
         </div>
+
+        {/* A read-only check found incoming changes it did not pull — nudge a Sync. */}
+        <Show when={incomingCount() > 0}>
+          <div class="git-panel__banner">
+            <span class="git-panel__banner-author">
+              {incomingCount() === 1 ? t("git.check.one") : t("git.check.n", { n: incomingCount() })}
+            </span>
+            <span class="git-panel__banner-msg">{t("git.check.hint")}</span>
+          </div>
+        </Show>
       </Show>
 
       <Show when={syncPaused()} fallback={<DigestView />}>
@@ -513,7 +527,10 @@ const ManageSection: Component = () => {
             onInput={(e) => setBranch(e.currentTarget.value)}
           />
 
-          <label class="settings__label">{t("git.setup.tokenLabel")}</label>
+          <div class="git-panel__label-row">
+            <label class="settings__label">{t("git.setup.tokenLabel")}</label>
+            <HelpButton label={t("git.setup.tokenLabel")}>{t("git.setup.tokenHint")}</HelpButton>
+          </div>
           <input
             class="settings__text-input"
             type="password"
