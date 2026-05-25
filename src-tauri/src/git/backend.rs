@@ -554,11 +554,19 @@ impl GitBackend {
 
     /// Fetch `branch` from the named remote into its remote-tracking ref. Does
     /// not merge — review sits between fetch and apply. Blocking.
+    ///
+    /// Prunes while fetching: a plain fetch leaves a remote-tracking ref in
+    /// place even after its branch disappears from the remote (a deleted/
+    /// migrated/re-created remote). Sync reads that ref as "theirs", so a stale
+    /// one makes it merge against phantom content that no longer exists upstream.
+    /// Pruning drops `refs/remotes/<remote>/<branch>` when the remote no longer
+    /// has the branch, so Sync then correctly sees "nothing incoming".
     pub fn fetch(&self, remote_name: &str, branch: &str) -> Result<()> {
         let mut remote = self.repo.find_remote(remote_name)?;
         let url = remote.url().unwrap_or("").to_string();
         let mut fo = git2::FetchOptions::new();
         fo.remote_callbacks(auth::remote_callbacks(&url));
+        fo.prune(git2::FetchPrune::On);
         let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote_name}/{branch}");
         remote.fetch(&[refspec], Some(&mut fo), None)?;
         Ok(())
@@ -983,6 +991,33 @@ mod tests {
         // The clean file now holds theirs; the conflicted file still holds mine.
         assert_eq!(std::fs::read_to_string(bpath.join("clean.typ")).unwrap(), "THEIRS clean\n");
         assert_eq!(std::fs::read_to_string(bpath.join("conflict.typ")).unwrap(), "BBB\nline2\n");
+    }
+
+    /// When the remote's branch disappears (a reset / migrated / re-created
+    /// remote), a pruning fetch drops the now-dangling remote-tracking ref, so
+    /// Sync sees "nothing incoming" instead of merging against phantom content.
+    #[test]
+    fn fetch_prunes_stale_tracking_ref_when_remote_branch_deleted() {
+        let (bare, _ad, _bd, _a, _apath, b, _bpath, branch) =
+            bare_with_two_clones(&[("x.typ", "hi\n")]);
+        // B (a clone) already tracks the remote branch.
+        b.fetch("origin", &branch).unwrap();
+        assert!(b.remote_tracking_oid("origin", &branch).unwrap().is_some());
+
+        // The branch vanishes from the remote.
+        let bare_repo = git2::Repository::open_bare(bare.path()).unwrap();
+        bare_repo
+            .find_reference(&format!("refs/heads/{branch}"))
+            .unwrap()
+            .delete()
+            .unwrap();
+
+        // The next fetch prunes the stale tracking ref.
+        b.fetch("origin", &branch).unwrap();
+        assert!(
+            b.remote_tracking_oid("origin", &branch).unwrap().is_none(),
+            "stale remote-tracking ref must be pruned once its branch is gone"
+        );
     }
 
     /// A pure pull when local has not diverged: fast-forward the working tree to
