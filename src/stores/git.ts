@@ -23,6 +23,7 @@ import type {
 } from "../lib/types";
 import { noteboxSettings, loadNoteboxSettings } from "./settings";
 import { openTab } from "./tabs";
+import { awaitAllPendingWrites } from "./editor-writes";
 import { showToast, toastError } from "./toasts";
 import { t } from "../lib/i18n";
 import {
@@ -151,6 +152,13 @@ export async function setupCollaboration(args: {
  *  summarizing what happened. Shared by Sync, Check, and finalize. */
 function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
   setSyncOutcome(outcome);
+  // A pull (fast-forward, merge, or finalize) rewrote notes on disk. Tell open
+  // editors to reload from disk so their buffers aren't stale — clean buffers
+  // pick up the merged content; dirty buffers keep their unsaved edits. (Tree /
+  // index refresh is driven separately by refreshStatus + the file watcher.)
+  if (outcome.pulled) {
+    document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
+  }
   if (outcome.paused) {
     setPausedPush(pushGesture);
     return; // the panel surfaces the conflict list; no toast.
@@ -180,6 +188,9 @@ function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
 export async function sync(): Promise<void> {
   setGitSyncing(true);
   try {
+    // Let in-flight editor saves land first so the sync's "commit my edits"
+    // step sees the latest content rather than a half-written file.
+    await awaitAllPendingWrites();
     const outcome = await ipc.gitSync();
     applyOutcome(outcome, true);
     await refreshStatus();
@@ -194,6 +205,7 @@ export async function sync(): Promise<void> {
 export async function checkUpdates(): Promise<void> {
   setGitSyncing(true);
   try {
+    await awaitAllPendingWrites();
     const outcome = await ipc.gitCheckUpdates();
     applyOutcome(outcome, false);
     await refreshStatus();
@@ -209,6 +221,9 @@ export async function checkUpdates(): Promise<void> {
 export async function finalizeSync(): Promise<void> {
   setGitSyncing(true);
   try {
+    // The resolved staged copies are edited in their tabs; let those writes
+    // land before the backend reads them to build the merged tree.
+    await awaitAllPendingWrites();
     const outcome = await ipc.gitSyncFinalize(pausedPush());
     applyOutcome(outcome, pausedPush());
     await refreshStatus();
