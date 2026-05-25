@@ -507,6 +507,23 @@ export async function gitDisableCollaboration(): Promise<void> {
   return invoke<void>("git_disable_collaboration");
 }
 
+/** Clone a collaborative notebox from a git remote into `dest` (a collaborator
+ *  joining in-app). Stores the optional HTTPS token first. Returns the cloned
+ *  notebox path; the caller registers + opens it. */
+export async function gitCloneNotebox(args: {
+  remote: string;
+  branch?: string;
+  dest: string;
+  httpsToken?: string;
+}): Promise<string> {
+  return invoke<string>("git_clone_notebox", {
+    remote: args.remote,
+    branch: args.branch ?? null,
+    dest: args.dest,
+    httpsToken: args.httpsToken ?? null,
+  });
+}
+
 /** Fetch the remote and stage every incoming note as inline suggestions.
  *  Does not touch the working tree. */
 export async function gitFetchReview(): Promise<GitReviewSession> {

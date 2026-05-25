@@ -5,8 +5,23 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (resolve→consolidate→push) DONE + committed (f064bd6). Phase 4 (frontend review surface) + 4.1 (outgoing-authoring half, git_publish) DONE + UNCOMMITTED, 538 lib tests + tsc + vite + utf8/path-safety green. Remaining: Phase 3b (binary/add/delete decision *application*) + in-app validation; clone-into-new-notebox onboarding still TODO."
+status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (f064bd6). Phase 4 (frontend review surface) + 4.1 (outgoing git_publish) DONE + COMMITTED (b5745ad). Phase 4.2 (in-app clone onboarding, git_clone_notebox) DONE + COMMITTED, validated in-app, 540 lib tests + tsc + vite + utf8/path-safety green. Remaining: Phase 3b (binary/note-delete decision *application*); user's deferred UX-clarity pass (per-item Consolidate discoverability + consolidate double-commit)."
 ---
+
+## Phase 4.2 — in-app clone onboarding (2026-05-24)
+
+Removes the command-line-git step a joining collaborator previously needed.
+Validated in-app (cloned the local bare remote into a fresh folder → opened as a
+collaborative notebox).
+
+- **`commands/git.rs`:** `git_clone_notebox(remote, branch?, dest, https_token?)`
+  → stores the optional token, clones with the standard auth callbacks via a
+  testable `clone_into` helper, returns the cloned path (frontend form). The
+  cloned tree arrives already collaborative — remote + branch travel in the
+  committed `.inkycap/settings.json`. Test `clone_into_fetches_notebox_content`.
+- **Frontend:** `ipc.gitCloneNotebox`; a **Clone from remote** form in Settings ›
+  Overview › Notebox Management (remote / branch / folder-name / optional token +
+  parent-folder picker) that clones → `registerNotebox` → `openNotebox`.
 
 ## In-app validation — DONE (2026-05-24, uncommitted)
 

@@ -480,6 +480,70 @@ pub async fn git_disable_collaboration(state: State<'_, AppState>) -> Result<()>
     Ok(())
 }
 
+/// The git-side of cloning, factored out for testing without app state: clone
+/// `remote` (optionally a specific `branch`) into `dest` with the standard auth
+/// callbacks. `dest` must not already exist as a non-empty directory.
+fn clone_into(remote: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
+    let mut fo = git2::FetchOptions::new();
+    fo.remote_callbacks(auth::remote_callbacks(remote));
+    let mut builder = git2::build::RepoBuilder::new();
+    builder.fetch_options(fo);
+    if let Some(b) = branch {
+        builder.branch(b);
+    }
+    builder.clone(remote, dest)?;
+    Ok(())
+}
+
+/// Clone a collaborative notebox from a git remote into `dest`, so a
+/// collaborator can join entirely in-app (no command-line git). The cloned tree
+/// already carries the notebox's settings — remote + branch travel in the
+/// committed `.inkycap/settings.json` — so the result opens as a collaborative
+/// notebox. Returns the cloned notebox path (frontend form) for the caller to
+/// register and open. Stores the optional HTTPS token first so the clone can
+/// authenticate. Does not touch the currently-open notebox.
+#[tauri::command]
+pub async fn git_clone_notebox(
+    remote: String,
+    branch: Option<String>,
+    dest: String,
+    https_token: Option<String>,
+) -> Result<String> {
+    let remote = remote.trim().to_string();
+    if remote.is_empty() {
+        return Err(InkyCapError::BadRequest("remote URL is required".into()));
+    }
+    let dest = PathBuf::from(dest.trim());
+    if dest.as_os_str().is_empty() {
+        return Err(InkyCapError::BadRequest("destination folder is required".into()));
+    }
+    if dest.exists()
+        && std::fs::read_dir(&dest)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+    {
+        return Err(InkyCapError::BadRequest(
+            "destination folder already exists and is not empty".into(),
+        ));
+    }
+
+    if let Some(token) = https_token {
+        if !token.trim().is_empty() {
+            auth::set_https_token(&remote, &token)?;
+        }
+    }
+
+    let branch = branch.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+    let cloned = tokio::task::spawn_blocking(move || -> Result<PathBuf> {
+        clone_into(&remote, branch.as_deref(), &dest)?;
+        Ok(dest)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("clone task failed: {e}")))??;
+
+    Ok(to_frontend_string(&cloned))
+}
+
 /// Outcome of [`git_publish`] — the outgoing-authoring counterpart to the
 /// incoming review loop. Reports what happened so the frontend can message it.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1046,6 +1110,27 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(cpath.join("note.typ")).unwrap(),
             "first\n"
+        );
+    }
+
+    /// In-app clone onboarding: cloning a remote brings the notebox content
+    /// into a fresh folder as a git repo (the collaborator-join path).
+    #[test]
+    fn clone_into_fetches_notebox_content() {
+        let src = tempfile::tempdir().unwrap();
+        let s = GitBackend::open_or_init(src.path()).unwrap();
+        std::fs::write(src.path().join("note.typ"), "shared\n").unwrap();
+        s.stage_all().unwrap();
+        s.commit("base", &sig()).unwrap();
+
+        let destdir = tempfile::tempdir().unwrap();
+        let dest = destdir.path().join("clone");
+        clone_into(src.path().to_str().unwrap(), None, &dest).unwrap();
+
+        assert!(GitBackend::is_repo(&dest));
+        assert_eq!(
+            std::fs::read_to_string(dest.join("note.typ")).unwrap(),
+            "shared\n"
         );
     }
 
