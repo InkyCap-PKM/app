@@ -252,12 +252,17 @@ export function openDigestEntry(path: string): void {
   openTab({ type: "file", title, path }, { forceNewTab: false });
 }
 
-/** Abandon a paused sync (clears staging). The clean changes the sync already
- *  applied stay in the working tree; the merge is simply not finalized. */
+/** Abort a paused sync: clears staging and restores the working tree to its
+ *  last committed state (so the clean files the merge auto-applied don't linger).
+ *  The incoming changes stay on the remote and re-apply on the next Sync. */
 export async function discardReview(): Promise<void> {
   try {
     await ipc.gitDiscardReview();
     setSyncOutcome(null);
+    // The working tree was rolled back to HEAD — reload open editors so their
+    // buffers reflect the restored content (clean buffers only).
+    document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
+    await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.discardFailed"), err);
   }

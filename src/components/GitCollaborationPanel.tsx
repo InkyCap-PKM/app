@@ -257,6 +257,16 @@ const SyncView: Component = () => {
 
 const ConflictView: Component = () => {
   const conflicts = () => syncOutcome()?.conflicts ?? [];
+  // Discard now rolls the working tree back to the last commit (dropping the
+  // clean files the merge auto-applied), so confirm before throwing it away.
+  async function confirmDiscard() {
+    const ok = await promptConfirm({
+      title: t("git.discard.title"),
+      message: t("git.discard.confirm"),
+      confirmLabel: t("git.actions.discard"),
+    });
+    if (ok) void discardReview();
+  }
   return (
     <>
       <div class="git-panel__banner git-panel__banner--conflict">
@@ -305,7 +315,7 @@ const ConflictView: Component = () => {
         <button class="git-panel__primary-btn" onClick={() => void finalizeSync()} disabled={gitSyncing()}>
           <Check size={13} /> {t("git.actions.finalize")}
         </button>
-        <button class="settings__detect-btn" onClick={() => void discardReview()} disabled={gitSyncing()}>
+        <button class="settings__detect-btn" onClick={() => void confirmDiscard()} disabled={gitSyncing()}>
           {t("git.actions.discard")}
         </button>
       </div>
