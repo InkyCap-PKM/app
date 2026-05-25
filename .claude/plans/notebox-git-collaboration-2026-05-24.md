@@ -5,8 +5,131 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0 DONE (e1298c8). Phase 1 (a84829d). Phase 2 (fe2a560). Phase 3 (f064bd6). Phase 4 (frontend review surface) + 4.1 (outgoing git_publish) DONE + COMMITTED (b5745ad). Phase 4.2 (in-app clone onboarding, git_clone_notebox) DONE + COMMITTED, validated in-app, 540 lib tests + tsc + vite + utf8/path-safety green. Remaining: Phase 3b (binary/note-delete decision *application*); user's deferred UX-clarity pass (per-item Consolidate discoverability + consolidate double-commit)."
+status: "Phase 0-4.2 DONE + COMMITTED (Phase 4 = b5745ad, clone = b0ec83f). Deterministic .bib + labelled Consolidate uncommitted. **PIVOT (2026-05-24, with user): replace the consolidate/publish model with a single git-aligned Sync + a pull-only Check for updates (Phase 5), then Version history/restore (Phase 6).** The consolidate/publish split + per-note partial consolidation + mandatory review of clean changes were eased-but-complicated divergences from git; Sync = real atomic merge commit (no rebase-onto-theirs, no partial-merge trap). See the Phase 5/6 section below — that is the active direction."
 ---
+
+## ⮕⮕ RESUME HERE (next session) — implement the `git_sync` orchestration
+
+**State at handoff (2026-05-24):** Phases 0–4.2 shipped; the **Phase 5 merge
+engine is built + tested** but not yet wired into a command. Working tree clean
+(everything below committed). All gates green at handoff: `cargo test --lib`
+**544**, 0 warnings, `tsc`, `npm run build`, utf8/path-safety.
+
+**Done so far for Phase 5 (backend foundation, in [git/backend.rs]):**
+`merge_commits_to_tree(ours, theirs) -> MergeOutcome::{Clean(tree_oid),
+Conflicts(Vec<PathBuf>)}` (real libgit2 3-way), `commit_tree(msg, sig, tree,
+parents)` (two-parent merge commit, moves HEAD), `fast_forward_checkout(target)`,
+`checkout_head_force()`. Tests: `merge_clean_different_files_fast_forwards_remote`,
+`merge_conflicts_same_region`, `fast_forward_pure_pull_updates_working_tree`
+(via a `bare_with_two_clones` helper). Also landed this stretch: deterministic
+`.bib` export (`export_entries_to_bibtex` sorts fields — kills the double-commit
+churn; +test) and a labelled per-note Consolidate button (**interim — it gets
+removed in the frontend reshape below**).
+
+**NEXT — the orchestration (commands/git.rs), build alongside the old commands:**
+1. `git_check_updates` (pull-only) and `git_sync` (pull+push). Shared algorithm:
+   - commit my working edits if dirty → `M` (reuse `stage_all`+`commit`); else
+     `M = current_head`.
+   - `fetch`; `T = remote_tracking_oid`. If `T` is `None`/`T==M`/`merge_base==T`
+     ⇒ nothing incoming (Sync: push if ahead; Check: up-to-date).
+   - else if `M.is_none()` or `merge_base(M,T)==M` ⇒ **`fast_forward_checkout(T)`**
+     (pure pull, no merge commit).
+   - else `merge_commits_to_tree(M,T)`:
+     - `Clean(tree)` ⇒ `commit_tree("Merge…", sig, tree, [M,T])` +
+       `checkout_head_force()`; Sync ⇒ `push` (fast-forwards; never rejected
+       unless a *new* race ⇒ re-fetch/re-sync).
+     - `Conflicts(paths)` ⇒ for each conflicted note render suggestions via
+       `suggest::render_incoming(base, mine, theirs, by, on)` into `staging.rs`
+       (`.inkycap/incoming/`); **auto-apply the clean (non-conflicted) notes to
+       the working tree**; **pause**, return `{conflicts, digest}`. A finalize
+       command (`git_sync_finalize`?) reads resolved staged copies, builds the
+       merged tree, `commit_tree([M,T])`, checkout, push-if-sync.
+   - Return a `SyncOutcome { upToDate, pulled, pushed, rejected, conflicts[],
+     digest[] }` (digest = `changed_paths(base→T)` of what landed from others).
+2. **Frontend reshape** (panel + status chip): replace Consolidate-all / per-note
+   Consolidate / Publish with **Sync** + **Check for updates**; show conflicts
+   (only conflicted notes need action) + the **post-sync digest**; add the
+   **opt-in "review every incoming change"** toggle (off by default). Remove the
+   labelled-Consolidate button + its strings/CSS.
+3. **Retire** `git_consolidate_note/all`, `git_publish`, `git_push` (user-facing)
+   + the frontend store actions; keep `git_fetch_review`/`suggest.rs` internal.
+   Drop `fast_forward_to` from any consolidate path.
+4. Validate in-app (2-clone round-trip), then **Phase 6 (version history/restore)**.
+
+**Validation harness (recreate per machine):** `git init --bare -b main
+/tmp/inkycap-test-remote.git`; set up a notebox at it + Publish; clone elsewhere
+(or via the in-app "Clone from remote") to play the second collaborator. The
+`-b main` matters (libgit2 inits on `master`).
+
+**Gotcha already learned:** a fresh repo / clone-of-empty defaults to `master`;
+setup's `ensure_initial_branch("main")` handles it. Sync must commit `M` *before*
+merging (users have uncommitted working edits), and the merge commit's two
+parents are what make the push a fast-forward (no rebase, no partial-merge trap).
+
+---
+
+## Phase 5 — Sync model (ACTIVE, agreed with user 2026-05-24)
+
+**Why:** Phase 2-4 added conveniences that diverged awkwardly from git and
+created the partial-merge data-loss trap + the double-commit: (a) **per-note
+partial consolidation** (git merges atomically — no "merge only their change to
+note A"); (b) **two commit verbs** (Consolidate for incoming, Publish for
+outgoing); (c) **mandatory review of *clean* incoming changes** (git auto-merges
+non-conflicting work for free); (d) **rebase-onto-theirs** (`fast_forward_to`)
+to keep pushes linear, which is what left un-consolidated notes stale. Keep the
+genuinely-good accommodations (track-changes UI for conflicts, hidden porcelain,
+author/message context); align the plumbing with git.
+
+**User decisions (all confirmed):**
+1. **Two gestures: `Sync` (pull+merge+push) and `Check for updates` (pull+merge,
+   no push)** — so a writer can pull a collaborator's changes without
+   broadcasting work-in-progress.
+2. **Default = auto-merge clean + a non-blocking post-sync digest** ("Alice
+   edited 3 notes…", click to see the track-changes diff). Full suggesting-mode
+   review of *every* incoming edit is an **opt-in toggle**, off by default.
+3. **Version history / restore (Phase 6)** comes next — per-note (and per-
+   notebox) list of past versions (who/when/message), view/compare/**restore**
+   (non-destructive: restore = a new change). Doubles as the safety net + the
+   "what changed" surface.
+
+**The merge mechanic (real git, no rebase hack):**
+- Sync: (1) commit my working edits if dirty → `M`; (2) fetch → `T`;
+  (3) `base = merge_base(M,T)`. Cases: `T` absent or `base==T` ⇒ mine is ahead,
+  just push. `M`==`base` (I haven't diverged) ⇒ **fast-forward** to `T` (pure
+  pull, no merge commit). Else **3-way merge** via libgit2 `merge_trees(base,M,T)`.
+  (4) no conflicts ⇒ write merged tree + **merge commit (parents [M,T])** +
+  checkout; conflicts ⇒ render conflicted notes as suggestions in staged copies,
+  auto-apply the clean notes to the working tree, **pause** and return the
+  conflict list + digest; user resolves → finalize: merged tree + merge commit +
+  checkout. (5) push if Sync (the merge commit descends from `T`, so it
+  fast-forwards the remote — no rebase, and atomic ⇒ no partial-merge trap).
+- `Check for updates` = the same up to the merge/commit, **without** the push.
+
+**Command reshape:** add `git_sync` (+ a finalize step for the conflict-resume),
+`git_check_updates`; retire `git_consolidate_note/all`, `git_publish`, `git_push`
+as user-facing (keep `git_fetch_review`/suggest.rs internally for conflict
+rendering). Drop `fast_forward_to` from the consolidate path. Build the new
+commands *alongside* the old (transition), switch the frontend, then remove the
+old. Reuse: `suggest::render_incoming` (conflict-note rendering), `staging.rs`
+(invisible scratch), fetch/commit/push/merge_base. New backend: `merge_trees`/
+`merge_commit`, clean-tree checkout, digest from `changed_paths`.
+
+**Frontend reshape:** panel's primary actions become **Sync** + **Check for
+updates**; conflicts list (only conflicted notes need action) + post-sync digest
+("what landed"); a "review every incoming change" opt-in toggle. Status chip:
+behind/ahead → "updates available" / "changes to share". Retire the
+Consolidate-all / per-note-Consolidate / Publish buttons.
+
+## Phase 6 — Version history / restore
+
+Per-note + per-notebox history from the git commit graph (we already have
+`read_blob_at` + `commit_info`): list versions (author/date/message), view a
+version, diff against now, and **restore** (writes the old content back as a new
+change to Sync — never rewrites history). Friendly "version history" framing, no
+git knowledge required.
+
+---
+
 
 ## Phase 4.2 — in-app clone onboarding (2026-05-24)
 

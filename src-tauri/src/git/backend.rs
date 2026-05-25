@@ -58,6 +58,15 @@ pub enum ChangeStatus {
     Deleted,
 }
 
+/// Result of a 3-way merge ([`GitBackend::merge_commits_to_tree`]).
+#[derive(Debug, Clone)]
+pub enum MergeOutcome {
+    /// Clean merge — the OID of the merged tree, ready to commit.
+    Clean(Oid),
+    /// Conflicting notebox-relative paths needing hand resolution.
+    Conflicts(Vec<PathBuf>),
+}
+
 /// One path that differs between two commit trees.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedPath {
@@ -383,6 +392,79 @@ impl GitBackend {
         }
     }
 
+    // ── 3-way merge (Phase 5: the Sync model) ────────────────────────────
+    //
+    // Real git merge, not the rebase-onto-theirs of the retired consolidate
+    // path: a merge commit with both tips as parents fast-forwards the remote
+    // and is atomic (no partial-merge trap). `merge_commits_to_tree` does the
+    // file-level 3-way; conflicts come back as paths for the suggestion UI.
+
+    /// 3-way merge `ours` and `theirs` (libgit2 finds the common ancestor).
+    /// Returns the merged tree to commit, or the conflicting notebox-relative
+    /// paths. Operates in memory — the working tree is untouched.
+    pub fn merge_commits_to_tree(&self, ours: Oid, theirs: Oid) -> Result<MergeOutcome> {
+        let our_c = self.repo.find_commit(ours)?;
+        let their_c = self.repo.find_commit(theirs)?;
+        let mut idx = self.repo.merge_commits(&our_c, &their_c, None)?;
+        if idx.has_conflicts() {
+            let mut paths = Vec::new();
+            for c in idx.conflicts()? {
+                let c = c?;
+                // Prefer whichever side carries the path; git stores it as raw
+                // bytes (UTF-8 in practice for note paths). Lossy is fine here —
+                // the value is only used as a relative-path identity for the UI.
+                if let Some(entry) = c.our.or(c.their).or(c.ancestor) {
+                    let p = PathBuf::from(String::from_utf8_lossy(&entry.path).into_owned());
+                    if !paths.contains(&p) {
+                        paths.push(p);
+                    }
+                }
+            }
+            return Ok(MergeOutcome::Conflicts(paths));
+        }
+        Ok(MergeOutcome::Clean(idx.write_tree_to(&self.repo)?))
+    }
+
+    /// Commit an explicit `tree` with the given `parents` (e.g. a two-parent
+    /// merge commit), moving the current branch to it. Returns the new OID.
+    pub fn commit_tree(
+        &self,
+        message: &str,
+        author: &git2::Signature,
+        tree: Oid,
+        parents: &[Oid],
+    ) -> Result<Oid> {
+        let tree = self.repo.find_tree(tree)?;
+        let parent_commits = parents
+            .iter()
+            .map(|p| self.repo.find_commit(*p))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+        Ok(self
+            .repo
+            .commit(Some("HEAD"), author, author, message, &tree, &parent_refs)?)
+    }
+
+    /// Update the working tree (and index) to match HEAD. Called after a merge
+    /// commit or a fast-forward, where local work is already committed so
+    /// nothing uncommitted is at risk. Forced so the working tree ends up
+    /// exactly matching HEAD.
+    pub fn checkout_head_force(&self) -> Result<()> {
+        let mut co = git2::build::CheckoutBuilder::new();
+        co.force();
+        self.repo.checkout_head(Some(&mut co))?;
+        Ok(())
+    }
+
+    /// Fast-forward the current branch to `target` and update the working tree.
+    /// For a pure pull when local has not diverged. The caller has already
+    /// committed local work, so the forced checkout discards nothing.
+    pub fn fast_forward_checkout(&self, target: Oid) -> Result<()> {
+        let mut head_ref = self.repo.head()?;
+        head_ref.set_target(target, "fast-forward")?;
+        self.checkout_head_force()
+    }
+
     /// Commit whatever is currently staged in the index, with `author` as both
     /// author and committer. Parents are the current head (none on the first
     /// commit). Returns the new commit's OID.
@@ -701,5 +783,134 @@ mod tests {
         let after_second = std::fs::read_to_string(root.join(".gitignore")).unwrap();
         assert_eq!(after_first, after_second);
         assert_eq!(after_second.matches(GITIGNORE_MARKER).count(), 1);
+    }
+
+    // ── Phase 5 merge engine ─────────────────────────────────────────────
+
+    /// Build a bare remote seeded with `files` on `main`, plus two clones A and
+    /// B both at that base. Returns the temp dirs (kept alive), the clones'
+    /// backends + paths, and the branch name.
+    #[allow(clippy::type_complexity)]
+    fn bare_with_two_clones(
+        files: &[(&str, &str)],
+    ) -> (
+        tempfile::TempDir,
+        tempfile::TempDir,
+        tempfile::TempDir,
+        GitBackend,
+        std::path::PathBuf,
+        GitBackend,
+        std::path::PathBuf,
+        String,
+    ) {
+        let bare = tempfile::tempdir().unwrap();
+        let r = git2::Repository::init_bare(bare.path()).unwrap();
+        r.set_head("refs/heads/main").unwrap();
+        let url = bare.path().to_str().unwrap();
+
+        let adir = tempfile::tempdir().unwrap();
+        let apath = adir.path().join("a");
+        git2::Repository::clone(url, &apath).unwrap();
+        let a = GitBackend::open(&apath).unwrap();
+        // Cloning an empty remote leaves an unborn HEAD on libgit2's default
+        // branch (master); pin it to main before the first commit, exactly as
+        // setup's apply_setup does, so the whole fixture is on one branch.
+        a.ensure_initial_branch("main").unwrap();
+        for (name, content) in files {
+            std::fs::write(apath.join(name), content).unwrap();
+        }
+        a.stage_all().unwrap();
+        a.commit("base", &sig()).unwrap();
+        let branch = a.current_head().unwrap().unwrap().0;
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        let bdir = tempfile::tempdir().unwrap();
+        let bpath = bdir.path().join("b");
+        git2::Repository::clone(url, &bpath).unwrap();
+        let b = GitBackend::open(&bpath).unwrap();
+
+        (bare, adir, bdir, a, apath, b, bpath, branch)
+    }
+
+    /// Edits to different files merge cleanly, the merge commit has both tips as
+    /// parents, and it fast-forwards the remote (no rebase) — the core Sync path.
+    #[test]
+    fn merge_clean_different_files_fast_forwards_remote() {
+        let (_bare, _ad, _bd, a, apath, b, bpath, branch) =
+            bare_with_two_clones(&[("x.typ", "l1\nl2\nl3\n"), ("y.typ", "yy\n")]);
+
+        // Theirs (A): change x.typ, push.
+        std::fs::write(apath.join("x.typ"), "CHANGED1\nl2\nl3\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        // Ours (B): change a different file, commit locally, fetch theirs.
+        std::fs::write(bpath.join("y.typ"), "B-EDIT\n").unwrap();
+        b.stage_all().unwrap();
+        let ours = b.commit("b-edit", &sig()).unwrap();
+        b.fetch("origin", &branch).unwrap();
+        let theirs = b.remote_tracking_oid("origin", &branch).unwrap().unwrap();
+
+        let tree = match b.merge_commits_to_tree(ours, theirs).unwrap() {
+            MergeOutcome::Clean(t) => t,
+            MergeOutcome::Conflicts(p) => panic!("expected clean, got {p:?}"),
+        };
+        b.commit_tree("Merge", &sig(), tree, &[ours, theirs]).unwrap();
+        b.checkout_head_force().unwrap();
+
+        // Both sides' edits are present, and the merge fast-forwards the remote.
+        assert_eq!(std::fs::read_to_string(bpath.join("x.typ")).unwrap(), "CHANGED1\nl2\nl3\n");
+        assert_eq!(std::fs::read_to_string(bpath.join("y.typ")).unwrap(), "B-EDIT\n");
+        assert!(
+            !b.push("origin", &branch).unwrap().rejected,
+            "a merge commit parented on theirs fast-forwards the remote"
+        );
+    }
+
+    /// Edits to the same region of the same note surface as a conflict path.
+    #[test]
+    fn merge_conflicts_same_region() {
+        let (_bare, _ad, _bd, a, apath, b, bpath, branch) =
+            bare_with_two_clones(&[("x.typ", "line1\nline2\n")]);
+
+        std::fs::write(apath.join("x.typ"), "AAA\nline2\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        std::fs::write(bpath.join("x.typ"), "BBB\nline2\n").unwrap();
+        b.stage_all().unwrap();
+        let ours = b.commit("b-edit", &sig()).unwrap();
+        b.fetch("origin", &branch).unwrap();
+        let theirs = b.remote_tracking_oid("origin", &branch).unwrap().unwrap();
+
+        match b.merge_commits_to_tree(ours, theirs).unwrap() {
+            MergeOutcome::Conflicts(paths) => {
+                assert_eq!(paths, vec![std::path::PathBuf::from("x.typ")]);
+            }
+            MergeOutcome::Clean(_) => panic!("expected a conflict on x.typ"),
+        }
+    }
+
+    /// A pure pull when local has not diverged: fast-forward the working tree to
+    /// theirs.
+    #[test]
+    fn fast_forward_pure_pull_updates_working_tree() {
+        let (_bare, _ad, _bd, a, apath, b, bpath, branch) =
+            bare_with_two_clones(&[("x.typ", "before\n")]);
+
+        std::fs::write(apath.join("x.typ"), "after\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        // B hasn't changed anything; fetch + fast-forward.
+        b.fetch("origin", &branch).unwrap();
+        let theirs = b.remote_tracking_oid("origin", &branch).unwrap().unwrap();
+        b.fast_forward_checkout(theirs).unwrap();
+
+        assert_eq!(std::fs::read_to_string(bpath.join("x.typ")).unwrap(), "after\n");
+        assert_eq!(b.current_head().unwrap().unwrap().1, theirs);
     }
 }
