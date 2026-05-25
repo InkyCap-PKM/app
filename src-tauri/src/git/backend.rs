@@ -67,6 +67,18 @@ pub enum MergeOutcome {
     Conflicts(Vec<PathBuf>),
 }
 
+/// Result of materializing the *clean* portion of a conflicted 3-way merge into
+/// the working tree ([`GitBackend::apply_clean_merge`]).
+#[derive(Debug, Clone, Default)]
+pub struct MergeApplication {
+    /// Notebox-relative paths that conflict (left untouched in the working tree,
+    /// still at *ours* — the review layer renders these as suggestions).
+    pub conflicts: Vec<PathBuf>,
+    /// Notebox-relative paths whose cleanly-merged result was written to (or
+    /// removed from) the working tree.
+    pub applied: Vec<PathBuf>,
+}
+
 /// One path that differs between two commit trees.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedPath {
@@ -314,32 +326,6 @@ impl GitBackend {
         })
     }
 
-    /// Adopt the fetched remote tip as the new base before consolidating, so a
-    /// consolidate commit lands *on top of theirs* and pushes as a
-    /// fast-forward. Moves HEAD + index to `target` but leaves the working tree
-    /// untouched (a soft/mixed reset), so the resolved working files survive
-    /// and are what gets staged next. Returns whether it advanced.
-    ///
-    /// Only advances when `target` descends from HEAD (a genuine fast-forward).
-    /// When histories have diverged it does nothing and returns `false`: the
-    /// eventual push is then rejected and the caller re-reviews, rather than the
-    /// branch being force-moved (which would drop local commits).
-    pub fn fast_forward_to(&self, target: Oid) -> Result<bool> {
-        match self.current_head()? {
-            Some((_, head)) if head == target => Ok(false),
-            Some((_, head)) => {
-                if self.merge_base(head, target)? == Some(head) {
-                    let obj = self.repo.find_object(target, None)?;
-                    self.repo.reset(&obj, git2::ResetType::Mixed, None)?;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            None => Ok(false),
-        }
-    }
-
     /// Stage notebox-relative paths into the index.
     pub fn stage_paths(&self, rels: &[PathBuf]) -> Result<()> {
         let mut index = self.repo.index()?;
@@ -423,6 +409,80 @@ impl GitBackend {
             return Ok(MergeOutcome::Conflicts(paths));
         }
         Ok(MergeOutcome::Clean(idx.write_tree_to(&self.repo)?))
+    }
+
+    /// Materialize the *cleanly-merged* portion of a 3-way merge of `ours`+
+    /// `theirs` into the working tree, leaving conflicting paths untouched
+    /// (still at *ours*) for the suggestion-review layer to render.
+    ///
+    /// Used on the conflict-pause path: the user sees every non-conflicting
+    /// incoming change land immediately, and resolves only the conflicts. The
+    /// merge is recomputed in memory (cheap); for every path *theirs* changed
+    /// relative to the merge base that did **not** conflict, the merged blob is
+    /// written to disk (or the file removed, for a clean deletion). This is a
+    /// git-level checkout of part of a tree — the same kind of direct
+    /// working-tree write [`Self::checkout_head_force`] performs — so it
+    /// deliberately bypasses `NoteboxStorage`, which is for app-authored content.
+    pub fn apply_clean_merge(&self, ours: Oid, theirs: Oid) -> Result<MergeApplication> {
+        let our_c = self.repo.find_commit(ours)?;
+        let their_c = self.repo.find_commit(theirs)?;
+        let idx = self.repo.merge_commits(&our_c, &their_c, None)?;
+
+        // Conflicting paths: any entry the merge index records at stage > 0.
+        let mut conflicts: Vec<PathBuf> = Vec::new();
+        for c in idx.conflicts()? {
+            let c = c?;
+            if let Some(entry) = c.our.as_ref().or(c.their.as_ref()).or(c.ancestor.as_ref()) {
+                let p = PathBuf::from(String::from_utf8_lossy(&entry.path).into_owned());
+                if !conflicts.contains(&p) {
+                    conflicts.push(p);
+                }
+            }
+        }
+
+        // Only paths *theirs* changed (vs the merge base) can differ in the
+        // merged result from *ours*; anything else the merge keeps at ours.
+        let base = self.merge_base(ours, theirs)?;
+        let mut applied = Vec::new();
+        for cp in self.changed_paths(base, theirs)? {
+            if conflicts.contains(&cp.path) {
+                continue; // a conflicted path stays at ours until resolved
+            }
+            // Defense in depth: never write through a path that escapes the root.
+            if cp.path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                continue;
+            }
+            let dest = self.root.join(&cp.path);
+            match idx.get_path(&cp.path, 0) {
+                Some(entry) => {
+                    let blob = self.repo.find_blob(entry.id)?;
+                    if let Some(parent) = dest.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&dest, blob.content())?;
+                    applied.push(cp.path);
+                }
+                None => {
+                    // Absent at stage 0 with no conflict ⇒ a clean deletion.
+                    if dest.exists() {
+                        std::fs::remove_file(&dest)?;
+                        applied.push(cp.path);
+                    }
+                }
+            }
+        }
+        Ok(MergeApplication { conflicts, applied })
+    }
+
+    /// Write the current index out as a tree object and return its OID — the
+    /// merged tree to hand to [`Self::commit_tree`] after a conflict resolution
+    /// has been staged into the working tree + index.
+    pub fn write_index_tree(&self) -> Result<Oid> {
+        let mut index = self.repo.index()?;
+        Ok(index.write_tree()?)
     }
 
     /// Commit an explicit `tree` with the given `parents` (e.g. a two-parent
@@ -891,6 +951,38 @@ mod tests {
             }
             MergeOutcome::Clean(_) => panic!("expected a conflict on x.typ"),
         }
+    }
+
+    /// On a conflicted merge, the clean (non-conflicting) incoming files are
+    /// materialized into the working tree while the conflicting file is left at
+    /// *ours* for the suggestion layer to render.
+    #[test]
+    fn apply_clean_merge_lands_clean_files_and_holds_conflicts() {
+        let (_bare, _ad, _bd, a, apath, b, bpath, branch) = bare_with_two_clones(&[
+            ("clean.typ", "shared\n"),
+            ("conflict.typ", "line1\nline2\n"),
+        ]);
+
+        // Theirs (A): edit a file B won't touch (clean) + the shared region.
+        std::fs::write(apath.join("clean.typ"), "THEIRS clean\n").unwrap();
+        std::fs::write(apath.join("conflict.typ"), "AAA\nline2\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        assert!(!a.push("origin", &branch).unwrap().rejected);
+
+        // Ours (B): edit the same region of conflict.typ, commit, fetch.
+        std::fs::write(bpath.join("conflict.typ"), "BBB\nline2\n").unwrap();
+        b.stage_all().unwrap();
+        let ours = b.commit("b-edit", &sig()).unwrap();
+        b.fetch("origin", &branch).unwrap();
+        let theirs = b.remote_tracking_oid("origin", &branch).unwrap().unwrap();
+
+        let app = b.apply_clean_merge(ours, theirs).unwrap();
+        assert_eq!(app.conflicts, vec![PathBuf::from("conflict.typ")]);
+        assert_eq!(app.applied, vec![PathBuf::from("clean.typ")]);
+        // The clean file now holds theirs; the conflicted file still holds mine.
+        assert_eq!(std::fs::read_to_string(bpath.join("clean.typ")).unwrap(), "THEIRS clean\n");
+        assert_eq!(std::fs::read_to_string(bpath.join("conflict.typ")).unwrap(), "BBB\nline2\n");
     }
 
     /// A pure pull when local has not diverged: fast-forward the working tree to

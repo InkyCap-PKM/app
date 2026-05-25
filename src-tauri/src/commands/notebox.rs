@@ -473,13 +473,46 @@ pub async fn get_notebox_info(
 
 // ── Notebox registry commands ──────────────────────────────────────────
 
-/// Return all registered noteboxes sorted by most recently opened.
+/// A registry entry as presented to the frontend. Extends the persisted
+/// [`config::NoteboxRegistryEntry`] with `collaborative`, computed fresh per
+/// call so the Settings list can show each notebox's true collaboration state
+/// without opening it. (The persisted registry deliberately does not store
+/// this — it would drift from the source of truth, the notebox's own
+/// `.inkycap/settings.json`.)
+#[derive(Debug, serde::Serialize)]
+pub struct NoteboxRegistryItem {
+    pub path: String,
+    pub display_name: String,
+    pub last_opened: u64,
+    /// This notebox carries a git collaboration config in its settings.
+    pub collaborative: bool,
+}
+
+/// Return all registered noteboxes sorted by most recently opened, each tagged
+/// with whether it is set up for git collaboration.
 #[tauri::command]
-pub async fn get_notebox_registry() -> Result<Vec<config::NoteboxRegistryEntry>, InkyCapError> {
+pub async fn get_notebox_registry() -> Result<Vec<NoteboxRegistryItem>, InkyCapError> {
     let cfg = config::load_config();
     let mut entries = cfg.notebox_registry;
     entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
-    Ok(entries)
+    Ok(entries
+        .into_iter()
+        .map(|e| {
+            // Cheap: reads only the notebox's own settings.json (no index, no
+            // git subprocess). A missing/unreadable file yields a non-collaborative
+            // default, which is the correct fallback for the toggle.
+            let collaborative =
+                crate::notebox_settings::load_settings(std::path::Path::new(&e.path))
+                    .git
+                    .is_some();
+            NoteboxRegistryItem {
+                path: e.path,
+                display_name: e.display_name,
+                last_opened: e.last_opened,
+                collaborative,
+            }
+        })
+        .collect())
 }
 
 /// Add or update a notebox in the persistent registry. The path must be an existing directory.

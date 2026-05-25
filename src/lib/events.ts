@@ -78,12 +78,6 @@ export interface GitReviewPendingPayload {
   count: number;
 }
 
-/** Emitted after a consolidate: a single note (`path`) or the batched-all case. */
-export interface GitConsolidatedPayload {
-  path?: string;
-  all?: boolean;
-}
-
 export function onGitStatus(
   callback: (payload: GitStatusEventPayload) => void,
 ): Promise<() => void> {
@@ -108,14 +102,6 @@ export function onGitReviewPending(
   callback: (payload: GitReviewPendingPayload) => void,
 ): Promise<() => void> {
   return listen<GitReviewPendingPayload>("notebox:git-review-pending", (event) => {
-    callback(event.payload);
-  }).then((unlisten) => unlisten);
-}
-
-export function onGitConsolidated(
-  callback: (payload: GitConsolidatedPayload) => void,
-): Promise<() => void> {
-  return listen<GitConsolidatedPayload>("notebox:git-consolidated", (event) => {
     callback(event.payload);
   }).then((unlisten) => unlisten);
 }

@@ -35,6 +35,9 @@ export interface NoteboxRegistryEntry {
   path: string;
   display_name: string;
   last_opened: number;
+  /** This notebox is set up for git collaboration (computed fresh by the
+   *  backend from the notebox's own settings, not persisted in the registry). */
+  collaborative: boolean;
 }
 
 export interface NoteboxMoveResult {
@@ -535,11 +538,35 @@ export interface GitReviewSession {
   upToDate: boolean;
 }
 
-/** Result of a push: a non-fast-forward comes back as `rejected`, not an
- *  error, so the caller fetch-and-reviews rather than forcing. */
-export interface GitPushResult {
+/** One incoming change in the post-sync digest ("what landed from others"). */
+export interface GitDigestEntry {
+  /** Notebox-relative path (frontend string form). */
+  path: string;
+  status: "added" | "modified" | "deleted";
+}
+
+/** Outcome of a Sync / Check for updates / finalize. Mirrors
+ *  `src-tauri/src/commands/git.rs::SyncOutcome`. */
+export interface GitSyncOutcome {
+  /** Nothing incoming and nothing outgoing — already in sync. */
+  upToDate: boolean;
+  /** Local working edits were committed as part of the sync. */
+  committed: boolean;
+  /** Incoming changes were folded into the working tree (fast-forward/merge). */
+  pulled: boolean;
+  /** Local commits were pushed to the remote (Sync only). */
+  pushed: boolean;
+  /** The push was rejected (the remote moved) — sync again. */
   rejected: boolean;
-  message: string | null;
+  /** The merge hit conflicts and is paused: resolve `conflicts` then finalize.
+   *  The clean incoming changes have already been applied. */
+  paused: boolean;
+  /** Conflicted notes/files needing a hand decision. Populated when `paused`. */
+  conflicts: GitReviewItem[];
+  /** What collaborators changed since the merge base — the "what landed" digest. */
+  digest: GitDigestEntry[];
+  /** The incoming tip commit's author/message, for the digest banner. */
+  incoming: GitCommitInfo | null;
 }
 
 /** A commit author identity (name + email). Stored per-installation, keyed by
@@ -554,20 +581,6 @@ export interface GitSetupResult {
   /** A fresh `git init` happened (notebox was not a repo before). */
   initialized: boolean;
   status: GitStatusSummary;
-}
-
-/** Outcome of `gitPublish` — the outgoing-authoring counterpart to review. */
-export interface GitPublishResult {
-  /** Working-tree changes were committed (first publish, or local edits). */
-  committed: boolean;
-  /** Commits were pushed to the remote. */
-  pushed: boolean;
-  /** The push was rejected (the remote moved) — fetch & review, then retry. */
-  rejected: boolean;
-  /** Nothing to commit and nothing to push — already in sync. */
-  nothingToDo: boolean;
-  /** The commit that was created, when one was. */
-  commit: GitCommitInfo | null;
 }
 
 // ============================================================================

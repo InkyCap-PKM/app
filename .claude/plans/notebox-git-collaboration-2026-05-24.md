@@ -5,66 +5,67 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-4.2 DONE + COMMITTED (Phase 4 = b5745ad, clone = b0ec83f, .bib-determinism+labelled-consolidate = 8b8d3eb). **PIVOT (2026-05-24, with user): replace consolidate/publish with a single git-aligned Sync + pull-only Check for updates (Phase 5), then Version history/restore (Phase 6).** Phase 5 **merge engine committed (da8d05c)** but NOT yet wired into a command — **resume by implementing the `git_sync`/`git_check_updates` orchestration; see the ⮕⮕ RESUME HERE block at the top.** Sync = real atomic merge commit (no rebase-onto-theirs, no partial-merge trap). 544 lib tests green, working tree clean."
+status: "Phase 0-4.2 DONE + COMMITTED. **Phase 5 Sync model DONE + UNCOMMITTED (2026-05-24).** `git_sync`/`git_check_updates`/`git_sync_finalize` orchestration built on the merge engine; consolidate/publish/push + `fast_forward_to` retired; frontend reshaped to Sync + Check for updates + conflict-resolve + post-sync digest. 549 lib tests green (+5 sync, +1 apply_clean_merge, −1 consolidate), 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = commit + in-app 2-clone validation (watch: open editors reloading after a sync writes notes via git checkout), then Phase 6 (version history/restore).** Deferred: the opt-in 'review every incoming change' toggle (off by default; `git_fetch_review`/suggest.rs kept internal to back it) and binary-conflict resolution UI (Phase 3b — finalize currently keep-mine for binary conflicts unless the user edits the working file first)."
 ---
 
-## ⮕⮕ RESUME HERE (next session) — implement the `git_sync` orchestration
+## ⮕⮕ RESUME HERE (next session) — commit + validate Phase 5, then Phase 6
 
-**State at handoff (2026-05-24):** Phases 0–4.2 shipped; the **Phase 5 merge
-engine is built + tested** but not yet wired into a command. Working tree clean
-(everything below committed). All gates green at handoff: `cargo test --lib`
-**544**, 0 warnings, `tsc`, `npm run build`, utf8/path-safety.
+**State at handoff (2026-05-24):** **Phase 5 Sync model is DONE + UNCOMMITTED.**
+All gates green: `cargo test --lib` **549** (+5 sync, +1 `apply_clean_merge`,
+−1 retired consolidate test), 0 warnings, `tsc`, `npm run build`,
+utf8/path-safety. Working tree dirty with the Phase 5 changes below.
 
-**Done so far for Phase 5 (backend foundation, in [git/backend.rs]):**
-`merge_commits_to_tree(ours, theirs) -> MergeOutcome::{Clean(tree_oid),
-Conflicts(Vec<PathBuf>)}` (real libgit2 3-way), `commit_tree(msg, sig, tree,
-parents)` (two-parent merge commit, moves HEAD), `fast_forward_checkout(target)`,
-`checkout_head_force()`. Tests: `merge_clean_different_files_fast_forwards_remote`,
-`merge_conflicts_same_region`, `fast_forward_pure_pull_updates_working_tree`
-(via a `bare_with_two_clones` helper). Also landed this stretch: deterministic
-`.bib` export (`export_entries_to_bibtex` sorts fields — kills the double-commit
-churn; +test) and a labelled per-note Consolidate button (**interim — it gets
-removed in the frontend reshape below**).
+**What shipped (Phase 5):**
+- **[git/backend.rs]**: `apply_clean_merge(ours, theirs) -> MergeApplication
+  {conflicts, applied}` (materializes the clean portion of a conflicted merge to
+  the working tree via stage-0 blobs + clean deletions, leaving conflicts at
+  ours), `write_index_tree()`. Test
+  `apply_clean_merge_lands_clean_files_and_holds_conflicts`. **Removed**
+  `fast_forward_to` (the retired rebase-onto-theirs hack).
+- **[commands/git.rs]**: `git_sync` (pull+merge+push), `git_check_updates`
+  (pull+merge, no push), `git_sync_finalize(push)` (resolve-then-commit), all on
+  the shared pure+blocking `run_sync` / `run_finalize`. `SyncOutcome
+  {upToDate, committed, pulled, pushed, rejected, paused, conflicts[], digest[],
+  incoming}` + `DigestEntry`. Algorithm = the 5 steps documented at the top of
+  the Phase-5 section in the file. Tests: clean-divergent-merge, conflict→pause→
+  finalize, ff-check-no-push, up-to-date, push-only. **Removed** the user-facing
+  `git_consolidate_note/all`, `git_publish`, `git_push` + `commit_staged`
+  + `notebox_relative`; `git_fetch_review`/`suggest.rs`/`staging.rs` kept
+  (suggest backs conflict rendering; fetch_review backs the future review-all).
+- **Frontend**: `stores/git.ts` reshaped (`sync`/`checkUpdates`/`finalizeSync`/
+  `discardReview`/`dismissDigest`, `syncOutcome`, `syncPaused`, `pendingCount` =
+  paused conflicts); `GitCollaborationPanel.tsx` → Sync + Check for updates +
+  ConflictView (finalize/discard) + DigestView ("what landed", dismissible);
+  `types.ts` (`GitSyncOutcome`/`GitDigestEntry`, dropped `GitPushResult`/
+  `GitPublishResult`); `ipc.ts` (`gitSync`/`gitCheckUpdates`/`gitSyncFinalize`);
+  `events.ts` (dropped `onGitConsolidated`); command palette (`git:sync`,
+  `git:check-updates`); i18n (`git.actions.*`, `git.conflict.*`, `git.digest.*`,
+  `git.toast.sync*`); CSS (`git-panel__digest*`, `banner--conflict`; removed the
+  per-item consolidate button styles).
 
-**NEXT — the orchestration (commands/git.rs), build alongside the old commands:**
-1. `git_check_updates` (pull-only) and `git_sync` (pull+push). Shared algorithm:
-   - commit my working edits if dirty → `M` (reuse `stage_all`+`commit`); else
-     `M = current_head`.
-   - `fetch`; `T = remote_tracking_oid`. If `T` is `None`/`T==M`/`merge_base==T`
-     ⇒ nothing incoming (Sync: push if ahead; Check: up-to-date).
-   - else if `M.is_none()` or `merge_base(M,T)==M` ⇒ **`fast_forward_checkout(T)`**
-     (pure pull, no merge commit).
-   - else `merge_commits_to_tree(M,T)`:
-     - `Clean(tree)` ⇒ `commit_tree("Merge…", sig, tree, [M,T])` +
-       `checkout_head_force()`; Sync ⇒ `push` (fast-forwards; never rejected
-       unless a *new* race ⇒ re-fetch/re-sync).
-     - `Conflicts(paths)` ⇒ for each conflicted note render suggestions via
-       `suggest::render_incoming(base, mine, theirs, by, on)` into `staging.rs`
-       (`.inkycap/incoming/`); **auto-apply the clean (non-conflicted) notes to
-       the working tree**; **pause**, return `{conflicts, digest}`. A finalize
-       command (`git_sync_finalize`?) reads resolved staged copies, builds the
-       merged tree, `commit_tree([M,T])`, checkout, push-if-sync.
-   - Return a `SyncOutcome { upToDate, pulled, pushed, rejected, conflicts[],
-     digest[] }` (digest = `changed_paths(base→T)` of what landed from others).
-2. **Frontend reshape** (panel + status chip): replace Consolidate-all / per-note
-   Consolidate / Publish with **Sync** + **Check for updates**; show conflicts
-   (only conflicted notes need action) + the **post-sync digest**; add the
-   **opt-in "review every incoming change"** toggle (off by default). Remove the
-   labelled-Consolidate button + its strings/CSS.
-3. **Retire** `git_consolidate_note/all`, `git_publish`, `git_push` (user-facing)
-   + the frontend store actions; keep `git_fetch_review`/`suggest.rs` internal.
-   Drop `fast_forward_to` from any consolidate path.
-4. Validate in-app (2-clone round-trip), then **Phase 6 (version history/restore)**.
+**NEXT:**
+1. **Commit** the Phase 5 changes.
+2. **In-app 2-clone validation** (harness below). **Watch specifically:** after a
+   Sync/Check writes notes to the working tree via git checkout (ff, clean merge,
+   finalize, or `apply_clean_merge`), do **open editor tabs reload** from the
+   file watcher? If not, wire an explicit reload on the sync-completion events.
+3. Then **Phase 6 (version history / restore)** — see its section below.
+
+**Known limits to revisit (not blockers):**
+- **Binary conflicts**: `finalize` keeps *mine* for a conflicted non-`.typ` file
+  unless the user edits the working file before finalizing (the conflict row says
+  "resolve manually"). The Keep-mine/Take-theirs/Rename UI is still Phase 3b.
+- **Review-all toggle deferred**: the opt-in "review every incoming change" mode
+  (off by default) is not built. The correct shape is to render *M→merged* (not
+  M→theirs) as suggestions so non-conflicting local edits are never dropped, then
+  reuse the same finalize path; `git_fetch_review`/`suggest.rs` are kept for it.
 
 **Validation harness (recreate per machine):** `git init --bare -b main
-/tmp/inkycap-test-remote.git`; set up a notebox at it + Publish; clone elsewhere
-(or via the in-app "Clone from remote") to play the second collaborator. The
-`-b main` matters (libgit2 inits on `master`).
-
-**Gotcha already learned:** a fresh repo / clone-of-empty defaults to `master`;
-setup's `ensure_initial_branch("main")` handles it. Sync must commit `M` *before*
-merging (users have uncommitted working edits), and the merge commit's two
-parents are what make the push a fast-forward (no rebase, no partial-merge trap).
+/tmp/inkycap-test-remote.git`; set up a notebox at it, **Sync** (first commit +
+push); clone elsewhere (in-app "Clone from remote") to play collaborator 2; edit
++ Sync on each side to exercise clean-merge, conflict→finalize, and ff. The
+`-b main` matters (libgit2 inits on `master`; setup's `ensure_initial_branch`
+handles it).
 
 ---
 
@@ -127,6 +128,64 @@ Per-note + per-notebox history from the git commit graph (we already have
 version, diff against now, and **restore** (writes the old content back as a new
 change to Sync — never rewrites history). Friendly "version history" framing, no
 git knowledge required.
+
+## Phase 7 — Offline package handoff (server-less transport) — ROADMAP
+
+**Idea (user, 2026-05-24):** collaborate with no hosted git server. Export the
+notebox **with its git history** to a single file, send it however (email, USB,
+drive), the recipient imports it and reconciles **locally**, edits, exports a
+package back. This resurrects InkyCap's original pre-git "package handoff" —
+but on the correct git foundation: because the package carries the full commit
+graph, the **merge base travels with it**, so reconciliation is the same real
+3-way merge as Sync (the old vector-clock model only had a 2-way compare — this
+is strictly better). Fits the local-first, no-account audience.
+
+**The key realization — it rides the Phase 5 engine almost entirely.** git2
+fetches/clones from a **local filesystem path** (proven by the clone tests), and
+the merge/conflict/digest orchestration (`run_sync`/`run_finalize`) is
+transport-agnostic. So "import a package" = extract it to a temp dir and point a
+**transient local-path remote** at it, then run the existing Sync. The only
+genuinely new code is *packaging* (export/import) + the package-mode UX. The hard
+part (merging) is done.
+
+**Transport encoding — decide at implementation:**
+- **Primary (works with today's git2): a zip of the repo's `.git`** (the whole
+  repository — every committed note, attachment, and the history). Reuse the
+  existing zip stack: `storage/zip_archive.rs` (`ZipBuilder`), `backup/archive.rs`
+  (tree walk; here we *include* `.git` rather than exclude it as backup does),
+  `backup/restore.rs` (extract), and `backup/password.rs` + the `zip` crate's
+  `aes-crypto` for optional encryption. `.git` alone is a complete repo — leaner
+  than shipping the working tree too.
+- **Optional later: `git bundle`** — a single file supporting *incremental*
+  packages (only the commits the other side lacks). **OPEN: confirm whether
+  git2 0.21 exposes a bundle API** (Explore could not confirm; no bundle usage
+  exists). If it doesn't: ship the whole-`.git` zip first; revisit incremental
+  bundles (manual packfile, or a vendored capability) — do **not** shell out to
+  system `git` (breaks the self-contained, no-system-git stance).
+
+**Commands (new), modelled on backup:**
+- `export_notebox_package(dest, password?)` — commit any pending working edits
+  first (reuse Sync's "commit mine" step), then zip the repo → an encrypted-
+  optional package. Sibling of `backup_now`.
+- `import_notebox_package(archive_path, password?, dest?)` — extract to a temp
+  staging dir, then:
+  - **First-time recipient:** the extracted repo *becomes* their notebox →
+    `register_notebox` + `open_notebox` (mirrors `git_clone_notebox`/`clone_into`).
+  - **Already have it:** set a transient local-path remote at the staging repo
+    and run `run_sync` (no push — there's no server; reconciliation is the
+    merge) → conflicts as suggestions + the post-sync digest, exactly as Sync.
+
+**UX:** a package-mode notebox shows **Export package** / **Import package**
+instead of (or alongside) Sync / Check-for-updates. Needs a way to mark a
+notebox "package-backed, no server" — `NoteboxGitConfig.remote` may be empty in
+that mode (Sync requires a URL today), so setup gains a "no server / package
+handoff" path, and the panel chooses gestures by mode. Server-backed and
+package-backed can coexist on the same repo (same engine).
+
+**Sequencing:** lands **after Phase 6**. Prereq: Phase 5 committed + validated.
+**Open decisions for the proper plan:** bundle vs whole-`.git` zip (+ git2 bundle
+check); `.git`-only vs whole-folder; how `NoteboxGitConfig` represents a
+server-less notebox; encryption default; incremental vs full packages.
 
 ---
 

@@ -1,13 +1,14 @@
-// Left-sidebar Git Collaboration pane (Phase 4 of the notebox-git plan).
+// Left-sidebar Git Collaboration pane (Phase 5: the Sync model).
 //
 // Two states, chosen by whether the open notebox carries a git config:
 //   • not collaborative → a setup form (remote, branch, sign-in, identity).
-//   • collaborative     → status + the fetch→review→consolidate→push loop.
+//   • collaborative     → status + the two gestures: Sync (pull + merge + push)
+//     and Check for updates (pull + merge, no push).
 //
-// The review surface is intentionally thin here: it lists the incoming changes
-// and opens each staged note as a tab, where the existing suggestion pills and
-// the right-panel Annotations pane do the actual resolving. "Consolidate"
-// writes the resolved staged copy back and commits; "Push" sends it on.
+// After a sync, a non-blocking digest lists what collaborators changed. When a
+// merge conflicts, the conflicted notes are listed and open as staged tabs
+// (the existing suggestion pills + the right-panel Annotations pane resolve
+// them); "Finalize" then commits the merged result and — for a Sync — pushes.
 
 import { Component, Show, For, createSignal, onMount } from "solid-js";
 import {
@@ -21,20 +22,24 @@ import {
   Paperclip,
   AlertTriangle,
   RefreshCw,
+  DownloadCloud,
+  X,
 } from "lucide-solid";
 import { noteboxSettings } from "../stores/settings";
 import {
   collaborative,
   repoMissing,
   gitStatus,
-  reviewSession,
+  syncOutcome,
+  syncPaused,
   gitSyncing,
-  fetchReview,
-  consolidateNote,
-  consolidateAll,
-  publish,
+  sync,
+  checkUpdates,
+  finalizeSync,
   discardReview,
+  dismissDigest,
   openStagedNote,
+  openDigestEntry,
   refreshStatus,
   setupCollaboration,
   signIn,
@@ -42,14 +47,14 @@ import {
   getIdentity,
   disableCollaboration,
 } from "../stores/git";
-import type { GitReviewItem } from "../lib/types";
+import type { GitReviewItem, GitDigestEntry } from "../lib/types";
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
 
-/** Icon for a review item's change kind (mirrors the inline suggestion tones). */
-const KindIcon: Component<{ item: GitReviewItem }> = (props) => {
-  switch (props.item.kind) {
+/** Icon for a change kind (mirrors the inline suggestion tones). */
+function kindIcon(kind: GitReviewItem["kind"] | GitDigestEntry["status"]) {
+  switch (kind) {
     case "added":
       return <Plus size={14} />;
     case "deleted":
@@ -59,18 +64,6 @@ const KindIcon: Component<{ item: GitReviewItem }> = (props) => {
     default:
       return <Pencil size={14} />;
   }
-};
-
-/** Short badge describing what an item carries. */
-function itemBadge(item: GitReviewItem): string {
-  if (item.kind === "added") return t("git.review.kind.added");
-  if (item.kind === "deleted") return t("git.review.kind.deleted");
-  if (item.kind === "binary") return t("git.review.kind.binary");
-  if (item.fallback) return t("git.review.fallback");
-  if (item.total === 0) return t("git.review.clean");
-  return item.total === 1
-    ? t("git.review.oneSuggestion")
-    : t("git.review.suggestions", { n: item.total });
 }
 
 const GitCollaborationPanel: Component = () => {
@@ -86,7 +79,7 @@ const GitCollaborationPanel: Component = () => {
         <span>{t("git.panel.title")}</span>
       </div>
       <Show when={collaborative() && !repoMissing()} fallback={<SetupForm />}>
-        <ReviewView />
+        <SyncView />
       </Show>
     </>
   );
@@ -200,9 +193,9 @@ const SetupForm: Component = () => {
   );
 };
 
-// ─────────────────────────── Review view ───────────────────────────────────
+// ─────────────────────────── Sync view ─────────────────────────────────────
 
-const ReviewView: Component = () => {
+const SyncView: Component = () => {
   const cfg = () => noteboxSettings.git;
 
   /** Human-readable sync state line. */
@@ -223,12 +216,6 @@ const ReviewView: Component = () => {
     return !!s && !!s.head && s.unpushed === 0 && s.behind === 0 && !s.dirty;
   }
 
-  /** There is local work to publish: uncommitted edits or unpushed commits. */
-  function hasOutgoing(): boolean {
-    const s = gitStatus();
-    return !!s && (s.dirty || s.unpushed > 0);
-  }
-
   return (
     <div class="git-panel__body">
       {/* Status row */}
@@ -244,103 +231,145 @@ const ReviewView: Component = () => {
         </span>
       </div>
 
-      <div class="git-panel__actions">
-        <button class="git-panel__primary-btn" onClick={() => void fetchReview()} disabled={gitSyncing()}>
-          <RefreshCw size={13} /> {gitSyncing() ? t("git.actions.fetching") : t("git.actions.fetch")}
-        </button>
+      {/* The two gestures. Hidden while a conflict resolution is paused — the
+          user must finalize or discard that first. */}
+      <Show when={!syncPaused()}>
+        <div class="git-panel__actions">
+          <button class="git-panel__primary-btn" onClick={() => void sync()} disabled={gitSyncing()}>
+            <RefreshCw size={13} /> {gitSyncing() ? t("git.actions.syncing") : t("git.actions.sync")}
+          </button>
+          <button class="settings__detect-btn" onClick={() => void checkUpdates()} disabled={gitSyncing()}>
+            <DownloadCloud size={13} /> {t("git.actions.checkUpdates")}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={syncPaused()} fallback={<DigestView />}>
+        <ConflictView />
+      </Show>
+
+      <ManageSection />
+    </div>
+  );
+};
+
+// ─────────────────────────── Conflicts (paused merge) ──────────────────────
+
+const ConflictView: Component = () => {
+  const conflicts = () => syncOutcome()?.conflicts ?? [];
+  return (
+    <>
+      <div class="git-panel__banner git-panel__banner--conflict">
+        <span class="git-panel__banner-author">
+          <AlertTriangle size={13} /> {t("git.conflict.heading")}
+        </span>
+        <span class="git-panel__banner-msg">{t("git.conflict.intro")}</span>
       </div>
 
-      {/* Incoming review list */}
-      <Show
-        when={reviewSession() && reviewSession()!.items.length > 0}
-        fallback={
-          <p class="sidebar-hint">
-            {reviewSession()?.upToDate ? t("git.review.upToDate") : t("git.review.empty")}
-          </p>
-        }
-      >
-        <Show when={reviewSession()!.incoming}>
-          {(incoming) => (
-            <div class="git-panel__banner">
-              <span class="git-panel__banner-author">
-                {t("git.review.from", { author: incoming().author_name })}
-              </span>
-              <span class="git-panel__banner-msg">{incoming().message}</span>
-            </div>
-          )}
-        </Show>
+      <div class="git-panel__list">
+        <For each={conflicts()}>
+          {(item) => {
+            const reviewable = () => item.kind === "modified";
+            const basename = () => item.path.split("/").pop() ?? item.path;
+            return (
+              <div
+                class={`sidebar-item git-panel__item${reviewable() ? "" : " git-panel__item--readonly"}`}
+                onClick={() => reviewable() && openStagedNote(item)}
+                title={item.path}
+              >
+                <span class={`sidebar-item__icon git-panel__icon--${item.kind}`}>
+                  {kindIcon(item.kind)}
+                </span>
+                <span class="git-panel__item-body">
+                  <span class="sidebar-item__label">{basename()}</span>
+                  <span class="git-panel__item-meta">
+                    <Show
+                      when={reviewable()}
+                      fallback={<span class="git-panel__badge">{t("git.conflict.binary")}</span>}
+                    >
+                      <span class="git-panel__badge git-panel__badge--conflict">
+                        {item.conflicts === 1
+                          ? t("git.review.oneConflict")
+                          : t("git.review.conflicts", { n: item.conflicts })}
+                      </span>
+                    </Show>
+                  </span>
+                </span>
+              </div>
+            );
+          }}
+        </For>
+      </div>
 
+      <div class="git-panel__actions">
+        <button class="git-panel__primary-btn" onClick={() => void finalizeSync()} disabled={gitSyncing()}>
+          <Check size={13} /> {t("git.actions.finalize")}
+        </button>
+        <button class="settings__detect-btn" onClick={() => void discardReview()} disabled={gitSyncing()}>
+          {t("git.actions.discard")}
+        </button>
+      </div>
+    </>
+  );
+};
+
+// ─────────────────────────── Digest ("what landed") ────────────────────────
+
+const DigestView: Component = () => {
+  const outcome = () => syncOutcome();
+  const digest = () => outcome()?.digest ?? [];
+  // Only show the digest when something actually came in from others.
+  return (
+    <Show when={outcome() && !outcome()!.upToDate && digest().length > 0}>
+      <div class="git-panel__digest">
+        <div class="git-panel__digest-head">
+          <Show when={outcome()!.incoming}>
+            {(incoming) => (
+              <span class="git-panel__banner-author">
+                {t("git.digest.from", { author: incoming().author_name })}
+              </span>
+            )}
+          </Show>
+          <button
+            class="git-panel__digest-dismiss"
+            title={t("git.digest.dismiss")}
+            onClick={dismissDigest}
+          >
+            <X size={13} />
+          </button>
+        </div>
+        <p class="sidebar-hint">
+          {digest().length === 1
+            ? t("git.digest.oneChange")
+            : t("git.digest.changes", { n: digest().length })}
+        </p>
         <div class="git-panel__list">
-          <For each={reviewSession()!.items}>
-            {(item) => {
-              const reviewable = () => item.kind === "modified" || item.kind === "added";
-              const basename = () => item.path.split("/").pop() ?? item.path;
+          <For each={digest()}>
+            {(entry) => {
+              const basename = () => entry.path.split("/").pop() ?? entry.path;
+              const isNote = () => entry.path.endsWith(".typ");
               return (
                 <div
-                  class={`sidebar-item git-panel__item${reviewable() ? "" : " git-panel__item--readonly"}`}
-                  onClick={() => reviewable() && openStagedNote(item)}
-                  title={item.path}
+                  class={`sidebar-item git-panel__item${isNote() ? "" : " git-panel__item--readonly"}`}
+                  onClick={() => isNote() && entry.status !== "deleted" && openDigestEntry(entry.path)}
+                  title={entry.path}
                 >
-                  <span class={`sidebar-item__icon git-panel__icon--${item.kind}`}>
-                    <KindIcon item={item} />
+                  <span class={`sidebar-item__icon git-panel__icon--${entry.status}`}>
+                    {kindIcon(entry.status)}
                   </span>
                   <span class="git-panel__item-body">
                     <span class="sidebar-item__label">{basename()}</span>
                     <span class="git-panel__item-meta">
-                      <span class="git-panel__badge">{itemBadge(item)}</span>
-                      <Show when={item.conflicts > 0}>
-                        <span class="git-panel__badge git-panel__badge--conflict">
-                          <AlertTriangle size={11} />
-                          {item.conflicts === 1
-                            ? t("git.review.oneConflict")
-                            : t("git.review.conflicts", { n: item.conflicts })}
-                        </span>
-                      </Show>
+                      <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
                     </span>
                   </span>
-                  <Show when={reviewable()}>
-                    <button
-                      class="git-panel__item-consolidate"
-                      title={t("git.actions.consolidate")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void consolidateNote(item.path);
-                      }}
-                    >
-                      <Check size={13} /> {t("git.actions.consolidateOne")}
-                    </button>
-                  </Show>
                 </div>
               );
             }}
           </For>
         </div>
-
-        <div class="git-panel__actions">
-          <button class="git-panel__primary-btn" onClick={() => void consolidateAll()} disabled={gitSyncing()}>
-            {t("git.actions.consolidateAll")}
-          </button>
-          <button class="settings__detect-btn" onClick={() => void discardReview()} disabled={gitSyncing()}>
-            {t("git.actions.discard")}
-          </button>
-        </div>
-      </Show>
-
-      {/* Publish my own work: commit uncommitted edits and/or push commits the
-          remote doesn't have yet. Shown whenever there's outgoing work. */}
-      <Show when={hasOutgoing()}>
-        <div class="git-panel__actions">
-          <button class="git-panel__primary-btn" onClick={() => void publish()} disabled={gitSyncing()}>
-            <ArrowUp size={13} />{" "}
-            {gitStatus()?.dirty
-              ? t("git.actions.publish")
-              : t("git.actions.pushN", { n: gitStatus()?.unpushed ?? 0 })}
-          </button>
-        </div>
-      </Show>
-
-      <ManageSection />
-    </div>
+      </div>
+    </Show>
   );
 };
 

@@ -29,9 +29,8 @@ import { triggerCreationRule } from "../stores/creation-rules";
 import { showToast } from "../stores/toasts";
 import {
   collaborative,
-  fetchReview,
-  consolidateAll,
-  publish as gitPublishAction,
+  sync as gitSyncAction,
+  checkUpdates as gitCheckUpdatesAction,
 } from "../stores/git";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
@@ -508,7 +507,7 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   // ── Git collaboration commands ──
-  // Fetch / consolidate / push act on the open collaborative notebox. When the
+  // Sync / Check for updates act on the open collaborative notebox. When the
   // notebox isn't collaborative they fall back to opening the panel (which
   // shows the setup form) rather than erroring on a missing remote.
 
@@ -520,32 +519,22 @@ export function registerBuiltinCommands(callbacks: {
   });
 
   registerCommand({
-    id: "git:fetch-review",
-    title: t("command.git.fetchReview"),
+    id: "git:sync",
+    title: t("command.git.sync"),
     category: "Git",
     execute: () => {
       callbacks.openCollaborationPanel();
-      if (collaborative()) void fetchReview();
+      if (collaborative()) void gitSyncAction();
     },
   });
 
   registerCommand({
-    id: "git:consolidate",
-    title: t("command.git.consolidate"),
+    id: "git:check-updates",
+    title: t("command.git.checkUpdates"),
     category: "Git",
     execute: () => {
-      if (collaborative()) void consolidateAll();
-      else callbacks.openCollaborationPanel();
-    },
-  });
-
-  registerCommand({
-    id: "git:publish",
-    title: t("command.git.publish"),
-    category: "Git",
-    execute: () => {
-      if (collaborative()) void gitPublishAction();
-      else callbacks.openCollaborationPanel();
+      callbacks.openCollaborationPanel();
+      if (collaborative()) void gitCheckUpdatesAction();
     },
   });
 
