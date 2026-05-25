@@ -583,54 +583,75 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   document.addEventListener("inkycap:flush-editor", onFlushRequest);
   onCleanup(() => document.removeEventListener("inkycap:flush-editor", onFlushRequest));
 
+  // Re-read the open file from disk and replace the CM6 buffer when it differs.
+  // Shared by the sidebar property-edit reload and the post-sync reload. The
+  // buffer-equality check makes a no-change reload a cheap no-op (so a file
+  // whose content didn't actually move never churns the editor).
+  async function reloadFromDisk() {
+    if (!currentPath) return;
+    try {
+      const freshContent = await ipc.readFileContent(currentPath);
+      // Compare against the actual editor buffer (not the cached docText
+      // signal) — otherwise transient signal updates can make the early-return
+      // fire when the buffer is still stale.
+      const bufferText = editorHandle?.getText() ?? docText();
+      if (freshContent === bufferText) {
+        // Buffer is already current; just settle the dirty flag / lastSaved.
+        lastSaved = freshContent;
+        setDirty(false);
+        return;
+      }
+      lastSaved = freshContent;
+      suppressChange = true;
+      try {
+        setDocText(freshContent);
+        if (editorHandle) {
+          editorHandle.setText(freshContent);
+          // Visual mode reloads need a parse-aware rebuild. setText alone
+          // runs visualField's update against a possibly-partial tree, so
+          // pre-existing Replace widgets can mask the new content and the
+          // editor renders blank. rebuildVisual() retries until the tree
+          // spans the new doc, then dispatches the rebuild effect.
+          if (currentMode() === "live") {
+            editorHandle.rebuildVisual();
+          }
+        }
+      } finally {
+        queueMicrotask(() => { suppressChange = false; });
+      }
+      setDirty(false);
+    } catch (err) {
+      console.error("[TypstEditor] reload from disk failed:", err);
+    }
+  }
+
   // ── External property edits (sidebar) ──────────────────
-  // When the sidebar property editor writes to disk, reload the file
-  // so the CM6 buffer reflects the updated #note(...) call.
+  // When the sidebar property editor writes to disk, reload the file so the
+  // CM6 buffer reflects the updated #note(...) call. The sidebar flushes the
+  // editor before writing, so reloading here never drops unsaved work.
   const onPropChanged = (e: Event) => {
     const detail = (e as CustomEvent).detail;
     if (detail?.path !== currentPath) return;
-    // Cancel pending save immediately (synchronously) to prevent race
-    cancelPendingSave();
-    (async () => {
-      try {
-        const freshContent = await ipc.readFileContent(currentPath!);
-        // Compare against the actual editor buffer (not the cached
-        // docText signal) — otherwise transient signal updates can make
-        // the early-return fire when the buffer is still stale.
-        const bufferText = editorHandle?.getText() ?? docText();
-        if (freshContent === bufferText) {
-          // Buffer is already current, but make sure the dirty flag
-          // and lastSaved reflect that.
-          lastSaved = freshContent;
-          setDirty(false);
-          return;
-        }
-        lastSaved = freshContent;
-        suppressChange = true;
-        try {
-          setDocText(freshContent);
-          if (editorHandle) {
-            editorHandle.setText(freshContent);
-            // Visual mode reloads need a parse-aware rebuild. setText alone
-            // runs visualField's update against a possibly-partial tree, so
-            // pre-existing Replace widgets can mask the new content and the
-            // editor renders blank. rebuildVisual() retries until the tree
-            // spans the new doc, then dispatches the rebuild effect.
-            if (currentMode() === "live") {
-              editorHandle.rebuildVisual();
-            }
-          }
-        } finally {
-          queueMicrotask(() => { suppressChange = false; });
-        }
-        setDirty(false);
-      } catch (err) {
-        console.error("[TypstEditor] property reload failed:", err);
-      }
-    })();
+    cancelPendingSave(); // synchronous, to prevent a save racing the reload
+    void reloadFromDisk();
   };
   document.addEventListener("inkycap:note-property-changed", onPropChanged);
   onCleanup(() => document.removeEventListener("inkycap:note-property-changed", onPropChanged));
+
+  // ── Post-sync reload ───────────────────────────────────
+  // A git Sync / Check for updates can rewrite the open note on disk (a merged
+  // or fast-forwarded version). Reload it so the buffer isn't stale — but only
+  // when the buffer is clean: a dirty buffer holds unsaved edits we must not
+  // clobber (those edits stay, and merge on the next Sync). Path-agnostic: every
+  // editor re-reads its own file, and the buffer-equality guard makes untouched
+  // files a no-op.
+  const onNoteboxSynced = () => {
+    if (!currentPath || dirty) return;
+    cancelPendingSave();
+    void reloadFromDisk();
+  };
+  document.addEventListener("inkycap:notebox-synced", onNoteboxSynced);
+  onCleanup(() => document.removeEventListener("inkycap:notebox-synced", onNoteboxSynced));
 
   // ── Wikilink click-to-navigate ────────────────────────
   const onWikilinkNav = (e: Event) => {
