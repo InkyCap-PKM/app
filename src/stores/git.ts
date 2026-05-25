@@ -1,9 +1,11 @@
-// Git collaboration store (Phase 4 of the notebox-git plan).
+// Git collaboration store (Phase 5: the Sync model).
 //
 // Holds the reactive state for the per-notebox collaboration surface: the git
-// status summary, the current fetch-and-review session, and a syncing flag.
-// Actions wrap the typed IPC bindings; the backend `notebox:git-*` events keep
-// the status fresh (and surface background errors) between explicit actions.
+// status summary, the last sync outcome (digest of what landed + any conflicts
+// awaiting resolution), and a syncing flag. The two user gestures are Sync
+// (pull + merge + push) and Check for updates (pull + merge, no push); when a
+// merge conflicts the outcome is `paused` and the conflicted notes are staged
+// as inline suggestions to resolve, then finalized.
 //
 // Deliberately does NOT import `./notebox` — `notebox.ts` imports this store to
 // reset it on a notebox switch, and a back-import would be a cycle.
@@ -15,7 +17,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as ipc from "../lib/ipc";
 import type {
   GitStatusSummary,
-  GitReviewSession,
+  GitSyncOutcome,
   GitReviewItem,
   GitIdentity,
 } from "../lib/types";
@@ -28,19 +30,23 @@ import {
   onGitFetchStarted,
   onGitFetchCompleted,
   onGitReviewPending,
-  onGitConsolidated,
   onGitPushStarted,
   onGitPushCompleted,
   onGitError,
 } from "../lib/events";
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusSummary | null>(null);
-const [reviewSession, setReviewSession] = createSignal<GitReviewSession | null>(null);
+/** The last completed sync outcome — drives the digest ("what landed") and, when
+ *  `paused`, the conflict list awaiting resolution. */
+const [syncOutcome, setSyncOutcome] = createSignal<GitSyncOutcome | null>(null);
+/** When a sync paused on conflicts, whether the originating gesture was a Sync
+ *  (push on finalize) vs Check for updates (no push). */
+const [pausedPush, setPausedPush] = createSignal(true);
 const [gitSyncing, setGitSyncing] = createSignal(false);
 /** The notebox is configured for collaboration (has a git config) but there is
  *  no local git repository behind it — e.g. the `.git` dir was deleted, or the
  *  notebox settings travelled to a machine where the repo was never cloned.
- *  The panel offers re-initialization in this state instead of the review view. */
+ *  The panel offers re-initialization in this state instead of the sync view. */
 const [repoMissing, setRepoMissing] = createSignal(false);
 /** Last background error message (from a `notebox:git-error` event). Cleared
  *  when a new operation starts. Foreground errors are toasted by the action. */
@@ -52,9 +58,14 @@ export function collaborative(): boolean {
   return noteboxSettings.git != null;
 }
 
-/** Number of changed items in the current review session (the pending badge). */
+/** Whether a sync is paused awaiting conflict resolution. */
+export function syncPaused(): boolean {
+  return syncOutcome()?.paused ?? false;
+}
+
+/** Number of conflicted items in a paused sync (the pending badge). */
 export function pendingCount(): number {
-  return reviewSession()?.items.length ?? 0;
+  return syncPaused() ? syncOutcome()!.conflicts.length : 0;
 }
 
 // ─────────────────────────── Event wiring ──────────────────────────────────
@@ -75,7 +86,6 @@ export async function ensureGitListeners(): Promise<void> {
     }),
     await onGitFetchCompleted(() => setGitSyncing(false)),
     await onGitReviewPending(() => setGitSyncing(false)),
-    await onGitConsolidated(() => void refreshStatus()),
     await onGitPushStarted(() => setGitSyncing(true)),
     await onGitPushCompleted(() => {
       setGitSyncing(false);
@@ -91,10 +101,10 @@ export async function ensureGitListeners(): Promise<void> {
   );
 }
 
-/** Reset per-notebox review state on a notebox switch and re-query status.
+/** Reset per-notebox sync state on a notebox switch and re-query status.
  *  Called from `openNotebox` after the new notebox's settings have loaded. */
 export async function resetGitOnOpen(): Promise<void> {
-  setReviewSession(null);
+  setSyncOutcome(null);
   setGitError(null);
   setGitSyncing(false);
   setGitStatus(null);
@@ -137,29 +147,81 @@ export async function setupCollaboration(args: {
   setRepoMissing(false);
 }
 
-/** Fetch the remote and stage incoming notes as suggestions. Returns the
- *  session (also stored). Toasts on failure. */
-export async function fetchReview(): Promise<GitReviewSession | null> {
+/** Apply a completed sync outcome to the store + surface a non-blocking message
+ *  summarizing what happened. Shared by Sync, Check, and finalize. */
+function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
+  setSyncOutcome(outcome);
+  if (outcome.paused) {
+    setPausedPush(pushGesture);
+    return; // the panel surfaces the conflict list; no toast.
+  }
+  if (outcome.rejected) {
+    showToast("info", t("git.toast.syncRejected"));
+  } else if (outcome.upToDate) {
+    showToast("info", t("git.toast.upToDate"));
+  } else if (outcome.pulled || outcome.pushed) {
+    const landed = outcome.digest.length;
+    if (outcome.pushed && landed === 0) {
+      showToast("success", t("git.toast.pushed"));
+    } else if (landed > 0) {
+      showToast(
+        "success",
+        landed === 1
+          ? t("git.toast.syncedOne")
+          : t("git.toast.synced", { n: landed }),
+      );
+    } else {
+      showToast("success", t("git.toast.synced", { n: landed }));
+    }
+  }
+}
+
+/** Sync: pull + merge incoming changes, then push. Pauses on conflicts. */
+export async function sync(): Promise<void> {
   setGitSyncing(true);
   try {
-    const session = await ipc.gitFetchReview();
-    setReviewSession(session);
+    const outcome = await ipc.gitSync();
+    applyOutcome(outcome, true);
     await refreshStatus();
-    if (session.upToDate) {
-      showToast("info", t("git.toast.upToDate"));
-    }
-    return session;
   } catch (err) {
-    toastError(t("git.toast.fetchFailed"), err);
-    return null;
+    toastError(t("git.toast.syncFailed"), err);
   } finally {
     setGitSyncing(false);
   }
 }
 
-/** Open a staged note copy as a reviewable tab (suggestion pills + the
+/** Check for updates: pull + merge incoming changes without pushing. */
+export async function checkUpdates(): Promise<void> {
+  setGitSyncing(true);
+  try {
+    const outcome = await ipc.gitCheckUpdates();
+    applyOutcome(outcome, false);
+    await refreshStatus();
+  } catch (err) {
+    toastError(t("git.toast.syncFailed"), err);
+  } finally {
+    setGitSyncing(false);
+  }
+}
+
+/** Finalize a paused sync after its conflicts have been resolved in the staged
+ *  copies. Pushes iff the gesture that paused was a Sync. */
+export async function finalizeSync(): Promise<void> {
+  setGitSyncing(true);
+  try {
+    const outcome = await ipc.gitSyncFinalize(pausedPush());
+    applyOutcome(outcome, pausedPush());
+    await refreshStatus();
+  } catch (err) {
+    toastError(t("git.toast.finalizeFailed"), err);
+  } finally {
+    setGitSyncing(false);
+  }
+}
+
+/** Open a staged conflict note as a reviewable tab (suggestion pills + the
  *  Annotations pane do the resolving). No-op for items without a staged copy
- *  (deletes / binaries). */
+ *  (binary conflicts). */
 export function openStagedNote(item: GitReviewItem): void {
   if (!item.stagedPath) return;
   const base = item.path.split("/").pop() ?? item.path;
@@ -169,73 +231,26 @@ export function openStagedNote(item: GitReviewItem): void {
   );
 }
 
-/** Consolidate one reviewed note (its resolved staged copy becomes the working
- *  note + a commit). Drops it from the session on success. */
-export async function consolidateNote(path: string, message?: string): Promise<void> {
-  setGitSyncing(true);
-  try {
-    await ipc.gitConsolidateNote(path, message);
-    const session = reviewSession();
-    if (session) {
-      setReviewSession({
-        ...session,
-        items: session.items.filter((i) => i.path !== path),
-      });
-    }
-    await refreshStatus();
-    showToast("success", t("git.toast.consolidated", { name: path.split("/").pop() ?? path }));
-  } catch (err) {
-    toastError(t("git.toast.consolidateFailed"), err);
-  } finally {
-    setGitSyncing(false);
-  }
+/** Open a digest entry's note (the working copy) — the "what landed" view. */
+export function openDigestEntry(path: string): void {
+  const title = path.split("/").pop() ?? path;
+  openTab({ type: "file", title, path }, { forceNewTab: false });
 }
 
-/** Consolidate every staged note in one commit, then clear the session. */
-export async function consolidateAll(message?: string): Promise<void> {
-  setGitSyncing(true);
-  try {
-    await ipc.gitConsolidateAll(message);
-    setReviewSession(null);
-    await refreshStatus();
-    showToast("success", t("git.toast.consolidatedAll"));
-  } catch (err) {
-    toastError(t("git.toast.consolidateFailed"), err);
-  } finally {
-    setGitSyncing(false);
-  }
-}
-
-/** Publish locally-authored work: commit the working tree and push. The
- *  outgoing counterpart to fetch→review. A rejected push (remote moved) is
- *  reported, not thrown, and prompts a fetch & review. */
-export async function publish(): Promise<void> {
-  setGitSyncing(true);
-  try {
-    const result = await ipc.gitPublish();
-    if (result.rejected) {
-      showToast("info", t("git.toast.publishRejected"));
-    } else if (result.nothingToDo) {
-      showToast("info", t("git.toast.nothingToPublish"));
-    } else {
-      showToast("success", t("git.toast.published"));
-    }
-    await refreshStatus();
-  } catch (err) {
-    toastError(t("git.toast.publishFailed"), err);
-  } finally {
-    setGitSyncing(false);
-  }
-}
-
-/** Abandon the current review session (clears staging). Working tree untouched. */
+/** Abandon a paused sync (clears staging). The clean changes the sync already
+ *  applied stay in the working tree; the merge is simply not finalized. */
 export async function discardReview(): Promise<void> {
   try {
     await ipc.gitDiscardReview();
-    setReviewSession(null);
+    setSyncOutcome(null);
   } catch (err) {
     toastError(t("git.toast.discardFailed"), err);
   }
+}
+
+/** Dismiss the post-sync digest (the non-blocking "what landed" summary). */
+export function dismissDigest(): void {
+  setSyncOutcome(null);
 }
 
 /** Store an HTTPS token for the remote host (re-auth). Throws on failure. */
@@ -247,7 +262,7 @@ export async function signIn(token: string): Promise<void> {
 export async function disableCollaboration(): Promise<void> {
   await ipc.gitDisableCollaboration();
   await loadNoteboxSettings();
-  setReviewSession(null);
+  setSyncOutcome(null);
   setGitStatus(null);
 }
 
@@ -265,4 +280,4 @@ export async function setIdentity(name: string, email: string): Promise<void> {
   await ipc.gitSetIdentity(name, email);
 }
 
-export { gitStatus, reviewSession, gitSyncing, gitError, repoMissing };
+export { gitStatus, syncOutcome, gitSyncing, gitError, repoMissing };

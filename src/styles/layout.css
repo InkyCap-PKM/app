@@ -7383,6 +7383,37 @@ svg.lucide {
   flex-shrink: 0;
 }
 
+/* Per-notebox collaboration toggle line, sitting under the notebox path. */
+.notebox-row__collab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.notebox-row__collab-icon {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.notebox-row__collab-label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.notebox-row__collab-configure {
+  margin-left: 2px;
+}
+
+/* Section header title group: the label and its inline help "?" trigger sit
+   together on the left while the section's action buttons stay on the right. */
+.settings__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 
 /* ─── Notebox-lost banner (top-of-app warning when the notebox directory
        has vanished from disk while the app is still running) ─── */
@@ -10016,31 +10047,47 @@ svg.lucide {
   font-weight: 600;
 }
 
-/* Per-item consolidate button: a clearly-labelled outline action (not a bare
-   icon), so the per-note merge gesture is discoverable alongside "Consolidate
-   all". The note name beside it truncates to make room. */
-.git-panel__item-consolidate {
+/* A conflict banner reuses the incoming banner, tinted with the danger accent. */
+.git-panel__banner--conflict {
+  border-left-color: var(--accent-danger);
+}
+
+/* Post-sync digest ("what landed"): a dismissible, non-blocking summary block. */
+.git-panel__digest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.git-panel__digest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.git-panel__digest-dismiss {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  white-space: nowrap;
   flex-shrink: 0;
   background: none;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-control);
-  color: var(--accent);
+  border: none;
+  color: var(--fg-dim);
   cursor: pointer;
-  padding: 2px 8px;
-  font-size: var(--text-xs, 0.72rem);
-  font-family: inherit;
+  padding: 2px;
+  border-radius: var(--radius-control);
 }
 
-.git-panel__item-consolidate:hover {
-  color: #fff;
-  background: var(--accent);
+.git-panel__digest-dismiss:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
 }
 
-/* Keep the note name from pushing the consolidate button off the row. */
+/* Keep the note name from overflowing its row. */
 .git-panel__item .sidebar-item__label {
   overflow: hidden;
   text-overflow: ellipsis;

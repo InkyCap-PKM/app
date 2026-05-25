@@ -40,6 +40,9 @@ import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
 import { dailyNotesFolder } from "../stores/journal-scroll";
 import { showToast, dismissToast } from "../stores/toasts";
+import { disableCollaboration } from "../stores/git";
+import { promptConfirm } from "../stores/prompt";
+import HelpButton from "./HelpButton";
 import inkycapLogo from "../assets/inkycap-logo.svg";
 import BackupBrowser from "./BackupBrowser";
 
@@ -341,6 +344,51 @@ function NoteboxManagementSection() {
     document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
   }
 
+  // Flip a notebox's collaboration on or off from the toggle. Collaboration
+  // commands act on the *open* notebox, so we switch to it first. Turning ON
+  // needs the multi-field setup form, which lives in the Collaboration pane —
+  // we route there and leave the toggle reading its real (still-off) state
+  // until setup completes and flips `noteboxSettings.git`. Turning OFF stops
+  // collaborating after a confirm. `input` is reset to the true state on any
+  // early exit so the switch never claims a state that isn't real.
+  async function toggleCollaboration(
+    entry: NoteboxRegistryEntry,
+    wasOn: boolean,
+    input: HTMLInputElement,
+  ) {
+    if (!pathEquals(entry.path, noteboxInfo()?.path)) {
+      try {
+        await openNotebox(entry.path);
+      } catch (err) {
+        showToast("error", `Failed to open notebox: ${err}`);
+        input.checked = wasOn;
+        return;
+      }
+    }
+    if (!wasOn) {
+      input.checked = false;
+      document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
+      return;
+    }
+    const ok = await promptConfirm({
+      title: t("git.manage.disable"),
+      message: t("git.manage.disableConfirm"),
+      confirmLabel: t("git.manage.disable"),
+    });
+    if (!ok) {
+      input.checked = true;
+      return;
+    }
+    try {
+      await disableCollaboration();
+      showToast("info", t("git.manage.disabled"));
+      await loadNoteboxRegistry();
+    } catch (err) {
+      showToast("error", `${t("git.manage.disableFailed")}: ${err}`);
+      input.checked = true;
+    }
+  }
+
   async function handleMove(entry: NoteboxRegistryEntry) {
     const selected = await open({
       directory: true,
@@ -488,31 +536,42 @@ function NoteboxManagementSection() {
   return (
     <>
       <div class="settings__section-header">
-        <span class="settings__label">Notebox Management</span>
-        <button
-          class="settings__detect-btn"
-          onClick={() => setShowAddForm(true)}
-          disabled={showAddForm()}
-        >
-          New notebox
-        </button>
-        <button
-          class="settings__detect-btn"
-          onClick={() => {
-            setShowCloneForm(true);
-            setCloneBranch("main");
-          }}
-          disabled={showCloneForm()}
-          title="Join a collaborative notebox by cloning its git remote"
-        >
-          Clone from remote
-        </button>
+        <span class="settings__section-title">
+          <span class="settings__label">Notebox Management</span>
+          <HelpButton label={t("settings.notebox.helpLabel")}>
+            {t("settings.notebox.help")}
+          </HelpButton>
+        </span>
+        <div class="notebox-row__actions">
+          <button
+            class="settings__detect-btn"
+            onClick={() => setShowAddForm(true)}
+            disabled={showAddForm()}
+          >
+            New notebox
+          </button>
+          <button
+            class="settings__detect-btn"
+            onClick={() => {
+              setShowCloneForm(true);
+              setCloneBranch("main");
+            }}
+            disabled={showCloneForm()}
+            title="Join a collaborative notebox by cloning its git remote"
+          >
+            Clone from remote
+          </button>
+        </div>
       </div>
 
       <For each={noteboxRegistry()}>
         {(entry) => {
           const isActive = () => entry.path === noteboxInfo()?.path;
           const isEditing = () => editingPath() === entry.path;
+          // The open notebox's collaboration state is live in the settings
+          // store; for the others, fall back to the flag the registry computed.
+          const collaborative = () =>
+            isActive() ? noteboxSettings.git != null : entry.collaborative;
 
           return (
             <div class="settings__row notebox-row">
@@ -563,18 +622,39 @@ function NoteboxManagementSection() {
                   </Show>
                 </div>
                 <span class="settings__description">{entry.path}</span>
+                <div class="notebox-row__collab">
+                  <Handshake size={13} class="notebox-row__collab-icon" />
+                  <span class="notebox-row__collab-label">
+                    {t("settings.notebox.collaboration")}
+                  </span>
+                  <label
+                    class="settings__toggle"
+                    title={t("git.settings.tooltip")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={collaborative()}
+                      onChange={(e) =>
+                        toggleCollaboration(
+                          entry,
+                          collaborative(),
+                          e.currentTarget,
+                        )
+                      }
+                    />
+                    <span class="settings__toggle-slider" />
+                  </label>
+                  <Show when={collaborative()}>
+                    <button
+                      class="settings__detect-btn notebox-row__collab-configure"
+                      onClick={() => handleCollaboration(entry)}
+                    >
+                      {t("settings.notebox.configure")}
+                    </button>
+                  </Show>
+                </div>
               </div>
               <div class="notebox-row__actions">
-                <button
-                  class="settings__detect-btn"
-                  onClick={() => handleCollaboration(entry)}
-                  title={t("git.settings.tooltip")}
-                >
-                  <Handshake size={12} />{" "}
-                  {isActive() && noteboxSettings.git
-                    ? t("git.settings.manage")
-                    : t("git.settings.setup")}
-                </button>
                 <button
                   class="settings__detect-btn"
                   onClick={() => handleShowInFilesystem(entry.path)}

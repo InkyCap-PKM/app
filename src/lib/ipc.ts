@@ -38,10 +38,8 @@ import type {
   FileCitation,
   AggregatedCitation,
   GitStatusSummary,
-  GitCommitInfo,
   GitReviewSession,
-  GitPushResult,
-  GitPublishResult,
+  GitSyncOutcome,
   GitIdentity,
   GitSetupResult,
 } from "./types";
@@ -524,48 +522,37 @@ export async function gitCloneNotebox(args: {
   });
 }
 
-/** Fetch the remote and stage every incoming note as inline suggestions.
- *  Does not touch the working tree. */
+/** Sync the notebox: pull + merge incoming changes, then push. On a conflict
+ *  the result is `paused` — resolve the staged conflict notes, then finalize. */
+export async function gitSync(): Promise<GitSyncOutcome> {
+  assertNoteboxWritable();
+  return invoke<GitSyncOutcome>("git_sync");
+}
+
+/** Check for and pull incoming changes *without* pushing — take a collaborator's
+ *  work without broadcasting work-in-progress. Same merge as `gitSync`, no push. */
+export async function gitCheckUpdates(): Promise<GitSyncOutcome> {
+  assertNoteboxWritable();
+  return invoke<GitSyncOutcome>("git_check_updates");
+}
+
+/** Finish a paused sync after its conflicts have been resolved in the staged
+ *  copies. `push` matches the gesture that paused (`true` for Sync). */
+export async function gitSyncFinalize(push: boolean): Promise<GitSyncOutcome> {
+  assertNoteboxWritable();
+  return invoke<GitSyncOutcome>("git_sync_finalize", { push });
+}
+
+/** Fetch the remote and stage every incoming note as inline suggestions. Kept
+ *  internal — backs a future "review every incoming change" mode. */
 export async function gitFetchReview(): Promise<GitReviewSession> {
   return invoke<GitReviewSession>("git_fetch_review");
 }
 
-/** Consolidate one reviewed note: write its resolved staged copy to the working
- *  path, stage, and commit. */
-export async function gitConsolidateNote(
-  path: string,
-  message?: string,
-): Promise<GitCommitInfo> {
-  assertNoteboxWritable();
-  return invoke<GitCommitInfo>("git_consolidate_note", {
-    path,
-    message: message ?? null,
-  });
-}
-
-/** Consolidate every staged note in one commit. */
-export async function gitConsolidateAll(message?: string): Promise<GitCommitInfo> {
-  assertNoteboxWritable();
-  return invoke<GitCommitInfo>("git_consolidate_all", { message: message ?? null });
-}
-
-/** Push consolidated commits. Never force-pushes; a non-fast-forward returns
- *  `{ rejected: true }` so the caller fetch-and-reviews. */
-export async function gitPush(): Promise<GitPushResult> {
-  return invoke<GitPushResult>("git_push");
-}
-
-/** Abandon the current review session (clear staging). Working tree untouched. */
+/** Abandon a paused review session (clear staging). The clean changes the sync
+ *  already applied to the working tree stay; the merge is simply not finalized. */
 export async function gitDiscardReview(): Promise<void> {
   return invoke<void>("git_discard_review");
-}
-
-/** Publish locally-authored work: commit the working tree (if changed) and
- *  push. Lands the first commit on a fresh notebox and shares later edits.
- *  Never force-pushes; a non-fast-forward returns `{ rejected: true }`. */
-export async function gitPublish(message?: string): Promise<GitPublishResult> {
-  assertNoteboxWritable();
-  return invoke<GitPublishResult>("git_publish", { message: message ?? null });
 }
 
 /** Set the commit identity for this notebox's remote (per-installation store). */

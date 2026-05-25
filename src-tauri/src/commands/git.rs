@@ -17,14 +17,13 @@ use tauri::{Emitter, State};
 use crate::errors::{InkyCapError, Result};
 use crate::git::auth::{self, GitIdentity};
 use crate::git::backend::{
-    ensure_collaboration_gitignore, ChangeStatus, CommitInfo, GitBackend, GitStatusSummary,
-    PushResult,
+    ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, GitBackend,
+    GitStatusSummary, MergeOutcome,
 };
 use crate::git::{staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
-use crate::storage::traits::NoteboxStorage;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
 /// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
@@ -301,13 +300,6 @@ fn format_date(secs: i64) -> String {
         .unwrap_or_default()
 }
 
-/// Normalize a path from the frontend (which may send an absolute path) to a
-/// notebox-relative one for storage + git.
-fn notebox_relative(root: &Path, path: &str) -> PathBuf {
-    let p = PathBuf::from(path);
-    p.strip_prefix(root).map(Path::to_path_buf).unwrap_or(p)
-}
-
 // ─────────────────────────── Phase 4: setup, status, sign-in ───────────────
 
 /// Outcome of turning a notebox into a collaborative git repo.
@@ -544,89 +536,409 @@ pub async fn git_clone_notebox(
     Ok(to_frontend_string(&cloned))
 }
 
-/// Outcome of [`git_publish`] — the outgoing-authoring counterpart to the
-/// incoming review loop. Reports what happened so the frontend can message it.
-#[derive(Debug, Clone, Default, Serialize)]
+// ─────────────────────────── Phase 5: Sync model ───────────────────────────
+//
+// `git_sync` (pull + merge + push) and `git_check_updates` (pull + merge, no
+// push) are the two user-facing gestures. They share one algorithm:
+//
+//   1. Commit my working edits, if any, → `M` (so the merge sees them).
+//   2. Fetch → `T` (the remote tip).
+//   3. Nothing incoming (`T` absent / `T == M` / `merge_base(M,T) == T`) ⇒
+//      Sync pushes if ahead, Check is up to date.
+//   4. Local hasn't diverged (`M` absent / `merge_base(M,T) == M`) ⇒
+//      fast-forward the working tree to `T` (a pure pull, no merge commit).
+//   5. Diverged ⇒ a real libgit2 3-way merge:
+//      • clean ⇒ a two-parent merge commit (parents `[M, T]`) + checkout;
+//        Sync pushes (the commit descends from `T`, so it fast-forwards).
+//      • conflicts ⇒ auto-apply the clean files to the working tree, render the
+//        conflicted notes as inline `#suggestion`s in `.inkycap/incoming/`, and
+//        **pause** — returning the conflict list + the incoming digest. The user
+//        resolves the staged copies, then `git_sync_finalize` builds the merged
+//        tree, makes the merge commit, and pushes (for a Sync).
+//
+// A merge commit parented on `T` is what keeps the push a fast-forward — no
+// rebase, and the commit is atomic, so there is no partial-merge data-loss trap.
+
+/// One incoming change in the post-sync digest ("what landed from others").
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PublishResult {
-    /// Working-tree changes were committed (the first publish, or local edits).
-    pub committed: bool,
-    /// Commits were pushed to the remote.
-    pub pushed: bool,
-    /// The push was rejected (the remote moved) — fetch & review, then publish
-    /// again. Never resolved by force-pushing.
-    pub rejected: bool,
-    /// Nothing to commit and nothing to push — already in sync.
-    pub nothing_to_do: bool,
-    /// The commit that was created, when one was.
-    pub commit: Option<CommitInfo>,
+pub struct DigestEntry {
+    /// Notebox-relative path (frontend string form).
+    pub path: String,
+    /// `"added"` | `"modified"` | `"deleted"`.
+    pub status: String,
 }
 
-/// Publish locally-authored work: commit the working tree (if anything
-/// changed) and push it. This is the outgoing half of the loop — it lands the
-/// first commit when a notebox is freshly set up *and* shares subsequent edits.
-/// Never force-pushes; a non-fast-forward comes back as `rejected` so the
-/// caller fetch-and-reviews before trying again.
+fn digest_entry(cp: ChangedPath) -> DigestEntry {
+    DigestEntry {
+        path: to_frontend_string(&cp.path),
+        status: match cp.status {
+            ChangeStatus::Added => "added",
+            ChangeStatus::Modified => "modified",
+            ChangeStatus::Deleted => "deleted",
+        }
+        .to_string(),
+    }
+}
+
+/// The result of a [`git_sync`] / [`git_check_updates`] / [`git_sync_finalize`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncOutcome {
+    /// Nothing incoming and nothing outgoing — already in sync.
+    pub up_to_date: bool,
+    /// Local working edits were committed as part of the sync.
+    pub committed: bool,
+    /// Incoming changes were folded into the local working tree (fast-forward
+    /// or merge commit).
+    pub pulled: bool,
+    /// Local commits were pushed to the remote (Sync only).
+    pub pushed: bool,
+    /// The push was rejected (the remote moved since the fetch) — sync again.
+    pub rejected: bool,
+    /// The merge hit conflicts and is paused: resolve [`conflicts`] then call
+    /// `git_sync_finalize`. The clean incoming changes are already applied.
+    pub paused: bool,
+    /// Conflicted notes/files needing a hand decision (rendered as suggestions
+    /// where possible). Only populated when [`paused`].
+    pub conflicts: Vec<ReviewItem>,
+    /// What collaborators changed since the merge base — the non-blocking
+    /// "what landed" summary.
+    pub digest: Vec<DigestEntry>,
+    /// The incoming tip commit's author/message, for the digest banner.
+    pub incoming: Option<CommitInfo>,
+}
+
+/// Commit message for the implicit commit of a user's uncommitted working edits
+/// at the start of a sync.
+const LOCAL_EDITS_MESSAGE: &str = "Update notes";
+
+/// Pull (and optionally push) the collaborative notebox, merging incoming
+/// changes. `push` distinguishes Sync (`true`) from Check for updates (`false`).
+/// Pure + blocking-safe (no async, no `AppHandle`) so it can be unit-tested
+/// against a bare remote and two clones.
+fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
+    let backend = GitBackend::open(root)?;
+    backend.set_remote(REMOTE_NAME, &git.remote)?;
+
+    let mut out = SyncOutcome::default();
+
+    // 1. Commit local working edits, if any → M (so the merge includes them).
+    let m: Option<git2::Oid> = if backend.status_summary()?.dirty {
+        let sig = backend.author_signature(&git.remote)?;
+        backend.stage_all()?;
+        let oid = backend.commit(LOCAL_EDITS_MESSAGE, &sig)?;
+        out.committed = true;
+        Some(oid)
+    } else {
+        backend.current_head()?.map(|(_, oid)| oid)
+    };
+
+    // 2. Fetch → T (the remote tip).
+    backend.fetch(REMOTE_NAME, &git.branch)?;
+    let t = backend.remote_tracking_oid(REMOTE_NAME, &git.branch)?;
+
+    // 3. Nothing incoming?
+    let incoming_exists = match (m, t) {
+        (_, None) => false,
+        (Some(m), Some(t)) if m == t => false,
+        (Some(m), Some(t)) => backend.merge_base(m, t)? != Some(t),
+        (None, Some(_)) => true,
+    };
+    if !incoming_exists {
+        if push && backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
+            push_into(&backend, git, &mut out)?;
+        }
+        out.up_to_date = !out.committed && !out.pushed && !out.rejected;
+        return Ok(out);
+    }
+    let t = t.expect("incoming implies a remote tip");
+
+    // Shared context for steps 4–5.
+    let base = match m {
+        Some(m) => backend.merge_base(m, t)?,
+        None => None,
+    };
+    out.incoming = backend.commit_info(t).ok();
+    out.digest = backend
+        .changed_paths(base, t)?
+        .into_iter()
+        .map(digest_entry)
+        .collect();
+
+    // 4. Fast-forward (local hasn't diverged: unborn, or M is an ancestor of T).
+    let is_ff = match m {
+        None => true,
+        Some(m) => backend.merge_base(m, t)? == Some(m),
+    };
+    if is_ff {
+        backend.fast_forward_checkout(t)?;
+        out.pulled = true;
+        return Ok(out);
+    }
+
+    // 5. Diverged → a real 3-way merge.
+    let m = m.expect("divergence implies a local tip");
+    match backend.merge_commits_to_tree(m, t)? {
+        MergeOutcome::Clean(tree) => {
+            let sig = backend.author_signature(&git.remote)?;
+            backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
+            backend.checkout_head_force()?;
+            out.pulled = true;
+            if push {
+                push_into(&backend, git, &mut out)?;
+            }
+            Ok(out)
+        }
+        MergeOutcome::Conflicts(_) => {
+            // Land the clean files now; render the conflicts for review + pause.
+            let application = backend.apply_clean_merge(m, t)?;
+            staging::clear(root)?;
+            let (by, on) = out
+                .incoming
+                .as_ref()
+                .map(|c| (Some(c.author_name.clone()), Some(format_date(c.timestamp))))
+                .unwrap_or((None, None));
+            out.conflicts = render_conflict_items(
+                &backend,
+                root,
+                m,
+                t,
+                base,
+                &application.conflicts,
+                by.as_deref(),
+                on.as_deref(),
+            )?;
+            out.pulled = !application.applied.is_empty();
+            out.paused = true;
+            Ok(out)
+        }
+    }
+}
+
+/// Render each conflicted path as a review item: `.typ` notes become inline
+/// `#suggestion` staged copies (mine with theirs overlaid); non-note files are
+/// surfaced read-only (no suggestion rendering for binaries — a hand decision).
+#[allow(clippy::too_many_arguments)]
+fn render_conflict_items(
+    backend: &GitBackend,
+    root: &Path,
+    mine_oid: git2::Oid,
+    theirs_oid: git2::Oid,
+    base_oid: Option<git2::Oid>,
+    conflicts: &[PathBuf],
+    by: Option<&str>,
+    on: Option<&str>,
+) -> Result<Vec<ReviewItem>> {
+    let mut items = Vec::new();
+    for rel in conflicts {
+        // Defense in depth: never follow a path component that escapes the root.
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let is_note = rel.extension().and_then(|e| e.to_str()) == Some("typ");
+        if !is_note {
+            items.push(ReviewItem {
+                path: to_frontend_string(rel),
+                kind: ChangeKind::Binary,
+                staged_path: None,
+                total: 0,
+                conflicts: 0,
+                fallback: false,
+            });
+            continue;
+        }
+
+        let mine = read_note_blob(backend, mine_oid, rel)?;
+        let theirs = read_note_blob(backend, theirs_oid, rel)?;
+        let base = base_oid
+            .and_then(|b| backend.read_blob_at(b, rel).ok().flatten())
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+
+        let item = match suggest::render_incoming(base.as_deref(), &mine, &theirs, by, on) {
+            suggest::StagedRender::Suggestions(s) => {
+                let staged = staging::write_staged(root, rel, &s.source)?;
+                ReviewItem {
+                    path: to_frontend_string(rel),
+                    kind: ChangeKind::Modified,
+                    staged_path: Some(to_frontend_string(&staged)),
+                    total: s.total,
+                    conflicts: s.conflicts.len(),
+                    fallback: false,
+                }
+            }
+            suggest::StagedRender::Fallback { reason } => {
+                log::info!("git sync: {} fell back to raw diff: {reason}", rel.display());
+                let staged = staging::write_staged(root, rel, &theirs)?;
+                ReviewItem {
+                    path: to_frontend_string(rel),
+                    kind: ChangeKind::Modified,
+                    staged_path: Some(to_frontend_string(&staged)),
+                    total: 0,
+                    conflicts: 0,
+                    fallback: true,
+                }
+            }
+        };
+        items.push(item);
+    }
+    Ok(items)
+}
+
+/// Push the local branch, recording the outcome into `out` (a rejection is a
+/// normal "remote moved" result, not an error).
+fn push_into(backend: &GitBackend, git: &NoteboxGitConfig, out: &mut SyncOutcome) -> Result<()> {
+    let pr = backend.push(REMOTE_NAME, &git.branch)?;
+    if pr.rejected {
+        out.rejected = true;
+    } else {
+        out.pushed = true;
+    }
+    Ok(())
+}
+
+/// Commit message for a merge commit, naming the incoming author when known.
+fn merge_message(incoming: &Option<CommitInfo>) -> String {
+    match incoming {
+        Some(c) if !c.author_name.is_empty() => {
+            format!("Merge changes from {}", c.author_name)
+        }
+        _ => "Merge remote changes".to_string(),
+    }
+}
+
+/// Finish a paused (conflict) sync: the resolved staged copies are written over
+/// the working tree (the clean files already landed), then a two-parent merge
+/// commit captures the whole resolved tree and — for a Sync — is pushed. `push`
+/// must match the gesture that paused (Sync vs Check). Pure + blocking-safe.
+fn run_finalize(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
+    let backend = GitBackend::open(root)?;
+    backend.set_remote(REMOTE_NAME, &git.remote)?;
+
+    let mut out = SyncOutcome::default();
+
+    let m = backend
+        .current_head()?
+        .map(|(_, oid)| oid)
+        .ok_or_else(|| InkyCapError::BadRequest("no local commit to finalize a merge".into()))?;
+    let t = backend
+        .remote_tracking_oid(REMOTE_NAME, &git.branch)?
+        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to finalize against".into()))?;
+
+    // Write each resolved staged copy over its working note (the clean files
+    // were applied at pause; conflicted notes are still at mine until now).
+    for rel in staging::list_staged(root) {
+        if let Some(content) = staging::read_staged(root, &rel)? {
+            let dest = root.join(&rel);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, content)?;
+        }
+    }
+
+    // The working tree is now the full merged result. Capture it as a two-parent
+    // merge commit so the push fast-forwards the remote.
+    let sig = backend.author_signature(&git.remote)?;
+    backend.stage_all()?;
+    let tree = backend.write_index_tree()?;
+    out.incoming = backend.commit_info(t).ok();
+    backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
+    backend.checkout_head_force()?;
+    staging::clear(root)?;
+    out.pulled = true;
+
+    let base = backend.merge_base(m, t)?;
+    out.digest = backend
+        .changed_paths(base, t)?
+        .into_iter()
+        .map(digest_entry)
+        .collect();
+
+    if push {
+        push_into(&backend, git, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// Sync the collaborative notebox: pull + merge incoming changes, then push.
+/// On a conflict it pauses (see [`SyncOutcome::paused`]) — resolve the staged
+/// copies and call [`git_sync_finalize`].
 #[tauri::command]
-pub async fn git_publish(
-    message: Option<String>,
+pub async fn git_sync(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
-) -> Result<PublishResult> {
+) -> Result<SyncOutcome> {
+    sync_command(state, app_handle, true).await
+}
+
+/// Check for and pull incoming changes *without* pushing — lets a writer take a
+/// collaborator's work without broadcasting work-in-progress. Same merge as
+/// [`git_sync`], minus the push.
+#[tauri::command]
+pub async fn git_check_updates(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<SyncOutcome> {
+    sync_command(state, app_handle, false).await
+}
+
+/// Shared body of [`git_sync`] / [`git_check_updates`].
+async fn sync_command(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    push: bool,
+) -> Result<SyncOutcome> {
     let (root, git) = require_collaborative_with_root(&state).await?;
+    let _ = app_handle.emit("notebox:git-fetch-started", ());
+    let result = tokio::task::spawn_blocking(move || run_sync(&root, &git, push))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
+    emit_sync_events(&app_handle, &result);
+    result
+}
 
+/// Finish a paused sync after the conflicts have been resolved in their staged
+/// copies. `push` matches the gesture that paused (`true` for Sync).
+#[tauri::command]
+pub async fn git_sync_finalize(
+    push: bool,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<SyncOutcome> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
     let _ = app_handle.emit("notebox:git-push-started", ());
-    let result = tokio::task::spawn_blocking(move || -> Result<PublishResult> {
-        let backend = GitBackend::open(&root)?;
-        backend.set_remote(REMOTE_NAME, &git.remote)?;
+    let result = tokio::task::spawn_blocking(move || run_finalize(&root, &git, push))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("finalize task failed: {e}")))?;
+    emit_sync_events(&app_handle, &result);
+    result
+}
 
-        let mut result = PublishResult::default();
-
-        // 1. Commit the working tree if it has changes (new notes, edits,
-        //    deletions). Honours .gitignore via stage_all.
-        if backend.status_summary()?.dirty {
-            let sig = backend.author_signature(&git.remote)?;
-            backend.stage_all()?;
-            let msg = message.unwrap_or_else(|| "Update notes".to_string());
-            let oid = backend.commit(&msg, &sig)?;
-            result.committed = true;
-            result.commit = backend.commit_info(oid).ok();
-        }
-
-        // 2. Push if there is anything the remote doesn't have.
-        if backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
-            let pr = backend.push(REMOTE_NAME, &git.branch)?;
-            if pr.rejected {
-                result.rejected = true;
-            } else {
-                result.pushed = true;
-            }
-        }
-
-        result.nothing_to_do = !result.committed && !result.pushed && !result.rejected;
-        Ok(result)
-    })
-    .await
-    .map_err(|e| InkyCapError::Git(format!("publish task failed: {e}")))?;
-
-    match &result {
+/// Translate a sync result into the `notebox:git-*` event vocabulary the store
+/// listens on (completion + a friendly error on rejection/failure).
+fn emit_sync_events(app_handle: &tauri::AppHandle, result: &Result<SyncOutcome>) {
+    match result {
         Ok(r) if r.rejected => {
             let _ = app_handle.emit(
                 "notebox:git-error",
-                "remote has moved; fetch and review before publishing again",
+                "the remote moved while syncing — sync again",
             );
         }
         Ok(_) => {
+            let _ = app_handle.emit("notebox:git-fetch-completed", ());
             let _ = app_handle.emit("notebox:git-push-completed", ());
         }
         Err(err) => {
             let _ = app_handle.emit("notebox:git-error", err.to_string());
         }
     }
-    result
 }
 
-// ─────────────────────────── Phase 3: consolidate & push ───────────────────
+// ─────────────────────────── Identity & review session ─────────────────────
 
 /// Set the commit identity for *this* notebox's remote. Stored per-installation
 /// keyed by the remote URL (see [`crate::git::auth`]); never enters the repo.
@@ -648,115 +960,9 @@ pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitId
     Ok(auth::identity_for_remote(&git.remote))
 }
 
-/// Consolidate one reviewed note: write its resolved staged copy to the working
-/// path (through [`NoteboxStorage`]), stage, and commit. The staged copy is the
-/// user's resolved version — consolidating *is* the merge. Returns the commit.
-#[tauri::command]
-pub async fn git_consolidate_note(
-    path: String,
-    message: Option<String>,
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<CommitInfo> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
-    let storage = state
-        .storage
-        .read()
-        .await
-        .clone()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
-
-    let rel = notebox_relative(&root, &path);
-    let staged = staging::read_staged(&root, &rel)?
-        .ok_or_else(|| InkyCapError::BadRequest(format!("no staged copy to consolidate: {path}")))?;
-
-    // The one working-tree write goes through the storage interface.
-    storage.write_file(&rel, &staged).await?;
-
-    let msg = message.unwrap_or_else(|| format!("Consolidate {}", rel.display()));
-    let info = commit_staged(root.clone(), git, vec![rel.clone()], msg).await?;
-
-    let _ = staging::remove_staged(&root, &rel);
-    let _ = app_handle.emit(
-        "notebox:git-consolidated",
-        serde_json::json!({ "path": to_frontend_string(&rel) }),
-    );
-    Ok(info)
-}
-
-/// Consolidate every staged note in one commit (the batched option). Writes
-/// each resolved staged copy to its working path, then a single commit.
-#[tauri::command]
-pub async fn git_consolidate_all(
-    message: Option<String>,
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<CommitInfo> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
-    let storage = state
-        .storage
-        .read()
-        .await
-        .clone()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
-
-    let rels = staging::list_staged(&root);
-    if rels.is_empty() {
-        return Err(InkyCapError::BadRequest("nothing staged to consolidate".into()));
-    }
-
-    for rel in &rels {
-        if let Some(content) = staging::read_staged(&root, rel)? {
-            storage.write_file(rel, &content).await?;
-        }
-    }
-
-    let msg = message.unwrap_or_else(|| format!("Consolidate {} notes", rels.len()));
-    let info = commit_staged(root.clone(), git, rels, msg).await?;
-
-    staging::clear(&root)?;
-    let _ = app_handle.emit("notebox:git-consolidated", serde_json::json!({ "all": true }));
-    Ok(info)
-}
-
-/// Push consolidated commits to the remote. Never force-pushes; a rejection
-/// (the remote moved) comes back as `PushResult { rejected: true }` so the
-/// caller can fetch-and-review rather than force.
-#[tauri::command]
-pub async fn git_push(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<PushResult> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
-    let _ = app_handle.emit("notebox:git-push-started", ());
-
-    let result = tokio::task::spawn_blocking(move || -> Result<PushResult> {
-        let backend = GitBackend::open(&root)?;
-        backend.set_remote(REMOTE_NAME, &git.remote)?;
-        backend.push(REMOTE_NAME, &git.branch)
-    })
-    .await
-    .map_err(|e| InkyCapError::Git(format!("push task failed: {e}")))?;
-
-    match &result {
-        Ok(r) if r.rejected => {
-            let _ = app_handle.emit(
-                "notebox:git-error",
-                "remote has moved; fetch and review before pushing again",
-            );
-        }
-        Ok(_) => {
-            let _ = app_handle.emit("notebox:git-push-completed", ());
-        }
-        Err(err) => {
-            let _ = app_handle.emit("notebox:git-error", err.to_string());
-        }
-    }
-    result
-}
-
-/// Abandon the current review session: clear the staging folder. The working
-/// tree is untouched (it never changed during review).
+/// Abandon a paused review session: clear the staging folder. The working tree
+/// keeps the clean changes already applied by the sync (the merge is simply not
+/// finalized — the conflicted notes stay at the local version).
 #[tauri::command]
 pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
     let root = state
@@ -766,32 +972,6 @@ pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     staging::clear(&root)
-}
-
-/// Adopt the fetched remote tip, stage the given notebox-relative paths, and
-/// commit them as the remote's author. Adopting theirs first makes the commit a
-/// fast-forward over the remote so it pushes without a rebase. Runs the
-/// blocking git work off the async runtime.
-async fn commit_staged(
-    root: PathBuf,
-    git: NoteboxGitConfig,
-    rels: Vec<PathBuf>,
-    message: String,
-) -> Result<CommitInfo> {
-    tokio::task::spawn_blocking(move || -> Result<CommitInfo> {
-        let backend = GitBackend::open(&root)?;
-        // Lay the resolutions on top of theirs (the fetched tip) so the
-        // consolidate commit fast-forwards the remote rather than diverging.
-        if let Some(theirs) = backend.remote_tracking_oid(REMOTE_NAME, &git.branch)? {
-            backend.fast_forward_to(theirs)?;
-        }
-        let sig = backend.author_signature(&git.remote)?;
-        backend.stage_paths(&rels)?;
-        let oid = backend.commit(&message, &sig)?;
-        backend.commit_info(oid)
-    })
-    .await
-    .map_err(|e| InkyCapError::Git(format!("commit task failed: {e}")))?
 }
 
 /// The open notebox's git config, erroring if it is not collaborative.
@@ -886,78 +1066,6 @@ mod tests {
         let mut c = r.config().unwrap();
         c.set_str("user.name", "Tester").unwrap();
         c.set_str("user.email", "tester@example.com").unwrap();
-    }
-
-    /// Full spine through a bare remote and two clones: fetch → review →
-    /// resolve → consolidate (adopting theirs) → push, and a third clone sees
-    /// the consolidated result. The consolidate must fast-forward the remote
-    /// (parented on theirs), not be rejected.
-    #[test]
-    fn consolidate_adopts_theirs_and_push_fast_forwards() {
-        let bare = tempfile::tempdir().unwrap();
-        git2::Repository::init_bare(bare.path()).unwrap();
-        let url = bare.path().to_str().unwrap();
-
-        // A: clone, base commit, push.
-        let adir = tempfile::tempdir().unwrap();
-        let apath = adir.path().join("a");
-        git2::Repository::clone(url, &apath).unwrap();
-        set_git_identity(&apath);
-        let a = GitBackend::open(&apath).unwrap();
-        std::fs::write(apath.join("note.typ"), "line one\nline two\n").unwrap();
-        a.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
-        let asig = a.author_signature(url).unwrap();
-        a.commit("base", &asig).unwrap();
-        let branch = a.current_head().unwrap().unwrap().0;
-        assert!(!a.push("origin", &branch).unwrap().rejected);
-
-        // B: clone at base.
-        let bdir = tempfile::tempdir().unwrap();
-        let bpath = bdir.path().join("b");
-        git2::Repository::clone(url, &bpath).unwrap();
-        set_git_identity(&bpath);
-
-        // A advances the note and pushes.
-        std::fs::write(apath.join("note.typ"), "line one\nCHANGED two\n").unwrap();
-        a.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
-        a.commit("change", &asig).unwrap();
-        assert!(!a.push("origin", &branch).unwrap().rejected);
-
-        // B fetches and reviews — the change is clean (B == base).
-        let b = GitBackend::open(&bpath).unwrap();
-        let git = NoteboxGitConfig {
-            remote: url.to_string(),
-            branch: branch.clone(),
-        };
-        b.set_remote(REMOTE_NAME, url).unwrap();
-        b.fetch(REMOTE_NAME, &branch).unwrap();
-        let session = compute_review_after_fetch(&b, &bpath, &git).unwrap();
-        assert_eq!(session.items.len(), 1);
-        assert_eq!(session.items[0].conflicts, 0);
-
-        // B resolves (accept theirs) and consolidates: write resolved working,
-        // adopt theirs, stage, commit — mirroring commit_staged's body.
-        let staged = staging::read_staged(&bpath, Path::new("note.typ")).unwrap().unwrap();
-        let resolved = resolve_all_suggestions(&staged, true);
-        std::fs::write(bpath.join("note.typ"), &resolved).unwrap();
-        let theirs = b.remote_tracking_oid(REMOTE_NAME, &branch).unwrap().unwrap();
-        assert!(b.fast_forward_to(theirs).unwrap(), "B should adopt theirs");
-        b.stage_paths(&[PathBuf::from("note.typ")]).unwrap();
-        let bsig = b.author_signature(url).unwrap();
-        b.commit("Consolidate note.typ", &bsig).unwrap();
-        assert!(
-            !b.push("origin", &branch).unwrap().rejected,
-            "consolidate parented on theirs ⇒ fast-forward push, not rejected"
-        );
-
-        // C: a fresh clone sees the consolidated content.
-        let cdir = tempfile::tempdir().unwrap();
-        let cpath = cdir.path().join("c");
-        git2::Repository::clone(url, &cpath).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(cpath.join("note.typ")).unwrap(),
-            "line one\nCHANGED two\n"
-        );
     }
 
     /// A push that diverged from the remote is reported as rejected (not an
@@ -1066,12 +1174,12 @@ mod tests {
         );
     }
 
-    /// The outgoing half: a freshly set-up notebox commits its working tree and
-    /// pushes the initial content (mirrors `git_publish`'s body). After the push
+    /// The outgoing primitives a first Sync relies on: a freshly set-up notebox
+    /// commits its working tree and pushes the initial content. After the push
     /// the local remote-tracking ref is updated, so `unpushed_count` reads 0, and
     /// a second clone sees the content.
     #[test]
-    fn publish_commits_working_tree_and_pushes_initial() {
+    fn first_sync_commits_working_tree_and_pushes_initial() {
         let bare = tempfile::tempdir().unwrap();
         git2::Repository::init_bare(bare.path()).unwrap();
         let url = bare.path().to_str().unwrap();
@@ -1159,5 +1267,159 @@ mod tests {
         let session = compute_review_after_fetch(&lback, &lpath, &git).unwrap();
         assert!(session.up_to_date);
         assert!(session.items.is_empty());
+    }
+
+    // ── Phase 5: Sync model (run_sync / run_finalize) ─────────────────────────
+
+    /// A bare remote whose HEAD points at `main` (libgit2 inits on `master`).
+    fn bare_remote() -> (tempfile::TempDir, String) {
+        let bare = tempfile::tempdir().unwrap();
+        let r = git2::Repository::init_bare(bare.path()).unwrap();
+        r.set_head("refs/heads/main").unwrap();
+        let url = bare.path().to_str().unwrap().to_string();
+        (bare, url)
+    }
+
+    /// Clone `url` into a fresh temp dir under `name`, with a git commit identity.
+    fn clone_at(url: &str, name: &str) -> (tempfile::TempDir, PathBuf, GitBackend) {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join(name);
+        git2::Repository::clone(url, &p).unwrap();
+        set_git_identity(&p);
+        let g = GitBackend::open(&p).unwrap();
+        (d, p, g)
+    }
+
+    fn main_cfg(url: &str) -> NoteboxGitConfig {
+        NoteboxGitConfig { remote: url.to_string(), branch: "main".into() }
+    }
+
+    /// Seed the remote with `files` from clone A and push them on `main`.
+    fn seed(a: &GitBackend, apath: &Path, url: &str, files: &[(&str, &str)]) {
+        a.ensure_initial_branch("main").unwrap();
+        for (name, content) in files {
+            std::fs::write(apath.join(name), content).unwrap();
+        }
+        a.stage_all().unwrap();
+        a.commit("base", &a.author_signature(url).unwrap()).unwrap();
+        assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
+    }
+
+    fn commit_push(a: &GitBackend, apath: &Path, url: &str, file: &str, content: &str) {
+        std::fs::write(apath.join(file), content).unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &a.author_signature(url).unwrap()).unwrap();
+        assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
+    }
+
+    /// Divergent edits to *different* files merge cleanly, commit, and push.
+    #[test]
+    fn sync_merges_clean_divergent_edits_and_pushes() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("x.typ", "x base\n"), ("y.typ", "y base\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        commit_push(&a, &ap, &url, "x.typ", "x THEIRS\n");
+
+        // B edits a *different* file (uncommitted) and syncs.
+        std::fs::write(bp.join("y.typ"), "y MINE\n").unwrap();
+        let out = run_sync(&bp, &git, true).unwrap();
+        assert!(out.committed && out.pulled && out.pushed && !out.paused);
+        assert!(out.conflicts.is_empty());
+        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
+        assert_eq!(std::fs::read_to_string(bp.join("y.typ")).unwrap(), "y MINE\n");
+        assert_eq!(out.digest.len(), 1, "only x landed from A");
+        assert_eq!(out.digest[0].status, "modified");
+
+        // A third clone sees both edits.
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(std::fs::read_to_string(cp.join("x.typ")).unwrap(), "x THEIRS\n");
+        assert_eq!(std::fs::read_to_string(cp.join("y.typ")).unwrap(), "y MINE\n");
+    }
+
+    /// Same-region edits conflict: sync pauses with the note staged as
+    /// suggestions; finalizing the resolution commits the merge and pushes.
+    #[test]
+    fn sync_conflict_pauses_then_finalizes_and_pushes() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("note.typ", "line one\nline two\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        commit_push(&a, &ap, &url, "note.typ", "AAA one\nline two\n");
+
+        // B rewrites the same line (uncommitted) and syncs → conflict, pause.
+        std::fs::write(bp.join("note.typ"), "BBB one\nline two\n").unwrap();
+        let out = run_sync(&bp, &git, true).unwrap();
+        assert!(out.paused && !out.pushed);
+        assert_eq!(out.conflicts.len(), 1);
+        let item = &out.conflicts[0];
+        assert!(matches!(item.kind, ChangeKind::Modified));
+        assert!(item.conflicts >= 1, "both edited the same line");
+        assert!(item.staged_path.is_some());
+
+        // Resolve: accept theirs in the staged copy (what the pills do).
+        let rel = Path::new("note.typ");
+        let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
+        let resolved = resolve_all_suggestions(&staged, true);
+        std::fs::write(staging::staged_path(&bp, rel), &resolved).unwrap();
+
+        let fin = run_finalize(&bp, &git, true).unwrap();
+        assert!(fin.pulled && fin.pushed && !fin.paused);
+        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+
+        // A third clone sees the resolved result.
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(std::fs::read_to_string(cp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+    }
+
+    /// Check for updates fast-forwards a clean local to the remote, without push.
+    #[test]
+    fn check_updates_fast_forwards_without_pushing() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("n.typ", "before\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        commit_push(&a, &ap, &url, "n.typ", "after\n");
+
+        // B is clean; pull via fast-forward, no push.
+        let out = run_sync(&bp, &git, false).unwrap();
+        assert!(out.pulled && !out.pushed && !out.committed && !out.paused);
+        assert_eq!(std::fs::read_to_string(bp.join("n.typ")).unwrap(), "after\n");
+    }
+
+    /// Nothing on either side ⇒ up to date.
+    #[test]
+    fn sync_reports_up_to_date_when_nothing_changed() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("n.typ", "stable\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        let out = run_sync(&bp, &git, true).unwrap();
+        assert!(out.up_to_date && !out.pulled && !out.pushed && !out.committed);
+    }
+
+    /// Local edits with nothing incoming ⇒ commit + push (no merge).
+    #[test]
+    fn sync_pushes_local_edits_when_nothing_incoming() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("n.typ", "base\n")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        std::fs::write(bp.join("n.typ"), "B edit\n").unwrap();
+        let out = run_sync(&bp, &git, true).unwrap();
+        assert!(out.committed && out.pushed && !out.pulled && !out.up_to_date);
+
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(std::fs::read_to_string(cp.join("n.typ")).unwrap(), "B edit\n");
     }
 }
