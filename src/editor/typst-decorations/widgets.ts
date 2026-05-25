@@ -829,27 +829,6 @@ export class SuggestionWidget extends WidgetType {
     return parts.join(" · ");
   }
 
-  /** Clean-Typst text this suggestion resolves to. Mirrors Rust
-   *  `resolution_text`: accept = take the proposed change. */
-  private resolution(accept: boolean): string {
-    switch (this.kind) {
-      case "insert": return accept ? this.body : "";
-      case "delete": return accept ? "" : this.body;
-      case "replace": return accept ? this.body : this.oldText;
-    }
-  }
-
-  /** The full replacement on resolve: the clean-Typst resolution, plus an
-   *  inline `#annotation[…]` at the suggestion's site when the reviewer left a
-   *  comment (so the author sees the rationale). */
-  private replacement(accept: boolean, comment: string): string {
-    const resolved = this.resolution(accept);
-    const c = comment.trim();
-    if (!c) return resolved;
-    const annotation = `#annotation[${c}]`;
-    return resolved ? `${resolved} ${annotation}` : annotation;
-  }
-
   toDOM(view: EditorView) {
     const wrap = document.createElement("span");
     wrap.className = "cm-typst-suggestion";
@@ -886,110 +865,174 @@ export class SuggestionWidget extends WidgetType {
     wrap.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.openMenu(view, wrap, kindLabel, attr);
+      this.openMenu(view, wrap);
     });
     return wrap;
   }
 
-  private openMenu(view: EditorView, anchor: HTMLElement, kindLabel: string, attr: string) {
-    closeSuggestionMenu();
-    const menu = document.createElement("div");
-    menu.className = "cm-suggestion-menu";
-
-    const header = document.createElement("div");
-    header.className = "cm-suggestion-menu__header";
-    header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
-    menu.appendChild(header);
-
-    // Comment — pre-filled with the suggestion's saved `note` so reopening the
-    // menu shows the existing remark. "Save comment" persists it onto the open
-    // suggestion (visible in the doc + Annotations pane); Accept/Reject resolve
-    // the change and fold any comment in as an inline #annotation so the
-    // rationale survives once the suggestion mark is gone.
-    const comment = document.createElement("textarea");
-    comment.className = "cm-suggestion-menu__comment";
-    comment.rows = 2;
-    comment.placeholder = "Comment — Save to keep it on the open suggestion";
-    comment.value = this.note;
-    // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
-    for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
-      comment.addEventListener(ev, (e) => e.stopPropagation());
-    }
-    menu.appendChild(comment);
-
-    // Save the comment onto the open suggestion without resolving it: rebuild
-    // the call carrying the updated `note` (kept in the args, byte-preserving
-    // the body/old content). Empty clears the note.
-    const saveRow = document.createElement("div");
-    saveRow.className = "cm-suggestion-menu__actions";
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.className = "cm-suggestion-menu__item is-comment";
-    saveBtn.textContent = "Save comment";
-    saveBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const rebuilt = buildSuggestionCall({
+  private openMenu(view: EditorView, anchor: HTMLElement) {
+    openSuggestionMenu(
+      view,
+      {
         kind: this.kind,
         body: this.body,
         oldText: this.oldText,
         by: this.by,
         on: this.on,
-        note: comment.value.trim() || undefined,
-      });
-      applyCallTransform(view, this.from, () => rebuilt);
-      closeSuggestionMenu();
-      view.focus();
-    });
-    saveRow.appendChild(saveBtn);
-    menu.appendChild(saveRow);
-
-    const row = document.createElement("div");
-    row.className = "cm-suggestion-menu__actions";
-    const mkBtn = (label: string, cls: string, accept: boolean) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `cm-suggestion-menu__item ${cls}`;
-      b.textContent = label;
-      b.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const text = this.replacement(accept, comment.value);
-        applyCallTransform(view, this.from, () => text);
-        closeSuggestionMenu();
-        view.focus();
-      });
-      row.appendChild(b);
-    };
-    mkBtn("Accept", "is-accept", true);
-    mkBtn("Reject", "is-reject", false);
-    menu.appendChild(row);
-
-    document.body.appendChild(menu);
-    activeSuggestionMenu = menu;
-    anchorPanelMenu(anchor, menu);
-
-    const onDown = (e: PointerEvent) => {
-      if (!menu.contains(e.target as Node)) closeSuggestionMenu();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeSuggestionMenu();
-    };
-    // Defer listener attach by a frame so the opening mousedown doesn't
-    // immediately re-close the menu it just opened.
-    requestAnimationFrame(() => {
-      document.addEventListener("pointerdown", onDown, true);
-      document.addEventListener("keydown", onKey, true);
-    });
-    suggestionMenuCleanup = () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
+        note: this.note,
+        from: this.from,
+      },
+      anchor,
+    );
   }
 
   ignoreEvent() {
     return true;
   }
+}
+
+/** The data a suggestion's review menu needs — supplied by the inline
+ *  [`SuggestionWidget`] or by the Changes & History pane (from a parsed
+ *  `AnnotationEntry`). `from` is the call's start offset; the menu's actions go
+ *  through [`applyCallTransform`], which re-resolves the call's live extent, so
+ *  it stays correct even when opened from outside the editor. */
+export interface SuggestionMenuParams {
+  kind: SuggestionKind;
+  body: string;
+  oldText: string;
+  by: string;
+  on: string;
+  note: string;
+  from: number;
+}
+
+/** Clean-Typst text a suggestion resolves to (accept = take the change). */
+function suggestionResolution(p: SuggestionMenuParams, accept: boolean): string {
+  switch (p.kind) {
+    case "insert":
+      return accept ? p.body : "";
+    case "delete":
+      return accept ? "" : p.body;
+    case "replace":
+      return accept ? p.body : p.oldText;
+  }
+}
+
+/** The full replacement on resolve: the resolution plus an inline `#annotation`
+ *  carrying the reviewer's comment, when one was left. */
+function suggestionReplacement(p: SuggestionMenuParams, accept: boolean, comment: string): string {
+  const resolved = suggestionResolution(p, accept);
+  const c = comment.trim();
+  if (!c) return resolved;
+  const annotation = `#annotation[${c}]`;
+  return resolved ? `${resolved} ${annotation}` : annotation;
+}
+
+/** Open the Accept / Reject / Comment review menu for a suggestion, anchored to
+ *  `anchor`. Shared by the inline [`SuggestionWidget`] (anchored to its own DOM)
+ *  and the Changes & History pane (anchored to the clicked row). */
+export function openSuggestionMenu(
+  view: EditorView,
+  p: SuggestionMenuParams,
+  anchor: HTMLElement,
+) {
+  closeSuggestionMenu();
+  const kindLabel =
+    p.kind === "insert" ? "Insertion" : p.kind === "delete" ? "Deletion" : "Replacement";
+  const attr = [p.by, p.on].filter(Boolean).join(" · ");
+
+  const menu = document.createElement("div");
+  menu.className = "cm-suggestion-menu";
+
+  const header = document.createElement("div");
+  header.className = "cm-suggestion-menu__header";
+  header.textContent = attr ? `${kindLabel} · ${attr}` : kindLabel;
+  menu.appendChild(header);
+
+  // Comment — pre-filled with the suggestion's saved `note` so reopening the
+  // menu shows the existing remark. "Save comment" persists it onto the open
+  // suggestion (visible in the doc + Annotations pane); Accept/Reject resolve
+  // the change and fold any comment in as an inline #annotation so the
+  // rationale survives once the suggestion mark is gone.
+  const comment = document.createElement("textarea");
+  comment.className = "cm-suggestion-menu__comment";
+  comment.rows = 2;
+  comment.placeholder = "Comment — Save to keep it on the open suggestion";
+  comment.value = p.note;
+  // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
+  for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
+    comment.addEventListener(ev, (e) => e.stopPropagation());
+  }
+  menu.appendChild(comment);
+
+  // Save the comment onto the open suggestion without resolving it: rebuild the
+  // call carrying the updated `note` (byte-preserving the body/old content).
+  // Empty clears the note.
+  const saveRow = document.createElement("div");
+  saveRow.className = "cm-suggestion-menu__actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "cm-suggestion-menu__item is-comment";
+  saveBtn.textContent = "Save comment";
+  saveBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rebuilt = buildSuggestionCall({
+      kind: p.kind,
+      body: p.body,
+      oldText: p.oldText,
+      by: p.by,
+      on: p.on,
+      note: comment.value.trim() || undefined,
+    });
+    applyCallTransform(view, p.from, () => rebuilt);
+    closeSuggestionMenu();
+    view.focus();
+  });
+  saveRow.appendChild(saveBtn);
+  menu.appendChild(saveRow);
+
+  const row = document.createElement("div");
+  row.className = "cm-suggestion-menu__actions";
+  const mkBtn = (label: string, cls: string, accept: boolean) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `cm-suggestion-menu__item ${cls}`;
+    b.textContent = label;
+    b.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = suggestionReplacement(p, accept, comment.value);
+      applyCallTransform(view, p.from, () => text);
+      closeSuggestionMenu();
+      view.focus();
+    });
+    row.appendChild(b);
+  };
+  mkBtn("Accept", "is-accept", true);
+  mkBtn("Reject", "is-reject", false);
+  menu.appendChild(row);
+
+  document.body.appendChild(menu);
+  activeSuggestionMenu = menu;
+  anchorPanelMenu(anchor, menu);
+
+  const onDown = (e: PointerEvent) => {
+    if (!menu.contains(e.target as Node)) closeSuggestionMenu();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") closeSuggestionMenu();
+  };
+  // Defer listener attach by a frame so the opening mousedown doesn't
+  // immediately re-close the menu it just opened.
+  requestAnimationFrame(() => {
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+  });
+  suggestionMenuCleanup = () => {
+    document.removeEventListener("pointerdown", onDown, true);
+    document.removeEventListener("keydown", onKey, true);
+  };
 }
 
 export class WikilinkWidget extends WidgetType {

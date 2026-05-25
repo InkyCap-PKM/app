@@ -137,6 +137,7 @@
   "annotations.paneTitle": "Changes & History",
   "annotations.view.changes": "Changes",
   "annotations.view.history": "History",
+  "annotations.dismiss": "Dismiss this comment",
 
   "history.loading": "Loading history…",
   "history.empty": "No earlier versions of this note yet.",

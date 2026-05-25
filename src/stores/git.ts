@@ -34,6 +34,9 @@ import {
   onGitPushStarted,
   onGitPushCompleted,
   onGitError,
+  onFileChanged,
+  onFileCreated,
+  onFileDeleted,
 } from "../lib/events";
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusSummary | null>(null);
@@ -74,6 +77,16 @@ export function pendingCount(): number {
 let gitListenersReady = false;
 const unlisteners: UnlistenFn[] = [];
 
+// A working-tree change (a save, a restore, a create/delete) means the git
+// status — dirty / unpushed — is now stale. Refresh it, debounced so a burst of
+// saves coalesces into one query. Only meaningful for a collaborative notebox.
+let statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleStatusRefresh(): void {
+  if (!collaborative()) return;
+  clearTimeout(statusRefreshTimer);
+  statusRefreshTimer = setTimeout(() => void refreshStatus(), 600);
+}
+
 /** Subscribe to the backend git events once per process. Called from
  *  `openNotebox`; idempotent. */
 export async function ensureGitListeners(): Promise<void> {
@@ -99,6 +112,11 @@ export async function ensureGitListeners(): Promise<void> {
       setGitError(message);
       setGitSyncing(false);
     }),
+    // Keep the status fresh as the working tree changes (saves, restores, file
+    // create/delete) — otherwise the chip can read "Up to date" after an edit.
+    await onFileChanged(() => scheduleStatusRefresh()),
+    await onFileCreated(() => scheduleStatusRefresh()),
+    await onFileDeleted(() => scheduleStatusRefresh()),
   );
 }
 

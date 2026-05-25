@@ -18,6 +18,8 @@ import {
   insertAnnotationMarkup,
   type InsertKind,
 } from "../editor/typst-decorations/annotation-insert";
+import { openSuggestionMenu } from "../editor/typst-decorations/widgets";
+import { applyCallTransform } from "../editor/typst-decorations/pill";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
 import NoteHistory from "./NoteHistory";
@@ -101,17 +103,34 @@ const AnnotationsPanel: Component = () => {
   const attribution = (a: AnnotationEntry): string =>
     [a.by, a.on].filter(Boolean).join(" · ");
 
-  /** Scroll the editor to an item and place the caret at its start, so the
-   *  inline widget (and its Accept/Reject menu, for suggestions) is in view. */
-  function jumpTo(a: AnnotationEntry) {
+  /** Click a row: scroll the change into view, then — for a tracked change
+   *  (suggestion) — open its Accept / Reject / Comment menu anchored to the row,
+   *  so the reviewer acts on it directly instead of landing in the raw markup.
+   *  A plain comment (`annotation`) has no resolution, so just place the caret. */
+  function activate(a: AnnotationEntry, rowEl: HTMLElement) {
     const handle = activeEditorView();
     if (!handle) return;
     const view = handle.view;
     const pos = Math.min(a.from, view.state.doc.length);
-    view.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "center" }),
-    });
+    view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+    if (a.kind === "annotation") {
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+      return;
+    }
+    openSuggestionMenu(
+      view,
+      { kind: a.kind, body: a.body, oldText: a.oldText, by: a.by, on: a.on, note: a.note, from: a.from },
+      rowEl,
+    );
+  }
+
+  /** Dismiss a comment (`#annotation[…]`) that is no longer relevant — delete the
+   *  call. The annotation tracker updates the list reactively on the change. */
+  function dismiss(a: AnnotationEntry) {
+    const view = activeEditorView()?.view;
+    if (!view) return;
+    applyCallTransform(view, a.from, () => "");
     view.focus();
   }
 
@@ -184,7 +203,7 @@ const AnnotationsPanel: Component = () => {
             {(a) => (
               <div
                 class="sidebar-item annotations-panel__item"
-                onClick={() => jumpTo(a)}
+                onClick={(e) => activate(a, e.currentTarget as HTMLElement)}
                 title={primary(a)}
               >
                 <span class={`sidebar-item__icon annotations-panel__icon--${tone(a.kind)}`}>
@@ -206,6 +225,22 @@ const AnnotationsPanel: Component = () => {
                     </span>
                   </Show>
                 </span>
+                {/* A standalone comment can be dismissed once it's no longer
+                    relevant (e.g. left behind after a suggestion was accepted).
+                    Tracked changes are resolved via their menu, not dismissed. */}
+                <Show when={a.kind === "annotation"}>
+                  <button
+                    class="annotations-panel__dismiss"
+                    title={t("annotations.dismiss")}
+                    aria-label={t("annotations.dismiss")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismiss(a);
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                </Show>
               </div>
             )}
           </For>
