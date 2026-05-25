@@ -122,9 +122,9 @@
   "agenda.tags.all": "All",
   "agenda.tags.nSelected": "{n} selected",
 
-  "annotations.title": "Annotations",
-  "annotations.filterPlaceholder": "Filter annotations…",
-  "annotations.empty": "No annotations in this note",
+  "annotations.title": "Changes and Annotations",
+  "annotations.filterPlaceholder": "Filter…",
+  "annotations.empty": "No changes or annotations in this note",
   "annotations.emptyItem": "(empty)",
   "annotations.kind.annotation": "Comment",
   "annotations.kind.insert": "Insertion",
