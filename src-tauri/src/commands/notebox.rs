@@ -564,12 +564,42 @@ pub async fn update_notebox_entry(
 }
 
 /// Remove a notebox from the persistent registry (does not delete files on disk).
+///
+/// If the removed notebox was also the saved/active one, the `notebox_path`
+/// pointer is cleared so a later launch doesn't try to reopen a notebox the
+/// user just removed. The frontend separately unloads the active notebox (see
+/// `closeActiveNotebox` in stores/notebox.ts) so the user is walked back to a
+/// valid notebox rather than left editing one that is no longer registered.
 #[tauri::command]
 pub async fn remove_notebox_from_registry(path: String) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
     cfg.remove_notebox(&path);
+    if cfg.notebox_path.as_deref() == Some(path.as_str()) {
+        cfg.notebox_path = None;
+    }
     config::save_config(&cfg)?;
     Ok(())
+}
+
+/// Returns `true` if `path` is a directory containing no entries, or does not
+/// exist yet (a clone will create it). Used by the clone-from-remote flow to
+/// keep a collaborator from cloning onto a folder that already holds files —
+/// git requires an empty destination, and overlaying a clone onto live notes
+/// would be destructive. An existing notebox always contains `.inkycap/`, so
+/// this also rejects "clone into my other notebox" by construction.
+#[tauri::command]
+pub async fn dir_is_empty(path: String) -> Result<bool, InkyCapError> {
+    let dir = std::path::PathBuf::from(&path);
+    if !dir.exists() {
+        return Ok(true);
+    }
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    let mut entries = std::fs::read_dir(&dir).map_err(|e| {
+        InkyCapError::InvalidPath(format!("Cannot read directory {}: {}", path, e))
+    })?;
+    Ok(entries.next().is_none())
 }
 
 #[derive(Debug, serde::Serialize)]

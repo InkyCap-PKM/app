@@ -79,6 +79,13 @@ export async function removeNoteboxFromRegistry(path: string): Promise<void> {
   return invoke<void>("remove_notebox_from_registry", { path });
 }
 
+/** True when `path` is an empty directory or doesn't exist yet — i.e. a valid,
+ *  non-destructive destination for "Clone from remote". An existing notebox
+ *  always contains `.inkycap/`, so this also returns false for one. */
+export async function dirIsEmpty(path: string): Promise<boolean> {
+  return invoke<boolean>("dir_is_empty", { path });
+}
+
 export async function moveNotebox(
   oldPath: string,
   newPath: string,

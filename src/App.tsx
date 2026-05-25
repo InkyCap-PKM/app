@@ -6,6 +6,7 @@ import StatusBar from "./components/StatusBar";
 import ResizeHandle from "./components/ResizeHandle";
 import VerticalToolbar, { type SidebarMode } from "./components/VerticalToolbar";
 import NoteboxLostBanner from "./components/NoteboxLostBanner";
+import NoteboxRequiredOverlay from "./components/NoteboxRequiredOverlay";
 import {
   leftWidth,
   rightWidth,
@@ -29,7 +30,7 @@ import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
-import { initNotebox } from "./stores/notebox";
+import { initNotebox, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import {
   initSettings,
@@ -101,6 +102,15 @@ const App: Component = () => {
     setSettingsInitialTab("overview");
     setSettingsVisible((v) => !v);
   };
+
+  // When the app falls into the "no active notebox" state — e.g. the user
+  // removed the active notebox from Settings — the NoteboxRequiredOverlay must
+  // own the screen. Close Settings so the overlay isn't stacked behind it.
+  createEffect(() => {
+    if (initAttempted() && !noteboxInfo() && settingsVisible()) {
+      setSettingsVisible(false);
+    }
+  });
   const toggleQuickOpen = () => setQuickOpenVisible((v) => !v);
   const toggleCommandPalette = () => setCmdPaletteVisible((v) => !v);
 
@@ -284,6 +294,7 @@ const App: Component = () => {
         <PromptHost />
         <FolderPickerHost />
         <NoteboxSeedHost />
+        <NoteboxRequiredOverlay />
       </div>
     </ErrorBoundary>
   );

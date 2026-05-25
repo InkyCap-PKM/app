@@ -48,7 +48,10 @@ const NoteboxSeedHost: Component = () => {
       skip();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      copy();
+      // "Use defaults" is the default action — copying from another notebox is
+      // the deliberate, opt-in choice, so Enter should not silently inherit
+      // another notebox's settings.
+      skip();
     }
   }
 
@@ -104,16 +107,16 @@ const NoteboxSeedHost: Component = () => {
             <div class="app-modal__footer">
               <button
                 class="app-modal__btn app-modal__btn--secondary"
-                onClick={skip}
-              >
-                Use defaults
-              </button>
-              <button
-                class="app-modal__btn app-modal__btn--primary"
                 onClick={copy}
                 disabled={!selected()}
               >
                 Copy and open
+              </button>
+              <button
+                class="app-modal__btn app-modal__btn--primary"
+                onClick={skip}
+              >
+                Use defaults
               </button>
             </div>
           </div>

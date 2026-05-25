@@ -94,6 +94,13 @@
   --z-menu: 1000;
   --z-modal: 2000;
   --z-toast: 3000;
+  /* A menu/popover *triggered from within a modal* — e.g. a HelpButton's
+     "?" popover inside Settings, or a dropdown opened in the Export dialog.
+     It is Portaled to <body>, so it becomes a sibling of the modal and a
+     plain --z-menu would paint behind it. This layer floats above modals
+     while still sitting below --z-toast, so errors surface over everything.
+     Use it for floating surfaces that can open from inside a modal. */
+  --z-menu-over-modal: 2500;
 }
 
 :root,
