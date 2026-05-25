@@ -40,6 +40,7 @@ import type {
   GitStatusSummary,
   GitReviewSession,
   GitSyncOutcome,
+  GitNoteVersion,
   GitIdentity,
   GitSetupResult,
 } from "./types";
@@ -553,6 +554,26 @@ export async function gitFetchReview(): Promise<GitReviewSession> {
  *  already applied to the working tree stay; the merge is simply not finalized. */
 export async function gitDiscardReview(): Promise<void> {
   return invoke<void>("git_discard_review");
+}
+
+/** A note's past versions, newest first (commit metadata only). Empty when the
+ *  note has no committed history yet. */
+export async function gitNoteHistory(path: string): Promise<GitNoteVersion[]> {
+  return invoke<GitNoteVersion[]>("git_note_history", { path });
+}
+
+/** Write a past version of a note to a disposable scratch file and return its
+ *  path, to open as a read-only view tab. `commit` is a full hash from
+ *  `gitNoteHistory`. */
+export async function gitOpenNoteVersion(path: string, commit: string): Promise<string> {
+  return invoke<string>("git_open_note_version", { path, commit });
+}
+
+/** Restore a past version: write its content back to the working note as a new
+ *  edit (then the user Syncs). Non-destructive — history is never rewritten. */
+export async function gitRestoreNoteVersion(path: string, commit: string): Promise<void> {
+  assertNoteboxWritable();
+  return invoke<void>("git_restore_note_version", { path, commit });
 }
 
 /** Set the commit identity for this notebox's remote (per-installation store). */

@@ -19,6 +19,8 @@ import {
   type InsertKind,
 } from "../editor/typst-decorations/annotation-insert";
 import { activeEditorView } from "../stores/editor";
+import { getActiveTab } from "../stores/tabs";
+import NoteHistory from "./NoteHistory";
 import { t } from "../lib/i18n";
 
 /** Semantic tone for a kind's icon + badge (mirrors the inline colours). */
@@ -54,6 +56,15 @@ const KindIcon: Component<{ kind: AnnotationKind }> = (props) => {
 
 const AnnotationsPanel: Component = () => {
   const [filter, setFilter] = createSignal("");
+  // Which half of the pane is showing: live "Changes" (annotations + tracked
+  // changes, the default) or the note's "History" (past versions from git).
+  const [view, setView] = createSignal<"changes" | "history">("changes");
+  // The open note's path, for the History view. Null when the active tab isn't
+  // a file note (the pane only renders for a file tab, so this is defensive).
+  const notePath = createMemo(() => {
+    const tab = getActiveTab();
+    return tab && tab.type === "file" ? tab.path : null;
+  });
 
   // Scan the active editor when this pane opens (the component mounts) and
   // whenever the active editor changes (tab switch). Live edits while the pane
@@ -113,10 +124,34 @@ const AnnotationsPanel: Component = () => {
 
   return (
     <div class="annotations-panel">
-      <div class="right-panel__section-header">
-        <span>{t("annotations.title")}</span>
+      <div class="right-panel__section-header annotations-panel__header">
+        <span>{t("annotations.paneTitle")}</span>
+        <div class="annotations-panel__view-toggle" role="tablist">
+          <button
+            class={`annotations-panel__view-btn${view() === "changes" ? " annotations-panel__view-btn--active" : ""}`}
+            role="tab"
+            aria-selected={view() === "changes"}
+            onClick={() => setView("changes")}
+          >
+            {t("annotations.view.changes")}
+          </button>
+          <button
+            class={`annotations-panel__view-btn${view() === "history" ? " annotations-panel__view-btn--active" : ""}`}
+            role="tab"
+            aria-selected={view() === "history"}
+            onClick={() => setView("history")}
+          >
+            {t("annotations.view.history")}
+          </button>
+        </div>
       </div>
 
+      <Show
+        when={view() === "changes"}
+        fallback={
+          <Show when={notePath()}>{(p) => <NoteHistory path={p()} />}</Show>
+        }
+      >
       <div class="right-panel__links-filter-wrap">
         <input
           class="right-panel__links-filter-input"
@@ -211,6 +246,7 @@ const AnnotationsPanel: Component = () => {
           <MessageSquare size={16} />
         </button>
       </div>
+      </Show>
     </div>
   );
 };
