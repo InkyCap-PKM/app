@@ -79,11 +79,20 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
       if (delimIdx < 0) return;
       const funcName = text.substring(hashOffset, delimIdx).trim();
 
+      // The FuncCall node sometimes starts *after* the leading `#` (markup vs
+      // code context). Normalize `from` to include it, so consumers that
+      // transform or delete the whole call (`#annotation[…]`) don't orphan the
+      // `#` — which would otherwise leave invalid Typst behind on dismiss.
+      let from = node.from;
+      if (hashOffset === 0 && from > 0 && state.doc.sliceString(from - 1, from) === "#") {
+        from -= 1;
+      }
+
       if (funcName === "annotation") {
         const body = extractBracketContent(text);
         if (body === null) return;
         out.push({
-          from: node.from,
+          from,
           to: node.to,
           kind: "annotation",
           by: extractNamedStringArg(text, "by") ?? "",
@@ -95,7 +104,7 @@ function collectAnnotations(state: EditorState): AnnotationEntry[] {
       } else if (funcName === "suggestion") {
         const kind = (extractNamedStringArg(text, "kind") ?? "insert") as AnnotationKind;
         out.push({
-          from: node.from,
+          from,
           to: node.to,
           kind,
           by: extractNamedStringArg(text, "by") ?? "",

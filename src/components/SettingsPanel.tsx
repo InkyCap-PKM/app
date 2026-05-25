@@ -11,7 +11,7 @@ import {
   resetNoteboxSettingGroups,
 } from "../stores/settings";
 import { setThemePreference, setAccentColor, setAccentSource, setBgPaletteLight, setBgPaletteDark } from "../stores/theme";
-import { noteboxInfo, noteboxRegistry, loadNoteboxRegistry, openNotebox } from "../stores/notebox";
+import { noteboxInfo, noteboxRegistry, loadNoteboxRegistry, openNotebox, closeActiveNotebox } from "../stores/notebox";
 import { pathEquals, pathStartsWith } from "../lib/paths";
 import { maybeSeedNotebox } from "../stores/notebox-seed";
 import type {
@@ -281,12 +281,13 @@ function NoteboxManagementSection() {
   const [editName, setEditName] = createSignal("");
 
   // "Clone from git remote" — the collaborator-join path (joins a collaborative
-  // notebox entirely in-app, no command-line git).
+  // notebox entirely in-app, no command-line git). `cloneDest` is the exact
+  // folder the clone lands in (mirrors the New-notebox flow: the folder you
+  // pick is the notebox), not a parent the folder name is appended to.
   const [showCloneForm, setShowCloneForm] = createSignal(false);
   const [cloneRemote, setCloneRemote] = createSignal("");
   const [cloneBranch, setCloneBranch] = createSignal("main");
-  const [cloneParent, setCloneParent] = createSignal("");
-  const [cloneName, setCloneName] = createSignal("");
+  const [cloneDest, setCloneDest] = createSignal("");
   const [cloneToken, setCloneToken] = createSignal("");
   const [cloning, setCloning] = createSignal(false);
 
@@ -312,8 +313,16 @@ function NoteboxManagementSection() {
   }
 
   async function handleRemove(path: string) {
+    const removingActive = pathEquals(path, noteboxInfo()?.path);
     try {
       await ipc.removeNoteboxFromRegistry(path);
+      // Removing the active notebox must also unload it — the user should never
+      // keep editing a notebox they've just removed (and may delete next). With
+      // it closed, the NoteboxRequiredOverlay takes over and walks them into a
+      // valid notebox. App.tsx closes this Settings panel in the same state.
+      if (removingActive) {
+        await closeActiveNotebox();
+      }
       await loadNoteboxRegistry();
     } catch (err) {
       showToast("error", `Failed to remove notebox: ${err}`);
@@ -465,14 +474,7 @@ function NoteboxManagementSection() {
     setAddName("");
   }
 
-  /** Folder name to clone into, derived from the remote URL's last segment
-   *  (minus a trailing `.git`). */
-  function deriveCloneName(remote: string): string {
-    const seg = remote.trim().replace(/\/+$/, "").split(/[/:]/).pop() ?? "";
-    return seg.replace(/\.git$/, "") || "notebox";
-  }
-
-  async function browseForCloneParent() {
+  async function browseForCloneDest() {
     let defaultPath: string | undefined;
     try {
       defaultPath = await homeDir();
@@ -482,35 +484,52 @@ function NoteboxManagementSection() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select parent folder for the cloned notebox",
+      title: "Select an empty folder for the cloned notebox",
       defaultPath,
     });
     if (!selected) return;
-    setCloneParent(selected);
-    if (!cloneName()) setCloneName(deriveCloneName(cloneRemote()));
+    // The clone lands directly in the chosen folder, so it must be empty —
+    // cloning over an existing notebox would corrupt the user's notes. (An
+    // existing notebox always contains `.inkycap/`, so the emptiness check
+    // also rejects "clone into my other notebox".) Reject at selection time
+    // so the user gets immediate, clear feedback rather than a clone error.
+    try {
+      const empty = await ipc.dirIsEmpty(selected);
+      if (!empty) {
+        showToast(
+          "error",
+          "That folder already contains files. Choose or create an empty folder for the cloned notebox.",
+        );
+        return;
+      }
+    } catch (err) {
+      showToast("error", `Couldn't inspect that folder: ${err}`);
+      return;
+    }
+    setCloneDest(selected);
   }
 
   function resetCloneForm() {
     setShowCloneForm(false);
     setCloneRemote("");
-    setCloneParent("");
-    setCloneName("");
+    setCloneDest("");
     setCloneToken("");
   }
 
   async function confirmClone() {
     const remote = cloneRemote().trim();
-    const parent = cloneParent().trim();
-    const name = cloneName().trim() || deriveCloneName(remote);
+    const dest = cloneDest().trim();
     if (!remote) {
       showToast("error", "Enter a remote URL to clone.");
       return;
     }
-    if (!parent) {
-      showToast("error", "Choose a parent folder for the clone.");
+    if (!dest) {
+      showToast("error", "Choose an empty folder for the clone.");
       return;
     }
-    const dest = parent.endsWith("/") ? parent + name : parent + "/" + name;
+    // Display name defaults to the destination folder's basename (the backend
+    // applies the same default when none is passed), matching New notebox.
+    const name = dest.split("/").pop() || "Notebox";
     setCloning(true);
     try {
       const path = await ipc.gitCloneNotebox({
@@ -698,10 +717,16 @@ function NoteboxManagementSection() {
           </div>
           <div class="notebox-row__actions">
             <button class="settings__detect-btn" onClick={browseForNewNotebox}>
-              Browse
+              Location
             </button>
             <button
               class="settings__detect-btn"
+              classList={{
+                // Once a name is typed and a location is chosen, nothing else
+                // is required — but it isn't obvious the user must still click
+                // Add. Draw the eye to it once both conditions are met.
+                "settings__detect-btn--cta": !!addName().trim() && !!addPath(),
+              }}
               onClick={confirmAdd}
               disabled={!addPath()}
             >
@@ -731,12 +756,6 @@ function NoteboxManagementSection() {
             />
             <input
               class="settings__text-input"
-              placeholder="Folder name"
-              value={cloneName()}
-              onInput={(e) => setCloneName(e.currentTarget.value)}
-            />
-            <input
-              class="settings__text-input"
               type="password"
               autocomplete="off"
               placeholder="HTTPS access token (optional; SSH uses your key)"
@@ -744,19 +763,23 @@ function NoteboxManagementSection() {
               onInput={(e) => setCloneToken(e.currentTarget.value)}
             />
             <span class="settings__description">
-              {cloneParent()
-                ? `Clones into: ${cloneParent().replace(/\/$/, "")}/${cloneName().trim() || deriveCloneName(cloneRemote())}`
-                : "No parent folder selected"}
+              {cloneDest()
+                ? `Clones into: ${cloneDest()}`
+                : "No folder selected (must be an empty folder)"}
             </span>
           </div>
           <div class="notebox-row__actions">
-            <button class="settings__detect-btn" onClick={browseForCloneParent}>
-              Browse
+            <button class="settings__detect-btn" onClick={browseForCloneDest}>
+              Location
             </button>
             <button
               class="settings__detect-btn"
+              classList={{
+                "settings__detect-btn--cta":
+                  !!cloneRemote().trim() && !!cloneDest() && !cloning(),
+              }}
               onClick={confirmClone}
-              disabled={cloning() || !cloneRemote().trim() || !cloneParent()}
+              disabled={cloning() || !cloneRemote().trim() || !cloneDest()}
             >
               {cloning() ? "Cloning…" : "Clone & open"}
             </button>

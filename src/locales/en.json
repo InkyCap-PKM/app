@@ -6,7 +6,7 @@
   "settings.appearance.theme.option.system": "Follow system",
 
   "settings.notebox.helpLabel": "About notebox management",
-  "settings.notebox.help": "New notebox creates an empty notebox on your local filesystem — start fresh, or copy in files from a notebox on another computer. Clone from remote downloads an existing notebox from a Git repository for collaboration.",
+  "settings.notebox.help": "'New notebox' creates an empty notebox on your local filesystem. Start fresh or copy in files from a notebox elsewhere. 'Clone from remote' downloads an existing notebox from a Git repository for collaboration.",
   "settings.notebox.collaboration": "Collaboration",
   "settings.notebox.configure": "Configure",
 

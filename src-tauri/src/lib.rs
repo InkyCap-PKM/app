@@ -221,6 +221,7 @@ pub fn run() {
             commands::notebox::register_notebox,
             commands::notebox::update_notebox_entry,
             commands::notebox::remove_notebox_from_registry,
+            commands::notebox::dir_is_empty,
             commands::notebox::move_notebox,
             commands::notebox::notebox_has_user_settings,
             commands::notebox::seed_notebox_from_source,

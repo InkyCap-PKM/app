@@ -38,6 +38,16 @@ const [isLoading, setIsLoading] = createSignal(false);
  */
 const [noteboxLost, setNoteboxLost] = createSignal<string | null>(null);
 /**
+ * False until the initial notebox-open attempt at app launch has run to a
+ * conclusion (opened the saved notebox, or determined there isn't one). The
+ * `NoteboxRequiredOverlay` keys on this so it only takes over *after* startup
+ * has had its chance — without it the overlay would flash during the first
+ * tick before `initNotebox()` resolves. InkyCap holds the invariant that the
+ * app is never usable without an active notebox, so once this is true the
+ * overlay is shown whenever `noteboxInfo()` is null.
+ */
+const [initAttempted, setInitAttempted] = createSignal(false);
+/**
  * `indexReady` is false during the brief window between notebox open and the
  * background index build completing. UI features that depend on the property
  * index, link index, or full-text search (search pane, tag pane, backlinks,
@@ -369,12 +379,32 @@ export async function initNotebox(): Promise<void> {
   if (savedPath) {
     try {
       await openNotebox(savedPath);
-      return;
     } catch (e) {
-      console.warn("Saved notebox path failed, prompting picker:", e);
+      console.warn("Saved notebox failed to open:", e);
     }
   }
-  await pickAndOpenNotebox();
+  // If nothing opened (fresh install, or the saved notebox is gone), we don't
+  // pop a bare OS folder picker any more — the `NoteboxRequiredOverlay` takes
+  // over once `initAttempted` flips. It walks the user into a valid notebox
+  // (open/create a folder, or pick one of their existing noteboxes), so the
+  // app is never left running without one.
+  setInitAttempted(true);
+}
+
+/**
+ * Unload the active notebox without opening another, returning the app to the
+ * "no notebox" state that `NoteboxRequiredOverlay` covers. Used when the active
+ * notebox is removed from the registry: editing a notebox the user just removed
+ * (and might delete from disk next) must not stay possible. Flushes any pending
+ * writes first so in-flight edits still land on disk while the folder exists.
+ */
+export async function closeActiveNotebox(): Promise<void> {
+  closeAllTabs();
+  await awaitAllPendingWrites();
+  stopLsp();
+  setNoteboxInfo(null);
+  setNoteboxLost(null);
+  setIndexReady(false);
 }
 
 export async function refreshNoteboxInfo() {
@@ -398,4 +428,4 @@ export function assertNoteboxWritable(): void {
   }
 }
 
-export { noteboxInfo, noteboxRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion, noteboxLost };
+export { noteboxInfo, noteboxRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion, noteboxLost, initAttempted };
