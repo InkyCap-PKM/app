@@ -44,6 +44,7 @@ import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
+import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
@@ -96,6 +97,25 @@ const App: Component = () => {
     // is also honoured.
     const tab = tabs.find((t) => t.id === id);
     setSidebarMode(tab?.type === "collection" ? "collections" : lastBrowseMode);
+  });
+
+  // The collaboration pane is only meaningful for a collaborative notebox.
+  // Switching to a notebox without collaboration (collaborative() flips false)
+  // should leave it rather than stranding the user on a setup form — fall back
+  // to the pane that fits: collections when a collection tab is active,
+  // otherwise the last browse pane (or the file tree). Within a collaborative
+  // notebox this never fires, so opening a staged note keeps the pane.
+  createEffect(() => {
+    if (sidebarMode() === "collaboration" && !collaborative()) {
+      const active = tabs.find((t) => t.id === activeTabId());
+      setSidebarMode(
+        active?.type === "collection"
+          ? "collections"
+          : lastBrowseMode === "collaboration"
+            ? "filetree"
+            : lastBrowseMode,
+      );
+    }
   });
 
   const toggleSettings = () => {
@@ -199,10 +219,14 @@ const App: Component = () => {
   // Open the Git Collaboration sidebar panel (from Settings' per-notebox entry
   // point, the status-bar chip, or the command palette). Close Settings,
   // ensure the sidebar is visible, and switch to the collaboration mode.
-  const onOpenCollaboration = () => {
+  const onOpenCollaboration = (e: Event) => {
     setSettingsVisible(false);
     if (leftCollapsed()) setLeftCollapsed(false);
     selectSidebarMode("collaboration");
+    // The Settings › Configure entry point asks for the Manage section expanded
+    // (the user is there to edit the configuration); the toolbar / status-bar
+    // entry points leave it collapsed (the sync workflow).
+    if ((e as CustomEvent).detail?.manage) setManageOpen(true);
   };
   document.addEventListener("inkycap:open-collaboration", onOpenCollaboration);
   onCleanup(() => document.removeEventListener("inkycap:open-collaboration", onOpenCollaboration));

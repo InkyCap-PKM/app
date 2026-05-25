@@ -350,7 +350,10 @@ function NoteboxManagementSection() {
         return;
       }
     }
-    document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
+    // Configure is an edit-the-settings intent — land with Manage expanded.
+    document.dispatchEvent(
+      new CustomEvent("inkycap:open-collaboration", { detail: { manage: true } }),
+    );
   }
 
   // Flip a notebox's collaboration on or off from the toggle. Collaboration
