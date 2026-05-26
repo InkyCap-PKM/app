@@ -121,6 +121,13 @@ pub struct NoteboxLocalState {
     /// workflow preference (it doesn't travel to collaborators), off by default.
     /// Read by `commands::git::run_sync`.
     pub review_incoming: bool,
+    /// The HEAD commit (full oid) the last time this machine *shared* the
+    /// notebox by **exporting a package** (package-handoff mode only). Lets the
+    /// status read "Changes to share" vs "shared" without a server: there are
+    /// unshared changes when the working tree is dirty or HEAD has moved past
+    /// this. `None` until the first export. Server-backed noteboxes use the
+    /// remote-tracking ref instead, so they never set this.
+    pub last_shared_oid: Option<String>,
 }
 
 /// Journal Scroll settings. Entirely per-notebox: each notebox has its own

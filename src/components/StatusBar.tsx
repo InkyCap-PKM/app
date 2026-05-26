@@ -16,7 +16,7 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { settings } from "../stores/settings";
-import { collaborative, packageMode, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
+import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 
 const StatusBar: Component = () => {
@@ -165,8 +165,9 @@ const StatusBar: Component = () => {
     if (!s) return "";
     if (!s.head && !s.dirty) return t("git.status.unborn");
     if (s.behind > 0) return t("git.status.behind", { n: s.behind });
-    if (s.unpushed > 0) return t(packageMode() ? "git.status.toShare" : "git.status.ahead", { n: s.unpushed });
-    if (s.dirty) return t("git.status.dirty");
+    // Outgoing state is qualitative ("Changes to share") — a commit count
+    // misleads (commits ≠ files) and never resets in package mode.
+    if (s.unshared) return t("git.status.toShare");
     return t("git.status.synced");
   });
 

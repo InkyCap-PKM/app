@@ -995,7 +995,7 @@ function EditorSettingsSection() {
       />
       <SettingToggle
         label="Enter key inserts a line break"
-        description="Typst normally treats a single Enter as a space on the same line and two Enters as a new paragraph. When this is on, pressing Enter inserts a Typst line break so your next line wraps as a new line in the rendered output; pressing Enter twice still starts a new paragraph."
+        description="Typst normally treats a single Enter as a space on the same line and two Enters as a new paragraph. When this is on, pressing Enter in the visual editor inserts a real line break — your next line wraps as a new line in the rendered output, and the underlying Typst marker stays hidden and managed for you. Pressing Enter twice still starts a new paragraph. Source mode is unaffected: Enter stays a plain newline there, and the marker simply shows as a trailing backslash."
         value={settings.editor.enter_inserts_line_break}
         onChange={(v) => updateSetting("editor", "enter_inserts_line_break", v)}
       />

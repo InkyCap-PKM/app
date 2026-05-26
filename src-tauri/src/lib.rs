@@ -208,6 +208,8 @@ pub fn run() {
             commands::git::git_sync,
             commands::git::git_check_updates,
             commands::git::git_sync_finalize,
+            commands::git::git_resolve_binary_conflict,
+            commands::git::git_resolve_settings,
             commands::git::git_fetch_review,
             commands::git::git_discard_review,
             commands::git::git_note_history,

@@ -592,6 +592,16 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   let isVisual = !!options.visualMode;
   let toolbarEnabled = options.selectionToolbar !== false;
   let paletteEnabled = options.commandPalette !== false;
+  // The auto-`\` linebreak is a *visual-mode* affordance: pressing Enter there
+  // inserts a Typst linebreak that the visual editor renders invisibly and
+  // manages as an atomic "soft break" (see visual-plugin.ts), so the writer
+  // sees a real new line without ever touching the `\`. Source mode never
+  // auto-inserts the `\` — Enter stays a plain newline there; the `\` only
+  // becomes *visible* in source mode (as ordinary text) once it exists. The
+  // keymap stays a pure consumer of the facet; this closure recomputes the
+  // effective value (setting AND visual mode) whenever either the setting or
+  // the mode changes (see setVisualMode / setEnterInsertsLineBreak below).
+  let enterLineBreakSetting = options.enterInsertsLineBreak !== false;
 
   const stateConfig = {
     doc: options.doc ?? "",
@@ -603,7 +613,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       focusModeCompartment.of([]),
       activeLineCompartment.of(activeLineExts),
       smartIndentCompartment.of(smartIndentListsFacet.of(!!options.smartIndentLists)),
-      enterLineBreakCompartment.of(enterInsertsLineBreakFacet.of(options.enterInsertsLineBreak !== false)),
+      enterLineBreakCompartment.of(enterInsertsLineBreakFacet.of(enterLineBreakSetting && isVisual)),
       selectionToolbarCompartment.of(options.selectionToolbar !== false && options.visualMode ? selectionToolbar : []),
       commandPaletteCompartment.of(options.commandPalette !== false && options.visualMode ? commandPalette : []),
       historyCompartment.of(history()),
@@ -700,6 +710,10 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
           selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
+          // Auto-linebreak is visual-mode only; entering visual mode turns it
+          // on (subject to the setting), leaving it returns Enter to a plain
+          // newline in source mode.
+          enterLineBreakCompartment.reconfigure(enterInsertsLineBreakFacet.of(enterLineBreakSetting && enabled)),
         ],
       });
     },
@@ -722,8 +736,9 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       });
     },
     setEnterInsertsLineBreak(enabled: boolean) {
+      enterLineBreakSetting = enabled;
       view.dispatch({
-        effects: enterLineBreakCompartment.reconfigure(enterInsertsLineBreakFacet.of(enabled)),
+        effects: enterLineBreakCompartment.reconfigure(enterInsertsLineBreakFacet.of(enabled && isVisual)),
       });
     },
     setSelectionToolbar(enabled: boolean) {

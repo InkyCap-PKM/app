@@ -9,9 +9,10 @@
 //! and [`GitBackend`] is not `Sync`, so it is created, used, and dropped inside
 //! one `spawn_blocking` closure rather than held in shared state.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::errors::{InkyCapError, Result};
@@ -20,10 +21,11 @@ use crate::git::backend::{
     ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, FileVersion, GitBackend,
     GitStatusSummary, MergeOutcome,
 };
+use crate::git::json_merge::{self, KeyConflict};
 use crate::git::{history, package, staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
-use crate::storage::to_frontend_string;
+use crate::storage::{canonicalize_root, to_frontend_string, validate_notebox_path};
 use crate::storage::traits::NoteboxStorage;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
@@ -493,10 +495,47 @@ pub async fn git_status(state: State<'_, AppState>) -> Result<Option<GitStatusSu
         let backend = GitBackend::open(&root)?;
         let mut summary = backend.status_summary()?;
         summary.unpushed = backend.unpushed_count(REMOTE_NAME, &git.branch)?;
+        summary.unshared = has_unshared_changes(&backend, &root, &git, &summary)?;
         Ok(Some(summary))
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("status task failed: {e}")))?
+}
+
+/// Whether the notebox has local work collaborators haven't received yet — the
+/// "Changes to share" signal. Server mode trusts the remote-tracking ref (dirty
+/// or unpushed commits, which a push clears). Package mode has no server, so a
+/// commit count never resets and is meaningless; instead compare HEAD against
+/// the last-exported commit recorded in `local.json` (dirty, or HEAD moved past
+/// it). The export records the new HEAD, so this flips back to "shared".
+fn has_unshared_changes(
+    backend: &GitBackend,
+    root: &Path,
+    git: &NoteboxGitConfig,
+    summary: &GitStatusSummary,
+) -> Result<bool> {
+    if !git.is_package_mode() {
+        return Ok(summary.dirty || summary.unpushed > 0);
+    }
+    if summary.dirty {
+        return Ok(true);
+    }
+    let head = backend.current_head()?.map(|(_, oid)| oid);
+    let last_shared = crate::notebox_settings::load_local_state(root)
+        .last_shared_oid
+        .and_then(|s| git2::Oid::from_str(&s).ok());
+    // Unshared when there's a commit that doesn't match the last export (incl.
+    // the never-exported case where `last_shared` is None but a commit exists).
+    Ok(head.is_some() && head != last_shared)
+}
+
+/// Record the current HEAD as the package-handoff "last shared" baseline in the
+/// gitignored `local.json`, so the status reads "shared" until the next edit.
+fn record_shared_head(backend: &GitBackend, root: &Path) -> Result<()> {
+    let head = backend.current_head()?.map(|(_, oid)| oid.to_string());
+    let mut local = crate::notebox_settings::load_local_state(root);
+    local.last_shared_oid = head;
+    crate::notebox_settings::save_local_state(root, &local)
 }
 
 /// Store an HTTPS personal-access token for this notebox's remote host
@@ -660,11 +699,29 @@ pub struct SyncOutcome {
     /// Conflicted notes/files needing a hand decision (rendered as suggestions
     /// where possible). Only populated when [`paused`].
     pub conflicts: Vec<ReviewItem>,
+    /// The shared `settings.json` was edited on both sides and structurally
+    /// merged; this lists any same-key clashes still needing a pick. `None`
+    /// when settings didn't conflict or merged with no clashes. Only meaningful
+    /// when [`paused`].
+    pub settings_conflict: Option<SettingsConflict>,
     /// What collaborators changed since the merge base — the non-blocking
     /// "what landed" summary.
     pub digest: Vec<DigestEntry>,
     /// The incoming tip commit's author/message, for the digest banner.
     pub incoming: Option<CommitInfo>,
+}
+
+/// A structurally-merged `settings.json` with the same-key clashes left to
+/// decide. The merged document (non-conflicting keys already unioned, clashes
+/// defaulting to mine) is written to the working tree; [`git_resolve_settings`]
+/// rewrites it as the user flips individual keys.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsConflict {
+    /// Notebox-relative path of the settings file (frontend string form).
+    pub path: String,
+    /// The keys both sides changed differently — each needs a Mine/Theirs pick.
+    pub conflicts: Vec<KeyConflict>,
 }
 
 /// Commit message for the implicit commit of a user's uncommitted working edits
@@ -778,6 +835,20 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool, review: bool) -> Re
             // Land the clean files now; render the conflicts for review + pause.
             let application = backend.apply_clean_merge(m, t)?;
             staging::clear(root)?;
+
+            // settings.json gets a structured key-level merge so distinct config
+            // edits on both sides both survive; everything else goes through the
+            // note/binary path.
+            let settings_path = settings_rel();
+            let mut note_conflicts = Vec::new();
+            for rel in &application.conflicts {
+                if *rel == settings_path {
+                    out.settings_conflict = auto_merge_settings(&backend, root, m, t, base)?;
+                } else {
+                    note_conflicts.push(rel.clone());
+                }
+            }
+
             let (by, on) = out
                 .incoming
                 .as_ref()
@@ -789,10 +860,27 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool, review: bool) -> Re
                 m,
                 t,
                 base,
-                &application.conflicts,
+                &note_conflicts,
                 by.as_deref(),
                 on.as_deref(),
             )?;
+
+            // If the structural settings merge resolved everything and nothing
+            // else clashed, the merge is effectively clean — commit the merged
+            // working tree and push, rather than pausing with nothing to decide.
+            if out.conflicts.is_empty() && out.settings_conflict.is_none() {
+                let sig = backend.author_signature(&git.remote)?;
+                backend.stage_all()?;
+                let tree = backend.write_index_tree()?;
+                backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
+                backend.checkout_head_force()?;
+                out.pulled = true;
+                if push {
+                    push_into(&backend, git, &mut out)?;
+                }
+                return Ok(out);
+            }
+
             out.pulled = !application.applied.is_empty();
             out.paused = true;
             Ok(out)
@@ -1174,6 +1262,263 @@ fn emit_sync_events(app_handle: &tauri::AppHandle, result: &Result<SyncOutcome>)
     }
 }
 
+// ──────────────────── Phase 3b: binary conflict resolution ─────────────────
+
+/// How the user chose to resolve a conflicted binary (non-`.typ`) file. `.typ`
+/// notes resolve through inline `#suggestion`s; binaries are whole-file because
+/// there's no meaningful line diff to fold in.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BinaryDecision {
+    /// Keep the local version (re-assert mine over the working tree).
+    KeepMine,
+    /// Replace the working file with the incoming version.
+    TakeTheirs,
+    /// Keep mine at its path and drop the incoming version beside it under a
+    /// free " (incoming)" name, so neither side is lost.
+    KeepBoth,
+}
+
+/// The outcome of resolving one binary conflict, for the frontend to reflect.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinaryResolution {
+    /// The notebox-relative path that now holds the resolved file (always the
+    /// original path — that's where mine/theirs land).
+    pub path: String,
+    /// For [`BinaryDecision::KeepBoth`]: the sibling path the incoming copy was
+    /// written to. `None` otherwise.
+    pub added_path: Option<String>,
+}
+
+/// Write `bytes` to a working-tree path, creating parent dirs as needed.
+fn write_working(dest: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(dest, bytes)?;
+    Ok(())
+}
+
+/// Remove a working-tree path; absent is success (the decision wanted it gone).
+fn remove_working(dest: &Path) -> Result<()> {
+    match std::fs::remove_file(dest) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Find a free `name (incoming).ext` sibling for `rel` inside the notebox so a
+/// "Keep both" never clobbers an existing file. Bumps a counter on collision.
+fn free_incoming_name(canonical_root: &Path, rel: &Path) -> Result<PathBuf> {
+    let parent = rel.parent().map(Path::to_path_buf).unwrap_or_default();
+    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = rel.extension().and_then(|s| s.to_str());
+    for n in 0..1000 {
+        let suffix = if n == 0 {
+            " (incoming)".to_string()
+        } else {
+            format!(" (incoming {})", n + 1)
+        };
+        let name = match ext {
+            Some(e) => format!("{stem}{suffix}.{e}"),
+            None => format!("{stem}{suffix}"),
+        };
+        let candidate = parent.join(&name);
+        if !canonical_root.join(&candidate).exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(InkyCapError::Git(
+        "could not find a free incoming filename".into(),
+    ))
+}
+
+/// Apply a whole-file decision to one conflicted binary, mutating the working
+/// tree immediately (mirrors how `apply_clean_merge` materializes clean files
+/// at pause). Finalize's `stage_all` + merge commit then captures the result.
+/// Reads mine from HEAD and theirs from the already-fetched remote tip — no
+/// network. Pure + blocking-safe.
+fn resolve_binary(
+    root: &Path,
+    git: &NoteboxGitConfig,
+    path: &str,
+    decision: BinaryDecision,
+) -> Result<BinaryResolution> {
+    let canonical_root = canonicalize_root(root)?;
+    // git tree lookups want the repo-relative path; the working write wants the
+    // validated absolute path (both rejected if they escape the notebox).
+    let rel = notebox_relative(root, path);
+    let dest = validate_notebox_path(&canonical_root, &rel)?;
+
+    let backend = GitBackend::open(root)?;
+    let m = backend.current_head()?.map(|(_, oid)| oid);
+    let t = backend
+        .remote_tracking_oid(REMOTE_NAME, &git.branch)?
+        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to resolve against".into()))?;
+
+    let mut out = BinaryResolution {
+        path: to_frontend_string(&rel),
+        added_path: None,
+    };
+
+    match decision {
+        BinaryDecision::KeepMine => {
+            let mine = match m {
+                Some(m) => backend.read_blob_at(m, &rel)?,
+                None => None,
+            };
+            match mine {
+                Some(bytes) => write_working(&dest, &bytes)?,
+                None => remove_working(&dest)?,
+            }
+        }
+        BinaryDecision::TakeTheirs => match backend.read_blob_at(t, &rel)? {
+            Some(bytes) => write_working(&dest, &bytes)?,
+            None => remove_working(&dest)?,
+        },
+        BinaryDecision::KeepBoth => {
+            // Re-assert mine at its path (in case a prior Take-theirs replaced it).
+            if let Some(m) = m {
+                if let Some(bytes) = backend.read_blob_at(m, &rel)? {
+                    write_working(&dest, &bytes)?;
+                }
+            }
+            // Drop the incoming copy beside it under a free name.
+            if let Some(theirs) = backend.read_blob_at(t, &rel)? {
+                let sibling = free_incoming_name(&canonical_root, &rel)?;
+                write_working(&canonical_root.join(&sibling), &theirs)?;
+                out.added_path = Some(to_frontend_string(&sibling));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Resolve one conflicted binary file by a whole-file decision, before
+/// [`git_sync_finalize`] commits the merged tree. Re-callable: the user can
+/// switch their choice for a file until they finalize.
+#[tauri::command]
+pub async fn git_resolve_binary_conflict(
+    path: String,
+    decision: BinaryDecision,
+    state: State<'_, AppState>,
+) -> Result<BinaryResolution> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    tokio::task::spawn_blocking(move || resolve_binary(&root, &git, &path, decision))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("resolve task failed: {e}")))?
+}
+
+// ──────────────── Phase 3b: structured settings.json merge ──────────────────
+
+/// The notebox-relative path of the shared settings file — the unit for
+/// structured (key-level) settings reconciliation.
+fn settings_rel() -> PathBuf {
+    Path::new(".inkycap").join("settings.json")
+}
+
+/// Read a commit's `settings.json` as JSON, or `Null` when it's absent,
+/// unreadable, or not valid JSON (so a malformed side merges as "empty").
+fn read_settings_json(
+    backend: &GitBackend,
+    oid: Option<git2::Oid>,
+    rel: &Path,
+) -> serde_json::Value {
+    oid.and_then(|o| backend.read_blob_at(o, rel).ok().flatten())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+/// Write a merged settings document over the working `settings.json` (pretty,
+/// matching `save_settings`' `to_string_pretty`).
+fn write_merged_settings(root: &Path, merged: &serde_json::Value) -> Result<()> {
+    let dest = crate::notebox_settings::settings_path(root);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&dest, serde_json::to_string_pretty(merged)?)?;
+    Ok(())
+}
+
+/// Structurally merge a conflicted `settings.json` and write the result over the
+/// working file. Returns the same-key clashes still needing a pick, or `None`
+/// when the merge was fully automatic (distinct / one-sided key edits). The
+/// merged document defaults each clash to mine.
+fn auto_merge_settings(
+    backend: &GitBackend,
+    root: &Path,
+    m: git2::Oid,
+    t: git2::Oid,
+    base: Option<git2::Oid>,
+) -> Result<Option<SettingsConflict>> {
+    let rel = settings_rel();
+    let mine = read_settings_json(backend, Some(m), &rel);
+    let theirs = read_settings_json(backend, Some(t), &rel);
+    let base_v = read_settings_json(backend, base, &rel);
+
+    let merge = json_merge::three_way(&base_v, &mine, &theirs);
+    write_merged_settings(root, &merge.merged)?;
+
+    if merge.conflicts.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(SettingsConflict {
+            path: to_frontend_string(&rel),
+            conflicts: merge.conflicts,
+        }))
+    }
+}
+
+/// Apply per-key decisions to the structurally-merged settings: recompute the
+/// 3-way merge (clashes default to mine), flip each key the user marked
+/// "theirs", and write the result over the working file. Re-callable until
+/// finalize — the user can change choices freely.
+fn resolve_settings(
+    root: &Path,
+    git: &NoteboxGitConfig,
+    decisions: &HashMap<String, String>,
+) -> Result<()> {
+    let backend = GitBackend::open(root)?;
+    let m = backend
+        .current_head()?
+        .map(|(_, oid)| oid)
+        .ok_or_else(|| InkyCapError::BadRequest("no local commit to resolve settings against".into()))?;
+    let t = backend
+        .remote_tracking_oid(REMOTE_NAME, &git.branch)?
+        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to resolve against".into()))?;
+    let base = backend.merge_base(m, t)?;
+    let rel = settings_rel();
+    let mine = read_settings_json(&backend, Some(m), &rel);
+    let theirs = read_settings_json(&backend, Some(t), &rel);
+    let base_v = read_settings_json(&backend, base, &rel);
+
+    let merge = json_merge::three_way(&base_v, &mine, &theirs);
+    let mut merged = merge.merged;
+    for c in &merge.conflicts {
+        if decisions.get(&c.path).map(|d| d == "theirs").unwrap_or(false) {
+            json_merge::set_at_path(&mut merged, &c.path, c.theirs.clone());
+        }
+    }
+    write_merged_settings(root, &merged)
+}
+
+/// Resolve the structurally-merged `settings.json` by choosing a side for each
+/// clashing key. `decisions` maps a dotted key path to `"mine"` or `"theirs"`
+/// (absent / `"mine"` keeps the local value — the default). Re-callable until
+/// [`git_sync_finalize`] commits the working tree.
+#[tauri::command]
+pub async fn git_resolve_settings(
+    decisions: HashMap<String, String>,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    tokio::task::spawn_blocking(move || resolve_settings(&root, &git, &decisions))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("resolve task failed: {e}")))?
+}
+
 // ─────────────────────────── Phase 6: version history ──────────────────────
 
 /// Normalize a path from the frontend (which may send an absolute path) to a
@@ -1426,6 +1771,9 @@ pub async fn git_export_package(
                 backend.commit(LOCAL_EDITS_MESSAGE, &sig)?;
             }
             let summary = package::export(&root, &dest_path, password.as_deref())?;
+            // Record the shared baseline so the status reads "shared" until the
+            // next edit (package mode has no remote ref to track this).
+            record_shared_head(&backend, &root)?;
             Ok((dest_path, summary))
         },
     )
@@ -1525,7 +1873,11 @@ pub async fn git_import_package_as_notebox(
         // server-backed package re-adds `origin` on its first Sync (its URL
         // travels in the committed `.inkycap/settings.json`); a package-mode one
         // never needs it.
-        GitBackend::open(&dest)?.remove_remote(REMOTE_NAME)?;
+        let backend = GitBackend::open(&dest)?;
+        backend.remove_remote(REMOTE_NAME)?;
+        // A first-time recipient has exactly what was shared with them — nothing
+        // new to share yet, so seed the shared baseline at the imported HEAD.
+        record_shared_head(&backend, &dest)?;
         drop(staging);
         Ok(dest)
     })
@@ -2056,6 +2408,178 @@ mod tests {
         // A third clone sees the resolved result.
         let (_cd, cp, _c) = clone_at(&url, "c");
         assert_eq!(std::fs::read_to_string(cp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+    }
+
+    /// Both sides change the same binary → sync pauses with a binary conflict
+    /// (no staged copy). `resolve_binary` applies each whole-file decision to the
+    /// working tree, and finalize commits + pushes the result.
+    #[test]
+    fn binary_conflict_resolves_mine_theirs_and_both() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed(&a, &ap, &url, &[("note.typ", "n\n"), ("img.bin", "BASE")]);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        // A changes the binary and pushes; B changes it differently (uncommitted).
+        commit_push(&a, &ap, &url, "img.bin", "THEIRS");
+        std::fs::write(bp.join("img.bin"), "MINE").unwrap();
+
+        let out = run_sync(&bp, &git, true, false).unwrap();
+        assert!(out.paused && !out.pushed);
+        let item = out
+            .conflicts
+            .iter()
+            .find(|i| i.path.ends_with("img.bin"))
+            .expect("the binary is a conflict item");
+        assert!(matches!(item.kind, ChangeKind::Binary));
+        assert!(item.staged_path.is_none(), "binaries have no staged copy");
+        // At pause the working tree keeps mine.
+        assert_eq!(std::fs::read(bp.join("img.bin")).unwrap(), b"MINE");
+
+        // Take theirs → working file is theirs.
+        resolve_binary(&bp, &git, "img.bin", BinaryDecision::TakeTheirs).unwrap();
+        assert_eq!(std::fs::read(bp.join("img.bin")).unwrap(), b"THEIRS");
+
+        // Switch back to mine (re-callable until finalize).
+        resolve_binary(&bp, &git, "img.bin", BinaryDecision::KeepMine).unwrap();
+        assert_eq!(std::fs::read(bp.join("img.bin")).unwrap(), b"MINE");
+
+        // Keep both: mine stays, theirs lands under a free sibling name.
+        let res = resolve_binary(&bp, &git, "img.bin", BinaryDecision::KeepBoth).unwrap();
+        assert_eq!(std::fs::read(bp.join("img.bin")).unwrap(), b"MINE");
+        assert_eq!(res.added_path.as_deref(), Some("img (incoming).bin"));
+        assert_eq!(std::fs::read(bp.join("img (incoming).bin")).unwrap(), b"THEIRS");
+
+        // Finalize commits the working tree (mine + the incoming sibling) and pushes.
+        let fin = run_finalize(&bp, &git, true).unwrap();
+        assert!(fin.pulled && fin.pushed && !fin.paused);
+
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(std::fs::read(cp.join("img.bin")).unwrap(), b"MINE");
+        assert_eq!(std::fs::read(cp.join("img (incoming).bin")).unwrap(), b"THEIRS");
+    }
+
+    /// Seed a single-line `settings.json` (so a both-sides edit forces a git
+    /// conflict on the one line, exercising the structured merge) plus a note.
+    fn seed_settings(a: &GitBackend, apath: &Path, url: &str, json: &str) {
+        std::fs::create_dir_all(apath.join(".inkycap")).unwrap();
+        std::fs::write(apath.join(".inkycap/settings.json"), json).unwrap();
+        std::fs::write(apath.join("n.typ"), "n\n").unwrap();
+        a.ensure_initial_branch("main").unwrap();
+        a.stage_all().unwrap();
+        a.commit("base", &a.author_signature(url).unwrap()).unwrap();
+        assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
+    }
+
+    fn read_settings(p: &Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(p.join(".inkycap/settings.json")).unwrap()).unwrap()
+    }
+
+    /// Both sides edit *different* keys of settings.json → the structured merge
+    /// keeps both edits automatically, with no pause (an effectively-clean merge).
+    #[test]
+    fn settings_conflict_auto_merges_distinct_keys() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed_settings(&a, &ap, &url, r#"{"a":1,"b":2}"#);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        // A changes key b and pushes; B changes key a (uncommitted).
+        std::fs::write(ap.join(".inkycap/settings.json"), r#"{"a":1,"b":9}"#).unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &a.author_signature(&url).unwrap()).unwrap();
+        assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
+        std::fs::write(bp.join(".inkycap/settings.json"), r#"{"a":5,"b":2}"#).unwrap();
+
+        let out = run_sync(&bp, &git, true, false).unwrap();
+        assert!(!out.paused, "distinct-key settings edits merge automatically");
+        assert!(out.settings_conflict.is_none());
+        assert!(out.pulled && out.pushed);
+        assert_eq!(read_settings(&bp), serde_json::json!({ "a": 5, "b": 9 }));
+
+        // A third clone sees both edits.
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(read_settings(&cp), serde_json::json!({ "a": 5, "b": 9 }));
+    }
+
+    /// Both sides set the *same* key differently → sync pauses with a settings
+    /// clash; `resolve_settings` picks theirs, and finalize commits + pushes.
+    #[test]
+    fn settings_same_key_clash_pauses_then_resolves() {
+        let (_bare, url) = bare_remote();
+        let git = main_cfg(&url);
+        let (_ad, ap, a) = clone_at(&url, "a");
+        seed_settings(&a, &ap, &url, r#"{"view":"source"}"#);
+        let (_bd, bp, _b) = clone_at(&url, "b");
+
+        std::fs::write(ap.join(".inkycap/settings.json"), r#"{"view":"live"}"#).unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &a.author_signature(&url).unwrap()).unwrap();
+        assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
+        std::fs::write(bp.join(".inkycap/settings.json"), r#"{"view":"reading"}"#).unwrap();
+
+        let out = run_sync(&bp, &git, true, false).unwrap();
+        assert!(out.paused, "a same-key clash needs a decision");
+        let sc = out.settings_conflict.expect("the settings clash is surfaced");
+        assert_eq!(sc.conflicts.len(), 1);
+        assert_eq!(sc.conflicts[0].path, "view");
+        // The merged working file defaults the clash to mine.
+        assert_eq!(read_settings(&bp), serde_json::json!({ "view": "reading" }));
+
+        // Pick theirs for `view`, then finalize.
+        let mut decisions = HashMap::new();
+        decisions.insert("view".to_string(), "theirs".to_string());
+        resolve_settings(&bp, &git, &decisions).unwrap();
+        assert_eq!(read_settings(&bp), serde_json::json!({ "view": "live" }));
+
+        let fin = run_finalize(&bp, &git, true).unwrap();
+        assert!(fin.pulled && fin.pushed && !fin.paused);
+
+        let (_cd, cp, _c) = clone_at(&url, "c");
+        assert_eq!(read_settings(&cp), serde_json::json!({ "view": "live" }));
+    }
+
+    /// Package mode (no remote): "unshared" is true while there are commits past
+    /// the last-exported HEAD, and resets once that HEAD is recorded — so the
+    /// status reads "Changes to share" → shared → "Changes to share" across an
+    /// export-then-edit cycle, instead of an ever-growing commit count.
+    #[test]
+    fn package_unshared_tracks_last_exported_head() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        git2::Repository::init(root).unwrap();
+        set_git_identity(root);
+        let backend = GitBackend::open(root).unwrap();
+        let git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        let sig = backend.author_signature("").unwrap();
+
+        std::fs::write(root.join("n.typ"), "one\n").unwrap();
+        backend.stage_all().unwrap();
+        backend.commit("c1", &sig).unwrap();
+
+        // A commit exists but was never exported → unshared.
+        let summary = backend.status_summary().unwrap();
+        assert!(has_unshared_changes(&backend, root, &git, &summary).unwrap());
+
+        // Record the export → shared.
+        record_shared_head(&backend, root).unwrap();
+        assert!(!has_unshared_changes(&backend, root, &git, &summary).unwrap());
+
+        // A new commit moves HEAD past the shared baseline → unshared again.
+        std::fs::write(root.join("n.typ"), "two\n").unwrap();
+        backend.stage_all().unwrap();
+        backend.commit("c2", &sig).unwrap();
+        let summary2 = backend.status_summary().unwrap();
+        assert!(has_unshared_changes(&backend, root, &git, &summary2).unwrap());
+
+        // A dirty working tree is unshared even at the shared HEAD.
+        record_shared_head(&backend, root).unwrap();
+        std::fs::write(root.join("n.typ"), "three\n").unwrap();
+        let summary3 = backend.status_summary().unwrap();
+        assert!(summary3.dirty);
+        assert!(has_unshared_changes(&backend, root, &git, &summary3).unwrap());
     }
 
     /// Sync with no local changes fast-forwards to the remote (a pure pull —

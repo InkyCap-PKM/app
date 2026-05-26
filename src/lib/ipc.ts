@@ -40,6 +40,9 @@ import type {
   GitStatusSummary,
   GitReviewSession,
   GitSyncOutcome,
+  GitBinaryDecision,
+  GitBinaryResolution,
+  GitSettingsDecisions,
   GitCheckResult,
   GitNoteVersion,
   GitIdentity,
@@ -557,6 +560,25 @@ export async function gitCheckUpdates(): Promise<GitCheckResult> {
 export async function gitSyncFinalize(push: boolean): Promise<GitSyncOutcome> {
   assertNoteboxWritable();
   return invoke<GitSyncOutcome>("git_sync_finalize", { push });
+}
+
+/** Resolve one conflicted binary (non-`.typ`) file by a whole-file decision
+ *  before finalizing. Re-callable until finalize — the user can change choice. */
+export async function gitResolveBinaryConflict(
+  path: string,
+  decision: GitBinaryDecision,
+): Promise<GitBinaryResolution> {
+  assertNoteboxWritable();
+  return invoke<GitBinaryResolution>("git_resolve_binary_conflict", { path, decision });
+}
+
+/** Resolve the structurally-merged settings.json by picking a side for each
+ *  clashing key (dotted path → "mine" | "theirs"). Re-callable until finalize. */
+export async function gitResolveSettings(
+  decisions: GitSettingsDecisions,
+): Promise<void> {
+  assertNoteboxWritable();
+  return invoke<void>("git_resolve_settings", { decisions });
 }
 
 /** Fetch the remote and stage every incoming note as inline suggestions. Kept

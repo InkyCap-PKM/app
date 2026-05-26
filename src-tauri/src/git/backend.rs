@@ -47,6 +47,13 @@ pub struct GitStatusSummary {
     /// first publish is surfaced. Populated by the command layer (which knows
     /// the configured remote + branch); `0` from a bare [`status_summary`].
     pub unpushed: usize,
+    /// Whether there is local work others haven't received yet — the qualitative
+    /// signal the UI shows ("Changes to share") instead of a raw commit count.
+    /// Server mode: dirty or unpushed. Package mode: dirty or HEAD moved past the
+    /// last exported commit (commit counts are meaningless with no remote, since
+    /// nothing ever resets them). Populated by the command layer; `false` from a
+    /// bare [`status_summary`].
+    pub unshared: bool,
 }
 
 /// How a path changed between two commits (git rename detection is off, so a

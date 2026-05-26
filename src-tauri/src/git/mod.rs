@@ -26,6 +26,8 @@
 //!   (the conflict-rendering core).
 //! - [`history`] — the `.inkycap/history/` scratch lifecycle for read-only
 //!   version-view tabs (Phase 6).
+//! - [`json_merge`] — structured 3-way merge for the shared `settings.json`
+//!   (key-level, so distinct config edits on both sides both survive).
 //! - [`package`] — offline package handoff (Phase 7): zip a notebox's whole
 //!   `.git` to a file and extract a received package to a staging repo, so a
 //!   notebox can collaborate with no hosted git server.
@@ -36,6 +38,7 @@
 pub mod auth;
 pub mod backend;
 pub mod history;
+pub mod json_merge;
 pub mod package;
 pub mod staging;
 pub mod suggest;

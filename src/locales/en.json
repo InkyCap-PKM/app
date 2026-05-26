@@ -6,7 +6,7 @@
   "settings.appearance.theme.option.system": "Follow system",
 
   "settings.notebox.helpLabel": "About notebox management",
-  "settings.notebox.help": "'New notebox' creates an empty notebox on your local filesystem. Start fresh or copy in files from a notebox elsewhere. 'Clone from remote' downloads an existing notebox from a Git repository for collaboration.",
+  "settings.notebox.help": "'New notebox' creates an empty notebox on your local filesystem. Start fresh or copy your files from a notebox elsewhere. 'Clone from remote' downloads an existing notebox from a Git repository for collaboration. 'Import package' creates a local notebox from an InkyCap package sent by a collaborator.",
   "settings.notebox.collaboration": "Collaboration",
   "settings.notebox.configure": "Configure",
 
@@ -277,12 +277,10 @@
   "git.reconnect.failed": "Could not reconnect",
 
   "git.status.synced": "No local changes",
-  "git.status.ahead": "{n} to push",
   "git.status.behind": "{n} incoming",
   "git.status.incomingN": "{n} to resolve",
-  "git.status.dirty": "Uncommitted changes",
   "git.status.unborn": "No commits yet",
-  "git.status.toShare": "{n} to share",
+  "git.status.toShare": "Changes to share",
 
   "git.actions.sync": "Sync",
   "git.actions.syncing": "Syncing…",
@@ -304,13 +302,25 @@
 
   "git.conflict.heading": "Conflicts to resolve",
   "git.conflict.intro": "These notes were edited on both sides. Open each one and resolve its suggestions in the Changes panel on the right. Your notebox stays on its current content until you finalize below — that step merges every resolved note and brings your notebox up to date.",
-  "git.conflict.binary": "binary — resolve manually",
+  "git.conflict.binary": "resolve manually",
+
+  "git.binary.keepMine": "Keep mine",
+  "git.binary.takeTheirs": "Take theirs",
+  "git.binary.keepBoth": "Keep both",
+  "git.binary.bothAdded": "Incoming copy saved as {name}",
+  "git.binary.resolveFailed": "Could not resolve the file",
+
+  "git.settings.heading": "Notebox settings changed on both sides",
+  "git.settings.intro": "Edits to different settings were merged automatically. Pick a value for each setting you both changed:",
+  "git.settings.mine": "Mine: {v}",
+  "git.settings.theirs": "Theirs: {v}",
+  "git.settings.resolveFailed": "Could not resolve the settings",
 
   "git.discard.title": "Discard merge",
   "git.discard.confirm": "Discard this merge and restore the notebox to its last committed state? The incoming changes stay on the remote — you can Sync again later. Any unsaved in-progress resolution is lost.",
 
-  "git.digest.from": "Changes from {author}",
-  "git.digest.dismiss": "Dismiss",
+  "git.digest.from": "Changes merged from {author}",
+  "git.digest.close": "Close",
   "git.digest.oneChange": "1 note changed.",
   "git.digest.changes": "{n} notes changed.",
   "git.digest.status.added": "added",
@@ -349,7 +359,8 @@
   "git.check.n": "{n} updates available",
   "git.check.hint": "Sync to bring them into your notebox.",
 
-  "git.package.modeLabel": "Offline (package handoff)",
+  "git.package.modeLabel": "Import/export changes",
+  "git.sync.heading": "Sync changes",
   "git.package.intro": "No git server: share this notebox by exporting it to a file, and merge changes others send back by importing their file.",
   "git.package.exportAction": "Export package",
   "git.package.importAction": "Import package",
