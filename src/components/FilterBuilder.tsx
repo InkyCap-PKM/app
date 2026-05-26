@@ -1,11 +1,5 @@
-import {
-  Component,
-  createSignal,
-  For,
-  Index,
-  Show,
-} from "solid-js";
-import type { FilterGroup } from "../lib/types";
+import { Component, For, Index, Show, createSignal } from "solid-js";
+import type { FilterGroup, FilterNode } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 
 /** Operators available in the filter builder. */
@@ -18,13 +12,35 @@ const OPERATORS = [
   { value: "!.isEmpty", label: "is not empty" },
 ] as const;
 
-type Combinator = "and" | "or";
+/** Group combinators, mapped to the backend `and`/`or`/`not` keys. The UI
+ *  labels them All / Any / None, following the convention in the reference
+ *  filter UIs (and reading naturally as "All of the following are true"). */
+type Combinator = "and" | "or" | "not";
+
+const COMBINATORS: { value: Combinator; label: string }[] = [
+  { value: "and", label: "All" },
+  { value: "or", label: "Any" },
+  { value: "not", label: "None" },
+];
+
+/** How deep nested groups may go. Keeps the recursive UI bounded — three
+ *  levels is already more than any realistic collection query needs. */
+const MAX_DEPTH = 3;
 
 interface FilterRow {
   property: string;
   operator: string;
   value: string;
 }
+
+// The editor works on a tree of nodes rather than raw expression strings so
+// that nested groups can be added, edited, and removed in place. A node is
+// either a leaf row (one property/operator/value triple) or a group with its
+// own combinator and child nodes. The tree round-trips to the backend
+// `FilterGroup` shape on save.
+type LeafNode = { kind: "leaf"; row: FilterRow };
+type GroupNode = { kind: "group"; combinator: Combinator; members: BuilderNode[] };
+type BuilderNode = LeafNode | GroupNode;
 
 /** Parse a filter expression string into a FilterRow for the UI. */
 function parseFilterRow(expr: string): FilterRow {
@@ -67,7 +83,8 @@ function parseFilterRow(expr: string): FilterRow {
   return { property: trimmed, operator: "==", value: "" };
 }
 
-/** Serialize a FilterRow back to a filter expression string. */
+/** Serialize a FilterRow back to a filter expression string, or "" when the
+ *  row has no property yet (such rows are dropped on save). */
 function serializeFilterRow(row: FilterRow): string {
   const prop = row.property.trim();
   if (!prop) return "";
@@ -84,8 +101,16 @@ function serializeFilterRow(row: FilterRow): string {
     case "==":
     case "!=": {
       const val = row.value.trim();
-      // Booleans and numbers don't need quotes
-      if (val === "true" || val === "false" || !isNaN(Number(val))) {
+      // Booleans, numbers, and property references (this.*, file.*, note[…])
+      // are emitted unquoted — quoting a reference like `this.file.name`
+      // would compare against that literal string instead of the referenced
+      // value, breaking e.g. the default self-exclusion row.
+      if (
+        val === "true" ||
+        val === "false" ||
+        (val !== "" && !isNaN(Number(val))) ||
+        /^(this\.|file\.|note\[)/.test(val)
+      ) {
         return `${prop} ${row.operator} ${val}`;
       }
       return `${prop} ${row.operator} "${val}"`;
@@ -95,54 +120,231 @@ function serializeFilterRow(row: FilterRow): string {
   }
 }
 
+// ── Tree ⇄ FilterGroup conversion ─────────────────────────────────────
+
+/** Read a backend `FilterGroup` into an editable group node. The builder
+ *  presents one combinator per group, so the first present of and/or/not
+ *  wins — which is exactly what the builder ever writes back. */
+function groupToNode(group: FilterGroup | null | undefined): GroupNode {
+  let combinator: Combinator = "and";
+  let members: FilterNode[] = [];
+  if (group?.and) {
+    combinator = "and";
+    members = group.and;
+  } else if (group?.or) {
+    combinator = "or";
+    members = group.or;
+  } else if (group?.not) {
+    combinator = "not";
+    members = group.not;
+  }
+  return {
+    kind: "group",
+    combinator,
+    members: members.map(memberToNode),
+  };
+}
+
+function memberToNode(member: FilterNode): BuilderNode {
+  if (typeof member === "string") {
+    return { kind: "leaf", row: parseFilterRow(member) };
+  }
+  return groupToNode(member);
+}
+
+/** Serialize a node back to a `FilterNode`, or `null` when it carries nothing
+ *  worth saving (an empty row, or a group with no non-empty members). */
+function nodeToMember(node: BuilderNode): FilterNode | null {
+  if (node.kind === "leaf") {
+    return serializeFilterRow(node.row) || null;
+  }
+  return groupToFilter(node);
+}
+
+function groupToFilter(node: GroupNode): FilterGroup | null {
+  const members = node.members
+    .map(nodeToMember)
+    .filter((m): m is FilterNode => m !== null);
+  if (members.length === 0) return null;
+  return { [node.combinator]: members };
+}
+
+// ── Leaf row editor ───────────────────────────────────────────────────
+
+const FilterRowEditor: Component<{
+  row: FilterRow;
+  onChange: (row: FilterRow) => void;
+  onRemove: () => void;
+}> = (props) => {
+  const update = (field: keyof FilterRow, value: string) =>
+    props.onChange({ ...props.row, [field]: value });
+
+  return (
+    <div class="filter-builder__row">
+      <input
+        class="filter-builder__input filter-builder__input--property"
+        type="text"
+        list="filter-property-keys"
+        value={props.row.property}
+        onInput={(e) => update("property", e.currentTarget.value)}
+        placeholder="property"
+      />
+
+      <Dropdown
+        value={props.row.operator}
+        options={OPERATORS.map((op) => ({ value: op.value as string, label: op.label }))}
+        onChange={(v) => update("operator", v)}
+        ariaLabel="Filter operator"
+      />
+
+      <Show when={props.row.operator !== ".isEmpty" && props.row.operator !== "!.isEmpty"}>
+        <input
+          class="filter-builder__input filter-builder__input--value"
+          type="text"
+          value={props.row.value}
+          onInput={(e) => update("value", e.currentTarget.value)}
+          placeholder="value"
+        />
+      </Show>
+
+      <button
+        class="filter-builder__remove"
+        onClick={props.onRemove}
+        title="Remove filter"
+        aria-label="Remove filter"
+      >
+        &times;
+      </button>
+    </div>
+  );
+};
+
+// ── Group editor (recursive) ──────────────────────────────────────────
+
+const FilterGroupEditor: Component<{
+  group: GroupNode;
+  onChange: (group: GroupNode) => void;
+  /** Remove this group from its parent. Absent for the root group. */
+  onRemove?: () => void;
+  depth: number;
+}> = (props) => {
+  const setCombinator = (c: Combinator) =>
+    props.onChange({ ...props.group, combinator: c });
+
+  const updateMember = (i: number, node: BuilderNode) =>
+    props.onChange({
+      ...props.group,
+      members: props.group.members.map((m, idx) => (idx === i ? node : m)),
+    });
+
+  const removeMember = (i: number) =>
+    props.onChange({
+      ...props.group,
+      members: props.group.members.filter((_, idx) => idx !== i),
+    });
+
+  const addLeaf = () => {
+    // Insert the new row just before the first nested group (or at the end if
+    // there are none), so a group's own filter rows stay grouped together
+    // above its sub-groups — order doesn't affect evaluation, only clarity.
+    const members = props.group.members;
+    const firstGroupIdx = members.findIndex((m) => m.kind === "group");
+    const insertAt = firstGroupIdx === -1 ? members.length : firstGroupIdx;
+    const newLeaf: BuilderNode = { kind: "leaf", row: { property: "", operator: "==", value: "" } };
+    props.onChange({
+      ...props.group,
+      members: [...members.slice(0, insertAt), newLeaf, ...members.slice(insertAt)],
+    });
+  };
+
+  const addGroup = () =>
+    props.onChange({
+      ...props.group,
+      members: [
+        ...props.group.members,
+        // A nested group is almost always meant to mix combinators with its
+        // parent, so seed it with the opposite of the parent's.
+        { kind: "group", combinator: props.group.combinator === "and" ? "or" : "and", members: [] },
+      ],
+    });
+
+  const isRoot = () => props.depth === 0;
+
+  return (
+    <div
+      class="filter-builder__group"
+      classList={{ "filter-builder__group--nested": !isRoot() }}
+    >
+      <div class="filter-builder__group-header">
+        <Dropdown<Combinator>
+          class="dropdown--sm"
+          value={props.group.combinator}
+          options={COMBINATORS}
+          onChange={setCombinator}
+          ariaLabel="Match combinator"
+        />
+        <span class="filter-builder__group-caption">of the following are true</span>
+        <Show when={props.onRemove}>
+          <button
+            class="filter-builder__remove filter-builder__remove--group"
+            onClick={() => props.onRemove?.()}
+            title="Remove group"
+            aria-label="Remove group"
+          >
+            &times;
+          </button>
+        </Show>
+      </div>
+
+      <div class="filter-builder__rows">
+        <Index each={props.group.members}>
+          {(member, index) => (
+            <Show
+              when={member().kind === "group"}
+              fallback={
+                <FilterRowEditor
+                  row={(member() as LeafNode).row}
+                  onChange={(row) => updateMember(index, { kind: "leaf", row })}
+                  onRemove={() => removeMember(index)}
+                />
+              }
+            >
+              <FilterGroupEditor
+                group={member() as GroupNode}
+                onChange={(g) => updateMember(index, g)}
+                onRemove={() => removeMember(index)}
+                depth={props.depth + 1}
+              />
+            </Show>
+          )}
+        </Index>
+      </div>
+
+      <div class="filter-builder__add-row">
+        <button class="filter-builder__add" onClick={addLeaf}>
+          + Add filter
+        </button>
+        <Show when={props.depth < MAX_DEPTH}>
+          <button class="filter-builder__add" onClick={addGroup}>
+            + Add filter group
+          </button>
+        </Show>
+      </div>
+    </div>
+  );
+};
+
+// ── Top-level builder ─────────────────────────────────────────────────
+
 const FilterBuilder: Component<{
   filters: FilterGroup | null | undefined;
   allKeys: string[];
   onSave: (filters: FilterGroup | null) => void;
   onClose: () => void;
 }> = (props) => {
-  // Parse initial state
-  const initial = props.filters;
-  const initialCombinator: Combinator = initial?.or ? "or" : "and";
-  const initialExpressions = initial?.or ?? initial?.and ?? [];
-  const initialRows = initialExpressions.map((expr) =>
-    parseFilterRow(typeof expr === "string" ? expr : String(expr)),
-  );
+  const [root, setRoot] = createSignal<GroupNode>(groupToNode(props.filters));
 
-  const [combinator, setCombinator] = createSignal<Combinator>(initialCombinator);
-  const [rows, setRows] = createSignal<FilterRow[]>(
-    initialRows.length > 0 ? initialRows : [],
-  );
-
-  function addRow() {
-    setRows([...rows(), { property: "file.name", operator: "==", value: "" }]);
-  }
-
-  function removeRow(index: number) {
-    setRows(rows().filter((_, i) => i !== index));
-  }
-
-  function updateRow(index: number, field: keyof FilterRow, value: string) {
-    setRows(
-      rows().map((r, i) =>
-        i === index ? { ...r, [field]: value } : r,
-      ),
-    );
-  }
-
-  function handleSave() {
-    const expressions = rows()
-      .map(serializeFilterRow)
-      .filter(Boolean);
-
-    if (expressions.length === 0) {
-      props.onSave(null);
-    } else if (combinator() === "or") {
-      props.onSave({ or: expressions });
-    } else {
-      props.onSave({ and: expressions });
-    }
-  }
+  const handleSave = () => props.onSave(groupToFilter(root()));
 
   return (
     <div class="filter-builder">
@@ -158,83 +360,11 @@ const FilterBuilder: Component<{
         </div>
       </div>
 
-      <Show when={rows().length > 0}>
-        <div class="filter-builder__combinator">
-          <label>
-            <input
-              type="radio"
-              name="combinator"
-              checked={combinator() === "and"}
-              onChange={() => setCombinator("and")}
-            />
-            Match ALL (AND)
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="combinator"
-              checked={combinator() === "or"}
-              onChange={() => setCombinator("or")}
-            />
-            Match ANY (OR)
-          </label>
-        </div>
-      </Show>
+      <FilterGroupEditor group={root()} onChange={setRoot} depth={0} />
 
-      <div class="filter-builder__rows">
-        <Index each={rows()}>
-          {(row, index) => (
-            <div class="filter-builder__row">
-              <input
-                class="filter-builder__input filter-builder__input--property"
-                type="text"
-                list="filter-property-keys"
-                value={row().property}
-                onInput={(e) => updateRow(index, "property", e.currentTarget.value)}
-                placeholder="property"
-              />
-
-              <Dropdown
-                value={row().operator}
-                options={OPERATORS.map((op) => ({
-                  value: op.value as string,
-                  label: op.label,
-                }))}
-                onChange={(v) => updateRow(index, "operator", v)}
-                ariaLabel="Filter operator"
-              />
-
-              <Show when={row().operator !== ".isEmpty" && row().operator !== "!.isEmpty"}>
-                <input
-                  class="filter-builder__input filter-builder__input--value"
-                  type="text"
-                  value={row().value}
-                  onInput={(e) => updateRow(index, "value", e.currentTarget.value)}
-                  placeholder="value"
-                />
-              </Show>
-
-              <button
-                class="filter-builder__remove"
-                onClick={() => removeRow(index)}
-                title="Remove filter"
-              >
-                &times;
-              </button>
-            </div>
-          )}
-        </Index>
-      </div>
-
-      <button class="filter-builder__add" onClick={addRow}>
-        + Add filter
-      </button>
-
-      {/* Datalist for property key suggestions */}
+      {/* Datalist for property key suggestions, shared by every leaf row. */}
       <datalist id="filter-property-keys">
-        <For each={props.allKeys}>
-          {(key) => <option value={key} />}
-        </For>
+        <For each={props.allKeys}>{(key) => <option value={key} />}</For>
       </datalist>
     </div>
   );

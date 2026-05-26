@@ -406,43 +406,74 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
     }
 }
 
-/// Evaluate a filter group (and/or combinator) against a note.
+/// Evaluate a single member of a filter list against a note. A member is
+/// either a leaf expression string (`collection.contains("x")`) or a nested
+/// filter group (a YAML mapping with its own `and`/`or`/`not`). Anything that
+/// fails to parse — a malformed expression or an unrecognised shape — counts
+/// as "does not match" so a broken row fails closed in an AND list and is
+/// simply skipped in an OR list, never matching a note by accident.
+fn evaluate_filter_member(member: &serde_yaml::Value, note: &NoteMetadata, self_path: &Path) -> bool {
+    match member {
+        serde_yaml::Value::String(expr_str) => match parse_filter_expr(expr_str) {
+            Ok(expr) => evaluate(&expr, note, self_path),
+            Err(_) => false,
+        },
+        serde_yaml::Value::Mapping(_) => {
+            match serde_yaml::from_value::<crate::collection_parser::model::FilterGroup>(
+                member.clone(),
+            ) {
+                Ok(group) => evaluate_filter_group(&group, note, self_path),
+                Err(_) => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Evaluate a filter group against a note. Combinators are recursive — any
+/// member of an `and`/`or`/`not` list may itself be a nested group — which is
+/// what lets a collection express arbitrary boolean queries like
+/// `(A or B) and C`.
+///
+/// When more than one combinator is present they are AND-ed together: the
+/// group passes when all `and` members pass, *and* at least one `or` member
+/// passes, *and* no `not` member passes. An absent or empty list is a
+/// pass-through, so a single-combinator group behaves as a plain AND / OR /
+/// NONE.
 pub fn evaluate_filter_group(
     group: &crate::collection_parser::model::FilterGroup,
     note: &NoteMetadata,
     self_path: &Path,
 ) -> bool {
-    if let Some(and_filters) = &group.and {
-        for filter_val in and_filters {
-            if let serde_yaml::Value::String(expr_str) = filter_val {
-                match parse_filter_expr(expr_str) {
-                    Ok(expr) => {
-                        if !evaluate(&expr, note, self_path) {
-                            return false;
-                        }
-                    }
-                    Err(_) => return false,
-                }
-            }
+    if let Some(members) = &group.and {
+        if !members
+            .iter()
+            .all(|m| evaluate_filter_member(m, note, self_path))
+        {
+            return false;
         }
-        true
-    } else if let Some(or_filters) = &group.or {
-        for filter_val in or_filters {
-            if let serde_yaml::Value::String(expr_str) = filter_val {
-                match parse_filter_expr(expr_str) {
-                    Ok(expr) => {
-                        if evaluate(&expr, note, self_path) {
-                            return true;
-                        }
-                    }
-                    Err(_) => continue,
-                }
-            }
-        }
-        false
-    } else {
-        true
     }
+
+    if let Some(members) = &group.or {
+        if !members.is_empty()
+            && !members
+                .iter()
+                .any(|m| evaluate_filter_member(m, note, self_path))
+        {
+            return false;
+        }
+    }
+
+    if let Some(members) = &group.not {
+        if members
+            .iter()
+            .any(|m| evaluate_filter_member(m, note, self_path))
+        {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[cfg(test)]
@@ -708,6 +739,132 @@ mod tests {
         let expr = parse_filter_expr(r#"nonexistent == "something""#).unwrap();
         let note = make_note(vec![]);
         assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+    }
+
+    // ── Nested filter group evaluation ──────────────────────────────
+    //
+    // The recursive group model is the load-bearing piece behind the
+    // "(A or B) and C" collection filter, so exercise the combinators and
+    // one real nesting case directly.
+
+    use crate::collection_parser::model::FilterGroup;
+
+    fn yaml_group(yaml: &str) -> FilterGroup {
+        serde_yaml::from_str(yaml).expect("valid filter group YAML")
+    }
+
+    #[test]
+    fn test_group_and_requires_all() {
+        let group = yaml_group(
+            r#"
+and:
+  - file.ext == "typ"
+  - file.name != this.file.name
+"#,
+        );
+        let p = Path::new("/notebox/Collection.collection");
+
+        let typ_note = make_note(vec![
+            ("file.ext", PropertyValue::String("typ".into())),
+            ("file.name", PropertyValue::String("Note".into())),
+        ]);
+        assert!(evaluate_filter_group(&group, &typ_note, p));
+
+        let pdf_note = make_note(vec![
+            ("file.ext", PropertyValue::String("pdf".into())),
+            ("file.name", PropertyValue::String("Note".into())),
+        ]);
+        assert!(!evaluate_filter_group(&group, &pdf_note, p));
+    }
+
+    #[test]
+    fn test_group_or_requires_any() {
+        let group = yaml_group(
+            r#"
+or:
+  - file.ext == "typ"
+  - file.ext == "md"
+"#,
+        );
+        let p = Path::new("/notebox/Collection.collection");
+
+        let md_note = make_note(vec![("file.ext", PropertyValue::String("md".into()))]);
+        assert!(evaluate_filter_group(&group, &md_note, p));
+
+        let pdf_note = make_note(vec![("file.ext", PropertyValue::String("pdf".into()))]);
+        assert!(!evaluate_filter_group(&group, &pdf_note, p));
+    }
+
+    #[test]
+    fn test_group_not_excludes() {
+        let group = yaml_group(
+            r#"
+not:
+  - file.ext == "pdf"
+"#,
+        );
+        let p = Path::new("/notebox/Collection.collection");
+
+        let typ_note = make_note(vec![("file.ext", PropertyValue::String("typ".into()))]);
+        assert!(evaluate_filter_group(&group, &typ_note, p));
+
+        let pdf_note = make_note(vec![("file.ext", PropertyValue::String("pdf".into()))]);
+        assert!(!evaluate_filter_group(&group, &pdf_note, p));
+    }
+
+    #[test]
+    fn test_group_empty_or_is_pass_through() {
+        // An empty `or` list must not exclude everything — it is "no
+        // constraint", matching how the builder leaves a fresh group.
+        let group = yaml_group("or: []");
+        let note = make_note(vec![("file.ext", PropertyValue::String("typ".into()))]);
+        assert!(evaluate_filter_group(
+            &group,
+            &note,
+            Path::new("/notebox/x.collection")
+        ));
+    }
+
+    #[test]
+    fn test_nested_group_a_or_b_and_c() {
+        // The motivating query: a note belongs when it is tagged for the
+        // collection OR sits in the Research folder, AND it is not the
+        // collection file itself.
+        let group = yaml_group(
+            r#"
+and:
+  - file.name != this.file.name
+  - or:
+      - collection.contains("my-paper")
+      - file.folder.contains("Research")
+"#,
+        );
+        let p = Path::new("/notebox/my-paper.collection");
+
+        // Tagged member.
+        let tagged = make_note(vec![
+            ("file.name", PropertyValue::String("Tagged".into())),
+            (
+                "collection",
+                PropertyValue::List(vec![PropertyValue::String("my-paper".into())]),
+            ),
+            ("file.folder", PropertyValue::String("notebox/inbox".into())),
+        ]);
+        assert!(evaluate_filter_group(&group, &tagged, p));
+
+        // Untagged but in the Research folder — the OR alternative.
+        let in_folder = make_note(vec![
+            ("file.name", PropertyValue::String("Folder".into())),
+            ("file.folder", PropertyValue::String("notebox/Research".into())),
+        ]);
+        assert!(evaluate_filter_group(&group, &in_folder, p));
+
+        // Neither tagged nor in the folder — excluded.
+        let outsider = make_note(vec![
+            ("file.name", PropertyValue::String("Outside".into())),
+            ("file.folder", PropertyValue::String("notebox/inbox".into())),
+        ]);
+        assert!(!evaluate_filter_group(&group, &outsider, p));
     }
 
     #[test]

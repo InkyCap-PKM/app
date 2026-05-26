@@ -1300,12 +1300,21 @@ export async function saveAuditReport(): Promise<string> {
   return invoke<string>("save_audit_report");
 }
 
+/// Result of a static-site export. `files` are the artifacts written;
+/// `skippedNotes` lists notes that couldn't be compiled (as "name: reason")
+/// and were left out, so the caller can tell the user what to fix. A run
+/// where every note fails rejects instead.
+export interface StaticSiteExportResult {
+  files: string[];
+  skippedNotes: string[];
+}
+
 export async function exportCollectionStaticSite(
   collectionPath: string,
   viewName: string,
   outputDir: string,
-): Promise<string[]> {
-  return invoke<string[]>("export_collection_static_site", {
+): Promise<StaticSiteExportResult> {
+  return invoke<StaticSiteExportResult>("export_collection_static_site", {
     collectionPath,
     viewName,
     outputDir,

@@ -4,6 +4,11 @@ import * as ipc from "../lib/ipc";
 import type { Contributor } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 
+/// Sentinel value for the role select's "Other…" entry. A row in this mode
+/// stores a free-text `biblio_role` the user types, instead of one of the
+/// catalog's known role values.
+const OTHER_ROLE = "__other__";
+
 /// The Book Metadata contributors table: each row is a contributor with a
 /// display name, a bibliographic role (drives the byline), and CRediT roles
 /// (drive the optional contributions statement).
@@ -33,6 +38,21 @@ const ContributorsEditor: Component<{
   const [creditOn, setCreditOn] = createSignal(props.includeCreditStatement);
   // Which row's CRediT checklist is expanded (-1 = none).
   const [expanded, setExpanded] = createSignal(-1);
+
+  const knownRoleValues = () =>
+    new Set((catalogs()?.biblio_roles ?? []).map((o) => o.value));
+
+  // What the role select should display for a stored value. Any non-null role
+  // that isn't a catalog value (a custom string, or the empty placeholder set
+  // when "Other…" was just chosen) shows as "Other…". Gated on the catalog
+  // being loaded so a known role isn't briefly mistaken for custom on first
+  // paint.
+  const roleSelectValue = (role: string | null | undefined): string => {
+    if (catalogs() && role != null && !knownRoleValues().has(role)) {
+      return OTHER_ROLE;
+    }
+    return role || "author";
+  };
 
   // Push current state up to the parent. Plain-object clones so the parent
   // never holds the store's reactive proxies.
@@ -82,14 +102,34 @@ const ContributorsEditor: Component<{
             />
             <Dropdown<string>
               class="contributors-editor__role"
-              value={row.biblio_role || "author"}
-              options={(catalogs()?.biblio_roles ?? []).map((o) => ({ value: o.value, label: o.label }))}
+              value={roleSelectValue(row.biblio_role)}
+              options={[
+                ...(catalogs()?.biblio_roles ?? []).map((o) => ({ value: o.value, label: o.label })),
+                { value: OTHER_ROLE, label: "Other…" },
+              ]}
               onChange={(v) => {
-                setRows(i(), "biblio_role", v === "author" ? null : v);
+                if (v === OTHER_ROLE) {
+                  // Enter custom mode with an empty value; the text field
+                  // below captures the typed role. An empty custom role is
+                  // treated as "author" by the export renderer.
+                  setRows(i(), "biblio_role", "");
+                } else {
+                  setRows(i(), "biblio_role", v === "author" ? null : v);
+                }
                 flush();
               }}
               ariaLabel="Bibliographic role"
             />
+            <Show when={roleSelectValue(row.biblio_role) === OTHER_ROLE}>
+              <input
+                type="text"
+                class="settings__text-input contributors-editor__role-other"
+                placeholder="Custom role"
+                value={row.biblio_role ?? ""}
+                onInput={(e) => setRows(i(), "biblio_role", e.currentTarget.value)}
+                onBlur={flush}
+              />
+            </Show>
             <button
               type="button"
               class="collection-table__toolbar-btn contributors-editor__btn"

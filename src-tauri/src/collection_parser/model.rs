@@ -351,12 +351,25 @@ fn default_sort_direction() -> String {
     "ASC".to_string()
 }
 
+/// A boolean group of filters. Each combinator holds a list of *members*,
+/// and a member is either a leaf expression string (e.g.
+/// `collection.contains("paper")`) or a nested `FilterGroup` (a YAML mapping
+/// with its own `and`/`or`/`not`). This recursion is what lets a collection
+/// express `(A or B) and C` — see `evaluate_filter_group`.
+///
+/// When more than one combinator is present they are AND-ed together:
+/// the group passes when its `and` members all pass, *and* at least one of
+/// its `or` members passes, *and* none of its `not` members pass. An absent
+/// or empty combinator is a pass-through, so the common single-combinator
+/// case behaves exactly as before.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterGroup {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub and: Option<Vec<serde_yaml::Value>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub or: Option<Vec<serde_yaml::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not: Option<Vec<serde_yaml::Value>>,
 }
 
 /// Parse a `.collection` file from its YAML content.
@@ -369,9 +382,28 @@ pub fn serialize_collection_file(base: &CollectionFile) -> Result<String, serde_
     serde_yaml::to_string(base)
 }
 
+/// Wrap a list of leaf filter expressions in a nested `{ or: [...] }` group
+/// value, suitable for embedding as a member of a parent group's list.
+/// Built as a mapping directly (rather than `serde_yaml::to_value`) so it is
+/// infallible — no `unwrap` in a construction path.
+fn or_group_value(exprs: Vec<String>) -> serde_yaml::Value {
+    let mut map = serde_yaml::Mapping::new();
+    map.insert(
+        serde_yaml::Value::String("or".to_string()),
+        serde_yaml::Value::Sequence(exprs.into_iter().map(serde_yaml::Value::String).collect()),
+    );
+    serde_yaml::Value::Mapping(map)
+}
+
 /// Create a default CollectionFile for a named collection.
-/// Includes a default filter `collection.contains("<name>")` so that notes
-/// with `#note(collection: ("name"))` are automatically included.
+///
+/// The default filter is `All[ file.name != this.file.name, Any[
+/// collection.contains("<name>") ] ]`: the outer AND keeps the collection
+/// file out of its own results and is where the user adds narrowing rules,
+/// while the inner OR group is where membership lives — notes tagged with
+/// `#note(collection: ("name"))` are auto-included, and the user can add
+/// alternatives there (a folder match, another tag) without forcing every
+/// rule to hold at once.
 pub fn default_collection_file_for(name: &str) -> CollectionFile {
     let collection_filter = format!(r#"collection.contains("{}")"#, name);
     CollectionFile {
@@ -385,10 +417,10 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
         filters: Some(FilterGroup {
             and: Some(vec![
                 serde_yaml::Value::String("file.name != this.file.name".to_string()),
-                serde_yaml::Value::String(format!(r#"file.ext == "typ""#)),
-                serde_yaml::Value::String(collection_filter),
+                or_group_value(vec![collection_filter]),
             ]),
             or: None,
+            not: None,
         }),
         formulas: None,
         summaries: None,
@@ -535,8 +567,26 @@ views:
         assert!(base.filters.is_some());
         let filters = base.filters.clone().unwrap();
         let and = filters.and.unwrap();
-        assert_eq!(and.len(), 3);
-        assert_eq!(and[2], serde_yaml::Value::String(r#"collection.contains("my-paper")"#.to_string()));
+        // Default is now All[ file-exclusion, Any[ collection.contains ] ]:
+        // two top-level AND members, the second a nested OR group.
+        assert_eq!(and.len(), 2);
+        assert_eq!(
+            and[0],
+            serde_yaml::Value::String("file.name != this.file.name".to_string())
+        );
+
+        // The membership rule lives inside a nested `{ or: [...] }` group so
+        // the user can add alternatives (folder, tag) without forcing all to
+        // hold at once.
+        let nested = and[1].as_mapping().expect("second member is a group");
+        let or_members = nested
+            .get(serde_yaml::Value::String("or".to_string()))
+            .and_then(|v| v.as_sequence())
+            .expect("nested group has an `or` list");
+        assert_eq!(
+            or_members[0],
+            serde_yaml::Value::String(r#"collection.contains("my-paper")"#.to_string())
+        );
 
         // Round-trip
         let yaml = serialize_collection_file(&base).unwrap();
