@@ -607,6 +607,17 @@ export interface GitSetupResult {
   status: GitStatusSummary;
 }
 
+/** Outcome of `gitExportPackage` (Phase 7 offline package handoff). Mirrors
+ *  `commands/git.rs::PackageExportResult`. */
+export interface GitPackageExportResult {
+  /** Where the package was written. */
+  path: string;
+  /** Files written from `.git` (objects, refs, etc.). */
+  fileCount: number;
+  /** Uncompressed bytes of `.git` packaged. */
+  bytes: number;
+}
+
 // ============================================================================
 // Journal Scroll — ScrollQuery primitive.
 //

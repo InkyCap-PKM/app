@@ -5,19 +5,66 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-6 DONE + COMMITTED on `notebox-git-collab` (HEAD `800cc01`, 2026-05-25). Sync model (Sync + read-only Check for updates), per-note version history/restore, and 5 rounds of in-app-validation UX fixes all committed. 557 lib tests green, 0 warnings, tsc + vite + utf8/path-safety green. **NEXT = rebuild the app, finish the in-app 2-clone validation from a CLEAN remote, then Phase 7 (offline package handoff — see its section; rides the Phase 5 engine).** Deferred: opt-in 'review every incoming change' toggle (off by default); binary / genuine-settings.json conflict resolution UI (Phase 3b — finalize keeps-mine for binaries). Full state + commit map in the ⮕⮕ RESUME HERE block at top."
+status: "Phase 0-6 DONE + COMMITTED (HEAD `f1d52ba`, 2026-05-25); Phase 0–6 in-app validation confirmed. **UNCOMMITTED (session 2, all gates green): Phase 7 offline package handoff + review-incoming mode + collaboration-pane bounce fix + .zip extension.** Phase 7 = whole-`.git` zip export/import; package mode = empty remote; rides Phase 5 engine via run_sync(push=false) against a transient local-path remote; optional AES. Review-incoming = per-notebox/per-machine toggle: Sync+import pause and stage every incoming note as suggestions (clean=mine→merged, no data loss), off by default. Bounce fix = App.tsx Round-6 effect bounced the pane on toggle-on (regression). 565 lib tests (+8), 0 warnings, tsc+vite+safety green; clippy 108 pre-existing/0 new. **NEXT = rebuild, in-app-validate, then COMMIT.** Deferred (user-validated, not built): two export modes — full (onboard new collaborator) vs incremental update (git2 0.21 HAS PackBuilder → feasible, corrects earlier 'no API'); Export/Import only in package-mode panel (UI gate); binary/settings.json conflict UI (Phase 3b). Full detail in ⮕⮕ RESUME HERE + Phase 7 — DONE."
 ---
 
-## ⮕⮕ RESUME HERE (next session) — rebuild + validate, then Phase 7
+## ⮕⮕ RESUME HERE (next session) — rebuild + validate, then commit
 
-**State at handoff (2026-05-25):** **Phases 0–6 are DONE + COMMITTED** on
-`notebox-git-collab` (HEAD `800cc01`). Working tree clean. All gates green:
-`cargo test --lib` **557**, 0 warnings, `tsc`, `npm run build`, utf8/path-safety.
+**State at handoff (2026-05-25, session 2):** **Phases 0–6 DONE + COMMITTED**
+(HEAD `f1d52ba`); **Phase 7 (offline package handoff) + the review-incoming mode
++ in-session fixes DONE but UNCOMMITTED**. User confirmed Phase 0–6 in-app
+validation. All gates green: `cargo test --lib` **565** (+8 this session), 0
+compiler warnings, `tsc`, `npm run build`, utf8/path-safety. clippy 108
+pre-existing / 0 new.
 
-**THE FIRST THING TO DO: rebuild the app** (`npm run tauri dev` or a release
-build). Everything from `e09fe27` onward — i.e. all the validation fixes below —
-is committed but **not in the running instance the user has been testing**, so
-the next validation pass must start from a fresh build.
+**THE FIRST THING TO DO: rebuild the app**, then in-app-validate (Phase 7 handoff
++ the review-incoming toggle), **then commit**. Everything in the working tree is
+this session's work — Phase 7 + the toggle-bounce fix + `.zip` extension +
+review-incoming. Nothing else pending.
+
+**This session's uncommitted work (all green):**
+1. **Phase 7 offline package handoff** (see the Phase 7 — DONE section).
+2. **Collaboration-pane bounce fix** ([src/App.tsx]) — the Round-6 "leave the
+   pane when not collaborative" effect (commit `800cc01`) bounced the pane away
+   when toggling collaboration *on* (the SetupForm opens it on a not-yet-collab
+   notebox). Rewritten to fire only on the `collaborative: true→false`
+   transition (a switch / Stop-collaborating), not on deliberate open. Strict
+   subset of the old condition. **This was a real regression the user hit.**
+3. **Package extension → `.zip`** (was `.inkypkg`): export default `notebox.zip`;
+   import still accepts `.inkypkg` for older test files.
+4. **Review-incoming mode** (the deferred "review every incoming change"):
+   per-notebox, per-machine toggle (`NoteboxLocalState.review_incoming`, off by
+   default) in the Collaboration panel. When on, Sync **and** package import
+   pause and stage *every* incoming added/modified note as suggestions — clean
+   ones rendered **mine→merged** (so accept takes theirs and never drops local
+   edits; conflicts still base→mine→theirs), then finalize via the existing
+   path. Backend: `run_sync(.., review)` + `run_review` + `stage_suggestion_item`
+   refactor; `git_get/set_review_incoming`; `save_settings` now load-merges
+   `local.json` so the flag survives. +2 tests incl.
+   `review_mode_accept_preserves_local_edit_on_clean_merge` (the no-data-loss
+   guarantee). Frontend: store `reviewIncoming`/`setReviewIncoming`, panel toggle
+   row, ipc, i18n (`git.review.toggle*`).
+
+**Phase 7 summary:** export a notebox's whole `.git` to one (optionally AES-256)
+file; import it as a new notebox (case A: clone+drop-origin) or reconcile into an
+existing one (case B: transient local-path remote + `run_sync(push=false)` →
+conflicts pause/finalize like Sync). Package mode = empty
+`NoteboxGitConfig.remote`. Full detail + decisions in the Phase 7 — DONE section.
+
+**Future export work (user-validated design, NOT built):** export currently
+ships the **whole `.git`** every time. Two-mode plan, mirroring git
+clone-vs-fetch: **Full / "Complete package"** (whole `.git`, the only thing that
+onboards a *new* collaborator — what we have) + **Update / incremental** (only the
+commits the peer lacks; needs per-peer basis tracking; a separate "Export
+update" button). **Correction to an earlier note:** git2 0.21 lacks a `bundle`
+API but **does** expose `PackBuilder` (`insert_walk` over a revwalk), so both a
+compact single-packfile *full* export (smaller/faster for big noteboxes — the
+135 MB case) and true incremental are feasible without a bundle API. Deferred,
+not blocked.
+
+**(Phase 0–6 historical note)** Everything from `e09fe27` onward is committed but
+was not in the instance the user tested mid-session-1; the user has since
+confirmed validation. The Phase 5/6 commit map is preserved below.
 
 **Commit map (this collaboration effort, newest last):**
 - `2ba46cc` Phase 5 sync model (git_sync / git_check_updates / git_sync_finalize)
@@ -277,7 +324,70 @@ never rewrites history.
 tab is view-only today); a true read-only editor state (the scratch tab is
 technically editable but inconsequential — gitignored, watcher-ignored).
 
-## Phase 7 — Offline package handoff (server-less transport) — ROADMAP
+## Phase 7 — Offline package handoff (server-less transport) — DONE (2026-05-25, uncommitted)
+
+**Built + all gates green** (`cargo test --lib` **563**, 0 compiler warnings,
+tsc, vite build, utf8/path-safety). **Not yet committed; not yet in-app
+validated** (the running instance predates it — rebuild before validating).
+
+**Decisions taken (the section below was the roadmap; these resolve its open Qs):**
+- **Transport = whole-`.git` zip.** git2 0.21 exposes **no bundle API**
+  (confirmed — nothing in the crate), so incremental `git bundle` stays deferred.
+- **`.git`-only** (no working tree): it is a complete repo; the working tree is
+  reconstructed on import (clone/checkout), and the gitignored per-machine
+  scratch is correctly absent. Confirmed against the `.gitignore` rationale.
+- **Package mode = empty `NoteboxGitConfig.remote`** (no new field). Documented
+  via `NoteboxGitConfig::is_package_mode()` (backend) / `packageMode()` (store).
+- **Encryption optional, off by default, per-operation password** (not keychain —
+  the recipient needs it out-of-band). Reuses the AES-256 `ZipBuilder`.
+- **Rides the Phase 5 engine:** `run_sync` gained a `push: bool`; import points a
+  transient local-path remote at the extracted package and calls
+  `run_sync(.., push=false)` — conflicts pause + finalize exactly like a Sync
+  (`git_sync_finalize(false)`). `set_remote` is skipped on an empty remote.
+
+**What shipped:**
+- **[git/package.rs]** (new) — `export(root, dest, password)` zips the whole
+  `.git`; `extract_to_temp(archive, password)` unpacks to a temp staging repo
+  with zip-slip defence (entries must be under `.git/`, no `..`/absolute
+  components, never materialized as symlinks). 4 unit tests (round-trip,
+  encrypted + wrong-password, reject-outside-`.git`, reject-traversal).
+- **[git/backend.rs]** — `remove_remote(name)` (idempotent; drops the transient
+  origin a first-time import leaves behind).
+- **[commands/git.rs]** — `git_export_package`, `git_import_package` (case B:
+  reconcile into the open notebox), `git_import_package_as_notebox` (case A: new
+  notebox via `clone_into` + drop origin), `git_setup_package_handoff` (empty
+  remote). `run_sync(root, git, push)` + empty-remote `set_remote` guards in
+  run_sync/run_check/run_finalize; `apply_setup` empty-remote-safe. 2 e2e tests
+  (clean divergent merge + conflict→finalize-no-push via a local package).
+  Registered in lib.rs.
+- **Frontend** — `types.ts` (`GitPackageExportResult`); `ipc.ts` (4 wrappers);
+  `stores/git.ts` (`packageMode()`, `setupPackageHandoff`, `exportPackage`,
+  `importPackage` — import routes through `applyOutcome(.., false)` to reuse the
+  ConflictView/DigestView + finalize-without-push); `GitCollaborationPanel.tsx`
+  (setup "Offline (package handoff)" toggle hiding remote/token; package-mode
+  `PackageActions` view = Export/Import + one optional shared password field via
+  save()/open() dialogs; Manage Save routes empty-remote→package, remote→server);
+  `SettingsPanel.tsx` ("Import package" → new-notebox flow beside Clone, mirrors
+  clone register+open); `commands.ts` (`git:export-package`/`git:import-package`
+  open the panel); en.json (`git.setup.offline*`, `git.package.*`,
+  `git.toast.export*/import*`, `command.git.*Package`). No new CSS (reused
+  `git-panel__*` / `settings__*` classes).
+
+**Known limits / deferred:** incremental bundles (no git2 API); a server-backed
+notebox does **not** surface Export/Import in the panel yet (only package-mode
+does — the backend supports export on any repo, so this is a UI gate only);
+command-palette export/import open the panel rather than driving the dialog
+directly (password lives inline in the panel). Binary-conflict + review-all
+limits from Phase 3b/5 still stand and apply to import the same as Sync.
+
+**⮕ NEXT: rebuild, then in-app-validate the package handoff** (export from one
+notebox → import-as-new-notebox into an empty folder; edit both sides → export →
+import-into-existing for a clean merge and a conflict→finalize; encrypted package
+with right/wrong password), **then commit.**
+
+---
+
+## Phase 7 — Offline package handoff (server-less transport) — original ROADMAP (HISTORICAL)
 
 **Idea (user, 2026-05-24):** collaborate with no hosted git server. Export the
 notebox **with its git history** to a single file, send it however (email, USB,

@@ -6,14 +6,12 @@ import {
   Settings,
   LayoutTemplate,
   Search,
-  Handshake,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
 import type { CreationRule } from "../lib/types";
 import { openTab } from "../stores/tabs";
 import { toolbarRules, triggerCreationRule } from "../stores/creation-rules";
-import { collaborative, pendingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 import RuleIcon from "./RuleIcon";
 import { toastError } from "../stores/toasts";
@@ -102,26 +100,9 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           </Show>
         </div>
         <div class="vertical-toolbar__bottom">
-          {/* Collaboration entry point: only shown for a notebox that has git
-              collaboration enabled (per the per-notebox opt-in in Settings).
-              Sits just above the theme switcher. The badge mirrors the count
-              of changed notes pending review. */}
-          <Show when={collaborative()}>
-            <button
-              class={`vertical-toolbar__btn vertical-toolbar__collab-btn${props.mode() === "collaboration" ? " vertical-toolbar__btn--active" : ""}`}
-              onClick={() => {
-                props.setMode("collaboration");
-                if (leftCollapsed()) setLeftCollapsed(false);
-              }}
-              title={t("git.toolbar.title")}
-              aria-label={t("git.toolbar.title")}
-            >
-              <Handshake size={18} />
-              <Show when={pendingCount() > 0}>
-                <span class="vertical-toolbar__badge">{pendingCount()}</span>
-              </Show>
-            </button>
-          </Show>
+          {/* Collaboration has no toolbar button: a collaborative notebox is
+              reached from the status-bar chip (which also shows its state),
+              the command palette, or Settings › Configure. */}
           <button
             class="vertical-toolbar__btn"
             onClick={toggleTheme}

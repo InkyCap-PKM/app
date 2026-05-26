@@ -178,6 +178,17 @@ impl GitBackend {
             .and_then(|r| r.url().ok().map(str::to_string))
     }
 
+    /// Delete the named remote (and its remote-tracking refs). Idempotent: a
+    /// missing remote is a no-op. Used to drop the transient local-path remote a
+    /// first-time package import leaves behind (it pointed at a temp dir).
+    pub fn remove_remote(&self, name: &str) -> Result<()> {
+        match self.repo.remote_delete(name) {
+            Ok(()) => Ok(()),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     // ── Head & status ────────────────────────────────────────────────────
 
     /// `(branch, head_oid)` of the current head, or `None` on an unborn

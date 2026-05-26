@@ -26,6 +26,9 @@
 //!   (the conflict-rendering core).
 //! - [`history`] — the `.inkycap/history/` scratch lifecycle for read-only
 //!   version-view tabs (Phase 6).
+//! - [`package`] — offline package handoff (Phase 7): zip a notebox's whole
+//!   `.git` to a file and extract a received package to a staging repo, so a
+//!   notebox can collaborate with no hosted git server.
 //!
 //! Per-notebox git configuration ([`crate::notebox_settings::NoteboxGitConfig`])
 //! lives in the notebox settings, not globally and not in a `.collection` file.
@@ -33,6 +36,7 @@
 pub mod auth;
 pub mod backend;
 pub mod history;
+pub mod package;
 pub mod staging;
 pub mod suggest;
 

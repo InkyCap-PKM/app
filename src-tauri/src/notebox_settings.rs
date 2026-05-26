@@ -78,10 +78,24 @@ pub struct NoteboxStartupSettings {
 #[serde(default)]
 pub struct NoteboxGitConfig {
     /// Remote URL — SSH (`git@host:owner/repo.git`) or HTTPS
-    /// (`https://host/owner/repo.git`).
+    /// (`https://host/owner/repo.git`). **Empty in package-handoff mode**: a
+    /// server-less notebox that collaborates by exporting/importing its git
+    /// history as a file (see [`Self::is_package_mode`] and the Phase 7 package
+    /// commands in `commands/git.rs`).
     pub remote: String,
     /// Branch that collaboration tracks (e.g. `"main"`).
     pub branch: String,
+}
+
+impl NoteboxGitConfig {
+    /// Whether this notebox collaborates by offline package handoff rather than
+    /// a hosted git server. The single source of truth for the invariant
+    /// "empty `remote` ⇒ no server": Sync/Check are not offered, and gestures
+    /// route through Export/Import package instead. A repo can still gain a
+    /// server later by setting a `remote`.
+    pub fn is_package_mode(&self) -> bool {
+        self.remote.trim().is_empty()
+    }
 }
 
 /// Per-machine notebox state that must **not** travel through git
@@ -101,6 +115,12 @@ pub struct NoteboxGitConfig {
 pub struct NoteboxLocalState {
     /// Notebox-relative path of the last active file on *this* machine.
     pub last_active_file: Option<String>,
+    /// When set, a Sync / package import that pulls incoming changes **pauses**
+    /// and stages every incoming note as inline suggestions to review before
+    /// merging, instead of auto-merging clean changes silently. A per-machine
+    /// workflow preference (it doesn't travel to collaborators), off by default.
+    /// Read by `commands::git::run_sync`.
+    pub review_incoming: bool,
 }
 
 /// Journal Scroll settings. Entirely per-notebox: each notebox has its own
@@ -227,13 +247,12 @@ pub fn load_settings(notebox_root: &Path) -> NoteboxSettings {
 /// gitignored `local.json`; the shared `settings.json` always records it as
 /// `null` so device-specific cursor state never travels through git.
 pub fn save_settings(notebox_root: &Path, settings: &NoteboxSettings) -> Result<()> {
-    // 1. Per-machine state → local.json.
-    save_local_state(
-        notebox_root,
-        &NoteboxLocalState {
-            last_active_file: settings.startup.last_active_file.clone(),
-        },
-    )?;
+    // 1. Per-machine state → local.json. Load-merge so other per-machine fields
+    //    (e.g. `review_incoming`) that aren't part of `NoteboxSettings` survive
+    //    a settings save instead of being reset to default.
+    let mut local = load_local_state(notebox_root);
+    local.last_active_file = settings.startup.last_active_file.clone();
+    save_local_state(notebox_root, &local)?;
 
     // 2. Shared state → settings.json, with the per-machine field blanked so
     //    it is never committed.

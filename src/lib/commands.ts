@@ -545,6 +545,22 @@ export function registerBuiltinCommands(callbacks: {
     execute: callbacks.openCollaborationPanel,
   });
 
+  // Package handoff (server-less) — open the panel, where Export/Import package
+  // and the optional archive password live (a file dialog drives each gesture).
+  registerCommand({
+    id: "git:export-package",
+    title: t("command.git.exportPackage"),
+    category: "Git",
+    execute: callbacks.openCollaborationPanel,
+  });
+
+  registerCommand({
+    id: "git:import-package",
+    title: t("command.git.importPackage"),
+    category: "Git",
+    execute: callbacks.openCollaborationPanel,
+  });
+
   // ── Zettelkasten commands ──
 
   registerCommand({

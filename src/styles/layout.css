@@ -5179,7 +5179,7 @@ svg.lucide {
 }
 
 /* Dismiss button on a comment row — muted by default, accents on hover. */
-.annotations-panel__dismiss {
+.annotations-panel__action {
   flex-shrink: 0;
   background: none;
   border: none;
@@ -5189,9 +5189,14 @@ svg.lucide {
   border-radius: var(--radius-control);
 }
 
-.annotations-panel__dismiss:hover {
-  color: var(--accent-danger);
+.annotations-panel__action:hover {
+  color: var(--accent-text, var(--fg-primary));
   background: var(--bg-hover);
+}
+
+/* The dismiss action removes a comment — warn on hover. */
+.annotations-panel__action--danger:hover {
+  color: var(--accent-danger);
 }
 
 .annotations-panel__body {
@@ -10087,36 +10092,18 @@ svg.lucide {
 
 /* ─────────────────────────── Git collaboration ─────────────────────────── */
 
-/* VerticalToolbar handshake button: a normal toolbar button with a small
-   accent count badge for pending reviews. */
-.vertical-toolbar__collab-btn {
-  position: relative;
-}
-
-.vertical-toolbar__badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 9px;
-  line-height: 14px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Status-bar git chip: matches the notebox-name chip's accent-tinted look. */
+/* Status-bar git chip: the sole collaboration entry point — neutral by default,
+   accented only when action is required (see `--attention`). */
 .status-bar__git {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--status-btn-bg);
+  background: transparent;
   border: none;
-  color: var(--accent-text, var(--status-fg));
+  /* Neutral by default so it doesn't compete with the notebox switcher; the
+     icon + word take on the accent only when action is required (see
+     `--attention`). */
+  color: var(--status-fg);
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
@@ -10127,6 +10114,12 @@ svg.lucide {
 
 .status-bar__git:hover {
   background: var(--status-btn-bg-hover);
+}
+
+/* Incoming updates or a pending review — colour the icon + word to draw the eye. */
+.status-bar__git--attention {
+  color: var(--accent-text, var(--status-fg));
+  font-weight: 600;
 }
 
 @keyframes git-spin {
@@ -10226,6 +10219,12 @@ svg.lucide {
 .git-panel__actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* "Review incoming changes" toggle row — separated from the gestures above. */
+.git-panel__review-toggle {
+  margin-top: 10px;
   flex-wrap: wrap;
 }
 
@@ -10378,6 +10377,9 @@ svg.lucide {
 }
 
 .git-panel__manage-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: none;
   border: none;
   color: var(--fg-muted);

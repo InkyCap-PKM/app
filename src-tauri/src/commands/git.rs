@@ -20,7 +20,7 @@ use crate::git::backend::{
     ensure_collaboration_gitignore, ChangeStatus, ChangedPath, CommitInfo, FileVersion, GitBackend,
     GitStatusSummary, MergeOutcome,
 };
-use crate::git::{history, staging, suggest};
+use crate::git::{history, package, staging, suggest};
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
 use crate::storage::to_frontend_string;
@@ -329,14 +329,19 @@ fn apply_setup(
     let initialized = !GitBackend::is_repo(root);
     let backend = GitBackend::open_or_init(root)?;
     ensure_collaboration_gitignore(root)?;
-    backend.set_remote(REMOTE_NAME, remote)?;
+    // Package-handoff setup passes an empty remote (no server): skip the remote
+    // and the host-keyed HTTPS token. The notebox is still a git repo — version
+    // history and package export/import all work without one.
+    if !remote.trim().is_empty() {
+        backend.set_remote(REMOTE_NAME, remote)?;
+    }
     // A freshly init'd repo defaults to `master`; make the first commit land on
     // the configured branch so the eventual push of `refs/heads/<branch>` has
     // something to send. No-op when an existing repo (with commits) is adopted.
     backend.ensure_initial_branch(branch)?;
 
     if let Some(token) = https_token {
-        if !token.trim().is_empty() {
+        if !token.trim().is_empty() && !remote.trim().is_empty() {
             auth::set_https_token(remote, token)?;
         }
     }
@@ -667,12 +672,28 @@ pub struct SyncOutcome {
 const LOCAL_EDITS_MESSAGE: &str = "Update notes";
 
 /// Pull (and optionally push) the collaborative notebox, merging incoming
-/// changes. `push` distinguishes Sync (`true`) from Check for updates (`false`).
-/// Pure + blocking-safe (no async, no `AppHandle`) so it can be unit-tested
-/// against a bare remote and two clones.
-fn run_sync(root: &Path, git: &NoteboxGitConfig) -> Result<SyncOutcome> {
+/// changes. `push` distinguishes Sync (`true`) from a no-push reconcile
+/// (`false`) — the latter is offline **package import**, which fetches from a
+/// transient local-path remote (the extracted package) and has no server to
+/// push to. Pure + blocking-safe (no async, no `AppHandle`) so it can be
+/// unit-tested against a bare remote and two clones — and, for package mode,
+/// against a local-path remote.
+///
+/// The remote is taken from `git.remote`, which is a server URL for a Sync and
+/// the extracted-package path for an import. An empty `remote` (a package-mode
+/// notebox at rest, e.g. when finalizing) skips the `set_remote` — the
+/// remote-tracking ref fetched at pause time already lives in `.git`.
+///
+/// `review` is the per-notebox "review incoming changes before merging"
+/// preference: when set and there are incoming changes against a local commit,
+/// the sync pauses and stages *every* incoming note as suggestions (clean ones
+/// rendered as mine→merged so local edits are never dropped) instead of
+/// auto-merging clean changes. Finalizing is the same path as a conflict.
+fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool, review: bool) -> Result<SyncOutcome> {
     let backend = GitBackend::open(root)?;
-    backend.set_remote(REMOTE_NAME, &git.remote)?;
+    if !git.remote.trim().is_empty() {
+        backend.set_remote(REMOTE_NAME, &git.remote)?;
+    }
 
     let mut out = SyncOutcome::default();
 
@@ -699,7 +720,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig) -> Result<SyncOutcome> {
         (None, Some(_)) => true,
     };
     if !incoming_exists {
-        if backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
+        if push && backend.unpushed_count(REMOTE_NAME, &git.branch)? > 0 {
             push_into(&backend, git, &mut out)?;
         }
         out.up_to_date = !out.committed && !out.pushed && !out.rejected;
@@ -718,6 +739,16 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig) -> Result<SyncOutcome> {
         .into_iter()
         .map(digest_entry)
         .collect();
+
+    // Review mode: pause and stage every incoming change for review instead of
+    // auto-merging. Only meaningful with a local commit to diff against (an
+    // unborn/first pull has nothing to review — fall through to fast-forward).
+    if review {
+        if let Some(m) = m {
+            run_review(&backend, root, m, t, base, &mut out)?;
+            return Ok(out);
+        }
+    }
 
     // 4. Fast-forward (local hasn't diverged: unborn, or M is an ancestor of T).
     let is_ff = match m {
@@ -738,7 +769,9 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig) -> Result<SyncOutcome> {
             backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
             backend.checkout_head_force()?;
             out.pulled = true;
-            push_into(&backend, git, &mut out)?;
+            if push {
+                push_into(&backend, git, &mut out)?;
+            }
             Ok(out)
         }
         MergeOutcome::Conflicts(_) => {
@@ -790,16 +823,8 @@ fn render_conflict_items(
         {
             continue;
         }
-        let is_note = rel.extension().and_then(|e| e.to_str()) == Some("typ");
-        if !is_note {
-            items.push(ReviewItem {
-                path: to_frontend_string(rel),
-                kind: ChangeKind::Binary,
-                staged_path: None,
-                total: 0,
-                conflicts: 0,
-                fallback: false,
-            });
+        if rel.extension().and_then(|e| e.to_str()) != Some("typ") {
+            items.push(binary_review_item(rel));
             continue;
         }
 
@@ -808,35 +833,137 @@ fn render_conflict_items(
         let base = base_oid
             .and_then(|b| backend.read_blob_at(b, rel).ok().flatten())
             .and_then(|bytes| String::from_utf8(bytes).ok());
-
-        let item = match suggest::render_incoming(base.as_deref(), &mine, &theirs, by, on) {
-            suggest::StagedRender::Suggestions(s) => {
-                let staged = staging::write_staged(root, rel, &s.source)?;
-                ReviewItem {
-                    path: to_frontend_string(rel),
-                    kind: ChangeKind::Modified,
-                    staged_path: Some(to_frontend_string(&staged)),
-                    total: s.total,
-                    conflicts: s.conflicts.len(),
-                    fallback: false,
-                }
-            }
-            suggest::StagedRender::Fallback { reason } => {
-                log::info!("git sync: {} fell back to raw diff: {reason}", rel.display());
-                let staged = staging::write_staged(root, rel, &theirs)?;
-                ReviewItem {
-                    path: to_frontend_string(rel),
-                    kind: ChangeKind::Modified,
-                    staged_path: Some(to_frontend_string(&staged)),
-                    total: 0,
-                    conflicts: 0,
-                    fallback: true,
-                }
-            }
-        };
-        items.push(item);
+        items.push(stage_suggestion_item(root, rel, base.as_deref(), &mine, &theirs, by, on)?);
     }
     Ok(items)
+}
+
+/// A read-only review row for a non-note (binary/attachment) change — no
+/// suggestion rendering; the user decides by hand.
+fn binary_review_item(rel: &Path) -> ReviewItem {
+    ReviewItem {
+        path: to_frontend_string(rel),
+        kind: ChangeKind::Binary,
+        staged_path: None,
+        total: 0,
+        conflicts: 0,
+        fallback: false,
+    }
+}
+
+/// Render one note's `base→mine→theirs` triple as inline `#suggestion`s and
+/// write the staged copy, returning its review item. Shared by conflict review
+/// (base = merge base, theirs = the remote blob) and review-incoming mode (for
+/// a clean note, base = mine and theirs = the merged result, so the suggestions
+/// show only what others added and accepting never drops local edits).
+fn stage_suggestion_item(
+    root: &Path,
+    rel: &Path,
+    base: Option<&str>,
+    mine: &str,
+    theirs: &str,
+    by: Option<&str>,
+    on: Option<&str>,
+) -> Result<ReviewItem> {
+    match suggest::render_incoming(base, mine, theirs, by, on) {
+        suggest::StagedRender::Suggestions(s) => {
+            let staged = staging::write_staged(root, rel, &s.source)?;
+            Ok(ReviewItem {
+                path: to_frontend_string(rel),
+                kind: ChangeKind::Modified,
+                staged_path: Some(to_frontend_string(&staged)),
+                total: s.total,
+                conflicts: s.conflicts.len(),
+                fallback: false,
+            })
+        }
+        suggest::StagedRender::Fallback { reason } => {
+            log::info!("git sync: {} fell back to raw diff: {reason}", rel.display());
+            let staged = staging::write_staged(root, rel, theirs)?;
+            Ok(ReviewItem {
+                path: to_frontend_string(rel),
+                kind: ChangeKind::Modified,
+                staged_path: Some(to_frontend_string(&staged)),
+                total: 0,
+                conflicts: 0,
+                fallback: true,
+            })
+        }
+    }
+}
+
+/// Review-incoming mode: materialize the merged working tree, then stage *every*
+/// incoming added/modified note for review (not just conflicts), and pause.
+/// A note that merged cleanly is rendered mine→merged (its merged content is now
+/// in the working file) so accepting keeps local edits and takes theirs; a note
+/// that genuinely conflicted is rendered base→mine→theirs. Deleted notes and
+/// clean binary changes are applied (they appear in the digest); only binaries
+/// that conflicted surface as read-only rows. Finalizing uses the same
+/// `run_finalize` path as a conflict.
+fn run_review(
+    backend: &GitBackend,
+    root: &Path,
+    m: git2::Oid,
+    t: git2::Oid,
+    base: Option<git2::Oid>,
+    out: &mut SyncOutcome,
+) -> Result<()> {
+    let application = backend.apply_clean_merge(m, t)?;
+    let conflicted: std::collections::HashSet<PathBuf> =
+        application.conflicts.iter().cloned().collect();
+    staging::clear(root)?;
+
+    let (by, on) = out
+        .incoming
+        .as_ref()
+        .map(|c| (Some(c.author_name.clone()), Some(format_date(c.timestamp))))
+        .unwrap_or((None, None));
+    let (by, on) = (by.as_deref(), on.as_deref());
+
+    let mut items = Vec::new();
+    for cp in backend.changed_paths(base, t)? {
+        let rel = cp.path;
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        // Deletions are applied (clean) and shown in the digest, not reviewed.
+        if matches!(cp.status, ChangeStatus::Deleted) {
+            continue;
+        }
+        if rel.extension().and_then(|e| e.to_str()) != Some("typ") {
+            // Only a binary that genuinely conflicted needs a hand decision;
+            // a clean binary change is applied and listed in the digest.
+            if conflicted.contains(&rel) {
+                items.push(binary_review_item(&rel));
+            }
+            continue;
+        }
+
+        if conflicted.contains(&rel) {
+            // Genuine conflict: review the full 3-way (base→mine→theirs).
+            let mine = read_note_blob(backend, m, &rel)?;
+            let theirs = read_note_blob(backend, t, &rel)?;
+            let base_s = base
+                .and_then(|b| backend.read_blob_at(b, &rel).ok().flatten())
+                .and_then(|bytes| String::from_utf8(bytes).ok());
+            items.push(stage_suggestion_item(root, &rel, base_s.as_deref(), &mine, &theirs, by, on)?);
+        } else {
+            // Clean incoming change: the merged content is now in the working
+            // file. Render mine→merged so the suggestions are exactly what
+            // others added and accepting never discards a local edit.
+            let mine = read_note_blob(backend, m, &rel)?;
+            let merged = std::fs::read_to_string(root.join(&rel)).unwrap_or_default();
+            items.push(stage_suggestion_item(root, &rel, Some(&mine), &mine, &merged, by, on)?);
+        }
+    }
+
+    out.conflicts = items;
+    out.pulled = !application.applied.is_empty();
+    out.paused = true;
+    Ok(())
 }
 
 /// Push the local branch, recording the outcome into `out` (a rejection is a
@@ -867,7 +994,12 @@ fn merge_message(incoming: &Option<CommitInfo>) -> String {
 /// must match the gesture that paused (Sync vs Check). Pure + blocking-safe.
 fn run_finalize(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
     let backend = GitBackend::open(root)?;
-    backend.set_remote(REMOTE_NAME, &git.remote)?;
+    // Package mode (empty remote) keeps the transient import remote from the
+    // paused sync; a server Sync re-points `origin` at its URL. Either way the
+    // remote-tracking ref to finalize against is already in `.git`.
+    if !git.remote.trim().is_empty() {
+        backend.set_remote(REMOTE_NAME, &git.remote)?;
+    }
 
     let mut out = SyncOutcome::default();
 
@@ -925,9 +1057,12 @@ pub async fn git_sync(
 ) -> Result<SyncOutcome> {
     let (root, git) = require_collaborative_with_root(&state).await?;
     let _ = app_handle.emit("notebox:git-fetch-started", ());
-    let result = tokio::task::spawn_blocking(move || run_sync(&root, &git))
-        .await
-        .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
+    let result = tokio::task::spawn_blocking(move || {
+        let review = crate::notebox_settings::load_local_state(&root).review_incoming;
+        run_sync(&root, &git, true, review)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
     emit_sync_events(&app_handle, &result);
     result
 }
@@ -973,7 +1108,9 @@ pub struct CheckResult {
 /// Fetch and report incoming state without merging. Pure + blocking-safe.
 fn run_check(root: &Path, git: &NoteboxGitConfig) -> Result<CheckResult> {
     let backend = GitBackend::open(root)?;
-    backend.set_remote(REMOTE_NAME, &git.remote)?;
+    if !git.remote.trim().is_empty() {
+        backend.set_remote(REMOTE_NAME, &git.remote)?;
+    }
     backend.fetch(REMOTE_NAME, &git.branch)?;
 
     let m = backend.current_head()?.map(|(_, oid)| oid);
@@ -1235,6 +1372,288 @@ pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("discard task failed: {e}")))?
+}
+
+// ───────────────────── Phase 7: offline package handoff ────────────────────
+//
+// Collaborate with no hosted git server. `git_export_package` zips the open
+// notebox's whole `.git` (its full history) to a single file; the recipient
+// either imports it as a brand-new notebox (`git_import_package_as_notebox`) or,
+// if they already have the notebox, reconciles it into theirs
+// (`git_import_package`). Reconciliation rides the Phase 5 engine unchanged: the
+// package is extracted to a temp staging repo, a transient local-path remote is
+// pointed at it, and `run_sync(..., push = false)` does the same 3-way merge as
+// a server Sync — conflicts pause and finalize via `git_sync_finalize(false)`.
+// A package-handoff notebox is marked by an empty `NoteboxGitConfig::remote`
+// (see `is_package_mode`); `git_setup_package_handoff` creates one.
+
+/// Outcome of [`git_export_package`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageExportResult {
+    /// Where the package was written (frontend string form).
+    pub path: String,
+    /// Files written from `.git` (objects, refs, etc.).
+    pub file_count: u64,
+    /// Uncompressed bytes of `.git` packaged.
+    pub bytes: u64,
+}
+
+/// Export the open notebox — with its full git history — to a single
+/// (optionally AES-256-encrypted) package file. Commits any pending working
+/// edits first so the package carries the latest. Works for any collaborative
+/// notebox (server-backed or package-mode).
+#[tauri::command]
+pub async fn git_export_package(
+    dest: String,
+    password: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<PackageExportResult> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let dest_path = PathBuf::from(dest.trim());
+    if dest_path.as_os_str().is_empty() {
+        return Err(InkyCapError::BadRequest("destination file is required".into()));
+    }
+    let password = password.filter(|p| !p.is_empty());
+
+    let (path, summary) = tokio::task::spawn_blocking(
+        move || -> Result<(PathBuf, package::PackageSummary)> {
+            // Commit my working edits, if any, so the package is current.
+            let backend = GitBackend::open(&root)?;
+            if backend.status_summary()?.dirty {
+                let sig = backend.author_signature(&git.remote)?;
+                backend.stage_all()?;
+                backend.commit(LOCAL_EDITS_MESSAGE, &sig)?;
+            }
+            let summary = package::export(&root, &dest_path, password.as_deref())?;
+            Ok((dest_path, summary))
+        },
+    )
+    .await
+    .map_err(|e| InkyCapError::Git(format!("export task failed: {e}")))??;
+
+    Ok(PackageExportResult {
+        path: to_frontend_string(&path),
+        file_count: summary.file_count,
+        bytes: summary.uncompressed_bytes,
+    })
+}
+
+/// Import a received package into the **currently open** notebox, reconciling
+/// its history with ours through the same merge as Sync (no push — there is no
+/// server). Returns a [`SyncOutcome`]: on a conflict it pauses exactly like a
+/// Sync, and the frontend finalizes with `git_sync_finalize(push = false)`.
+/// Use this when you already have the notebox; a first-time recipient uses
+/// [`git_import_package_as_notebox`].
+#[tauri::command]
+pub async fn git_import_package(
+    archive: String,
+    password: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<SyncOutcome> {
+    let (root, git) = require_collaborative_with_root(&state).await?;
+    let archive_path = PathBuf::from(archive.trim());
+    if archive_path.as_os_str().is_empty() {
+        return Err(InkyCapError::BadRequest("package file is required".into()));
+    }
+    let password = password.filter(|p| !p.is_empty());
+    let _ = app_handle.emit("notebox:git-fetch-started", ());
+
+    let result = tokio::task::spawn_blocking(move || -> Result<SyncOutcome> {
+        let staging = package::extract_to_temp(&archive_path, password.as_deref())?;
+        // Point a transient remote at the extracted repo (a local path). The
+        // fetch copies its objects + the `origin/<branch>` ref into our `.git`,
+        // so once this returns the staging dir is no longer needed — a paused
+        // merge finalizes against that persisted ref.
+        // path-stringification-ok: consumed by libgit2 as a local-path remote,
+        // not compared on the frontend.
+        let staging_remote = staging.path().to_string_lossy().into_owned();
+        let tmp_git = NoteboxGitConfig {
+            remote: staging_remote,
+            branch: git.branch.clone(),
+        };
+        let review = crate::notebox_settings::load_local_state(&root).review_incoming;
+        let outcome = run_sync(&root, &tmp_git, false, review)?;
+        drop(staging);
+        Ok(outcome)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("import task failed: {e}")))?;
+    emit_sync_events(&app_handle, &result);
+    result
+}
+
+/// Import a received package as a **new** notebox at `dest` — for a first-time
+/// recipient who does not already have this notebox. Extracts the package,
+/// clones it into `dest` (materializing the working tree), and drops the
+/// transient `origin` remote (it pointed at the temp staging dir), so a
+/// package-handoff notebox carries no dangling remote. Returns the new notebox
+/// path (frontend form) for the caller to register and open. Sibling of
+/// [`git_clone_notebox`]; does not touch the currently-open notebox.
+#[tauri::command]
+pub async fn git_import_package_as_notebox(
+    archive: String,
+    password: Option<String>,
+    dest: String,
+) -> Result<String> {
+    let archive_path = PathBuf::from(archive.trim());
+    if archive_path.as_os_str().is_empty() {
+        return Err(InkyCapError::BadRequest("package file is required".into()));
+    }
+    let dest = PathBuf::from(dest.trim());
+    if dest.as_os_str().is_empty() {
+        return Err(InkyCapError::BadRequest("destination folder is required".into()));
+    }
+    if dest.exists()
+        && std::fs::read_dir(&dest)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+    {
+        return Err(InkyCapError::BadRequest(
+            "destination folder already exists and is not empty".into(),
+        ));
+    }
+    let password = password.filter(|p| !p.is_empty());
+
+    let cloned = tokio::task::spawn_blocking(move || -> Result<PathBuf> {
+        let staging = package::extract_to_temp(&archive_path, password.as_deref())?;
+        // path-stringification-ok: consumed by libgit2 as a local clone source.
+        let staging_path = staging.path().to_string_lossy().into_owned();
+        clone_into(&staging_path, None, &dest)?;
+        // The clone's `origin` points at the temp staging dir; drop it. A
+        // server-backed package re-adds `origin` on its first Sync (its URL
+        // travels in the committed `.inkycap/settings.json`); a package-mode one
+        // never needs it.
+        GitBackend::open(&dest)?.remove_remote(REMOTE_NAME)?;
+        drop(staging);
+        Ok(dest)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("import task failed: {e}")))??;
+
+    Ok(to_frontend_string(&cloned))
+}
+
+/// Set up the open notebox for **server-less** collaboration (offline package
+/// handoff): init/adopt the git repo with no remote, so the notebox is
+/// collaborative — version history and package export/import all work — without
+/// a hosted git server. The counterpart to [`git_setup_collaboration`];
+/// persists a [`NoteboxGitConfig`] with an empty `remote` (package mode).
+#[tauri::command]
+pub async fn git_setup_package_handoff(
+    branch: Option<String>,
+    identity_name: Option<String>,
+    identity_email: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<GitSetupResult> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let branch = branch
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| "main".to_string());
+    let identity = match (identity_name, identity_email) {
+        (Some(name), Some(email)) => Some(GitIdentity { name, email }),
+        _ => None,
+    };
+
+    let setup_root = root.clone();
+    let setup_branch = branch.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        apply_setup(&setup_root, "", &setup_branch, None, identity)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("setup task failed: {e}")))??;
+
+    let mut settings = state.notebox_settings.read().await.clone();
+    settings.git = Some(NoteboxGitConfig {
+        remote: String::new(),
+        branch,
+    });
+    crate::notebox_settings::save_settings(&root, &settings)?;
+    *state.notebox_settings.write().await = settings;
+
+    Ok(result)
+}
+
+// ───────── Review-incoming preference (per-notebox, per-machine) ────────────
+
+/// Whether the open notebox is set to review incoming changes before merging
+/// (the per-machine `NoteboxLocalState::review_incoming`). Off by default.
+#[tauri::command]
+pub async fn git_get_review_incoming(state: State<'_, AppState>) -> Result<bool> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    Ok(crate::notebox_settings::load_local_state(&root).review_incoming)
+}
+
+/// Set whether the open notebox reviews incoming changes before merging. Stored
+/// per-machine (gitignored `local.json`), so it never travels to collaborators.
+#[tauri::command]
+pub async fn git_set_review_incoming(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut local = crate::notebox_settings::load_local_state(&root);
+        local.review_incoming = enabled;
+        crate::notebox_settings::save_local_state(&root, &local)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("review-incoming task failed: {e}")))?
+}
+
+/// Reconstruct an in-progress review from the on-disk staging folder, so a
+/// paused Sync/import survives an app restart (the `SyncOutcome` lives only in
+/// memory, but the staged copies are on disk in `.inkycap/incoming/`). Returns a
+/// paused [`SyncOutcome`] listing the staged notes when a review is pending, or
+/// a non-paused default when nothing is staged. The per-note conflict counts and
+/// incoming author are not recovered (the staged copies still carry the
+/// suggestion markup to review), so the items read as plain incoming changes.
+#[tauri::command]
+pub async fn git_pending_review(state: State<'_, AppState>) -> Result<SyncOutcome> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let mut out = SyncOutcome::default();
+    let staged = staging::list_staged(&root);
+    if staged.is_empty() {
+        return Ok(out);
+    }
+    out.paused = true;
+    out.pulled = true;
+    out.conflicts = staged
+        .into_iter()
+        .map(|rel| {
+            let staged_path = staging::staged_path(&root, &rel);
+            ReviewItem {
+                path: to_frontend_string(&rel),
+                kind: ChangeKind::Modified,
+                staged_path: Some(to_frontend_string(&staged_path)),
+                total: 0,
+                conflicts: 0,
+                fallback: false,
+            }
+        })
+        .collect();
+    Ok(out)
 }
 
 /// The open notebox's git config, erroring if it is not collaborative.
@@ -1588,7 +2007,7 @@ mod tests {
 
         // B edits a *different* file (uncommitted) and syncs.
         std::fs::write(bp.join("y.typ"), "y MINE\n").unwrap();
-        let out = run_sync(&bp, &git).unwrap();
+        let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.committed && out.pulled && out.pushed && !out.paused);
         assert!(out.conflicts.is_empty());
         assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
@@ -1616,7 +2035,7 @@ mod tests {
 
         // B rewrites the same line (uncommitted) and syncs → conflict, pause.
         std::fs::write(bp.join("note.typ"), "BBB one\nline two\n").unwrap();
-        let out = run_sync(&bp, &git).unwrap();
+        let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.paused && !out.pushed);
         assert_eq!(out.conflicts.len(), 1);
         let item = &out.conflicts[0];
@@ -1652,7 +2071,7 @@ mod tests {
         commit_push(&a, &ap, &url, "n.typ", "after\n");
 
         // B is clean; pull via fast-forward (nothing to push back).
-        let out = run_sync(&bp, &git).unwrap();
+        let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.pulled && !out.pushed && !out.committed && !out.paused);
         assert_eq!(std::fs::read_to_string(bp.join("n.typ")).unwrap(), "after\n");
     }
@@ -1666,7 +2085,7 @@ mod tests {
         seed(&a, &ap, &url, &[("n.typ", "stable\n")]);
         let (_bd, bp, _b) = clone_at(&url, "b");
 
-        let out = run_sync(&bp, &git).unwrap();
+        let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.up_to_date && !out.pulled && !out.pushed && !out.committed);
     }
 
@@ -1680,7 +2099,7 @@ mod tests {
         let (_bd, bp, _b) = clone_at(&url, "b");
 
         std::fs::write(bp.join("n.typ"), "B edit\n").unwrap();
-        let out = run_sync(&bp, &git).unwrap();
+        let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.committed && out.pushed && !out.pulled && !out.up_to_date);
 
         let (_cd, cp, _c) = clone_at(&url, "c");
@@ -1720,5 +2139,197 @@ mod tests {
 
         let res = run_check(&bp, &git).unwrap();
         assert!(res.up_to_date && res.behind == 0);
+    }
+
+    // ── Phase 7: offline package handoff (server-less, local-path remote) ──────
+
+    /// A package-mode notebox seeded with `files`, no remote. Returns its dir
+    /// (kept alive by the caller) and an opened backend.
+    fn package_notebox(files: &[(&str, &str)]) -> (tempfile::TempDir, GitBackend) {
+        let d = tempfile::tempdir().unwrap();
+        let g = GitBackend::open_or_init(d.path()).unwrap();
+        set_git_identity(d.path());
+        g.ensure_initial_branch("main").unwrap();
+        for (name, content) in files {
+            std::fs::write(d.path().join(name), content).unwrap();
+        }
+        g.stage_all().unwrap();
+        g.commit("base", &sig()).unwrap();
+        (d, g)
+    }
+
+    /// Receive a package as a brand-new package-mode notebox (the
+    /// `git_import_package_as_notebox` body): extract → clone → drop origin.
+    fn receive_as_notebox(archive: &Path, into: &Path) {
+        let staging = package::extract_to_temp(archive, None).unwrap();
+        clone_into(&staging.path().to_string_lossy(), None, into).unwrap();
+        GitBackend::open(into).unwrap().remove_remote(REMOTE_NAME).unwrap();
+        set_git_identity(into);
+    }
+
+    /// Reconcile a package into an existing notebox (the `git_import_package`
+    /// body): extract → transient local-path remote → `run_sync(push = false)`.
+    fn reconcile_package(archive: &Path, into: &Path) -> SyncOutcome {
+        reconcile_package_review(archive, into, false)
+    }
+
+    /// As [`reconcile_package`], with the review-incoming preference.
+    fn reconcile_package_review(archive: &Path, into: &Path, review: bool) -> SyncOutcome {
+        let staging = package::extract_to_temp(archive, None).unwrap();
+        let tmp = NoteboxGitConfig {
+            remote: staging.path().to_string_lossy().into_owned(),
+            branch: "main".into(),
+        };
+        run_sync(into, &tmp, false, review).unwrap()
+    }
+
+    /// Two package-mode noteboxes sharing history reconcile divergent edits to
+    /// *different* files with a clean merge and **no push** — the Sync engine
+    /// driven by the extracted package as a local-path remote.
+    #[test]
+    fn package_handoff_merges_clean_divergent_edits() {
+        let (adir, a) = package_notebox(&[("x.typ", "x base\n"), ("y.typ", "y base\n")]);
+
+        // B receives A as a new notebox.
+        let pkg0 = tempfile::tempdir().unwrap();
+        let base_pkg = pkg0.path().join("base.inkypkg");
+        package::export(adir.path(), &base_pkg, None).unwrap();
+        let bdir = tempfile::tempdir().unwrap();
+        let bp = bdir.path().join("b");
+        receive_as_notebox(&base_pkg, &bp);
+        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x base\n");
+
+        // A edits x, commits, exports an update package.
+        std::fs::write(adir.path().join("x.typ"), "x THEIRS\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        let update_pkg = pkg0.path().join("update.inkypkg");
+        package::export(adir.path(), &update_pkg, None).unwrap();
+
+        // B edits a *different* file (uncommitted) and imports A's update.
+        std::fs::write(bp.join("y.typ"), "y MINE\n").unwrap();
+        let out = reconcile_package(&update_pkg, &bp);
+        assert!(out.committed && out.pulled && !out.pushed && !out.paused);
+        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
+        assert_eq!(std::fs::read_to_string(bp.join("y.typ")).unwrap(), "y MINE\n");
+        assert_eq!(out.digest.len(), 1, "only x landed from the package");
+    }
+
+    /// A same-line conflict in a package import pauses with the note staged as
+    /// suggestions; finalizing with `push = false` commits the merge locally
+    /// (no server) using the package-mode (empty-remote) config.
+    #[test]
+    fn package_handoff_conflict_pauses_then_finalizes_without_push() {
+        let (adir, a) = package_notebox(&[("note.typ", "line one\nline two\n")]);
+
+        let pkg0 = tempfile::tempdir().unwrap();
+        let base_pkg = pkg0.path().join("base.inkypkg");
+        package::export(adir.path(), &base_pkg, None).unwrap();
+        let bdir = tempfile::tempdir().unwrap();
+        let bp = bdir.path().join("b");
+        receive_as_notebox(&base_pkg, &bp);
+
+        // A and B rewrite the same line; A packages, B imports → conflict.
+        std::fs::write(adir.path().join("note.typ"), "AAA one\nline two\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        let update_pkg = pkg0.path().join("update.inkypkg");
+        package::export(adir.path(), &update_pkg, None).unwrap();
+
+        std::fs::write(bp.join("note.typ"), "BBB one\nline two\n").unwrap();
+        let out = reconcile_package(&update_pkg, &bp);
+        assert!(out.paused && !out.pushed);
+        assert_eq!(out.conflicts.len(), 1);
+        assert!(out.conflicts[0].staged_path.is_some());
+
+        // Resolve: accept theirs in the staged copy, then finalize (no push).
+        let rel = Path::new("note.typ");
+        let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
+        let resolved = resolve_all_suggestions(&staged, true);
+        std::fs::write(staging::staged_path(&bp, rel), &resolved).unwrap();
+
+        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        let fin = run_finalize(&bp, &package_git, false).unwrap();
+        assert!(fin.pulled && !fin.pushed && !fin.paused);
+        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+    }
+
+    // ── Review-incoming mode (pause + stage every incoming change) ────────────
+
+    /// With review on, a *clean* incoming change (no conflict) still pauses and
+    /// is staged as a suggestion to review — not auto-merged silently.
+    #[test]
+    fn review_mode_pauses_on_clean_incoming_change() {
+        let (adir, a) = package_notebox(&[("note.typ", "alpha\nbeta\n")]);
+
+        let pkg = tempfile::tempdir().unwrap();
+        let base_pkg = pkg.path().join("base.zip");
+        package::export(adir.path(), &base_pkg, None).unwrap();
+        let bdir = tempfile::tempdir().unwrap();
+        let bp = bdir.path().join("b");
+        receive_as_notebox(&base_pkg, &bp);
+
+        // A edits the note (B has no local edit → a clean, fast-forwardable pull).
+        std::fs::write(adir.path().join("note.typ"), "ALPHA\nbeta\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        let update_pkg = pkg.path().join("update.zip");
+        package::export(adir.path(), &update_pkg, None).unwrap();
+
+        // Import with review on → pause + a staged suggestion (would auto-merge
+        // without review).
+        let out = reconcile_package_review(&update_pkg, &bp, true);
+        assert!(out.paused, "review pauses even on a clean change");
+        assert_eq!(out.conflicts.len(), 1);
+        assert!(out.conflicts[0].staged_path.is_some());
+
+        // Accept the suggestion and finalize → the incoming edit lands.
+        let rel = Path::new("note.typ");
+        let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
+        std::fs::write(staging::staged_path(&bp, rel), resolve_all_suggestions(&staged, true)).unwrap();
+        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        run_finalize(&bp, &package_git, false).unwrap();
+        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "ALPHA\nbeta\n");
+    }
+
+    /// The load-bearing guarantee: in review mode, accepting an incoming change
+    /// to a note the importer *also* edited (a different region — clean merge)
+    /// keeps the local edit. The suggestion is rendered mine→merged, so accept
+    /// takes theirs without discarding mine.
+    #[test]
+    fn review_mode_accept_preserves_local_edit_on_clean_merge() {
+        let (adir, a) = package_notebox(&[("note.typ", "line1\nline2\nline3\n")]);
+
+        let pkg = tempfile::tempdir().unwrap();
+        let base_pkg = pkg.path().join("base.zip");
+        package::export(adir.path(), &base_pkg, None).unwrap();
+        let bdir = tempfile::tempdir().unwrap();
+        let bp = bdir.path().join("b");
+        receive_as_notebox(&base_pkg, &bp);
+
+        // A changes the first line; B changes the last line (different regions →
+        // a clean 3-way merge).
+        std::fs::write(adir.path().join("note.typ"), "AAA\nline2\nline3\n").unwrap();
+        a.stage_all().unwrap();
+        a.commit("a-edit", &sig()).unwrap();
+        let update_pkg = pkg.path().join("update.zip");
+        package::export(adir.path(), &update_pkg, None).unwrap();
+
+        std::fs::write(bp.join("note.typ"), "line1\nline2\nBBB\n").unwrap();
+        let out = reconcile_package_review(&update_pkg, &bp, true);
+        assert!(out.paused);
+        assert_eq!(out.conflicts.len(), 1);
+
+        // Accept-all → takes A's first-line change AND keeps B's last-line edit.
+        let rel = Path::new("note.typ");
+        let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
+        std::fs::write(staging::staged_path(&bp, rel), resolve_all_suggestions(&staged, true)).unwrap();
+        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        run_finalize(&bp, &package_git, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(bp.join("note.typ")).unwrap(),
+            "AAA\nline2\nBBB\n",
+            "review-mode accept must not drop the local edit"
+        );
     }
 }
