@@ -99,14 +99,27 @@ const App: Component = () => {
     setSidebarMode(tab?.type === "collection" ? "collections" : lastBrowseMode);
   });
 
-  // The collaboration pane is only meaningful for a collaborative notebox.
-  // Switching to a notebox without collaboration (collaborative() flips false)
-  // should leave it rather than stranding the user on a setup form — fall back
-  // to the pane that fits: collections when a collection tab is active,
-  // otherwise the last browse pane (or the file tree). Within a collaborative
-  // notebox this never fires, so opening a staged note keeps the pane.
+  // The collaboration pane is meaningful for a collaborative notebox (sync /
+  // history) AND for a non-collaborative one the user is actively setting up —
+  // the SetupForm lives there, reached by toggling collaboration on or the
+  // `git:setup` command. So only LEAVE the pane when the active notebox
+  // *becomes* non-collaborative while we're parked on it (i.e. a switch to a
+  // non-collaborative notebox, or Stop collaborating), never when the user
+  // deliberately opens the pane on a non-collaborative notebox to set it up.
+  // We watch the `collaborative` true→false transition rather than the bare
+  // `!collaborative()` state so opening the pane doesn't bounce away. Falls back
+  // to the pane that fits: collections for a collection tab, else the last
+  // browse pane (or the file tree).
+  let prevSidebarMode = sidebarMode();
+  let wasCollaborative = collaborative();
   createEffect(() => {
-    if (sidebarMode() === "collaboration" && !collaborative()) {
+    const mode = sidebarMode();
+    const isCollaborative = collaborative();
+    const becameNonCollaborative = wasCollaborative && !isCollaborative;
+    const stayedOnPane = mode === "collaboration" && prevSidebarMode === "collaboration";
+    prevSidebarMode = mode;
+    wasCollaborative = isCollaborative;
+    if (stayedOnPane && becameNonCollaborative) {
       const active = tabs.find((t) => t.id === activeTabId());
       setSidebarMode(
         active?.type === "collection"
