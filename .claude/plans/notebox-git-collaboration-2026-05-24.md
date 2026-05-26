@@ -5,51 +5,58 @@ supersedes:
   - ".claude/plans/hi-i-would-like-declarative-otter.md (collection-level git)"
   - "the package-handoff transport (collaboration-status-2026-05-21.md), which this removes"
 baseline_commit: "4c4966e (MILESTONE: …last set of changes before switching to a git-based system)"
-status: "Phase 0-6 DONE + COMMITTED (HEAD `f1d52ba`, 2026-05-25); Phase 0–6 in-app validation confirmed. **UNCOMMITTED (session 2, all gates green): Phase 7 offline package handoff + review-incoming mode + collaboration-pane bounce fix + .zip extension.** Phase 7 = whole-`.git` zip export/import; package mode = empty remote; rides Phase 5 engine via run_sync(push=false) against a transient local-path remote; optional AES. Review-incoming = per-notebox/per-machine toggle: Sync+import pause and stage every incoming note as suggestions (clean=mine→merged, no data loss), off by default. Bounce fix = App.tsx Round-6 effect bounced the pane on toggle-on (regression). 565 lib tests (+8), 0 warnings, tsc+vite+safety green; clippy 108 pre-existing/0 new. **NEXT = rebuild, in-app-validate, then COMMIT.** Deferred (user-validated, not built): two export modes — full (onboard new collaborator) vs incremental update (git2 0.21 HAS PackBuilder → feasible, corrects earlier 'no API'); Export/Import only in package-mode panel (UI gate); binary/settings.json conflict UI (Phase 3b). Full detail in ⮕⮕ RESUME HERE + Phase 7 — DONE."
+status: "Phases 0-6 + Phase 7 + all session-2 work COMMITTED on `notebox-git-collab` (HEAD `2ae7920`, 2026-05-25). Session-2 commits: `acda2e6` (App.tsx collab-pane bounce-on-toggle-ON regression fix), `9c502cd` (Phase 7 offline package handoff + review-incoming mode + collaboration UX), `2ae7920` (suggest.rs markup-overlap raw-diff fallback). Phase 7 = whole-`.git` zip export/import; package mode = empty remote; rides Phase 5 engine via run_sync(push=false) against a transient local-path remote; optional AES. Review-incoming = per-notebox/per-machine toggle (off by default): Sync+import pause and stage every incoming note as suggestions (clean=mine→merged, no data loss). 567 lib tests, 0 warnings, tsc+vite+safety green; clippy 108 pre-existing/0 new. **⚠ 4 Junicode .ttf fonts left modified/uncommitted (pre-existing 2026-05-20, NOT this work — user to resolve).** **NEXT = continued in-app testing.** Deferred (user-validated, not built): two export modes — full vs incremental (git2 0.21 HAS PackBuilder → feasible); full intra-line opaque-markup rendering in suggest.rs (now falls back to raw diff on overlap); Export/Import surfaced only in package-mode panel (UI gate); binary/settings.json conflict UI (Phase 3b). Full detail in ⮕⮕ RESUME HERE + Phase 7 — DONE."
 ---
 
-## ⮕⮕ RESUME HERE (next session) — rebuild + validate, then commit
+## ⮕⮕ RESUME HERE (next session) — all committed; continue in-app testing
 
-**State at handoff (2026-05-25, session 2):** **Phases 0–6 DONE + COMMITTED**
-(HEAD `f1d52ba`); **Phase 7 (offline package handoff) + the review-incoming mode
-+ in-session fixes DONE but UNCOMMITTED**. User confirmed Phase 0–6 in-app
-validation. All gates green: `cargo test --lib` **565** (+8 this session), 0
-compiler warnings, `tsc`, `npm run build`, utf8/path-safety. clippy 108
-pre-existing / 0 new.
+**State at handoff (2026-05-25, end of session 2):** **everything is COMMITTED**
+on `notebox-git-collab`, **HEAD `2ae7920`**, working tree clean except 4
+unrelated font files (see ⚠ below). All gates green: `cargo test --lib` **567**,
+0 compiler warnings, `tsc`, `npm run build`, utf8/path-safety. clippy 108
+pre-existing / 0 new. The user was mid in-app testing and will resume there.
 
-**THE FIRST THING TO DO: rebuild the app**, then in-app-validate (Phase 7 handoff
-+ the review-incoming toggle), **then commit**. Everything in the working tree is
-this session's work — Phase 7 + the toggle-bounce fix + `.zip` extension +
-review-incoming. Nothing else pending.
+**Session-2 commit map (newest last):**
+- `acda2e6` — **App.tsx collab-pane bounce fix.** The Round-6 "leave the pane
+  when `!collaborative()`" effect (`800cc01`) bounced the pane away when toggling
+  collaboration *on* (the SetupForm opens it on a not-yet-collab notebox). Now
+  fires only on the `collaborative: true→false` transition (switch /
+  Stop-collaborating), never on a deliberate open. A real regression the user hit.
+- `9c502cd` — **Phase 7 offline package handoff + review-incoming mode + collab
+  UX.** Phase 7: export the whole `.git` to one (optional AES) `.zip`; import as a
+  new notebox (clone + drop transient origin) or reconcile into an existing one
+  (transient local-path remote + `run_sync(push=false)` → conflicts pause/finalize
+  like Sync); package mode = empty `NoteboxGitConfig.remote`; `run_sync` gained
+  `push`. Review-incoming: per-notebox/per-machine toggle
+  (`NoteboxLocalState.review_incoming`, off by default) — Sync+import pause and
+  stage every incoming note as suggestions (clean = mine→merged, NO local-edit
+  loss; proven by `review_mode_accept_preserves_local_edit_on_clean_merge`);
+  `run_review` + `stage_suggestion_item` refactor; `git_get/set_review_incoming`;
+  `save_settings` load-merges `local.json`; `git_pending_review` rebuilds a paused
+  review after a restart. UX: status-bar chip is the SOLE collab entry (removed
+  the vertical-toolbar handshake), neutral-until-action; package panel polish
+  (folder-up/down Import/Export, "to share" language, Manage chevron +
+  auto-collapse, review-aware ConflictView, package-mode setup toggle); Changes &
+  History pane — row click navigates, per-row UserPen button opens
+  Accept/Reject/Comment.
+- `2ae7920` — **suggest.rs markup-overlap fallback.** A change over a line that
+  already holds inline `#suggestion`/`#annotation` markup falls back to the raw
+  diff instead of nesting a suggestion in a suggestion. Narrow (a change on a
+  *different* line still renders pills). +2 tests.
 
-**This session's uncommitted work (all green):**
-1. **Phase 7 offline package handoff** (see the Phase 7 — DONE section).
-2. **Collaboration-pane bounce fix** ([src/App.tsx]) — the Round-6 "leave the
-   pane when not collaborative" effect (commit `800cc01`) bounced the pane away
-   when toggling collaboration *on* (the SetupForm opens it on a not-yet-collab
-   notebox). Rewritten to fire only on the `collaborative: true→false`
-   transition (a switch / Stop-collaborating), not on deliberate open. Strict
-   subset of the old condition. **This was a real regression the user hit.**
-3. **Package extension → `.zip`** (was `.inkypkg`): export default `notebox.zip`;
-   import still accepts `.inkypkg` for older test files.
-4. **Review-incoming mode** (the deferred "review every incoming change"):
-   per-notebox, per-machine toggle (`NoteboxLocalState.review_incoming`, off by
-   default) in the Collaboration panel. When on, Sync **and** package import
-   pause and stage *every* incoming added/modified note as suggestions — clean
-   ones rendered **mine→merged** (so accept takes theirs and never drops local
-   edits; conflicts still base→mine→theirs), then finalize via the existing
-   path. Backend: `run_sync(.., review)` + `run_review` + `stage_suggestion_item`
-   refactor; `git_get/set_review_incoming`; `save_settings` now load-merges
-   `local.json` so the flag survives. +2 tests incl.
-   `review_mode_accept_preserves_local_edit_on_clean_merge` (the no-data-loss
-   guarantee). Frontend: store `reviewIncoming`/`setReviewIncoming`, panel toggle
-   row, ipc, i18n (`git.review.toggle*`).
+**⚠ Uncommitted in the working tree (NOT this work):** 4 `src-tauri/assets/fonts/
+Junicode-*.ttf` files, modified 2026-05-20 (pre-dates this session — likely a dev
+build rewrite). Excluded from all session-2 commits. **The user is to decide**
+whether to `git checkout` (discard) or commit them.
 
-**Phase 7 summary:** export a notebox's whole `.git` to one (optionally AES-256)
-file; import it as a new notebox (case A: clone+drop-origin) or reconcile into an
-existing one (case B: transient local-path remote + `run_sync(push=false)` →
-conflicts pause/finalize like Sync). Package mode = empty
-`NoteboxGitConfig.remote`. Full detail + decisions in the Phase 7 — DONE section.
+**NEXT — pick up the user's in-app testing.** Two deferred enhancements are queued
+(both user-validated, neither built):
+1. **Full intra-line opaque-markup rendering in `suggest.rs`** — preserve existing
+   tracked-changes markup as a live pill and suggestion-render only the
+   surrounding text (needs a tokenized intra-line diff). Today it falls back to
+   raw diff on overlap (`2ae7920`); do this if that fallback proves too coarse
+   once notes carry lots of tracked changes.
+2. **Two export modes** — see "Future export work" below.
 
 **Future export work (user-validated design, NOT built):** export currently
 ships the **whole `.git`** every time. Two-mode plan, mirroring git
