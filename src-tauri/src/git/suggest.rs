@@ -31,7 +31,10 @@
 //! (e.g. a hunk cut through a `#func[...]` call and unbalanced its brackets),
 //! the whole note falls back to the raw-diff view — correctness over coverage.
 //! Incoming hunks that already *are* `#suggestion`/`#annotation` markup pass
-//! through verbatim rather than being wrapped again.
+//! through verbatim rather than being wrapped again. And when a *changed* hunk
+//! holds existing tracked-changes markup mid-content (so it can't pass through
+//! cleanly), the whole note falls back to the raw diff rather than nest a
+//! suggestion inside a suggestion.
 
 use similar::{capture_diff_slices, Algorithm, DiffOp};
 
@@ -103,6 +106,11 @@ pub fn render_incoming(
                 old_index, old_len, ..
             } => {
                 let body = concat_lines(&mine_lines[old_index..old_index + old_len]);
+                // Deleting a region that holds existing tracked-changes markup
+                // would wrap a suggestion in a suggestion — bail to the raw diff.
+                if contains_tracked_markup(&body) {
+                    return fallback_markup_overlap();
+                }
                 let conflict = is_conflict(&from_base, old_index, old_len);
                 emit_suggestion(
                     &mut out,
@@ -120,6 +128,10 @@ pub fn render_incoming(
                 new_index, new_len, ..
             } => {
                 let body = concat_lines(&theirs_lines[new_index..new_index + new_len]);
+                // Markup mid-hunk (not a clean whole-hunk passthrough) would nest.
+                if !is_passthrough_markup(&body) && contains_tracked_markup(&body) {
+                    return fallback_markup_overlap();
+                }
                 // A pure insertion touches no lines of mine, so it can never be
                 // a conflict on its own.
                 emit_suggestion(
@@ -142,6 +154,15 @@ pub fn render_incoming(
             } => {
                 let old = concat_lines(&mine_lines[old_index..old_index + old_len]);
                 let body = concat_lines(&theirs_lines[new_index..new_index + new_len]);
+                // Either side carrying existing tracked-changes markup in the
+                // changed region would produce a suggestion-within-a-suggestion;
+                // fall back rather than emit stacked markup. (A clean whole-hunk
+                // suggestion in `body` still passes through via emit_suggestion.)
+                if contains_tracked_markup(&old)
+                    || (!is_passthrough_markup(&body) && contains_tracked_markup(&body))
+                {
+                    return fallback_markup_overlap();
+                }
                 let conflict = is_conflict(&from_base, old_index, old_len);
                 emit_suggestion(
                     &mut out,
@@ -216,6 +237,25 @@ fn is_passthrough_markup(text: &str) -> bool {
     let t = text.trim_start();
     (t.starts_with("#suggestion(") || t.starts_with("#annotation(") || t.starts_with("#annotation["))
         && parse_error_count(text) == 0
+}
+
+/// Whether `text` contains tracked-changes markup (`#suggestion`/`#annotation`)
+/// *anywhere*, not just at the start. When a changed hunk's content holds such
+/// markup, wrapping it as a suggestion would nest a suggestion inside a
+/// suggestion (the "stacked" markup a reviewer sees as raw text); rendering
+/// bails to the raw-diff view for that note instead — correctness over coverage,
+/// like the parse backstop. (A whole-hunk passthrough is handled separately and
+/// does not reach this check.)
+fn contains_tracked_markup(text: &str) -> bool {
+    text.contains("#suggestion(") || text.contains("#annotation(") || text.contains("#annotation[")
+}
+
+/// The fallback returned when an incoming change overlaps existing tracked
+/// changes (see [`contains_tracked_markup`]).
+fn fallback_markup_overlap() -> StagedRender {
+    StagedRender::Fallback {
+        reason: "incoming change overlaps existing tracked-changes markup".into(),
+    }
 }
 
 /// Split keeping line terminators so concatenation reproduces the input
@@ -403,6 +443,38 @@ mod tests {
         assert!(
             !s.source.contains("suggestion(kind: \"insert\")[#suggestion"),
             "must not wrap a suggestion in a suggestion"
+        );
+    }
+
+    #[test]
+    fn change_over_existing_inline_markup_falls_back() {
+        // A line carries a hand-authored inline suggestion; theirs edits the
+        // text around it on the same line. Wrapping that whole line would nest
+        // a suggestion inside a suggestion, so render bails to the raw diff.
+        let mine = "asd #suggestion(kind: \"insert\")[Mork] the\n";
+        let theirs = "asd #suggestion(kind: \"insert\")[Mork] the stuff\n";
+        match render_incoming(Some(mine), mine, theirs, None, None) {
+            StagedRender::Fallback { .. } => {}
+            StagedRender::Suggestions(s) => {
+                panic!("expected fallback for markup overlap, got {} suggestions", s.total)
+            }
+        }
+    }
+
+    #[test]
+    fn change_away_from_existing_markup_still_renders_suggestions() {
+        // The note contains a hand-authored suggestion on one line, but the
+        // incoming change touches a *different* line — so it renders normally
+        // (the overlap guard is narrow: only changed hunks that hold markup bail)
+        // and the existing markup is preserved verbatim, exactly once.
+        let mine = "intro\n#suggestion(kind: \"insert\")[note]\noutro\n";
+        let theirs = "intro changed\n#suggestion(kind: \"insert\")[note]\noutro\n";
+        let s = staged(render_incoming(Some(mine), mine, theirs, None, None));
+        assert!(s.total >= 1, "the unrelated edit still renders as a suggestion");
+        assert_eq!(
+            s.source.matches("#suggestion(kind: \"insert\")[note]").count(),
+            1,
+            "the pre-existing markup is preserved untouched"
         );
     }
 }
