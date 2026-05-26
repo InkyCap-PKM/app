@@ -139,6 +139,7 @@
   "annotations.view.history": "History",
   "annotations.dismiss": "Dismiss this comment",
   "annotations.openMenu": "Accept, reject, or comment",
+  "annotations.collabHint": "These accept/reject decisions apply to this note only. When every note is reviewed, merge them all and update your notebox from the Collaboration panel.",
 
   "history.loading": "Loading history…",
   "history.empty": "No earlier versions of this note yet.",
@@ -290,18 +291,19 @@
   "git.actions.discard": "Discard merge",
 
   "git.review.tabTitle": "Resolve: {name}",
+  "git.review.tabIconTitle": "Part of a collaboration review",
   "git.review.conflicts": "{n} conflicts",
   "git.review.oneConflict": "1 conflict",
   "git.review.toggleLabel": "Review incoming changes before merging",
   "git.review.toggleHint": "When on, a Sync or package import pauses and shows every incoming change as a suggestion to accept or reject, instead of merging automatically. Your own edits are never dropped — accepting takes a collaborator's change on top of yours. Applies to both Git-server sync and package handoff. A per-device setting; it doesn't affect collaborators.",
   "git.review.toggleFailed": "Could not change the review setting",
   "git.review.heading": "Review incoming changes",
-  "git.review.intro": "Open each note to see what changed (additions show as suggestions), accept or reject them, then finish to merge.",
+  "git.review.intro": "Open each note and accept or reject its incoming changes in the Changes panel on the right. Your notebox stays on its current content until you Accept reviewed & finish below — that step merges every reviewed note and brings your notebox up to date.",
   "git.review.incomingBadge": "incoming",
   "git.review.finish": "Accept reviewed & finish",
 
   "git.conflict.heading": "Conflicts to resolve",
-  "git.conflict.intro": "These notes were edited on both sides. Open each one, resolve the suggestions, then finalize.",
+  "git.conflict.intro": "These notes were edited on both sides. Open each one and resolve its suggestions in the Changes panel on the right. Your notebox stays on its current content until you finalize below — that step merges every resolved note and brings your notebox up to date.",
   "git.conflict.binary": "binary — resolve manually",
 
   "git.discard.title": "Discard merge",

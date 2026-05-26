@@ -27,7 +27,6 @@ import {
   FolderDown,
   ChevronDown,
   ChevronRight,
-  Eye,
   X,
 } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
@@ -464,7 +463,7 @@ const ConflictView: Component = () => {
     <>
       <div class={`git-panel__banner${hasConflicts() ? " git-panel__banner--conflict" : ""}`}>
         <span class="git-panel__banner-author">
-          <Show when={hasConflicts()} fallback={<Eye size={13} />}>
+          <Show when={hasConflicts()}>
             <AlertTriangle size={13} />
           </Show>
           {hasConflicts() ? t("git.conflict.heading") : t("git.review.heading")}

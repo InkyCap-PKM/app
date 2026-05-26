@@ -961,7 +961,9 @@ const RightPanel: Component = () => {
   async function menuRename() {
     setFileMenu(null);
     const tab = activeFileTab();
-    if (!tab) return;
+    // Staged collaboration-review tabs aren't the user's to rename mid-merge;
+    // the menu entry is hidden for them, but guard the action defensively too.
+    if (!tab || tab.collab) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     const newName = await promptText({
       title: "Rename note",
@@ -2002,12 +2004,17 @@ const RightPanel: Component = () => {
             style={{ left: `${menu().x}px`, top: `${menu().y}px`, position: "fixed" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button class="context-menu__item" onClick={menuRename}>
-              Rename...
-            </button>
-            <button class="context-menu__item" onClick={menuMoveFile}>
-              Move file to...
-            </button>
+            {/* Identity / lifecycle ops on a staged collaboration-review note
+                would desync the merge — hidden while reviewing. Content edits
+                (properties, citations, the editor itself) stay enabled. */}
+            <Show when={!activeFileTab()?.collab}>
+              <button class="context-menu__item" onClick={menuRename}>
+                Rename...
+              </button>
+              <button class="context-menu__item" onClick={menuMoveFile}>
+                Move file to...
+              </button>
+            </Show>
             <button class="context-menu__item" onClick={menuBookmark}>
               Bookmark...
             </button>
@@ -2029,10 +2036,12 @@ const RightPanel: Component = () => {
             <button class="context-menu__item" onClick={menuShowInExplorer}>
               Show in system file manager
             </button>
-            <div class="context-menu__separator" />
-            <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
-              Delete file
-            </button>
+            <Show when={!activeFileTab()?.collab}>
+              <div class="context-menu__separator" />
+              <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
+                Delete file
+              </button>
+            </Show>
           </div>
         )}
       </Show>

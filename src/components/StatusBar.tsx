@@ -79,6 +79,11 @@ const StatusBar: Component = () => {
   const activeFilePath = createMemo(() => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file" || !tab.path) return null;
+    // A collaboration-review (staged "Resolve:") tab points at an internal
+    // staging path and must not be renamed mid-merge. Hide the path, name, and
+    // rename affordance entirely while reviewing — the file identity isn't the
+    // user's to change here.
+    if (tab.collab) return null;
     const root = noteboxInfo()?.path;
     if (!root) return null;
     // Normalize through the canonical-shape helper so a regression on

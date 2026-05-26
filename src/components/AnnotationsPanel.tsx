@@ -68,6 +68,10 @@ const AnnotationsPanel: Component = () => {
     const tab = getActiveTab();
     return tab && tab.type === "file" ? tab.path : null;
   });
+  // True while the open note is a staged collaboration-review tab. Drives the
+  // scope hint that connects this pane's per-change decisions to the larger
+  // merge the reviewer finishes from the Collaboration panel.
+  const isCollabReview = createMemo(() => getActiveTab()?.collab === true);
 
   // Scan the active editor when this pane opens (the component mounts) and
   // whenever the active editor changes (tab switch). Live edits while the pane
@@ -181,6 +185,9 @@ const AnnotationsPanel: Component = () => {
           <Show when={notePath()}>{(p) => <NoteHistory path={p()} />}</Show>
         }
       >
+      <Show when={isCollabReview()}>
+        <p class="annotations-panel__collab-hint">{t("annotations.collabHint")}</p>
+      </Show>
       <div class="right-panel__links-filter-wrap">
         <input
           class="right-panel__links-filter-input"
