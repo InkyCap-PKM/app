@@ -1776,7 +1776,13 @@ function ExportSettingsSection() {
 }
 
 function BackupSettingsSection() {
-  const [lastState, { refetch: refetchLastState }] = createResource(() => ipc.getBackupState());
+  // Keyed on the active notebox path so switching noteboxes refetches —
+  // the backup state is per-notebox and the backend returns the open
+  // notebox's record, so the "Last backup" line must follow the notebox.
+  const [lastState, { refetch: refetchLastState }] = createResource(
+    () => noteboxInfo()?.path,
+    () => ipc.getBackupState(),
+  );
   const [hasPassword, { refetch: refetchHasPassword }] = createResource(() => ipc.hasBackupPassword());
 
   // Subscribe to the backend's `backup:state-changed` event so the

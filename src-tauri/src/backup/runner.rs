@@ -69,7 +69,7 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     // notebox has had no writes since the last successful backup. We
     // only consult the notebox tree (not the user-config folder) here
     // because user-config changes alone don't justify a fresh archive.
-    let st = state::load();
+    let st = state::load(inputs.notebox_root);
     if inputs.is_scheduled && inputs.settings.only_on_change && st.last_success_unix > 0 {
         let max_mtime = newest_mtime_under(inputs.notebox_root).unwrap_or(0);
         if max_mtime <= st.last_success_unix {
@@ -188,7 +188,7 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
         last_archive_path: Some(canonical.clone()),
         last_status: Some("Success".to_string()),
     };
-    if let Err(e) = state::save(&new_state) {
+    if let Err(e) = state::save(inputs.notebox_root, &new_state) {
         log::warn!("backup state save failed (archive still written): {e}");
     }
 
@@ -202,13 +202,14 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     }))
 }
 
-/// Record a failure into the persisted backup state without changing
-/// the `last_success_unix` timestamp. Used by the scheduler tick so
-/// the settings UI can surface "Last attempt failed: <message>".
-pub fn record_failure(message: &str) {
-    let mut st = state::load();
+/// Record a failure into the persisted backup state for `notebox_root`
+/// without changing its `last_success_unix` timestamp. Used by the manual
+/// run and the scheduler tick so the settings UI can surface "Last attempt
+/// failed: <message>" for the notebox the attempt was made against.
+pub fn record_failure(notebox_root: &Path, message: &str) {
+    let mut st = state::load(notebox_root);
     st.last_status = Some(message.to_string());
-    if let Err(e) = state::save(&st) {
+    if let Err(e) = state::save(notebox_root, &st) {
         log::warn!("backup state save failed during failure-record: {e}");
     }
 }
