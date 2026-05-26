@@ -341,6 +341,28 @@ export function closeAllTabs() {
   resetToSingleEmptyLeaf();
 }
 
+/** Close every collaboration-review ("Resolve:") tab. Finalize and Discard
+ *  both clear the `.inkycap/incoming/` staging dir, so these tabs would point
+ *  at dangling paths — close them rather than leave stale buffers. Deliberately
+ *  does NOT record them on the reopen stack (Ctrl+Shift+T): the staged copy is
+ *  gone, so reopening would resolve nothing. Spawns one empty tab if closing
+ *  these emptied the workspace. */
+export function closeCollabTabs() {
+  const ids = tabs.filter((t) => t.collab).map((t) => t.id);
+  if (ids.length === 0) return;
+  for (const id of ids) {
+    removeTab(id);
+    setTabs(produce((t) => {
+      const i = t.findIndex((x) => x.id === id);
+      if (i !== -1) t.splice(i, 1);
+    }));
+    historyMap.delete(id);
+    editorStateCache.delete(id);
+    setTabDirty(id, false);
+  }
+  if (tabs.length === 0) createEmptyTab();
+}
+
 /** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
  *  closed-tab stack is empty. Opens in a fresh tab; if a tab with the
  *  same path is already open, that tab is focused instead. */

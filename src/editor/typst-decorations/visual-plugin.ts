@@ -6,8 +6,9 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { type ChangeSet, EditorState, Facet, Prec, type Range, RangeSet, StateEffect, StateField } from "@codemirror/state";
+import { type ChangeSet, EditorState, Facet, type Line, Prec, type Range, RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
 import { expandFunc } from "./effects";
+import { inVerbatimLineContext } from "./keymaps";
 import { findCallEnd } from "./pill";
 import { syntaxTree } from "@codemirror/language";
 import {
@@ -113,6 +114,26 @@ function isOnCursorLine(state: EditorState, from: number, to: number, focused: S
     if (focused.has(n)) return true;
   }
   return false;
+}
+
+/**
+ * If `line` ends with a managed paragraph soft break — a single unescaped
+ * trailing `\` outside any verbatim context — return the document position of
+ * that `\`; otherwise null. This is the marker the visual editor inserts on
+ * Enter (see `enterInsertsLineBreakFacet`): it is rendered invisibly and the
+ * `\␤` pair is made atomic so the writer never sees or lands inside it. Source
+ * mode does neither, so the `\` shows there as ordinary text. The
+ * verbatim-context check is shared with the Enter keymap so insertion and
+ * rendering agree on exactly which `\` are managed breaks.
+ */
+function softBreakSlashPos(state: EditorState, line: Line): number | null {
+  const text = line.text;
+  if (text.length === 0 || text[text.length - 1] !== "\\") return null;
+  // An escaped backslash (`…\\`) is literal content, not a line break.
+  if (text.length >= 2 && text[text.length - 2] === "\\") return null;
+  const slashPos = line.from + text.length - 1;
+  if (inVerbatimLineContext(state, slashPos)) return null;
+  return slashPos;
 }
 
 function cursorPositions(state: EditorState): Set<number> {
@@ -535,23 +556,18 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
     }
   }
 
-  // Hide trailing `\` linebreak markers in visual mode. The visual editor's
-  // job is to make authoring feel natural — the `\` is meaningful in source
-  // mode and the compiled output, but at the cursor's eye level the line
-  // break itself is the feedback. We hide the marker when the cursor is
-  // away from the line; when the cursor is on the line, we leave it visible
-  // so editing it (e.g. backspacing the `\` to undo the break) is not
-  // hidden state.
+  // Hide trailing `\` paragraph-break markers in visual mode — always, even on
+  // the cursor line. The `\` is meaningful in source mode and the compiled
+  // output, but in the visual editor the line break itself is the feedback and
+  // the marker only gets in the way of writing. We keep it invisible at all
+  // times and instead make the `\␤` pair atomic (see `softBreakRangesField`)
+  // so the writer edits across the break — type, backspace, delete — without
+  // ever seeing or landing inside the `\`.
   for (const i of escScanLines) {
     const line = state.doc.line(i);
-    if (isOnCursorLine(state, line.from, line.to, focused)) continue;
-    const text = line.text;
-    if (text.length === 0) continue;
-    if (text[text.length - 1] !== "\\") continue;
-    // Don't hide an escaped backslash (`\\` at end of line).
-    if (text.length >= 2 && text[text.length - 2] === "\\") continue;
-    const from = line.from + text.length - 1;
-    decos.push(hide.range(from, from + 1));
+    const slashPos = softBreakSlashPos(state, line);
+    if (slashPos === null) continue;
+    decos.push(hide.range(slashPos, slashPos + 1));
   }
 
   if (!onlyRanges) {
@@ -1564,7 +1580,50 @@ const protectedChangeFilter = createProtectedChangeFilter(protectedRangesField);
 const tableEntryKeymap = createTableEntryKeymap(visualField);
 const clickAnchorPlugin = createClickAnchorPlugin(visualField);
 
+// A trailing paragraph-break `\` is hidden in visual mode (see
+// `buildDecorations`) and registered here as an atomic range spanning the `\`
+// *and* the following newline. Atomicity makes CodeMirror treat the whole soft
+// break as one unit: the cursor can't land between the `\` and its newline
+// (which would otherwise let a keystroke insert text after the `\`, silently
+// turning the line break into a literal `\x` escape), and a single
+// Backspace/Delete at the break removes both characters at once, merging the
+// lines exactly as the writer expects. So the marker behaves like a seamless
+// line break even though the `\` is still present in the source.
+class SoftBreakRange extends RangeValue {}
+const softBreakMarker = new SoftBreakRange();
+
+function computeSoftBreakRanges(state: EditorState): RangeSet<SoftBreakRange> {
+  const ranges: Range<SoftBreakRange>[] = [];
+  for (let i = 1; i <= state.doc.lines; i++) {
+    const slashPos = softBreakSlashPos(state, state.doc.line(i));
+    if (slashPos === null) continue;
+    // Extend over the trailing newline when one exists (every line but the
+    // last); a soft break on the final line covers just the `\`.
+    ranges.push(softBreakMarker.range(slashPos, Math.min(slashPos + 2, state.doc.length)));
+  }
+  return RangeSet.of(ranges);
+}
+
+const softBreakRangesField = StateField.define<RangeSet<SoftBreakRange>>({
+  create: (state) => computeSoftBreakRanges(state),
+  update(value, tr) {
+    // Recompute on doc edits, on async reparse (a trailing `\` can move
+    // in/out of a verbatim context once the tree settles), and on the
+    // explicit rebuild effect — the same triggers `visualField` uses, so the
+    // hidden markers and their atomic ranges never drift apart.
+    for (const e of tr.effects) if (e.is(rebuildVisualDecorations)) return computeSoftBreakRanges(tr.state);
+    if (tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
+      return computeSoftBreakRanges(tr.state);
+    }
+    return value;
+  },
+});
+
+const softBreakAtomicRanges = EditorView.atomicRanges.of(
+  (view) => view.state.field(softBreakRangesField, false) ?? RangeSet.empty,
+);
+
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin];
 }
 

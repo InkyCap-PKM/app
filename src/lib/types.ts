@@ -495,6 +495,11 @@ export interface GitStatusSummary {
    *  Counts all local commits before the first push (unlike `ahead`), so the
    *  initial publish is surfaced. */
   unpushed: number;
+  /** Whether there's local work collaborators haven't received — the
+   *  qualitative "Changes to share" signal shown instead of a commit count.
+   *  Server mode: dirty or unpushed. Package mode: dirty or HEAD moved past the
+   *  last export (commit counts never reset with no remote). */
+  unshared: boolean;
 }
 
 /** Author + message of a commit — the review context the loop harvests. */
@@ -538,6 +543,19 @@ export interface GitReviewSession {
   upToDate: boolean;
 }
 
+/** How the user chose to resolve a conflicted binary (non-`.typ`) file.
+ *  Mirrors `commands/git.rs::BinaryDecision`. */
+export type GitBinaryDecision = "keepMine" | "takeTheirs" | "keepBoth";
+
+/** Outcome of resolving one binary conflict. Mirrors
+ *  `commands/git.rs::BinaryResolution`. */
+export interface GitBinaryResolution {
+  /** The notebox-relative path that now holds the resolved file. */
+  path: string;
+  /** For `keepBoth`: the sibling path the incoming copy was written to. */
+  addedPath: string | null;
+}
+
 /** One incoming change in the post-sync digest ("what landed from others"). */
 export interface GitDigestEntry {
   /** Notebox-relative path (frontend string form). */
@@ -563,11 +581,35 @@ export interface GitSyncOutcome {
   paused: boolean;
   /** Conflicted notes/files needing a hand decision. Populated when `paused`. */
   conflicts: GitReviewItem[];
+  /** The shared settings.json was edited on both sides and structurally merged;
+   *  this lists any same-key clashes still needing a pick. `null` when settings
+   *  didn't conflict or merged with no clashes. Populated when `paused`. */
+  settingsConflict: GitSettingsConflict | null;
   /** What collaborators changed since the merge base — the "what landed" digest. */
   digest: GitDigestEntry[];
   /** The incoming tip commit's author/message, for the digest banner. */
   incoming: GitCommitInfo | null;
 }
+
+/** One key both sides changed differently in settings.json. Mirrors
+ *  `git/json_merge.rs::KeyConflict`. `mine`/`theirs` are arbitrary JSON values. */
+export interface GitKeyConflict {
+  /** Dotted key path, e.g. "citations.zoteroPath". */
+  path: string;
+  mine: unknown;
+  theirs: unknown;
+}
+
+/** A structurally-merged settings.json with same-key clashes left to decide.
+ *  Mirrors `commands/git.rs::SettingsConflict`. */
+export interface GitSettingsConflict {
+  /** Notebox-relative path of the settings file. */
+  path: string;
+  conflicts: GitKeyConflict[];
+}
+
+/** Per-key resolution for a settings clash: dotted path → which side to keep. */
+export type GitSettingsDecisions = Record<string, "mine" | "theirs">;
 
 /** Result of a read-only "Check for updates": how far the local branch is
  *  behind the remote, fetched without pulling. Mirrors `commands/git.rs::CheckResult`. */

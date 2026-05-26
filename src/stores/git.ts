@@ -20,10 +20,13 @@ import type {
   GitStatusSummary,
   GitSyncOutcome,
   GitReviewItem,
+  GitBinaryDecision,
+  GitBinaryResolution,
+  GitSettingsDecisions,
   GitIdentity,
 } from "../lib/types";
 import { noteboxSettings, loadNoteboxSettings } from "./settings";
-import { openTab } from "./tabs";
+import { openTab, closeCollabTabs } from "./tabs";
 import { setRightCollapsed, setRightPanelTab } from "./layout";
 import { awaitAllPendingWrites } from "./editor-writes";
 import { showToast, toastError } from "./toasts";
@@ -71,6 +74,12 @@ const [incomingCount, setIncomingCount] = createSignal(0);
  *  Lifted to the store so the Settings › Configure entry point can open the panel
  *  with it already expanded. Reset (collapsed) on a notebox switch. */
 const [manageOpen, setManageOpen] = createSignal(false);
+/** Whether the "Import/export changes" / "Sync changes" action section is
+ *  expanded. Collapsed by default and auto-collapsed by the store once a gesture
+ *  completes (sync / export / import / finalize / discard), so the panel returns
+ *  to the calm status + digest view. Lifted to the store so those gesture
+ *  actions can fold it back. Reset (collapsed) on a notebox switch. */
+const [actionsOpen, setActionsOpen] = createSignal(false);
 /** Per-machine "review incoming changes before merging" preference for the open
  *  notebox (off by default). When on, Sync / package import pauses and stages
  *  every incoming change for review instead of auto-merging. Loaded on open. */
@@ -163,6 +172,7 @@ export async function resetGitOnOpen(): Promise<void> {
   setReconnectable(null);
   setIncomingCount(0);
   setManageOpen(false);
+  setActionsOpen(false);
   setReviewIncomingSignal(false);
   if (collaborative()) {
     await refreshStatus();
@@ -293,6 +303,7 @@ export async function sync(): Promise<void> {
     await awaitAllPendingWrites();
     const outcome = await ipc.gitSync();
     applyOutcome(outcome, true);
+    setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.syncFailed"), err);
@@ -337,6 +348,7 @@ export async function exportPackage(dest: string, password?: string): Promise<vo
     await awaitAllPendingWrites();
     const res = await ipc.gitExportPackage(dest, password);
     showToast("success", t("git.toast.exported", { path: res.path }));
+    setActionsOpen(false);
     // A dirty notebox was committed during export — refresh the status chip.
     await refreshStatus();
   } catch (err) {
@@ -356,6 +368,7 @@ export async function importPackage(archive: string, password?: string): Promise
     await awaitAllPendingWrites();
     const outcome = await ipc.gitImportPackage(archive, password);
     applyOutcome(outcome, false);
+    setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.importFailed"), err);
@@ -373,7 +386,13 @@ export async function finalizeSync(): Promise<void> {
     // land before the backend reads them to build the merged tree.
     await awaitAllPendingWrites();
     const outcome = await ipc.gitSyncFinalize(pausedPush());
+    // Finalize cleared `.inkycap/incoming/`, so the staged "Resolve:" tabs now
+    // point at deleted files. Close them before applyOutcome dispatches the
+    // post-sync editor reload, or those editors try to reload a gone path.
+    closeCollabTabs();
     applyOutcome(outcome, pausedPush());
+    // The paused view is done — fold the action section back to status + digest.
+    setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.finalizeFailed"), err);
@@ -399,19 +418,18 @@ export function openStagedNote(item: GitReviewItem): void {
   setRightPanelTab("annotations");
 }
 
-/** Open a digest entry's note (the working copy) — the "what landed" view. */
-export function openDigestEntry(path: string): void {
-  const title = path.split("/").pop() ?? path;
-  openTab({ type: "file", title, path }, { forceNewTab: false });
-}
-
 /** Abort a paused sync: clears staging and restores the working tree to its
  *  last committed state (so the clean files the merge auto-applied don't linger).
  *  The incoming changes stay on the remote and re-apply on the next Sync. */
 export async function discardReview(): Promise<void> {
   try {
     await ipc.gitDiscardReview();
+    // Discard also cleared staging — close the staged "Resolve:" tabs before
+    // the reload dispatch so they don't point at deleted files.
+    closeCollabTabs();
     setSyncOutcome(null);
+    // The paused view is done — fold the action section back to status + digest.
+    setActionsOpen(false);
     // The working tree was rolled back to HEAD — reload open editors so their
     // buffers reflect the restored content (clean buffers only).
     document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
@@ -424,6 +442,35 @@ export async function discardReview(): Promise<void> {
 /** Dismiss the post-sync digest (the non-blocking "what landed" summary). */
 export function dismissDigest(): void {
   setSyncOutcome(null);
+}
+
+/** Resolve one conflicted binary file (Mine / Theirs / Both) before finalizing.
+ *  Mutates the working tree immediately; re-callable until finalize. Returns the
+ *  resolution (incl. the added sibling path for "Both"), or null on failure. */
+export async function resolveBinaryConflict(
+  path: string,
+  decision: GitBinaryDecision,
+): Promise<GitBinaryResolution | null> {
+  try {
+    return await ipc.gitResolveBinaryConflict(path, decision);
+  } catch (err) {
+    toastError(t("git.binary.resolveFailed"), err);
+    return null;
+  }
+}
+
+/** Resolve the structurally-merged settings.json by picking a side per clashing
+ *  key. Re-callable until finalize. Returns true on success. */
+export async function resolveSettings(
+  decisions: GitSettingsDecisions,
+): Promise<boolean> {
+  try {
+    await ipc.gitResolveSettings(decisions);
+    return true;
+  } catch (err) {
+    toastError(t("git.settings.resolveFailed"), err);
+    return false;
+  }
 }
 
 /** Toggle the per-machine "review incoming changes before merging" preference
@@ -486,5 +533,7 @@ export {
   incomingCount,
   manageOpen,
   setManageOpen,
+  actionsOpen,
+  setActionsOpen,
   reviewIncoming,
 };

@@ -32,11 +32,15 @@ pub struct EditorSettings {
     pub auto_pair_typst: bool,
     /// Smart list indentation on Enter/Tab.
     pub smart_indent_lists: bool,
-    /// When true, pressing Enter at the end of a line inserts a Typst
-    /// linebreak (`\`) so the next line wraps as a new visual line in
-    /// the rendered output, instead of being collapsed into a space
-    /// (Typst's default behaviour for single newlines). A second
-    /// consecutive Enter still produces a paragraph break.
+    /// When true, pressing Enter at the end of a line in the *visual
+    /// editor* inserts a Typst linebreak (`\`) so the next line wraps as
+    /// a new visual line in the rendered output, instead of being
+    /// collapsed into a space (Typst's default behaviour for single
+    /// newlines). A second consecutive Enter still produces a paragraph
+    /// break. In the visual editor the `\` is hidden and managed as an
+    /// atomic "soft break" so the writer never sees or edits it; source
+    /// mode never auto-inserts it and shows any existing `\` as plain
+    /// text.
     pub enter_inserts_line_break: bool,
     /// Default editing mode: "source" or "live-preview".
     pub default_editing_mode: String,
