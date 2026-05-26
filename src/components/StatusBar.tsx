@@ -6,6 +6,7 @@ import {
   TextCursorInput,
   Handshake,
   RefreshCw,
+  ChevronUp,
 } from "lucide-solid";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
@@ -213,6 +214,10 @@ const StatusBar: Component = () => {
             <RefreshCw size={13} class="status-bar__git-spin" />
           </Show>
           <span>{gitSummary()}</span>
+          {/* Trails the summary at the button's right edge; cues that the
+              click opens the collaboration pane upward (like the notebox
+              switcher above it). */}
+          <ChevronUp size={13} class="status-bar__git-chevron" />
         </button>
       </Show>
 

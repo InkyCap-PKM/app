@@ -22,6 +22,7 @@
 //!   `runner::record_failure` (which the settings UI surfaces) and the
 //!   scheduler keeps going. We never panic the task or stop the loop.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -65,15 +66,17 @@ async fn run_loop(app: AppHandle) {
 
     loop {
         // Snapshot what we need on every iteration. Cheap; avoids
-        // holding any state lock across the sleep below.
-        let (settings, notebox_open, wake) = {
+        // holding any state lock across the sleep below. The notebox root
+        // (not just "is one open?") is needed so the next-due calc reads
+        // *this* notebox's last-backup time.
+        let (settings, notebox_root, wake) = {
             let state = app.state::<AppState>();
             let settings = state.settings.read().await.backup.clone();
-            let notebox_open = state.notebox_root.read().await.is_some();
-            (settings, notebox_open, state.backup_scheduler_wake.clone())
+            let notebox_root = state.notebox_root.read().await.clone();
+            (settings, notebox_root, state.backup_scheduler_wake.clone())
         };
 
-        let sleep_for = compute_sleep_secs(&settings, notebox_open);
+        let sleep_for = compute_sleep_secs(&settings, notebox_root.as_deref());
 
         // Sleep until either due-time or a settings-change wake. The
         // `select!` cancellation is safe because both branches are
@@ -100,13 +103,13 @@ async fn run_loop(app: AppHandle) {
 /// Compute how long to sleep before the next scheduled tick. Returns
 /// `None` when the scheduler should be dormant (interval is 0, path is
 /// unset, or no notebox is open — the runner would fail anyway).
-fn compute_sleep_secs(settings: &BackupSettings, notebox_open: bool) -> Option<u64> {
+fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) -> Option<u64> {
     if !settings.enabled {
         return None;
     }
-    if !notebox_open {
+    let Some(notebox_root) = notebox_root else {
         return None;
-    }
+    };
     if settings.interval_hours == 0 {
         return None;
     }
@@ -120,7 +123,7 @@ fn compute_sleep_secs(settings: &BackupSettings, notebox_open: bool) -> Option<u
         (settings.interval_hours as u64).saturating_mul(3600),
     );
 
-    let last = state::load().last_success_unix;
+    let last = state::load(notebox_root).last_success_unix;
     if last <= 0 {
         // Never run before — schedule the first one one full interval
         // from now. Avoids "open the app, get a backup immediately"
@@ -162,6 +165,9 @@ async fn run_one_tick(app: &AppHandle) {
     let cancel = state.backup_cancel.clone();
 
     let user_config_root = crate::app_paths::config_dir();
+    // The runner consumes `notebox_root` (moved into the blocking task);
+    // keep a copy so a failure can be recorded against the right notebox.
+    let notebox_root_for_record = notebox_root.clone();
     let outcome = tokio::task::spawn_blocking(move || {
         runner::run(runner::RunInputs {
             settings: &settings,
@@ -200,12 +206,12 @@ async fn run_one_tick(app: &AppHandle) {
         }
         Ok(Err(e)) => {
             log::warn!("scheduled backup failed: {e}");
-            runner::record_failure(&e.to_string());
+            runner::record_failure(&notebox_root_for_record, &e.to_string());
             let _ = emit_state_changed(app);
         }
         Err(e) => {
             log::warn!("scheduled backup task panicked: {e}");
-            runner::record_failure(&format!("task panicked: {e}"));
+            runner::record_failure(&notebox_root_for_record, &format!("task panicked: {e}"));
         }
     }
 }

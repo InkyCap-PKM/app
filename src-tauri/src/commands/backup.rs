@@ -60,6 +60,10 @@ pub async fn backup_now(
     state.backup_cancel.store(false, Ordering::Release);
     let cancel = state.backup_cancel.clone();
 
+    // The runner consumes `notebox_root` (moved into the blocking task);
+    // keep a copy so a failure can be recorded against the right notebox.
+    let notebox_root_for_record = notebox_root.clone();
+
     // The zip writer is synchronous; do it in a blocking task so we
     // don't tie up the tokio reactor on big noteboxes. The cost of one
     // OS thread is negligible vs. the cost of stalling other commands.
@@ -82,7 +86,7 @@ pub async fn backup_now(
     // "Last backup" record.
     if let Err(e) = &result {
         if !matches!(e, InkyCapError::Cancelled) {
-            runner::record_failure(&e.to_string());
+            runner::record_failure(&notebox_root_for_record, &e.to_string());
         }
     }
 
@@ -94,11 +98,17 @@ pub async fn backup_now(
     result
 }
 
-/// Read the persisted "last backup" record. Returns the same shape as
-/// the on-disk state file so the UI can show it directly.
+/// Read the persisted "last backup" record for the *currently open*
+/// notebox. Backups are per-notebox, so the settings UI must only ever see
+/// the active notebox's record — never another notebox's. Returns the
+/// default ("never ran") record when no notebox is open.
 #[tauri::command]
-pub async fn get_backup_state(_state: State<'_, AppState>) -> Result<state::BackupState> {
-    Ok(state::load())
+pub async fn get_backup_state(state: State<'_, AppState>) -> Result<state::BackupState> {
+    let notebox_root = state.notebox_root.read().await.clone();
+    Ok(match notebox_root {
+        Some(root) => state::load(&root),
+        None => state::BackupState::default(),
+    })
 }
 
 /// Request cancellation of any backup currently in flight. Sets the

@@ -10130,6 +10130,13 @@ svg.lucide {
   animation: git-spin 1s linear infinite;
 }
 
+/* Disclosure chevron at the button's right edge. Muted so it reads as an
+   affordance without competing with the handshake icon + summary word. */
+.status-bar__git-chevron {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
 /* Panel body */
 .git-panel__body {
   display: flex;
