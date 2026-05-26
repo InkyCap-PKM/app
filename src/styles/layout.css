@@ -1010,11 +1010,16 @@ svg.lucide {
   margin-top: 2px;
 }
 
+/* The PDF-standard selector stacks its label above a full-width dropdown.
+   A horizontal label+dropdown row overflowed the menu's right edge because
+   the block dropdown claims 100% width and does not shrink; stacking lets
+   it fill the field exactly instead. */
 .collection-table__export-menu-field {
   padding: 6px 12px;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .collection-table__export-menu-label {
@@ -1453,30 +1458,49 @@ svg.lucide {
   background: var(--border-input);
 }
 
-.filter-builder__combinator {
+/* A boolean group: a combinator header, its member rows / sub-groups, and
+   the add buttons. The root group is unadorned (the .filter-builder box is
+   its frame); nested groups are inset with a left accent rule so the
+   boolean structure reads at a glance. */
+.filter-builder__group {
   display: flex;
-  gap: 16px;
-  margin-bottom: 8px;
-  font-size: var(--text-base);
-  color: var(--fg-secondary);
+  flex-direction: column;
+  gap: 6px;
 }
 
-.filter-builder__combinator label {
+.filter-builder__group--nested {
+  padding: 6px 8px;
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-primary);
+}
+
+.filter-builder__group-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  cursor: pointer;
+  gap: 8px;
 }
 
-.filter-builder__combinator input[type="radio"] {
-  accent-color: var(--accent);
+.filter-builder__group-caption {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.filter-builder__remove--group {
+  margin-left: auto;
+}
+
+.filter-builder__add-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .filter-builder__rows {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 8px;
 }
 
 .filter-builder__row {
@@ -4232,6 +4256,22 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Trailing controls (a Browse button, a help "?", an inline checkbox's
+     hint) wrap onto the next line instead of pushing the row past the
+     panel's right edge. */
+  flex-wrap: wrap;
+}
+
+/* The right panel is narrow (and user-resizable down to 160px), so the
+   default 200px-wide, non-shrinking text input overflowed it and forced a
+   horizontal scrollbar. In a collection field, let text inputs shrink to the
+   space available — small fixed-width inputs (sizes, languages) keep their
+   inline width because they never need to shrink. */
+.collection-meta__row .settings__text-input,
+.collection-meta__add-row .settings__text-input {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .collection-meta__row--top {
@@ -4502,6 +4542,14 @@ svg.lucide {
 .contributors-editor__role {
   flex: 0 0 auto;
   min-width: 150px;
+}
+
+/* Free-text role field shown when the role select is on "Other…". Flows
+   inline after the select and wraps with the row's other controls. */
+.contributors-editor__role-other {
+  flex: 1 1 140px;
+  min-width: 120px;
+  width: auto;
 }
 
 .contributors-editor__btn {

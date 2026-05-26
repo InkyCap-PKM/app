@@ -98,9 +98,16 @@ export interface SortRule {
   direction: "ASC" | "DESC";
 }
 
+/// A member of a filter group's list: either a leaf expression string
+/// (e.g. `collection.contains("paper")`) or a nested group. This recursion
+/// is what lets a collection express `(A or B) and C`. Mirrors the backend
+/// `FilterGroup` whose members are untyped YAML values.
+export type FilterNode = string | FilterGroup;
+
 export interface FilterGroup {
-  and?: string[];
-  or?: string[];
+  and?: FilterNode[];
+  or?: FilterNode[];
+  not?: FilterNode[];
 }
 
 export interface ViewDef {

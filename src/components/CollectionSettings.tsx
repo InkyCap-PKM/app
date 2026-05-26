@@ -35,6 +35,7 @@ import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
 import { Dropdown } from "./Dropdown";
+import HelpButton from "./HelpButton";
 
 // ── Collection style editor ───────────────────────────────────────
 
@@ -713,13 +714,17 @@ const CollectionCharacteristicsEditor: Component<{
         <input
           type="text"
           class="settings__text-input"
+          style={{ flex: "1", "min-width": "0" }}
           value={props.collectionFile.typst_template ?? ""}
           onInput={(e) => saveField("typst_template", e.currentTarget.value)}
           placeholder="e.g. ieee or /templates/ieee.typ"
         />
-        <span class="collection-meta__hint">
-          Template name (resolved from templates folder) or notebox path starting with /
-        </span>
+        <HelpButton label="About the Typst template">
+          A template name, resolved from the notebox's templates folder, or a
+          notebox path starting with <code>/</code> (for example{" "}
+          <code>/templates/ieee.typ</code>). Applied to every note in this
+          collection.
+        </HelpButton>
       </div>
 
       <div class="collection-meta__row">
@@ -782,9 +787,11 @@ const CollectionCharacteristicsEditor: Component<{
             Browse…
           </button>
         </div>
-        <span class="collection-meta__hint">
-          Path to a .bib file (relative to notebox root). Setting this file will override the global file or Zotero.
-        </span>
+        <HelpButton label="About the bibliography file">
+          Path to a <code>.bib</code> file, relative to the notebox root.
+          Setting it here overrides the global bibliography file or Zotero for
+          notes in this collection.
+        </HelpButton>
       </div>
 
       <div class="collection-meta__section-label">Custom Metadata</div>

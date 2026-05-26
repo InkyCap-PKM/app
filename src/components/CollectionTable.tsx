@@ -347,22 +347,24 @@ const CollectionTable: Component<{ path: string }> = (props) => {
 
   // ── Sort handling ──
 
+  // Clicking a header sorts by that column *alone*, cycling
+  // none → ASC → DESC → none. Sorting by a single column at a time is what
+  // users expect from a table header click; the previous behaviour appended
+  // each click as a lower-priority key, so a click on a second column was
+  // dominated by the first and appeared to do nothing. (A `.collection`
+  // file can still define a multi-key sort by hand — the backend honours the
+  // whole list — this only governs what header clicks produce.)
   async function handleSort(col: string) {
     const rules = currentSortRules();
-    const existing = rules.find((r) => r.property === col);
+    const isPrimary = rules[0]?.property === col;
     let newRules: SortRule[];
 
-    if (!existing) {
-      // Add ASC sort
-      newRules = [...rules, { property: col, direction: "ASC" }];
-    } else if (existing.direction === "ASC") {
-      // Toggle to DESC
-      newRules = rules.map((r) =>
-        r.property === col ? { ...r, direction: "DESC" as const } : r,
-      );
+    if (!isPrimary) {
+      newRules = [{ property: col, direction: "ASC" }];
+    } else if (rules[0].direction === "ASC") {
+      newRules = [{ property: col, direction: "DESC" }];
     } else {
-      // Remove sort
-      newRules = rules.filter((r) => r.property !== col);
+      newRules = [];
     }
 
     await ipc.updateViewSort(props.path, activeView(), newRules);
@@ -632,13 +634,27 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setBusyMessage("Exporting collection as HTML site…");
       setBusyDetail(`Output folder: ${outputDir}`);
       setExportStatus("Exporting as static HTML site...");
-      const exported = await ipc.exportCollectionStaticSite(
+      const result = await ipc.exportCollectionStaticSite(
         props.path,
         activeView(),
         outputDir as string,
       );
-      setExportStatus(`Exported ${exported.length} file(s) to static site`);
-      setTimeout(() => setExportStatus(null), 4000);
+      if (result.skippedNotes.length > 0) {
+        // The site exported, but some notes couldn't be compiled and were
+        // left out. Surface them in the persistent banner so the user can
+        // fix the markup and re-export — the HTML counterpart of the book
+        // export's "some notes have errors" report.
+        const list = result.skippedNotes.map((n) => `  • ${n}`).join("\n");
+        const n = result.skippedNotes.length;
+        reportExportError(
+          `Exported ${result.files.length} file(s). ${n} note${n === 1 ? "" : "s"} ` +
+            `couldn't be compiled and ${n === 1 ? "was" : "were"} left out — ` +
+            `fix the markup and re-export:\n${list}`,
+        );
+      } else {
+        setExportStatus(`Exported ${result.files.length} file(s) to static site`);
+        setTimeout(() => setExportStatus(null), 4000);
+      }
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
       reportExportError(`Static site export failed: ${msg}`);

@@ -20,7 +20,7 @@ pub async fn export_collection_static_site(
     view_name: String,
     output_dir: String,
     state: State<'_, AppState>,
-) -> Result<Vec<String>, InkyCapError> {
+) -> Result<StaticSiteExportResult, InkyCapError> {
     let data = crate::commands::collections::get_collection_data_internal(
         &collection_path, &view_name, &state,
     )
@@ -52,10 +52,20 @@ pub async fn export_collection_static_site(
         .collect();
 
     let mut exported = Vec::new();
+    let mut skipped_notes = Vec::new();
+    // Stems that actually produced a page, so the index links only to files
+    // that exist (a skipped note must not appear as a dead nav link).
+    let mut exported_stems: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for row in &data.rows {
         let note_path_buf = PathBuf::from(&row.file_path);
-        let content = storage.read_file(&note_path_buf).await?;
+        let content = match storage.read_file(&note_path_buf).await {
+            Ok(c) => c,
+            Err(e) => {
+                skipped_notes.push(format!("{}: {}", row.file_name, e));
+                continue;
+            }
+        };
         let content = crate::notebox_package::ensure_import(&content);
         let content = rewrite_wikilinks_to_links(&content, &name_to_file);
         let content = style_injection::inject_style_rules(
@@ -72,17 +82,28 @@ pub async fn export_collection_static_site(
             .ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-        let result = compiler
-            .compile_html(&note_path_buf, source)
-            .map_err(|e| InkyCapError::ExportFailed(
-                format!("Failed to compile {}: {}", row.file_name, e),
-            ))?;
+        // A note that won't compile is skipped and reported rather than
+        // aborting the whole site — the resilient counterpart of the batch
+        // PDF export. Recovery (partial render with markers) is deliberately
+        // not used here: an exported page should be whole, not silently
+        // missing its errored region (see typst_pipeline/recovery.rs).
+        let result = match compiler.compile_html(&note_path_buf, source) {
+            Ok(r) => r,
+            Err(e) => {
+                skipped_notes.push(format!("{}: {}", row.file_name, e));
+                continue;
+            }
+        };
 
         if !result.ok {
-            let msgs: Vec<_> = result.diagnostics.iter().map(|d| d.message.clone()).collect();
-            return Err(InkyCapError::ExportFailed(
-                format!("HTML compilation failed for {}: {}", row.file_name, msgs.join("; ")),
-            ));
+            let reason = result
+                .diagnostics
+                .iter()
+                .map(|d| d.message.clone())
+                .next()
+                .unwrap_or_else(|| "compilation failed".to_string());
+            skipped_notes.push(format!("{}: {}", row.file_name, reason));
+            continue;
         }
 
         let html = &result.html;
@@ -109,13 +130,25 @@ pub async fn export_collection_static_site(
         };
 
         let file_path = output_dir.join(&html_name);
-        tokio::fs::write(&file_path, full_html.as_bytes())
-            .await
-            .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write {}: {}", html_name, e)))?;
-        exported.push(html_name.clone());
+        match tokio::fs::write(&file_path, full_html.as_bytes()).await {
+            Ok(()) => {
+                exported.push(html_name.clone());
+                exported_stems.insert(stem.to_string());
+            }
+            Err(e) => skipped_notes.push(format!("{}: {}", html_name, e)),
+        }
     }
 
-    let index_html = generate_site_index(&data.rows, &name_to_file);
+    // Writing an index + stylesheet around zero pages is never useful, so a
+    // run where every note failed is a hard error carrying the reasons.
+    if exported.is_empty() {
+        return Err(InkyCapError::ExportFailed(format!(
+            "No notes could be exported to HTML:\n{}",
+            skipped_notes.join("\n"),
+        )));
+    }
+
+    let index_html = generate_site_index(&data.rows, &name_to_file, &exported_stems);
     tokio::fs::write(output_dir.join("index.html"), index_html.as_bytes())
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write index.html: {}", e)))?;
@@ -126,7 +159,22 @@ pub async fn export_collection_static_site(
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write style.css: {}", e)))?;
     exported.push("style.css".to_string());
 
-    Ok(exported)
+    Ok(StaticSiteExportResult {
+        files: exported,
+        skipped_notes,
+    })
+}
+
+/// Outcome of a static-site export. `files` are the artifacts written to the
+/// output directory (note pages + index.html + style.css); `skipped_notes`
+/// lists notes that couldn't be compiled and were left out, as
+/// `"name: reason"` strings the caller surfaces so the user can fix them.
+/// A run where *every* note fails comes back as `Err` instead.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaticSiteExportResult {
+    pub files: Vec<String>,
+    pub skipped_notes: Vec<String>,
 }
 
 fn slug_from_name(name: &str) -> String {
@@ -138,10 +186,14 @@ fn slug_from_name(name: &str) -> String {
 fn generate_site_index(
     rows: &[crate::models::collection::CollectionRow],
     name_to_file: &std::collections::HashMap<String, String>,
+    exported_stems: &std::collections::HashSet<String>,
 ) -> String {
     let mut items = String::new();
     for row in rows {
         let stem = row.file_name.strip_suffix(".typ").unwrap_or(&row.file_name);
+        if !exported_stems.contains(stem) {
+            continue;
+        }
         if let Some(file) = name_to_file.get(stem) {
             items.push_str(&format!(
                 "    <li><a href=\"{}\">{}</a></li>\n",

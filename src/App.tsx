@@ -71,14 +71,18 @@ const App: Component = () => {
     }
   });
 
-  // The left sidebar follows the active tab's context: a collection tab always
-  // shows the Collections list, while every other tab (note/file/mycelial)
-  // shows the general notebox sidebar. We remember the most recent
-  // non-collection ("browse") mode the user chose so that switching from a
-  // collection back to a note restores Files / Tags / Bookmarks / etc. exactly
-  // as they left it, rather than snapping back to Files each time. Only the
-  // collection-vs-not distinction drives the auto-switch; the cross-cutting
-  // browse modes apply to the whole notebox regardless of which note is open.
+  // The left sidebar follows the active tab's content: a collection tab shows
+  // the Collections list; a file / mycelial tab shows the general notebox
+  // browse panel. We remember the most recent non-collection ("browse") mode
+  // the user chose so moving between notes restores Files / Tags / Bookmarks /
+  // etc. as they left it, rather than snapping back to Files each time.
+  //
+  // An *empty* tab (a fresh "New tab", or the placeholder left after the last
+  // real tab closes) has no content of its own, so it leaves the sidebar where
+  // it is: deleting the only collection, or opening a new tab beside one,
+  // keeps the Collections panel up instead of throwing the user to the file
+  // tree. Switching to a tab that *does* have content always re-syncs the
+  // sidebar to match it.
   let lastBrowseMode: SidebarMode = "filetree";
 
   // User-initiated mode changes (toolbar buttons, the sidebar mode bar,
@@ -95,8 +99,15 @@ const App: Component = () => {
     const id = activeTabId();
     // Read the type reactively (not just the id) so an in-place type change
     // is also honoured.
-    const tab = tabs.find((t) => t.id === id);
-    setSidebarMode(tab?.type === "collection" ? "collections" : lastBrowseMode);
+    const type = tabs.find((t) => t.id === id)?.type;
+    if (type === "collection") {
+      setSidebarMode("collections");
+    } else if (type && type !== "empty") {
+      // A file / mycelial tab — match the content by restoring the browse panel.
+      setSidebarMode(lastBrowseMode);
+    }
+    // An empty tab leaves the sidebar untouched (sticky), so closing a
+    // collection down to an empty workspace doesn't yank the panel away.
   });
 
   // The collaboration pane is meaningful for a collaborative notebox (sync /
