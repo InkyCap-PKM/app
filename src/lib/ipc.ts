@@ -44,6 +44,7 @@ import type {
   GitNoteVersion,
   GitIdentity,
   GitSetupResult,
+  GitPackageExportResult,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -604,6 +605,84 @@ export async function gitGetIdentity(): Promise<GitIdentity | null> {
  *  git-config fallback) — for pre-filling the identity fields. */
 export async function gitDefaultCommitIdentity(): Promise<GitIdentity | null> {
   return invoke<GitIdentity | null>("git_default_commit_identity");
+}
+
+// ── Phase 7: offline package handoff (server-less collaboration) ──
+// Export the open notebox's whole git history to a single file; the recipient
+// imports it as a new notebox or reconciles it into one they already have.
+
+/** Set up the open notebox for server-less collaboration (no remote) — version
+ *  history + package export/import without a hosted git server. Counterpart to
+ *  `gitSetupCollaboration`; persists a git config with an empty remote. */
+export async function gitSetupPackageHandoff(args: {
+  branch?: string;
+  identityName?: string;
+  identityEmail?: string;
+}): Promise<GitSetupResult> {
+  return invoke<GitSetupResult>("git_setup_package_handoff", {
+    branch: args.branch ?? null,
+    identityName: args.identityName ?? null,
+    identityEmail: args.identityEmail ?? null,
+  });
+}
+
+/** Export the open notebox — with its full git history — to a single
+ *  (optionally AES-256-encrypted) package file. Commits pending edits first. */
+export async function gitExportPackage(
+  dest: string,
+  password?: string,
+): Promise<GitPackageExportResult> {
+  assertNoteboxWritable();
+  return invoke<GitPackageExportResult>("git_export_package", {
+    dest,
+    password: password ?? null,
+  });
+}
+
+/** Import a received package into the open notebox, reconciling its history
+ *  with ours through the same merge as Sync (no push). On a conflict the result
+ *  is `paused` — resolve the staged notes, then finalize with `push = false`. */
+export async function gitImportPackage(
+  archive: string,
+  password?: string,
+): Promise<GitSyncOutcome> {
+  assertNoteboxWritable();
+  return invoke<GitSyncOutcome>("git_import_package", {
+    archive,
+    password: password ?? null,
+  });
+}
+
+/** Import a received package as a brand-new notebox at `dest` (a first-time
+ *  recipient). Returns the new notebox path; the caller registers + opens it. */
+export async function gitImportPackageAsNotebox(args: {
+  archive: string;
+  password?: string;
+  dest: string;
+}): Promise<string> {
+  return invoke<string>("git_import_package_as_notebox", {
+    archive: args.archive,
+    password: args.password ?? null,
+    dest: args.dest,
+  });
+}
+
+/** Whether the open notebox reviews incoming changes before merging (a
+ *  per-machine preference; off by default). */
+export async function gitGetReviewIncoming(): Promise<boolean> {
+  return invoke<boolean>("git_get_review_incoming");
+}
+
+/** Set whether the open notebox reviews incoming changes before merging. */
+export async function gitSetReviewIncoming(enabled: boolean): Promise<void> {
+  return invoke<void>("git_set_review_incoming", { enabled });
+}
+
+/** Reconstruct an in-progress review from the on-disk staging folder (so a
+ *  paused Sync/import survives a restart). Returns a paused outcome listing the
+ *  staged notes, or a non-paused default when nothing is staged. */
+export async function gitPendingReview(): Promise<GitSyncOutcome> {
+  return invoke<GitSyncOutcome>("git_pending_review");
 }
 
 /**

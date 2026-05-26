@@ -1,13 +1,14 @@
 // Right-panel Annotations pane: lists every `#annotation` comment and
-// `#suggestion` tracked change in the active note, lets the user click one to
-// jump to it in the editor, filters by text at the top, and offers a fixed
-// bottom toolbar to insert new markup at the editor cursor. Resolving a
-// suggestion (Accept/Reject) happens inline at its widget after jumping —
-// this pane is a navigator + author, not a resolver.
+// `#suggestion` tracked change in the active note. Clicking a row jumps to the
+// change in the editor (scroll + caret) so the reviewer sees where it is;
+// resolving a tracked change (Accept/Reject/Comment) is a separate per-row
+// action via the row's menu button, so the menu never obscures the list on a
+// navigation click. Filters by text at the top, and a fixed bottom toolbar
+// inserts new markup at the editor cursor.
 
 import { Component, For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import { EditorView } from "@codemirror/view";
-import { X, Plus, Minus, Replace, MessageSquare } from "lucide-solid";
+import { X, Plus, Minus, Replace, MessageSquare, UserPen } from "lucide-solid";
 import {
   noteAnnotations,
   rescanAnnotations,
@@ -103,25 +104,34 @@ const AnnotationsPanel: Component = () => {
   const attribution = (a: AnnotationEntry): string =>
     [a.by, a.on].filter(Boolean).join(" · ");
 
-  /** Click a row: scroll the change into view, then — for a tracked change
-   *  (suggestion) — open its Accept / Reject / Comment menu anchored to the row,
-   *  so the reviewer acts on it directly instead of landing in the raw markup.
-   *  A plain comment (`annotation`) has no resolution, so just place the caret. */
-  function activate(a: AnnotationEntry, rowEl: HTMLElement) {
+  /** Click a row: jump to the change in the document — scroll it into view and
+   *  place the caret at it — so the reviewer can see *where* it is. Resolving a
+   *  tracked change (Accept / Reject / Comment) is a separate, explicit action
+   *  via the row's menu button ([`openMenu`]), so it doesn't obscure the list. */
+  function activate(a: AnnotationEntry) {
     const handle = activeEditorView();
     if (!handle) return;
     const view = handle.view;
     const pos = Math.min(a.from, view.state.doc.length);
-    view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
-    if (a.kind === "annotation") {
-      view.dispatch({ selection: { anchor: pos } });
-      view.focus();
-      return;
-    }
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+    });
+    view.focus();
+  }
+
+  /** Open a tracked change's Accept / Reject / Comment menu, anchored to the
+   *  row's menu button. Suggestions only — a plain comment has no resolution. */
+  function openMenu(a: AnnotationEntry, anchorEl: HTMLElement) {
+    const view = activeEditorView()?.view;
+    // The menu resolves a tracked change; a plain comment has none (and only
+    // suggestions render this button). The guard also narrows `a.kind` to the
+    // suggestion kinds the menu accepts.
+    if (!view || a.kind === "annotation") return;
     openSuggestionMenu(
       view,
       { kind: a.kind, body: a.body, oldText: a.oldText, by: a.by, on: a.on, note: a.note, from: a.from },
-      rowEl,
+      anchorEl,
     );
   }
 
@@ -203,7 +213,7 @@ const AnnotationsPanel: Component = () => {
             {(a) => (
               <div
                 class="sidebar-item annotations-panel__item"
-                onClick={(e) => activate(a, e.currentTarget as HTMLElement)}
+                onClick={() => activate(a)}
                 title={primary(a)}
               >
                 <span class={`sidebar-item__icon annotations-panel__icon--${tone(a.kind)}`}>
@@ -225,12 +235,28 @@ const AnnotationsPanel: Component = () => {
                     </span>
                   </Show>
                 </span>
-                {/* A standalone comment can be dismissed once it's no longer
-                    relevant (e.g. left behind after a suggestion was accepted).
-                    Tracked changes are resolved via their menu, not dismissed. */}
-                <Show when={a.kind === "annotation"}>
+                {/* Row click jumps to the change; resolving / dismissing is an
+                    explicit per-row action so it never fires on a navigation
+                    click. A tracked change opens its Accept/Reject/Comment menu;
+                    a standalone comment (no resolution) can be dismissed. */}
+                <Show
+                  when={a.kind === "annotation"}
+                  fallback={
+                    <button
+                      class="annotations-panel__action"
+                      title={t("annotations.openMenu")}
+                      aria-label={t("annotations.openMenu")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openMenu(a, e.currentTarget as HTMLElement);
+                      }}
+                    >
+                      <UserPen size={14} />
+                    </button>
+                  }
+                >
                   <button
-                    class="annotations-panel__dismiss"
+                    class="annotations-panel__action annotations-panel__action--danger"
                     title={t("annotations.dismiss")}
                     aria-label={t("annotations.dismiss")}
                     onClick={(e) => {

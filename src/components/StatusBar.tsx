@@ -15,7 +15,7 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { settings } from "../stores/settings";
-import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
+import { collaborative, packageMode, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 
 const StatusBar: Component = () => {
@@ -159,7 +159,7 @@ const StatusBar: Component = () => {
     if (!s) return "";
     if (!s.head && !s.dirty) return t("git.status.unborn");
     if (s.behind > 0) return t("git.status.behind", { n: s.behind });
-    if (s.unpushed > 0) return t("git.status.ahead", { n: s.unpushed });
+    if (s.unpushed > 0) return t(packageMode() ? "git.status.toShare" : "git.status.ahead", { n: s.unpushed });
     if (s.dirty) return t("git.status.dirty");
     return t("git.status.synced");
   });
@@ -205,6 +205,7 @@ const StatusBar: Component = () => {
       <Show when={collaborative()}>
         <button
           class="status-bar__git"
+          classList={{ "status-bar__git--attention": pendingCount() > 0 || incomingCount() > 0 }}
           onClick={openCollaboration}
           title={t("git.toolbar.title")}
         >

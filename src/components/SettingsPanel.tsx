@@ -291,6 +291,16 @@ function NoteboxManagementSection() {
   const [cloneToken, setCloneToken] = createSignal("");
   const [cloning, setCloning] = createSignal(false);
 
+  // "Import package" — the offline-handoff join path: a first-time recipient
+  // turns a received package (a notebox's `.git`, exported elsewhere) into a new
+  // notebox. `importDest` is the exact empty folder the notebox lands in, like
+  // the clone flow above.
+  const [showImportForm, setShowImportForm] = createSignal(false);
+  const [importArchive, setImportArchive] = createSignal("");
+  const [importDest, setImportDest] = createSignal("");
+  const [importPassword, setImportPassword] = createSignal("");
+  const [importing, setImporting] = createSignal(false);
+
   function startEdit(entry: NoteboxRegistryEntry) {
     setEditingPath(entry.path);
     setEditName(entry.display_name);
@@ -555,6 +565,89 @@ function NoteboxManagementSection() {
     }
   }
 
+  async function browseForImportArchive() {
+    const selected = await open({
+      multiple: false,
+      title: "Select a notebox package to import",
+      filters: [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }],
+    });
+    if (typeof selected !== "string") return;
+    setImportArchive(selected);
+  }
+
+  async function browseForImportDest() {
+    let defaultPath: string | undefined;
+    try {
+      defaultPath = await homeDir();
+    } catch {
+      defaultPath = undefined;
+    }
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select an empty folder for the imported notebox",
+      defaultPath,
+    });
+    if (!selected) return;
+    // The package is cloned directly into the chosen folder, so it must be empty
+    // (same rule as the clone flow — importing over existing notes would corrupt
+    // them). Reject at selection time for immediate, clear feedback.
+    try {
+      const empty = await ipc.dirIsEmpty(selected);
+      if (!empty) {
+        showToast(
+          "error",
+          "That folder already contains files. Choose or create an empty folder for the imported notebox.",
+        );
+        return;
+      }
+    } catch (err) {
+      showToast("error", `Couldn't inspect that folder: ${err}`);
+      return;
+    }
+    setImportDest(selected);
+  }
+
+  function resetImportForm() {
+    setShowImportForm(false);
+    setImportArchive("");
+    setImportDest("");
+    setImportPassword("");
+  }
+
+  async function confirmImport() {
+    const archive = importArchive().trim();
+    const dest = importDest().trim();
+    if (!archive) {
+      showToast("error", "Choose a package file to import.");
+      return;
+    }
+    if (!dest) {
+      showToast("error", "Choose an empty folder for the imported notebox.");
+      return;
+    }
+    const name = dest.split("/").pop() || "Notebox";
+    setImporting(true);
+    try {
+      const path = await ipc.gitImportPackageAsNotebox({
+        archive,
+        password: importPassword().trim() || undefined,
+        dest,
+      });
+      // Register and open the imported notebox; its committed settings carry its
+      // collaboration mode (package-handoff or a server remote), like a clone.
+      await ipc.registerNotebox(path, name);
+      await loadNoteboxRegistry();
+      resetImportForm();
+      await openNotebox(path);
+      showToast("success", `Imported and opened ${name}.`);
+    } catch (err) {
+      showToast("error", `Import failed: ${err}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <>
       <div class="settings__section-header">
@@ -582,6 +675,14 @@ function NoteboxManagementSection() {
             title="Join a collaborative notebox by cloning its git remote"
           >
             Clone from remote
+          </button>
+          <button
+            class="settings__detect-btn"
+            onClick={() => setShowImportForm(true)}
+            disabled={showImportForm()}
+            title="Join a notebox shared offline by importing its package file"
+          >
+            Import package
           </button>
         </div>
       </div>
@@ -787,6 +888,53 @@ function NoteboxManagementSection() {
               {cloning() ? "Cloning…" : "Clone & open"}
             </button>
             <button class="settings__detect-btn" onClick={resetCloneForm} disabled={cloning()}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={showImportForm()}>
+        <div class="settings__row notebox-row notebox-row--add-form">
+          <div class="settings__row-info">
+            <span class="settings__description">
+              {importArchive()
+                ? `Package: ${importArchive()}`
+                : "No package file selected"}
+            </span>
+            <input
+              class="settings__text-input"
+              type="password"
+              autocomplete="off"
+              placeholder="Archive password (only if the package is encrypted)"
+              value={importPassword()}
+              onInput={(e) => setImportPassword(e.currentTarget.value)}
+            />
+            <span class="settings__description">
+              {importDest()
+                ? `Imports into: ${importDest()}`
+                : "No folder selected (must be an empty folder)"}
+            </span>
+          </div>
+          <div class="notebox-row__actions">
+            <button class="settings__detect-btn" onClick={browseForImportArchive}>
+              Package
+            </button>
+            <button class="settings__detect-btn" onClick={browseForImportDest}>
+              Location
+            </button>
+            <button
+              class="settings__detect-btn"
+              classList={{
+                "settings__detect-btn--cta":
+                  !!importArchive() && !!importDest() && !importing(),
+              }}
+              onClick={confirmImport}
+              disabled={importing() || !importArchive() || !importDest()}
+            >
+              {importing() ? "Importing…" : "Import & open"}
+            </button>
+            <button class="settings__detect-btn" onClick={resetImportForm} disabled={importing()}>
               Cancel
             </button>
           </div>

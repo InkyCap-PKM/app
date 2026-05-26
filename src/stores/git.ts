@@ -70,11 +70,23 @@ const [incomingCount, setIncomingCount] = createSignal(0);
  *  Lifted to the store so the Settings › Configure entry point can open the panel
  *  with it already expanded. Reset (collapsed) on a notebox switch. */
 const [manageOpen, setManageOpen] = createSignal(false);
+/** Per-machine "review incoming changes before merging" preference for the open
+ *  notebox (off by default). When on, Sync / package import pauses and stages
+ *  every incoming change for review instead of auto-merging. Loaded on open. */
+const [reviewIncoming, setReviewIncomingSignal] = createSignal(false);
 
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
 export function collaborative(): boolean {
   return noteboxSettings.git != null;
+}
+
+/** True when the open notebox collaborates by offline package handoff rather
+ *  than a hosted git server — an empty `remote` (see
+ *  `NoteboxGitConfig::is_package_mode` on the backend). The panel then offers
+ *  Export / Import package instead of Sync / Check for updates. */
+export function packageMode(): boolean {
+  return collaborative() && (noteboxSettings.git?.remote ?? "").trim() === "";
 }
 
 /** Whether a sync is paused awaiting conflict resolution. */
@@ -150,8 +162,25 @@ export async function resetGitOnOpen(): Promise<void> {
   setReconnectable(null);
   setIncomingCount(0);
   setManageOpen(false);
+  setReviewIncomingSignal(false);
   if (collaborative()) {
     await refreshStatus();
+    // Load the per-machine review-incoming preference for this notebox.
+    setReviewIncomingSignal(await ipc.gitGetReviewIncoming().catch(() => false));
+    // Recover an in-progress review left on disk (a paused Sync/import that
+    // outlived an app restart), so the list of notes to review reappears — e.g.
+    // when the user opens the panel from the status bar.
+    try {
+      const pending = await ipc.gitPendingReview();
+      if (pending.paused) {
+        setSyncOutcome(pending);
+        // A recovered review finalizes without pushing only in package mode
+        // (no server); a server notebox's paused review came from a Sync.
+        setPausedPush(!packageMode());
+      }
+    } catch (err) {
+      console.error("git pending-review recovery failed:", err);
+    }
   }
 }
 
@@ -183,6 +212,21 @@ export async function setupCollaboration(args: {
   httpsToken?: string;
 }): Promise<void> {
   const result = await ipc.gitSetupCollaboration(args);
+  await loadNoteboxSettings();
+  setGitStatus(result.status);
+  setRepoMissing(false);
+  setReconnectable(null);
+}
+
+/** Set up the open notebox for server-less collaboration (offline package
+ *  handoff — no remote), then refresh settings so the panel switches to package
+ *  gestures. Throws on failure so the setup form can surface it. */
+export async function setupPackageHandoff(args: {
+  branch?: string;
+  identityName?: string;
+  identityEmail?: string;
+}): Promise<void> {
+  const result = await ipc.gitSetupPackageHandoff(args);
   await loadNoteboxSettings();
   setGitStatus(result.status);
   setRepoMissing(false);
@@ -282,6 +326,43 @@ export async function checkUpdates(): Promise<void> {
   }
 }
 
+/** Export the open notebox (with its full git history) to a package file.
+ *  Commits any pending edits first, so the package is current. `password`
+ *  enables AES-256; the recipient needs it out-of-band. */
+export async function exportPackage(dest: string, password?: string): Promise<void> {
+  setGitSyncing(true);
+  try {
+    // Let in-flight saves land so the auto-commit packages the latest content.
+    await awaitAllPendingWrites();
+    const res = await ipc.gitExportPackage(dest, password);
+    showToast("success", t("git.toast.exported", { path: res.path }));
+    // A dirty notebox was committed during export — refresh the status chip.
+    await refreshStatus();
+  } catch (err) {
+    toastError(t("git.toast.exportFailed"), err);
+  } finally {
+    setGitSyncing(false);
+  }
+}
+
+/** Import a received package into the open notebox, reconciling histories
+ *  through the same engine as Sync (no push). Routes the outcome through
+ *  `applyOutcome` with `pushGesture = false`, so a conflict pauses into the same
+ *  ConflictView and finalizes without pushing. */
+export async function importPackage(archive: string, password?: string): Promise<void> {
+  setGitSyncing(true);
+  try {
+    await awaitAllPendingWrites();
+    const outcome = await ipc.gitImportPackage(archive, password);
+    applyOutcome(outcome, false);
+    await refreshStatus();
+  } catch (err) {
+    toastError(t("git.toast.importFailed"), err);
+  } finally {
+    setGitSyncing(false);
+  }
+}
+
 /** Finalize a paused sync after its conflicts have been resolved in the staged
  *  copies. Pushes iff the gesture that paused was a Sync. */
 export async function finalizeSync(): Promise<void> {
@@ -339,6 +420,18 @@ export function dismissDigest(): void {
   setSyncOutcome(null);
 }
 
+/** Toggle the per-machine "review incoming changes before merging" preference
+ *  for the open notebox. Optimistic; reverts + toasts on failure. */
+export async function setReviewIncoming(enabled: boolean): Promise<void> {
+  setReviewIncomingSignal(enabled);
+  try {
+    await ipc.gitSetReviewIncoming(enabled);
+  } catch (err) {
+    setReviewIncomingSignal(!enabled);
+    toastError(t("git.review.toggleFailed"), err);
+  }
+}
+
 /** Store an HTTPS token for the remote host (re-auth). Throws on failure. */
 export async function signIn(token: string): Promise<void> {
   await ipc.gitSignIn(token);
@@ -387,4 +480,5 @@ export {
   incomingCount,
   manageOpen,
   setManageOpen,
+  reviewIncoming,
 };

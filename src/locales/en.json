@@ -138,6 +138,7 @@
   "annotations.view.changes": "Changes",
   "annotations.view.history": "History",
   "annotations.dismiss": "Dismiss this comment",
+  "annotations.openMenu": "Accept, reject, or comment",
 
   "history.loading": "Loading history…",
   "history.empty": "No earlier versions of this note yet.",
@@ -265,6 +266,8 @@
   "git.setup.done": "Collaboration set up.",
   "git.setup.failed": "Setup failed",
   "git.setup.remoteRequired": "A remote URL is required.",
+  "git.setup.offlineLabel": "Offline (package handoff)",
+  "git.setup.offlineHint": "Collaborate with no git server: share this notebox by exporting it — with its full history — to a single file, and reconcile changes by importing files others send back. Choose this when you have no hosted git remote. You can add a remote later.",
 
   "git.reconnect.intro": "This notebox is already linked to a remote ({remote}, branch {branch}) but isn't set up for collaboration here. Reconnect to pick up where you left off.",
   "git.reconnect.action": "Reconnect collaboration",
@@ -278,6 +281,7 @@
   "git.status.incomingN": "{n} to resolve",
   "git.status.dirty": "Uncommitted changes",
   "git.status.unborn": "No commits yet",
+  "git.status.toShare": "{n} to share",
 
   "git.actions.sync": "Sync",
   "git.actions.syncing": "Syncing…",
@@ -288,6 +292,13 @@
   "git.review.tabTitle": "Resolve: {name}",
   "git.review.conflicts": "{n} conflicts",
   "git.review.oneConflict": "1 conflict",
+  "git.review.toggleLabel": "Review incoming changes before merging",
+  "git.review.toggleHint": "When on, a Sync or package import pauses and shows every incoming change as a suggestion to accept or reject, instead of merging automatically. Your own edits are never dropped — accepting takes a collaborator's change on top of yours. Applies to both Git-server sync and package handoff. A per-device setting; it doesn't affect collaborators.",
+  "git.review.toggleFailed": "Could not change the review setting",
+  "git.review.heading": "Review incoming changes",
+  "git.review.intro": "Open each note to see what changed (additions show as suggestions), accept or reject them, then finish to merge.",
+  "git.review.incomingBadge": "incoming",
+  "git.review.finish": "Accept reviewed & finish",
 
   "git.conflict.heading": "Conflicts to resolve",
   "git.conflict.intro": "These notes were edited on both sides. Open each one, resolve the suggestions, then finalize.",
@@ -336,8 +347,22 @@
   "git.check.n": "{n} updates available",
   "git.check.hint": "Sync to bring them into your notebox.",
 
+  "git.package.modeLabel": "Offline (package handoff)",
+  "git.package.intro": "No git server: share this notebox by exporting it to a file, and merge changes others send back by importing their file.",
+  "git.package.exportAction": "Export package",
+  "git.package.importAction": "Import package",
+  "git.package.exportTitle": "Export notebox package",
+  "git.package.importTitle": "Import notebox package",
+  "git.package.passwordLabel": "Archive password (optional)",
+  "git.package.passwordHint": "Leave blank for no encryption. If set, the package is AES-256 encrypted — share the password with collaborators separately (it is never stored). The same password is used to import an encrypted package.",
+  "git.toast.exported": "Package exported to {path}",
+  "git.toast.exportFailed": "Could not export the package",
+  "git.toast.importFailed": "Could not import the package",
+
   "command.git.setup": "Git: Set up collaboration for this notebox",
   "command.git.sync": "Git: Sync",
   "command.git.checkUpdates": "Git: Check for updates",
-  "command.git.signIn": "Git: Sign in"
+  "command.git.signIn": "Git: Sign in",
+  "command.git.exportPackage": "Git: Export package (offline handoff)",
+  "command.git.importPackage": "Git: Import package (offline handoff)"
 }
