@@ -16,6 +16,7 @@ import {
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
+  Handshake,
   Scroll,
   LibraryBig,
 } from "lucide-solid";
@@ -207,6 +208,11 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                 <Show when={tab.type === "collection"}>
                   <span class="tab__icon" title={t("collection.tab.title")}>
                     <LibraryBig size={13} />
+                  </span>
+                </Show>
+                <Show when={tab.collab}>
+                  <span class="tab__icon" title={t("git.review.tabIconTitle")}>
+                    <Handshake size={13} />
                   </span>
                 </Show>
                 <span class="tab__title">

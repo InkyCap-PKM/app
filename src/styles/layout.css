@@ -5088,6 +5088,19 @@ svg.lucide {
   color: #fff;
 }
 
+/* Scope hint shown only while reviewing a collaboration note: ties this
+   pane's per-change decisions to the larger merge finished from the
+   Collaboration panel. Mirrors the git panel's accent-bordered banner. */
+.annotations-panel__collab-hint {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
 /* Version history (the History half of the pane). */
 .note-history {
   flex: 1;

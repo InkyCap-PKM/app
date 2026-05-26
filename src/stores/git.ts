@@ -24,6 +24,7 @@ import type {
 } from "../lib/types";
 import { noteboxSettings, loadNoteboxSettings } from "./settings";
 import { openTab } from "./tabs";
+import { setRightCollapsed, setRightPanelTab } from "./layout";
 import { awaitAllPendingWrites } from "./editor-writes";
 import { showToast, toastError } from "./toasts";
 import { t } from "../lib/i18n";
@@ -388,9 +389,14 @@ export function openStagedNote(item: GitReviewItem): void {
   if (!item.stagedPath) return;
   const base = item.path.split("/").pop() ?? item.path;
   openTab(
-    { type: "file", title: t("git.review.tabTitle", { name: base }), path: item.stagedPath },
+    { type: "file", title: t("git.review.tabTitle", { name: base }), path: item.stagedPath, collab: true },
     { forceNewTab: true },
   );
+  // The note's incoming changes are staged as suggestions — surface the
+  // Changes panel alongside the note so the reviewer sees them immediately,
+  // rather than having to discover the right-sidebar tab themselves.
+  setRightCollapsed(false);
+  setRightPanelTab("annotations");
 }
 
 /** Open a digest entry's note (the working copy) — the "what landed" view. */

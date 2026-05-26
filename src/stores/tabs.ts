@@ -42,6 +42,12 @@ export interface Tab {
    *  `line` is 1-indexed; `charStart`/`charEnd` are offsets into that line.
    *  Used by the search panel to deep-link a result row to its exact spot. */
   pendingMatch?: { line: number; charStart: number; charEnd: number };
+  /** True when this tab is part of a collaboration review (e.g. a staged
+   *  "Resolve:" note opened from the Git collaboration panel). Drives the
+   *  handshake marker in the tab strip and the scope hint in the Changes
+   *  panel so the reviewer knows the note's accept/reject decisions feed a
+   *  larger merge they finish from the Collaboration panel. */
+  collab?: boolean;
 }
 
 interface TabHistoryEntry {
