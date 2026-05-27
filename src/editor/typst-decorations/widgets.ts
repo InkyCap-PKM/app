@@ -122,7 +122,7 @@ function stripMetadata(source: string): string {
   return result.join("\n");
 }
 
-const CALLOUT_COLORS: Record<string, string> = {
+export const CALLOUT_COLORS: Record<string, string> = {
   note: "#448aff",
   tip: "#00bfa5",
   warning: "#ff9100",
@@ -312,6 +312,12 @@ export class ImageWidget extends WidgetType {
       img.src = convertFileSrc(absPath);
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
+      // Preserve aspect ratio when only one axis is constrained — Typst scales
+      // the other proportionally — and lift the default preview height cap so
+      // an explicitly-sized image isn't silently clipped to a different ratio.
+      if (this.width && !this.height) img.style.height = "auto";
+      if (this.height && !this.width) img.style.width = "auto";
+      if (this.width || this.height) img.style.maxHeight = "none";
       img.addEventListener("load", () => {
         label.style.display = "none";
       });
@@ -381,6 +387,12 @@ export class ImageBlockWidget extends WidgetType {
       img.src = convertFileSrc(absPath);
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
+      // Preserve aspect ratio when only one axis is constrained — Typst scales
+      // the other proportionally — and lift the default preview height cap so
+      // an explicitly-sized image isn't silently clipped to a different ratio.
+      if (this.width && !this.height) img.style.height = "auto";
+      if (this.height && !this.width) img.style.width = "auto";
+      if (this.width || this.height) img.style.maxHeight = "none";
       img.addEventListener("load", () => { label.style.display = "none"; });
       img.addEventListener("error", () => { img.style.display = "none"; });
       inner.insertBefore(img, label);

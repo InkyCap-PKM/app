@@ -78,7 +78,8 @@ export function inVerbatimLineContext(state: EditorState, pos: number): boolean 
  */
 function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   const line = state.doc.lineAt(pos);
-  if (/^\s*[-+]\s/.test(line.text)) return false;
+  // Lists (`-`, `+`, `N.`) are continued by the list keymap, not soft-broken.
+  if (/^\s*([-+]|\d+\.)\s/.test(line.text)) return false;
   // If the line already ends with an unescaped trailing `\`, don't double up.
   const trimmedEnd = line.text.replace(/\s+$/, "");
   if (trimmedEnd.endsWith("\\") && !trimmedEnd.endsWith("\\\\")) return false;
@@ -199,12 +200,17 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const line = state.doc.lineAt(from);
   const text = line.text;
 
-  const listMatch = text.match(/^(\s*)([-+])\s/);
+  // Typst's three list markers: `-` (bullet), `+` (auto-numbered), and an
+  // explicit number `N.`. A trailing space (or end-of-line, for a marker the
+  // user just typed) confirms it is a list item rather than prose.
+  const listMatch = text.match(/^(\s*)([-+]|\d+\.)(?:\s|$)/);
   if (!listMatch) return null;
 
   const indent = listMatch[1];
   const marker = listMatch[2];
 
+  // Pressing Enter on an empty item (marker only) ends the list: clear the
+  // marker and leave the cursor on the now-blank line.
   if (text.trim() === marker) {
     return {
       changes: { from: line.from, to: line.to, insert: "" },
@@ -212,7 +218,12 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
     };
   }
 
-  const insert = `\n${indent}${marker} `;
+  // Bullets and `+` repeat their marker; an explicit number increments so the
+  // writer gets 1., 2., 3.… as they go (Typst renumbers from the source).
+  const numMatch = marker.match(/^(\d+)\.$/);
+  const nextMarker = numMatch ? `${Number(numMatch[1]) + 1}.` : marker;
+
+  const insert = `\n${indent}${nextMarker} `;
   return {
     changes: { from, insert },
     selection: { anchor: from + insert.length },
@@ -294,6 +305,53 @@ function applyIndentPlan(view: EditorView, plan: { changes: { from: number; to?:
       view.dispatch({ changes: spec });
     }
   }
+}
+
+/**
+ * Reorder a list item by swapping its content with the adjacent sibling's,
+ * leaving the markers fixed in place — so an explicit `1. 2. 3.` numbering
+ * stays in order (the number belongs to the position, not the moved text) and
+ * a `+`/`-` list is unaffected. Self-contained and a single transaction: it
+ * does NOT delegate to the generic move-line command, which interacted badly
+ * with the visual decoration layer (the move would silently stop working after
+ * a few presses). Only swaps with an immediately adjacent same-indent sibling;
+ * at a list edge it consumes the key without moving — never falling through to
+ * a page scroll. Returns false when the cursor is not on a list item, so the
+ * caller can fall back to plain line movement for ordinary prose.
+ */
+function moveListItem(view: EditorView, dir: -1 | 1): boolean {
+  const { state } = view;
+  const doc = state.doc;
+  const head = state.selection.main.head;
+  const line = doc.lineAt(head);
+  const m = line.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
+  if (!m) return false; // not a list item → caller falls back
+  const indent = m[1].length;
+  const targetNo = dir < 0 ? line.number - 1 : line.number + 1;
+  if (targetNo < 1 || targetNo > doc.lines) return true; // document edge → consume
+  const target = doc.line(targetNo);
+  const tm = target.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
+  if (!tm || tm[1].length !== indent) return true; // not an adjacent sibling → consume
+
+  const curContentFrom = line.from + m[0].length;
+  const tgtContentFrom = target.from + tm[0].length;
+  const curContent = doc.sliceString(curContentFrom, line.to);
+  const tgtContent = doc.sliceString(tgtContentFrom, target.to);
+  const offset = Math.max(0, head - curContentFrom); // caret position within the content
+
+  // Two non-overlapping content replacements, ordered ascending by position.
+  const changes = dir < 0
+    ? [{ from: tgtContentFrom, to: target.to, insert: curContent },
+       { from: curContentFrom, to: line.to, insert: tgtContent }]
+    : [{ from: curContentFrom, to: line.to, insert: tgtContent },
+       { from: tgtContentFrom, to: target.to, insert: curContent }];
+  // The moved content lands in the sibling's content slot; the caret follows.
+  const newHead = dir < 0
+    ? tgtContentFrom + offset
+    : tgtContentFrom + (tgtContent.length - curContent.length) + offset;
+
+  view.dispatch({ changes, selection: { anchor: newHead }, scrollIntoView: true, userEvent: "move.line" });
+  return true;
 }
 
 export const typstKeymap: KeyBinding[] = [
@@ -473,6 +531,16 @@ export const typstKeymap: KeyBinding[] = [
   // Shift-Alt-Up/Down moves lines instead of duplicating them — matching the
   // behavior of plain Alt-Up/Down. Duplication is rarely the desired action
   // when the user is reordering list items.
-  { key: "Shift-Alt-ArrowUp", run: moveLineUp },
-  { key: "Shift-Alt-ArrowDown", run: moveLineDown },
+  //
+  // Always consume the key (return true) even when the move is a no-op — e.g.
+  // the item is already at the top/bottom of the list or document — and even
+  // if the move command throws. Without this, an unhandled (or thrown) keydown
+  // falls through to the webview, which scrolls the page: to the user it looks
+  // like the shortcut works "for a few moves" and then suddenly starts
+  // scrolling instead of reordering. The try/catch makes that impossible.
+  // List items reorder via the self-contained content-swap (reliable + keeps
+  // numbering in order); ordinary lines fall back to the generic move-line
+  // command. Always consume the key so it can never scroll the page.
+  { key: "Shift-Alt-ArrowUp", run: (view) => { try { if (!moveListItem(view, -1)) moveLineUp(view); } catch { /* swallow: never fall through to page scroll */ } return true; } },
+  { key: "Shift-Alt-ArrowDown", run: (view) => { try { if (!moveListItem(view, 1)) moveLineDown(view); } catch { /* swallow */ } return true; } },
 ];

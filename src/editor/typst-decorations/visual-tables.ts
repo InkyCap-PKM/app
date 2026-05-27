@@ -9,6 +9,7 @@ import { EditorView, type DecorationSet, keymap } from "@codemirror/view";
 import { type StateField } from "@codemirror/state";
 import { TableWidget } from "./table-widget";
 import { type TableData, type TableCell, parseClipboardAsGrid, serializeTable } from "./table-parser";
+import { inVerbatimLineContext } from "./keymaps";
 
 // ---------------------------------------------------------------------------
 // Clipboard handlers
@@ -42,6 +43,13 @@ const tablePasteHandler = EditorView.domEventHandlers({
   paste(event: ClipboardEvent, view: EditorView) {
     const target = event.target as HTMLElement;
     if (target.closest?.(".cm-typst-table-wrap")) return false;
+
+    // Never reinterpret a paste as a table inside a verbatim region. This is
+    // exactly where the cursor sits when editing a fenced code block, so
+    // pasting plain text there must stay literal rather than being folded
+    // into a `#table(...)` call (it would land inside the fence as garbage).
+    // Math and verse are protected for the same reason.
+    if (inVerbatimLineContext(view.state, view.state.selection.main.head)) return false;
 
     const grid = parseClipboardAsGrid(event);
     if (!grid || grid.length === 0) return false;

@@ -26,6 +26,10 @@ export interface PillMenuItem {
   isActive?: boolean;
   /** Optional tooltip. */
   title?: string;
+  /** Optional longer help text. Renders a circled "?" trigger next to the
+   *  item's label that reveals this text inline within the menu — for
+   *  explanations too long to sit comfortably in a tooltip or placeholder. */
+  help?: string;
   /** Disable this item (renders dimmed, not clickable). */
   disabled?: boolean;
   /** Called on click; the menu closes after the handler returns unless
@@ -329,6 +333,37 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
   label.textContent = item.label;
   wrap.appendChild(label);
 
+  // Optional inline help: a circled "?" next to the label toggles a wrapped
+  // explanation on its own line within the menu. Kept inside the menu DOM (not
+  // a portalled popover) so the menu's outside-click dismissal leaves it be.
+  let helpBlock: HTMLElement | null = null;
+  if (item.help) {
+    const helpWrap = document.createElement("span");
+    helpWrap.className = "help-button";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "help-button__trigger";
+    trigger.setAttribute("aria-label", `Help: ${item.label}`);
+    trigger.innerHTML = // static-only: lucide circle-help glyph
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>';
+    helpWrap.appendChild(trigger);
+    wrap.appendChild(helpWrap);
+
+    helpBlock = document.createElement("div");
+    helpBlock.className = "cm-typst-pill-menu-help";
+    helpBlock.textContent = item.help;
+    helpBlock.style.display = "none";
+
+    trigger.addEventListener("mousedown", (e) => e.stopPropagation());
+    trigger.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const showing = helpBlock!.style.display !== "none";
+      helpBlock!.style.display = showing ? "none" : "block";
+      trigger.classList.toggle("is-open", !showing);
+    });
+  }
+
   const input = document.createElement("input");
   input.type = "text";
   input.className = "cm-typst-pill-menu-input";
@@ -362,6 +397,10 @@ function buildInputItem(item: PillMenuItem, close: () => void): HTMLElement {
       item.input!.onCommit(input.value);
     }
   });
+
+  // Help text comes last so `flex-wrap` drops it onto its own full-width line
+  // below the label + input.
+  if (helpBlock) wrap.appendChild(helpBlock);
 
   return wrap;
 }

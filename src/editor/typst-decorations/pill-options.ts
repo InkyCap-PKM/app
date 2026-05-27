@@ -346,10 +346,12 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
       },
     }, {
       label: "Width",
-      title: "Accepts percentages (80%) or absolute units (400px, 12cm, 30em)",
+      // Typst's length units only. `px` is deliberately omitted — Typst has no
+      // pixel unit, so it compiles cleanly in the preview but breaks the PDF.
+      help: "A percentage scales to the page's text width — 50% is half the column. Absolute units set a fixed size: pt, cm, mm, in, or em (font-relative). Typst has no pixel unit, so px isn't supported.",
       input: {
         value: width,
-        placeholder: "e.g. 80% or 400px",
+        placeholder: "e.g. 50% or 8cm",
         onCommit: (v) => {
           const t = v.trim();
           applyCallTransform(view, from, (s) =>

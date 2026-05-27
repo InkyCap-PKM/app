@@ -1,5 +1,5 @@
 import { Compartment, EditorState, Prec, StateField, Transaction, type Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, crosshairCursor, highlightSpecialChars, tooltips } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
@@ -494,8 +494,10 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     lineNumbers(),
     highlightSpecialChars(),
     foldGutter(),
-    rectangularSelection(),
-    crosshairCursor(),
+    // Rectangular selection + the Alt "crosshair" cursor are code-editor
+    // affordances: in a prose/notebox editor they add little, and the crosshair
+    // turned holding Alt (e.g. for the Alt-Shift line-move shortcut) into a
+    // confusing "+" pointer. Dropped in favour of plain prose-style selection.
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),
