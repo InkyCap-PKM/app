@@ -29,6 +29,7 @@ import {
   FootnoteWidget,
   SuggestionWidget,
   type SuggestionKind,
+  CALLOUT_COLORS,
 } from "./widgets";
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
@@ -42,6 +43,7 @@ export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
 import { createClickAnchorPlugin } from "./click-anchor";
+import { pillBoundaryNav } from "./pill-boundary-nav";
 
 const escapedChar = Decoration.mark({ class: "cm-typst-escaped" });
 const bold = Decoration.mark({ class: "cm-typst-bold" });
@@ -61,6 +63,10 @@ const refMark = Decoration.mark({ class: "cm-typst-ref" });
 const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
 // Inline #quote[…] body — adds smart-quote brackets via ::before/::after.
 const quoteInlineMark = Decoration.mark({ class: "cm-typst-quote-inline" });
+// Block #quote(block:true)[…] body while editing — italic + muted, bounded to
+// the body so text trailing after the closing `]` on the same line is NOT
+// styled as part of the quote (the bar + geometry come from the line deco).
+const blockquoteBodyMark = Decoration.mark({ class: "cm-typst-blockquote-body" });
 
 const headingMarks = [
   Decoration.mark({ class: "cm-typst-h1" }),
@@ -158,6 +164,41 @@ function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to
   return false;
 }
 
+/**
+ * Display number for an ordered-list (`EnumMarker`) item, computed purely
+ * from the document text so it is identical whether the whole document or a
+ * single slice is being re-decorated.
+ *
+ * Typst accepts two ordered-list markers: an explicit number (`1.`) and the
+ * auto-numbering `+`. We honour an explicit number verbatim — the writer
+ * typed it, so we show exactly that — which is both predictable and correct
+ * for `1. / 2.` lists. For `+` we count the run of consecutive enum items at
+ * the same indent immediately above this one (a blank line, a shallower
+ * item, or any non-enum line ends the run), giving the natural 1, 2, 3…
+ * sequence. Counting locally — rather than threading a mutable counter across
+ * the iteration and reseeding it from a pre-scan — is what keeps the number
+ * stable when the cursor moves and only part of the document is rebuilt; the
+ * old shared-counter approach drifted on every partial rebuild.
+ */
+function enumItemNumber(state: EditorState, markerFrom: number): string {
+  const line = state.doc.lineAt(markerFrom);
+  const indent = markerFrom - line.from;
+  const explicit = line.text.slice(indent).match(/^(\d+)\./);
+  if (explicit) return `${explicit[1]}.`;
+
+  // "+" marker: its position is the length of the same-indent enum run above.
+  let count = 1;
+  for (let n = line.number - 1; n >= 1; n--) {
+    const m = state.doc.line(n).text.match(/^(\s*)(?:\+|\d+\.)(?:\s|$)/);
+    if (!m) break;                      // non-enum line ends the list
+    const prevIndent = m[1].length;
+    if (prevIndent < indent) break;     // parent level — our run starts below it
+    if (prevIndent > indent) continue;  // nested child — does not affect our number
+    count++;
+  }
+  return `${count}.`;
+}
+
 function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
@@ -165,9 +206,6 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   const expandedPos = state.field(expandedFuncField, false) ?? null;
   const decos: Range<Decoration>[] = [];
 
-  let enumCounter = 0;
-  let lastEnumLine = -1;
-  let lastEnumIndent = -1;
   const escapeRanges = new Set<string>();
   const escapeDecos: { from: number; backslashEnd: number; charEnd: number }[] = [];
   const activeFormatting = { bold: false, italic: false, strike: false, highlight: false, headingLevel: 0 };
@@ -184,26 +222,6 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
         decos.push(hide.range(line.from, hideEnd));
       }
     }
-  }
-
-  if (onlyRanges && onlyRanges.length > 0 && onlyRanges[0].from > 0) {
-    syntaxTree(state).iterate({
-      from: 0,
-      to: onlyRanges[0].from,
-      enter(node) {
-        if (node.name === "EnumMarker") {
-          const line = state.doc.lineAt(node.from);
-          const indent = node.from - line.from;
-          if (indent !== lastEnumIndent || line.number > lastEnumLine + 1) {
-            enumCounter = 1;
-          } else {
-            enumCounter++;
-          }
-          lastEnumLine = line.number;
-          lastEnumIndent = indent;
-        }
-      },
-    });
   }
 
   syntaxTree(state).iterate({
@@ -267,17 +285,8 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             return false;
           }
           case "EnumMarker": {
-            const line = state.doc.lineAt(node.from);
-            const indent = node.from - line.from;
-            if (indent !== lastEnumIndent || line.number > lastEnumLine + 1) {
-              enumCounter = 1;
-            } else {
-              enumCounter++;
-            }
-            lastEnumLine = line.number;
-            lastEnumIndent = indent;
             decos.push(
-              Decoration.replace({ widget: new BulletWidget(`${enumCounter}.`) }).range(node.from, node.to),
+              Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(node.from, node.to),
             );
             return false;
           }
@@ -791,11 +800,43 @@ function handleFuncCall(
     case "callout": {
       const kind = extractFirstStringArg(text);
       const title = extractNamedStringArg(text, "title");
-      const bodyText = extractBracketContent(text);
       if (!kind) return false;
-      pushBlockElement((withPill) =>
-        new CalloutBlockWidget(kind, title ?? "", bodyText ?? "", from, withPill),
+      const bodyRange = bracketRangeAfterArgs(text, from);
+      if (bodyRange === null) return false;
+      // Same model as block quote: a single rendered widget when the cursor is
+      // away, and an in-place editable body (real text + callout styling, no
+      // duplicate, no caret trap) when it's on. Replaces the old
+      // pushBlockElement "source + side:1 preview" path that rendered twice.
+      if (!onCursor) {
+        const bodyText = state.doc.sliceString(bodyRange.from, bodyRange.to);
+        decos.push(
+          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, false) }).range(from, to),
+        );
+        return false;
+      }
+      const color = CALLOUT_COLORS[kind] ?? CALLOUT_COLORS.note;
+      decos.push(
+        Decoration.replace({ widget: new FuncPillWidget(from, "callout") }).range(from, bodyRange.from),
       );
+      if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
+      const startLine = state.doc.lineAt(bodyRange.from);
+      const endLine = state.doc.lineAt(bodyRange.to);
+      for (let ln = startLine.number; ln <= endLine.number; ln++) {
+        decos.push(
+          Decoration.line({
+            class: "cm-typst-callout-line",
+            attributes: { style: `border-left-color: ${color};` },
+          }).range(state.doc.line(ln).from),
+        );
+      }
+      // Tint only the body, not any text trailing after the closing `]`.
+      if (bodyRange.from < bodyRange.to) {
+        decos.push(
+          Decoration.mark({
+            attributes: { style: `background-color: color-mix(in srgb, ${color} 8%, transparent);` },
+          }).range(bodyRange.from, bodyRange.to),
+        );
+      }
       return false;
     }
     case "annotation": {
@@ -1012,12 +1053,43 @@ function handleFuncCall(
       // `<q>` — Typst doesn't render attribution inline either).
       const isBlock = /\bblock\s*:\s*true\b/.test(text);
       if (isBlock) {
-        const content = extractBracketContent(text);
-        const attribution = extractAttributionDisplay(text);
-        if (content === null) return false;
-        pushBlockElement((withPill) =>
-          new BlockquoteBlockWidget(content, attribution, from, withPill),
+        const bodyRange = bracketRangeAfterArgs(text, from);
+        if (bodyRange === null) return false;
+        // Edit in place when the cursor is on the quote; render a widget when
+        // it's away. We deliberately do NOT use the old "raw source + side:1
+        // preview widget" pattern: it rendered the quote twice and left a
+        // block widget at `to` that trapped the caret. Instead we follow the
+        // Tier-1 decoration model used by the inline content-bracket pills.
+        if (!onCursor) {
+          // Cursor away → one rendered blockquote widget. Single, atomic,
+          // no trailing block widget, so nothing to duplicate or trap.
+          const content = state.doc.sliceString(bodyRange.from, bodyRange.to);
+          const attribution = extractAttributionDisplay(text);
+          decos.push(
+            Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, false) }).range(from, to),
+          );
+          return false;
+        }
+        // Cursor on the quote → edit the body as real CodeMirror text: a
+        // quote pill replaces the `#quote(block: true)[…]` opener, the
+        // closing `]` is hidden, and the body's lines get blockquote styling.
+        // Native cursor/undo, no contentEditable, no round-trip.
+        decos.push(
+          Decoration.replace({ widget: new FuncPillWidget(from, "quote") }).range(from, bodyRange.from),
         );
+        if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
+        const startLine = state.doc.lineAt(bodyRange.from);
+        const endLine = state.doc.lineAt(bodyRange.to);
+        for (let ln = startLine.number; ln <= endLine.number; ln++) {
+          decos.push(
+            Decoration.line({ class: "cm-typst-blockquote-line" }).range(state.doc.line(ln).from),
+          );
+        }
+        // Italic/colour only over the body — keeps any text trailing after the
+        // closing `]` on the same line looking like the ordinary text it is.
+        if (bodyRange.from < bodyRange.to) {
+          decos.push(blockquoteBodyMark.range(bodyRange.from, bodyRange.to));
+        }
         return false;
       }
       // Inline: same content-bracket pill pattern as #strike, #emph, etc.
@@ -1183,6 +1255,47 @@ function extractContentBracket(
   // visual editor falls back to raw source the moment a slash-command or
   // shortcut produces an empty pair.
   return { from: nodeFrom + open + 1, to: nodeFrom + closeIdx };
+}
+
+/**
+ * Range of the body content bracket that follows a call's argument list —
+ * the `[…]` after `(…)`. Use this instead of {@link extractContentBracket}
+ * when a named bracket argument can precede the body (e.g.
+ * `#quote(block: true, attribution: [Smith])[body]`), where the first `[`
+ * belongs to the argument, not the body. Quote- and depth-aware so a `)` or
+ * `[` inside a string argument doesn't close the list early. Returns a
+ * zero-width range for an empty body (`[]`), like extractContentBracket.
+ */
+function bracketRangeAfterArgs(
+  text: string,
+  nodeFrom: number,
+): { from: number; to: number } | null {
+  let scanFrom = 0;
+  const lp = text.indexOf("(");
+  if (lp >= 0) {
+    let depth = 0;
+    let inStr = false;
+    for (let i = lp; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '"' && text[i - 1] !== "\\") inStr = !inStr;
+      else if (!inStr && ch === "(") depth++;
+      else if (!inStr && ch === ")") {
+        depth--;
+        if (depth === 0) { scanFrom = i + 1; break; }
+      }
+    }
+  }
+  const open = text.indexOf("[", scanFrom);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "[") depth++;
+    else if (text[i] === "]") {
+      depth--;
+      if (depth === 0) return { from: nodeFrom + open + 1, to: nodeFrom + i };
+    }
+  }
+  return null;
 }
 
 function extractFirstStringArg(text: string): string | null {
@@ -1396,22 +1509,65 @@ function cursorNearDecoTrigger(state: EditorState): boolean {
   return false;
 }
 
+/**
+ * Grow each dirty range so it fully contains any `FuncCall` it overlaps. A
+ * block element (callout, quote, …) renders as several decorations spread
+ * across its lines — a pill, hidden markup, a per-line style. If a partial
+ * rebuild covered only some of those lines it would rebuild part of the set
+ * and keep the rest stale, leaving self-contradictory decorations: a leftover
+ * editing line-border doubling the rendered widget's bar, or a stale pill
+ * replace overlapping a fresh whole-element widget so the body vanishes.
+ * Rebuilding the whole element at once keeps its decoration set consistent.
+ */
+function expandRangesToBlockElements(
+  state: EditorState,
+  ranges: { from: number; to: number }[],
+): { from: number; to: number }[] {
+  const tree = syntaxTree(state);
+  return ranges.map((r) => {
+    let { from, to } = r;
+    const grow = (nodeFrom: number, nodeTo: number) => {
+      if (nodeFrom < from) from = nodeFrom;
+      if (nodeTo > to) to = nodeTo;
+    };
+    // Enclosing calls at either edge of the range …
+    for (const [pos, side] of [[r.from, 1], [r.to, -1]] as const) {
+      let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, side);
+      while (n) {
+        if (n.name === "FuncCall") grow(n.from, n.to);
+        if (!n.parent) break;
+        n = n.parent;
+      }
+    }
+    // … plus any call that begins inside it.
+    tree.iterate({
+      from: r.from,
+      to: r.to,
+      enter(n) { if (n.name === "FuncCall") grow(n.from, n.to); },
+    });
+    return { from, to };
+  });
+}
+
+function coalesceRanges(ranges: { from: number; to: number }[]): { from: number; to: number }[] {
+  ranges.sort((a, b) => a.from - b.from);
+  const merged: { from: number; to: number }[] = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r.from <= last.to + 1) last.to = Math.max(last.to, r.to);
+    else merged.push({ from: r.from, to: r.to });
+  }
+  return merged;
+}
+
 function rebuildRanges(
   existing: DecorationSet,
   state: EditorState,
   dirtyRanges: { from: number; to: number }[],
 ): DecorationSet {
-  dirtyRanges.sort((a, b) => a.from - b.from);
-
-  const merged: { from: number; to: number }[] = [];
-  for (const r of dirtyRanges) {
-    const last = merged[merged.length - 1];
-    if (last && r.from <= last.to + 1) {
-      last.to = Math.max(last.to, r.to);
-    } else {
-      merged.push({ from: r.from, to: r.to });
-    }
-  }
+  // Coalesce, then grow to whole block elements, then coalesce again (the
+  // growth can make formerly-separate ranges overlap).
+  const merged = coalesceRanges(expandRangesToBlockElements(state, coalesceRanges(dirtyRanges)));
 
   if (merged.length === 0) return existing;
 
@@ -1427,7 +1583,18 @@ function rebuildRanges(
   while (iter.value) {
     let inDirty = false;
     for (const r of merged) {
-      if (iter.from < r.to && iter.to > r.from) {
+      // Range decorations: standard half-open overlap.
+      // Point decorations (Decoration.line lives at line.from, from === to):
+      // a strict overlap test would judge one sitting exactly at the dirty
+      // range's start (iter.to === r.from) as "not dirty" and keep it. That
+      // strands a stale block-element line style — e.g. a callout/quote whose
+      // call begins at column 0, so its first line decoration sits at the very
+      // start of the expanded element range — behind the freshly rendered
+      // widget, producing a doubled bar. Treat a point at [r.from, r.to) as
+      // dirty so it is dropped and rebuilt with the rest of the element.
+      const overlaps = iter.from < r.to && iter.to > r.from;
+      const pointInRange = iter.from === iter.to && iter.from >= r.from && iter.from < r.to;
+      if (overlaps || pointInRange) {
         inDirty = true;
         break;
       }
@@ -1623,7 +1790,42 @@ const softBreakAtomicRanges = EditorView.atomicRanges.of(
   (view) => view.state.field(softBreakRangesField, false) ?? RangeSet.empty,
 );
 
+// ── Atomic markup ranges ────────────────────────────────────────────
+// Every *replacing* decoration — a pill, hidden markup like `#callout("…")[`
+// or a closing `]`, a list marker, a block widget — should behave as a single
+// unit under cursor motion: one arrow press crosses it, not one press per
+// hidden character (which felt like the arrow key was stuck). CodeMirror does
+// not make replace decorations atomic on its own, so we derive an atomic
+// RangeSet from the visual decoration set: include the shared `hide` replace
+// and any widget-bearing replace, but NOT mark decorations (bold / italic /
+// highlight), whose text must stay editable. Memoised per decoration-set
+// instance so cursor moves don't re-scan an unchanged set.
+class AtomicMarkupRange extends RangeValue {}
+const atomicMarkupMarker = new AtomicMarkupRange();
+const atomicMarkupCache = new WeakMap<DecorationSet, RangeSet<AtomicMarkupRange>>();
+
+function atomicMarkupRanges(decos: DecorationSet | undefined): RangeSet<AtomicMarkupRange> {
+  if (!decos) return RangeSet.empty;
+  const cached = atomicMarkupCache.get(decos);
+  if (cached) return cached;
+  const ranges: Range<AtomicMarkupRange>[] = [];
+  const iter = decos.iter();
+  while (iter.value) {
+    if (iter.from < iter.to && (iter.value === hide || iter.value.spec?.widget != null)) {
+      ranges.push(atomicMarkupMarker.range(iter.from, iter.to));
+    }
+    iter.next();
+  }
+  const set = RangeSet.of(ranges);
+  atomicMarkupCache.set(decos, set);
+  return set;
+}
+
+const markupAtomicRanges = EditorView.atomicRanges.of(
+  (view) => atomicMarkupRanges(view.state.field(visualField, false)),
+);
+
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
 }
 

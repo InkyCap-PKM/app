@@ -4515,6 +4515,25 @@ svg.lucide {
   background: var(--bg-hover);
 }
 
+/* Pill content-boundary pulse (pill-boundary-nav.ts). A brief outline that
+   flashes around an inline pill's content when the caret crosses — or pauses
+   at — its boundary, so the region change is legible. Lives in global CSS so
+   the @keyframes resolves; the class is applied inside the editor DOM. */
+@keyframes cm-typst-pill-pulse-kf {
+  0% {
+    box-shadow: 0 0 0 2px var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+    background: transparent;
+  }
+}
+.cm-typst-pill-pulse {
+  border-radius: 3px;
+  animation: cm-typst-pill-pulse-kf 0.5s ease-out;
+}
+
 /* Contributors editor (Book Metadata) */
 .contributors-editor {
   display: flex;

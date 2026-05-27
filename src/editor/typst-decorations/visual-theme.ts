@@ -2,7 +2,11 @@ import { EditorView } from "@codemirror/view";
 
 export const visualTheme = EditorView.theme({
   ".cm-scroller": { overflowAnchor: "none" },
-  ".cm-cursor": { maxHeight: "1.5em" },
+  // Let the caret follow the natural height of the line it sits on. A fixed
+  // cap (previously 1.5em) left the caret stranded short and top-aligned on
+  // heading lines, whose font is up to 1.8em — the caret must grow with the
+  // text so it reads as belonging to the heading.
+  ".cm-cursor": { maxHeight: "none" },
   ".cm-gutters": {
     display: "none !important",
   },
@@ -197,13 +201,21 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-codeblock pre": {
     margin: "0",
     padding: "8px 10px",
-    overflow: "auto",
+    // Wrap long lines inside the box rather than letting them run past the
+    // rounded right edge. A notes editor favours always-visible content over
+    // a horizontal scrollbar; `pre-wrap` keeps the source's own line breaks
+    // and indentation while folding overlong lines back into the box.
+    maxWidth: "100%",
+    overflowX: "hidden",
     fontSize: "0.9em",
     lineHeight: "1.5",
     fontFamily: "inherit",
   },
   ".cm-typst-codeblock code": {
     fontFamily: "inherit",
+    display: "block",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
   },
   // Edit-mode lines: when the cursor enters the code block we show the raw
   // source instead of the widget. Just the monospace font + a tighter size;
@@ -451,6 +463,26 @@ export const visualTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--fg-dim)",
   },
+  // Editing state for a block quote. The line decoration carries only the bar
+  // + inset (geometry that's safe to apply to a whole line); the italic/muted
+  // fill is a separate mark bounded to the body, so text trailing after the
+  // closing `]` on the same line keeps its ordinary style. (13px left padding
+  // + 3px border ≈ the rendered widget's 16px inset.)
+  ".cm-typst-blockquote-line": {
+    borderLeft: "3px solid var(--border-primary)",
+    paddingLeft: "13px",
+  },
+  ".cm-typst-blockquote-body": {
+    fontStyle: "italic",
+    color: "var(--fg-muted)",
+  },
+  // Editing state for a callout — the kind's accent colour for the bar is set
+  // per-line inline; the faint tint is a body-bounded mark (also inline), again
+  // so trailing text after `]` isn't swept into the callout's styling.
+  ".cm-typst-callout-line": {
+    borderLeft: "3px solid var(--accent)",
+    paddingLeft: "13px",
+  },
   // ── Pills (R1–R3) ──
   // Single visual identity for every pill in the visual editor. Inline,
   // block-row, and embedded sites all use this class. See
@@ -565,9 +597,19 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-pill-menu-input-row": {
     display: "flex",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: "8px",
     padding: "5px 12px",
     cursor: "default",
+  },
+  // Inline help revealed by the row's "?" trigger. flex-basis 100% drops it
+  // onto its own line below the label + input so the full width is available.
+  ".cm-typst-pill-menu-help": {
+    flexBasis: "100%",
+    margin: "2px 0 0 0",
+    fontSize: "0.85em",
+    lineHeight: "1.45",
+    color: "var(--fg-muted)",
   },
   ".cm-typst-pill-menu-input-label": {
     fontSize: "0.92em",

@@ -475,8 +475,12 @@ export function parseTsvToGrid(text: string): string[][] | null {
   const lines = text.split(/\r?\n/).filter(l => l.length > 0);
   if (lines.length === 0) return null;
 
-  const hasTabs = lines.some(l => l.includes("\t"));
-  if (!hasTabs && lines.length <= 1) return null;
-
-  return lines.map(l => l.split("\t"));
+  // Only treat plain text as tabular when it is genuinely tab-delimited and
+  // at least one row yields two or more columns. Prose — including multi-line
+  // prose with runs of spaces, such as copied verse — has no tab delimiters
+  // and must never be folded into a table.
+  if (!lines.some(l => l.includes("\t"))) return null;
+  const grid = lines.map(l => l.split("\t"));
+  if (!grid.some(r => r.length >= 2)) return null;
+  return grid;
 }
