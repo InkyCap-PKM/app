@@ -575,8 +575,17 @@ mod tests {
         assert!(html.html.contains("<video"), "expected <video>, got: {}", html.html);
         assert!(html.html.contains("<audio"), "expected <audio>, got: {}", html.html);
         assert!(html.html.contains("controls"), "expected controls attr: {}", html.html);
-        assert!(html.html.contains("/Assets/clip.mp4"), "expected video src: {}", html.html);
-        assert!(html.html.contains("/Assets/song.mp3"), "expected audio src: {}", html.html);
+        // Double-quoted `src` is what the HTML-export asset localizer keys on.
+        assert!(
+            html.html.contains(r#"src="/Assets/clip.mp4""#),
+            "expected double-quoted video src: {}",
+            html.html
+        );
+        assert!(
+            html.html.contains(r#"src="/Assets/song.mp3""#),
+            "expected double-quoted audio src: {}",
+            html.html
+        );
     }
 
     #[test]

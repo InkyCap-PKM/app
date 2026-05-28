@@ -479,6 +479,81 @@ pub(super) fn extract_image_paths(source: &str) -> Vec<String> {
         .collect()
 }
 
+// ── HTML asset localization ─────────────────────────────────────
+
+/// Make exported HTML self-contained: copy every notebox asset referenced by a
+/// notebox-root-absolute `src="/…"` attribute (images, `#video`/`#audio`) into
+/// `output_dir`, preserving its relative subpath, and rewrite the attribute to
+/// that relative path. typst-html leaves these paths untouched, so without this
+/// an exported `.html`/site points back at `/Assets/…` and shows nothing.
+///
+/// `src`s that already carry a scheme (`http:`, `blob:`, `data:`, …) or are
+/// already relative don't start with `/`, so they're left untouched. Returns
+/// the rewritten HTML and the list of relative paths copied.
+pub(super) async fn localize_html_assets(
+    html: &str,
+    notebox_root: &Path,
+    output_dir: &Path,
+) -> Result<(String, Vec<String>), crate::errors::InkyCapError> {
+    let re = regex::Regex::new(r#"src="(/[^"]*)""#).unwrap();
+
+    // Collect the distinct root-absolute asset paths referenced in the HTML.
+    let mut seen = std::collections::HashSet::new();
+    let mut paths = Vec::new();
+    for cap in re.captures_iter(html) {
+        let p = cap[1].to_string();
+        if seen.insert(p.clone()) {
+            paths.push(p);
+        }
+    }
+
+    // Copy each into the output directory, preserving its relative subpath.
+    // Paths that don't resolve to a real file inside the notebox are left as
+    // written (and not rewritten below), so a broken reference stays visible
+    // rather than silently disappearing.
+    let mut copied_ok = std::collections::HashSet::new();
+    let mut copied = Vec::new();
+    for p in &paths {
+        let rel = p.trim_start_matches('/');
+        let candidate = notebox_root.join(rel);
+        let Ok(resolved) = crate::storage::path::validate_notebox_path(notebox_root, &candidate)
+        else {
+            continue;
+        };
+        if !resolved.is_file() {
+            continue;
+        }
+        let dest = output_dir.join(rel);
+        if let Some(parent) = dest.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                crate::errors::InkyCapError::ExportFailed(format!(
+                    "Failed to create asset dir {}: {e}",
+                    parent.display()
+                ))
+            })?;
+        }
+        tokio::fs::copy(&resolved, &dest).await.map_err(|e| {
+            crate::errors::InkyCapError::ExportFailed(format!("Failed to copy asset {rel}: {e}"))
+        })?;
+        copied_ok.insert(p.clone());
+        copied.push(rel.to_string());
+    }
+
+    // Rewrite only the references we actually copied, to the relative path.
+    let rewritten = re
+        .replace_all(html, |caps: &regex::Captures| {
+            let full = &caps[1];
+            if copied_ok.contains(full) {
+                format!("src=\"{}\"", full.trim_start_matches('/'))
+            } else {
+                caps[0].to_string()
+            }
+        })
+        .to_string();
+
+    Ok((rewritten, copied))
+}
+
 // ── Template resolution ─────────────────────────────────────────
 
 /// Resolve a template reference to a Typst import path.
@@ -508,4 +583,55 @@ pub fn resolve_template_path_with_root(template: &str, _notebox_root: Option<&Pa
     // Bare name → default to the local namespace and version 0.1.0. Users
     // who need a different version or namespace write the full spec.
     format!("@local/{}:0.1.0", template)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::path::canonicalize_root;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn localize_copies_assets_and_rewrites_src() {
+        let notebox = tempdir().unwrap();
+        let root = canonicalize_root(notebox.path()).unwrap();
+        fs::create_dir_all(root.join("Assets")).unwrap();
+        fs::write(root.join("Assets/clip.mp4"), b"fakevideo").unwrap();
+        fs::write(root.join("Assets/pic.png"), b"fakeimg").unwrap();
+
+        let out = tempdir().unwrap();
+        let html = concat!(
+            r#"<img src="/Assets/pic.png">"#,
+            r#"<video controls="" src="/Assets/clip.mp4"></video>"#,
+            r#"<a href="/Assets/clip.mp4">x</a>"#,
+            r#"<img src="https://ext/e.png">"#,
+        );
+
+        let (rewritten, copied) = localize_html_assets(html, &root, out.path()).await.unwrap();
+
+        // Files copied, preserving their relative subpath.
+        assert!(out.path().join("Assets/clip.mp4").is_file());
+        assert!(out.path().join("Assets/pic.png").is_file());
+        assert_eq!(copied.len(), 2, "copied: {copied:?}");
+
+        // Local `src` rewritten to relative; href and external src untouched.
+        assert!(rewritten.contains(r#"src="Assets/pic.png""#), "{rewritten}");
+        assert!(rewritten.contains(r#"src="Assets/clip.mp4""#), "{rewritten}");
+        assert!(rewritten.contains(r#"href="/Assets/clip.mp4""#), "href untouched: {rewritten}");
+        assert!(rewritten.contains(r#"src="https://ext/e.png""#), "external untouched: {rewritten}");
+    }
+
+    #[tokio::test]
+    async fn localize_leaves_missing_assets_untouched() {
+        let notebox = tempdir().unwrap();
+        let root = canonicalize_root(notebox.path()).unwrap();
+        let out = tempdir().unwrap();
+        let html = r#"<img src="/Assets/missing.png">"#;
+
+        let (rewritten, copied) = localize_html_assets(html, &root, out.path()).await.unwrap();
+
+        assert!(copied.is_empty());
+        assert_eq!(rewritten, html, "missing asset src should be left as written");
+    }
 }

@@ -7,7 +7,7 @@ use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::{
-    escape_html_attr, escape_html_content, extract_metadata_raw,
+    escape_html_attr, escape_html_content, extract_metadata_raw, localize_html_assets,
     prepare_bibliography, strip_wikilinks_from_source,
 };
 
@@ -61,7 +61,19 @@ pub async fn export_note_html(
         ));
     }
 
-    tokio::fs::write(&output_path, result.html.as_bytes())
+    // Copy referenced assets (images, video, audio) next to the output file and
+    // rewrite their `/…` srcs to relative paths, so the .html is self-contained.
+    let output_path_buf = PathBuf::from(&output_path);
+    let output_dir = output_path_buf.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let html_out = {
+        let notebox_root = state.notebox_root.read().await;
+        match notebox_root.as_ref() {
+            Some(root) => localize_html_assets(&result.html, root, output_dir).await?.0,
+            None => result.html.clone(),
+        }
+    };
+
+    tokio::fs::write(&output_path, html_out.as_bytes())
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write HTML: {}", e)))?;
 
