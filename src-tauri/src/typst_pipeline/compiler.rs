@@ -550,6 +550,35 @@ mod tests {
         );
     }
 
+    /// `#video` / `#audio` compile in both targets: a placeholder in paged
+    /// output (which can't play media) and a real `<video>` / `<audio
+    /// controls>` element in HTML export.
+    #[test]
+    fn video_and_audio_render_in_both_targets() {
+        let (_dir, root) = canonical_tempdir();
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+        let src = format!(
+            "{import}\n\n#video(\"/Assets/clip.mp4\", width: 50%)\n\n#audio(\"/Assets/song.mp3\")\n"
+        );
+        let note_path = root.join("media.typ");
+        fs::write(&note_path, &src).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+
+        // Paged: compiles to a placeholder, no error.
+        let paged = compiler.compile_svg(&note_path, src.clone()).expect("compile_svg");
+        assert!(paged.ok, "paged compile failed: {:?}", paged.diagnostics);
+
+        // HTML: emits real media elements with controls + the source path.
+        let html = compiler.compile_html(&note_path, src).expect("compile_html");
+        assert!(html.html.contains("<video"), "expected <video>, got: {}", html.html);
+        assert!(html.html.contains("<audio"), "expected <audio>, got: {}", html.html);
+        assert!(html.html.contains("controls"), "expected controls attr: {}", html.html);
+        assert!(html.html.contains("/Assets/clip.mp4"), "expected video src: {}", html.html);
+        assert!(html.html.contains("/Assets/song.mp3"), "expected audio src: {}", html.html);
+    }
+
     #[test]
     fn compiles_phase_0_spike_fixture() {
         // The Phase 0 spike fixture exercises the full inkycap-notebox package

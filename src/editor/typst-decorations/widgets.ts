@@ -1,5 +1,6 @@
 import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { openLink } from "../../lib/open-link";
+import { loadMediaObjectUrl, revokeMediaBlobs } from "../../lib/media-src";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
 import { highlightCodeInto } from "./code-highlight";
@@ -401,6 +402,88 @@ export class ImageBlockWidget extends WidgetType {
   }
 
   ignoreEvent() { return false; }
+}
+
+/// Block widget for `#video(...)` / `#audio(...)`: an inline player rendered
+/// from the notebox attachment, so the writer can scrub/preview media while
+/// authoring. The compiled output differs by target (a real <video>/<audio>
+/// element in HTML export, a placeholder in PDF) — this widget is purely an
+/// authoring convenience, per CLAUDE.md's "visual editor as a user-friendliness
+/// tool" principle.
+export class MediaBlockWidget extends WidgetType {
+  constructor(
+    readonly kind: "video" | "audio",
+    readonly path: string,
+    readonly pos: number,
+    readonly withPill: boolean,
+    readonly width: string | null = null,
+  ) {
+    super();
+  }
+
+  eq(other: MediaBlockWidget) {
+    return this.kind === other.kind && this.path === other.path
+      && this.pos === other.pos && this.withPill === other.withPill
+      && this.width === other.width;
+  }
+
+  get estimatedHeight(): number {
+    const base = this.kind === "audio" ? 54 : 200;
+    return this.withPill ? base + 24 : base;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-typst-media-block";
+    wrap.style.overflow = "hidden";
+    this.renderContent(wrap, view);
+    return wrap;
+  }
+
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    revokeMediaBlobs(dom);
+    dom.innerHTML = "";
+    this.renderContent(dom, view);
+    return true;
+  }
+
+  destroy(dom: HTMLElement) {
+    revokeMediaBlobs(dom);
+  }
+
+  private renderContent(wrap: HTMLElement, view: EditorView) {
+    if (this.withPill) wrap.appendChild(makeBlockPillRow(this.kind, this.pos, view));
+
+    const inner = document.createElement("div");
+    inner.style.textAlign = "center";
+
+    const label = document.createElement("div");
+    label.className = "cm-typst-image-label";
+    label.textContent = this.path;
+    inner.appendChild(label);
+
+    const mediaPath = this.path;
+    loadMediaObjectUrl(mediaPath).then((url) => {
+      if (!url || !document.body.contains(wrap)) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
+      const el = document.createElement(this.kind) as HTMLMediaElement;
+      el.className = `cm-typst-media-${this.kind}`;
+      el.controls = true;
+      el.preload = "metadata";
+      el.src = url;
+      if (this.kind === "video" && this.width) el.style.width = typstLengthToCss(this.width);
+      el.addEventListener("loadedmetadata", () => { label.style.display = "none"; });
+      el.addEventListener("error", () => { el.style.display = "none"; });
+      inner.insertBefore(el, label);
+    });
+    wrap.appendChild(inner);
+  }
+
+  // Let the native media controls own all interaction (play/seek/volume);
+  // CM should not treat clicks on the player as editor input.
+  ignoreEvent() { return true; }
 }
 
 export class TagWidget extends WidgetType {

@@ -630,13 +630,16 @@ function registerMarkupCommands() {
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
-    // Image is special-cased below: rather than inserting a template with an
-    // empty path the user must hand-type (which would produce a fragile
-    // relative reference), it drives the attachment picker, copies the chosen
-    // file(s) into `settings.files.attachment_folder`, and emits a
-    // notebox-root-absolute `#image("/...")` call. The `insert` field here is
-    // unused for that id — the picker diverts the execute path.
+    // Image/Video/Audio are special-cased below: rather than inserting a
+    // template with an empty path the user must hand-type (which would produce
+    // a fragile relative reference), they drive the attachment picker, copy the
+    // chosen file(s) into `settings.files.attachment_folder`, and emit a
+    // notebox-root-absolute `#image("/...")` / `#video(...)` / `#audio(...)`
+    // call. The `insert` field is unused for those ids — the picker diverts the
+    // execute path.
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
+    { id: "video", title: "Video", category: "Insert", insert: '#video("")', cursorOffset: 8 },
+    { id: "audio", title: "Audio", category: "Insert", insert: '#audio("")', cursorOffset: 8 },
     { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4, shortcut: "```" },
     { id: "math-block", title: "Math Block", category: "Insert", insert: "$ ${sel} $", cursorOffset: 2 },
     { id: "horizontal-rule", title: "Horizontal Rule", category: "Insert", insert: "#line(length: 100%)", cursorOffset: 19, shortcut: "+++" },
@@ -675,11 +678,11 @@ function registerMarkupCommands() {
     { id: "due", title: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
   ];
 
+  const ATTACHMENT_IDS = new Set(["image", "video", "audio"]);
   for (const item of items) {
-    const execute =
-      item.id === "image"
-        ? () => insertAttachmentViaPicker("image")
-        : () => insertMarkup(item.insert, item.cursorOffset);
+    const execute = ATTACHMENT_IDS.has(item.id)
+      ? () => insertAttachmentViaPicker(item.id as "image" | "video" | "audio")
+      : () => insertMarkup(item.insert, item.cursorOffset);
 
     registerCommand({
       id: `markup:${item.id}`,
@@ -691,7 +694,7 @@ function registerMarkupCommands() {
   }
 }
 
-async function insertAttachmentViaPicker(func: "image") {
+async function insertAttachmentViaPicker(func: "image" | "video" | "audio") {
   const handle = activeEditorView();
   if (!handle) return;
   const view = handle.view;

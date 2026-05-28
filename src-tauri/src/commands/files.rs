@@ -309,6 +309,31 @@ pub async fn update_property(
     Ok(())
 }
 
+/// Read a notebox media file as raw bytes, returned to the webview as an
+/// ArrayBuffer (no base64 inflation). The frontend wraps these in a `blob:`
+/// URL to play `#video` / `#audio`: WebKitGTK doesn't reliably stream media
+/// through Tauri's custom asset protocol (images work, media silently fails),
+/// but blob URLs play everywhere. `target` is a notebox-root-absolute path
+/// like `/Assets/clip.mp4`; traversal is blocked by `validate_notebox_path`.
+#[tauri::command]
+pub async fn read_media_bytes(
+    target: String,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, InkyCapError> {
+    let notebox_root = state.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let clean = target.split('|').next().unwrap_or(&target).trim();
+    let stripped = clean.trim_start_matches('/').trim_start_matches('\\');
+    let candidate = root.join(stripped);
+    let resolved = crate::storage::path::validate_notebox_path(root, &candidate)?;
+    if !resolved.is_file() {
+        return Err(InkyCapError::InvalidPath(format!("Not a file: {target}")));
+    }
+    let bytes = std::fs::read(&resolved)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Resolve an embed target (e.g. "image.png") to an absolute file path.
 /// Searches all files in the notebox by filename (case-insensitive, shortest path).
 #[tauri::command]

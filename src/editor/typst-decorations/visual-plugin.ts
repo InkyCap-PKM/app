@@ -16,6 +16,7 @@ import {
   AnnotationBlockWidget,
   CodeBlockWidget,
   ImageBlockWidget,
+  MediaBlockWidget,
   BlockquoteBlockWidget,
   BibliographyBlockWidget,
   TagWidget,
@@ -454,7 +455,7 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
                     const funcNameForBracket = rawCheck.match(/^#?(\w[\w-]*)/);
                     const fnb = funcNameForBracket ? funcNameForBracket[1] : null;
                     const NO_TRAILING_BRACKET = new Set([
-                      "table", "note", "bibliography", "image", "verse", "cite",
+                      "table", "note", "bibliography", "image", "video", "audio", "verse", "cite",
                     ]);
                     if (!fnb || !NO_TRAILING_BRACKET.has(fnb)) {
                       const afterParen = state.doc.sliceString(realEnd, Math.min(realEnd + 100, state.doc.length)).trimStart();
@@ -644,7 +645,7 @@ function extractDateLiteral(s: string): string | null {
 }
 
 // Block widgets that collapse to pill + editable value when cursor is on line.
-const BLOCK_WIDGET_FUNCS = new Set(["image"]);
+const BLOCK_WIDGET_FUNCS = new Set(["image", "video", "audio"]);
 
 function handleFuncCall(
   state: EditorState,
@@ -864,6 +865,15 @@ function handleFuncCall(
       const imgWidth = extractNamedBareArg(text, "width");
       const imgHeight = extractNamedBareArg(text, "height");
       pushBlockElement((withPill) => new ImageBlockWidget(path, from, withPill, imgAlt, imgWidth, imgHeight));
+      return false;
+    }
+    case "video":
+    case "audio": {
+      const path = extractFirstStringArg(text);
+      if (!path) return false;
+      const mediaKind = funcName as "video" | "audio";
+      const mediaWidth = mediaKind === "video" ? extractNamedBareArg(text, "width") : null;
+      pushBlockElement((withPill) => new MediaBlockWidget(mediaKind, path, from, withPill, mediaWidth));
       return false;
     }
     case "tag": {

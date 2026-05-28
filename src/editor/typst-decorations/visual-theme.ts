@@ -292,6 +292,21 @@ export const visualTheme = EditorView.theme({
     padding: "2px 6px",
     textAlign: "center" as any,
   },
+  ".cm-typst-media-block": {
+    display: "block",
+    margin: "4px 0",
+  },
+  ".cm-typst-media-video": {
+    maxWidth: "100%",
+    maxHeight: "50vh",
+    borderRadius: "4px",
+    display: "block",
+    margin: "0 auto",
+  },
+  ".cm-typst-media-audio": {
+    width: "100%",
+    display: "block",
+  },
   ".cm-typst-tag": {
     display: "inline-block",
     backgroundColor: "var(--accent-purple-bg)",
