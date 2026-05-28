@@ -213,14 +213,13 @@ fn handle_func_call(
             // `#tag("name")` — extract the name as a searchable token,
             // *and* record this call site as a tag location for the
             // `tag:` filter's navigation.
-            if let Some(name) = first_positional_string(node) {
-                let call_range = node.range();
-                let line = line_map.line_of(call_range.start);
+            if let Some((name, anchor)) = first_positional_string_at(node) {
+                let line = line_map.line_of(anchor);
                 out.tag_locations
                     .entry(name.to_lowercase())
                     .or_default()
                     .push(line);
-                emit_string_tokens(&name, call_range.start, line_map, out);
+                emit_string_tokens(&name, anchor, line_map, out);
             }
             return;
         }
@@ -228,9 +227,10 @@ fn handle_func_call(
         Some("wikilink") => {
             // `#wikilink("Page Name", label: "…")` — first positional
             // is the target note name, which is the user-visible bit.
-            if let Some(name) = first_positional_string(node) {
-                let call_range = node.range();
-                emit_string_tokens(&name, call_range.start, line_map, out);
+            // Anchor at the string content (not the call) so a search match
+            // highlights the name, not the `#wikilink(` markup.
+            if let Some((name, anchor)) = first_positional_string_at(node) {
+                emit_string_tokens(&name, anchor, line_map, out);
             }
             return;
         }
@@ -281,11 +281,13 @@ fn handle_func_call(
         Some("image") => {
             // `#image("/dir/photo.png")` — make the filename stem
             // searchable so "photo" finds the image.
-            if let Some(path) = first_positional_string(node) {
+            if let Some((path, anchor)) = first_positional_string_at(node) {
                 let stem = path_stem(&path);
                 if !stem.is_empty() {
-                    let call_range = node.range();
-                    emit_string_tokens(stem, call_range.start, line_map, out);
+                    // Anchor at the stem's offset within the path string so the
+                    // highlight lands on the filename, not the `#image(` markup.
+                    let stem_offset = stem.as_ptr() as usize - path.as_ptr() as usize;
+                    emit_string_tokens(stem, anchor + stem_offset, line_map, out);
                 }
             }
             return;
@@ -347,7 +349,17 @@ fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
     None
 }
 
-fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
+/// The first positional string argument's decoded value, paired with the
+/// source byte offset of its *content* (just past the opening quote).
+///
+/// Anchoring emitted tokens at the content offset — rather than the enclosing
+/// call's `#func(` start — makes a search match inside `#wikilink("journalism")`
+/// or `#tag("name")` highlight the argument text, not the function markup.
+/// The offset assumes no escape sequences shift the content, which holds for
+/// the note names / tags / paths these calls carry in practice; under an
+/// escape the highlight can drift by the escape's width, acceptable for a
+/// search excerpt.
+fn first_positional_string_at(call_node: &LinkedNode<'_>) -> Option<(String, usize)> {
     let args_node = call_node
         .children()
         .find(|c| c.kind() == SyntaxKind::Args)?;
@@ -364,7 +376,10 @@ fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
 
             SyntaxKind::Str => {
                 let str_ast = child.cast::<ast::Str>()?;
-                return Some(str_ast.get().to_string());
+                // The Str node's range spans the surrounding quotes; its
+                // content begins one byte past the opening `"`.
+                let content_start = child.range().start + 1;
+                return Some((str_ast.get().to_string(), content_start));
             }
 
             // Named, Spread, Array, Code, etc. in the first slot — no
@@ -750,6 +765,38 @@ mod tests {
         let w = words(&p);
         assert!(w.iter().any(|(_, t)| *t == "daisy"));
         assert!(w.iter().any(|(_, t)| *t == "dog"));
+    }
+
+    #[test]
+    fn wikilink_token_anchors_to_argument_not_markup() {
+        // Regression: a search match inside `#wikilink("…")` must highlight the
+        // argument text, not the `#wikilink(` markup. The token's source span
+        // (line-relative byte offsets, which equal source offsets on line 0)
+        // must slice back to exactly the matched word.
+        let src = "see #wikilink(\"journalism\") ok";
+        let p = project(src);
+        let t = p
+            .tokens
+            .iter()
+            .find(|t| t.word == "journalism")
+            .expect("journalism token");
+        assert_eq!(
+            &src[t.char_start..t.char_end],
+            "journalism",
+            "token anchored at wrong source span"
+        );
+    }
+
+    #[test]
+    fn tag_token_anchors_to_argument_not_markup() {
+        let src = "body #tag(\"doc-howto\") more";
+        let p = project(src);
+        let t = p
+            .tokens
+            .iter()
+            .find(|t| t.word == "doc-howto")
+            .expect("tag token");
+        assert_eq!(&src[t.char_start..t.char_end], "doc-howto");
     }
 
     #[test]

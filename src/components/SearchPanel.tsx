@@ -28,8 +28,9 @@ import {
   Regex,
   MessagesSquare,
   Info,
+  Check,
 } from "lucide-solid";
-import type { SearchResult } from "../lib/types";
+import type { SearchResult, AnnotationScope } from "../lib/types";
 import { pathEquals } from "../lib/paths";
 import { clickOutside } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
@@ -52,8 +53,10 @@ import {
   setCaseSensitive,
   useRegex,
   setUseRegex,
-  annotationsOnly,
-  setAnnotationsOnly,
+  annotationScope,
+  setAnnotationScope,
+  showSettings,
+  setShowSettings,
   collapseResults,
   setCollapseResults,
   showMoreContext,
@@ -69,6 +72,8 @@ import {
   replaceResults,
   setReplaceResults,
   resetSearchVolatileState,
+  setSearchHighlights,
+  type SearchHighlights,
   type SortMode,
 } from "../stores/search";
 
@@ -104,27 +109,23 @@ const FILTER_HINTS: FilterHint[] = [
 const SYNTAX_TIPS: { label: string; description: string }[] = [
   {
     label: '"…"',
-    description: "phrase: find an exact phrase by enclosing it in double quotes",
+    description: "phrase search: find an exact phrase by enclosing it in double quotes",
   },
   {
     label: "AND OR NOT",
-    description: "boolean operators (uppercase). Use ( ) to group",
+    description: "boolean operators (uppercase). Use ( ) to group. Multiple words with no operator are treated as AND",
   },
   {
     label: "-term",
-    description: "exclude term (shorthand for NOT)",
+    description: "minus symbol excludes a term (shorthand for NOT)",
   },
   {
     label: "word*",
-    description: "truncation: match any suffix after the stem",
+    description: "truncation: match any suffix after the stem: ink* finds ink or inkycap but ink find only ink",
   },
   {
     label: "a W/5 b",
     description: "proximity: a within 5 words of b (W=ordered, N=any order)",
-  },
-  {
-    label: "/regex/",
-    description: "treat the query as a regular expression",
   },
 ];
 
@@ -138,6 +139,24 @@ const SORT_OPTIONS: { value: SortMode; label: string }[] = [
   { value: "created-asc", label: "Created time (old – new)" },
 ];
 
+const ANNOTATION_SCOPE_OPTIONS: {
+  value: AnnotationScope;
+  label: string;
+  description: string;
+}[] = [
+  { value: "all", label: "All text", description: "Search everything" },
+  {
+    value: "only",
+    label: "Annotations only",
+    description: "Only annotations and suggestions",
+  },
+  {
+    value: "exclude",
+    label: "Exclude annotations",
+    description: "Hide annotation and suggestion text",
+  },
+];
+
 const SearchPanel: Component = () => {
   // UI-only ephemeral state — these don't need to persist across mode
   // switches because they're transient overlays. Loading/showSettings
@@ -145,14 +164,17 @@ const SearchPanel: Component = () => {
   // a user would expect.
   const [loading, setLoading] = createSignal(false);
   const [replacing, setReplacing] = createSignal(false);
-  const [showSettings, setShowSettings] = createSignal(false);
+  // showSettings lives in the search store (not here) so the "Search Options"
+  // expander stays open across sidebar tab switches — see stores/search.ts.
   const [showTips, setShowTips] = createSignal(false);
   const [showSortMenu, setShowSortMenu] = createSignal(false);
   const [showOverflowMenu, setShowOverflowMenu] = createSignal(false);
+  const [showScopeMenu, setShowScopeMenu] = createSignal(false);
   // Trigger buttons, so click-outside dismissal can ignore clicks on the
   // toggle itself (otherwise it would close then immediately reopen).
   let overflowBtnRef: HTMLButtonElement | undefined;
   let sortBtnRef: HTMLButtonElement | undefined;
+  let scopeBtnRef: HTMLButtonElement | undefined;
   const [resultContextMenu, setResultContextMenu] = createSignal<
     { x: number; y: number; result: SearchResult } | null
   >(null);
@@ -164,23 +186,49 @@ const SearchPanel: Component = () => {
     if (searchTimeout) clearTimeout(searchTimeout);
   });
 
+  // Focus the query box. Called on mount (opening the pane from another tab
+  // remounts this component) and from the open-search event (so Ctrl+Shift+F
+  // refocuses even when the pane is already open). The `autofocus` attribute
+  // alone only fires on the first page-load mount — browsers don't re-honour
+  // it on later dynamic remounts — which is why focus "only worked the first
+  // time". `cursorAtEnd` parks the caret after a pre-filled query (e.g. a
+  // property click) instead of selecting it.
+  function focusInput(cursorAtEnd = false) {
+    queueMicrotask(() => {
+      if (!inputRef) return;
+      inputRef.focus();
+      if (cursorAtEnd) {
+        const end = inputRef.value.length;
+        inputRef.setSelectionRange(end, end);
+      } else {
+        inputRef.select();
+      }
+    });
+  }
+
   onMount(() => {
+    // Land the cursor in the box immediately whenever the pane opens.
+    focusInput();
+
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ query?: string; showReplace?: boolean }>)
         .detail;
       if (detail?.showReplace) setShowReplace(true);
-      if (!detail?.query) return;
+      if (!detail?.query) {
+        // Plain open (e.g. Ctrl+Shift+F while already on the search tab):
+        // refocus the existing box so the user can start typing.
+        focusInput();
+        return;
+      }
       setSearchQuery(detail.query);
       if (searchTimeout) clearTimeout(searchTimeout);
       // Property-click queries arrive ending in `=` so the user can type
       // a value next; park the cursor there and don't auto-run.
       if (detail.query.endsWith("=")) {
-        setTimeout(() => {
-          inputRef?.focus();
-          inputRef?.setSelectionRange(detail.query!.length, detail.query!.length);
-        }, 0);
+        focusInput(true);
         return;
       }
+      focusInput(true);
       executeSearch();
     };
     document.addEventListener("inkycap:open-search", handler);
@@ -222,7 +270,7 @@ const SearchPanel: Component = () => {
     const q = buildQuery();
     // An empty query normally clears results — except in annotations-only
     // mode, where it means "browse every annotation in the notebox".
-    if (!q && !annotationsOnly()) {
+    if (!q && annotationScope() !== "only") {
       setSearchResults([]);
       setSearchResultCount(0);
       setSearchTotalCount(0);
@@ -249,7 +297,7 @@ const SearchPanel: Component = () => {
         caseSensitive(),
         off,
         useRegex(),
-        annotationsOnly(),
+        annotationScope(),
       );
       setSearchResults(resp.results);
       setSearchResultCount(resp.results.length);
@@ -284,8 +332,13 @@ const SearchPanel: Component = () => {
 
   function clearQuery() {
     setSearchQuery("");
-    resetSearchVolatileState();
     if (searchTimeout) clearTimeout(searchTimeout);
+    resetSearchVolatileState();
+    // Re-run the now-empty query so the × matches manually deleting the text.
+    // executeSearch's empty-query branch clears results in normal mode, but in
+    // annotations-only mode an empty query *browses every annotation* — so the
+    // × must reissue that browse instead of leaving the list empty.
+    executeSearch();
     inputRef?.focus();
   }
 
@@ -318,6 +371,21 @@ const SearchPanel: Component = () => {
           charEnd: first[1],
         }
       : undefined;
+    // Highlight *every* match in this file once it opens — not just the clicked
+    // line — so a multi-term query (e.g. `journ* AND canad*`) shows all matching
+    // portions. Gather all ranges for the path from the current result set.
+    const fileRanges: SearchHighlights["ranges"] = [];
+    for (const r of searchResults()) {
+      if (!pathEquals(r.path, result.path)) continue;
+      for (const [s, en] of r.match_ranges) {
+        if (en > s) {
+          fileRanges.push({ line: r.line_number, charStart: s, charEnd: en });
+        }
+      }
+    }
+    setSearchHighlights(
+      fileRanges.length > 0 ? { path: result.path, ranges: fileRanges } : null,
+    );
     openTab(
       {
         type: "file",
@@ -571,6 +639,24 @@ const SearchPanel: Component = () => {
     return SORT_OPTIONS.find((o) => o.value === sortMode())?.label ?? "Sort";
   }
 
+  function chooseAnnotationScope(scope: AnnotationScope) {
+    setShowScopeMenu(false);
+    if (annotationScope() === scope) return;
+    setAnnotationScope(scope);
+    executeSearch();
+  }
+
+  function annotationScopeTitle(): string {
+    switch (annotationScope()) {
+      case "only":
+        return "Annotation scope: annotations only (empty query lists them all)";
+      case "exclude":
+        return "Annotation scope: annotations excluded";
+      default:
+        return "Annotation scope: all text";
+    }
+  }
+
   return (
     <div class="search-panel">
       <div class="search-panel__input-row">
@@ -701,18 +787,47 @@ const SearchPanel: Component = () => {
           >
             <Regex size={18} />
           </button>
-          <button
-            class={`icon-btn ${annotationsOnly() ? "icon-btn--active" : ""}`}
-            onClick={() => {
-              setAnnotationsOnly(!annotationsOnly());
-              executeSearch();
-            }}
-            title="Annotations — search only within annotations and suggestions (empty query lists them all)"
-            aria-label="Annotations"
-            aria-pressed={annotationsOnly()}
-          >
-            <MessagesSquare size={18} />
-          </button>
+          <div class="search-panel__scope-menu-wrap">
+            <button
+              ref={scopeBtnRef}
+              class={`icon-btn ${annotationScope() !== "all" ? "icon-btn--active" : ""}`}
+              onClick={() => setShowScopeMenu(!showScopeMenu())}
+              title={annotationScopeTitle()}
+              aria-label="Annotation scope"
+              aria-haspopup="menu"
+              aria-expanded={showScopeMenu()}
+            >
+              <MessagesSquare size={18} />
+            </button>
+            <Show when={showScopeMenu()}>
+              <div
+                class="context-menu search-panel__menu-anchored search-panel__menu-anchored--right"
+                use:clickOutside={{
+                  onDismiss: () => setShowScopeMenu(false),
+                  ignore: scopeBtnRef,
+                }}
+              >
+                <For each={ANNOTATION_SCOPE_OPTIONS}>
+                  {(opt) => (
+                    <button
+                      classList={{
+                        "context-menu__item": true,
+                        "context-menu__item--active":
+                          annotationScope() === opt.value,
+                      }}
+                      onClick={() => chooseAnnotationScope(opt.value)}
+                      title={opt.description}
+                    >
+                      <span>{opt.label}</span>
+                      <Show when={annotationScope() === opt.value}>
+                        <Check size={14} class="context-menu__check" />
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
         </div>
       </Show>
 

@@ -12,6 +12,34 @@ use crate::models::note::PropertyValue;
 use crate::search::query::{FilterKind, QueryNode};
 use crate::search::results::{compute_score, SearchResult};
 
+/// How a search treats text inside `#annotation[…]` / `#suggestion[…]` marks.
+/// Drives the SearchPanel's tri-state annotation toggle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnnotationScope {
+    /// Search everything — body prose and annotation/suggestion text alike.
+    #[default]
+    All,
+    /// Restrict matches to lines within an annotation/suggestion (the
+    /// "Annotations only" scope; an empty query browses every annotation).
+    Only,
+    /// Hide matches that fall inside an annotation/suggestion — search only
+    /// the surrounding body prose.
+    Exclude,
+}
+
+impl AnnotationScope {
+    /// True when `line_idx` (a line carrying an annotation/suggestion call)
+    /// should be kept under this scope.
+    fn keeps_annotation_line(self, is_annotation_line: bool) -> bool {
+        match self {
+            AnnotationScope::All => true,
+            AnnotationScope::Only => is_annotation_line,
+            AnnotationScope::Exclude => !is_annotation_line,
+        }
+    }
+}
+
 /// Flatten a note's property map into a `key → [stringified values]`
 /// form that the search engine uses to evaluate `property:key=value`
 /// filters. Values are lowercased so filter matching is case
@@ -258,34 +286,49 @@ impl SearchEngine {
     /// the auto-injected notebox-library import are filtered out so users
     /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
-        let mut results = self.collect_ranked_results(query, false);
+        let mut results = self.collect_ranked_results(query, AnnotationScope::All, None);
         results.truncate(max_results);
         results
     }
 
     /// Like [`search`], but returns the total match count before
     /// truncation and supports an offset for pagination. When
-    /// `annotations_only` is set, results are restricted to lines that fall
-    /// within an `#annotation[…]` / `#suggestion[…]` call — the "Annotations"
-    /// search-scope toggle.
+    /// `annotation_scope` selects whether annotation/suggestion lines are
+    /// searched, ignored, or searched exclusively — the SearchPanel's
+    /// tri-state "Annotations" toggle.
+    ///
+    /// `verify_span` enables case-sensitive search: the inverted index is
+    /// case-insensitive, so candidate lines are found case-insensitively and
+    /// then each matched span (the literal source slice) is re-checked against
+    /// the original-case query via this predicate. Applying it here — before
+    /// counting and pagination — keeps `total_count` and the page in agreement
+    /// (a case-sensitive query that drops a line also drops it from the count).
     pub fn search_paginated(
         &self,
         query: &QueryNode,
         offset: usize,
         limit: usize,
-        annotations_only: bool,
+        annotation_scope: AnnotationScope,
+        verify_span: Option<&dyn Fn(&str) -> bool>,
     ) -> (Vec<SearchResult>, usize) {
-        let results = self.collect_ranked_results(query, annotations_only);
+        let results = self.collect_ranked_results(query, annotation_scope, verify_span);
         let total_count = results.len();
         let page = results.into_iter().skip(offset).take(limit).collect();
         (page, total_count)
     }
 
     /// Core search logic: evaluate query, build scored results, sort by
-    /// relevance descending. Callers decide how to slice the output. When
-    /// `annotations_only` is set, only result lines inside an annotation
-    /// survive (mirrors the import-line skip).
-    fn collect_ranked_results(&self, query: &QueryNode, annotations_only: bool) -> Vec<SearchResult> {
+    /// relevance descending. Callers decide how to slice the output.
+    /// `annotation_scope` filters result lines by their annotation membership
+    /// (mirrors the import-line skip). When `verify_span` is set, each matched
+    /// span is re-checked against it (case-sensitive search) and a line whose
+    /// every match is rejected is dropped entirely.
+    fn collect_ranked_results(
+        &self,
+        query: &QueryNode,
+        annotation_scope: AnnotationScope,
+        verify_span: Option<&dyn Fn(&str) -> bool>,
+    ) -> Vec<SearchResult> {
         let matches = self.evaluate(query);
         let mut results: Vec<SearchResult> = Vec::new();
 
@@ -334,7 +377,7 @@ impl SearchEngine {
                 .iter()
                 .filter(|(line_idx, _)| !doc.import_line_indices.contains(line_idx))
                 .filter(|(line_idx, _)| {
-                    !annotations_only || doc.annotation_lines.contains(line_idx)
+                    annotation_scope.keeps_annotation_line(doc.annotation_lines.contains(line_idx))
                 })
                 .map(|(line, positions)| (*line, positions))
                 .collect();
@@ -342,10 +385,25 @@ impl SearchEngine {
 
             for (line_idx, positions) in sorted_lines {
                 let line_text = doc.lines.get(line_idx).cloned().unwrap_or_default();
-                let match_ranges: Vec<(usize, usize)> = positions
+                let mut match_ranges: Vec<(usize, usize)> = positions
                     .iter()
                     .map(|p| (p.char_start, p.char_end))
                     .collect();
+
+                // Case-sensitive verification: keep only spans the predicate
+                // accepts. `char_start`/`char_end` are byte offsets here (the
+                // UTF-16 conversion for the frontend happens later, in the
+                // command), so the slice lands on char boundaries.
+                if let Some(verify) = verify_span {
+                    match_ranges.retain(|(s, e)| {
+                        line_text
+                            .get(*s..*e)
+                            .map_or(false, |span| verify(span))
+                    });
+                    if match_ranges.is_empty() {
+                        continue;
+                    }
+                }
 
                 let (context_before, context_after) =
                     collect_context(&doc.lines, &doc.import_line_indices, line_idx, 2);
@@ -1167,13 +1225,19 @@ mod tests {
 
         // Plain "citation" matches both the body and the annotation line.
         let q = parse_query("citation").unwrap();
-        let (all, _) = engine.search_paginated(&q, 0, 50, false);
+        let (all, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::All, None);
         assert_eq!(all.len(), 2);
 
         // With the annotations-only scope, only the annotation line survives.
-        let (scoped, _) = engine.search_paginated(&q, 0, 50, true);
+        let (scoped, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::Only, None);
         assert_eq!(scoped.len(), 1);
         assert!(scoped[0].line_text.contains("#annotation["));
+
+        // The exclude scope is the complement: the annotation line drops out,
+        // leaving only the plain-prose hit.
+        let (excluded, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::Exclude, None);
+        assert_eq!(excluded.len(), 1);
+        assert!(!excluded[0].line_text.contains("#annotation["));
     }
 
     #[test]

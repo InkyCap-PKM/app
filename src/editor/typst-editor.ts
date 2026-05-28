@@ -130,6 +130,11 @@ import { cursorPositionTracker } from "./typst-decorations/cursor-position";
 import { lspExtension } from "./lsp";
 import type { LspClient } from "./lsp";
 import { inkycapSearch } from "./search-panel";
+import {
+  searchMatchHighlight,
+  setSearchMatches,
+  type SearchMatchRange,
+} from "./typst-decorations/search-matches";
 
 export interface TypstEditorHandle {
   view: EditorView;
@@ -151,6 +156,9 @@ export interface TypstEditorHandle {
   focus(): void;
   focusAtContent(): void;
   setCursor(offset: number): void;
+  /** Highlight every notebox-search match in the doc (pass `[]` to clear).
+   *  Positions are line/char as returned by the search backend. */
+  setSearchMatches(ranges: SearchMatchRange[]): void;
   /** Serialize doc + selection + undo history. Pair with `restoreState`. */
   serializeState(): unknown;
   destroy(): void;
@@ -519,6 +527,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     ]),
     typstLanguage(),
     inkycapSearch,
+    searchMatchHighlight,
     drawSelection(),
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),
@@ -778,6 +787,9 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       const pos = Math.min(offset, view.state.doc.length);
       view.dispatch({ selection: { anchor: pos } });
       view.focus();
+    },
+    setSearchMatches(ranges: SearchMatchRange[]) {
+      view.dispatch({ effects: setSearchMatches.of(ranges) });
     },
     serializeState() {
       return view.state.toJSON({ history: historyField });
