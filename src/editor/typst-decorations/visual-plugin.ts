@@ -35,7 +35,8 @@ import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys } from "./citation-suggest";
-import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget } from "./visual-widgets";
+import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SymWidget } from "./visual-widgets";
+import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { isNoteboxImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
@@ -496,13 +497,20 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             if (autoExpand && onCursor) return false;
             const text = state.doc.sliceString(node.from, node.to);
             let replacement: string | null = null;
+            // `ghost` renders a dimmed placeholder for non-printing shorthands —
+            // a soft hyphen is invisible in output, so we show a faint "-" to
+            // mark the optional break point rather than letting the source
+            // silently vanish in the visual editor.
+            let ghost = false;
             if (text === "---") replacement = "—";
             else if (text === "--") replacement = "–";
             else if (text === "~") replacement = " ";
-            if (replacement) {
+            else if (text === "...") replacement = "…";
+            else if (text === "-?") { replacement = "-"; ghost = true; }
+            if (replacement !== null) {
               decos.push(
                 Decoration.replace({
-                  widget: new ShorthandWidget(replacement, text),
+                  widget: new ShorthandWidget(replacement, text, ghost),
                 }).range(node.from, node.to),
               );
             }
@@ -510,6 +518,29 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
           }
           case "SmartQuote": {
             return false;
+          }
+          case "FieldAccess": {
+            // `#sym.*` named-symbol references render as a glyph pill. The `#`
+            // is a separate sibling Hash node, so a sym reference is a
+            // FieldAccess whose preceding char is `#`. Only the outermost
+            // FieldAccess is handled (we return false to skip the nested ones).
+            // Any other field access falls through to default raw rendering.
+            if (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#") {
+              const text = state.doc.sliceString(node.from, node.to);
+              if (text.startsWith("sym.")) {
+                const hashFrom = node.from - 1;
+                if (isCursorAdjacentOrInside(state, hashFrom, node.to, cursors)) return false;
+                if (autoExpand && onCursor) return false;
+                const path = text.slice(4);
+                decos.push(
+                  Decoration.replace({
+                    widget: new SymWidget(hashFrom, node.to, path, symbolGlyph(path)),
+                  }).range(hashFrom, node.to),
+                );
+                return false;
+              }
+            }
+            return;
           }
           case "FuncCall": {
             const funcFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")

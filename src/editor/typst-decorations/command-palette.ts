@@ -3,6 +3,7 @@ import { type ChangeSpec, type Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
 import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
+import { CURATED_SYMBOLS } from "./symbols";
 
 interface PaletteItem {
   label: string;
@@ -35,11 +36,31 @@ interface PaletteItem {
    *  edge and keystrokes appear outside the call body. Same trick the
    *  markdown shortcut for `> ` already uses. */
   expandOnInsert?: boolean;
+  /** When set, this is a group row (e.g. "More symbols…") that has no
+   *  insert of its own — selecting it (Right arrow / click / Enter) opens a
+   *  side submenu listing these child items. While the user is typing a
+   *  query the children are flattened into the main results so they stay
+   *  searchable; the group row only appears for the empty-query browse. */
+  submenu?: PaletteItem[];
+  /** Render this row indented — used for a group's children when expanded. */
+  indent?: boolean;
 }
 
 /** Shorthand for the annotation/suggestion palette entries — builds the markup
  *  (with author attribution) from the live selection at accept time. */
 const mark = (kind: InsertKind, sel: string) => buildAnnotationInsert(kind, sel);
+
+/** Curated `#sym.*` named symbols (single source of truth in symbols.ts).
+ *  Surfaced behind the "More symbols…" group so they don't flood the menu,
+ *  but flattened back into the results when the user types a query. */
+const SYMBOL_ITEMS: PaletteItem[] = CURATED_SYMBOLS.map((s) => ({
+  label: `${s.char}  ${s.label}`,
+  category: "Symbol",
+  insert: `#sym.${s.name}`,
+  cursorOffset: `#sym.${s.name}`.length,
+  shortcut: `sym.${s.name}`,
+  indent: true,
+}));
 
 const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
@@ -61,6 +82,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Heading 6", category: "Structure", insert: '====== ', cursorOffset: 7, shortcut: "====== " },
   { label: "Bullet list", category: "Structure", insert: '- ', cursorOffset: 2, shortcut: "- " },
   { label: "Ordered list", category: "Structure", insert: '+ ', cursorOffset: 2, shortcut: "+ " },
+  { label: "Term list", category: "Structure", insert: '/ ', cursorOffset: 2, shortcut: "/ Term: …" },
   { label: "Quote (inline)", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7, expandOnInsert: true },
   { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true, shortcut: "> " },
 
@@ -73,6 +95,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
   { label: "Footnote", category: "Insert", insert: '#footnote[${sel}]', cursorOffset: 10, shortcut: "++…++" },
   { label: "Citation", category: "Insert", insert: '@', cursorOffset: 1, shortcut: "@" },
+  { label: "Label", category: "Insert", insert: '<>', cursorOffset: 1, shortcut: "<…>" },
 
   { label: "Table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
 
@@ -86,6 +109,17 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
+
+  // Symbol shorthands — Typst's parser-level abbreviations that compile to
+  // typographic characters. We insert the shorthand sequence (not the literal
+  // glyph) so the source stays Typst-native and the ShorthandWidget renders it.
+  { label: "Em dash (—)", category: "Symbol", insert: '---', cursorOffset: 3, shortcut: "---" },
+  { label: "En dash (–)", category: "Symbol", insert: '--', cursorOffset: 2, shortcut: "--" },
+  { label: "Ellipsis (…)", category: "Symbol", insert: '...', cursorOffset: 3, shortcut: "..." },
+  { label: "Non-breaking space", category: "Symbol", insert: '~', cursorOffset: 1, shortcut: "~" },
+  { label: "Soft hyphen", category: "Symbol", insert: '-?', cursorOffset: 2, shortcut: "-?" },
+  { label: "More symbols…", category: "Symbol", submenu: SYMBOL_ITEMS },
+
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
   { label: "Annotation", category: "InkyCap", dynamic: (s) => mark("annotation", s) },
@@ -124,6 +158,9 @@ let currentPaletteState: PaletteState = EMPTY;
 let paletteActive = false;
 let activeView: EditorView | null = null;
 
+// Labels of group rows (e.g. "More symbols…") currently expanded inline.
+const expandedGroups = new Set<string>();
+
 function getPopup(): HTMLElement {
   if (!popup) {
     popup = document.createElement("div");
@@ -138,6 +175,7 @@ function hidePopup() {
   const el = getPopup();
   el.style.display = "none";
   el.innerHTML = "";
+  expandedGroups.clear();
   filteredItems = [];
   selectedIndex = 0;
   currentPaletteState = EMPTY;
@@ -172,19 +210,33 @@ function detectPaletteContext(view: EditorView): PaletteState {
   };
 }
 
-function filterItems(query: string): PaletteItem[] {
-  if (query === "") return PALETTE_ITEMS;
-  const q = query.toLowerCase();
-  return PALETTE_ITEMS.filter(
-    (item) =>
-      item.label.toLowerCase().includes(q) ||
-      item.category.toLowerCase().includes(q),
-  );
+function buildDisplayList(query: string): PaletteItem[] {
+  // Querying: flatten group rows into their children so submenu items
+  // (curated symbols) remain directly searchable, then filter everything.
+  if (query !== "") {
+    const q = query.toLowerCase();
+    const flattened = PALETTE_ITEMS.flatMap((item) => item.submenu ?? [item]);
+    return flattened.filter(
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q),
+    );
+  }
+  // Empty query: browse view — group rows stay collapsed unless expanded, in
+  // which case their children are spliced in directly beneath them.
+  const out: PaletteItem[] = [];
+  for (const item of PALETTE_ITEMS) {
+    out.push(item);
+    if (item.submenu && expandedGroups.has(item.label)) {
+      out.push(...item.submenu);
+    }
+  }
+  return out;
 }
 
 function showPopup(view: EditorView, state: PaletteState) {
   const el = getPopup();
-  filteredItems = filterItems(state.query);
+  filteredItems = buildDisplayList(state.query);
   currentPaletteState = state;
 
   if (filteredItems.length === 0) {
@@ -210,6 +262,7 @@ function showPopup(view: EditorView, state: PaletteState) {
 
     const row = document.createElement("div");
     row.className = "command-palette__item";
+    if (item.indent) row.classList.add("command-palette__item--child");
     if (i === 0) row.classList.add("is-selected");
 
     const labelEl = document.createElement("span");
@@ -224,10 +277,22 @@ function showPopup(view: EditorView, state: PaletteState) {
       row.appendChild(shortcutEl);
     }
 
-    row.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      acceptItem(view, state, item);
-    });
+    if (item.submenu) {
+      row.classList.add("command-palette__item--group");
+      const caret = document.createElement("span");
+      caret.className = "command-palette__submenu-caret";
+      caret.textContent = expandedGroups.has(item.label) ? "⌄" : "›";
+      row.appendChild(caret);
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        toggleGroup(view, state, item);
+      });
+    } else {
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        acceptItem(view, state, item);
+      });
+    }
     el.appendChild(row);
   }
 
@@ -297,6 +362,24 @@ function updateSelection(delta: number) {
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
 }
 
+/** Expand or collapse a group row (e.g. "More symbols…") inline: its children
+ *  are spliced into the list directly beneath it. Re-renders and keeps the
+ *  group row selected so keyboard focus doesn't jump. */
+function toggleGroup(view: EditorView, state: PaletteState, item: PaletteItem) {
+  if (expandedGroups.has(item.label)) expandedGroups.delete(item.label);
+  else expandedGroups.add(item.label);
+
+  showPopup(view, state); // rebuilds the list with/without the children
+  const idx = filteredItems.indexOf(item);
+  if (idx >= 0) {
+    const rows = getPopup().querySelectorAll(".command-palette__item");
+    rows[selectedIndex]?.classList.remove("is-selected");
+    selectedIndex = idx;
+    rows[idx]?.classList.add("is-selected");
+    (rows[idx] as HTMLElement)?.scrollIntoView({ block: "nearest" });
+  }
+}
+
 function handleKeyDown(e: KeyboardEvent) {
   if (!paletteActive || !activeView) return;
 
@@ -304,7 +387,30 @@ function handleKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     const item = filteredItems[selectedIndex];
-    if (item) acceptItem(activeView, currentPaletteState, item);
+    // A group row (e.g. "More symbols…") toggles its inline children instead
+    // of inserting; everything else inserts its markup.
+    if (item?.submenu) toggleGroup(activeView, currentPaletteState, item);
+    else if (item) acceptItem(activeView, currentPaletteState, item);
+    return;
+  }
+
+  if (e.key === "ArrowRight") {
+    const item = filteredItems[selectedIndex];
+    if (item?.submenu && !expandedGroups.has(item.label)) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleGroup(activeView, currentPaletteState, item);
+    }
+    return;
+  }
+
+  if (e.key === "ArrowLeft") {
+    const item = filteredItems[selectedIndex];
+    if (item?.submenu && expandedGroups.has(item.label)) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleGroup(activeView, currentPaletteState, item);
+    }
     return;
   }
 
