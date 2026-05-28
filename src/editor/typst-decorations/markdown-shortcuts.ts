@@ -4,6 +4,7 @@
 //   "> "           at line start  →  #quote(block: true)[<cursor>]
 //   "+++"          alone on a line →  #line(length: 100%)
 //   "++<text>++"   inline          →  #footnote[<text>]
+//   "- [ ] " / "- [x] " at line start → #task("<cursor>") (done: true when x)
 //
 // The pattern follows the same philosophy as the [[wikilink]] shortcut:
 // trigger sequences map to function calls that have no native Typst markup.
@@ -22,6 +23,23 @@ const HR_INSERT = "#line(length: 100%)";
 function handleSpace(view: EditorView, from: number): boolean {
   const line = view.state.doc.lineAt(from);
   const beforeCursor = view.state.doc.sliceString(line.from, from);
+
+  // Markdown task checkbox → #task(...). The just-typed space starts the body,
+  // so the line so far is the bare `- [ ]` / `- [x]` marker (indentation kept).
+  // `x`/`X` inside the box maps to `done: true`; the caret lands inside the
+  // body string so the user types the task text next.
+  const task = beforeCursor.match(/^(\s*)[-+] \[([ xX]?)\]$/);
+  if (task) {
+    const indent = task[1];
+    const done = /[xX]/.test(task[2]);
+    const insert = done ? '#task("", done: true)' : '#task("")';
+    view.dispatch({
+      changes: { from: line.from, to: from, insert: indent + insert } as ChangeSpec,
+      selection: { anchor: line.from + indent.length + '#task("'.length },
+    });
+    return true;
+  }
+
   if (beforeCursor !== ">") return false;
 
   // The cursor lands inside #quote[] to let the user keep typing the body.
@@ -82,37 +100,14 @@ function handlePlus(view: EditorView, from: number): boolean {
   return true;
 }
 
-// CriticMarkup highlight typing shortcut → `#highlight`, completed by the final
-// `}`. `{` is not auto-paired, so the user types the full delimiter run.
-//
-// The suggestion/annotation CriticMarkup shortcuts ({++…++}, {--…--}, {~~…~~},
-// {>>…<<}) were intentionally removed: those review primitives are authored via
-// the `/` slash menu, the command palette, or the Annotations pane instead —
-// friendlier than memorising delimiter runs for users not steeped in
-// CriticMarkup. The feature (`#annotation` / `#suggestion`) is unchanged.
-//
-//   {==highlight==}  → #highlight[highlight]
-const CRITIC_PATTERNS: { re: RegExp; build: (m: RegExpMatchArray) => string }[] = [
-  { re: /\{==([\s\S]*?)==\}$/, build: (m) => `#highlight[${m[1]}]` },
-];
-
-function handleBrace(view: EditorView, from: number): boolean {
-  const line = view.state.doc.lineAt(from);
-  const beforeCursor = view.state.doc.sliceString(line.from, from);
-  for (const { re, build } of CRITIC_PATTERNS) {
-    const m = beforeCursor.match(re);
-    if (!m) continue;
-    const start = line.from + (beforeCursor.length - m[0].length);
-    const insert = build(m);
-    view.dispatch({
-      changes: { from: start, to: from, insert } as ChangeSpec,
-      // Cursor after the call so the mark renders and typing continues.
-      selection: { anchor: start + insert.length },
-    });
-    return true;
-  }
-  return false;
-}
+// The CriticMarkup typing shortcuts were all removed. The highlight run
+// (`{==…==}` → #highlight) could never fire — `{` is auto-paired by
+// closeBrackets, so the closing `}` is typed over rather than inserted and the
+// input handler never saw it. The suggestion/annotation runs ({++…++}, {--…--},
+// {~~…~~}, {>>…<<}) were dropped earlier for being unfriendly to author by
+// hand. All of these primitives (`#highlight`, `#annotation`, `#suggestion`)
+// remain available via the `/` slash menu, the command palette, and the
+// Annotations pane — only the delimiter-run typing shortcuts are gone.
 
 // Typing the first content character immediately after a bare list marker
 // (`-`, `+`, or an explicit number `N.`) inserts the separating space for the
@@ -140,7 +135,6 @@ export const markdownShortcuts: Extension = EditorView.inputHandler.of(
   (view, from, to, text) => {
     if (from !== to) return false;
     if (text === " ") return handleSpace(view, from);
-    if (text === "}") return handleBrace(view, from);
     if (text === "+" && handlePlus(view, from)) return true;
     // Any single character can complete a bare list marker into a real list
     // item by auto-inserting the separating space.

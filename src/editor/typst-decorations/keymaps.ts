@@ -1,5 +1,5 @@
 import { type EditorView, type KeyBinding } from "@codemirror/view";
-import { Facet, type EditorState, type ChangeSpec } from "@codemirror/state";
+import { Facet, type EditorState, type ChangeSpec, type Line } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
 
@@ -68,18 +68,90 @@ export function inVerbatimLineContext(state: EditorState, pos: number): boolean 
   return false;
 }
 
+/** Code-mode and control-flow node kinds that must never receive a managed
+ *  paragraph soft break — a trailing `\` after any of these injects a stray
+ *  line break into the compiled output. */
+const NON_PROSE_STATEMENT_NODES = new Set([
+  "SetRule",
+  "ShowRule",
+  "LetBinding",
+  "ModuleImport",
+  "ModuleInclude",
+  "Conditional",
+  "ForLoop",
+  "WhileLoop",
+]);
+
+/**
+ * True when `line` is a non-prose construct that should never carry a managed
+ * paragraph soft break (`\`): a code statement (`#set`, `#show`, `#let`,
+ * `#import`, `#include`, control flow), a heading, or a standalone block-level
+ * function call (`#image(...)`, `#figure(...)`, `#pagebreak()`, …) that fills
+ * the whole line. Appending `\` to any of these injects a stray line break into
+ * the compiled output — the bug where a `/`-menu insert on its own line,
+ * followed by Enter, silently broke reading/export rendering.
+ *
+ * Shared by the Enter keymap (so it doesn't insert the `\`) and the visual-mode
+ * soft-break renderer (so a pre-existing `\` on such a line shows visibly
+ * instead of being hidden, surfacing already-broken source for the user to fix).
+ *
+ * The trailing `\` is ignored when locating the line's content bounds so the
+ * rendering call site — which passes lines that still carry the `\` — inspects
+ * the construct beneath it. Pure tree inspection: no DOM, no doc mutation.
+ */
+export function lineIsNonProse(state: EditorState, line: Line): boolean {
+  const text = line.text;
+  const leadingWs = text.length - text.trimStart().length;
+  let endTrim = text.trimEnd().length;
+  if (
+    endTrim > leadingWs &&
+    text[endTrim - 1] === "\\" &&
+    !(endTrim >= 2 && text[endTrim - 2] === "\\")
+  ) {
+    endTrim = text.slice(0, endTrim - 1).trimEnd().length;
+  }
+  if (endTrim <= leadingWs) return false;
+  const first = text[leadingWs];
+  // Only code (`#…`) and heading (`=…`) lines can be non-prose; anything else
+  // is flowing text that legitimately wants a soft break.
+  if (first !== "#" && first !== "=") return false;
+  const contentFrom = line.from + leadingWs;
+  const contentTo = line.from + endTrim;
+  const tree = syntaxTree(state);
+  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(
+    contentFrom + 1,
+    1,
+  );
+  while (node) {
+    if (node.name === "Heading") return true;
+    if (NON_PROSE_STATEMENT_NODES.has(node.name)) return true;
+    if (node.name === "FuncCall") {
+      // Standalone call only — one that fills the line with no trailing prose.
+      // An inline call followed by text (`#emph[x] and more`) stays prose.
+      return node.to >= contentTo;
+    }
+    if (!node.parent) break;
+    node = node.parent;
+  }
+  return false;
+}
+
 /**
  * Decide whether the auto-`\` linebreak should be inserted before the
  * newline produced by an Enter keypress at `pos`. Returns `false` in lists
- * (`- `, `+ `) — the list-continuation keymap handles Enter — when the line
- * already ends with an unescaped `\`, when the cursor is mid-line (a
- * deliberate split, not a soft wrap), or inside a verbatim context where a
- * literal `\` would be wrong (see `inVerbatimLineContext`).
+ * (`- `, `+ `) — the list-continuation keymap handles Enter — on non-prose
+ * lines (code statements, headings, standalone block calls; see
+ * `lineIsNonProse`), when the line already ends with an unescaped `\`, when the
+ * cursor is mid-line (a deliberate split, not a soft wrap), or inside a
+ * verbatim context where a literal `\` would be wrong (see
+ * `inVerbatimLineContext`).
  */
 function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   const line = state.doc.lineAt(pos);
   // Lists (`-`, `+`, `N.`) are continued by the list keymap, not soft-broken.
   if (/^\s*([-+]|\d+\.)\s/.test(line.text)) return false;
+  // Code statements, headings, and standalone block calls must not get a `\`.
+  if (lineIsNonProse(state, line)) return false;
   // If the line already ends with an unescaped trailing `\`, don't double up.
   const trimmedEnd = line.text.replace(/\s+$/, "");
   if (trimmedEnd.endsWith("\\") && !trimmedEnd.endsWith("\\\\")) return false;

@@ -8,7 +8,7 @@ import {
 } from "@codemirror/view";
 import { type ChangeSet, EditorState, Facet, type Line, Prec, type Range, RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
 import { expandFunc } from "./effects";
-import { inVerbatimLineContext } from "./keymaps";
+import { inVerbatimLineContext, lineIsNonProse } from "./keymaps";
 import { findCallEnd } from "./pill";
 import { syntaxTree } from "@codemirror/language";
 import {
@@ -139,6 +139,10 @@ function softBreakSlashPos(state: EditorState, line: Line): number | null {
   if (text.length >= 2 && text[text.length - 2] === "\\") return null;
   const slashPos = line.from + text.length - 1;
   if (inVerbatimLineContext(state, slashPos)) return null;
+  // A `\` trailing a code statement / heading / standalone block call is not a
+  // managed soft break — leave it visible so the user can see (and fix) source
+  // that would mis-render, rather than silently hiding it.
+  if (lineIsNonProse(state, line)) return null;
   return slashPos;
 }
 
