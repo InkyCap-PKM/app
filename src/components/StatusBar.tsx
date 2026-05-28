@@ -302,7 +302,7 @@ const StatusBar: Component = () => {
           {stats().words} words
         </span>
         <span class="status-bar__stat">
-          {stats().chars} chars
+          {stats().chars} characters
         </span>
       </Show>
 
