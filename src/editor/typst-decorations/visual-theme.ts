@@ -123,6 +123,11 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-shorthand": {
     color: "inherit",
   },
+  // Non-printing shorthand (soft hyphen): faint placeholder marking the
+  // optional break point, since the produced character is invisible in output.
+  ".cm-typst-shorthand--ghost": {
+    opacity: "0.4",
+  },
   ".cm-typst-list-bullet": {
     color: "inherit",
     display: "inline-block",

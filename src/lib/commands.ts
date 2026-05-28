@@ -623,7 +623,7 @@ function insertMarkup(template: string, cursorOffset: number) {
 }
 
 function registerMarkupCommands() {
-  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string };
+  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Symbol" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string };
 
   const items: MarkupItem[] = [
     // ── Format ──
@@ -647,6 +647,7 @@ function registerMarkupCommands() {
     { id: "heading-6", title: "Heading 6", category: "Structure", insert: "====== ", cursorOffset: 7, shortcut: "====== " },
     { id: "bullet-list", title: "Bullet List", category: "Structure", insert: "- ", cursorOffset: 2, shortcut: "- " },
     { id: "ordered-list", title: "Ordered List", category: "Structure", insert: "+ ", cursorOffset: 2, shortcut: "+ " },
+    { id: "term-list", title: "Term List", category: "Structure", insert: "/ ", cursorOffset: 2, shortcut: "/ Term: …" },
     { id: "quote-inline", title: "Quote (inline)", category: "Structure", insert: "#quote[${sel}]", cursorOffset: 7 },
     { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20, shortcut: "> " },
 
@@ -676,8 +677,16 @@ function registerMarkupCommands() {
     { id: "rect", title: "Rect", category: "Insert", insert: "#rect[${sel}]", cursorOffset: 6 },
     { id: "hide", title: "Hide", category: "Insert", insert: "#hide[${sel}]", cursorOffset: 6 },
     { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
+    { id: "label", title: "Label", category: "Insert", insert: "<>", cursorOffset: 1, shortcut: "<…>" },
     { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1, shortcut: "@" },
     { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+
+    // ── Symbol shorthands ──
+    { id: "em-dash", title: "Em dash (—)", category: "Symbol", insert: "---", cursorOffset: 3, shortcut: "---" },
+    { id: "en-dash", title: "En dash (–)", category: "Symbol", insert: "--", cursorOffset: 2, shortcut: "--" },
+    { id: "ellipsis", title: "Ellipsis (…)", category: "Symbol", insert: "...", cursorOffset: 3, shortcut: "..." },
+    { id: "nbsp", title: "Non-breaking space", category: "Symbol", insert: "~", cursorOffset: 1, shortcut: "~" },
+    { id: "soft-hyphen", title: "Soft hyphen", category: "Symbol", insert: "-?", cursorOffset: 2, shortcut: "-?" },
 
     // ── Style ──
     { id: "page-size", title: "Page Size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },

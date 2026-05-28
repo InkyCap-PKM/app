@@ -88,6 +88,42 @@ export class StylePreambleWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/**
+ * Pill for a `#sym.*` named-symbol reference (a `FieldAccess` code expression,
+ * e.g. `#sym.arrow.r`). Renders the resolved glyph when the symbol is in the
+ * curated set, otherwise the raw dotted name — either way clearer than the raw
+ * `#sym.…` markup. Routes through {@link buildPillButton} so it gets the
+ * standard pill behaviour; the pill menu (see pill-options `symOptions`) carries
+ * a name input so any symbol can be entered/changed without touching source.
+ * `from`/`to` bound the whole `#sym.…` reference.
+ */
+export class SymWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly path: string,
+    readonly glyph: string | null,
+  ) { super(); }
+  eq(other: SymWidget) {
+    return this.from === other.from && this.to === other.to
+      && this.path === other.path && this.glyph === other.glyph;
+  }
+  toDOM(view: EditorView) {
+    return buildPillButton(
+      "sym",
+      view,
+      () => ({
+        funcName: "sym",
+        callFrom: this.from,
+        callTo: this.to,
+        optionSections: getPillOptions("sym", view, this.from, this.to),
+      }),
+      { label: this.glyph ?? this.path, title: `#sym.${this.path}` },
+    );
+  }
+  ignoreEvent() { return true; }
+}
+
 export class BulletWidget extends WidgetType {
   constructor(readonly marker: string) { super(); }
   eq(other: BulletWidget) { return this.marker === other.marker; }
@@ -100,11 +136,11 @@ export class BulletWidget extends WidgetType {
 }
 
 export class ShorthandWidget extends WidgetType {
-  constructor(readonly rendered: string, readonly raw: string) { super(); }
-  eq(other: ShorthandWidget) { return this.rendered === other.rendered; }
+  constructor(readonly rendered: string, readonly raw: string, readonly ghost = false) { super(); }
+  eq(other: ShorthandWidget) { return this.rendered === other.rendered && this.ghost === other.ghost; }
   toDOM() {
     const el = document.createElement("span");
-    el.className = "cm-typst-shorthand";
+    el.className = this.ghost ? "cm-typst-shorthand cm-typst-shorthand--ghost" : "cm-typst-shorthand";
     el.textContent = this.rendered;
     el.title = this.raw;
     return el;

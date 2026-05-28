@@ -14,6 +14,7 @@ export type CommandCategory =
   | "Format"
   | "Structure"
   | "Insert"
+  | "Symbol"
   | "Style"
   | "InkyCap"
   | "Git"

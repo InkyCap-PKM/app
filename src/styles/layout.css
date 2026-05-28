@@ -8707,6 +8707,19 @@ svg.lucide {
   padding: 1px 5px;
 }
 
+/* "More symbols…"-style group rows: a chevron hints at expand/collapse. */
+.command-palette__submenu-caret {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+/* A group's children, shown inline beneath it when expanded. */
+.command-palette__item--child {
+  padding-left: 26px;
+}
+
 /* Paste-as-URL popup menu */
 .paste-url-menu {
   position: fixed;

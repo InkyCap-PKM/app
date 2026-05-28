@@ -71,6 +71,7 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   cite:      citeOptions,
   task:      taskOptions,
   due:       dueOptions,
+  sym:       symOptions,
 };
 
 /** Returns option sections for the named pill, or an empty array if the
@@ -649,6 +650,40 @@ function dueOptions(view: EditorView, from: number, to: number): PillMenuSection
             applyCallTransform(view, from, (s) =>
               upsertNamedArg(s, "label", v.trim() === "" ? null : quote(v)),
             ),
+        },
+      }],
+    },
+  ];
+}
+
+// ── #sym.* ──────────────────────────────────────────────────────────
+//
+// A `#sym.<path>` reference isn't a parenthesized call, so it doesn't use the
+// upsertNamedArg machinery — the option is a single name input that rewrites
+// the whole reference. The input accepts any symbol path (e.g. `arrow.r`,
+// `cc.by`), so the pill covers Typst's entire `sym` module, not just the
+// curated quick-picks in the `/` menu.
+
+function symOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const path = src.replace(/^#?sym\./, "");
+  return [
+    {
+      heading: "Symbol",
+      items: [{
+        label: "Name",
+        title: "Symbol name after #sym. (e.g. arrow.r, copyright, cc.by)",
+        input: {
+          value: path,
+          placeholder: "arrow.r",
+          onCommit: (v) => {
+            const name = v.trim();
+            if (name === "" || name === path) return;
+            const len = view.state.doc.length;
+            const safeFrom = Math.max(0, Math.min(from, len));
+            const safeTo = Math.max(safeFrom, Math.min(to, len));
+            view.dispatch({ changes: { from: safeFrom, to: safeTo, insert: `#sym.${name}` } });
+          },
         },
       }],
     },
