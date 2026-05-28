@@ -45,7 +45,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
   { label: "Italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
   { label: "Strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8 },
-  { label: "Highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11, shortcut: "{==…==}" },
+  { label: "Highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11 },
   { label: "Underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11 },
   { label: "Overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10 },
   { label: "Subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5 },

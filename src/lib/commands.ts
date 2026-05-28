@@ -19,6 +19,7 @@ import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/pane
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
 import { toggleTheme } from "../stores/theme";
+import { toggleDistractionFree } from "../stores/layout";
 import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
@@ -235,6 +236,27 @@ export function registerBuiltinCommands(callbacks: {
       const current = tab.editingMode ?? "live";
       setTabEditingMode(tab.id, current === "live" ? "source" : "live");
     },
+  });
+
+  registerCommand({
+    id: "view:toggle-reading-mode",
+    title: "Toggle Reading Mode",
+    category: "View",
+    execute: () => {
+      const tab = getActiveTab();
+      if (!tab || tab.type !== "file") return;
+      // Reading is a third per-tab mode alongside live/source. Toggle it
+      // against the editing modes: leaving reading returns to live preview.
+      const current = tab.editingMode ?? "live";
+      setTabEditingMode(tab.id, current === "reading" ? "live" : "reading");
+    },
+  });
+
+  registerCommand({
+    id: "view:toggle-distraction-free",
+    title: "Toggle Distraction-Free Mode",
+    category: "View",
+    execute: toggleDistractionFree,
   });
 
   // ── Edit commands ──

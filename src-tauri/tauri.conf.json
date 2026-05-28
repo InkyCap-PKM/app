@@ -40,6 +40,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Joshua Chalifour",
+    "copyright": "© 2026 Joshua Chalifour",
     "icon": [
       "icons/icon.png",
       "icons/icon.ico",
