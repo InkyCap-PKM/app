@@ -89,12 +89,16 @@ export function buildPillButton(
   funcName: string,
   view: EditorView,
   modelFor: () => PillModel,
+  /** Presentation overrides for pills that aren't a single named call —
+   *  e.g. the document-style preamble chip, which shows a custom label plus a
+   *  rule-count accessory. Defaults reproduce the standard `funcName` chip. */
+  opts?: { label?: string; title?: string; accessory?: Node },
 ): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "cm-typst-pill";
-  btn.title = funcName;
-  btn.setAttribute("aria-label", `${funcName} — open options`);
+  btn.title = opts?.title ?? funcName;
+  btn.setAttribute("aria-label", `${opts?.label ?? funcName} — open options`);
 
   const hash = document.createElement("span");
   hash.className = "cm-typst-pill-hash";
@@ -102,8 +106,10 @@ export function buildPillButton(
 
   const label = document.createElement("span");
   label.className = "cm-typst-pill-label";
-  label.textContent = funcName;
+  label.textContent = opts?.label ?? funcName;
   btn.appendChild(label);
+
+  if (opts?.accessory) btn.appendChild(opts.accessory);
 
   // Don't let a mousedown on the pill move CodeMirror's selection or
   // start a text drag. The actual action runs on click so that focus

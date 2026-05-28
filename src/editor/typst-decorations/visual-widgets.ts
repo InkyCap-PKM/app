@@ -1,6 +1,7 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { buildPillButton, findCallEnd } from "./pill";
 import { getPillOptions } from "./pill-options";
+import { t } from "../../lib/i18n";
 
 export class FuncPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly funcName: string) { super(); }
@@ -36,6 +37,56 @@ export class FuncChipWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+
+/**
+ * Collapsed affordance for a contiguous leading run of `#set` / `#show` rules
+ * (the "document style preamble"). Replaces the whole multi-line block with a
+ * single chip so the visual editor isn't cluttered with configuration markup.
+ *
+ * Routes through {@link buildPillButton} so it inherits the universal pill
+ * behaviour: left-click reveals the raw source for editing (`alwaysExpandOnClick`
+ * — the block is multi-line, so it would otherwise be classed "complex" and
+ * open the menu), and right-click / Enter open the standard super-menu (Edit
+ * source / Open in source editor / Copy / Duplicate / Delete) acting on the
+ * whole block. The block re-collapses once the cursor leaves (handled in
+ * visual-plugin's collapse decision). `from`/`to` bound the block's lines.
+ */
+export class StylePreambleWidget extends WidgetType {
+  constructor(readonly from: number, readonly to: number, readonly count: number) { super(); }
+  eq(other: StylePreambleWidget) {
+    return this.from === other.from && this.to === other.to && this.count === other.count;
+  }
+  toDOM(view: EditorView) {
+    const row = document.createElement("div");
+    row.className = "cm-typst-block-pill-row cm-typst-style-preamble";
+
+    const count = document.createElement("span");
+    count.className = "cm-typst-style-preamble-count";
+    count.textContent = t(
+      this.count === 1 ? "editor.stylePreamble.countOne" : "editor.stylePreamble.count",
+      { count: this.count },
+    );
+
+    const btn = buildPillButton(
+      "set",
+      view,
+      () => ({
+        funcName: t("editor.stylePreamble.label"),
+        callFrom: this.from,
+        callTo: this.to,
+        alwaysExpandOnClick: true,
+      }),
+      {
+        label: t("editor.stylePreamble.label"),
+        title: t("editor.stylePreamble.hint"),
+        accessory: count,
+      },
+    );
+    row.appendChild(btn);
+    return row;
+  }
+  ignoreEvent() { return true; }
+}
 
 export class BulletWidget extends WidgetType {
   constructor(readonly marker: string) { super(); }
