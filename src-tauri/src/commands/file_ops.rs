@@ -98,6 +98,70 @@ pub async fn read_clipboard_file_paths(
     }
 }
 
+/// Read whatever the native clipboard holds — file references or raw image
+/// bytes — copy it into the notebox's attachment folder, and return the
+/// notebox-relative paths the editor should insert. Backs the paste handler:
+/// WebKitGTK hides clipboard files from the webview (and, on Linux, hides
+/// pasted image data too), so a paste that the webview sees as empty is read
+/// here from the Rust side instead.
+///
+/// Unlike [`copy_path_to_attachments`], file references are *not* gated by
+/// the SEC-1 drop allowlist: the path set originates from the OS clipboard
+/// via a trusted native read, not from frontend-supplied input, so there is
+/// no untrusted path to validate against the allowlist.
+#[tauri::command]
+pub async fn paste_clipboard_to_attachments(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, InkyCapError> {
+    // 1. File references — "copy a file in the file manager, then paste".
+    let uris = read_clipboard_file_paths(app.clone()).await?;
+    if !uris.is_empty() {
+        let mut saved = Vec::new();
+        for uri in uris {
+            let src = PathBuf::from(&uri);
+            if !src.is_file() {
+                continue;
+            }
+            let data = std::fs::read(&src)?;
+            let filename = src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "pasted".to_string());
+            saved.push(write_to_attachments(&filename, &data, &app, &state).await?);
+        }
+        if !saved.is_empty() {
+            return Ok(saved);
+        }
+    }
+
+    // 2. Raw image bytes — screenshots / "Copy Image". Only needed on Linux:
+    //    macOS WKWebView and Windows WebView2 already hand pasted image data
+    //    to the webview's paste event, so the frontend resolves those before
+    //    ever reaching this command.
+    #[cfg(target_os = "linux")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<Vec<u8>>>();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(linux::read_clipboard_image_png_blocking());
+        })
+        .map_err(|e| InkyCapError::InvalidPath(format!("run_on_main_thread failed: {e}")))?;
+        let png = rx
+            .await
+            .map_err(|_| InkyCapError::InvalidPath("clipboard channel closed".into()))?;
+        if let Some(bytes) = png {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            let name = format!("pasted-{ts}.png");
+            return Ok(vec![write_to_attachments(&name, &bytes, &app, &state).await?]);
+        }
+    }
+
+    Ok(Vec::new())
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
     //! Read the GTK3 clipboard via `wait_for_uris`. Runs on the
@@ -121,6 +185,23 @@ mod linux {
         uris.into_iter()
             .filter_map(|u: gtk::glib::GString| super::parse_file_uri_line(u.as_str()))
             .collect()
+    }
+
+    /// Read raw image data from the GTK clipboard (e.g. a screenshot or
+    /// "Copy Image" from another app) and encode it as PNG bytes. Returns
+    /// `None` when the clipboard offers no image target. Runs on the main
+    /// GTK loop thread, like [`read_clipboard_uris_blocking`].
+    pub fn read_clipboard_image_png_blocking() -> Option<Vec<u8>> {
+        let display = gtk::gdk::Display::default()?;
+        let clipboard = gtk::Clipboard::for_display(&display, &gtk::gdk::SELECTION_CLIPBOARD);
+        let pixbuf = clipboard.wait_for_image()?;
+        match pixbuf.save_to_bufferv("png", &[]) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                log::debug!("[clipboard] pixbuf->png encode failed: {e}");
+                None
+            }
+        }
     }
 }
 
@@ -694,7 +775,7 @@ pub async fn move_file(
 ///
 /// Wikilinks survive untouched: they resolve by note *stem*, which a
 /// folder move never changes. What does need fixing is each contained
-/// note's own relative `image()`/`read()`/`embed()`/`bibliography()`
+/// note's own relative `image()`/`read()`/`bibliography()`
 /// arguments — those are anchored at the note's parent directory, so
 /// every `.typ` file under the folder is rebased to notebox-root-absolute
 /// paths (Phase B) before the move, exactly as `move_file` does for a
@@ -960,7 +1041,7 @@ fn typst_string_unescape(s: &str) -> String {
 }
 
 /// Read the note at `old_notebox_path` and rewrite any relative path
-/// arguments in `image`/`read`/`embed`/`bibliography` calls to notebox-
+/// arguments in `image`/`read`/`bibliography` calls to notebox-
 /// root-absolute paths anchored at the note's CURRENT (pre-move) parent
 /// directory. After this pass, the note's path references are stable
 /// across subsequent moves — see CLAUDE.md's portable-paths principle
@@ -1170,6 +1251,64 @@ pub async fn open_file_externally(path: String) -> Result<(), InkyCapError> {
     {
         std::process::Command::new("cmd")
             .args(["/C", "start", "", &p.to_string_lossy()])
+            .spawn()?;
+    }
+    Ok(())
+}
+
+/// Open an external URL in the OS default handler. This intentionally
+/// supports custom application schemes (`zotero://`, `obsidian://`, etc.)
+/// in addition to `http(s)`/`mailto`/`tel` — handing a scheme to the OS
+/// opener is exactly what lets a note link into another desktop app, and
+/// preserving that interop is a first-class goal for a PKM tool.
+///
+/// Schemes that carry an executable payload inline (rather than delegating
+/// to a registered handler) are refused, as are `file:` URLs — local files
+/// are opened through [`open_file_externally`] after notebox-root
+/// resolution, never via an unvalidated `file://` from note content.
+/// The URL is passed to the opener as a single argv entry (never through a
+/// shell), so there is no interpolation; a leading `-` is rejected so the
+/// target can't be mistaken for a flag.
+#[tauri::command]
+pub async fn open_url_externally(url: String) -> Result<(), InkyCapError> {
+    let trimmed = url.trim();
+
+    if trimmed.starts_with('-') {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Refusing to open suspicious URL: {trimmed}"
+        )));
+    }
+
+    // A URL must start with `scheme:`; bare paths belong to open_file_externally.
+    let scheme = trimmed
+        .split_once(':')
+        .map(|(s, _)| s.to_ascii_lowercase())
+        .filter(|s| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+        })
+        .ok_or_else(|| InkyCapError::InvalidPath(format!("Not a URL: {trimmed}")))?;
+
+    const BLOCKED: &[&str] = &["javascript", "data", "vbscript", "file"];
+    if BLOCKED.contains(&scheme.as_str()) {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Refusing to open '{scheme}:' URL"
+        )));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(trimmed).spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(trimmed).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", trimmed])
             .spawn()?;
     }
     Ok(())

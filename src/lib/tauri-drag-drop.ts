@@ -135,29 +135,27 @@ async function handleDrop(
   // space (window-relative including the GTK header bar) and doesn't
   // map reliably to posAtCoords.
   let dropPos: number | null = null;
+
+  // The DOM dragover (tracked by the CM6 plugin) gives client CSS coords
+  // that map directly onto the editor. `posAtCoords(coords, false)` uses
+  // non-precise mode so a drop into inter-line space, padding, or past the
+  // end of a short line still resolves to the *nearest* text position
+  // instead of null (precise mode returns null off-glyph, which is why
+  // drops used to collapse to the top of the document).
   const domPos = getLastDragPos();
   if (domPos) {
     try {
-      const posInfo = view.posAtCoords({ x: domPos.x, y: domPos.y });
-      if (posInfo !== null) dropPos = posInfo;
+      dropPos = view.posAtCoords({ x: domPos.x, y: domPos.y }, false);
     } catch { /* fall through to Tauri coords */ }
   }
 
+  // Fallback: Tauri's own drop position. On Linux/GTK this arrives in
+  // logical (CSS) pixels — identical to the DOM client coords — so it is
+  // used as-is. Do NOT divide by devicePixelRatio: on a HiDPI display that
+  // halves the point and pushes the drop into the top-left corner.
   if (dropPos === null) {
-    // Fallback: try Tauri's physical-pixel coordinates
-    const scale = window.devicePixelRatio || 1;
-    const cssX = position.x / scale;
-    const cssY = position.y / scale;
     try {
-      const posInfo = view.posAtCoords({ x: cssX, y: cssY });
-      if (posInfo !== null) {
-        dropPos = posInfo;
-      } else {
-        const editorRect = view.dom.getBoundingClientRect();
-        const clampedX = Math.max(editorRect.left + 4, Math.min(cssX, editorRect.right - 4));
-        const retryPos = view.posAtCoords({ x: clampedX, y: cssY });
-        if (retryPos !== null) dropPos = retryPos;
-      }
+      dropPos = view.posAtCoords({ x: position.x, y: position.y }, false);
     } catch (err) {
       console.warn("[tauri-drop] coord lookup failed, using cursor", err);
     }
@@ -199,8 +197,8 @@ export async function initTauriDragDrop(): Promise<void> {
     const webview = getCurrentWebviewWindow();
     unlisten = await webview.onDragDropEvent((event) => {
       const payload = event.payload;
-      console.debug("[tauri-drop] event:", payload);
       if (payload.type === "drop" && payload.paths.length > 0) {
+        console.debug("[tauri-drop] drop:", payload.paths, payload.position);
         void handleDrop(payload.paths, payload.position);
       }
     });

@@ -7,7 +7,6 @@
 //   #due(date, label: ...) inline dated reminder (emits <inkycap-agenda>)
 //   #wikilink("Name", display: ...)
 //   link-ref("Name")      link reference value (use inside note() fields)
-//   #embed("Name")        transclude another note (emits link)
 //   #callout("type")[...] styled admonition block
 //   #annotation(body, ...)  margin comment on note content (reader/reviewer)
 //   #review-decision(target, action, ...)  review-log entry: an accept /
@@ -473,24 +472,6 @@
       [#display]
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// embed: transclude another note. Emits <inkycap-link> so the link graph
-// captures the relationship. Renders a boxed placeholder in compiled output;
-// the visual editor (Phase 3+) replaces this with a live transcluded card.
-// ---------------------------------------------------------------------------
-
-#let embed(name) = {
-  assert(type(name) == str, message: "embed: name must be a string")
-  [#metadata((target: name, from: "body")) <inkycap-link>]
-  block(
-    width: 100%,
-    inset: 8pt,
-    stroke: 0.5pt + luma(80%),
-    radius: 3pt,
-    text(fill: luma(40%), size: 0.9em, sym.arrow.r.hook + " " + name),
-  )
 }
 
 // ---------------------------------------------------------------------------

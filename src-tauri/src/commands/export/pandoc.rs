@@ -188,9 +188,6 @@ pub(super) fn strip_inkycap_functions(source: &str) -> String {
     let tag_re = regex::Regex::new(r#"#tag\("[^"]*"\)\s*"#).unwrap();
     result = tag_re.replace_all(&result, "").to_string();
 
-    let embed_re = regex::Regex::new(r#"#embed\("[^"]*"\)"#).unwrap();
-    result = embed_re.replace_all(&result, "").to_string();
-
     let linkref_re = regex::Regex::new(r#"link-ref\("([^"]*)"\)"#).unwrap();
     result = linkref_re.replace_all(&result, "$1").to_string();
 

@@ -511,6 +511,45 @@ mod tests {
         assert!(frame.height_pt > 0.0);
     }
 
+    /// A note that `#include`s a syntactically broken file should still render
+    /// its own content. Recovery can't patch another file, but it drops the
+    /// failing `#include` statement (replacing it with the error marker) so the
+    /// host doesn't blank out, and the included-file error is still surfaced.
+    /// Regression for the silent-blank reading view when a transcluded note has
+    /// a parse error (a lone `/` term-list marker, "expected colon").
+    #[test]
+    fn recovers_from_a_broken_include_by_dropping_it() {
+        let (_dir, root) = canonical_tempdir();
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+
+        fs::write(
+            root.join("broken.typ"),
+            format!("{import}\n\n#note(title: \"Broken\")\n\nsome text\n\n/\n\nmore text\n"),
+        )
+        .expect("write broken");
+
+        let host_path = root.join("host.typ");
+        let host_src = format!(
+            "{import}\n\n#note(title: \"Host\")\n\n= Daisy\n\nbody line\n\n#include \"/broken.typ\"\n"
+        );
+        fs::write(&host_path, &host_src).expect("write host");
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compiler
+            .compile_svg(&host_path, host_src)
+            .expect("compile_svg");
+
+        assert!(!result.ok, "compile should report the included-file error");
+        assert!(result.recovered, "recovery should salvage the host page");
+        assert!(!result.frames.is_empty(), "host content should still render");
+        assert!(
+            result.diagnostics.iter().any(|d| d.severity == "error"),
+            "the included-file parse error should still be surfaced: {:?}",
+            result.diagnostics,
+        );
+    }
+
     #[test]
     fn compiles_phase_0_spike_fixture() {
         // The Phase 0 spike fixture exercises the full inkycap-notebox package

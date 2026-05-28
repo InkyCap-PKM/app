@@ -13,7 +13,7 @@ use super::md_to_typst::{
     extract_embed_filenames, markdown_to_typst, MarkdownDialect, MarkdownToTypstOptions,
 };
 
-/// Rewrite relative path arguments in `image`/`read`/`embed`/`bibliography`
+/// Rewrite relative path arguments in `image`/`read`/`bibliography`
 /// calls to notebox-root-absolute paths anchored at the note's location.
 /// Markdown commonly emits `![](images/foo.png)` which `markdown_to_typst`
 /// turns into `#image("images/foo.png")`. Left alone, that path is fragile

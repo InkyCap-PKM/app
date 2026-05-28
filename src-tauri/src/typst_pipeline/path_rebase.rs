@@ -2,7 +2,7 @@
 //!
 //! When a note's content is inlined into another document (today: merged
 //! collection export), Typst resolves relative path arguments — to
-//! `image()`, `read()`, `embed()`, `bibliography()` — against the *outer*
+//! `image()`, `read()`, `bibliography()` — against the *outer*
 //! document's directory, not the source note's. That breaks every
 //! `image("daisy.png")` style call as soon as the note moves into a
 //! foreign anchor.
@@ -24,7 +24,7 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
 /// Typst function names whose first positional argument is a path that
 /// should be rebased. Exact identifier match, case-sensitive.
-const PATH_BEARING_CALLS: &[&str] = &["image", "read", "embed", "bibliography"];
+const PATH_BEARING_CALLS: &[&str] = &["image", "read", "bibliography"];
 
 /// Rewrite relative path arguments to notebox-root-absolute paths.
 ///
@@ -60,7 +60,7 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
 }
 
 /// Collect the string-literal first arguments of path-bearing calls
-/// (`image`, `read`, `embed`, `bibliography`) in `source`, returning the
+/// (`image`, `read`, `bibliography`) in `source`, returning the
 /// raw path values exactly as written — absolute (`/Assets/x.png`),
 /// relative, or otherwise. The caller decides which to keep and how to
 /// resolve them (see `collab::attachments`). Non-string arguments
@@ -321,7 +321,7 @@ pub fn count_absolute_prefix_matches(source: &str, segment: &str) -> usize {
     count
 }
 
-/// Rewrite path-bearing calls (`image`/`read`/`embed`/`bibliography`) whose
+/// Rewrite path-bearing calls (`image`/`read`/`bibliography`) whose
 /// first string argument references the attachment at notebox-relative
 /// `old_rel`, repointing them at `new_rel`. Used when a collaborative
 /// attachment is renamed on import to dodge a filename collision: every member
@@ -574,13 +574,6 @@ mod tests {
     }
 
     #[test]
-    fn embed_call_rebased() {
-        let src = "#embed(\"file.pdf\")";
-        let out = rebase(src, "notes");
-        assert_eq!(out, "#embed(\"/notes/file.pdf\")");
-    }
-
-    #[test]
     fn bibliography_rebased() {
         let src = "#bibliography(\"refs.bib\")";
         let out = rebase(src, "notes/papers");
@@ -622,9 +615,9 @@ mod tests {
 
     #[test]
     fn extract_collects_path_bearing_calls_verbatim() {
-        let src = "#image(\"/Assets/fig.png\")\ntext\n#read(\"data/x.csv\")\n#embed(\"/docs/a.pdf\")";
+        let src = "#image(\"/Assets/fig.png\")\ntext\n#read(\"data/x.csv\")\n#bibliography(\"/docs/refs.bib\")";
         let got = extract_referenced_paths(src);
-        assert_eq!(got, vec!["/Assets/fig.png", "data/x.csv", "/docs/a.pdf"]);
+        assert_eq!(got, vec!["/Assets/fig.png", "data/x.csv", "/docs/refs.bib"]);
     }
 
     #[test]
@@ -680,11 +673,11 @@ mod tests {
 
     #[test]
     fn replace_prefix_rewrites_all_path_bearing_calls() {
-        let src = "#image(\"/assets/a.png\")\n#read(\"/assets/b.csv\")\n#embed(\"/assets/c.pdf\")\n#bibliography(\"/assets/refs.bib\")";
+        let src = "#image(\"/assets/a.png\")\n#read(\"/assets/b.csv\")\n#bibliography(\"/assets/refs.bib\")";
         let out = replace_absolute_prefix(src, "assets", "media");
         assert_eq!(
             out,
-            "#image(\"/media/a.png\")\n#read(\"/media/b.csv\")\n#embed(\"/media/c.pdf\")\n#bibliography(\"/media/refs.bib\")"
+            "#image(\"/media/a.png\")\n#read(\"/media/b.csv\")\n#bibliography(\"/media/refs.bib\")"
         );
     }
 
@@ -758,9 +751,9 @@ mod tests {
     }
 
     #[test]
-    fn rename_handles_multibyte_and_embed() {
-        let src = "#embed(\"/媒体/写真.png\")";
+    fn rename_handles_multibyte_path() {
+        let src = "#image(\"/媒体/写真.png\")";
         let out = rename(src, "媒体/写真.png", "媒体/写真-x.png", "");
-        assert_eq!(out, "#embed(\"/媒体/写真-x.png\")");
+        assert_eq!(out, "#image(\"/媒体/写真-x.png\")");
     }
 }

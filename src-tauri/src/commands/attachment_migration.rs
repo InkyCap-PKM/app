@@ -6,7 +6,7 @@
 //! 1. Move every file under `<notebox>/<old>/` to `<notebox>/<new>/`.
 //! 2. Across every `.typ` note in the notebox, rewrite path-bearing
 //!    calls whose string argument starts with `/<old>/` to `/<new>/`.
-//!    Limited to `image`/`read`/`embed`/`bibliography` per the
+//!    Limited to `image`/`read`/`bibliography` per the
 //!    shared rewriter contract.
 //! 3. Persist the updated setting.
 //!

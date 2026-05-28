@@ -124,13 +124,6 @@ mod tests {
     }
 
     #[test]
-    fn preprocess_strips_embed() {
-        let source = "#embed(\"Embedded Note\")\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#embed"));
-    }
-
-    #[test]
     fn extract_image_paths_finds_all() {
         let source = r#"
 = My Note

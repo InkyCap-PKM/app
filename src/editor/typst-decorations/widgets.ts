@@ -1,5 +1,5 @@
 import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { openLink } from "../../lib/open-link";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as ipc from "../../lib/ipc";
 import { highlightCodeInto } from "./code-highlight";
@@ -21,7 +21,7 @@ function typstLengthToCss(value: string): string {
   return v;
 }
 
-// Build the small pill row that block elements (image, embed, callout,
+// Build the small pill row that block elements (image, callout,
 // blockquote) show at their top edge when the cursor is on the line.
 // The pill is rendered INSIDE the element's widget DOM, not as a
 // separate block widget above it: keeping it inside means
@@ -34,7 +34,7 @@ function typstLengthToCss(value: string): string {
 // real content — clicking the pill should always reveal the source for
 // editing, even when the call is "complex" by the simple/complex
 // classifier (multi-line / multi-paragraph callouts are the common
-// case). Other block-row pills (image, embed, figure) stick to the
+// case). Other block-row pills (image, figure) stick to the
 // default simple→expand / complex→menu split.
 const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "annotation"]);
 
@@ -401,292 +401,6 @@ export class ImageBlockWidget extends WidgetType {
   }
 
   ignoreEvent() { return false; }
-}
-
-export class EmbedBlockWidget extends WidgetType {
-  constructor(
-    readonly name: string,
-    readonly pos: number,
-    readonly withPill: boolean,
-  ) {
-    super();
-  }
-
-  eq(other: EmbedBlockWidget) {
-    return this.name === other.name && this.pos === other.pos && this.withPill === other.withPill;
-  }
-
-  get estimatedHeight(): number { return this.withPill ? 104 : 80; }
-
-  toDOM(view: EditorView) {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-typst-embed-block";
-    wrap.style.overflow = "hidden";
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("embed", this.pos, view));
-    this.renderExpanded(wrap);
-    return wrap;
-  }
-
-  updateDOM(dom: HTMLElement, view: EditorView): boolean {
-    dom.innerHTML = "";
-    if (this.withPill) dom.appendChild(makeBlockPillRow("embed", this.pos, view));
-    this.renderExpanded(dom);
-    return true;
-  }
-
-  private renderExpanded(wrap: HTMLElement) {
-    const header = document.createElement("div");
-    header.className = "cm-typst-embed-header";
-
-    const icon = document.createElement("span");
-    icon.className = "cm-typst-embed-icon";
-    icon.textContent = "↪";
-
-    const label = document.createElement("span");
-    label.className = "cm-typst-embed-label";
-    label.textContent = this.name.replace(/\.typ$/, "");
-
-    const embedName = this.name;
-
-    const navBtn = document.createElement("span");
-    navBtn.className = "cm-typst-embed-nav-btn";
-    navBtn.title = `Open ${embedName.replace(/\.typ$/, "")}`;
-    const navIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    navIcon.setAttribute("width", "14");
-    navIcon.setAttribute("height", "14");
-    navIcon.setAttribute("viewBox", "0 0 24 24");
-    navIcon.setAttribute("fill", "none");
-    navIcon.setAttribute("stroke", "currentColor");
-    navIcon.setAttribute("stroke-width", "2");
-    navIcon.setAttribute("stroke-linecap", "round");
-    navIcon.setAttribute("stroke-linejoin", "round");
-    navIcon.innerHTML = // static-only
-      '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
-      '<polyline points="15 3 21 3 21 9"/>' +
-      '<line x1="10" y1="14" x2="21" y2="3"/>';
-    navBtn.appendChild(navIcon);
-    navBtn.addEventListener("mousedown", (e) => {
-      if (e.button === 2) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const newTab = e.ctrlKey || e.metaKey || e.button === 1;
-      document.dispatchEvent(
-        new CustomEvent("inkycap:navigate-wikilink", {
-          detail: { target: embedName.replace(/\.typ$/, ""), newTab },
-        }),
-      );
-    });
-    navBtn.addEventListener("auxclick", (e) => {
-      if (e.button === 1) {
-        e.preventDefault();
-        e.stopPropagation();
-        document.dispatchEvent(
-          new CustomEvent("inkycap:navigate-wikilink", {
-            detail: { target: embedName.replace(/\.typ$/, ""), newTab: true },
-          }),
-        );
-      }
-    });
-    navBtn.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const menu = document.createElement("div");
-      menu.style.cssText = "position:fixed;z-index:var(--z-menu,1000);background:var(--popup-bg);border:1px solid var(--popup-border-color);border-radius:var(--popup-radius);padding:var(--popup-padding-block,4px) 0;box-shadow:var(--popup-shadow);font-size:13px;";
-      const item = document.createElement("div");
-      item.style.cssText = "padding:4px 12px;cursor:pointer;white-space:nowrap;";
-      item.textContent = "Open in new tab";
-      item.addEventListener("mouseenter", () => { item.style.backgroundColor = "var(--bg-hover)"; });
-      item.addEventListener("mouseleave", () => { item.style.backgroundColor = ""; });
-      item.addEventListener("click", () => {
-        menu.remove();
-        document.dispatchEvent(
-          new CustomEvent("inkycap:navigate-wikilink", {
-            detail: { target: embedName.replace(/\.typ$/, ""), newTab: true },
-          }),
-        );
-      });
-      menu.appendChild(item);
-      menu.style.left = `${e.clientX}px`;
-      menu.style.top = `${e.clientY}px`;
-      document.body.appendChild(menu);
-      const dismiss = (ev: Event) => { if (!menu.contains(ev.target as Node)) { menu.remove(); document.removeEventListener("mousedown", dismiss); } };
-      setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
-    });
-
-    header.appendChild(icon);
-    header.appendChild(label);
-    header.appendChild(navBtn);
-    wrap.appendChild(header);
-
-    const preview = document.createElement("div");
-    preview.className = "cm-typst-embed-preview";
-    preview.textContent = "Loading...";
-    wrap.appendChild(preview);
-
-    const baseName = embedName.replace(/\.typ$/, "");
-    ipc.resolveWikilink(baseName).then(async (path) => {
-      if (!path) {
-        preview.textContent = "Note not found";
-        preview.classList.add("cm-typst-embed-preview--error");
-        return;
-      }
-      try {
-        const content = await ipc.readFileContent(path);
-        const lines = stripMetadata(content).split("\n")
-          .filter((l) => l.trim() !== "")
-          .slice(0, 4);
-        preview.textContent = lines.join("\n") || "(empty note)";
-      } catch {
-        preview.textContent = "Could not load preview";
-        preview.classList.add("cm-typst-embed-preview--error");
-      }
-    }).catch(() => {
-      preview.textContent = "Could not load preview";
-      preview.classList.add("cm-typst-embed-preview--error");
-    });
-  }
-
-  ignoreEvent(e: Event) {
-    if (e.type !== "mousedown") return false;
-    const target = e.target as HTMLElement;
-    return !!target.closest(".cm-typst-embed-nav-btn");
-  }
-}
-
-export class EmbedWidget extends WidgetType {
-  constructor(
-    readonly name: string,
-    readonly pos: number,
-  ) {
-    super();
-  }
-
-  eq(other: EmbedWidget) {
-    return this.name === other.name && this.pos === other.pos;
-  }
-
-  toDOM() {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-typst-embed";
-
-    const header = document.createElement("div");
-    header.className = "cm-typst-embed-header";
-
-    const icon = document.createElement("span");
-    icon.className = "cm-typst-embed-icon";
-    icon.textContent = "↪";
-
-    const label = document.createElement("span");
-    label.className = "cm-typst-embed-label";
-    label.textContent = this.name.replace(/\.typ$/, "");
-
-    const embedName = this.name;
-
-    const navBtn = document.createElement("span");
-    navBtn.className = "cm-typst-embed-nav-btn";
-    navBtn.title = `Open ${embedName.replace(/\.typ$/, "")}`;
-    const navIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    navIcon.setAttribute("width", "14");
-    navIcon.setAttribute("height", "14");
-    navIcon.setAttribute("viewBox", "0 0 24 24");
-    navIcon.setAttribute("fill", "none");
-    navIcon.setAttribute("stroke", "currentColor");
-    navIcon.setAttribute("stroke-width", "2");
-    navIcon.setAttribute("stroke-linecap", "round");
-    navIcon.setAttribute("stroke-linejoin", "round");
-    navIcon.innerHTML = // static-only
-      '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
-      '<polyline points="15 3 21 3 21 9"/>' +
-      '<line x1="10" y1="14" x2="21" y2="3"/>';
-    navBtn.appendChild(navIcon);
-    navBtn.addEventListener("mousedown", (e) => {
-      if (e.button === 2) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const newTab = e.ctrlKey || e.metaKey || e.button === 1;
-      document.dispatchEvent(
-        new CustomEvent("inkycap:navigate-wikilink", {
-          detail: { target: embedName.replace(/\.typ$/, ""), newTab },
-        }),
-      );
-    });
-    navBtn.addEventListener("auxclick", (e) => {
-      if (e.button === 1) {
-        e.preventDefault();
-        e.stopPropagation();
-        document.dispatchEvent(
-          new CustomEvent("inkycap:navigate-wikilink", {
-            detail: { target: embedName.replace(/\.typ$/, ""), newTab: true },
-          }),
-        );
-      }
-    });
-    navBtn.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const menu = document.createElement("div");
-      menu.style.cssText = "position:fixed;z-index:var(--z-menu,1000);background:var(--popup-bg);border:1px solid var(--popup-border-color);border-radius:var(--popup-radius);padding:var(--popup-padding-block,4px) 0;box-shadow:var(--popup-shadow);font-size:13px;";
-      const item = document.createElement("div");
-      item.style.cssText = "padding:4px 12px;cursor:pointer;white-space:nowrap;";
-      item.textContent = "Open in new tab";
-      item.addEventListener("mouseenter", () => { item.style.backgroundColor = "var(--bg-hover)"; });
-      item.addEventListener("mouseleave", () => { item.style.backgroundColor = ""; });
-      item.addEventListener("click", () => {
-        menu.remove();
-        document.dispatchEvent(
-          new CustomEvent("inkycap:navigate-wikilink", {
-            detail: { target: embedName.replace(/\.typ$/, ""), newTab: true },
-          }),
-        );
-      });
-      menu.appendChild(item);
-      menu.style.left = `${e.clientX}px`;
-      menu.style.top = `${e.clientY}px`;
-      document.body.appendChild(menu);
-      const dismiss = (ev: Event) => { if (!menu.contains(ev.target as Node)) { menu.remove(); document.removeEventListener("mousedown", dismiss); } };
-      setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
-    });
-
-    header.appendChild(icon);
-    header.appendChild(label);
-    header.appendChild(navBtn);
-    wrap.appendChild(header);
-
-    const preview = document.createElement("div");
-    preview.className = "cm-typst-embed-preview";
-    preview.textContent = "Loading...";
-    wrap.appendChild(preview);
-
-    const baseName = embedName.replace(/\.typ$/, "");
-    ipc.resolveWikilink(baseName).then(async (path) => {
-      if (!path) {
-        preview.textContent = "Note not found";
-        preview.classList.add("cm-typst-embed-preview--error");
-        return;
-      }
-      try {
-        const content = await ipc.readFileContent(path);
-        const lines = stripMetadata(content).split("\n")
-          .filter((l) => l.trim() !== "")
-          .slice(0, 4);
-        preview.textContent = lines.join("\n") || "(empty note)";
-      } catch {
-        preview.textContent = "Could not load preview";
-        preview.classList.add("cm-typst-embed-preview--error");
-      }
-    }).catch(() => {
-      preview.textContent = "Could not load preview";
-      preview.classList.add("cm-typst-embed-preview--error");
-    });
-
-    return wrap;
-  }
-
-  ignoreEvent(e: Event) {
-    if (e.type !== "mousedown") return false;
-    const target = e.target as HTMLElement;
-    return !!target.closest(".cm-typst-embed-nav-btn");
-  }
 }
 
 export class TagWidget extends WidgetType {
@@ -2157,7 +1871,7 @@ export class LinkWidget extends WidgetType {
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      shellOpen(this.url);
+      void openLink(this.url);
     });
     return el;
   }

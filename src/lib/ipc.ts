@@ -886,12 +886,31 @@ export async function readClipboardFilePaths(): Promise<string[]> {
   return invoke<string[]>("read_clipboard_file_paths");
 }
 
+/**
+ * Read the native clipboard (file references or raw image bytes), copy
+ * the content into the notebox attachment folder, and return the
+ * notebox-relative paths to insert. Used by the paste handler when the
+ * webview's clipboardData yields nothing — the WebKitGTK case on Linux.
+ */
+export async function pasteClipboardToAttachments(): Promise<string[]> {
+  return invoke<string[]>("paste_clipboard_to_attachments");
+}
+
 export async function showInExplorer(path: string): Promise<void> {
   return invoke<void>("show_in_explorer", { path });
 }
 
 export async function openFileExternally(path: string): Promise<void> {
   return invoke<void>("open_file_externally", { path });
+}
+
+/**
+ * Open an external URL (http(s), mailto, or a custom app scheme such as
+ * zotero:// / obsidian://) in the OS default handler. Dangerous and
+ * `file:` schemes are refused by the backend.
+ */
+export async function openUrlExternally(url: string): Promise<void> {
+  return invoke<void>("open_url_externally", { url });
 }
 
 // Creation rules
