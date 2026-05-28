@@ -35,7 +35,7 @@ import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys } from "./citation-suggest";
-import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS } from "./visual-widgets";
+import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget } from "./visual-widgets";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
 import { isNoteboxImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
@@ -168,6 +168,67 @@ function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to
   return false;
 }
 
+type StylePreamble = { from: number; to: number; count: number };
+
+// Top-level node names that are transparent while scanning for the style
+// preamble: whitespace, the `#` markers that precede each code expression, and
+// comments. They neither start nor end the run.
+const PREAMBLE_TRANSPARENT_NODES = new Set([
+  "Space", "Parbreak", "Hash", "LineComment", "BlockComment", "Comment",
+]);
+
+/**
+ * Locate a contiguous *leading* run of `#set` / `#show` rules — the document
+ * style preamble — returning its line-aligned range and rule count, or null
+ * when there is none. The notebox import line and the `#note(...)` properties
+ * call may precede the run; the first prose or other-content node before any
+ * set/show rule means there is nothing to collapse. A `#set` that appears only
+ * after content (a deliberate local style change) is intentionally left alone —
+ * it never starts a preamble.
+ *
+ * Walks the flat top-level node sequence (Markup's children) rather than
+ * scanning line by line: the `#note(...)` properties call spans several lines,
+ * and a per-line scan misclassifies its inner/closing lines. The top-level
+ * walk sees `note` as a single FuncCall node, so the run boundary is exact.
+ */
+function findStylePreamble(state: EditorState): StylePreamble | null {
+  const cur = syntaxTree(state).cursor();
+  if (!cur.firstChild()) return null;
+  let firstFrom = -1;
+  let lastTo = -1;
+  let count = 0;
+  do {
+    const name = cur.name;
+    if (PREAMBLE_TRANSPARENT_NODES.has(name)) continue;
+    if (name === "SetRule" || name === "ShowRule") {
+      if (firstFrom < 0) firstFrom = cur.from;
+      lastTo = cur.to;
+      count++;
+      continue;
+    }
+    if (firstFrom < 0) {
+      // Header items allowed before the run.
+      if (name === "ModuleImport") continue;
+      if (name === "FuncCall") {
+        const head = state.doc.sliceString(cur.from, Math.min(cur.from + 8, cur.to));
+        if (/^note\b/.test(head)) continue;
+      }
+      return null; // some other leading construct — no collapsible preamble
+    }
+    break; // real content ends the run
+  } while (cur.nextSibling());
+  if (firstFrom < 0 || count < 1) return null;
+  return {
+    from: state.doc.lineAt(firstFrom).from,
+    to: state.doc.lineAt(Math.min(lastTo, state.doc.length)).to,
+    count,
+  };
+}
+
+function posWithinPreamble(pos: number, preamble: StylePreamble): boolean {
+  return pos >= preamble.from && pos < preamble.to;
+}
+
 /**
  * Display number for an ordered-list (`EnumMarker`) item, computed purely
  * from the document text so it is identical whether the whole document or a
@@ -210,6 +271,30 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   const expandedPos = state.field(expandedFuncField, false) ?? null;
   const decos: Range<Decoration>[] = [];
 
+  // Document style preamble: a contiguous leading run of #set/#show rules is
+  // collapsed to a single chip unless the cursor is inside it or it was clicked
+  // open (expandFunc). Collapsing skips its inner nodes during iteration so the
+  // raw markup isn't rendered behind the widget.
+  const stylePreamble = findStylePreamble(state);
+  const stylePreambleCollapsed = stylePreamble
+    ? !isOnCursorLine(state, stylePreamble.from, stylePreamble.to, focused)
+      && expandedPos !== stylePreamble.from
+    : false;
+  if (
+    stylePreamble &&
+    stylePreambleCollapsed &&
+    (!onlyRanges || nodeOverlapsRanges(stylePreamble.from, stylePreamble.to, onlyRanges))
+  ) {
+    // Inline replace spanning the block's lines — same recipe the cursor-away
+    // callout/quote widgets use. The widget's root is a block-level element, so
+    // it occupies its own line even though the decoration is inline.
+    decos.push(
+      Decoration.replace({
+        widget: new StylePreambleWidget(stylePreamble.from, stylePreamble.to, stylePreamble.count),
+      }).range(stylePreamble.from, stylePreamble.to),
+    );
+  }
+
   const escapeRanges = new Set<string>();
   const escapeDecos: { from: number; backslashEnd: number; charEnd: number }[] = [];
   const activeFormatting = { bold: false, italic: false, strike: false, highlight: false, headingLevel: 0 };
@@ -235,6 +320,11 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
         if (node.from > state.doc.length || node.to > state.doc.length) return;
         if (node.from < consumedUntil) return false;
         if (onlyRanges && !nodeOverlapsRanges(node.from, node.to, onlyRanges)) return;
+        // Inside a collapsed style preamble: the chip replaces the whole range,
+        // so don't render its inner markup.
+        if (stylePreamble && stylePreambleCollapsed && posWithinPreamble(node.from, stylePreamble)) {
+          return false;
+        }
         const onCursor = isOnCursorLine(state, node.from, node.to, focused);
 
         switch (node.name) {
@@ -540,6 +630,8 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   for (const i of escScanLines) {
     const line = state.doc.line(i);
     if (autoExpand && isOnCursorLine(state, line.from, line.to, focused)) continue;
+    // Skip lines hidden behind the collapsed style-preamble chip.
+    if (stylePreamble && stylePreambleCollapsed && posWithinPreamble(line.from, stylePreamble)) continue;
     const text = line.text;
     let idx = text.indexOf("\\");
     while (idx >= 0 && idx < text.length - 1) {
@@ -1531,6 +1623,7 @@ function expandRangesToBlockElements(
   ranges: { from: number; to: number }[],
 ): { from: number; to: number }[] {
   const tree = syntaxTree(state);
+  const preamble = findStylePreamble(state);
   return ranges.map((r) => {
     let { from, to } = r;
     const grow = (nodeFrom: number, nodeTo: number) => {
@@ -1552,6 +1645,12 @@ function expandRangesToBlockElements(
       to: r.to,
       enter(n) { if (n.name === "FuncCall") grow(n.from, n.to); },
     });
+    // The style preamble collapses/expands as one multi-line block widget, so a
+    // dirty line anywhere inside it must rebuild the whole range — otherwise a
+    // partial rebuild leaves the block decoration half-applied.
+    if (preamble && r.from < preamble.to && r.to > preamble.from) {
+      grow(preamble.from, preamble.to);
+    }
     return { from, to };
   });
 }

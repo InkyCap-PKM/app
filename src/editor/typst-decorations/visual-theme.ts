@@ -233,6 +233,13 @@ export const visualTheme = EditorView.theme({
     margin: "0",
     lineHeight: "1.4",
   },
+  // Collapsed document-style preamble chip: reuses the standard pill chrome
+  // (.cm-typst-pill); only the trailing rule-count needs its own muted style.
+  ".cm-typst-style-preamble-count": {
+    color: "var(--fg-dim)",
+    fontSize: "0.92em",
+    marginLeft: "1px",
+  },
   ".cm-typst-image-block": {
     display: "block",
     position: "relative",
