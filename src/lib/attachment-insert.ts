@@ -2,14 +2,14 @@ import type { EditorView } from "@codemirror/view";
 import * as ipc from "./ipc";
 import { typstStringEscape } from "./typst";
 
-export type AttachmentFunc = "image" | "embed";
+export type AttachmentFunc = "image";
 
 /**
  * Open the native attachment picker, copy each selected file into the
  * notebox's configured attachment folder, and replace the editor range
- * `[from, to]` with `#image("/<path>")` (or `#embed(...)`) calls for
- * each picked file. Notebox-root-absolute path emission is the load-bearing
- * invariant — see CLAUDE.md's portable-paths principle.
+ * `[from, to]` with `#image("/<path>")` calls for each picked file.
+ * Notebox-root-absolute path emission is the load-bearing invariant —
+ * see CLAUDE.md's portable-paths principle.
  *
  * If the user cancels the picker, the editor range is left untouched
  * (the slash-trigger or selection is preserved so the user can keep

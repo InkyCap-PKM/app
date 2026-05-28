@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { type EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { openLink } from "../../lib/open-link";
 import { modifierKey } from "../../lib/platform";
 
 /** Extract the first quoted string argument from a Typst function call text. */
@@ -49,7 +49,7 @@ export const linkClickHandler = EditorView.domEventHandlers({
     if (pos == null) return false;
     const link = findLinkAtPos(view.state, pos);
     if (!link) return false;
-    shellOpen(link.url);
+    void openLink(link.url);
     event.preventDefault();
     return true;
   },

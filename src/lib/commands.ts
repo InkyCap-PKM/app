@@ -630,13 +630,12 @@ function registerMarkupCommands() {
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
-    // Image and Embed are special-cased below: rather than inserting a
-    // template with an empty path the user must hand-type (which would
-    // produce a fragile relative reference), they drive the attachment
-    // picker, copy the chosen file(s) into `settings.files.attachment_folder`,
-    // and emit a notebox-root-absolute `#image("/...")` call.
-    // The `insert` field here is unused for these two ids — `pickInsert: true`
-    // diverts the execute path.
+    // Image is special-cased below: rather than inserting a template with an
+    // empty path the user must hand-type (which would produce a fragile
+    // relative reference), it drives the attachment picker, copies the chosen
+    // file(s) into `settings.files.attachment_folder`, and emits a
+    // notebox-root-absolute `#image("/...")` call. The `insert` field here is
+    // unused for that id — the picker diverts the execute path.
     { id: "image", title: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8 },
     { id: "code-block", title: "Code Block", category: "Insert", insert: "```\n${sel}\n```", cursorOffset: 4, shortcut: "```" },
     { id: "math-block", title: "Math Block", category: "Insert", insert: "$ ${sel} $", cursorOffset: 2 },
@@ -651,7 +650,6 @@ function registerMarkupCommands() {
     { id: "box", title: "Box", category: "Insert", insert: "#box[${sel}]", cursorOffset: 5 },
     { id: "rect", title: "Rect", category: "Insert", insert: "#rect[${sel}]", cursorOffset: 6 },
     { id: "hide", title: "Hide", category: "Insert", insert: "#hide[${sel}]", cursorOffset: 6 },
-    { id: "embed", title: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8 },
     { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
     { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1, shortcut: "@" },
     { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
@@ -679,8 +677,8 @@ function registerMarkupCommands() {
 
   for (const item of items) {
     const execute =
-      item.id === "image" || item.id === "embed"
-        ? () => insertAttachmentViaPicker(item.id as "image" | "embed")
+      item.id === "image"
+        ? () => insertAttachmentViaPicker("image")
         : () => insertMarkup(item.insert, item.cursorOffset);
 
     registerCommand({
@@ -693,7 +691,7 @@ function registerMarkupCommands() {
   }
 }
 
-async function insertAttachmentViaPicker(func: "image" | "embed") {
+async function insertAttachmentViaPicker(func: "image") {
   const handle = activeEditorView();
   if (!handle) return;
   const view = handle.view;

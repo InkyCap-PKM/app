@@ -16,7 +16,6 @@ import {
   AnnotationBlockWidget,
   CodeBlockWidget,
   ImageBlockWidget,
-  EmbedBlockWidget,
   BlockquoteBlockWidget,
   BibliographyBlockWidget,
   TagWidget,
@@ -449,13 +448,13 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
                     realEnd = scanStart + i + 1;
                     // Check for trailing content bracket [...] — only for
                     // functions that actually use content brackets after ().
-                    // Block funcs like table/note/bibliography/image/embed
+                    // Block funcs like table/note/bibliography/image
                     // never have trailing brackets; without this guard the
                     // scanner can consume unrelated lines after the func.
                     const funcNameForBracket = rawCheck.match(/^#?(\w[\w-]*)/);
                     const fnb = funcNameForBracket ? funcNameForBracket[1] : null;
                     const NO_TRAILING_BRACKET = new Set([
-                      "table", "note", "bibliography", "image", "embed", "verse", "cite",
+                      "table", "note", "bibliography", "image", "verse", "cite",
                     ]);
                     if (!fnb || !NO_TRAILING_BRACKET.has(fnb)) {
                       const afterParen = state.doc.sliceString(realEnd, Math.min(realEnd + 100, state.doc.length)).trimStart();
@@ -645,7 +644,7 @@ function extractDateLiteral(s: string): string | null {
 }
 
 // Block widgets that collapse to pill + editable value when cursor is on line.
-const BLOCK_WIDGET_FUNCS = new Set(["image", "embed"]);
+const BLOCK_WIDGET_FUNCS = new Set(["image"]);
 
 function handleFuncCall(
   state: EditorState,
@@ -673,7 +672,7 @@ function handleFuncCall(
   if (INTERACTIVE_FUNCS.has(funcName)) {
     if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
   } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation") {
-    // image, embed, callout, quote, annotation use the pill-above-element pattern:
+    // image, callout, quote, annotation use the pill-above-element pattern:
     // the element stays rendered; a pill is shown above it on cursor
     // entry; clicking the pill exposes the raw markup for editing while
     // the element re-renders as a block widget below. All handled in
@@ -696,7 +695,7 @@ function handleFuncCall(
     && !BLOCK_FUNCS.has(funcName) && !INTERACTIVE_FUNCS.has(funcName)
     && !BLOCK_WIDGET_FUNCS.has(funcName);
 
-  // Decoration recipe for block elements (image, embed, callout, quote)
+  // Decoration recipe for block elements (image, callout, quote)
   // that uses the pill-above-element pattern. Three states:
   //   • cursor away: replace [from..to] with the element widget.
   //   • cursor on line: same replace, but the widget renders a small
@@ -865,12 +864,6 @@ function handleFuncCall(
       const imgWidth = extractNamedBareArg(text, "width");
       const imgHeight = extractNamedBareArg(text, "height");
       pushBlockElement((withPill) => new ImageBlockWidget(path, from, withPill, imgAlt, imgWidth, imgHeight));
-      return false;
-    }
-    case "embed": {
-      const name = extractFirstStringArg(text);
-      if (!name) return false;
-      pushBlockElement((withPill) => new EmbedBlockWidget(name, from, withPill));
       return false;
     }
     case "tag": {

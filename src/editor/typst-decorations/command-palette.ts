@@ -19,9 +19,9 @@ interface PaletteItem {
   /** When set, accepting the item runs the attachment picker instead of
    *  inserting the `insert` template. The picker copies the selected
    *  file(s) into `settings.files.attachment_folder` and emits
-   *  `#image("/...")` / `#embed("/...")` with a notebox-root-absolute path.
+   *  `#image("/...")` with a notebox-root-absolute path.
    *  See CLAUDE.md's portable-paths principle. */
-  pickAttachment?: "image" | "embed";
+  pickAttachment?: "image";
   /** Inline typing shortcut shown at the right edge of the row, when
    *  one exists. Purely informational — the actual trigger lives in
    *  auto-pair-typst.ts, markdown-shortcuts.ts, wikilink-suggest.ts,
@@ -83,7 +83,6 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
   { label: "Rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
   { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
-  { label: "Embed", category: "Insert", insert: '#embed("")', cursorOffset: 8, pickAttachment: "embed" },
   { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
   { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
   { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
@@ -259,9 +258,9 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const deleteFrom = state.from;
   const deleteTo = view.state.selection.main.from;
 
-  // Image / Embed: open the attachment picker and replace the slash trigger
-  // with a notebox-root-absolute call. The picker is async; hide the popup
-  // first so the dialog can take focus cleanly.
+  // Image: open the attachment picker and replace the slash trigger with a
+  // notebox-root-absolute call. The picker is async; hide the popup first so
+  // the dialog can take focus cleanly.
   if (item.pickAttachment) {
     hidePopup();
     void pickAndInsertAttachments(view, deleteFrom, deleteTo, item.pickAttachment);

@@ -278,9 +278,9 @@ fn handle_func_call(
             return;
         }
 
-        Some("image") | Some("embed") => {
+        Some("image") => {
             // `#image("/dir/photo.png")` — make the filename stem
-            // searchable so "photo" finds the embed.
+            // searchable so "photo" finds the image.
             if let Some(path) = first_positional_string(node) {
                 let stem = path_stem(&path);
                 if !stem.is_empty() {
@@ -587,8 +587,8 @@ fn gap_breaks_phrase(gap: &str) -> bool {
 }
 
 /// Filename stem from a path-shaped string (forward-slash separated,
-/// as Typst paths always are). Used by `#image` / `#embed` so embed
-/// callsites contribute their filename as searchable text.
+/// as Typst paths always are). Used by `#image` so image callsites
+/// contribute their filename as searchable text.
 fn path_stem(path: &str) -> &str {
     let after_slash = path.rsplit('/').next().unwrap_or(path);
     match after_slash.rsplit_once('.') {

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use typst::foundations::{Dict, Label, Selector, Value};
+use typst::foundations::{Content, Dict, Label, Selector, Value};
 use typst::introspection::{Introspector, MetadataElem};
 use typst::layout::PagedDocument;
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
@@ -32,17 +32,63 @@ pub struct QueryResult {
     pub agenda: Vec<AgendaMarker>,
 }
 
+/// A comparable key approximating a located element's reading-order position
+/// in the document: `(page, top, left)`. Used to compare metadata markers
+/// against the transclusion boundary.
+type PosKey = (usize, f64, f64);
+
 /// Query a compiled document for all InkyCap metadata.
 pub fn query_document(document: &PagedDocument) -> QueryResult {
     let introspector = &document.introspector;
     let mut result = QueryResult::default();
 
+    // Transclusion guard. A note that does `#include "other.typ"` compiles the
+    // included file inline, so `other`'s `<inkycap-note>` / `<inkycap-tag>` /
+    // `<inkycap-link>` / `<inkycap-agenda>` labels appear in *this* document
+    // too. The host's own `#note(...)` is always first in document order (it
+    // lives in the prelude, above the body); a *second* `<inkycap-note>` marks
+    // where included content begins. We read only the first note for
+    // properties and drop body labels positioned at/after that boundary, so a
+    // host note never absorbs an included note's identity, tags, or links.
+    //
+    // The one case this can't distinguish is host content authored *physically
+    // after* an `#include` — raw `#include` provides no hook marking where the
+    // included note ends. The clean pattern is `#include` as a trailing block.
+    let boundary = transclusion_boundary(introspector);
+
     extract_note_metadata(introspector, &mut result);
-    extract_tags(introspector, &mut result);
-    extract_links(introspector, &mut result);
-    extract_agenda_markers(introspector, &mut result);
+    extract_tags(introspector, &mut result, boundary);
+    extract_links(introspector, &mut result, boundary);
+    extract_agenda_markers(introspector, &mut result, boundary);
 
     result
+}
+
+/// Reading-order position of a located element, or `None` if it has no
+/// location (an unplaced/detached element).
+fn pos_key(introspector: &Introspector, elem: &Content) -> Option<PosKey> {
+    let loc = elem.location()?;
+    let pos = introspector.position(loc);
+    Some((pos.page.get(), pos.point.y.to_raw(), pos.point.x.to_raw()))
+}
+
+/// Position of the second `<inkycap-note>`, marking the start of `#include`d
+/// content. `None` when the document has at most one note (the common case),
+/// so nothing is filtered.
+fn transclusion_boundary(introspector: &Introspector) -> Option<PosKey> {
+    let selector = label_selector("inkycap-note")?;
+    let notes = introspector.query(&selector);
+    if notes.len() < 2 {
+        return None;
+    }
+    pos_key(introspector, &notes[1])
+}
+
+/// Whether a metadata marker at `key` belongs to transcluded content — i.e.
+/// it sits at or past the transclusion `boundary`. False when either is
+/// unknown (no boundary, or an unlocatable element).
+fn is_transcluded(key: Option<PosKey>, boundary: Option<PosKey>) -> bool {
+    matches!((key, boundary), (Some(k), Some(b)) if k >= b)
 }
 
 /// Compile a file and extract metadata in one step. Returns
@@ -67,7 +113,7 @@ pub fn compile_and_query(
 ) -> QueryResult {
     // First try compiling the full file. If that fails — typically because of
     // unresolved citations on a file without an inline `#bibliography(...)`,
-    // a panic-free typst error in the body, an unresolved embed, etc. — fall
+    // a panic-free typst error in the body, etc. — fall
     // back to compiling just the preamble (import + `#note(...)`). The
     // metadata pipeline only cares about the labels emitted by `note()`, so
     // a body-stripped recompile is enough to surface properties to the panel
@@ -85,7 +131,7 @@ pub fn compile_and_query(
     // The preamble compile recovers properties from `#note(...)` but
     // throws away body-derived metadata — wikilinks and body tags. For a
     // user with a notebox full of notes where one body has a typst error
-    // (an unresolved citation, a broken embed path, etc.), the result
+    // (an unresolved citation, a broken image path, etc.), the result
     // is a Links pane that silently shows nothing for every note that
     // hit this path. Use `typst::syntax` to walk the parsed AST and
     // pick out the `wikilink(...)` / `tag(...)` call sites directly —
@@ -236,7 +282,9 @@ fn extract_note_metadata(introspector: &Introspector, result: &mut QueryResult) 
     };
     let elements = introspector.query(&selector);
 
-    for elem in elements.iter() {
+    // Only the first `<inkycap-note>` is the host's own document metadata;
+    // any later ones come from `#include`d notes (see `query_document`).
+    for elem in elements.iter().take(1) {
         let Some(meta) = elem.to_packed::<MetadataElem>() else {
             continue;
         };
@@ -275,13 +323,16 @@ fn extract_note_metadata(introspector: &Introspector, result: &mut QueryResult) 
 // <inkycap-tag> — inline tags
 // ---------------------------------------------------------------------------
 
-fn extract_tags(introspector: &Introspector, result: &mut QueryResult) {
+fn extract_tags(introspector: &Introspector, result: &mut QueryResult, boundary: Option<PosKey>) {
     let Some(selector) = label_selector("inkycap-tag") else {
         return;
     };
     let elements = introspector.query(&selector);
 
     for elem in elements.iter() {
+        if is_transcluded(pos_key(introspector, elem), boundary) {
+            continue;
+        }
         let Some(meta) = elem.to_packed::<MetadataElem>() else {
             continue;
         };
@@ -302,13 +353,16 @@ fn extract_tags(introspector: &Introspector, result: &mut QueryResult) {
 // <inkycap-link> — wikilinks and link-refs
 // ---------------------------------------------------------------------------
 
-fn extract_links(introspector: &Introspector, result: &mut QueryResult) {
+fn extract_links(introspector: &Introspector, result: &mut QueryResult, boundary: Option<PosKey>) {
     let Some(selector) = label_selector("inkycap-link") else {
         return;
     };
     let elements = introspector.query(&selector);
 
     for elem in elements.iter() {
+        if is_transcluded(pos_key(introspector, elem), boundary) {
+            continue;
+        }
         let Some(meta) = elem.to_packed::<MetadataElem>() else {
             continue;
         };
@@ -329,13 +383,20 @@ fn extract_links(introspector: &Introspector, result: &mut QueryResult) {
 // <inkycap-agenda> — inline #task / #due markers
 // ---------------------------------------------------------------------------
 
-fn extract_agenda_markers(introspector: &Introspector, result: &mut QueryResult) {
+fn extract_agenda_markers(
+    introspector: &Introspector,
+    result: &mut QueryResult,
+    boundary: Option<PosKey>,
+) {
     let Some(selector) = label_selector("inkycap-agenda") else {
         return;
     };
     let elements = introspector.query(&selector);
 
     for elem in elements.iter() {
+        if is_transcluded(pos_key(introspector, elem), boundary) {
+            continue;
+        }
         let Some(meta) = elem.to_packed::<MetadataElem>() else {
             continue;
         };
@@ -689,17 +750,123 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
         assert_eq!(date_marker.body.as_deref(), Some("Conference"));
     }
 
+    /// A note that `#include`s another note must not absorb the included
+    /// note's identity, tags, or links into its own index. The included
+    /// content compiles inline (so its labels appear in the document), but
+    /// the indexer reads only the host's own first `<inkycap-note>` and drops
+    /// body labels positioned past the second note. See `query_document`.
     #[test]
-    fn extracts_embed_links() {
-        let (_dir, root) = setup_notebox_with_package(
-            r#"#embed("Embedded Note")"#,
+    fn include_does_not_pollute_host_index() {
+        let dir = tempdir().expect("tempdir");
+        let root = canonicalize_root(dir.path()).expect("canonicalize");
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+
+        // The included note carries its own prelude, property tag, body tag,
+        // and outgoing wikilink.
+        fs::write(
+            root.join("included.typ"),
+            format!(
+                "{import}\n\n#note(title: \"Included\", tags: (\"included-tag\",))\n\n\
+                 Body with #tag(\"included-body-tag\") and #wikilink(\"Included Target\").\n"
+            ),
+        )
+        .expect("write included");
+
+        // The host note has its own identity, tags, and link, and includes the
+        // other note as a trailing block.
+        let host_path = root.join("host.typ");
+        let host_src = format!(
+            "{import}\n\n#note(title: \"Host\", tags: (\"host-tag\",))\n\n\
+             Host body with #tag(\"host-body-tag\") and #wikilink(\"Host Target\").\n\n\
+             #include \"/included.typ\"\n"
         );
-        let note_path = root.join("test.typ");
-        let source = fs::read_to_string(&note_path).unwrap();
+        fs::write(&host_path, &host_src).expect("write host");
 
         let mut compiler = TypstCompiler::new(root);
-        let result = compile_and_query(&mut compiler, &note_path, source);
+        let result = compile_and_query(&mut compiler, &host_path, host_src);
 
-        assert!(result.links.contains(&"Embedded Note".to_string()));
+        // Identity: the host's title wins; the included title is not absorbed.
+        assert_eq!(
+            result.properties.get("title"),
+            Some(&PropertyValue::String("Host".to_string())),
+            "host title should not be overwritten by the included note",
+        );
+
+        // Tags: the host's own tags are present; the included note's are not.
+        assert!(result.tags.contains(&"host-tag".to_string()));
+        assert!(result.tags.contains(&"host-body-tag".to_string()));
+        assert!(
+            !result.tags.contains(&"included-tag".to_string()),
+            "included note's property tag leaked into host: {:?}",
+            result.tags,
+        );
+        assert!(
+            !result.tags.contains(&"included-body-tag".to_string()),
+            "included note's body tag leaked into host: {:?}",
+            result.tags,
+        );
+
+        // Links: the host's own wikilink is present; the included one is not.
+        assert!(result.links.contains(&"Host Target".to_string()));
+        assert!(
+            !result.links.contains(&"Included Target".to_string()),
+            "included note's wikilink leaked into host: {:?}",
+            result.links,
+        );
+    }
+
+    /// Recursively collect rendered text from a laid-out frame.
+    fn collect_frame_text(frame: &typst::layout::Frame, out: &mut String) {
+        for (_, item) in frame.items() {
+            match item {
+                typst::layout::FrameItem::Text(t) => {
+                    out.push_str(&t.text);
+                    out.push(' ');
+                }
+                typst::layout::FrameItem::Group(g) => collect_frame_text(&g.frame, out),
+                _ => {}
+            }
+        }
+    }
+
+    /// `#include "/other.typ"` from a note in a subfolder must render the
+    /// included note's *body* into the compiled document — not just compile.
+    /// Reproduces the real-notebox layout (host in `test1/`, target at root).
+    #[test]
+    fn include_renders_included_body() {
+        let dir = tempdir().expect("tempdir");
+        let root = canonicalize_root(dir.path()).expect("canonicalize");
+        crate::notebox_package::scaffold(&root);
+        let import = crate::notebox_package::import_line();
+
+        fs::write(
+            root.join("deleteme.typ"),
+            format!("{import}\n\n#note(title: \"Del\")\n\nINCLUDEDBODYMARKER content here.\n"),
+        )
+        .expect("write included");
+
+        fs::create_dir_all(root.join("test1")).expect("mkdir test1");
+        let host_path = root.join("test1/host.typ");
+        let host_src = format!(
+            "{import}\n\n#note(title: \"Host\")\n\n= Daisy\n\nHOSTBODYMARKER\n\n#include \"/deleteme.typ\"\n"
+        );
+        fs::write(&host_path, &host_src).expect("write host");
+
+        let mut compiler = TypstCompiler::new(root);
+        let doc = compiler
+            .compile_document(&host_path, host_src)
+            .expect("host should compile");
+
+        let mut text = String::new();
+        for page in &doc.pages {
+            collect_frame_text(&page.frame, &mut text);
+        }
+
+        assert!(text.contains("HOSTBODYMARKER"), "host body missing; rendered: {text}");
+        assert!(
+            text.contains("INCLUDEDBODYMARKER"),
+            "included note's body did not render; rendered: {text}"
+        );
     }
 }

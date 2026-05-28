@@ -245,17 +245,6 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     marginLeft: "4px",
   },
-  ".cm-typst-embed-block": {
-    display: "block",
-    position: "relative",
-    margin: "0",
-  },
-  ".cm-typst-embed-block-name": {
-    fontFamily: "var(--editor-font-mono, monospace)",
-    fontSize: "0.85em",
-    color: "var(--fg-dim)",
-    marginLeft: "4px",
-  },
   ".cm-typst-callout-block": {
     display: "block",
     position: "relative",
@@ -302,61 +291,6 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     padding: "2px 6px",
     textAlign: "center" as any,
-  },
-  ".cm-typst-embed": {
-    display: "block",
-    position: "relative",
-    backgroundColor: "var(--bg-secondary)",
-    border: "1px solid var(--border-subtle)",
-    borderLeft: "3px solid var(--accent, #1D7874)",
-    borderRadius: "4px",
-    margin: "4px 0",
-    overflow: "hidden",
-  },
-  ".cm-typst-embed-header": {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 10px",
-    fontSize: "0.9em",
-    fontWeight: "600",
-    color: "var(--accent-text)",
-    borderBottom: "1px solid var(--border-subtle)",
-    backgroundColor: "var(--bg-hover)",
-  },
-  ".cm-typst-embed-icon": {
-    fontSize: "1em",
-    color: "var(--fg-dim)",
-  },
-  ".cm-typst-embed-label": {
-    color: "var(--accent-text)",
-  },
-  ".cm-typst-embed-nav-btn": {
-    marginLeft: "auto",
-    cursor: "pointer",
-    opacity: "0.4",
-    display: "flex",
-    alignItems: "center",
-    padding: "2px",
-    borderRadius: "3px",
-    transition: "opacity 0.15s",
-  },
-  ".cm-typst-embed-nav-btn:hover": {
-    opacity: "1",
-    backgroundColor: "var(--bg-hover)",
-  },
-  ".cm-typst-embed-preview": {
-    padding: "8px 10px",
-    fontSize: "0.85em",
-    lineHeight: "1.5",
-    color: "var(--fg-muted)",
-    whiteSpace: "pre-line",
-    maxHeight: "6em",
-    overflow: "hidden",
-  },
-  ".cm-typst-embed-preview--error": {
-    fontStyle: "italic",
-    color: "var(--fg-dim)",
   },
   ".cm-typst-tag": {
     display: "inline-block",
@@ -542,6 +476,9 @@ export const visualTheme = EditorView.theme({
     boxShadow: "var(--popup-shadow)",
     zIndex: "var(--z-menu)",
     minWidth: "320px",
+    // Cap the width so an expanded inline help block (or a long value) wraps
+    // instead of stretching the whole menu wide.
+    maxWidth: "360px",
     fontSize: "0.9em",
     // UI chrome (a menu popup), so it follows the interface font.
     fontFamily: "var(--interface-font, inherit)",
@@ -606,10 +543,13 @@ export const visualTheme = EditorView.theme({
   // onto its own line below the label + input so the full width is available.
   ".cm-typst-pill-menu-help": {
     flexBasis: "100%",
+    minWidth: "0",
     margin: "2px 0 0 0",
     fontSize: "0.85em",
     lineHeight: "1.45",
     color: "var(--fg-muted)",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
   },
   ".cm-typst-pill-menu-input-label": {
     fontSize: "0.92em",
