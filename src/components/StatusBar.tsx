@@ -7,7 +7,10 @@ import {
   Handshake,
   RefreshCw,
   ChevronUp,
+  Maximize,
+  Minimize,
 } from "lucide-solid";
+import { TextCountIcon } from "./icons";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { cursorPosition } from "../editor/typst-decorations/cursor-position";
@@ -16,6 +19,12 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
 import { settings } from "../stores/settings";
+import {
+  distractionFree,
+  toggleDistractionFree,
+  statusCountMode,
+  toggleStatusCountMode,
+} from "../stores/layout";
 import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 
@@ -192,7 +201,13 @@ const StatusBar: Component = () => {
   }
 
   return (
-    <div class="status-bar">
+    <div
+      class="status-bar"
+      classList={{ "status-bar--distraction-free": distractionFree() }}
+    >
+      {/* Everything except the distraction-free toggle collapses away in
+          distraction-free mode, leaving just the exit button at the edge. */}
+      <Show when={!distractionFree()}>
       <Show when={noteboxInfo()} fallback={<span>No notebox open</span>}>
         {(info) => (
           <>
@@ -298,13 +313,49 @@ const StatusBar: Component = () => {
       </Show>
 
       <Show when={isFileTab()}>
-        <span class="status-bar__stat">
-          {stats().words} words
-        </span>
-        <span class="status-bar__stat">
-          {stats().chars} characters
-        </span>
+        {/* Word & character counts share one slot at the right edge; clicking
+            toggles which is shown (default words). */}
+        <button
+          class="status-bar__count"
+          onClick={toggleStatusCountMode}
+          title={
+            statusCountMode() === "words"
+              ? "Word count. Click for characters"
+              : "Character count. Click for words"
+          }
+        >
+          <TextCountIcon size={13} class="status-bar__count-icon" />
+          <span class="status-bar__count-value">
+            {statusCountMode() === "words"
+              ? `${stats().words} words`
+              : `${stats().chars} characters`}
+          </span>
+        </button>
       </Show>
+      </Show>
+
+      {/* In distraction-free mode the whole bar is lifted out of the grid and
+          shrink-wrapped to the bottom-right corner (see CSS), so this button
+          is all that floats there. */}
+      <button
+        class="status-bar__df"
+        onClick={toggleDistractionFree}
+        title={
+          distractionFree()
+            ? "Exit distraction-free mode"
+            : "Distraction-free mode"
+        }
+        aria-label={
+          distractionFree()
+            ? "Exit distraction-free mode"
+            : "Distraction-free mode"
+        }
+        aria-pressed={distractionFree()}
+      >
+        <Show when={distractionFree()} fallback={<Maximize size={14} />}>
+          <Minimize size={14} />
+        </Show>
+      </button>
 
       <Show when={switcherMenu()}>
         {(menu) => (

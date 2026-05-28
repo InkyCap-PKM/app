@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "tauri": "tauri",
-    "icons": "npx tauri icon design-assets/inkycap-logo.svg",
+    "icons": "npx tauri icon design-assets/inkycap-tile-ink.svg",
     "tauri:dev": "env -u GTK_PATH -u GDK_PIXBUF_MODULEDIR -u GDK_PIXBUF_MODULE_FILE -u SNAP_LIBRARY_PATH -u GSETTINGS_SCHEMA_DIR -u LOCPATH -u GIO_MODULE_DIR -u GIO_LAUNCHED_DESKTOP_FILE XDG_DATA_DIRS=\"$XDG_DATA_DIRS_VSCODE_SNAP_ORIG\" npm run tauri dev"
   },
   "devDependencies": {

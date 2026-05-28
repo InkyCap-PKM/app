@@ -16,6 +16,7 @@ import {
   setRightWidth,
   setLeftCollapsed,
   toggleRightCollapsed,
+  distractionFree,
 } from "./stores/layout";
 import { PanelRightDashed } from "lucide-solid";
 import QuickOpen from "./components/QuickOpen";
@@ -274,10 +275,12 @@ const App: Component = () => {
       )}
     >
       <div
-        class={`app-shell${leftCollapsed() ? " app-shell--left-collapsed" : ""}${rightCollapsed() ? " app-shell--right-collapsed" : ""}`}
+        class={`app-shell${leftCollapsed() ? " app-shell--left-collapsed" : ""}${rightCollapsed() ? " app-shell--right-collapsed" : ""}${distractionFree() ? " app-shell--distraction-free" : ""}`}
         style={{
-          "--left-width": leftCollapsed() ? "0px" : `${leftWidth()}px`,
-          "--right-width": rightCollapsed() ? "0px" : `${rightWidth()}px`,
+          "--left-width":
+            distractionFree() || leftCollapsed() ? "0px" : `${leftWidth()}px`,
+          "--right-width":
+            distractionFree() || rightCollapsed() ? "0px" : `${rightWidth()}px`,
         }}
       >
         <NoteboxLostBanner />

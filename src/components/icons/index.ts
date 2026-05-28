@@ -12,4 +12,5 @@ export { LibraryPlusIcon } from "./LibraryPlus";
 export { ZoteroIcon } from "./Zotero";
 export { SquareArrowOutUpRight } from "./SquareArrowOutUpRight";
 export { SquareArrowInDownLeft } from "./SquareArrowInDownLeft";
+export { TextCountIcon } from "./TextCount";
 export { VERSE_ICON_SVG } from "./verse";

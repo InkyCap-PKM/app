@@ -15,6 +15,7 @@ import type { SearchResult } from "../lib/types";
 import { indexReady, bumpPropertyVersion } from "../stores/notebox";
 import { moveActiveFileInteractive } from "../lib/move-file";
 import { deleteActiveFileInteractive } from "../lib/delete-file";
+import { createOverflowWatcher } from "../lib/overflow";
 import {
   PROPERTY_TYPE_OPTIONS,
   propertyTypeLabel,
@@ -143,6 +144,10 @@ interface BacklinkWithContext extends LinkInfo {
 const RightPanel: Component = () => {
   const activePanel = rightPanelTab;
   const setActivePanel = (tab: RightPanelTab) => setRightPanelTab(tab);
+
+  // Edge-shadow cue when the tab bar is too narrow to show every tab (the user
+  // widens the panel to reveal them — see createOverflowWatcher).
+  const tabsOverflow = createOverflowWatcher();
 
   // The Scroll Context tab only exists while Journal Scroll is on. When the
   // user turns scroll off (or switches to a non-scroll tab), revert the right
@@ -1047,7 +1052,11 @@ const RightPanel: Component = () => {
   return (
     <div class="right-panel">
       {/* Tab bar — always visible so the collapse toggle is accessible */}
-      <div class="right-panel__tabs">
+      <div
+        class="right-panel__tabs"
+        ref={tabsOverflow.ref}
+        data-overflow={tabsOverflow.overflowing() ? "true" : undefined}
+      >
         <Show when={activeFileTab()}>
           {/* In Journal Scroll the right panel is wholly owned by the scroll
               context — the file-scoped tabs (File actions, Outline,
