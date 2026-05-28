@@ -8,7 +8,7 @@ use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
-    escape_html_content, prepare_bibliography, rewrite_wikilinks_to_links,
+    escape_html_content, localize_html_assets, prepare_bibliography, rewrite_wikilinks_to_links,
 };
 
 /// Export a collection as a static HTML site. Each note is compiled to HTML
@@ -35,6 +35,10 @@ pub async fn export_collection_static_site(
     tokio::fs::create_dir_all(&output_dir)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create output dir: {}", e)))?;
+
+    // Notebox root, for copying referenced assets into the site so its pages
+    // are self-contained (images, video, audio next to the HTML).
+    let notebox_root = state.notebox_root.read().await.clone();
 
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
@@ -127,6 +131,19 @@ pub async fn export_collection_static_site(
                 escape_html_content(stem),
                 html,
             )
+        };
+
+        // Copy referenced assets into the site and rewrite their srcs to
+        // relative paths so each page is self-contained.
+        let full_html = match notebox_root.as_ref() {
+            Some(root) => match localize_html_assets(&full_html, root, &output_dir).await {
+                Ok((rewritten, _copied)) => rewritten,
+                Err(e) => {
+                    skipped_notes.push(format!("{}: {}", html_name, e));
+                    continue;
+                }
+            },
+            None => full_html,
         };
 
         let file_path = output_dir.join(&html_name);
