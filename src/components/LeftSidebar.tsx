@@ -36,6 +36,7 @@ import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
+import { createOverflowWatcher } from "../lib/overflow";
 import { settings } from "../stores/settings";
 import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
@@ -174,6 +175,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const mode = props.mode;
   const setMode = props.setMode;
   const [refreshTick, setRefreshTick] = createSignal(0);
+
+  // Edge-shadow cue when the mode bar is too narrow to show every button (the
+  // user widens the sidebar to reveal them — see createOverflowWatcher).
+  const modeOverflow = createOverflowWatcher();
 
   // File tree: sort mode + per-folder expansion state hoisted from the
   // TreeNode component so the Expand All / Collapse All button can flip
@@ -1092,7 +1097,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   return (
     <div class="left-sidebar">
-      <div class="left-sidebar__mode-bar">
+      <div
+        class="left-sidebar__mode-bar"
+        ref={modeOverflow.ref}
+        data-overflow={modeOverflow.overflowing() ? "true" : undefined}
+      >
         <button
           class={`left-sidebar__mode-btn ${mode() === "filetree" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("filetree")}

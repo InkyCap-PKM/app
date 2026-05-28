@@ -21,6 +21,57 @@
   --right-width: 0px;
 }
 
+/* Distraction-free mode: collapse all chrome down to just the editor toolbar
+   (.editor-header) + content. The vertical toolbar, both sidebars and the
+   per-pane tab strip are hidden; the status bar keeps only its exit button
+   (handled in StatusBar). The left/right column widths are zeroed inline in
+   App.tsx (inline style would otherwise win); the toolbar column is zeroed
+   here since it has no inline override. */
+.app-shell--distraction-free {
+  --toolbar-width: 0px;
+}
+
+.app-shell--distraction-free .vertical-toolbar,
+.app-shell--distraction-free .left-sidebar,
+.app-shell--distraction-free .right-panel,
+.app-shell--distraction-free .right-panel-toggle,
+.app-shell--distraction-free .resize-handle,
+.app-shell--distraction-free .main-content__tabs {
+  display: none;
+}
+
+/* The status bar itself disappears: lifting it to `position: fixed` removes it
+   from the grid's `auto` row (which then collapses to 0, so the editor fills
+   the full height) and shrink-wraps it to the bottom-right corner. Only the
+   exit button remains, floating there. */
+.app-shell--distraction-free .status-bar {
+  position: fixed;
+  right: 8px;
+  bottom: 6px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  z-index: var(--z-menu);
+}
+
+/* The lone floating exit button: a semi-transparent pill so it stays
+   unobtrusive over the content, solidifying on hover. */
+.app-shell--distraction-free .status-bar__df {
+  background: var(--status-btn-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--popup-radius);
+  padding: 5px 7px;
+  opacity: 0.55;
+  backdrop-filter: blur(4px);
+}
+
+.app-shell--distraction-free .status-bar__df:hover {
+  opacity: 1;
+  background: var(--status-btn-bg-hover);
+}
+
 /* Native checkboxes/radios follow the app accent (teal) instead of the
    desktop palette (which paints them the OS highlight colour, e.g. orange).
    themes.css sets `color-scheme` for the same intent; `accent-color` is the
@@ -392,6 +443,15 @@ body.is-resizing-pane .pane-resizer {
   background: var(--bg-hover);
 }
 
+/* When the right panel is collapsed, the floating toggle drops onto the
+   editor's own tab strip at the top-right — exactly where the pane menu sits.
+   Reserve its width (matching its right offset) so the toggle lands in an
+   empty gap instead of stacking over the pane menu and showing through to it.
+   Making the toggle opaque instead would just hide the pane menu. */
+.app-shell--right-collapsed .main-content__tabs {
+  padding-right: 40px;
+}
+
 .right-panel__section {
   margin-bottom: 16px;
 }
@@ -442,6 +502,38 @@ body.is-resizing-pane .pane-resizer {
   font-size: var(--text-base);
   color: var(--status-fg);
   padding: 0 6px;
+}
+
+/* Word/character count toggle and the distraction-free button: both are
+   borderless status-bar buttons that inherit the bar's foreground. The count
+   toggle shares one slot — its label swaps between words and characters. */
+.status-bar__count,
+.status-bar__df {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--status-fg);
+  font-size: var(--text-base);
+  padding: 0 6px;
+  height: 100%;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.status-bar__count:hover,
+.status-bar__df:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+.status-bar__count-icon {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.status-bar__count-value {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Cursor line:column readout (Source Edit mode). Tabular figures keep the
@@ -5048,6 +5140,56 @@ svg.lucide {
      load-bearing — see the comment on .left-sidebar__mode-bar. */
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+/* ── Overflow cue for the two header bars ──────────────────────────────────
+   When the left mode bar / right tab bar is narrowed past the point where all
+   its buttons fit, the extras are clipped at the trailing edge. A soft inward
+   shadow appears there — driven by `data-overflow` from createOverflowWatcher
+   — to signal there's more; the reveal gesture is widening the panel, so there
+   are deliberately no scroll buttons. Same shadow language as the tab strip. */
+.left-sidebar__mode-bar,
+.right-panel__tabs {
+  position: relative;
+  overflow: hidden;
+}
+
+.left-sidebar__mode-bar::after,
+.right-panel__tabs::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.16));
+}
+
+/* The right panel's collapse toggle occupies the trailing 40px (it's why the
+   tab bar reserves padding-right: 40px). clip-path cuts the tab content off at
+   that line so overflowing tabs can't render under the button — or, crucially,
+   in the gap beside it — and the cue sits just to its left where tabs actually
+   disappear. (overflow: hidden alone clips at the padding box, i.e. the window
+   edge, which let icons bleed past the button.) */
+.right-panel__tabs {
+  clip-path: inset(0 40px 0 0);
+}
+
+.right-panel__tabs::after {
+  right: 40px;
+}
+
+[data-theme="dark"] .left-sidebar__mode-bar::after,
+[data-theme="dark"] .right-panel__tabs::after {
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.5));
+}
+
+.left-sidebar__mode-bar[data-overflow="true"]::after,
+.right-panel__tabs[data-overflow="true"]::after {
+  opacity: 1;
 }
 
 .right-panel__tab {

@@ -37,6 +37,11 @@ const COLLECTION_PANEL_TABS: readonly CollectionPanelTab[] = [
   "book",
 ];
 
+/// Which metric the status-bar count readout shows. The two share one slot
+/// at the right edge and toggle on click (see StatusBar); persisted so the
+/// user's preference survives reloads.
+export type StatusCountMode = "words" | "chars";
+
 interface LayoutState {
   leftWidth: number;
   rightWidth: number;
@@ -44,6 +49,7 @@ interface LayoutState {
   rightCollapsed: boolean;
   rightPanelTab: RightPanelTab;
   collectionPanelTab: CollectionPanelTab;
+  statusCountMode: StatusCountMode;
 }
 
 const DEFAULTS: LayoutState = {
@@ -53,6 +59,7 @@ const DEFAULTS: LayoutState = {
   rightCollapsed: false,
   rightPanelTab: "outline",
   collectionPanelTab: "characteristics",
+  statusCountMode: "words",
 };
 
 const MIN_WIDTH = 160;
@@ -107,6 +114,14 @@ const [rightPanelTab, setRightPanelTabInternal] = createSignal<RightPanelTab>(
 );
 const [collectionPanelTab, setCollectionPanelTabInternal] =
   createSignal<CollectionPanelTab>(initial.collectionPanelTab);
+// Distraction-free mode hides the vertical toolbar, both sidebars, the tab
+// strip and the status bar (the bar leaves only its floating exit button),
+// keeping just the editor toolbar + content. Deliberately NOT persisted — it's
+// session-only, so every launch starts in regular mode regardless of how the
+// last session ended.
+const [distractionFree, setDistractionFreeInternal] = createSignal(false);
+const [statusCountMode, setStatusCountModeInternal] =
+  createSignal<StatusCountMode>(initial.statusCountMode);
 
 function persist() {
   save({
@@ -116,6 +131,7 @@ function persist() {
     rightCollapsed: rightCollapsed(),
     rightPanelTab: rightPanelTab(),
     collectionPanelTab: collectionPanelTab(),
+    statusCountMode: statusCountMode(),
   });
 }
 
@@ -159,6 +175,22 @@ export function setCollectionPanelTab(tab: CollectionPanelTab) {
   persist();
 }
 
+// Session-only (see signal definition): no persist() — the mode never
+// survives a restart.
+export function toggleDistractionFree() {
+  setDistractionFreeInternal((v) => !v);
+}
+
+export function setDistractionFree(v: boolean) {
+  setDistractionFreeInternal(v);
+}
+
+/// Flip the status-bar count readout between words and characters.
+export function toggleStatusCountMode() {
+  setStatusCountModeInternal((m) => (m === "words" ? "chars" : "words"));
+  persist();
+}
+
 export {
   leftWidth,
   rightWidth,
@@ -166,4 +198,6 @@ export {
   rightCollapsed,
   rightPanelTab,
   collectionPanelTab,
+  distractionFree,
+  statusCountMode,
 };
