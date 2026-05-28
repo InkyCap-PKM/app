@@ -260,6 +260,7 @@ pub fn run() {
             commands::files::write_file_content,
             commands::files::update_property,
             commands::files::resolve_embed_path,
+            commands::files::read_media_bytes,
             commands::files::resolve_wikilink,
             commands::files::create_note,
             commands::files::get_note_preview,

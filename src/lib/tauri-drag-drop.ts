@@ -96,11 +96,19 @@ function clampPastProtected(state: EditorState, pos: number): number {
 /// project-root-relative (works in reading view + export), while the
 /// visual editor's `resolveEmbedPath` also handles the slash form.
 const NOTE_EXTS = new Set(["typ"]);
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "ogv", "m4v"]);
+const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac", "opus"]);
 
 function attachmentMarkup(relativePath: string): string {
   const ext = getExtension(relativePath);
   if (IMAGE_EXTS.has(ext)) {
     return `#image("/${relativePath}")`;
+  }
+  if (VIDEO_EXTS.has(ext)) {
+    return `#video("/${relativePath}")`;
+  }
+  if (AUDIO_EXTS.has(ext)) {
+    return `#audio("/${relativePath}")`;
   }
   if (NOTE_EXTS.has(ext)) {
     const basename = relativePath.split("/").pop() ?? relativePath;

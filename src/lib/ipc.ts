@@ -896,6 +896,16 @@ export async function pasteClipboardToAttachments(): Promise<string[]> {
   return invoke<string[]>("paste_clipboard_to_attachments");
 }
 
+/**
+ * Read a notebox media file's bytes as an ArrayBuffer. Backs `#video`/`#audio`
+ * playback via a `blob:` URL — WebKitGTK doesn't reliably stream media through
+ * the asset protocol, so we load the bytes and wrap them in a blob instead.
+ * `path` is a notebox-root-absolute path (e.g. `/Assets/clip.mp4`).
+ */
+export async function readMediaBytes(path: string): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("read_media_bytes", { target: path });
+}
+
 export async function showInExplorer(path: string): Promise<void> {
   return invoke<void>("show_in_explorer", { path });
 }

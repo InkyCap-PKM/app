@@ -21,7 +21,7 @@ interface Block {
 // ── Block boundary detection ───────────────────────────
 
 const BLOCK_FUNC_NAMES = new Set([
-  "callout", "quote", "verse", "table", "image", "annotation",
+  "callout", "quote", "verse", "table", "image", "video", "audio", "annotation",
 ]);
 
 function detectBlocks(state: EditorState): Block[] {

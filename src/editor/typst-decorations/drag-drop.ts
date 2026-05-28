@@ -26,11 +26,19 @@ function clampPastProtected(view: EditorView, pos: number): number {
 }
 
 const NOTE_EXTS = new Set(["typ"]);
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "ogv", "m4v"]);
+const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac", "aac", "opus"]);
 
 function attachmentMarkup(relativePath: string): string {
   const ext = getExtension(relativePath);
   if (IMAGE_EXTS.has(ext)) {
     return `#image("/${typstStringEscape(relativePath)}")`;
+  }
+  if (VIDEO_EXTS.has(ext)) {
+    return `#video("/${typstStringEscape(relativePath)}")`;
+  }
+  if (AUDIO_EXTS.has(ext)) {
+    return `#audio("/${typstStringEscape(relativePath)}")`;
   }
   if (NOTE_EXTS.has(ext)) {
     const basename = relativePath.split("/").pop() ?? relativePath;

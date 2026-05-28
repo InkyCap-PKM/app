@@ -475,6 +475,49 @@
 }
 
 // ---------------------------------------------------------------------------
+// video / audio: embed a media file. Native Typst has no audio/video element,
+// so these are inkycap-notebox extensions (CLAUDE.md Typst-first, tier 2). In
+// HTML export we emit a real <video>/<audio controls> element via html.elem;
+// in paged output (PDF/SVG), which cannot play media, we render an honest
+// placeholder naming the file. The visual editor replaces both with a live
+// player. Paths are notebox-root-absolute (e.g. "/Assets/clip.mp4"), like
+// #image — the surfaces that load the media (visual editor, HTML reading view)
+// resolve them to the real file.
+// ---------------------------------------------------------------------------
+
+#let _media-placeholder(kind, path) = block(
+  width: 100%,
+  inset: 8pt,
+  stroke: 0.5pt + luma(80%),
+  radius: 3pt,
+  text(fill: luma(40%), size: 0.9em, "\u{25B6} " + kind + ": " + path),
+)
+
+#let video(path, width: auto) = {
+  assert(type(path) == str, message: "video: path must be a string")
+  context {
+    if target() == "html" {
+      let attrs = (controls: "", src: path)
+      if width != auto { attrs.insert("style", "width: " + repr(width)) }
+      html.elem("video", attrs: attrs)
+    } else {
+      _media-placeholder("video", path)
+    }
+  }
+}
+
+#let audio(path) = {
+  assert(type(path) == str, message: "audio: path must be a string")
+  context {
+    if target() == "html" {
+      html.elem("audio", attrs: (controls: "", src: path))
+    } else {
+      _media-placeholder("audio", path)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // callout: styled admonition block. Type determines icon/color in visual mode.
 // Supported types: note, tip, warning, important, caution, example, quote,
 // abstract, info, todo, success, question, failure, danger, bug.

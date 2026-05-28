@@ -11,6 +11,7 @@ import {
   Show,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { loadMediaObjectUrl, revokeMediaBlobs } from "../lib/media-src";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
 import {
@@ -1001,6 +1002,23 @@ interface TypstHtmlReadingViewProps {
   documentFont?: string;
 }
 
+/// typst-html emits `#video`/`#audio` as `<video src="/Assets/clip.mp4">` with
+/// a notebox-root-absolute path, which the webview can't load directly. Replace
+/// each src with a `blob:` URL of the file's bytes so the players work in the
+/// HTML reading view (WebKitGTK won't stream media from the asset protocol —
+/// see media-src.ts). srcs that already carry a scheme are left untouched.
+async function resolveMediaSources(root: HTMLElement): Promise<void> {
+  const media = Array.from(root.querySelectorAll<HTMLMediaElement>("video[src], audio[src]"));
+  for (const el of media) {
+    const raw = el.getAttribute("src");
+    if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+    const url = await loadMediaObjectUrl(raw);
+    // Skip if the view was torn down/replaced while we were loading.
+    if (url && el.isConnected) el.src = url;
+    else if (url) URL.revokeObjectURL(url);
+  }
+}
+
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
   // Font size is intentionally left to CSS (--md-body-size) so the
   // content zoom (Ctrl+= / Ctrl+-) applies here. Only the font family
@@ -1044,8 +1062,11 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                   doc.querySelectorAll("script").forEach((s) => s.remove());
                   const body = doc.body;
                   if (body) {
+                    // Release any object URLs from the previous render first.
+                    revokeMediaBlobs(el);
                     while (el.firstChild) el.removeChild(el.firstChild);
                     while (body.firstChild) el.appendChild(body.firstChild);
+                    void resolveMediaSources(el);
                   }
                 }}
               />

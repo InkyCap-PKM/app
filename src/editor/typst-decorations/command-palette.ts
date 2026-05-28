@@ -19,9 +19,9 @@ interface PaletteItem {
   /** When set, accepting the item runs the attachment picker instead of
    *  inserting the `insert` template. The picker copies the selected
    *  file(s) into `settings.files.attachment_folder` and emits
-   *  `#image("/...")` with a notebox-root-absolute path.
-   *  See CLAUDE.md's portable-paths principle. */
-  pickAttachment?: "image";
+   *  `#image("/...")` (or `#video` / `#audio`) with a notebox-root-absolute
+   *  path. See CLAUDE.md's portable-paths principle. */
+  pickAttachment?: "image" | "video" | "audio";
   /** Inline typing shortcut shown at the right edge of the row, when
    *  one exists. Purely informational — the actual trigger lives in
    *  auto-pair-typst.ts, markdown-shortcuts.ts, wikilink-suggest.ts,
@@ -66,6 +66,8 @@ const PALETTE_ITEMS: PaletteItem[] = [
 
   { label: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
   { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8, pickAttachment: "image" },
+  { label: "Video", category: "Insert", insert: '#video("")', cursorOffset: 8, pickAttachment: "video" },
+  { label: "Audio", category: "Insert", insert: '#audio("")', cursorOffset: 8, pickAttachment: "audio" },
   { label: "Code block", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4, shortcut: "```" },
   { label: "Math block", category: "Insert", insert: '$ ${sel} $', cursorOffset: 2 },
   { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
