@@ -104,7 +104,6 @@ pub fn parse_query(input: &str) -> Option<QueryNode> {
 enum Token {
     Word(String),
     Phrase(String),
-    Regex(String),
     LParen,
     RParen,
     And,
@@ -152,22 +151,12 @@ fn tokenize(input: &str) -> Vec<Token> {
             continue;
         }
 
-        // Regex: /pattern/
-        if chars[i] == '/' {
-            i += 1;
-            let start = i;
-            while i < len && chars[i] != '/' {
-                i += 1;
-            }
-            let pattern: String = chars[start..i].iter().collect();
-            if !pattern.is_empty() {
-                tokens.push(Token::Regex(pattern));
-            }
-            if i < len {
-                i += 1;
-            }
-            continue;
-        }
+        // NOTE: `/pattern/` is intentionally NOT auto-detected as a regex.
+        // Regex search is opt-in via the toolbar toggle (which routes through
+        // `QueryNode::Regex` directly in commands/search.rs); treating a bare
+        // `/` as a regex delimiter would mangle ordinary queries that contain
+        // slashes (paths, "and/or", dates). A leading `/` now just falls into
+        // the word reader below and is searched literally.
 
         // Minus (NOT shorthand) — only if followed by a non-space character
         if chars[i] == '-' && i + 1 < len && !chars[i + 1].is_whitespace() {
@@ -290,7 +279,6 @@ fn parse_and(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             tokens[*pos],
             Token::Word(_)
                 | Token::Phrase(_)
-                | Token::Regex(_)
                 | Token::Filter(_, _)
                 | Token::LParen
                 | Token::Not
@@ -341,11 +329,6 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             } else {
                 Some(QueryNode::Phrase(words))
             }
-        }
-        Token::Regex(pattern) => {
-            let node = QueryNode::Regex(pattern.clone());
-            *pos += 1;
-            Some(node)
         }
         Token::Filter(kind, value) => {
             let filter_kind = FilterKind::from_prefix(kind)?;
@@ -499,8 +482,17 @@ mod tests {
     }
 
     #[test]
-    fn regex() {
+    fn slash_query_is_literal_not_regex() {
+        // Regex is opt-in via the toolbar toggle; a slash-delimited query
+        // typed into the normal box must be searched literally, not parsed
+        // as a regex pattern.
         let q = parse_query("/hel+o/").unwrap();
-        assert!(matches!(q, QueryNode::Regex(ref s) if s == "hel+o"));
+        assert!(
+            matches!(q, QueryNode::Term(ref s) if s == "/hel+o/"),
+            "expected a literal term, got {q:?}"
+        );
+        // A path-shaped query stays one literal term too.
+        let q = parse_query("notes/journal").unwrap();
+        assert!(matches!(q, QueryNode::Term(ref s) if s == "notes/journal"));
     }
 }

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::errors::InkyCapError;
+use crate::search::engine::AnnotationScope;
 use crate::search::query::parse_query;
 use crate::search::results::{ReplaceResult, SearchResponse};
 use crate::state::AppState;
@@ -31,14 +32,14 @@ pub async fn notebox_search(
     offset: Option<usize>,
     case_sensitive: Option<bool>,
     use_regex: Option<bool>,
-    annotations_only: Option<bool>,
+    annotation_scope: Option<AnnotationScope>,
 ) -> Result<SearchResponse, InkyCapError> {
     let limit = max_results.unwrap_or(100);
     let offset = offset.unwrap_or(0);
-    let annotations_only = annotations_only.unwrap_or(false);
+    let annotation_scope = annotation_scope.unwrap_or_default();
 
-    let parsed = if annotations_only && query.trim().is_empty() {
-        // Annotations scope with no query → browse every annotation.
+    let parsed = if annotation_scope == AnnotationScope::Only && query.trim().is_empty() {
+        // Annotations-only scope with no query → browse every annotation.
         crate::search::query::QueryNode::Filter {
             kind: crate::search::query::FilterKind::Annotation,
             value: String::new(),
@@ -51,23 +52,42 @@ pub async fn notebox_search(
         })?
     };
 
-    let engine = state.search_engine.read().await;
-    let (mut results, total_count) =
-        engine.search_paginated(&parsed, offset, limit, annotations_only);
+    // Case-sensitive search verifies each matched span against the original-case
+    // query terms. The inverted index is case-insensitive, so this runs as a
+    // span predicate inside the engine — *before* counting and pagination — so a
+    // dropped line is dropped from `total_count` too. With no case-sensitive
+    // terms (e.g. a pure `tag:` filter), there's nothing to verify and the
+    // predicate is omitted so filter-only results survive unchanged.
+    let terms = if case_sensitive.unwrap_or(false) {
+        original_case_terms(&query)
+    } else {
+        Vec::new()
+    };
+    let verify = (!terms.is_empty()).then(|| {
+        move |span: &str| terms.iter().any(|t| t.matches(span))
+    });
 
-    if case_sensitive.unwrap_or(false) {
-        let terms = original_case_terms(&query);
-        if !terms.is_empty() {
-            results.retain_mut(|r| {
-                r.match_ranges.retain(|(start, end)| {
-                    if *start >= *end || *end > r.line_text.len() {
-                        return false;
-                    }
-                    let span = &r.line_text[*start..*end];
-                    terms.iter().any(|t| t == span)
-                });
-                !r.match_ranges.is_empty()
-            });
+    let engine = state.search_engine.read().await;
+    let (mut results, total_count) = engine.search_paginated(
+        &parsed,
+        offset,
+        limit,
+        annotation_scope,
+        verify.as_ref().map(|v| v as &dyn Fn(&str) -> bool),
+    );
+
+    // Match ranges are computed as *byte* offsets into each line (Rust `&str`),
+    // but the webview indexes line text — and CodeMirror places selections — in
+    // UTF-16 code units. On a line with multi-byte characters (curly quotes,
+    // em-dashes, accents) the two diverge, drifting every highlight after the
+    // first such character onto the wrong text. Convert to UTF-16 here, the
+    // single boundary every frontend highlight consumer (result excerpt, editor
+    // jump, in-note highlight) reads from. This runs *after* the case-sensitive
+    // check above, which still needs byte offsets to slice `line_text`.
+    for r in &mut results {
+        for (start, end) in &mut r.match_ranges {
+            *start = byte_to_utf16(&r.line_text, *start);
+            *end = byte_to_utf16(&r.line_text, *end);
         }
     }
 
@@ -77,15 +97,50 @@ pub async fn notebox_search(
     })
 }
 
-/// Re-extract original-case word tokens from a raw query string. Used by
+/// Byte offset → UTF-16 code-unit offset within `line`, matching how the
+/// JS/CodeMirror frontend indexes strings. See the call site in
+/// `notebox_search` for why search ranges cross the IPC boundary in UTF-16.
+fn byte_to_utf16(line: &str, byte_off: usize) -> usize {
+    let mut b = byte_off.min(line.len());
+    // Defensive: ranges land on char boundaries, but never panic if one didn't.
+    while b > 0 && !line.is_char_boundary(b) {
+        b -= 1;
+    }
+    line[..b].encode_utf16().count()
+}
+
+/// A single original-case verification predicate for case-sensitive search.
+/// Built from the raw query so a candidate span (found via the case-insensitive
+/// index) can be re-checked against exactly what the user typed.
+enum CaseTerm {
+    /// A plain term — the matched word must equal this verbatim.
+    Exact(String),
+    /// A wildcard term (`DOG*`, `d*g`) — the matched word must match this
+    /// case-sensitive, anchored regex. The engine reports a wildcard hit's
+    /// span as the whole matched word, so an exact-equality check against the
+    /// `*`-stripped stem would wrongly reject it (e.g. stem `DOG` ≠ word
+    /// `DOGGZ`); the wildcard pattern accepts the full word instead.
+    Wildcard(regex::Regex),
+}
+
+impl CaseTerm {
+    fn matches(&self, span: &str) -> bool {
+        match self {
+            CaseTerm::Exact(s) => s == span,
+            CaseTerm::Wildcard(re) => re.is_match(span),
+        }
+    }
+}
+
+/// Re-extract original-case query terms from a raw query string. Used by
 /// case-sensitive search to verify that a match-range substring really
-/// equals what the user typed. Filter prefixes (`tag:foo`, `path:bar`,
+/// corresponds to what the user typed. Filter prefixes (`tag:foo`, `path:bar`,
 /// `property:k=v`, etc.), boolean operators, regex literals, and quoted
 /// phrases are skipped — none of them participate in the case-sensitivity
 /// check.
-fn original_case_terms(query: &str) -> Vec<String> {
+fn original_case_terms(query: &str) -> Vec<CaseTerm> {
     const FILTER_PREFIXES: &[&str] = &["path:", "file:", "tag:", "section:", "property:"];
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<CaseTerm> = Vec::new();
     for raw in query.split_whitespace() {
         if matches!(raw, "AND" | "OR" | "NOT") {
             continue;
@@ -103,16 +158,35 @@ fn original_case_terms(query: &str) -> Vec<String> {
         if FILTER_PREFIXES.iter().any(|p| lower.starts_with(p)) {
             continue;
         }
-        // Strip a wildcard `*` if present so we keep the literal stem.
-        let cleaned: String = trimmed
-            .chars()
-            .filter(|c| *c != '*' && *c != '(' && *c != ')')
-            .collect();
-        if !cleaned.is_empty() {
-            out.push(cleaned);
+        // Drop grouping parens; they're query syntax, not part of the term.
+        let cleaned: String = trimmed.chars().filter(|c| *c != '(' && *c != ')').collect();
+        if cleaned.is_empty() {
+            continue;
+        }
+        if cleaned.contains('*') {
+            if let Some(re) = wildcard_to_regex(&cleaned) {
+                out.push(CaseTerm::Wildcard(re));
+            }
+        } else {
+            out.push(CaseTerm::Exact(cleaned));
         }
     }
     out
+}
+
+/// Compile a wildcard term (`*` = any run of characters) into a case-sensitive,
+/// fully-anchored regex. Non-`*` segments are escaped so regex metacharacters in
+/// the user's term are matched literally.
+fn wildcard_to_regex(term: &str) -> Option<regex::Regex> {
+    let mut pattern = String::from("^");
+    for (i, segment) in term.split('*').enumerate() {
+        if i > 0 {
+            pattern.push_str(".*");
+        }
+        pattern.push_str(&regex::escape(segment));
+    }
+    pattern.push('$');
+    regex::Regex::new(&pattern).ok()
 }
 
 /// Search and replace across specified files (or all notebox files if none specified).
@@ -194,4 +268,62 @@ pub async fn search_and_replace(
     }
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{byte_to_utf16, original_case_terms};
+
+    /// Does any original-case term accept this span? Mirrors the engine's
+    /// `verify_span` predicate.
+    fn verify(query: &str, span: &str) -> bool {
+        original_case_terms(query).iter().any(|t| t.matches(span))
+    }
+
+    #[test]
+    fn case_sensitive_wildcard_accepts_full_matched_word() {
+        // Regression: a wildcard hit's span is the whole matched word, so a
+        // case-sensitive `DOG*` must accept `DOGGZ` (not just the stem `DOG`),
+        // while still rejecting a lowercase word.
+        assert!(verify("DOG*", "DOGGZ"));
+        assert!(verify("DOG*", "DOG"));
+        assert!(!verify("DOG*", "doggz"));
+        assert!(!verify("DOG*", "dogs"));
+    }
+
+    #[test]
+    fn case_sensitive_exact_term_requires_same_case() {
+        assert!(verify("Tool", "Tool"));
+        assert!(!verify("Tool", "tool"));
+        assert!(!verify("Tool", "Toolbox")); // exact word, not a prefix
+    }
+
+    #[test]
+    fn wildcard_escapes_regex_metacharacters() {
+        // A `.` in the term is a literal, not "any char".
+        assert!(verify("a.b*", "a.bcd"));
+        assert!(!verify("a.b*", "aXbcd"));
+    }
+
+    #[test]
+    fn filters_and_operators_are_not_verification_terms() {
+        // Pure filters / operators yield no terms, so case-sensitive search
+        // leaves filter-only results untouched (no span predicate at all).
+        assert!(original_case_terms("tag:Rust").is_empty());
+        assert!(original_case_terms("AND OR NOT").is_empty());
+    }
+
+    #[test]
+    fn byte_to_utf16_converts_past_multibyte() {
+        // `“` is 3 UTF-8 bytes but 1 UTF-16 unit. A word after it has a byte
+        // offset 2 higher than its UTF-16 index — the exact drift that pushed
+        // highlights onto the wrong characters.
+        let line = "“a is"; // “(3) a(1) ' '(1) i(1) s(1)
+        // "is" starts at byte 5 (3+1+1) but UTF-16 index 3 (1+1+1).
+        assert_eq!(byte_to_utf16(line, 5), 3);
+        // ASCII-only lines are unchanged.
+        assert_eq!(byte_to_utf16("hello world", 6), 6);
+        // Out-of-range clamps to the string's UTF-16 length.
+        assert_eq!(byte_to_utf16("ab", 99), 2);
+    }
 }

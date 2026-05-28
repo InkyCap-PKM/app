@@ -769,6 +769,13 @@ export interface SearchResponse {
   total_count: number;
 }
 
+/// How a search treats text inside `#annotation[…]` / `#suggestion[…]` marks.
+/// Sent verbatim across IPC; mirrors the Rust `AnnotationScope` enum.
+///   "all"     — search body prose and annotation text alike (default)
+///   "only"    — restrict matches to annotation/suggestion lines
+///   "exclude" — hide annotation/suggestion text, search only body prose
+export type AnnotationScope = "all" | "only" | "exclude";
+
 export interface ReplaceResult {
   path: string;
   replacements: number;

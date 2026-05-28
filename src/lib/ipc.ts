@@ -48,6 +48,7 @@ import type {
   GitIdentity,
   GitSetupResult,
   GitPackageExportResult,
+  AnnotationScope,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -725,7 +726,7 @@ export async function noteboxSearch(
   caseSensitive?: boolean,
   offset?: number,
   useRegex?: boolean,
-  annotationsOnly?: boolean,
+  annotationScope?: AnnotationScope,
 ): Promise<SearchResponse> {
   return invoke<SearchResponse>("notebox_search", {
     query,
@@ -733,7 +734,7 @@ export async function noteboxSearch(
     offset: offset ?? null,
     caseSensitive: caseSensitive ?? null,
     useRegex: useRegex ?? null,
-    annotationsOnly: annotationsOnly ?? null,
+    annotationScope: annotationScope ?? null,
   });
 }
 

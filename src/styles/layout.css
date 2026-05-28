@@ -3716,6 +3716,13 @@ svg.lucide {
   gap: 4px;
 }
 
+/* Positioning context for the annotation-scope dropdown so its anchored
+   menu (.search-panel__menu-anchored) drops directly under the button. */
+.search-panel__scope-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .search-panel__hints-divider {
   height: 1px;
   background: var(--border-input);

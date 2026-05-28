@@ -33,6 +33,8 @@ import {
   setTabReadingFormat,
 } from "../stores/tabs";
 import { navigateWikilink } from "../lib/wikilink-nav";
+import { searchHighlights } from "../stores/search";
+import { pathEquals } from "../lib/paths";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
@@ -451,6 +453,34 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     },
   );
 
+  // Issue 3A: highlight ALL of the opened file's search matches, not just the
+  // clicked line. The search store records every match for the path when a
+  // result is opened; mark them here. Source/live only — the char positions are
+  // source offsets (same constraint as scrollToMatch); reading mode clears them.
+  function applySearchHighlights() {
+    if (!editorHandle) return;
+    const hl = searchHighlights();
+    const mode = currentMode();
+    if (
+      hl &&
+      currentPath &&
+      pathEquals(hl.path, currentPath) &&
+      (mode === "source" || mode === "live")
+    ) {
+      editorHandle.setSearchMatches(hl.ranges);
+    } else {
+      editorHandle.setSearchMatches([]);
+    }
+  }
+
+  // Re-apply when the search store changes (clicking another result in the
+  // already-open file, or clearing the search) or the mode changes.
+  createEffect(() => {
+    searchHighlights();
+    currentMode();
+    applySearchHighlights();
+  });
+
   createEffect(
     on([() => props.path, content], ([path, doc]) => {
       if (doc === undefined) return;
@@ -526,6 +556,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           });
         }
       }
+
+      // The doc is now loaded for this path; mark its search matches (if this
+      // file is the one a search result was opened from). Reads are untracked
+      // here because the enclosing effect uses `on`, so this doesn't subscribe
+      // the file-load effect to the search store.
+      applySearchHighlights();
     }),
   );
 
