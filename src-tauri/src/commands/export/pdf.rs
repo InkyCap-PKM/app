@@ -196,6 +196,7 @@ pub async fn export_collection_batch_pdf(
     metadata_mode: Option<String>,
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let data = crate::commands::collections::get_collection_data_internal(
@@ -235,6 +236,7 @@ pub async fn export_collection_batch_pdf(
             }
         };
 
+        let content = apply_review_mode(&content, review_mode.as_deref());
         let content = crate::notebox_package::ensure_import(&content);
         let source = if metadata_mode.as_deref() == Some("properties") {
             inject_document_metadata(&content)
@@ -344,6 +346,9 @@ pub struct BookExportOverrides {
     pub page_numbering: Option<crate::collection_parser::model::BookPageNumbering>,
     pub pdf_standard: Option<PdfStandardPreset>,
     pub include_bibliography: Option<bool>,
+    /// Review-markup policy ("accept"/"reject"/"keep") applied to every note
+    /// before it is inlined into the book. Absent → keep marks.
+    pub review_mode: Option<String>,
 }
 
 /// Detected user-label collision returned to the frontend so the UI can
@@ -393,6 +398,7 @@ pub async fn export_collection_book_pdf(
     }
 
     let book_pdf_standard = overrides.as_ref().and_then(|o| o.pdf_standard).unwrap_or_default();
+    let review_mode = overrides.as_ref().and_then(|o| o.review_mode.clone());
     let mut options = BookExportOptions::from_config(base.book.as_ref());
     if let Some(ov) = overrides {
         if ov.title.is_some() { options.title = ov.title; }
@@ -419,6 +425,7 @@ pub async fn export_collection_book_pdf(
     for row in &data.rows {
         let note_path_buf = PathBuf::from(&row.file_path);
         let content = storage.read_file(&note_path_buf).await?;
+        let content = apply_review_mode(&content, review_mode.as_deref());
         let stem = note_path_buf
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())

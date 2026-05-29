@@ -217,6 +217,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   } | null>(null);
   const [showExportMenu, setShowExportMenu] = createSignal(false);
   const [exportPdfStandard, setExportPdfStandard] = createSignal<ipc.PdfStandardPreset>("standard");
+  const [exportReviewMode, setExportReviewMode] = createSignal<ipc.ReviewMarkupMode>("keep");
   const [exportStatus, setExportStatus] = createSignal<string | null>(null);
   // Errors are tracked separately so they persist (with a close button)
   // until the user dismisses them. Multi-line PDF/UA-1 reports in
@@ -544,6 +545,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         outputDir as string,
         "properties",
         std,
+        undefined,
+        exportReviewMode(),
       );
       setExportStatus(`Exported ${exported.length} PDF(s)`);
       setTimeout(() => setExportStatus(null), 4000);
@@ -568,7 +571,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       });
       if (!outputPath) return;
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
-      const overrides = std ? { pdfStandard: std } : undefined;
+      const rm = exportReviewMode() === "keep" ? undefined : exportReviewMode();
+      const overrides: ipc.BookExportOverrides | undefined =
+        std || rm ? { pdfStandard: std, reviewMode: rm } : undefined;
 
       // Retry loop: each round either writes the PDF or reports notes that
       // failed to compile. The user decides whether to exclude those and retry.
@@ -677,6 +682,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         activeView(),
         outputDir as string,
         "preserve",
+        exportReviewMode(),
       );
       setExportStatus(`Exported ${exported.length} Markdown file(s)`);
       setTimeout(() => setExportStatus(null), 4000);
@@ -856,6 +862,20 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                           ]}
                           onChange={setExportPdfStandard}
                           ariaLabel="PDF standard"
+                        />
+                      </div>
+                      <div class="collection-table__export-menu-field">
+                        <label class="collection-table__export-menu-label">Review markup</label>
+                        <Dropdown<ipc.ReviewMarkupMode>
+                          class="dropdown--block"
+                          value={exportReviewMode()}
+                          options={[
+                            { value: "keep", label: "Keep tracked changes" },
+                            { value: "accept", label: "Accept all changes" },
+                            { value: "reject", label: "Reject all changes" },
+                          ]}
+                          onChange={setExportReviewMode}
+                          ariaLabel="Review markup"
                         />
                       </div>
                       <button
