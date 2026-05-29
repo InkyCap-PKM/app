@@ -53,22 +53,41 @@ function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Ext
       if (!tr.docChanged) return null;
 
       const isHistory = tr.isUserEvent("undo") || tr.isUserEvent("redo");
-      let needsFullClear = isHistory;
-      const collected: unknown[] = [];
+
+      // First pass — decide whether we must full-clear, WITHOUT touching the
+      // WASM parser. A multi-region transaction (alt-up/down move,
+      // find-replace-all, multi-cursor) or any line-spanning change leaves the
+      // incremental tree mismatched against the post-doc; for those we drop the
+      // parser's state and reparse from scratch (clearParser). Critically, when
+      // we're going to clearParser() anyway we must NOT call edit() first: a
+      // full-document / multi-region replace (e.g. inserting a scaffold, which
+      // replaces 0..len) makes the incremental edit() panic inside the WASM
+      // parser ("unreachable" / "recursive use of an object … unsafe
+      // aliasing"), poisoning it for every subsequent edit. clearParser()
+      // reparses from the live doc, so those edit() calls are pointless as well
+      // as dangerous.
       let changeCount = 0;
       let crossesLine = false;
-
       tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
         changeCount++;
         const removed = tr.startState.doc.sliceString(fromA, toA);
-        const insertedStr = inserted.toString();
-        // Any change that spans / produces a newline reshuffles line
-        // structure — the incremental parser's edits aren't reliable for
-        // line-granular nodes (ListMarker, Heading, etc.). Clear instead.
-        if (removed.includes("\n") || insertedStr.includes("\n")) {
+        if (removed.includes("\n") || inserted.toString().includes("\n")) {
           crossesLine = true;
         }
-        const result = wasm.parser?.edit(fromA, toA, insertedStr);
+      });
+
+      if (isHistory || changeCount > 1 || crossesLine) {
+        wasm.clearParser();
+        return null;
+      }
+
+      // Incremental path: a single, in-line (no-newline) change — the normal
+      // typing case the WASM parser handles reliably. Keep it in sync via
+      // edit() and apply the returned tree edits.
+      const collected: unknown[] = [];
+      let needsFullClear = false;
+      tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+        const result = wasm.parser?.edit(fromA, toA, inserted.toString());
         if (!result) return;
         if (result.full_update) {
           needsFullClear = true;
@@ -77,20 +96,7 @@ function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Ext
         }
       });
 
-      // Multi-region transactions (alt-up/down move, find-replace-all,
-      // multi-cursor) and any line-spanning edit leave the incremental
-      // tree mismatched against the post-doc — see header comment.
-      if (changeCount > 1 || crossesLine) needsFullClear = true;
-
       if (needsFullClear) {
-        // clearTree() alone is insufficient for multi-region edits:
-        // iterChanges reports each fromA/toA in start-state positions,
-        // but the WASM parser's edit() tracks state sequentially. After
-        // one edit() shifts internal offsets, the next call's start-
-        // state position is wrong from WASM's perspective and corrupts
-        // its internal tracking. clearParser() drops the parser's
-        // internal state entirely so the next tree() call re-parses
-        // from the live doc — slower but always correct.
         wasm.clearParser();
       } else {
         for (const e of collected) wasm.applyTreeEdit(e);
@@ -511,8 +517,11 @@ const scrollPastEndHalf = (() => {
       height = 0;
       attrs: { style: string } = { style: "padding-bottom: 0px" };
       update(update: { view: EditorView }) {
-        const view = update.view;
-        const full = view.scrollDOM.clientHeight
+        // Use the cached editor height (same field CM's own scrollPastEnd
+        // reads) rather than `scrollDOM.clientHeight`, which would force a
+        // synchronous reflow on every update.
+        const view = update.view as EditorView & { viewState: { editorHeight: number } };
+        const full = view.viewState.editorHeight
           - view.defaultLineHeight - view.documentPadding.top - 0.5;
         const height = Math.max(0, full * 0.5);
         if (height !== this.height) {

@@ -16,10 +16,29 @@ export interface PropertyEditorProps {
    * registering the type globally.
    */
   typeHint?: PropertyType;
+  /**
+   * True when the edited file is a scaffold template. Scaffold property values
+   * are routinely `{{var}}` placeholders, so the picker-only editors
+   * (date/datetime/checkbox) relax to raw text entry — the picker can't accept
+   * a variable, and a scaffold author needs to type one.
+   */
+  scaffoldContext?: boolean;
+}
+
+/** A value that is entirely a single `{{var}}` template placeholder (e.g.
+ *  `{{zid}}`, `{{date:YYYY-MM-DD}}`). Scaffold authoring puts these in typed
+ *  fields — they expand at insert time, so they shouldn't be type-validated or
+ *  coerced. Stored as a (quoted) string so the scaffold still compiles and the
+ *  value round-trips through the property index. */
+export function isTemplatePlaceholder(value: PropertyValue): value is string {
+  return typeof value === "string" && /^\s*\{\{[^{}]+\}\}\s*$/.test(value);
 }
 
 function validateValue(value: PropertyValue, declaredType: string): string | null {
   if (value === null || value === undefined || value === "") return null;
+  // Template placeholders are valid in any field — they're not concrete
+  // values yet, and validating them as the declared type is meaningless.
+  if (isTemplatePlaceholder(value)) return null;
   switch (declaredType) {
     case "number":
       if (typeof value === "string" && isNaN(Number(value))) return "Expected a number";
@@ -69,32 +88,50 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
 
   const isCollectionProp = () => props.propKey === "collection";
 
+  // Route to the raw text editor when the value is already a placeholder, or
+  // when we're authoring a scaffold and the declared type is a picker-only
+  // editor (date/datetime/checkbox) that can't accept a typed `{{var}}`.
+  // Number and list already have text-entry paths, so they keep their editors.
+  const usesRawEditor = () => {
+    if (isTemplatePlaceholder(props.value)) return true;
+    if (!props.scaffoldContext) return false;
+    const t = effectiveType();
+    return t === "date" || t === "datetime" || t === "checkbox";
+  };
+
   return (
     <div class="property-editor">
       <Show when={isCollectionProp()} fallback={
-        <>
-          <Show when={effectiveType() === "checkbox"}>
-            <BooleanEditor {...props} />
-          </Show>
-          <Show when={effectiveType() === "number"}>
-            <NumberEditor {...props} />
-          </Show>
-          <Show when={effectiveType() === "text" || effectiveType() === "commalist"}>
-            <StringEditor {...props} />
-          </Show>
-          <Show when={effectiveType() === "date"}>
-            <DateEditor {...props} withTime={false} />
-          </Show>
-          <Show when={effectiveType() === "datetime"}>
-            <DateEditor {...props} withTime={true} />
-          </Show>
-          <Show when={effectiveType() === "list"}>
-            <ListEditor {...props} />
-          </Show>
-          <Show when={effectiveType() === "null"}>
-            <NullEditor {...props} />
-          </Show>
-        </>
+        <Show when={usesRawEditor()} fallback={
+          <>
+            <Show when={effectiveType() === "checkbox"}>
+              <BooleanEditor {...props} />
+            </Show>
+            <Show when={effectiveType() === "number"}>
+              <NumberEditor {...props} />
+            </Show>
+            <Show when={effectiveType() === "text" || effectiveType() === "commalist"}>
+              <StringEditor {...props} />
+            </Show>
+            <Show when={effectiveType() === "date"}>
+              <DateEditor {...props} withTime={false} />
+            </Show>
+            <Show when={effectiveType() === "datetime"}>
+              <DateEditor {...props} withTime={true} />
+            </Show>
+            <Show when={effectiveType() === "list"}>
+              <ListEditor {...props} />
+            </Show>
+            <Show when={effectiveType() === "null"}>
+              <NullEditor {...props} />
+            </Show>
+          </>
+        }>
+          {/* Raw text editor: used for an existing {{placeholder}} value
+              (any type), and for date/datetime/checkbox fields while
+              authoring a scaffold, where the picker can't accept a variable. */}
+          <StringEditor {...props} />
+        </Show>
       }>
         <CollectionEditor {...props} />
       </Show>
@@ -252,8 +289,23 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
   function commit() {
     const raw = draft().trim();
     if (raw === "") {
+      // Clearing the field clears the value (persisted as empty) rather than
+      // silently reverting to the old number. Stored as an empty string —
+      // `none` would round-trip back as the literal string "none".
       setError(null);
       setEditing(false);
+      if (props.value !== "" && props.value !== null && props.value !== undefined) {
+        props.onSave(props.propKey, "");
+      }
+      return;
+    }
+    // A `{{var}}` template placeholder is accepted verbatim (saved as a
+    // string) so a numeric field can hold a scaffold variable — see
+    // isTemplatePlaceholder.
+    if (isTemplatePlaceholder(raw)) {
+      setError(null);
+      setEditing(false);
+      if (raw !== props.value) props.onSave(props.propKey, raw);
       return;
     }
     const num = parseFloat(raw);

@@ -258,6 +258,17 @@ pub async fn execute_creation_rule(
         }
     }
 
+    // Drop the caret on a fresh line at the very end of the note so the user
+    // can start typing immediately below the scaffold's content. This
+    // supersedes any earlier {{cursor}}-based offset (that marker is no longer
+    // used for positioning) and matches the Ctrl+\ insert behaviour. Normalize
+    // to exactly one trailing newline so the caret sits on the first blank line
+    // below the content rather than several lines down.
+    let trimmed_len = content.trim_end_matches('\n').len();
+    content.truncate(trimmed_len);
+    content.push('\n');
+    cursor_offset = Some(content.len());
+
     storage.write_file(&file_path, &content).await?;
 
     state.reindex_note(&file_path, &content).await;
@@ -402,119 +413,91 @@ pub async fn prepare_scaffold_insert(
         return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string())); // path-stringification-ok: error message, not IPC
     }
 
+    // The cursor/selection are no longer used to position the insert — a
+    // scaffold appends to the end of the note (see assemble_scaffold_insert).
+    // Kept in the signature for IPC compatibility with the frontend caller.
+    let _ = (cursor_offset, selection_from, selection_to);
+
     let expanded =
         scaffolds::expand_scaffold_with_zid(storage.as_ref(), &scaffold_path, &title, &zid_pattern)
             .await?;
 
-    // Split the expanded scaffold into (note_args, body_text). The body is
-    // what gets inserted at the cursor; the args drive the merge into the
-    // current note's `#note(...)`.
-    let (scaffold_note_args, scaffold_body) =
-        split_scaffold_note_and_body(&expanded.content);
+    Ok(assemble_scaffold_insert(&current_source, &expanded.content))
+}
 
-    // Merge step. Walk scaffold args; for each key not already present in
-    // the current source's `#note(...)`, append it. Existing keys win.
+/// Pure core of [`prepare_scaffold_insert`]: merge the scaffold's `#note(...)`
+/// properties into the target note and append the scaffold's body to the end
+/// of the document. Split out so it's unit-testable without app state.
+///
+/// Behaviour:
+/// - **Properties**: scaffold keys not already present in the target's
+///   `#note(...)` are appended; existing keys are left untouched (existing
+///   wins). Never replaces the target's body.
+/// - **Body**: the scaffold's content after its `#note(...)`/imports is
+///   appended at the end of the document, separated by one blank line. For a
+///   note that's empty below its `#note(...)`, this reads as "fill it in"; for
+///   one with content, it reads as "append" — matching the user's mental model
+///   and, crucially, never overwriting existing prose.
+/// - **Cursor**: lands on a fresh line at the very end of the inserted content
+///   so the user can start typing immediately. The scaffold's `{{cursor}}`
+///   marker (if any) is stripped by the expander but its offset is not used —
+///   a trailing fresh line is simpler and is what authoring actually wants.
+fn assemble_scaffold_insert(
+    current_source: &str,
+    expanded_content: &str,
+) -> ScaffoldInsertResult {
+    let (scaffold_note_args, body_start) = split_scaffold_note_and_body(expanded_content);
+
+    // Merge step: append scaffold keys not already present. Existing keys win.
+    // Each call may shift downstream bytes, but we always operate on the result
+    // of the previous call, so sequential application stays correct.
     let existing_keys: std::collections::HashSet<String> =
-        note_rewriter::extract_note_properties(&current_source)
+        note_rewriter::extract_note_properties(current_source)
             .into_iter()
             .map(|(k, _)| k)
             .collect();
-
-    let merge_keys: Vec<(String, String)> = scaffold_note_args
+    let mut working = current_source.to_string();
+    for (key, raw_value) in scaffold_note_args
         .into_iter()
         .filter(|(k, _)| !existing_keys.contains(k))
-        .collect();
-
-    // Apply merges sequentially. Each call may shift downstream bytes, but
-    // since we always operate on the result of the previous call this is
-    // correct — and we never assume a stable byte position for downstream
-    // edits while merging.
-    let mut working = current_source.clone();
-    let pre_merge_len = working.len();
-    for (key, raw_value) in &merge_keys {
-        working = note_rewriter::set_note_property_raw(&working, key, raw_value);
+    {
+        working = note_rewriter::set_note_property_raw(&working, &key, &raw_value);
     }
-    let merge_delta: isize = working.len() as isize - pre_merge_len as isize;
 
-    // Compute the post-merge cursor and selection by shifting positions that
-    // sit after the `#note(...)` call. If the cursor is inside or before
-    // the note, leave it as-is (clamp to bounds at the end).
-    let note_span_before = note_rewriter::note_call_span(&current_source);
-    let shift_threshold = note_span_before.as_ref().map(|s| s.end).unwrap_or(0);
+    // The body is everything after the scaffold's `#note(...)`/imports. Trim
+    // surrounding blank lines so we control the spacing ourselves.
+    let body = expanded_content[body_start..].trim_matches('\n');
 
-    let shift = |pos: usize| -> usize {
-        if pos >= shift_threshold {
-            ((pos as isize) + merge_delta).max(0) as usize
-        } else {
-            pos
-        }
-    };
+    if body.is_empty() {
+        // Note-only scaffold: nothing to append. Cursor stays at end.
+        let cur = working.len();
+        return ScaffoldInsertResult {
+            new_source: working,
+            new_cursor_offset: cur,
+        };
+    }
 
-    let target_cursor = shift(cursor_offset);
-    let sel_from = selection_from.map(shift);
-    let sel_to = selection_to.map(shift);
+    // Append at the end of the document, separated by one blank line, and put
+    // the caret on a fresh line *after* the inserted content so the user can
+    // start typing immediately below it. new_source ends with a newline, so
+    // new_source.len() is the start of that fresh empty line.
+    let base = working.trim_end_matches('\n');
+    let new_source = format!("{base}\n\n{body}\n");
+    let new_cursor_offset = new_source.len();
 
-    // Insert the scaffold body. If a selection is provided, replace it;
-    // otherwise insert at cursor. Trim leading whitespace from the body so
-    // it doesn't introduce a stray blank line, but preserve internal shape.
-    let body_to_insert = scaffold_body.trim_start_matches('\n').to_string();
-
-    let (insert_from, insert_to) = match (sel_from, sel_to) {
-        (Some(a), Some(b)) if a != b => {
-            let lo = a.min(b).min(working.len());
-            let hi = a.max(b).min(working.len());
-            (lo, hi)
-        }
-        _ => {
-            let c = target_cursor.min(working.len());
-            (c, c)
-        }
-    };
-
-    let mut new_source = String::with_capacity(working.len() + body_to_insert.len());
-    new_source.push_str(&working[..insert_from]);
-    new_source.push_str(&body_to_insert);
-    new_source.push_str(&working[insert_to..]);
-
-    // Cursor lands at the end of the inserted body, unless the scaffold had
-    // a `{{cursor}}` placeholder (cursor_offset in ExpandedScaffold was
-    // relative to the *expanded* scaffold including its #note() block; we
-    // need the offset relative to body_to_insert). If the scaffold had no
-    // {{cursor}}, the end-of-insert is the natural caret position.
-    let body_cursor_in_inserted = expanded
-        .cursor_offset
-        .and_then(|c| {
-            // Translate the scaffold-relative cursor into a body-relative
-            // offset. Bytes before scaffold_body_start in expanded.content
-            // are everything we stripped (imports + note call + leading
-            // whitespace). If the cursor was inside the stripped prefix,
-            // fall back to end-of-body.
-            let stripped_prefix = expanded.content.len() - body_to_insert.len();
-            if c >= stripped_prefix {
-                Some(c - stripped_prefix)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(body_to_insert.len());
-
-    let new_cursor_offset = insert_from + body_cursor_in_inserted;
-    let new_cursor_offset = new_cursor_offset.min(new_source.len());
-
-    Ok(ScaffoldInsertResult {
+    ScaffoldInsertResult {
         new_source,
         new_cursor_offset,
-    })
+    }
 }
 
-/// Split an expanded scaffold into (note-call kwargs, body-after-note).
+/// Split an expanded scaffold into (note-call kwargs, body-start-offset).
 ///
-/// - If there's a `#note(...)` call near the top, returns its named-arg
-///   pairs and the text *after* the call (skipping imports and the call
-///   itself).
-/// - If there's no `#note(...)`, returns ([], the whole scaffold body
-///   minus leading import lines).
-fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, String) {
+/// - If there's a `#note(...)` call near the top, returns its named-arg pairs
+///   and the offset *after* the call (skipping imports and the call itself).
+/// - If there's no `#note(...)`, returns ([], offset after the leading import
+///   lines).
+fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, usize) {
     let args = note_rewriter::extract_note_properties(content);
     let span = note_rewriter::note_call_span(content);
 
@@ -528,8 +511,7 @@ fn split_scaffold_note_and_body(content: &str) -> (Vec<(String, String)>, String
         skip_leading_imports(content)
     };
 
-    let body = content[body_start..].to_string();
-    (args, body)
+    (args, body_start.min(content.len()))
 }
 
 fn skip_leading_imports(content: &str) -> usize {
@@ -603,5 +585,69 @@ pub async fn create_scaffold(
     storage.write_file(&file_path, starter).await?;
 
     Ok(to_frontend_string(&file_path))
+}
+
+#[cfg(test)]
+mod scaffold_insert_tests {
+    use super::*;
+
+    const IMPORT: &str = "#import \"/.inkycap/notebox.typ\": *\n";
+
+    #[test]
+    fn appends_body_preserving_existing_content() {
+        let current =
+            format!("{IMPORT}#note(\n  title: \"Existing\",\n)\n\nExisting prose here.\n");
+        let scaffold = format!(
+            "{IMPORT}#note(\n  title: \"Meeting\",\n  kind: \"meeting\",\n)\n\n= Meeting\n"
+        );
+        let r = assemble_scaffold_insert(&current, &scaffold);
+        // Existing prose is never overwritten — the original wipe bug.
+        assert!(r.new_source.contains("Existing prose here."), "{}", r.new_source);
+        // Existing property wins; the scaffold's new key is merged in.
+        assert!(r.new_source.contains("title: \"Existing\""), "{}", r.new_source);
+        assert!(r.new_source.contains("kind: \"meeting\""), "{}", r.new_source);
+        // Body appended at the very end, one blank line after the prose.
+        assert!(
+            r.new_source.contains("Existing prose here.\n\n= Meeting"),
+            "{}",
+            r.new_source
+        );
+        assert!(r.new_source.trim_end().ends_with("= Meeting"), "{}", r.new_source);
+    }
+
+    #[test]
+    fn fills_blank_note() {
+        let current = format!("{IMPORT}#note(\n  title: \"Blank\",\n)\n");
+        let scaffold =
+            format!("{IMPORT}#note(\n  title: \"Meeting\",\n)\n\n= Meeting\n\nbody text\n");
+        let r = assemble_scaffold_insert(&current, &scaffold);
+        assert!(r.new_source.contains("= Meeting"), "{}", r.new_source);
+        assert!(r.new_source.contains("body text"), "{}", r.new_source);
+        // The note call survives exactly once (scaffold's own #note is dropped).
+        assert_eq!(r.new_source.matches("#note(").count(), 1, "{}", r.new_source);
+        assert!(r.new_source.starts_with(IMPORT), "{}", r.new_source);
+    }
+
+    #[test]
+    fn note_only_scaffold_merges_props_without_touching_body() {
+        let current = format!("{IMPORT}#note(\n  title: \"A\",\n)\n\nprose\n");
+        let scaffold = format!("{IMPORT}#note(\n  status: \"draft\",\n)\n");
+        let r = assemble_scaffold_insert(&current, &scaffold);
+        assert!(r.new_source.contains("prose"), "{}", r.new_source);
+        assert!(r.new_source.contains("status: \"draft\""), "{}", r.new_source);
+        // Nothing appended after the prose.
+        assert!(r.new_source.trim_end().ends_with("prose"), "{}", r.new_source);
+    }
+
+    #[test]
+    fn cursor_lands_on_fresh_line_at_end() {
+        let current = format!("{IMPORT}#note(\n  title: \"X\",\n)\n\nprose\n");
+        // The scaffold's {{cursor}} marker (stripped by the expander before
+        // this fn) is irrelevant — the caret goes to a fresh line at the end.
+        let scaffold = format!("{IMPORT}#note(\n)\n\n= Meeting\n");
+        let r = assemble_scaffold_insert(&current, &scaffold);
+        assert_eq!(r.new_cursor_offset, r.new_source.len());
+        assert!(r.new_source.ends_with("= Meeting\n"), "{}", r.new_source);
+    }
 }
 
