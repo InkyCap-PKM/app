@@ -66,8 +66,11 @@ static LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
 static LINK_BARE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#link\("([^"]*)"\)"#).unwrap());
 
+// Matches `#image("path")` and `#image("path", width: 25%, …)` — the trailing
+// named args (width/height/fit/alt) have no CommonMark equivalent and are
+// dropped; only the path is carried into `![](path)`.
 static IMAGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"\)"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"(?:,[^)]*)?\)"#).unwrap());
 
 static CALLOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"#callout\("([^"]*)"(?:,\s*title:\s*"([^"]*)")?\)\[(.*?)\]"#).unwrap()
@@ -833,6 +836,16 @@ mod tests {
         let input = "#image(\"photo.png\")";
         let result = convert(input);
         assert!(result.contains("![](photo.png)"));
+    }
+
+    #[test]
+    fn image_with_width_arg_becomes_markdown_image_not_code() {
+        // Regression: `#image("p", width: 25%)` used to miss the arg-less regex
+        // and get wrapped in a ```typst block instead of converting.
+        let input = "#image(\"/Assets/daisy.png\", width: 25%)";
+        let result = convert(input);
+        assert!(result.contains("![](/Assets/daisy.png)"), "got: {result}");
+        assert!(!result.contains("```typst"), "must not be a code block: {result}");
     }
 
     #[test]

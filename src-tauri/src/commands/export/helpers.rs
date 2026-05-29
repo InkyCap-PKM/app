@@ -4,6 +4,15 @@ use tauri::State;
 
 use crate::state::AppState;
 
+/// Apply the export dialog's "Review markup" choice to a note's raw source
+/// before any other processing. `mode` is the frontend string tag
+/// (`"accept"` / `"reject"` / `"keep"`); absent/unknown defaults to keeping the
+/// tracked-change marks so an export never silently rewrites content.
+pub(crate) fn apply_review_mode(content: &str, mode: Option<&str>) -> String {
+    use crate::typst_pipeline::review_markup::{prepare_review_markup, ReviewMarkupMode};
+    prepare_review_markup(content, ReviewMarkupMode::from_opt(mode))
+}
+
 // ── Bibliography ────────────────────────────────────────────────
 
 /// Determine the bibliography file to use for export. Collection-level
@@ -423,24 +432,6 @@ pub(super) fn find_matching_paren(s: &str, open_pos: usize) -> Option<usize> {
             b'"' if in_string => in_string = false,
             b'(' if !in_string => depth += 1,
             b')' if !in_string => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-pub(super) fn find_matching_bracket(s: &str, open_pos: usize) -> Option<usize> {
-    let mut depth = 0;
-    let bytes = s.as_bytes();
-    for i in open_pos..bytes.len() {
-        match bytes[i] {
-            b'[' => depth += 1,
-            b']' => {
                 depth -= 1;
                 if depth == 0 {
                     return Some(i);

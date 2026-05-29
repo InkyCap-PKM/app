@@ -7,8 +7,8 @@ use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::{
-    escape_html_attr, escape_html_content, extract_metadata_raw, localize_html_assets,
-    prepare_bibliography, strip_wikilinks_from_source,
+    apply_review_mode, escape_html_attr, escape_html_content, extract_metadata_raw,
+    localize_html_assets, prepare_bibliography, strip_wikilinks_from_source,
 };
 
 /// Export a note to HTML using Typst's native HTML backend. Optionally
@@ -20,11 +20,13 @@ pub async fn export_note_html(
     metadata_mode: String,
     strip_wikilinks: Option<bool>,
     include_bibliography: Option<bool>,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
+    let content = apply_review_mode(&content, review_mode.as_deref());
     let content = crate::notebox_package::ensure_import(&content);
 
     let raw_metadata = if metadata_mode == "properties" {

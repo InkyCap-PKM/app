@@ -7,13 +7,9 @@ use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
 use super::helpers::{
-    escape_xml, extract_metadata_raw,
-    find_matching_bracket, find_matching_paren, normalize_metadata,
-    parse_first_string_arg, parse_named_string_arg, upsert_xml_element,
-    upsert_xml_element_with_attr,
+    escape_xml, extract_metadata_raw, localize_html_assets, normalize_metadata,
+    prepare_bibliography, upsert_xml_element, upsert_xml_element_with_attr,
 };
-
-use super::html::inject_html_metadata;
 
 // ── Pandoc detection ────────────────────────────────────────────
 
@@ -56,6 +52,7 @@ pub async fn export_via_pandoc(
     output_path: String,
     format: String,
     metadata_mode: String,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let pandoc_path = detect_pandoc()
@@ -66,36 +63,71 @@ pub async fn export_via_pandoc(
 
     let storage = state.get_storage().await?;
     let path_buf = std::path::PathBuf::from(&path);
-    let content = storage.read_file(&path_buf).await?;
+    let raw_content = storage.read_file(&path_buf).await?;
 
+    // Document properties are read straight from the note's `#note(...)` call and
+    // injected into the finished file afterwards — independent of how the body is
+    // converted, so they survive regardless of the intermediate format.
     let raw_metadata = if metadata_mode == "properties" {
-        extract_metadata_raw(&content)
+        extract_metadata_raw(&raw_content)
     } else {
         Vec::new()
     };
     let normalized = normalize_metadata(&raw_metadata);
 
-    let processed = preprocess_for_pandoc(&content);
+    // Resolve the review layer per the user's choice (accept/reject collapse to
+    // clean text; keep leaves the marks for the real compiler to render).
+    let content = super::helpers::apply_review_mode(&raw_content, review_mode.as_deref());
+
+    // Compile the note to HTML with the *real* Typst compiler, then let Pandoc
+    // convert from HTML — a format it fully supports. This sidesteps Pandoc's
+    // partial built-in Typst reader, so `#include`, the inkycap-notebox package,
+    // symbols (`#sym.*`), and layout all resolve natively instead of erroring on
+    // an unknown identifier or module method.
+    let content = crate::notebox_package::ensure_import(&content);
+    let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
+    let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    let source = prepare_bibliography(source, None, None, true, &state).await;
+
+    let html = {
+        let mut compiler = state.typst_compiler.lock().await;
+        let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
+        compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
+        let result = compiler
+            .compile_html(&path_buf, source)
+            .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+        if !result.ok {
+            let msgs: Vec<_> = result.diagnostics.iter().map(|d| d.message.clone()).collect();
+            return Err(InkyCapError::ExportFailed(format!(
+                "Compilation failed: {}",
+                msgs.join("; ")
+            )));
+        }
+        result.html
+    };
 
     let temp_dir = tempfile::tempdir()
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create temp dir: {}", e)))?;
-    let temp_input = temp_dir.path().join("input.typ");
-    tokio::fs::write(&temp_input, &processed)
+
+    // Copy referenced assets next to the intermediate HTML and rewrite their
+    // notebox-root-absolute `/…` srcs to relative paths so Pandoc embeds them.
+    let html = {
+        let notebox_root = state.notebox_root.read().await;
+        match notebox_root.as_ref() {
+            Some(root) => localize_html_assets(&html, root, temp_dir.path()).await?.0,
+            None => html,
+        }
+    };
+
+    let html = mirror_img_style_size_to_attrs(&html);
+
+    let temp_input = temp_dir.path().join("input.html");
+    tokio::fs::write(&temp_input, &html)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write temp file: {}", e)))?;
 
     let mut cmd = tokio::process::Command::new(&pandoc_path);
-    cmd.arg("-f").arg("typst");
-
-    if !normalized.is_empty() {
-        for (key, value) in &normalized {
-            let clean: String = value
-                .chars()
-                .filter(|c| !c.is_control() || *c == ' ')
-                .collect();
-            cmd.arg("--metadata").arg(format!("{}={}", key, clean));
-        }
-    }
+    cmd.arg("-f").arg("html");
 
     if format == "latex" && !normalized.is_empty() {
         cmd.arg("--standalone");
@@ -132,7 +164,6 @@ pub async fn export_via_pandoc(
 
     if !raw_metadata.is_empty() {
         match format.as_str() {
-            "html" => inject_html_metadata(&output_path, &raw_metadata).await?,
             "docx" => postprocess_docx(&output_path, &normalized)?,
             "odt" => postprocess_odt(&output_path, &normalized)?,
             "latex" => postprocess_latex(&output_path, &normalized).await?,
@@ -143,139 +174,58 @@ pub async fn export_via_pandoc(
     Ok(())
 }
 
-// ── Preprocessing ───────────────────────────────────────────────
+/// Pandoc's HTML reader sizes images from the `width`/`height` *attributes*,
+/// not the inline CSS that Typst's HTML export emits (`<img … style="width:
+/// 25%">`). With no attribute, Pandoc falls back to the image's intrinsic pixel
+/// size, which overflows the page in DOCX/ODT. Mirror any width/height in the
+/// style onto real attributes (when not already present) so the author's sizing
+/// carries through. `auto`/empty values are skipped; existing attributes win.
+pub(super) fn mirror_img_style_size_to_attrs(html: &str) -> String {
+    let img_re = regex::Regex::new(r"(?is)<img\b[^>]*>").unwrap();
+    let style_re = regex::Regex::new(r#"(?i)style\s*=\s*["']([^"']*)["']"#).unwrap();
+    let has_w = regex::Regex::new(r#"(?i)\bwidth\s*="#).unwrap();
+    let has_h = regex::Regex::new(r#"(?i)\bheight\s*="#).unwrap();
 
-/// Pre-process Typst source for Pandoc: strip InkyCap-specific constructs.
-pub(super) fn preprocess_for_pandoc(source: &str) -> String {
-    use crate::typst_pipeline::note_rewriter::note_call_span;
-
-    let without_note = if let Some(span) = note_call_span(source) {
-        let mut s = String::with_capacity(source.len());
-        s.push_str(&source[..span.start]);
-        let rest_start = if source.as_bytes().get(span.end) == Some(&b'\n') {
-            span.end + 1
-        } else {
-            span.end
-        };
-        s.push_str(&source[rest_start..]);
-        s
-    } else {
-        source.to_string()
-    };
-
-    let mut result = String::with_capacity(without_note.len());
-    for line in without_note.lines() {
-        if line.trim().starts_with("#import") {
-            continue;
-        }
-        result.push_str(line);
-        result.push('\n');
-    }
-
-    strip_inkycap_functions(&result)
-}
-
-/// Replace InkyCap function calls with plain text equivalents.
-pub(super) fn strip_inkycap_functions(source: &str) -> String {
-    let mut result = source.to_string();
-
-    result = strip_function_calls(&result, "wikilink", |args| {
-        let name = parse_first_string_arg(args).unwrap_or_default();
-        let display = parse_named_string_arg(args, "display");
-        display.unwrap_or(name)
-    });
-
-    let tag_re = regex::Regex::new(r#"#tag\("[^"]*"\)\s*"#).unwrap();
-    result = tag_re.replace_all(&result, "").to_string();
-
-    let linkref_re = regex::Regex::new(r#"link-ref\("([^"]*)"\)"#).unwrap();
-    result = linkref_re.replace_all(&result, "$1").to_string();
-
-    let setnotebox_re = regex::Regex::new(r#"#set-notebox\([^)]*\)\s*"#).unwrap();
-    result = setnotebox_re.replace_all(&result, "").to_string();
-
-    result = rewrite_content_block_func(&result, "callout", |_args, body| {
-        format!("#quote(block: true)[{}]", body)
-    });
-
-    let verse_re = regex::Regex::new(r#"#verse\("([^"]*)"\)"#).unwrap();
-    result = verse_re.replace_all(&result, "#quote(block: true)[$1]").to_string();
-    result = rewrite_content_block_func(&result, "verse", |_args, body| {
-        format!("#quote(block: true)[{}]", body)
-    });
-
-    result
-}
-
-/// Rewrite `#func_name(...)[body]` calls by extracting the content block with
-/// bracket matching, then calling `rewriter(args, body)` for the replacement.
-fn rewrite_content_block_func(
-    source: &str,
-    func_name: &str,
-    rewriter: impl Fn(&str, &str) -> String,
-) -> String {
-    let pattern = format!("#{}(", func_name);
-    let mut result = String::with_capacity(source.len());
-    let mut remaining = source;
-
-    while let Some(start) = remaining.find(&pattern) {
-        result.push_str(&remaining[..start]);
-        let after_hash = &remaining[start + 1..];
-
-        let args_start = func_name.len() + 1;
-        let Some(args_end) = find_matching_paren(after_hash, args_start - 1) else {
-            result.push_str(&remaining[start..start + pattern.len()]);
-            remaining = &remaining[start + pattern.len()..];
-            continue;
-        };
-        let args = &after_hash[args_start..args_end];
-
-        let after_args = &after_hash[args_end + 1..];
-        let trimmed = after_args.trim_start();
-        if trimmed.starts_with('[') {
-            let ws_skipped = after_args.len() - trimmed.len();
-            let Some(block_end) = find_matching_bracket(trimmed, 0) else {
-                result.push_str(&remaining[start..start + pattern.len()]);
-                remaining = &remaining[start + pattern.len()..];
-                continue;
+    img_re
+        .replace_all(html, |caps: &regex::Captures| {
+            let tag = &caps[0];
+            let Some(style) = style_re.captures(tag).map(|c| c[1].to_string()) else {
+                return tag.to_string();
             };
-            let body = &trimmed[1..block_end];
-            result.push_str(&rewriter(args, body));
-            remaining = &after_hash[args_end + 1 + ws_skipped + block_end + 1..];
-        } else {
-            result.push_str(&rewriter(args, ""));
-            remaining = &after_hash[args_end + 1..];
-        }
-    }
-    result.push_str(remaining);
-    result
+            let mut attrs = String::new();
+            if !has_w.is_match(tag) {
+                if let Some(v) = css_prop(&style, "width") {
+                    if !v.is_empty() && v != "auto" {
+                        attrs.push_str(&format!(" width=\"{v}\""));
+                    }
+                }
+            }
+            if !has_h.is_match(tag) {
+                if let Some(v) = css_prop(&style, "height") {
+                    if !v.is_empty() && v != "auto" {
+                        attrs.push_str(&format!(" height=\"{v}\""));
+                    }
+                }
+            }
+            if attrs.is_empty() {
+                tag.to_string()
+            } else {
+                tag.replacen("<img", &format!("<img{attrs}"), 1)
+            }
+        })
+        .into_owned()
 }
 
-/// Replace every `#<func_name>(...)` call in `source` with the result of
-/// `replace(args)`.
-fn strip_function_calls(
-    source: &str,
-    func_name: &str,
-    replace: impl Fn(&str) -> String,
-) -> String {
-    let pattern = format!("#{}(", func_name);
-    let mut out = String::with_capacity(source.len());
-    let mut remaining = source;
-    while let Some(start) = remaining.find(&pattern) {
-        out.push_str(&remaining[..start]);
-        let after_hash = &remaining[start + 1..];
-        let args_open = func_name.len();
-        let Some(args_close) = find_matching_paren(after_hash, args_open) else {
-            out.push_str(&remaining[start..start + pattern.len()]);
-            remaining = &remaining[start + pattern.len()..];
-            continue;
-        };
-        let args = &after_hash[args_open + 1..args_close];
-        out.push_str(&replace(args));
-        remaining = &after_hash[args_close + 1..];
+/// Extract a CSS declaration value from a `style` string (`width: 25%` → `25%`).
+fn css_prop(style: &str, prop: &str) -> Option<String> {
+    for decl in style.split(';') {
+        let mut it = decl.splitn(2, ':');
+        let key = it.next()?.trim();
+        if key.eq_ignore_ascii_case(prop) {
+            return it.next().map(|v| v.trim().to_string());
+        }
     }
-    out.push_str(remaining);
-    out
+    None
 }
 
 // ── Format-specific post-processing ─────────────────────────────

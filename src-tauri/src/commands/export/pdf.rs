@@ -9,7 +9,7 @@ use crate::typst_pipeline::compiler::PdfStandardPreset;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
-    apply_bibliography_visibility, args_has_named_arg,
+    apply_bibliography_visibility, apply_review_mode, args_has_named_arg,
     find_matching_paren, inject_document_metadata, parse_date_to_typst_datetime,
     parse_first_string_arg, parse_named_string_arg, prepare_bibliography,
     resolve_effective_bib, resolve_template_path_with_root,
@@ -57,11 +57,13 @@ pub async fn export_note_pdf_to_file(
     metadata_mode: String,
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
+    let content = apply_review_mode(&content, review_mode.as_deref());
     let content = crate::notebox_package::ensure_import(&content);
 
     let source = if metadata_mode == "properties" {
@@ -104,6 +106,7 @@ pub async fn export_collection_note_pdf(
     metadata_mode: Option<String>,
     pdf_standard: Option<PdfStandardPreset>,
     include_bibliography: Option<bool>,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
@@ -111,6 +114,7 @@ pub async fn export_collection_note_pdf(
     let collection_path_buf = PathBuf::from(&collection_path);
 
     let content = storage.read_file(&note_path_buf).await?;
+    let content = apply_review_mode(&content, review_mode.as_deref());
     let content = crate::notebox_package::ensure_import(&content);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
