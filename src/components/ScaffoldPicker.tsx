@@ -8,7 +8,9 @@
 // The merge + insert happens in the `prepare_scaffold_insert` Tauri command
 // which returns the new full source and cursor offset; we replace the
 // editor's whole document in one CodeMirror transaction so the operation
-// collapses into a single undo step.
+// collapses into a single undo step. That transaction is tagged
+// `externalReload` so the protected-range change filters (import-line guard,
+// #note guard) don't clip the whole-doc replace and clear the note.
 
 import { Component, For, Show, createResource, createSignal, createEffect, createMemo } from "solid-js";
 import * as ipc from "../lib/ipc";
@@ -16,6 +18,7 @@ import { fuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
 import { toastError, showToast } from "../stores/toasts";
+import { externalReload } from "../editor/typst-decorations/visual-plugin";
 
 interface ScaffoldPickerProps {
   visible: boolean;
@@ -86,6 +89,11 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
       view.dispatch({
         changes: { from: 0, to: currentSource.length, insert: result.new_source },
         selection: { anchor: result.new_cursor_offset },
+        // Whole-doc replace: bypass the protected-range change filters that
+        // would otherwise preserve the old import/#note lines against this
+        // change and shred the result (clearing the note). Same pattern as
+        // the editor's own external-reload path.
+        annotations: externalReload.of(true),
       });
       view.focus();
       close();

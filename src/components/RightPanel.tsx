@@ -9,6 +9,7 @@ import {
   setHoveredContextNote,
 } from "../stores/mycelial";
 import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
+import { normalizePath } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
@@ -205,6 +206,14 @@ const RightPanel: Component = () => {
   const activeCollectionTab = () => {
     const tab = getActiveTab();
     return tab?.type === "collection" ? tab : undefined;
+  };
+
+  /** True when the open file is a scaffold template. Scaffold property values
+   *  are routinely `{{var}}` placeholders, so the property editors relax their
+   *  typed pickers (date/checkbox) to raw text entry here — see PropertyEditor. */
+  const activeFileIsScaffold = () => {
+    const t = activeFileTab();
+    return !!t && normalizePath(t.path).includes("/.inkycap/scaffolds/");
   };
 
   /// The collection's file stem (basename minus extension) — the membership
@@ -1469,6 +1478,7 @@ const RightPanel: Component = () => {
                                 value={value}
                                 onSave={handlePropertySave}
                                 typeHint={ty()}
+                                scaffoldContext={activeFileIsScaffold()}
                               />
                             </div>
                             <button

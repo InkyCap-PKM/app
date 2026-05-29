@@ -93,7 +93,6 @@ pub const DEFAULT_NEW_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ": 
   description: "",
 )
 = {{title}}
-{{cursor}}
 "#;
 
 /// Default scaffold seeded for the built-in "Daily Note" creation rule.
@@ -107,7 +106,6 @@ pub const DEFAULT_DAILY_NOTE_SCAFFOLD: &str = r#"#import "/.inkycap/notebox.typ"
   tags: (),
 )
 = {{title}}
-{{cursor}}
 "#;
 
 /// File basename for the seeded New Note scaffold.
