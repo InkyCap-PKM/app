@@ -31,6 +31,17 @@ pub async fn get_property_types(
     Ok(reg.all())
 }
 
+/// Return the set of built-in system property keys whose types are fixed and
+/// cannot be reassigned by the user. The markdown-import mapping dialog uses
+/// this to lock the type column for these targets.
+#[tauri::command]
+pub async fn get_system_property_keys() -> Result<Vec<String>, InkyCapError> {
+    Ok(crate::property_types::SYSTEM_PROPERTY_KEYS
+        .iter()
+        .map(|k| k.to_string())
+        .collect())
+}
+
 /// Set the declared type for a property key and rewrite that key in
 /// every note that has it, coercing each value to the new type. When
 /// `ty` is `Auto` the registry entry is stored but no files are

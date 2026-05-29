@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -6,11 +6,15 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+use crate::property_types::{builtin_property_type, is_system_property, PropertyType};
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
 use crate::notebox_package;
 
+use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias};
 use super::md_to_typst::{
-    extract_embed_filenames, markdown_to_typst, MarkdownDialect, MarkdownToTypstOptions,
+    extract_embed_filenames, extract_frontmatter, extract_image_filenames,
+    markdown_to_typst_with_stats, FrontmatterMapping, MarkdownDialect, MarkdownToTypstOptions,
+    MathImportMode,
 };
 
 /// Rewrite relative path arguments in `image`/`read`/`bibliography`
@@ -31,41 +35,83 @@ pub struct ImportResult {
     pub notes_converted: u32,
     pub files_copied: u32,
     pub errors: Vec<String>,
+    /// Count of LaTeX equations preserved as code blocks because the `mitex`
+    /// package wasn't installed in the target notebox. The frontend turns a
+    /// non-zero value into an informational notice.
+    pub math_as_code: u32,
+}
+
+/// Probe the target notebox for a user-installed `mitex` package and pick the
+/// math-import strategy accordingly. Packages resolve from
+/// `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/`; mitex lives
+/// under the `preview` namespace. If several versions are present the highest
+/// is used. Absent → preserve LaTeX as code blocks (no fidelity loss).
+pub fn detect_math_mode(notebox_root: &Path) -> MathImportMode {
+    let dir = notebox_root
+        .join(".inkycap")
+        .join("packages")
+        .join("preview")
+        .join("mitex");
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return MathImportMode::Preserve;
+    };
+    let mut versions: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    versions.sort_by(|a, b| compare_semver(a, b));
+    match versions.last() {
+        Some(v) => MathImportMode::Mitex { version: v.clone() },
+        None => MathImportMode::Preserve,
+    }
+}
+
+/// Compare two dotted version strings numerically (so `0.10.0` > `0.9.0`),
+/// falling back to lexical order for non-numeric components.
+fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |s: &str| -> Vec<u64> {
+        s.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect()
+    };
+    parse(a).cmp(&parse(b)).then_with(|| a.cmp(b))
 }
 
 /// Import a markdown notebox from a directory into the target notebox location.
 /// Converts .md files to .typ, copies other files as-is, and scaffolds the
 /// inkycap-notebox package.
 ///
-/// Obsidian-style image embeds `![[name.png]]` carry no path — the file
-/// could live anywhere in the source notebox. To resolve them faithfully
-/// the importer makes a first pre-pass to scan every markdown file for
-/// embed references, then routes the matching source files into the
-/// user's configured `attachment_folder` (instead of preserving their
-/// original relative paths) so the emitted
-/// `#image("/<attachment_folder>/name.png")` calls land on the actual
-/// file. Files referenced by embeds but absent from the source notebox
-/// produce broken paths — surfaced to the user instead of silently
-/// rewritten — so they can be hand-fixed post-import.
+/// Every image a note references — both Obsidian embeds `![[name.png]]` and
+/// standard markdown images `![](path.png)` — is funnelled into the user's
+/// configured `attachment_folder`, matching drag/drop/paste behaviour (see
+/// CLAUDE.md). A first pre-pass scans every markdown file for those
+/// references; the main pass then routes the matching source files into
+/// `attachment_folder` (instead of preserving their original relative paths)
+/// so the emitted `#image("/<attachment_folder>/name.png")` calls land on the
+/// actual file. External/absolute image URLs are left untouched. Files
+/// referenced but absent from the source produce broken paths — surfaced to
+/// the user instead of silently rewritten — so they can be hand-fixed.
 pub fn import_from_directory(
     source: &Path,
     target: &Path,
     dialect: MarkdownDialect,
+    frontmatter_mapping: Option<FrontmatterMapping>,
+    attachment_folder: String,
 ) -> ImportResult {
-    // Import creates a fresh notebox at `target` with no settings yet, so
-    // attachment-folder routing uses the per-notebox default. The new
-    // notebox's settings file will be seeded at first open.
-    let attachment_folder = crate::notebox_settings::NoteboxFileSettings::default()
-        .attachment_folder;
+    // Embed-referenced files (and pasted/dropped images) route into the
+    // target notebox's configured attachment folder, supplied by the caller
+    // from notebox settings (Settings ▸ Files & Links).
     let options = MarkdownToTypstOptions {
         attachment_folder: attachment_folder.clone(),
         dialect,
+        frontmatter_mapping,
+        math: detect_math_mode(target),
         ..MarkdownToTypstOptions::default()
     };
     let mut result = ImportResult {
         notes_converted: 0,
         files_copied: 0,
         errors: Vec::new(),
+        math_as_code: 0,
     };
 
     // Scaffold the inkycap-notebox package in the target.
@@ -135,11 +181,11 @@ pub fn import_from_directory(
     result
 }
 
-/// Walk every `.md` file under `source` and collect the filenames
-/// (e.g. `"Pasted image 20240412113956.png"`) referenced by Obsidian-
-/// style embed syntax `![[…]]`. Filenames are intentionally bare —
-/// the same name in different folders collapses to one entry, matching
-/// Obsidian's notebox-wide-by-name lookup semantics.
+/// Walk every `.md` file under `source` and collect the filenames referenced
+/// by either Obsidian embed syntax `![[…]]` or standard markdown images
+/// `![](path)`. Every referenced image is routed into the attachment folder,
+/// so filenames are intentionally bare — the same name in different folders
+/// collapses to one entry (matching Obsidian's notebox-wide-by-name lookup).
 fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
     let mut targets = HashSet::new();
     for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
@@ -152,6 +198,9 @@ fn scan_directory_embed_targets(source: &Path) -> HashSet<String> {
         }
         if let Ok(content) = fs::read_to_string(path) {
             for name in extract_embed_filenames(&content) {
+                targets.insert(name);
+            }
+            for name in extract_image_filenames(&content) {
                 targets.insert(name);
             }
         }
@@ -207,18 +256,21 @@ pub fn import_from_zip(
     zip_path: &Path,
     target: &Path,
     dialect: MarkdownDialect,
+    frontmatter_mapping: Option<FrontmatterMapping>,
+    attachment_folder: String,
 ) -> ImportResult {
-    let attachment_folder = crate::notebox_settings::NoteboxFileSettings::default()
-        .attachment_folder;
     let options = MarkdownToTypstOptions {
         attachment_folder: attachment_folder.clone(),
         dialect,
+        frontmatter_mapping,
+        math: detect_math_mode(target),
         ..MarkdownToTypstOptions::default()
     };
     let mut result = ImportResult {
         notes_converted: 0,
         files_copied: 0,
         errors: Vec::new(),
+        math_as_code: 0,
     };
 
     let file = match fs::File::open(zip_path) {
@@ -359,6 +411,9 @@ fn scan_zip_embed_targets(archive: &mut ZipArchive<fs::File>) -> HashSet<String>
             for name in extract_embed_filenames(text) {
                 targets.insert(name);
             }
+            for name in extract_image_filenames(text) {
+                targets.insert(name);
+            }
         }
     }
     targets
@@ -416,7 +471,7 @@ fn convert_markdown_file(
         }
     };
 
-    let typst_content = markdown_to_typst(&content, options);
+    let (typst_content, stats) = markdown_to_typst_with_stats(&content, options);
     let typst_content = rebase_for_note(&typst_content, relative);
     let target_path = target.join(relative).with_extension("typ");
 
@@ -425,7 +480,10 @@ fn convert_markdown_file(
     }
 
     match fs::write(&target_path, &typst_content) {
-        Ok(()) => result.notes_converted += 1,
+        Ok(()) => {
+            result.notes_converted += 1;
+            result.math_as_code += stats.latex_math_as_code;
+        }
         Err(e) => {
             result
                 .errors
@@ -451,7 +509,7 @@ fn convert_markdown_bytes(
         }
     };
 
-    let typst_content = markdown_to_typst(text, options);
+    let (typst_content, stats) = markdown_to_typst_with_stats(text, options);
     let typst_content = rebase_for_note(&typst_content, relative);
     let target_path = target.join(relative).with_extension("typ");
 
@@ -460,7 +518,10 @@ fn convert_markdown_bytes(
     }
 
     match fs::write(&target_path, &typst_content) {
-        Ok(()) => result.notes_converted += 1,
+        Ok(()) => {
+            result.notes_converted += 1;
+            result.math_as_code += stats.latex_math_as_code;
+        }
         Err(e) => {
             result
                 .errors
@@ -569,11 +630,14 @@ pub fn import_from_tarball(
     tar_path: &Path,
     target: &Path,
     dialect: MarkdownDialect,
+    frontmatter_mapping: Option<FrontmatterMapping>,
+    attachment_folder: String,
 ) -> ImportResult {
     let mut result = ImportResult {
         notes_converted: 0,
         files_copied: 0,
         errors: Vec::new(),
+        math_as_code: 0,
     };
 
     let file = match fs::File::open(tar_path) {
@@ -605,9 +669,11 @@ pub fn import_from_tarball(
     // detect_zip_root_prefix.
     let source_root = collapse_single_root(tmp.path());
 
-    let inner = import_from_directory(&source_root, target, dialect);
+    let inner =
+        import_from_directory(&source_root, target, dialect, frontmatter_mapping, attachment_folder);
     result.notes_converted += inner.notes_converted;
     result.files_copied += inner.files_copied;
+    result.math_as_code += inner.math_as_code;
     result.errors.extend(inner.errors);
     result
 }
@@ -684,6 +750,261 @@ fn detect_zip_root_prefix(archive: &mut ZipArchive<fs::File>) -> Option<PathBuf>
     candidate.map(PathBuf::from)
 }
 
+// ---------------------------------------------------------------------------
+// Frontmatter scan (drives the import property-mapping dialog)
+// ---------------------------------------------------------------------------
+
+/// One distinct YAML frontmatter key discovered across the source notebox,
+/// with everything the import dialog needs to render a mapping row: how
+/// often it appears, a sample value, the type we inferred, and the InkyCap
+/// property it would default to (system alias, an existing notebox property,
+/// or a new property to auto-create).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FrontmatterKeyInfo {
+    /// The key as authored in the source (first-seen casing).
+    pub source_key: String,
+    /// A representative value, for display only.
+    pub sample_value: String,
+    /// How many source notes carry this key.
+    pub occurrences: u32,
+    /// Type inferred from the values seen (list / number / checkbox / date /
+    /// text). Used as the default when auto-creating a new property.
+    pub inferred_type: PropertyType,
+    /// The InkyCap property key this would map to by default.
+    pub suggested_target: String,
+    /// The type the value would be formatted as under the suggested target.
+    pub suggested_type: PropertyType,
+    /// Whether the suggested target is a type-locked system property.
+    pub target_is_system: bool,
+    /// Whether the suggested target already exists in the notebox.
+    pub target_exists: bool,
+    /// Whether importing would create the suggested target as a new property.
+    pub will_create: bool,
+}
+
+/// Accumulator for one key while scanning files.
+struct KeyAccumulator {
+    display_key: String,
+    occurrences: u32,
+    sample: String,
+    types: Vec<PropertyType>,
+}
+
+/// Scan all markdown frontmatter in `source` and aggregate the distinct
+/// keys, computing a suggested InkyCap mapping for each against the open
+/// notebox's existing property keys and declared types.
+pub fn scan_frontmatter(
+    source: &Path,
+    archive: SourceKind,
+    existing_keys: &HashSet<String>,
+    types: &HashMap<String, PropertyType>,
+) -> Vec<FrontmatterKeyInfo> {
+    let blocks = match archive {
+        SourceKind::Directory => scan_directory_frontmatter(source),
+        SourceKind::Zip => scan_zip_frontmatter(source),
+        SourceKind::TarGz => scan_tarball_frontmatter(source),
+    };
+    aggregate_frontmatter(&blocks, existing_keys, types)
+}
+
+/// Which kind of source the frontmatter scan should read.
+#[derive(Clone, Copy)]
+pub enum SourceKind {
+    Directory,
+    Zip,
+    TarGz,
+}
+
+/// Aggregate raw frontmatter YAML blocks into per-key info with suggestions.
+fn aggregate_frontmatter(
+    blocks: &[String],
+    existing_keys: &HashSet<String>,
+    types: &HashMap<String, PropertyType>,
+) -> Vec<FrontmatterKeyInfo> {
+    // Preserve first-seen order so the dialog rows are stable run-to-run.
+    let mut order: Vec<String> = Vec::new();
+    let mut acc: HashMap<String, KeyAccumulator> = HashMap::new();
+
+    for block in blocks {
+        for field in parse_frontmatter_fields(block) {
+            let lk = field.key.to_lowercase();
+            let entry = acc.entry(lk.clone()).or_insert_with(|| {
+                order.push(lk.clone());
+                KeyAccumulator {
+                    display_key: field.key.clone(),
+                    occurrences: 0,
+                    sample: String::new(),
+                    types: Vec::new(),
+                }
+            });
+            entry.occurrences += 1;
+            if entry.sample.is_empty() {
+                entry.sample = field.value.sample();
+            }
+            entry.types.push(field.value.inferred_type());
+        }
+    }
+
+    order
+        .into_iter()
+        .map(|lk| {
+            let a = &acc[&lk];
+            let inferred = reduce_types(&a.types);
+            let (suggested_target, suggested_type, target_is_system, target_exists, will_create) =
+                suggest_mapping(&lk, &a.display_key, inferred, existing_keys, types);
+            FrontmatterKeyInfo {
+                source_key: a.display_key.clone(),
+                sample_value: a.sample.clone(),
+                occurrences: a.occurrences,
+                inferred_type: inferred,
+                suggested_target,
+                suggested_type,
+                target_is_system,
+                target_exists,
+                will_create,
+            }
+        })
+        .collect()
+}
+
+/// Resolve a single inferred type from all the per-value types seen for a
+/// key. A list anywhere wins (the field is multi-valued); otherwise a
+/// unanimous type holds, and mixed scalars fall back to text.
+fn reduce_types(types: &[PropertyType]) -> PropertyType {
+    if types.is_empty() {
+        return PropertyType::Text;
+    }
+    if types.iter().any(|t| matches!(t, PropertyType::List)) {
+        return PropertyType::List;
+    }
+    let first = types[0];
+    if types.iter().all(|t| *t == first) {
+        first
+    } else {
+        PropertyType::Text
+    }
+}
+
+/// Compute the default InkyCap mapping for a source key: a system alias if
+/// one exists, else an existing notebox property matched case-insensitively,
+/// else a new property named after the (sanitized) source key.
+fn suggest_mapping(
+    key_lower: &str,
+    display_key: &str,
+    inferred: PropertyType,
+    existing_keys: &HashSet<String>,
+    types: &HashMap<String, PropertyType>,
+) -> (String, PropertyType, bool, bool, bool) {
+    // 1) Known alias → canonical system property (handles created→date, etc.).
+    if let Some(sys) = system_alias(key_lower) {
+        return (sys.to_string(), builtin_property_type(sys), true, true, false);
+    }
+    // 2) Exact (case-insensitive) match to an existing property — checking
+    //    both the note index (keys actually used) and the type registry
+    //    (declared-but-not-yet-used user properties, which the index misses).
+    if let Some(existing) = existing_keys
+        .iter()
+        .chain(types.keys())
+        .find(|k| !k.starts_with("file.") && k.eq_ignore_ascii_case(key_lower))
+    {
+        let sys = is_system_property(existing);
+        let ty = if sys {
+            builtin_property_type(existing)
+        } else {
+            types.get(existing).copied().unwrap_or(PropertyType::Auto)
+        };
+        return (existing.clone(), ty, sys, true, false);
+    }
+    // 3) No match — propose a new property.
+    (sanitize_ident(display_key), inferred, false, false, true)
+}
+
+/// Collect the raw YAML frontmatter block of every `.md` file in a directory.
+fn scan_directory_frontmatter(source: &Path) -> Vec<String> {
+    let mut blocks = Vec::new();
+    for entry in WalkDir::new(source).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path();
+        // Skip hidden dirs (.obsidian, .trash, …) to match the import walk.
+        if path
+            .strip_prefix(source)
+            .ok()
+            .map(|r| {
+                r.components()
+                    .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+            })
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        if let Ok(content) = fs::read_to_string(path) {
+            if let (Some(fm), _) = extract_frontmatter(&content) {
+                blocks.push(fm);
+            }
+        }
+    }
+    blocks
+}
+
+/// Collect frontmatter blocks from every `.md` entry in a zip archive.
+fn scan_zip_frontmatter(zip_path: &Path) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let Ok(file) = fs::File::open(zip_path) else {
+        return blocks;
+    };
+    let Ok(mut archive) = ZipArchive::new(file) else {
+        return blocks;
+    };
+    for i in 0..archive.len() {
+        let Ok(mut entry) = archive.by_index(i) else {
+            continue;
+        };
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(name) = entry.enclosed_name() else {
+            continue;
+        };
+        if name
+            .components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+        {
+            continue;
+        }
+        if name.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let mut content = String::new();
+        if entry.read_to_string(&mut content).is_ok() {
+            if let (Some(fm), _) = extract_frontmatter(&content) {
+                blocks.push(fm);
+            }
+        }
+    }
+    blocks
+}
+
+/// Collect frontmatter blocks from a `.tar.gz` archive by extracting to a
+/// temp dir and reusing the directory scan — mirrors `import_from_tarball`.
+fn scan_tarball_frontmatter(tar_path: &Path) -> Vec<String> {
+    let Ok(file) = fs::File::open(tar_path) else {
+        return Vec::new();
+    };
+    let Ok(tmp) = tempfile::tempdir() else {
+        return Vec::new();
+    };
+    if crate::typst_packages::extract_tar_gz(file, tmp.path()).is_err() {
+        return Vec::new();
+    }
+    let source_root = collapse_single_root(tmp.path());
+    scan_directory_frontmatter(&source_root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,7 +1038,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
+        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
 
         assert_eq!(result.notes_converted, 2);
         assert_eq!(result.files_copied, 1);
@@ -744,15 +1065,15 @@ mod tests {
     }
 
     #[test]
-    fn import_rebases_relative_image_paths_to_notebox_root_absolute() {
+    fn import_routes_standard_image_to_attachment_folder() {
         let source = TempDir::new().unwrap();
         let target = TempDir::new().unwrap();
 
-        // Note at notes/foo.md references images/pic.png alongside it.
-        // After import: note at notes/foo.typ, asset at notes/images/pic.png.
-        // The emitted #image() call must be /notes/images/pic.png so it
-        // survives note moves and merged export — see Phase A/D of the
-        // portable-paths plan.
+        // A standard markdown image `![alt](images/pic.png)` should funnel into
+        // the configured attachment folder (like drag/drop/paste — CLAUDE.md):
+        //   1. Emit `#image("/<attachment_folder>/pic.png")`.
+        //   2. Route the file into `<target>/<attachment_folder>/`, not its
+        //      original `notes/images/` location.
         fs::create_dir_all(source.path().join("notes/images")).unwrap();
         fs::write(
             source.path().join("notes/foo.md"),
@@ -761,17 +1082,50 @@ mod tests {
         .unwrap();
         fs::write(source.path().join("notes/images/pic.png"), b"fake").unwrap();
 
-        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
+        let result = import_from_directory(
+            source.path(),
+            target.path(),
+            MarkdownDialect::Obsidian,
+            None,
+            "Assets".to_string(),
+        );
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
         let typ = fs::read_to_string(target.path().join("notes/foo.typ")).unwrap();
         assert!(
-            typ.contains("#image(\"/notes/images/pic.png\")"),
-            "expected rebased absolute image path, got:\n{typ}"
+            typ.contains("#image(\"/Assets/pic.png\")"),
+            "expected attachment-folder image path, got:\n{typ}"
         );
         assert!(
-            !typ.contains("#image(\"images/pic.png\")"),
-            "relative image path must be rewritten, got:\n{typ}"
+            !typ.contains("images/pic.png"),
+            "original relative path must be rewritten, got:\n{typ}"
+        );
+        // File routed into the attachment folder, not its original subfolder.
+        assert!(target.path().join("Assets/pic.png").exists(), "image not routed to attachment folder");
+        assert!(!target.path().join("notes/images/pic.png").exists(), "image left at original path");
+    }
+
+    #[test]
+    fn import_leaves_external_image_urls_untouched() {
+        let source = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+        fs::write(
+            source.path().join("note.md"),
+            "# N\n\n![web](https://example.com/a.png)\n",
+        )
+        .unwrap();
+        let result = import_from_directory(
+            source.path(),
+            target.path(),
+            MarkdownDialect::Obsidian,
+            None,
+            "Assets".to_string(),
+        );
+        assert!(result.errors.is_empty());
+        let typ = fs::read_to_string(target.path().join("note.typ")).unwrap();
+        assert!(
+            typ.contains("#image(\"https://example.com/a.png\")"),
+            "external URL must be left as-is, got:\n{typ}"
         );
     }
 
@@ -805,7 +1159,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian);
+        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
         // Emitted call points at the attachment folder, not the
@@ -863,7 +1217,7 @@ mod tests {
         }
 
         let import_target = TempDir::new().unwrap();
-        let result = import_from_zip(&zip_path, import_target.path(), MarkdownDialect::Obsidian);
+        let result = import_from_zip(&zip_path, import_target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
 
         assert_eq!(result.notes_converted, 1);
         assert_eq!(result.files_copied, 1);

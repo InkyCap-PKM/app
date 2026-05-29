@@ -1,7 +1,7 @@
 // In-memory inverted index for full-text notebox search.
 // Built on notebox open, incrementally updated on file changes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -84,6 +84,13 @@ fn collect_value_strings(value: &PropertyValue, out: &mut Vec<String>) {
         PropertyValue::Null => {}
     }
 }
+
+/// Precomputed collection membership for `collection:` filters: lowercased
+/// collection name → set of member note paths. Resolved by the command layer
+/// (which has the collection definitions and property index) and handed to the
+/// engine, which only intersects it with document paths. Empty when a query
+/// references no collections.
+pub type CollectionMembership = HashMap<String, HashSet<PathBuf>>;
 
 /// Position of a word within a document: (line_number, word_offset_in_line, char_start, char_end).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,7 +293,11 @@ impl SearchEngine {
     /// the auto-injected notebox-library import are filtered out so users
     /// never see InkyCap's preamble in the result list.
     pub fn search(&self, query: &QueryNode, max_results: usize) -> Vec<SearchResult> {
-        let mut results = self.collect_ranked_results(query, AnnotationScope::All, None);
+        // `collection:` scoping is a feature of the paginated UI search; the
+        // bare `search` path (quick lookups) carries no membership data, so a
+        // `collection:` filter there simply matches nothing.
+        let empty = CollectionMembership::new();
+        let mut results = self.collect_ranked_results(query, AnnotationScope::All, None, &empty);
         results.truncate(max_results);
         results
     }
@@ -310,8 +321,10 @@ impl SearchEngine {
         limit: usize,
         annotation_scope: AnnotationScope,
         verify_span: Option<&dyn Fn(&str) -> bool>,
+        collections: &CollectionMembership,
     ) -> (Vec<SearchResult>, usize) {
-        let results = self.collect_ranked_results(query, annotation_scope, verify_span);
+        let results =
+            self.collect_ranked_results(query, annotation_scope, verify_span, collections);
         let total_count = results.len();
         let page = results.into_iter().skip(offset).take(limit).collect();
         (page, total_count)
@@ -328,8 +341,9 @@ impl SearchEngine {
         query: &QueryNode,
         annotation_scope: AnnotationScope,
         verify_span: Option<&dyn Fn(&str) -> bool>,
+        collections: &CollectionMembership,
     ) -> Vec<SearchResult> {
-        let matches = self.evaluate(query);
+        let matches = self.evaluate(query, collections);
         let mut results: Vec<SearchResult> = Vec::new();
 
         for (doc_id, line_matches) in &matches {
@@ -438,16 +452,20 @@ impl SearchEngine {
     }
 
     /// Evaluate a query node, returning matching doc_ids with per-line positions.
-    fn evaluate(&self, node: &QueryNode) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
+    fn evaluate(
+        &self,
+        node: &QueryNode,
+        collections: &CollectionMembership,
+    ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         match node {
             QueryNode::Term(term) => self.find_term(term),
             QueryNode::Phrase(words) => self.find_phrase(words),
             QueryNode::Wildcard(pattern) => self.find_wildcard(pattern),
             QueryNode::Regex(pattern) => self.find_regex(pattern),
-            QueryNode::Filter { kind, value } => self.find_filter(kind, value),
+            QueryNode::Filter { kind, value } => self.find_filter(kind, value, collections),
             QueryNode::And(left, right) => {
-                let left_matches = self.evaluate(left);
-                let right_matches = self.evaluate(right);
+                let left_matches = self.evaluate(left, collections);
+                let right_matches = self.evaluate(right, collections);
                 // Intersect doc IDs
                 let mut result = HashMap::new();
                 for (doc_id, left_lines) in &left_matches {
@@ -462,8 +480,8 @@ impl SearchEngine {
                 result
             }
             QueryNode::Or(left, right) => {
-                let mut result = self.evaluate(left);
-                let right_matches = self.evaluate(right);
+                let mut result = self.evaluate(left, collections);
+                let right_matches = self.evaluate(right, collections);
                 for (doc_id, lines) in right_matches {
                     let entry = result.entry(doc_id).or_default();
                     for (line, positions) in lines {
@@ -473,7 +491,7 @@ impl SearchEngine {
                 result
             }
             QueryNode::Not(inner) => {
-                let exclude = self.evaluate(inner);
+                let exclude = self.evaluate(inner, collections);
                 // Return all docs NOT in the exclude set
                 let mut result = HashMap::new();
                 for (doc_id, doc) in self.docs.iter().enumerate() {
@@ -644,6 +662,7 @@ impl SearchEngine {
         &self,
         kind: &FilterKind,
         value: &str,
+        collections: &CollectionMembership,
     ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let value_lower = value.to_lowercase();
         let mut result = HashMap::new();
@@ -707,6 +726,14 @@ impl SearchEngine {
                     } else {
                         doc.annotation_text.contains(&value_lower)
                     }
+                }
+                FilterKind::Collection => {
+                    // Membership was resolved by the command layer (keyed by
+                    // lowercased collection name); the engine just checks
+                    // whether this document is one of the member paths.
+                    collections
+                        .get(&value_lower)
+                        .map_or(false, |members| members.contains(&doc.path))
                 }
             };
 
@@ -1225,17 +1252,21 @@ mod tests {
 
         // Plain "citation" matches both the body and the annotation line.
         let q = parse_query("citation").unwrap();
-        let (all, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::All, None);
+        let no_collections = CollectionMembership::new();
+        let (all, _) =
+            engine.search_paginated(&q, 0, 50, AnnotationScope::All, None, &no_collections);
         assert_eq!(all.len(), 2);
 
         // With the annotations-only scope, only the annotation line survives.
-        let (scoped, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::Only, None);
+        let (scoped, _) =
+            engine.search_paginated(&q, 0, 50, AnnotationScope::Only, None, &no_collections);
         assert_eq!(scoped.len(), 1);
         assert!(scoped[0].line_text.contains("#annotation["));
 
         // The exclude scope is the complement: the annotation line drops out,
         // leaving only the plain-prose hit.
-        let (excluded, _) = engine.search_paginated(&q, 0, 50, AnnotationScope::Exclude, None);
+        let (excluded, _) =
+            engine.search_paginated(&q, 0, 50, AnnotationScope::Exclude, None, &no_collections);
         assert_eq!(excluded.len(), 1);
         assert!(!excluded[0].line_text.contains("#annotation["));
     }

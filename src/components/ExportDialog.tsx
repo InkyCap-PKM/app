@@ -1,5 +1,6 @@
 import { Component, createSignal, onMount, onCleanup, Show } from "solid-js";
 import { save } from "@tauri-apps/plugin-dialog";
+import { exportDefault, rememberExportFile } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
@@ -160,20 +161,22 @@ const ExportDialog: Component = () => {
     try {
       if (fmt === "typ") {
         const outputPath = await save({
-          defaultPath: `${fileName()}.typ`,
+          defaultPath: await exportDefault(`${fileName()}.typ`),
           filters: [{ name: "Typst", extensions: ["typ"] }],
         });
         if (!outputPath) return;
+        await rememberExportFile(outputPath);
 
         setExporting(true);
         await ipc.exportSelfContainedTyp(filePath(), outputPath, reviewMode());
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "pdf") {
         const outputPath = await save({
-          defaultPath: `${fileName()}.pdf`,
+          defaultPath: await exportDefault(`${fileName()}.pdf`),
           filters: [{ name: "PDF", extensions: ["pdf"] }],
         });
         if (!outputPath) return;
+        await rememberExportFile(outputPath);
 
         setExporting(true);
         const std = pdfStandard() === "standard" ? undefined : pdfStandard();
@@ -186,10 +189,11 @@ const ExportDialog: Component = () => {
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "markdown") {
         const outputPath = await save({
-          defaultPath: `${fileName()}.md`,
+          defaultPath: await exportDefault(`${fileName()}.md`),
           filters: [{ name: "Markdown", extensions: ["md"] }],
         });
         if (!outputPath) return;
+        await rememberExportFile(outputPath);
 
         setExporting(true);
         await ipc.exportNoteMarkdownToFile(
@@ -201,10 +205,11 @@ const ExportDialog: Component = () => {
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "typst-html") {
         const outputPath = await save({
-          defaultPath: `${fileName()}.html`,
+          defaultPath: await exportDefault(`${fileName()}.html`),
           filters: [{ name: "HTML", extensions: ["html"] }],
         });
         if (!outputPath) return;
+        await rememberExportFile(outputPath);
 
         setExporting(true);
         const includeBib = includeBibliography() ? undefined : false;
@@ -213,10 +218,11 @@ const ExportDialog: Component = () => {
       } else {
         // Pandoc formats (including pandoc-pdf)
         const outputPath = await save({
-          defaultPath: `${fileName()}.${info.ext}`,
+          defaultPath: await exportDefault(`${fileName()}.${info.ext}`),
           filters: [{ name: info.label, extensions: [info.ext] }],
         });
         if (!outputPath) return;
+        await rememberExportFile(outputPath);
 
         setExporting(true);
         await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode(), reviewMode());
@@ -225,9 +231,10 @@ const ExportDialog: Component = () => {
 
       if (extractFigures()) {
         const outputPath = await save({
-          defaultPath: `${fileName()}-figures`,
+          defaultPath: await exportDefault(`${fileName()}-figures`),
         });
         if (outputPath) {
+          await rememberExportFile(outputPath);
           const dir = outputPath.replace(/\/[^/]*$/, "");
           const figDir = `${dir}/${fileName()}-figures`;
           const figures = await ipc.exportFigures(filePath(), figDir);

@@ -304,6 +304,12 @@ export async function getPropertyTypes(): Promise<Record<string, PropertyType>> 
   return invoke<Record<string, PropertyType>>("get_property_types");
 }
 
+/// The built-in system property keys whose types are fixed and cannot be
+/// reassigned. Used by the import mapping dialog to lock the type column.
+export async function getSystemPropertyKeys(): Promise<string[]> {
+  return invoke<string[]>("get_system_property_keys");
+}
+
 export async function setPropertyType(
   key: string,
   ty: PropertyType,
@@ -1513,19 +1519,58 @@ export interface ImportResult {
   notes_converted: number;
   files_copied: number;
   errors: string[];
+  /** LaTeX equations preserved as code blocks because the mitex package
+   *  isn't installed. Non-zero → show the user how to render them. */
+  math_as_code: number;
 }
 
 export type MarkdownDialect = "standard" | "obsidian";
+
+/// One distinct YAML frontmatter key found across the source notebox, with
+/// the import dialog's suggested InkyCap mapping. Field names mirror the
+/// Rust `FrontmatterKeyInfo` (snake_case) so no remapping is needed.
+export interface FrontmatterKeyInfo {
+  source_key: string;
+  sample_value: string;
+  occurrences: number;
+  inferred_type: PropertyType;
+  suggested_target: string;
+  suggested_type: PropertyType;
+  target_is_system: boolean;
+  target_exists: boolean;
+  will_create: boolean;
+}
+
+/// One row of the user's confirmed YAML→property mapping sent back to the
+/// importer. `target_key: null` excludes the property; `create` marks a new
+/// property whose `target_type` should be registered.
+export interface PropertyMapping {
+  source_key: string;
+  target_key: string | null;
+  target_type: PropertyType;
+  create: boolean;
+}
+
+/// Scan every markdown file's YAML frontmatter in the source archive (or
+/// directory) and report the distinct keys with suggested mappings. Drives
+/// the property-mapping dialog shown before the import runs.
+export async function scanMarkdownFrontmatter(
+  sourcePath: string,
+): Promise<FrontmatterKeyInfo[]> {
+  return invoke<FrontmatterKeyInfo[]>("scan_markdown_frontmatter", { sourcePath });
+}
 
 export async function importMarkdownNotebox(
   sourcePath: string,
   targetPath: string,
   dialect: MarkdownDialect | null = null,
+  mappings: PropertyMapping[] | null = null,
 ): Promise<ImportResult> {
   return invoke<ImportResult>("import_markdown_notebox", {
     sourcePath,
     targetPath,
     dialect,
+    mappings,
   });
 }
 

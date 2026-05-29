@@ -65,7 +65,7 @@ impl Default for PropertyType {
 /// Built-in standard property types that are always available.
 /// These cannot be deleted by users and provide correct defaults
 /// even in a fresh notebox.
-fn builtin_property_type(key: &str) -> PropertyType {
+pub fn builtin_property_type(key: &str) -> PropertyType {
     match key {
         "title" => PropertyType::Text,
         "date" => PropertyType::Date,

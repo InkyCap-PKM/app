@@ -27,7 +27,7 @@ import { t } from "../lib/i18n";
 import { modifierKey } from "../lib/platform";
 import { formatUserDate, formatUserDateTime, DEFAULT_DATE_FORMAT } from "../lib/dates";
 import { open } from "@tauri-apps/plugin-dialog";
-import { homeDir } from "@tauri-apps/api/path";
+import { homeDirDefault, noteboxRootDefault, backupDefault } from "../lib/dialog-defaults";
 import { Pencil, Check, X, Handshake } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
@@ -35,6 +35,31 @@ import { FontPicker } from "./FontPicker";
 import { FontRoleRow, type FontRoleOption } from "./FontRoleRow";
 import { SettingCombobox } from "./SettingCombobox";
 import { Dropdown } from "./Dropdown";
+import { PropertyMappingDialog, type TargetOption as MappingTargetOption } from "./PropertyMappingDialog";
+
+/** Build the InkyCap properties offered as mapping targets in the import
+ *  dialog: the union of system properties and every existing notebox
+ *  property (excluding internal `file.*` keys), each with its declared type
+ *  and whether it is a type-locked system property. */
+async function loadMappingTargets(): Promise<MappingTargetOption[]> {
+  const [types, allKeys, systemKeys] = await Promise.all([
+    ipc.getPropertyTypes(),
+    ipc.getAllPropertyKeys(),
+    ipc.getSystemPropertyKeys(),
+  ]);
+  const systemSet = new Set(systemKeys);
+  const byKey = new Map<string, MappingTargetOption>();
+  for (const key of systemKeys) {
+    byKey.set(key, { key, type: types[key] ?? "auto", isSystem: true });
+  }
+  const addUser = (key: string) => {
+    if (key.startsWith("file.") || byKey.has(key)) return;
+    byKey.set(key, { key, type: types[key] ?? "auto", isSystem: systemSet.has(key) });
+  };
+  allKeys.forEach(addUser);
+  Object.keys(types).forEach(addUser);
+  return [...byKey.values()];
+}
 import { BUNDLED_INTERFACE, BUNDLED_TEXT, BUNDLED_MONO, BUNDLED_VERSE } from "../lib/fontResolver";
 import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
@@ -441,17 +466,11 @@ function NoteboxManagementSection() {
     // Default to the user's home directory regardless of OS — adding a
     // notebox is a fresh task, not navigation from wherever InkyCap was
     // launched.
-    let defaultPath: string | undefined;
-    try {
-      defaultPath = await homeDir();
-    } catch {
-      defaultPath = undefined;
-    }
     const selected = await open({
       directory: true,
       multiple: false,
       title: "Select notebox folder",
-      defaultPath,
+      defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
     setAddPath(selected);
@@ -488,17 +507,11 @@ function NoteboxManagementSection() {
   }
 
   async function browseForCloneDest() {
-    let defaultPath: string | undefined;
-    try {
-      defaultPath = await homeDir();
-    } catch {
-      defaultPath = undefined;
-    }
     const selected = await open({
       directory: true,
       multiple: false,
       title: "Select an empty folder for the cloned notebox",
-      defaultPath,
+      defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
     // The clone lands directly in the chosen folder, so it must be empty —
@@ -569,6 +582,7 @@ function NoteboxManagementSection() {
     const selected = await open({
       multiple: false,
       title: "Select a notebox package to import",
+      defaultPath: await homeDirDefault(),
       filters: [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }],
     });
     if (typeof selected !== "string") return;
@@ -576,17 +590,11 @@ function NoteboxManagementSection() {
   }
 
   async function browseForImportDest() {
-    let defaultPath: string | undefined;
-    try {
-      defaultPath = await homeDir();
-    } catch {
-      defaultPath = undefined;
-    }
     const selected = await open({
       directory: true,
       multiple: false,
       title: "Select an empty folder for the imported notebox",
-      defaultPath,
+      defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
     // The package is cloned directly into the chosen folder, so it must be empty
@@ -1475,7 +1483,7 @@ function CitationsSettingsSection() {
                 const selected = await open({
                   multiple: false,
                   filters: [{ name: "Bibliography", extensions: ["bib", "yml", "yaml", "json"] }],
-                  defaultPath: noteboxInfo()?.path,
+                  defaultPath: await noteboxRootDefault(),
                 });
                 if (typeof selected === "string" && selected) {
                   const root = noteboxInfo()?.path;
@@ -1554,6 +1562,7 @@ function CitationsSettingsSection() {
                 const { open } = await import("@tauri-apps/plugin-dialog");
                 const result = await open({
                   title: "Select CSL citation style file",
+                  defaultPath: await noteboxRootDefault(),
                   filters: [{ name: "CSL Files", extensions: ["csl"] }],
                 });
                 if (result) {
@@ -1580,6 +1589,11 @@ function ExportSettingsSection() {
   const [pickedFile, setPickedFile] = createSignal<string | null>(null);
   const [dialect, setDialect] = createSignal<ipc.MarkdownDialect>("standard");
   const [autoDetected, setAutoDetected] = createSignal<ipc.MarkdownDialect | null>(null);
+  // Property-mapping step: populated by scanning the archive's frontmatter
+  // after the user clicks Run; the dialog opens only when keys are found.
+  const [mappingRows, setMappingRows] = createSignal<ipc.FrontmatterKeyInfo[]>([]);
+  const [mappingTargets, setMappingTargets] = createSignal<MappingTargetOption[]>([]);
+  const [showMapping, setShowMapping] = createSignal(false);
 
   onMount(async () => {
     try {
@@ -1595,6 +1609,7 @@ function ExportSettingsSection() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const zipPath = await open({
       title: "Select markdown notebox archive",
+      defaultPath: await homeDirDefault(),
       // Tauri filter extensions match the final dot-segment only — `tar.gz`
       // wouldn't match `.tar.gz` files. We list `gz` (covers `.tar.gz`) plus
       // `tgz`; the backend validates the actual archive shape and rejects
@@ -1620,22 +1635,53 @@ function ExportSettingsSection() {
     }
   }
 
+  // Step 1 of import: scan the archive's YAML frontmatter. If it carries any
+  // properties, open the mapping dialog so the user can confirm/adjust how
+  // they convert; otherwise go straight to the import.
   async function runImport() {
     const source = pickedFile();
     if (!source) return;
 
-    const noteboxRoot = (await import("../lib/ipc")).getNoteboxInfo;
-    const info = await noteboxRoot();
+    const info = await ipc.getNoteboxInfo();
     if (!info) {
       setImportStatus("No notebox is open. Open a notebox first.");
       return;
     }
 
     setImporting(true);
+    setImportStatus("Scanning properties...");
+    try {
+      const rows = await ipc.scanMarkdownFrontmatter(source);
+      if (rows.length === 0) {
+        await doImport(null, info.path);
+        return;
+      }
+      setMappingRows(rows);
+      setMappingTargets(await loadMappingTargets());
+      setImportStatus(null);
+      setShowMapping(true);
+    } catch (e: any) {
+      setImportStatus(`Import failed: ${e}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Step 2: run the conversion with the (optional) confirmed mapping.
+  async function doImport(
+    mappings: ipc.PropertyMapping[] | null,
+    targetPath: string,
+  ) {
+    const source = pickedFile();
+    if (!source) return;
+    setImporting(true);
     setImportStatus("Importing...");
     try {
-      const result = await ipc.importMarkdownNotebox(source, info.path, dialect());
+      const result = await ipc.importMarkdownNotebox(source, targetPath, dialect(), mappings);
       let msg = `Imported ${result.notes_converted} note(s) and ${result.files_copied} file(s).`;
+      if (result.math_as_code > 0) {
+        msg += ` ${result.math_as_code} LaTeX equation(s) were kept as code blocks because the mitex package isn't installed. To render LaTeX, first install the @preview/mitex package in InkyCap and re-import, or rewrite as Typst math.`;
+      }
       if (result.errors.length > 0) {
         msg += ` ${result.errors.length} error(s): ${result.errors.slice(0, 3).join("; ")}`;
       }
@@ -1649,10 +1695,22 @@ function ExportSettingsSection() {
     }
   }
 
+  // Confirm handler from the mapping dialog: close it and run the import.
+  async function confirmMapping(mappings: ipc.PropertyMapping[]) {
+    setShowMapping(false);
+    const info = await ipc.getNoteboxInfo();
+    if (!info) {
+      setImportStatus("No notebox is open. Open a notebox first.");
+      return;
+    }
+    await doImport(mappings, info.path);
+  }
+
   function cancelPick() {
     setPickedFile(null);
     setAutoDetected(null);
     setImportStatus(null);
+    setShowMapping(false);
   }
 
   return (
@@ -1740,9 +1798,16 @@ function ExportSettingsSection() {
         </div>
       </Show>
       <Show when={importStatus()}>
-        <div class="settings__description" style={{ "margin-top": "8px" }}>
-          {importStatus()}
-        </div>
+        <div class="settings__notice" role="status">{importStatus()}</div>
+      </Show>
+
+      <Show when={showMapping()}>
+        <PropertyMappingDialog
+          rows={mappingRows()}
+          targets={mappingTargets()}
+          onConfirm={confirmMapping}
+          onCancel={() => setShowMapping(false)}
+        />
       </Show>
 
       <div class="settings__label" style={{ "margin-top": "24px" }}>Export</div>
@@ -1810,7 +1875,7 @@ function BackupSettingsSection() {
       directory: true,
       multiple: false,
       title: t("backup.destination.pickerTitle"),
-      defaultPath: settings.backup.path ?? (await homeDir()),
+      defaultPath: await backupDefault(),
     });
     if (typeof picked !== "string") return;
 

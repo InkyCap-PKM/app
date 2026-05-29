@@ -23,7 +23,11 @@
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, CodeBlockKind, HeadingLevel};
 use regex::Regex;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+
+use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias, ParsedYamlValue};
+use crate::property_types::{builtin_property_type, PropertyType};
 
 /// Source-markdown dialect the converter should assume. The two flavors
 /// diverge in three meaningful places:
@@ -75,6 +79,17 @@ pub struct MarkdownToTypstOptions {
     pub attachment_folder: String,
     /// Source-markdown dialect — see [`MarkdownDialect`].
     pub dialect: MarkdownDialect,
+    /// User-confirmed YAML→property mapping from the import dialog, keyed by
+    /// lowercased source key. When `Some`, frontmatter is emitted strictly
+    /// per this table — keys absent from it (or mapped to `None`) are
+    /// dropped, and each value is formatted for its target property type.
+    /// When `None`, the importer falls back to the built-in alias defaults
+    /// (used by paths with no mapping UI: directory import, paste).
+    pub frontmatter_mapping: Option<FrontmatterMapping>,
+    /// How to render LaTeX-flavoured math (`$…$` / `$$…$$`) from the source.
+    /// Markdown math is LaTeX, which Typst can't typeset natively — see
+    /// [`MathImportMode`].
+    pub math: MathImportMode,
 }
 
 impl Default for MarkdownToTypstOptions {
@@ -85,9 +100,56 @@ impl Default for MarkdownToTypstOptions {
             // bare-options conversion still emits a sensible path.
             attachment_folder: "Assets".to_string(),
             dialect: MarkdownDialect::default(),
+            frontmatter_mapping: None,
+            math: MathImportMode::default(),
         }
     }
 }
+
+/// Strategy for importing LaTeX math, chosen per-import by probing the target
+/// notebox for a user-installed `mitex` package.
+#[derive(Debug, Clone)]
+pub enum MathImportMode {
+    /// `mitex` is installed — render LaTeX via `#mi(`…`)` (inline) and
+    /// `#mitex(`…`)` (block), adding the package import to notes that use it.
+    /// The string is the installed version, for the import line.
+    Mitex { version: String },
+    /// `mitex` is absent — preserve the LaTeX verbatim as inline raw (inline
+    /// math) or a fenced ```` ```latex ```` block (display math). Nothing is
+    /// lost and the note still compiles; the user can install mitex or
+    /// rewrite the math as Typst math later.
+    Preserve,
+}
+
+impl Default for MathImportMode {
+    fn default() -> Self {
+        MathImportMode::Preserve
+    }
+}
+
+/// Counts/flags from one conversion, so the importer can report how many
+/// LaTeX equations fell back to code blocks (and tell the user how to render
+/// them).
+#[derive(Debug, Clone, Default)]
+pub struct ConversionStats {
+    /// LaTeX equations preserved as code (mitex absent).
+    pub latex_math_as_code: u32,
+    /// Whether any `#mi`/`#mitex` call was emitted (mitex present).
+    pub used_mitex: bool,
+}
+
+/// How a single source frontmatter key should be imported.
+#[derive(Debug, Clone)]
+pub struct FieldMapping {
+    /// Target `#note(...)` argument name, or `None` to drop the property.
+    pub target_key: Option<String>,
+    /// Property type the value is formatted as (list → tuple, number → bare
+    /// numeral, checkbox → `true`/`false`, everything else → quoted string).
+    pub target_type: PropertyType,
+}
+
+/// Lowercased-source-key → mapping. Built from the user's dialog choices.
+pub type FrontmatterMapping = HashMap<String, FieldMapping>;
 
 /// `![[name.png|alt]]` — Obsidian-style image embed. Must run BEFORE
 /// the wikilink regex so the `[[name]]` portion isn't matched as a
@@ -98,6 +160,11 @@ impl Default for MarkdownToTypstOptions {
 /// the replacement closure.
 static IMAGE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
+
+/// Standard CommonMark image: `![alt](url "title")`. Captures the URL up to
+/// the first whitespace or closing paren (so an optional title is ignored).
+static STD_IMAGE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\(\s*([^)\s]+)").unwrap());
 
 static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
@@ -145,21 +212,80 @@ pub fn extract_embed_filenames(input: &str) -> Vec<String> {
     out
 }
 
+/// Extract the basenames of files referenced by standard markdown images
+/// (`![alt](path)`), skipping external (`http(s)://`, `data:`) and already-
+/// absolute (`/…`) URLs. Like [`extract_embed_filenames`], the importer routes
+/// these files into the user's `attachment_folder` so every imported image
+/// lands in one place (matching drag/drop/paste behaviour — see CLAUDE.md).
+pub fn extract_image_filenames(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for caps in STD_IMAGE_RE.captures_iter(input) {
+        let url = caps[1].trim();
+        if is_external_or_absolute(url) {
+            continue;
+        }
+        let basename = image_basename(url);
+        if !basename.is_empty() {
+            out.push(basename.to_string());
+        }
+    }
+    out
+}
+
+/// Whether an image URL points outside the notebox (so it's left untouched):
+/// a scheme-qualified URL (`http://`, `data:`) or an already notebox-absolute
+/// path (`/…`).
+fn is_external_or_absolute(url: &str) -> bool {
+    url.starts_with('/') || url.starts_with("data:") || url.contains("://")
+}
+
+/// The final path component of an image URL (its filename).
+fn image_basename(url: &str) -> &str {
+    url.rsplit('/').next().unwrap_or(url)
+}
+
+/// Rewrite a standard-markdown image URL to the notebox-absolute attachment
+/// path the importer routes the file into. External/absolute URLs pass
+/// through unchanged.
+fn route_image_url(url: &str, attachment_folder: &str) -> String {
+    if is_external_or_absolute(url) {
+        return url.to_string();
+    }
+    let basename = image_basename(url);
+    let folder = attachment_folder.trim_matches('/');
+    if folder.is_empty() {
+        format!("/{}", basename)
+    } else {
+        format!("/{}/{}", folder, basename)
+    }
+}
+
 /// Convert a markdown string to InkyCap-flavored Typst source.
 pub fn markdown_to_typst(input: &str, options: &MarkdownToTypstOptions) -> String {
+    markdown_to_typst_with_stats(input, options).0
+}
+
+/// Like [`markdown_to_typst`] but also returns [`ConversionStats`] so callers
+/// can report e.g. how many LaTeX equations were preserved as code blocks.
+pub fn markdown_to_typst_with_stats(
+    input: &str,
+    options: &MarkdownToTypstOptions,
+) -> (String, ConversionStats) {
     let (frontmatter, body) = extract_frontmatter(input);
 
     let mut out = String::with_capacity(input.len());
 
     // Emit import preamble.
-    let _ = options; // reserved for future conversion knobs
     out.push_str(&crate::notebox_package::import_line());
     out.push('\n');
 
     // Emit #note(...) from frontmatter.
     if options.convert_frontmatter {
         if let Some(fm) = frontmatter {
-            let note_call = frontmatter_to_note(&fm);
+            let note_call = match &options.frontmatter_mapping {
+                Some(mapping) => frontmatter_to_note_mapped(&fm, mapping),
+                None => frontmatter_to_note(&fm),
+            };
             if !note_call.is_empty() {
                 out.push('\n');
                 out.push_str(&note_call);
@@ -192,8 +318,29 @@ pub fn markdown_to_typst(input: &str, options: &MarkdownToTypstOptions) -> Strin
     }
 
     let parser = Parser::new_ext(&preprocessed, md_options);
-    let mut converter = Converter::new(&mut out);
-    converter.convert(parser);
+    // Convert the body inside a scope so the converter's mutable borrow of
+    // `out` ends before we (possibly) splice in the mitex import line.
+    let stats = {
+        let mut converter = Converter::new(&mut out);
+        converter.math_mode = options.math.clone();
+        converter.attachment_folder = options.attachment_folder.clone();
+        converter.convert(parser);
+        ConversionStats {
+            latex_math_as_code: converter.math_as_code,
+            used_mitex: converter.used_mitex,
+        }
+    };
+
+    // If any note actually used mitex, add its package import right after the
+    // notebox import line. Only notes with math carry the dependency.
+    if stats.used_mitex {
+        if let MathImportMode::Mitex { version } = &options.math {
+            let import = format!("#import \"@preview/mitex:{}\": mi, mitex\n", version);
+            if let Some(pos) = out.find('\n') {
+                out.insert_str(pos + 1, &import);
+            }
+        }
+    }
 
     // Standard-dialect post-pass: escape any `#` that isn't part of a
     // recognized Typst function call we emit. This runs on the full
@@ -206,7 +353,7 @@ pub fn markdown_to_typst(input: &str, options: &MarkdownToTypstOptions) -> Strin
         out = escape_unrecognized_hashes(&out);
     }
 
-    out
+    (out, stats)
 }
 
 /// Names of Typst function calls the converter emits with a leading
@@ -230,6 +377,11 @@ const EMITTED_TYPST_CALLS: &[&str] = &[
     "table",
     "line",
     "footnote",
+    // mitex math calls (only emitted when the package is installed); math is
+    // Obsidian-dialect-only today, but list them so the Standard-dialect
+    // hash-escape never mangles a `#mi`/`#mitex` should that change.
+    "mi",
+    "mitex",
 ];
 
 fn escape_unrecognized_hashes(text: &str) -> String {
@@ -415,7 +567,7 @@ fn preprocess_markdown(
 }
 
 /// Splits YAML frontmatter (delimited by `---`) from the body.
-fn extract_frontmatter(input: &str) -> (Option<String>, &str) {
+pub fn extract_frontmatter(input: &str) -> (Option<String>, &str) {
     let trimmed = input.trim_start();
     if !trimmed.starts_with("---") {
         return (None, input);
@@ -436,85 +588,147 @@ fn extract_frontmatter(input: &str) -> (Option<String>, &str) {
     }
 }
 
-/// Convert YAML frontmatter into a `#note(...)` call.
-/// Handles common Obsidian fields: title, tags, aliases, date, description, etc.
+/// Convert YAML frontmatter into a `#note(...)` call using the built-in
+/// alias defaults. Used by import paths with no mapping UI (directory
+/// import, clipboard paste). Common keys resolve to their system property
+/// (`created`→`date`, `summary`→`description`, …); every other valid key
+/// passes through under its own (sanitized) name. The value-typing for each
+/// field follows the same rules as the dialog-driven path.
 fn frontmatter_to_note(yaml: &str) -> String {
-    let mut fields: Vec<(String, String)> = Vec::new();
+    let fields = parse_frontmatter_fields(yaml);
+    let mut emitted: Vec<(String, String)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
 
-    for line in yaml.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+    for field in &fields {
+        let (target, ty) = match system_alias(&field.key) {
+            Some(sys) => (sys.to_string(), builtin_property_type(sys)),
+            None => (sanitize_ident(&field.key), field.value.inferred_type()),
+        };
+        if !seen.insert(target.clone()) {
             continue;
         }
-
-        // Handle "key: value" lines (simple YAML subset).
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim().to_lowercase();
-            let value = value.trim();
-
-            // Skip empty values.
-            if value.is_empty() {
-                continue;
-            }
-
-            match key.as_str() {
-                "title" => {
-                    fields.push(("title".into(), format_string_value(value)));
-                }
-                "tags" => {
-                    let tags = parse_yaml_list_inline(value);
-                    if !tags.is_empty() {
-                        let formatted: Vec<String> =
-                            tags.iter().map(|t| format_string_value(t)).collect();
-                        fields.push(("tags".into(), format!("({})", formatted.join(", "))));
-                    }
-                }
-                "aliases" => {
-                    let aliases = parse_yaml_list_inline(value);
-                    if !aliases.is_empty() {
-                        let formatted: Vec<String> =
-                            aliases.iter().map(|a| format_string_value(a)).collect();
-                        fields.push(("aliases".into(), format!("({})", formatted.join(", "))));
-                    }
-                }
-                "date" | "created" => {
-                    fields.push(("date".into(), format_string_value(value)));
-                }
-                "description" | "summary" => {
-                    fields.push(("description".into(), format_string_value(value)));
-                }
-                "collection" | "collections" => {
-                    let collections = parse_yaml_list_inline(value);
-                    if !collections.is_empty() {
-                        let formatted: Vec<String> =
-                            collections.iter().map(|c| format_string_value(c)).collect();
-                        fields
-                            .push(("collection".into(), format!("({})", formatted.join(", "))));
-                    }
-                }
-                "source" | "url" => {
-                    fields.push(("source".into(), format_string_value(value)));
-                }
-                _ => {
-                    // Pass through unknown fields as string properties.
-                    if is_valid_typst_ident(&key) {
-                        fields.push((key, format_string_value(value)));
-                    }
-                }
-            }
+        if let Some(formatted) = format_value_for_type(&field.value, ty) {
+            emitted.push((target, formatted));
         }
     }
 
+    emit_note(&emitted)
+}
+
+/// Convert YAML frontmatter into a `#note(...)` call following the user's
+/// confirmed mapping (from the import dialog). Keys absent from the mapping,
+/// or mapped to `None`, are dropped. Distinct source keys that resolve to
+/// the same target collapse to the first occurrence (a `#note` call can't
+/// carry the same named argument twice).
+fn frontmatter_to_note_mapped(yaml: &str, mapping: &FrontmatterMapping) -> String {
+    let fields = parse_frontmatter_fields(yaml);
+    let mut emitted: Vec<(String, String)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for field in &fields {
+        let Some(field_map) = mapping.get(&field.key.to_lowercase()) else {
+            continue;
+        };
+        let Some(target) = &field_map.target_key else {
+            continue; // explicitly excluded by the user
+        };
+        if !seen.insert(target.clone()) {
+            continue;
+        }
+        if let Some(formatted) = format_value_for_type(&field.value, field_map.target_type) {
+            emitted.push((target.clone(), formatted));
+        }
+    }
+
+    emit_note(&emitted)
+}
+
+/// Assemble a `#note(...)` call from already-formatted (key, value) pairs.
+/// Returns an empty string when there is nothing to emit.
+fn emit_note(fields: &[(String, String)]) -> String {
     if fields.is_empty() {
         return String::new();
     }
-
     let args: Vec<String> = fields
         .iter()
         .map(|(k, v)| format!("  {}: {}", k, v))
         .collect();
-
     format!("#note(\n{},\n)", args.join(",\n"))
+}
+
+/// Format a parsed frontmatter value as a Typst expression for the given
+/// target property type. Returns `None` when the value is effectively empty
+/// (so the property is simply omitted rather than emitted as `""`).
+fn format_value_for_type(value: &ParsedYamlValue, ty: PropertyType) -> Option<String> {
+    match ty {
+        PropertyType::List | PropertyType::CommaList => {
+            let items: Vec<String> = match value {
+                ParsedYamlValue::List(items) => items.clone(),
+                ParsedYamlValue::Scalar { raw, .. } => split_scalar_list(raw),
+            };
+            if items.is_empty() {
+                return None;
+            }
+            let formatted: Vec<String> = items.iter().map(|s| format_string_value(s)).collect();
+            Some(format!("({})", formatted.join(", ")))
+        }
+        PropertyType::Number => match value {
+            ParsedYamlValue::Scalar { raw, .. } if raw.trim().parse::<f64>().is_ok() => {
+                Some(raw.trim().to_string())
+            }
+            // Non-numeric value forced to a Number target — fall back to a
+            // quoted string so the #note call stays well-formed.
+            ParsedYamlValue::Scalar { raw, .. } => Some(format_string_value(raw)),
+            ParsedYamlValue::List(items) => items.first().map(|s| format_string_value(s)),
+        },
+        PropertyType::Checkbox => {
+            let truthy = match value {
+                ParsedYamlValue::Scalar { raw, .. } => {
+                    matches!(
+                        raw.trim().to_lowercase().as_str(),
+                        "true" | "yes" | "1" | "on" | "checked"
+                    )
+                }
+                ParsedYamlValue::List(items) => !items.is_empty(),
+            };
+            Some(if truthy { "true".into() } else { "false".into() })
+        }
+        // Text, Date, DateTime, Auto — quoted string (date/datetime are
+        // stored as strings; the editor picks the right widget by type).
+        _ => {
+            let s = match value {
+                ParsedYamlValue::Scalar { raw, .. } => raw.clone(),
+                ParsedYamlValue::List(items) => items.join(", "),
+            };
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(format_string_value(&s))
+            }
+        }
+    }
+}
+
+/// Split a scalar that's being coerced into a list. A bracketed inline list
+/// or a comma-separated string becomes multiple items; anything else is a
+/// single-element list.
+fn split_scalar_list(value: &str) -> Vec<String> {
+    let value = value.trim();
+    let inner = value
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(value);
+    if inner.contains(',') {
+        inner
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else if inner.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![inner.trim().to_string()]
+    }
 }
 
 fn format_string_value(s: &str) -> String {
@@ -522,37 +736,25 @@ fn format_string_value(s: &str) -> String {
     if let Some(target) = s.strip_prefix("[[").and_then(|s| s.strip_suffix("]]")) {
         return format!("link-ref(\"{}\")", target.replace('\\', "\\\\").replace('"', "\\\""));
     }
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    format!("\"{}\"", escape_str(s))
 }
 
-/// Parse a YAML inline list: `[a, b, c]` or a bare scalar value.
-fn parse_yaml_list_inline(value: &str) -> Vec<String> {
-    let value = value.trim();
-    if value.starts_with('[') && value.ends_with(']') {
-        let inner = &value[1..value.len() - 1];
-        inner
-            .split(',')
-            .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        // Single value — might be comma-separated without brackets in some noteboxes.
-        if value.contains(',') {
-            value
-                .split(',')
-                .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        } else {
-            vec![value.trim_matches('"').trim_matches('\'').to_string()]
-        }
-    }
+/// Escape a string for use inside a Typst `"..."` string literal — only `\`
+/// and `"` are special there (`$`, backtick, etc. are literal inside a
+/// string), so this is intentionally narrower than `escape_text_for_typst`.
+fn escape_str(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn is_valid_typst_ident(s: &str) -> bool {
-    !s.is_empty()
-        && s.chars().next().unwrap().is_alphabetic()
-        && s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+/// Heuristic: does this `$…$` content use LaTeX-only syntax Typst can't
+/// typeset natively? Markdown math is LaTeX, but the simple common cases
+/// (`E = mc^2`, `1 + 2 = 3`, `x^2 + y^2`) are also valid Typst math and
+/// render fine left as-is. Backslash commands (`\sum`, `\frac`, `\leq`) and
+/// `{}` grouping are LaTeX-specific — Typst uses `(...)` grouping and named
+/// functions — so those need mitex (or a code-block fallback). This keeps
+/// simple math rendering natively and only diverts genuine LaTeX.
+fn is_latex_specific(math: &str) -> bool {
+    math.contains('\\') || math.contains('{') || math.contains('}')
 }
 
 // ---------------------------------------------------------------------------
@@ -581,6 +783,25 @@ struct Converter<'a> {
     in_code_block: bool,
     in_footnote: bool,
     footnote_label: String,
+    // Task-list conversion: an Obsidian/GFM `- [ ]` item becomes an InkyCap
+    // `#task(...)`. `task_line_reset` records the output offset right after a
+    // list item's bullet was emitted, so a TaskListMarker (which always
+    // follows the item start) can rewrite that bullet into a task. `in_task`
+    // routes the item's text into `task_buf` instead of the output.
+    task_line_reset: Option<usize>,
+    task_indent: String,
+    in_task: bool,
+    task_done: bool,
+    task_buf: String,
+    // Math handling — see `MathImportMode`. `math_as_code` counts LaTeX
+    // equations preserved as code (mitex absent); `used_mitex` records that a
+    // `#mi`/`#mitex` call was emitted (so the note imports the package).
+    math_mode: MathImportMode,
+    math_as_code: u32,
+    used_mitex: bool,
+    // Notebox attachment folder; standard `![](path)` images are rewritten to
+    // `/<attachment_folder>/<basename>` so every imported image lands there.
+    attachment_folder: String,
 }
 
 #[derive(Clone)]
@@ -614,6 +835,15 @@ impl<'a> Converter<'a> {
             in_code_block: false,
             in_footnote: false,
             footnote_label: String::new(),
+            task_line_reset: None,
+            task_indent: String::new(),
+            in_task: false,
+            task_done: false,
+            task_buf: String::new(),
+            math_mode: MathImportMode::default(),
+            math_as_code: 0,
+            used_mitex: false,
+            attachment_folder: String::new(),
         }
     }
 
@@ -624,7 +854,12 @@ impl<'a> Converter<'a> {
     }
 
     fn emit(&mut self, s: &str) {
-        if self.in_table_cell {
+        if self.in_task {
+            // The task body is a plain string argument; capture everything
+            // (including any inline markup chars) so it isn't written to the
+            // document body mid-task.
+            self.task_buf.push_str(s);
+        } else if self.in_table_cell {
             self.cell_buf.push_str(s);
         } else if self.blockquote_depth > 0 {
             self.blockquote_buf.push_str(s);
@@ -687,19 +922,55 @@ impl<'a> Converter<'a> {
                 self.emit(&format!("#footnote[see {}]", label));
             }
             Event::TaskListMarker(checked) => {
-                if checked {
-                    self.emit("[x] ");
+                // A task marker always immediately follows its list-item
+                // start. Rewrite the just-emitted bullet into an InkyCap
+                // `#task(...)`: drop the bullet and capture the item text.
+                if let Some(reset) = self.task_line_reset.take() {
+                    self.out.truncate(reset);
+                    self.in_task = true;
+                    self.task_done = checked;
+                    self.task_buf.clear();
                 } else {
-                    self.emit("[ ] ");
+                    // Fallback (e.g. inside a blockquote, where output is
+                    // buffered elsewhere): keep a literal checkbox marker.
+                    self.emit(if checked { "[x] " } else { "[ ] " });
                 }
             }
             Event::DisplayMath(math) => {
                 self.ensure_blank_line();
-                self.emit(&format!("$ {} $", math));
+                if is_latex_specific(&math) {
+                    // LaTeX-only syntax Typst can't typeset natively.
+                    match &self.math_mode {
+                        MathImportMode::Mitex { .. } => {
+                            self.used_mitex = true;
+                            self.emit(&format!("#mitex(`{}`)", math.trim()));
+                        }
+                        MathImportMode::Preserve => {
+                            self.math_as_code += 1;
+                            self.emit(&format!("```latex\n{}\n```", math.trim()));
+                        }
+                    }
+                } else {
+                    // Brace/command-free math is valid Typst — render natively.
+                    self.emit(&format!("$ {} $", math.trim()));
+                }
                 self.ensure_blank_line();
             }
             Event::InlineMath(math) => {
-                self.emit(&format!("${}$", math));
+                if is_latex_specific(&math) {
+                    match &self.math_mode {
+                        MathImportMode::Mitex { .. } => {
+                            self.used_mitex = true;
+                            self.emit(&format!("#mi(`{}`)", math));
+                        }
+                        MathImportMode::Preserve => {
+                            self.math_as_code += 1;
+                            self.emit(&format!("`{}`", math));
+                        }
+                    }
+                } else {
+                    self.emit(&format!("${}$", math));
+                }
             }
         }
     }
@@ -756,10 +1027,24 @@ impl<'a> Converter<'a> {
                 let ctx = self.list_stack.last().cloned();
                 if let Some(ctx) = &ctx {
                     let indent = "  ".repeat(ctx.indent);
-                    if ctx.ordered {
-                        self.emit(&format!("{}+ ", indent));
+                    let bullet = if ctx.ordered {
+                        format!("{}+ ", indent)
                     } else {
-                        self.emit(&format!("{}- ", indent));
+                        format!("{}- ", indent)
+                    };
+                    // On the direct output path, flush pending newlines and
+                    // record the line-start offset so a following
+                    // TaskListMarker can rewrite this bullet into #task.
+                    // Inside a blockquote/table cell the output is buffered
+                    // elsewhere, so skip task rewriting there.
+                    if self.blockquote_depth == 0 && !self.in_table_cell {
+                        self.flush_newlines();
+                        self.task_line_reset = Some(self.out.len());
+                        self.task_indent = indent;
+                        self.out.push_str(&bullet);
+                    } else {
+                        self.task_line_reset = None;
+                        self.emit(&bullet);
                     }
                 }
             }
@@ -854,6 +1139,18 @@ impl<'a> Converter<'a> {
                 }
             }
             TagEnd::Item => {
+                if self.in_task {
+                    let body = std::mem::take(&mut self.task_buf);
+                    let body = body.trim();
+                    let indent = std::mem::take(&mut self.task_indent);
+                    let done_arg = if self.task_done { ", done: true" } else { "" };
+                    // Each task on its own line; the next item's `ensure_newline`
+                    // keeps them on separate lines without an explicit break.
+                    self.out
+                        .push_str(&format!("{}#task(\"{}\"{})", indent, escape_str(body), done_arg));
+                    self.in_task = false;
+                }
+                self.task_line_reset = None;
                 if let Some(ctx) = self.list_stack.last_mut() {
                     ctx.index += 1;
                 }
@@ -876,7 +1173,10 @@ impl<'a> Converter<'a> {
             TagEnd::Image => {
                 self.in_image = false;
                 let url = std::mem::take(&mut self.image_url);
-                self.emit(&format!("#image(\"{}\")", url));
+                // Route notebox-local images into the attachment folder; leave
+                // external/absolute URLs untouched.
+                let routed = route_image_url(&url, &self.attachment_folder);
+                self.emit(&format!("#image(\"{}\")", routed));
             }
             TagEnd::Table => {
                 self.in_table = false;
@@ -924,6 +1224,14 @@ impl<'a> Converter<'a> {
     }
 
     fn text(&mut self, text: &str) {
+        if self.in_task {
+            // Task body is a plain-string argument: capture raw text (no
+            // Typst-markup escaping); `escape_str` handles the string literal
+            // at emit time.
+            self.task_buf.push_str(text);
+            return;
+        }
+
         if self.in_link {
             self.link_text.push_str(text);
             return;
@@ -1079,6 +1387,155 @@ mod tests {
             ..MarkdownToTypstOptions::default()
         };
         markdown_to_typst(md, &opts)
+    }
+
+    fn map(source: &str, target: Option<&str>, ty: PropertyType) -> (String, FieldMapping) {
+        (
+            source.to_string(),
+            FieldMapping {
+                target_key: target.map(|s| s.to_string()),
+                target_type: ty,
+            },
+        )
+    }
+
+    #[test]
+    fn default_frontmatter_emits_via_serde_yaml() {
+        // Block-style list (unsupported by the old line parser) now works.
+        let md = "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ncreated: 2024-03-01\n---\n\nBody";
+        let out = convert(md);
+        assert!(out.contains("title: \"My Note\""), "got:\n{out}");
+        assert!(out.contains("tags: (\"alpha\", \"beta\")"), "got:\n{out}");
+        // `created` aliases to the system `date` property.
+        assert!(out.contains("date: \"2024-03-01\""), "got:\n{out}");
+    }
+
+    #[test]
+    fn mapped_frontmatter_respects_targets_types_and_exclusions() {
+        let md = "---\nstatus: draft\npriority: 3\nignore_me: secret\n---\n\nBody";
+        let mapping: FrontmatterMapping = [
+            // Remap to a custom existing property name.
+            map("status", Some("workflow-state"), PropertyType::Text),
+            // Force a numeric property.
+            map("priority", Some("priority"), PropertyType::Number),
+            // Exclude entirely.
+            map("ignore_me", None, PropertyType::Auto),
+        ]
+        .into_iter()
+        .collect();
+        let opts = MarkdownToTypstOptions {
+            dialect: MarkdownDialect::Standard,
+            frontmatter_mapping: Some(mapping),
+            ..MarkdownToTypstOptions::default()
+        };
+        let out = markdown_to_typst(md, &opts);
+        assert!(out.contains("workflow-state: \"draft\""), "got:\n{out}");
+        assert!(out.contains("priority: 3"), "got:\n{out}");
+        assert!(!out.contains("ignore_me"), "excluded key leaked:\n{out}");
+        assert!(!out.contains("secret"), "excluded value leaked:\n{out}");
+    }
+
+    #[test]
+    fn simple_math_stays_native_typst() {
+        // Brace/backslash-free math is valid Typst and must render natively
+        // (not be diverted to code/mitex) regardless of mode.
+        let md = "Inline $E = mc^2$ and $$x^2 + y^2 = z^2$$";
+        let (out, stats) = markdown_to_typst_with_stats(
+            md,
+            &MarkdownToTypstOptions { dialect: MarkdownDialect::Obsidian, ..Default::default() },
+        );
+        assert!(out.contains("$E = mc^2$"), "inline simple math changed:\n{out}");
+        assert!(out.contains("$ x^2 + y^2 = z^2 $"), "display simple math changed:\n{out}");
+        assert_eq!(stats.latex_math_as_code, 0);
+        assert!(!stats.used_mitex);
+    }
+
+    #[test]
+    fn latex_math_preserved_as_code_without_mitex() {
+        // Default math mode is Preserve. LaTeX-specific inline math → inline
+        // raw; display math → a ```latex block. The LaTeX is kept verbatim.
+        let md = "Inline $\\alpha_i$ here.\n\n$$\\sum_{i=1}^n x_i$$";
+        let (out, stats) = markdown_to_typst_with_stats(
+            md,
+            &MarkdownToTypstOptions { dialect: MarkdownDialect::Obsidian, ..Default::default() },
+        );
+        assert!(out.contains("`\\alpha_i`"), "inline LaTeX not raw:\n{out}");
+        assert!(out.contains("```latex\n\\sum_{i=1}^n x_i\n```"), "display LaTeX not code:\n{out}");
+        assert_eq!(stats.latex_math_as_code, 2);
+        assert!(!stats.used_mitex);
+        // No bare Typst math delimiters wrapping raw LaTeX (which wouldn't render).
+        assert!(!out.contains("$ \\sum"), "raw LaTeX left in Typst math:\n{out}");
+    }
+
+    #[test]
+    fn latex_math_uses_mitex_when_installed() {
+        let md = "Inline $\\alpha_i$ here.\n\n$$\\sum_{i=1}^n x_i$$";
+        let (out, stats) = markdown_to_typst_with_stats(
+            md,
+            &MarkdownToTypstOptions {
+                dialect: MarkdownDialect::Obsidian,
+                math: MathImportMode::Mitex { version: "0.2.7".into() },
+                ..Default::default()
+            },
+        );
+        assert!(out.contains("#mi(`\\alpha_i`)"), "inline mitex missing:\n{out}");
+        assert!(out.contains("#mitex(`\\sum_{i=1}^n x_i`)"), "display mitex missing:\n{out}");
+        assert!(
+            out.contains("#import \"@preview/mitex:0.2.7\": mi, mitex"),
+            "mitex import not added:\n{out}"
+        );
+        assert!(stats.used_mitex);
+        assert_eq!(stats.latex_math_as_code, 0);
+    }
+
+    #[test]
+    fn no_mitex_import_when_note_has_no_math() {
+        let (out, _) = markdown_to_typst_with_stats(
+            "# Just text\n\nNo math here.",
+            &MarkdownToTypstOptions {
+                dialect: MarkdownDialect::Obsidian,
+                math: MathImportMode::Mitex { version: "0.2.7".into() },
+                ..Default::default()
+            },
+        );
+        assert!(!out.contains("mitex"), "mitex import added to a math-free note:\n{out}");
+    }
+
+    #[test]
+    fn obsidian_task_list_becomes_tasks() {
+        let md = "- [ ] wake up\n- [x] have breakfast\n- [ ] go to work";
+        let out = convert(md);
+        assert!(out.contains("#task(\"wake up\")"), "got:\n{out}");
+        assert!(out.contains("#task(\"have breakfast\", done: true)"), "got:\n{out}");
+        assert!(out.contains("#task(\"go to work\")"), "got:\n{out}");
+        // No literal checkbox markers or bullets should survive.
+        assert!(!out.contains("[ ]") && !out.contains("[x]"), "literal marker left:\n{out}");
+        assert!(!out.contains("- #task"), "task kept a list bullet:\n{out}");
+        // Each task on its own line, with no stray Typst line-break (`\`).
+        assert!(out.contains("#task(\"wake up\")\n"), "tasks not on separate lines:\n{out}");
+        assert!(!out.contains(" \\"), "unnecessary line-break inserted:\n{out}");
+    }
+
+    #[test]
+    fn plain_list_after_task_handling_unaffected() {
+        // A normal bullet list must still render as a list, not tasks.
+        let out = convert("- dog\n- bird\n- whale");
+        assert!(out.contains("- dog"));
+        assert!(out.contains("- bird"));
+        assert!(!out.contains("#task"));
+    }
+
+    #[test]
+    fn mapped_scalar_coerced_to_list_target() {
+        let md = "---\ncategory: research\n---\n\nBody";
+        let mapping: FrontmatterMapping =
+            [map("category", Some("tags"), PropertyType::List)].into_iter().collect();
+        let opts = MarkdownToTypstOptions {
+            frontmatter_mapping: Some(mapping),
+            ..MarkdownToTypstOptions::default()
+        };
+        let out = markdown_to_typst(md, &opts);
+        assert!(out.contains("tags: (\"research\")"), "got:\n{out}");
     }
 
     #[test]
@@ -1448,8 +1905,21 @@ mod tests {
 
     #[test]
     fn images() {
+        // Standard images funnel into the attachment folder (default "Assets").
         let result = convert("![alt](image.png)");
-        assert!(result.contains("#image(\"image.png\")"));
+        assert!(result.contains("#image(\"/Assets/image.png\")"), "got:\n{result}");
+    }
+
+    #[test]
+    fn images_route_subfolder_paths_to_attachment_by_basename() {
+        let result = convert("![alt](sub/dir/pic.png)");
+        assert!(result.contains("#image(\"/Assets/pic.png\")"), "got:\n{result}");
+    }
+
+    #[test]
+    fn external_image_urls_unchanged() {
+        let result = convert("![alt](https://example.com/x.png)");
+        assert!(result.contains("#image(\"https://example.com/x.png\")"), "got:\n{result}");
     }
 
     #[test]
@@ -1561,3 +2031,4 @@ mod tests {
         assert!(!result.contains("#highlight["), "Highlight should not span lines");
     }
 }
+

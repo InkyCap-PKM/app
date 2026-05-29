@@ -20,6 +20,7 @@ import {
 } from "solid-js";
 import { ChevronDown, ChevronRight } from "lucide-solid";
 import { open } from "@tauri-apps/plugin-dialog";
+import { noteboxRootDefault } from "../lib/dialog-defaults";
 import type {
   BookExportConfig,
   CollectionFile,
@@ -692,6 +693,7 @@ const CollectionCharacteristicsEditor: Component<{
   async function handleBrowseCsl() {
     const result = await open({
       title: "Select CSL citation style file",
+      defaultPath: await noteboxRootDefault(),
       filters: [{ name: "CSL Files", extensions: ["csl"] }],
     });
     if (result) {
@@ -779,6 +781,7 @@ const CollectionCharacteristicsEditor: Component<{
             onClick={async () => {
               const result = await open({
                 title: "Select bibliography file",
+                defaultPath: await noteboxRootDefault(),
                 filters: [{ name: "Bibliography", extensions: ["bib", "yml", "yaml", "json"] }],
               });
               if (result) saveField("bibliography_file", result as string);

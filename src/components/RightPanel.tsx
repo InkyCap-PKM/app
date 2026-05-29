@@ -22,6 +22,7 @@ import {
   propertyTypeIcon,
   reloadPropertyTypes,
   propertyType as getPropertyType,
+  inferPropertyType,
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
@@ -1422,7 +1423,10 @@ const RightPanel: Component = () => {
                         const ty = () => {
                           const declared = getPropertyType(key);
                           if (declared !== "auto") return declared;
-                          return KNOWN_FIELD_TYPES[key] ?? "auto";
+                          // Untyped key: resolve to a concrete type (system
+                          // default, else inferred from the value) so the row
+                          // never shows the ambiguous "Automatic".
+                          return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value);
                         };
                         const isDragging = () => draggingKey() === key;
                         const dropAbove = () =>

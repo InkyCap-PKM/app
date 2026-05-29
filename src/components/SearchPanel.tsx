@@ -102,6 +102,11 @@ const FILTER_HINTS: FilterHint[] = [
     insert: "annotation:",
     description: "match text inside an annotation or suggestion",
   },
+  {
+    prefix: "collection:",
+    insert: "collection:",
+    description: "scope results to notes belonging to a collection",
+  },
 ];
 
 /// Informational tips (non-insertable) describing query syntax beyond

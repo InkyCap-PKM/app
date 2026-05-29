@@ -67,6 +67,21 @@ pub async fn notebox_search(
         move |span: &str| terms.iter().any(|t| t.matches(span))
     });
 
+    // Resolve membership for any `collection:` filter in the query before we
+    // take the search-engine lock (resolution reads the collection files and
+    // property index). The engine itself has no notion of collections — it
+    // just intersects the precomputed member paths with document paths.
+    let mut collections = crate::search::engine::CollectionMembership::new();
+    for name in crate::search::query::collection_filter_values(&parsed) {
+        let key = name.to_lowercase();
+        if collections.contains_key(&key) {
+            continue;
+        }
+        let members =
+            crate::commands::collections::collection_member_paths(state.inner(), &name).await;
+        collections.insert(key, members);
+    }
+
     let engine = state.search_engine.read().await;
     let (mut results, total_count) = engine.search_paginated(
         &parsed,
@@ -74,6 +89,7 @@ pub async fn notebox_search(
         limit,
         annotation_scope,
         verify.as_ref().map(|v| v as &dyn Fn(&str) -> bool),
+        &collections,
     );
 
     // Match ranges are computed as *byte* offsets into each line (Rust `&str`),
@@ -139,7 +155,8 @@ impl CaseTerm {
 /// phrases are skipped — none of them participate in the case-sensitivity
 /// check.
 fn original_case_terms(query: &str) -> Vec<CaseTerm> {
-    const FILTER_PREFIXES: &[&str] = &["path:", "file:", "tag:", "section:", "property:"];
+    const FILTER_PREFIXES: &[&str] =
+        &["path:", "file:", "tag:", "section:", "property:", "annotation:", "collection:"];
     let mut out: Vec<CaseTerm> = Vec::new();
     for raw in query.split_whitespace() {
         if matches!(raw, "AND" | "OR" | "NOT") {

@@ -344,13 +344,15 @@ const inkycapTheme = EditorView.theme({
     boxSizing: "border-box",
   },
   ".cm-search__clear": {
-    // A normal flex item of `.cm-search__field` (inline-flex, align-items
-    // centre), so it is vertically centred by the wrapper with no manual
-    // offset. A negative left margin pulls it back over the input's right
-    // padding, leaving a 5px gap to the field's right edge (input width
-    // 100% − 21px margin + 16px button = field width − 5px).
-    flex: "0 0 auto",
-    marginLeft: "-21px",
+    // Absolutely positioned inside the field wrapper (which is
+    // position:relative) over the input's reserved 26px right padding, so it
+    // sits *within* the text-entry box rather than after it. Being out of
+    // normal flow, toggling its visibility with the field's contents never
+    // reflows the row — the Next/Previous/All buttons stay put.
+    position: "absolute",
+    right: "6px",
+    top: "50%",
+    transform: "translateY(-50%)",
     width: "16px",
     height: "16px",
     display: "inline-flex",

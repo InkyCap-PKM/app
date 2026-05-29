@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 
 use crate::errors::InkyCapError;
-use crate::markdown::notebox_import::{self, ImportResult};
+use crate::markdown::md_to_typst::{FieldMapping, FrontmatterMapping};
+use crate::markdown::notebox_import::{self, FrontmatterKeyInfo, ImportResult, SourceKind};
 use crate::markdown::{
     markdown_to_typst, typst_to_markdown, MarkdownToTypstOptions, TypstToMarkdownOptions,
     UnconvertibleMode,
 };
+use crate::property_types::{is_system_property, PropertyType};
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 
@@ -48,6 +50,12 @@ pub async fn paste_markdown_as_typst(
         convert_frontmatter: true,
         attachment_folder,
         dialect: crate::markdown::md_to_typst::MarkdownDialect::Standard,
+        // Clipboard paste has no mapping dialog; the built-in alias
+        // defaults (shared serde_yaml parser) handle any frontmatter.
+        frontmatter_mapping: None,
+        // Standard dialect doesn't parse `$…$` as math, so this is unused;
+        // Preserve is the safe default regardless.
+        math: crate::markdown::MathImportMode::Preserve,
     };
 
     let full = markdown_to_typst(&text, &options);
@@ -191,6 +199,11 @@ pub async fn convert_markdown_to_typst(
         convert_frontmatter: true,
         attachment_folder,
         dialect: crate::markdown::md_to_typst::MarkdownDialect::Standard,
+        // Programmatic conversion has no mapping dialog; the built-in
+        // alias defaults (shared serde_yaml parser) handle frontmatter.
+        frontmatter_mapping: None,
+        // Standard dialect doesn't parse `$…$` as math; Preserve is unused.
+        math: crate::markdown::MathImportMode::Preserve,
     };
 
     let full = markdown_to_typst(&markdown, &options);
@@ -210,15 +223,92 @@ pub async fn convert_markdown_to_typst(
     }
 }
 
+/// One row of the user's confirmed YAML→property mapping from the import
+/// dialog. `target_key` is `None` when the user excluded the property.
+/// `target_type` is the type the value is formatted as (and, when `create`
+/// is set, the type registered for the new property). System properties are
+/// never re-typed regardless of `create`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PropertyMapping {
+    pub source_key: String,
+    pub target_key: Option<String>,
+    pub target_type: PropertyType,
+    /// Whether `target_key` is a new property to register in the type
+    /// registry (vs. an existing notebox/system property).
+    pub create: bool,
+}
+
+/// Build the lowercased-source-key → `FieldMapping` table the converter
+/// consumes from the dialog's mapping rows.
+fn build_mapping_table(mappings: &[PropertyMapping]) -> FrontmatterMapping {
+    mappings
+        .iter()
+        .map(|m| {
+            (
+                m.source_key.to_lowercase(),
+                FieldMapping {
+                    target_key: m.target_key.clone(),
+                    target_type: m.target_type,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Scan every markdown file's YAML frontmatter in a source archive (or
+/// directory) and report the distinct keys with a suggested InkyCap
+/// property mapping for each. The frontend shows these in the mapping
+/// dialog before committing the import. Frontmatter is YAML regardless of
+/// dialect, so this needs no dialect argument. An open notebox supplies the
+/// existing property keys/types used to suggest matches.
+#[tauri::command]
+pub async fn scan_markdown_frontmatter(
+    source_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<FrontmatterKeyInfo>, String> {
+    let source = PathBuf::from(&source_path);
+    if !source.exists() {
+        return Err(format!("Source path does not exist: {}", source_path));
+    }
+
+    let archive_kind = archive_kind_for(&source);
+    let source_kind = match archive_kind {
+        Some(ArchiveKind::Zip) => SourceKind::Zip,
+        Some(ArchiveKind::TarGz) => SourceKind::TarGz,
+        None if source.is_dir() => SourceKind::Directory,
+        None => return Err("Source must be a directory, .zip, or .tar.gz file".to_string()),
+    };
+
+    let existing_keys = {
+        let index = state.property_index.read().await;
+        index.property_keys.iter().cloned().collect()
+    };
+    let types = {
+        let reg = state.property_types.read().await;
+        reg.all()
+    };
+
+    Ok(notebox_import::scan_frontmatter(
+        &source,
+        source_kind,
+        &existing_keys,
+        &types,
+    ))
+}
+
 /// Import a markdown notebox from a zip file or directory into the target
 /// notebox. `dialect` selects the source-markdown flavor ("standard" or
 /// "obsidian"); pass `None` to let the importer auto-detect by looking
-/// for an `.obsidian/` folder in the source.
+/// for an `.obsidian/` folder in the source. `mappings`, when present,
+/// carries the user's confirmed YAML→property mapping from the dialog;
+/// when `None`, the importer falls back to its built-in alias defaults.
 #[tauri::command]
 pub async fn import_markdown_notebox(
     source_path: String,
     target_path: String,
     dialect: Option<String>,
+    mappings: Option<Vec<PropertyMapping>>,
+    state: State<'_, AppState>,
 ) -> Result<ImportResult, String> {
     let source = PathBuf::from(&source_path);
     let target = PathBuf::from(&target_path);
@@ -242,13 +332,75 @@ pub async fn import_markdown_notebox(
         },
     };
 
+    let mapping_table = mappings.as_deref().map(build_mapping_table);
+
+    // Route embed-referenced attachments into the target notebox's configured
+    // attachment folder (Settings ▸ Files & Links), not a hardcoded default.
+    let attachment_folder = state
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
+
     let result = match archive_kind {
-        Some(ArchiveKind::Zip) => notebox_import::import_from_zip(&source, &target, resolved_dialect),
-        Some(ArchiveKind::TarGz) => {
-            notebox_import::import_from_tarball(&source, &target, resolved_dialect)
-        }
-        None => notebox_import::import_from_directory(&source, &target, resolved_dialect),
+        Some(ArchiveKind::Zip) => notebox_import::import_from_zip(
+            &source,
+            &target,
+            resolved_dialect,
+            mapping_table,
+            attachment_folder,
+        ),
+        Some(ArchiveKind::TarGz) => notebox_import::import_from_tarball(
+            &source,
+            &target,
+            resolved_dialect,
+            mapping_table,
+            attachment_folder,
+        ),
+        None => notebox_import::import_from_directory(
+            &source,
+            &target,
+            resolved_dialect,
+            mapping_table,
+            attachment_folder,
+        ),
     };
+
+    // Persist the declared type for any newly-created properties so the
+    // editor renders them with the right widget after the import. System
+    // properties have fixed types and are never touched; a "create" that
+    // collides with a property already in the notebox is treated as a plain
+    // mapping (no re-typing of the existing property).
+    if let Some(mappings) = &mappings {
+        let existing_keys: std::collections::HashSet<String> = {
+            let index = state.property_index.read().await;
+            index.property_keys.iter().cloned().collect()
+        };
+        let mut reg = state.property_types.write().await;
+        let known = reg.all();
+        let mut changed = false;
+        for m in mappings {
+            if !m.create {
+                continue;
+            }
+            let Some(target) = &m.target_key else {
+                continue;
+            };
+            if is_system_property(target)
+                || existing_keys.contains(target)
+                || known.contains_key(target)
+            {
+                continue;
+            }
+            reg.set(target.clone(), m.target_type);
+            changed = true;
+        }
+        if changed {
+            reg.save();
+        }
+    }
 
     Ok(result)
 }

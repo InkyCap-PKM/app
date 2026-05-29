@@ -41,8 +41,11 @@ export function allPropertyTypes() {
   return types();
 }
 
+// Concrete, user-selectable property types. "auto" is deliberately absent:
+// it's an internal default for keys the user hasn't typed yet, not a value a
+// user should pick. Untyped keys resolve to a concrete type for display via
+// `inferPropertyType` (from the value) or `KNOWN_FIELD_TYPES` (system keys).
 export const PROPERTY_TYPE_OPTIONS: PropertyType[] = [
-  "auto",
   "checkbox",
   "date",
   "datetime",
@@ -51,6 +54,20 @@ export const PROPERTY_TYPE_OPTIONS: PropertyType[] = [
   "number",
   "text",
 ];
+
+/// Best-effort concrete type for a value whose key carries no declared type.
+/// Used so an untyped ("auto") property still shows a meaningful type in the
+/// UI instead of the ambiguous "Automatic". Mirrors the backend's
+/// frontmatter type inference (list / checkbox / number / date / text).
+export function inferPropertyType(value: unknown): PropertyType {
+  if (Array.isArray(value)) return "list";
+  if (typeof value === "boolean") return "checkbox";
+  if (typeof value === "number") return "number";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value.trim())) {
+    return "date";
+  }
+  return "text";
+}
 
 export function propertyTypeLabel(ty: PropertyType): string {
   switch (ty) {
