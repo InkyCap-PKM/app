@@ -1,5 +1,5 @@
 import { Compartment, EditorState, Prec, StateField, Transaction, type Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
+import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
@@ -499,6 +499,35 @@ const inkycapHighlight = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--accent-danger)", textDecoration: "underline wavy" },
 ]);
 
+// Obsidian-style "scroll past the end", but half as far as CodeMirror's
+// built-in `scrollPastEnd()`. The stock version pads the bottom by a full
+// editor height (last line scrolls to the very top); we want the last line to
+// rise only to roughly the middle, so we use half that. Mirrors CM's own
+// plugin (padding via the contentAttributes facet) — non-typable space, no
+// real blank lines inserted.
+const scrollPastEndHalf = (() => {
+  const plugin = ViewPlugin.fromClass(
+    class {
+      height = 0;
+      attrs: { style: string } = { style: "padding-bottom: 0px" };
+      update(update: { view: EditorView }) {
+        const view = update.view;
+        const full = view.scrollDOM.clientHeight
+          - view.defaultLineHeight - view.documentPadding.top - 0.5;
+        const height = Math.max(0, full * 0.5);
+        if (height !== this.height) {
+          this.height = height;
+          this.attrs = { style: `padding-bottom: ${height}px` };
+        }
+      }
+    },
+  );
+  return [
+    plugin,
+    EditorView.contentAttributes.of((view) => view.plugin(plugin)?.attrs ?? null),
+  ];
+})();
+
 function baseExtensions(options: TypstEditorOptions): Extension[] {
   const exts: Extension[] = [
     lineNumbers(),
@@ -542,6 +571,10 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     cursorPositionTracker,
     lintGutter(),
     EditorView.lineWrapping,
+    // Obsidian-style "scroll past the end": lets the last line scroll up toward
+    // the middle of the viewport instead of staying pinned to the bottom while
+    // typing. Half the reach of CM's built-in scrollPastEnd (see definition).
+    scrollPastEndHalf,
   ];
 
   if (options.readOnly) {

@@ -183,7 +183,11 @@ const RightPanel: Component = () => {
   // edge, so a normally-rightward submenu overflows off-screen.
   const [rowMenu, setRowMenu] = createSignal<{
     key: string;
-    x: number;
+    // Distance from the viewport's right edge, so the menu's right edge
+    // stays flush under the kebab button it opened from (the button lives
+    // at the property row's right edge). Anchoring by `right` keeps the
+    // menu connected to its trigger regardless of the menu's own width.
+    right: number;
     y: number;
     typeSubmenuOpen: boolean;
     openLeft: boolean;
@@ -813,19 +817,19 @@ const RightPanel: Component = () => {
       return;
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const MENU_W = 200;
     const MENU_H = 120;
     const SUBMENU_W = 180;
-    let x = rect.left;
+    // Right-align the menu under the kebab button so it reads as attached
+    // to its trigger rather than floating mid-panel.
+    const right = Math.max(8, window.innerWidth - rect.right);
     let y = rect.bottom + 4;
-    if (x + MENU_W > window.innerWidth - 8) {
-      x = Math.max(8, window.innerWidth - MENU_W - 8);
-    }
     if (y + MENU_H > window.innerHeight - 8) {
       y = Math.max(8, rect.top - MENU_H - 4);
     }
-    const openLeft = x + MENU_W + SUBMENU_W > window.innerWidth - 8;
-    setRowMenu({ key, x, y, typeSubmenuOpen: false, openLeft });
+    // The type submenu would normally open to the right; near the panel's
+    // right edge there's no room, so flip it left.
+    const openLeft = rect.right + SUBMENU_W > window.innerWidth - 8;
+    setRowMenu({ key, right, y, typeSubmenuOpen: false, openLeft });
     setTimeout(() => {
       const onDocClick = () => {
         closeRowMenu();
@@ -2093,7 +2097,7 @@ const RightPanel: Component = () => {
         {(menu) => (
           <div
             class="context-menu"
-            style={{ left: `${menu().x}px`, top: `${menu().y}px`, position: "fixed" }}
+            style={{ right: `${menu().right}px`, top: `${menu().y}px`, position: "fixed" }}
             onClick={(e) => e.stopPropagation()}
           >
             <Show when={!KNOWN_FIELDS.has(menu().key)}>
