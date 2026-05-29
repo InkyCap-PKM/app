@@ -13,6 +13,7 @@
 
 import { Component, For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
+import { backupDefault, homeDirDefault } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { BackupEntry, BackupContentEntry, RestoreConflictPolicy } from "../lib/ipc";
 import { noteboxInfo } from "../stores/notebox";
@@ -93,6 +94,7 @@ const BackupBrowser: Component<Props> = (props) => {
     const picked = await open({
       multiple: false,
       title: t("backup.browse.pickExternalTitle"),
+      defaultPath: await backupDefault(),
       filters: [{ name: "Backup archive", extensions: ["zip"] }],
     });
     if (typeof picked !== "string") return;
@@ -177,6 +179,10 @@ const BackupBrowser: Component<Props> = (props) => {
       directory: true,
       multiple: false,
       title: t("backup.browse.pickTargetTitle"),
+      // This picker exists to restore SOMEWHERE OTHER than the notebox (the
+      // "Original notebox location" radio already covers in-place restore), so
+      // default to home rather than the notebox root.
+      defaultPath: await homeDirDefault(),
     });
     if (typeof picked === "string") {
       setAltTarget(picked);

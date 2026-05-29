@@ -115,8 +115,13 @@ const TemplatesPanel: Component = () => {
 
   async function installFromFile() {
     const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+    const { homeDirDefault } = await import("../lib/dialog-defaults");
+    // This dialog only chooses which tarball on disk to read; the install
+    // destination is fixed by the backend (the notebox's package dir). The
+    // source archive lives on the user's computer, so default to home.
     const path = await openDialog({
       title: "Install Typst package from local archive",
+      defaultPath: await homeDirDefault(),
       // Tauri filter extensions match the final dot-segment only — `tar.gz`
       // wouldn't match. List `gz`+`tgz`; backend validates actual shape.
       filters: [{ name: "Tarball", extensions: ["gz", "tgz"] }],

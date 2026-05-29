@@ -9,6 +9,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { save, open } from "@tauri-apps/plugin-dialog";
+import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
   PropertyValue,
   SortRule,
@@ -518,10 +519,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     const label = delimiter === "tab" ? "TSV" : "CSV";
     try {
       const outputPath = await save({
-        defaultPath: `${collectionName()}.${ext}`,
+        defaultPath: await exportDefault(`${collectionName()}.${ext}`),
         filters: [{ name: label, extensions: [ext] }],
       });
       if (!outputPath) return;
+      await rememberExportFile(outputPath);
       await ipc.exportCollectionCsvToFile(props.path, activeView(), outputPath, delimiter);
       setExportStatus(`Exported ${label} to ${outputPath}`);
       setTimeout(() => setExportStatus(null), 4000);
@@ -533,8 +535,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function exportAllPdf() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for PDFs" });
+      const outputDir = await open({ directory: true, title: "Select output folder for PDFs", defaultPath: await exportDefault() });
       if (!outputDir) return;
+      rememberExportDir(outputDir as string);
       setBusyMessage("Exporting collection as PDF files…");
       setBusyDetail(`Output folder: ${outputDir}`);
       setExportStatus("Exporting all notes as PDF...");
@@ -566,10 +569,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       const titleHint = cf?.book?.title || collectionName();
       const safeName = titleHint.replace(/[\\/:*?"<>|]+/g, "_");
       const outputPath = await save({
-        defaultPath: `${safeName}.pdf`,
+        defaultPath: await exportDefault(`${safeName}.pdf`),
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!outputPath) return;
+      await rememberExportFile(outputPath);
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const rm = exportReviewMode() === "keep" ? undefined : exportReviewMode();
       const overrides: ipc.BookExportOverrides | undefined =
@@ -634,8 +638,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function exportStaticSite() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for static site" });
+      const outputDir = await open({ directory: true, title: "Select output folder for static site", defaultPath: await exportDefault() });
       if (!outputDir) return;
+      rememberExportDir(outputDir as string);
       setBusyMessage("Exporting collection as HTML site…");
       setBusyDetail(`Output folder: ${outputDir}`);
       setExportStatus("Exporting as static HTML site...");
@@ -672,8 +677,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function exportAllMarkdown() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for Markdown files" });
+      const outputDir = await open({ directory: true, title: "Select output folder for Markdown files", defaultPath: await exportDefault() });
       if (!outputDir) return;
+      rememberExportDir(outputDir as string);
       setBusyMessage("Exporting collection as Markdown files…");
       setBusyDetail(`Output folder: ${outputDir}`);
       setExportStatus("Exporting all notes as Markdown...");

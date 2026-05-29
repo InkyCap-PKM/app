@@ -2728,6 +2728,21 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* Transient post-action notice (e.g. markdown-import result). Styled as a
+   callout-style banner — tinted background + accent left border — so it
+   reads as a distinct notification rather than blending into the section's
+   descriptive copy. Reuses the shared callout-info tokens. */
+.settings__notice {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--callout-info);
+  background: color-mix(in srgb, var(--callout-info) 8%, transparent);
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
 /* "this notebox" badge — small inline tag next to per-notebox setting
    labels, so users can see at a glance which settings are scoped to
    the current notebox vs. user-global. */
@@ -9217,6 +9232,132 @@ svg.lucide {
   font-size: var(--text-base);
   line-height: 1.45;
   color: var(--fg-secondary);
+}
+
+/* ── Markdown-import property mapping dialog (PropertyMappingDialog) ───────
+   A wider .app-modal variant holding the YAML→property mapping grid. The
+   grid columns are shared by the head row and every data row so they stay
+   aligned; the body scrolls when there are many properties. */
+.property-map-dialog {
+  width: 720px;
+}
+
+.property-map-dialog .app-modal__body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.property-map {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--modal-radius);
+  overflow: hidden;
+}
+
+.property-map__head,
+.property-map__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(120px, 0.8fr);
+  gap: 12px;
+  /* Top-align so each row's "Maps to" dropdown lines up horizontally with
+     its "Type" control and YAML key — rows vary in height (the source cell
+     has a meta line, the target cell an optional status line). */
+  align-items: start;
+  padding: 8px 12px;
+}
+
+.property-map__head {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.property-map__row + .property-map__row,
+.property-map__row {
+  border-top: 1px solid var(--border-color);
+}
+
+.property-map__head + .property-map__row {
+  border-top: none;
+}
+
+.property-map__source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.property-map__key {
+  font-weight: 500;
+  color: var(--fg-primary);
+  word-break: break-word;
+}
+
+.property-map__meta {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.property-map__target {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.property-map__status {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Editable name for a "Create new" property mapping. Mirrors the dropdown
+   trigger's sizing so it sits flush under it. */
+.property-map__name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: var(--text-md);
+  outline: none;
+}
+
+.property-map__name-input:focus {
+  border-color: var(--accent, #1D7874);
+}
+
+.property-map__name-input--error {
+  border-color: var(--error-fg, #e55);
+}
+
+.property-map__error {
+  font-size: var(--text-sm);
+  color: var(--error-fg, #e55);
+}
+
+.property-map__type {
+  min-width: 0;
+}
+
+/* Locked (non-editable) type label. Padding matches the dropdown trigger's
+   text inset (4px padding + 1px border) so a locked label's text baseline
+   aligns with the editable type dropdowns in adjacent rows. */
+.property-map__type-locked {
+  display: block;
+  padding: 5px 2px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
 }
 
 /* ── "Open a notebox to continue" overlay (NoteboxRequiredOverlay) ─────────

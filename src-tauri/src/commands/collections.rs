@@ -123,6 +123,76 @@ pub(crate) fn resolve_collection_members<'a>(
         .collect()
 }
 
+/// Resolve the set of note paths belonging to the collection whose name (the
+/// `.collection` file stem, matched case-insensitively) equals `name`. This
+/// backs the `collection:` search filter. Membership is the union over the
+/// collection's views — every note that appears anywhere in the collection —
+/// falling back to the collection's base filter group when it defines no
+/// views. Returns an empty set when no collection matches, the file can't be
+/// read/parsed, or no notebox is open. Unreadable files are skipped (logged),
+/// never surfaced as an error, so a broken collection just scopes to nothing.
+///
+/// The returned paths are the same `PathBuf`s the search engine keys its
+/// documents on (both derive from the notebox scan), so the caller can
+/// intersect them directly with search hits.
+pub(crate) async fn collection_member_paths(
+    state: &AppState,
+    name: &str,
+) -> std::collections::HashSet<std::path::PathBuf> {
+    let mut members = std::collections::HashSet::new();
+    let target = name.trim().to_lowercase();
+    if target.is_empty() {
+        return members;
+    }
+    let storage = match state.get_storage().await {
+        Ok(s) => s,
+        Err(_) => return members,
+    };
+    let collection_files = state.collection_files.read().await;
+    let index = state.property_index.read().await;
+    for path in collection_files.iter() {
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if stem != target {
+            continue;
+        }
+        let base = match storage.read_file(path).await {
+            Ok(content) => match parse_collection_file(&content) {
+                Ok(b) => b,
+                Err(err) => {
+                    log::warn!("collection_member_paths: failed to parse {}: {err}", path.display());
+                    continue;
+                }
+            },
+            Err(err) => {
+                log::warn!("collection_member_paths: failed to read {}: {err}", path.display());
+                continue;
+            }
+        };
+        if base.views.is_empty() {
+            // No views defined: membership is the collection-level filter group.
+            for note in index.notes.values() {
+                let included = base
+                    .filters
+                    .as_ref()
+                    .map_or(true, |g| evaluate_filter_group(g, note, path));
+                if included {
+                    members.insert(note.path.clone());
+                }
+            }
+        } else {
+            for view in &base.views {
+                for note in resolve_collection_members(&base, view, &index, path) {
+                    members.insert(note.path.clone());
+                }
+            }
+        }
+    }
+    members
+}
+
 /// Load a collection's data for a specific view, applying its filters and sorts. Requires an open notebox.
 #[tauri::command]
 pub async fn get_collection_data(

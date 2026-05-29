@@ -37,25 +37,30 @@ import { t } from "../lib/i18n";
  *  theme keys the every-match highlight off it (see typst-editor.ts). */
 const HIGHLIGHT_ALL_CLASS = "cm-search-highlight-all";
 
-/** Wrap a Lucide-style icon path in a stroked 24×24 SVG. */
-function svgIcon(path: string, size = 16): string {
+/** Wrap one or more Lucide-style icon paths in a stroked 24×24 SVG. */
+function svgIcon(paths: string | string[], size = 16): string {
+  const body = (Array.isArray(paths) ? paths : [paths])
+    .map((p) => `<path d="${p}"/>`)
+    .join("");
   return (
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" ` +
     `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
-    `stroke-linejoin="round"><path d="${path}"/></svg>`
+    `stroke-linejoin="round">${body}</svg>`
   );
 }
 
 // Right-pointing chevron for the disclosure toggle; CSS rotates it 90° when
-// the replace row is open. Lucide `arrow-big-right` / `arrow-big-left` drive
-// the Next / Previous buttons.
+// the replace row is open. Lucide `arrow-big-down-dash` / `arrow-big-up-dash`
+// drive the Next / Previous buttons.
 const CHEVRON_SVG = svgIcon("m9 18 6-6-6-6", 14);
-const ARROW_RIGHT_SVG = svgIcon(
-  "M13.207 19.793a.707.707 0 0 1-1.207-.5V16a1 1 0 0 0-1-1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h6a1 1 0 0 0 1-1V4.707a.707.707 0 0 1 1.207-.5l6.94 6.94a1.207 1.207 0 0 1 0 1.707z",
-);
-const ARROW_LEFT_SVG = svgIcon(
-  "M10.793 19.793a.707.707 0 0 0 1.207-.5V16a1 1 0 0 1 1-1h6a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1h-6a1 1 0 0 1-1-1V4.707a.707.707 0 0 0-1.207-.5l-6.94 6.94a1.207 1.207 0 0 0 0 1.707z",
-);
+const ARROW_DOWN_SVG = svgIcon([
+  "M14 8a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h3.293a.707.707 0 0 1 .5 1.207l-6.939 6.939a1.207 1.207 0 0 1-1.708 0l-6.94-6.94a.707.707 0 0 1 .5-1.206H8a1 1 0 0 0 1-1V9a1 1 0 0 1 1-1z",
+  "M9 4h6",
+]);
+const ARROW_UP_SVG = svgIcon([
+  "M14 16a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h3.293a.707.707 0 0 0 .5-1.207l-6.939-6.939a1.207 1.207 0 0 0-1.708 0l-6.94 6.94a.707.707 0 0 0 .5 1.206H8a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1z",
+  "M9 20h6",
+]);
 
 /** Lucide `x` — drives the in-field clear button. */
 const X_SVG =
@@ -124,8 +129,8 @@ class InkycapSearchPanel implements Panel {
     searchRow.append(
       this.wrapField(this.searchField),
       group(
-        iconButton("next", ARROW_RIGHT_SVG, t("search.next"), () => findNext(view)),
-        iconButton("prev", ARROW_LEFT_SVG, t("search.previous"), () => findPrevious(view)),
+        iconButton("next", ARROW_DOWN_SVG, t("search.next"), () => findNext(view)),
+        iconButton("prev", ARROW_UP_SVG, t("search.previous"), () => findPrevious(view)),
         allBtn,
       ),
       option(this.caseField, t("search.matchCase"), t("search.tip.matchCase")),

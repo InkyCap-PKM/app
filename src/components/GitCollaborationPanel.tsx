@@ -29,6 +29,7 @@ import {
   Settings2,
 } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
+import { homeDirDefault } from "../lib/dialog-defaults";
 import HelpButton from "./HelpButton";
 import { noteboxSettings } from "../stores/settings";
 import {
@@ -428,7 +429,10 @@ const PackageActions: Component = () => {
   async function doExport() {
     const dest = await save({
       title: t("git.package.exportTitle"),
-      defaultPath: "notebox.zip",
+      // Default OUTSIDE the notebox (home), never the notebox root: writing the
+      // handoff package into the very folder being packaged would fold prior
+      // packages into each new one. Imports likewise come from outside.
+      defaultPath: await homeDirDefault("notebox.zip"),
       filters: PACKAGE_FILTERS,
     });
     if (!dest) return;
@@ -439,6 +443,7 @@ const PackageActions: Component = () => {
     const picked = await open({
       multiple: false,
       title: t("git.package.importTitle"),
+      defaultPath: await homeDirDefault(),
       filters: PACKAGE_FILTERS,
     });
     if (typeof picked !== "string") return;

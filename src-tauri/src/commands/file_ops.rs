@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::errors::InkyCapError;
 use crate::state::AppState;
@@ -466,8 +466,17 @@ pub async fn pick_and_upload_to_attachments(
     use tauri_plugin_dialog::DialogExt;
 
     let app_for_picker = app.clone();
+    // Start the picker in the user's home directory rather than the process
+    // working directory (which, in `tauri dev`, is the build folder). The
+    // attachment source is an arbitrary file on the user's computer, so home
+    // is the sensible neutral default.
+    let home_dir = app.path().home_dir().ok();
     let picked = tokio::task::spawn_blocking(move || {
-        app_for_picker.dialog().file().blocking_pick_files()
+        let mut builder = app_for_picker.dialog().file();
+        if let Some(home) = home_dir {
+            builder = builder.set_directory(home);
+        }
+        builder.blocking_pick_files()
     })
     .await
     .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("dialog join error: {e}"))))?;

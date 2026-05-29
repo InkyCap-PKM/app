@@ -3,7 +3,8 @@
 // Supports terms, "phrases", AND/OR/NOT, wildcards (`*`), regex (`/pattern/`),
 // proximity operators (W/N, N/N), and a unified family of bare-prefix
 // filters that mirror Obsidian: `path:`, `file:`, `tag:`, `section:`,
-// `property:`. Filter values are single non-whitespace tokens; quote
+// `property:`, `annotation:`, `collection:`. Filter values are single
+// non-whitespace tokens; quote
 // (`property:author="Jane Doe"`) when the value contains spaces. Property
 // filters take a `key=value` form — `property:status=draft` matches notes
 // whose `status` property contains `draft`. The bare `property:key` form
@@ -58,6 +59,11 @@ pub enum FilterKind {
     /// `#suggestion[…]` whose body text contains `keyword`. A bare
     /// `annotation:` (empty value) matches any note with an annotation.
     Annotation,
+    /// `collection:name` — scopes results to notes that belong to the
+    /// collection whose name (the `.collection` file stem, case-insensitive)
+    /// matches `name`. Membership is resolved from the collection's filters
+    /// by the command layer; the engine receives the precomputed member set.
+    Collection,
 }
 
 impl FilterKind {
@@ -69,6 +75,7 @@ impl FilterKind {
             "section" => Some(Self::Section),
             "property" => Some(Self::Property),
             "annotation" => Some(Self::Annotation),
+            "collection" => Some(Self::Collection),
             _ => None,
         }
     }
@@ -83,8 +90,32 @@ impl fmt::Display for FilterKind {
             FilterKind::Section => "section",
             FilterKind::Property => "property",
             FilterKind::Annotation => "annotation",
+            FilterKind::Collection => "collection",
         };
         write!(f, "{}", s)
+    }
+}
+
+/// Collect the values of every `collection:` filter referenced anywhere in a
+/// parsed query (including inside boolean groups). The command layer uses
+/// these names to resolve each collection's member set before searching.
+pub fn collection_filter_values(node: &QueryNode) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_collection_values(node, &mut out);
+    out
+}
+
+fn collect_collection_values(node: &QueryNode, out: &mut Vec<String>) {
+    match node {
+        QueryNode::Filter { kind: FilterKind::Collection, value } => {
+            out.push(value.clone());
+        }
+        QueryNode::And(l, r) | QueryNode::Or(l, r) => {
+            collect_collection_values(l, out);
+            collect_collection_values(r, out);
+        }
+        QueryNode::Not(inner) => collect_collection_values(inner, out),
+        _ => {}
     }
 }
 
@@ -233,7 +264,8 @@ fn tokenize(input: &str) -> Vec<Token> {
 /// If `chars[i..]` starts with `<prefix>:` for one of the known filter
 /// prefixes (case-insensitive), return `(prefix_len, lowercased_prefix)`.
 fn match_filter_prefix(chars: &[char], i: usize) -> Option<(usize, String)> {
-    const PREFIXES: &[&str] = &["path", "file", "tag", "section", "property", "annotation"];
+    const PREFIXES: &[&str] =
+        &["path", "file", "tag", "section", "property", "annotation", "collection"];
     for prefix in PREFIXES {
         let pl = prefix.len();
         if i + pl + 1 > chars.len() {
@@ -413,6 +445,36 @@ mod tests {
     fn case_insensitive_prefix() {
         let q = parse_query("Tag:rust").unwrap();
         assert!(matches!(q, QueryNode::Filter { kind: FilterKind::Tag, .. }));
+    }
+
+    #[test]
+    fn parses_collection_filter() {
+        let q = parse_query("collection:papers").unwrap();
+        match q {
+            QueryNode::Filter { kind: FilterKind::Collection, value } => {
+                assert_eq!(value, "papers");
+            }
+            other => panic!("expected Collection filter, got {other:?}"),
+        }
+        // Quoted value carries spaces through verbatim.
+        let q = parse_query("collection:\"My Papers\"").unwrap();
+        assert!(matches!(
+            q,
+            QueryNode::Filter { kind: FilterKind::Collection, ref value } if value == "My Papers"
+        ));
+    }
+
+    #[test]
+    fn collection_values_collected_across_query() {
+        // Names are gathered from every branch of the boolean tree.
+        let q = parse_query("hello collection:papers OR collection:drafts").unwrap();
+        let mut names = collection_filter_values(&q);
+        names.sort();
+        assert_eq!(names, vec!["drafts".to_string(), "papers".to_string()]);
+
+        // A query with no collection filter yields nothing.
+        let q = parse_query("just words tag:rust").unwrap();
+        assert!(collection_filter_values(&q).is_empty());
     }
 
     #[test]
