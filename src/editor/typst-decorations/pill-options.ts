@@ -39,7 +39,7 @@ interface HighlightColor {
   hex: string;
 }
 const HIGHLIGHT_COLORS: HighlightColor[] = [
-  { label: "Yellow", fill: 'rgb("#fff3a3")', hex: "#fff3a3" },
+  { label: "Yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61" },
   { label: "Green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
   { label: "Blue",   fill: 'rgb("#c8dcff")', hex: "#c8dcff" },
   { label: "Pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
@@ -50,6 +50,26 @@ const LINE_STROKES: { label: string; literal: string; defaultMatch: boolean }[] 
   { label: "Thin",   literal: "0.5pt", defaultMatch: false },
   { label: "Medium", literal: "1pt",   defaultMatch: true  },
   { label: "Thick",  literal: "2pt",   defaultMatch: false },
+];
+
+// Common `delimiter:` choices for `#csv(…)`. Each is the Typst string
+// literal (quotes included). Comma is Typst's own default. We always write
+// an explicit literal rather than dropping the arg, because the comma
+// literal `","` contains a comma that the shared drop-path regex in
+// `upsertNamedArg` can't safely excise.
+const CSV_DELIMITERS: { label: string; literal: string; isDefault: boolean }[] = [
+  { label: "Comma",     literal: '","',  isDefault: true  },
+  { label: "Semicolon", literal: '";"',  isDefault: false },
+  { label: "Tab",       literal: '"\\t"', isDefault: false },
+];
+
+// `row-type:` choices for `#csv(…)`. Array is Typst's default (cleared from
+// source); dictionary keys each row by the header row's column names.
+const CSV_ROW_TYPES: { label: string; value: string | null; help?: string }[] = [
+  { label: "Array",      value: null,
+    help: "Each row is a list of cell strings (the default)." },
+  { label: "Dictionary", value: "dictionary",
+    help: "Each row is keyed by the first row's column headers." },
 ];
 
 // ── Lookup ──────────────────────────────────────────────────────────
@@ -66,6 +86,7 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   image:     imageOptions,
   line:      lineOptions,
   highlight: highlightOptions,
+  csv:       csvOptions,
   align:     alignOptions,
   figure:    figureOptions,
   cite:      citeOptions,
@@ -360,6 +381,50 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
         },
       },
     }],
+  }];
+}
+
+function csvOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const path = readFirstPositionalString(src) ?? "";
+  const delimiter = readNamedArg(src, "delimiter");
+  const rowType = readNamedArg(src, "row-type");
+  // `#csv(…)` is a call-only data form with no body bracket, so — like image
+  // — every meaningful argument has to surface in the pill menu or the user
+  // is forced into "Edit source" for routine tweaks. File is first so it's
+  // the auto-focused input.
+  return [{
+    items: [{
+      label: "File",
+      title: "Path to the CSV file",
+      help: "Paths are resolved from the notebox root, so a leading-slash path like /data/scores.csv is the most portable. A bare name resolves relative to the note.",
+      input: {
+        value: path,
+        placeholder: "e.g. /data/scores.csv",
+        onCommit: (v) => {
+          const trimmed = v.trim();
+          if (trimmed === "") return;
+          applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, trimmed));
+        },
+      },
+    }],
+  }, {
+    heading: "Delimiter",
+    items: CSV_DELIMITERS.map((opt) => ({
+      label: opt.label,
+      isActive: delimiter === opt.literal || (delimiter == null && opt.isDefault),
+      onSelect: () => applyCallTransform(view, from, (s) =>
+        upsertNamedArg(s, "delimiter", opt.literal)),
+    })),
+  }, {
+    heading: "Row type",
+    items: CSV_ROW_TYPES.map((opt) => ({
+      label: opt.label,
+      help: opt.help,
+      isActive: rowType === opt.value || (rowType == null && opt.value == null),
+      onSelect: () => applyCallTransform(view, from, (s) =>
+        upsertNamedArg(s, "row-type", opt.value)),
+    })),
   }];
 }
 

@@ -14,6 +14,13 @@ export interface TableCell {
 export interface TableData {
   columns: string[];
   align: string[] | null;
+  /**
+   * Optional explicit row heights, mirroring Typst's `rows:` argument
+   * (one entry per logical row, header included). `auto` lets a row fit its
+   * content; a length (e.g. `30pt`) is a user override applied by dragging a
+   * row edge. `null` when the table has no `rows:` argument at all.
+   */
+  rowSizes: string[] | null;
   header: TableCell[] | null;
   rows: TableCell[][];
   /** Full source text of the #table(...) call */
@@ -53,6 +60,7 @@ export function parseCanonicalTable(text: string): TableData | null {
 
   let columns: string[] | null = null;
   let align: string[] | null = null;
+  let rowSizes: string[] | null = null;
   let header: TableCell[] | null = null;
   const rows: TableCell[][] = [];
   let currentRow: TableCell[] = [];
@@ -65,6 +73,12 @@ export function parseCanonicalTable(text: string): TableData | null {
       } else if (arg.key === "align") {
         align = parseArrayLiteral(arg.value);
         if (!align) return null;
+      } else if (arg.key === "rows") {
+        // Accept an explicit `(…)` array of row heights. A bare length or
+        // integer shorthand applies cyclically in Typst and can't be mapped
+        // to per-row handles, so treat those as non-canonical.
+        rowSizes = parseArrayLiteral(arg.value);
+        if (!rowSizes) return null;
       } else {
         // Unknown named arg — non-canonical
         return null;
@@ -115,6 +129,7 @@ export function parseCanonicalTable(text: string): TableData | null {
   return {
     columns,
     align,
+    rowSizes,
     header,
     rows: properRows,
     sourceText: text,
@@ -128,6 +143,12 @@ export function serializeTable(data: TableData): string {
   const lines: string[] = [];
   lines.push("#table(");
   lines.push(`  columns: (${data.columns.join(", ")}),`);
+
+  // Only emit `rows:` when at least one row carries an explicit override —
+  // an all-`auto` array is redundant noise in the source.
+  if (data.rowSizes && data.rowSizes.some((r) => r !== "auto")) {
+    lines.push(`  rows: (${data.rowSizes.join(", ")}),`);
+  }
 
   if (data.align) {
     lines.push(`  align: (${data.align.join(", ")}),`);

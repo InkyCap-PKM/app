@@ -14,7 +14,11 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-italic": { fontStyle: "italic", color: "inherit" },
   ".cm-typst-strike": { textDecoration: "line-through", color: "var(--syntax-strike)" },
   ".cm-typst-highlight": {
-    backgroundColor: "var(--bg-search-match)",
+    // A bare `#highlight[…]` (no `fill:`) is the "Yellow" default — the
+    // palette's default deliberately writes no fill to keep source clean, so
+    // the bare mark must paint the same yellow the notebox wrapper compiles
+    // to (`--hl-yellow`, themed light/dark).
+    backgroundColor: "var(--hl-yellow)",
     borderRadius: "2px",
     padding: "0 2px",
     // The five highlight palette colours are intentionally light pastels,
@@ -701,8 +705,11 @@ export const visualTheme = EditorView.theme({
     boxShadow: "inset 0 0 0 2px var(--accent)",
     cursor: "text",
   },
+  // WebKitGTK honours only `background-color` (not the `background`
+  // shorthand) inside `::selection`; using the shorthand left cell text with
+  // the browser-default blue selection instead of the app's accent tint.
   ".cm-typst-table-cell::selection, .cm-typst-table-cell *::selection": {
-    background: "var(--bg-selection, Highlight) !important",
+    backgroundColor: "var(--bg-selection, Highlight)",
     color: "inherit",
   },
   ".cm-typst-table-cell--selected": {
@@ -796,17 +803,14 @@ export const visualTheme = EditorView.theme({
 
   ".cm-table-handle-grip": {
     pointerEvents: "none",
-    display: "grid",
-    gap: "1px",
-    fontSize: "6px",
-    lineHeight: "0.5",
+    display: "flex",
+    alignItems: "center",
     justifyContent: "center",
   },
-  ".cm-table-handle-grip--col": {
-    gridTemplateColumns: "repeat(3, auto)",
-  },
-  ".cm-table-handle-grip--row": {
-    gridTemplateColumns: "repeat(2, auto)",
+  ".cm-table-handle-grip svg": {
+    display: "block",
+    width: "14px",
+    height: "14px",
   },
 
   // ── Row handle cells (left column) ──
@@ -828,59 +832,60 @@ export const visualTheme = EditorView.theme({
     opacity: "1",
   },
 
-  // ── Add (+) buttons at edges ──
-  ".cm-table-add-btn": {
+  // ── Edge-drag resize handles ──
+  // Thin draggable lines pinned over each column's right edge and each row's
+  // bottom edge (positioned by setupResize). The hit target is wider than
+  // the visible line via content-box background clipping, so the 2px line
+  // stays crisp while remaining easy to grab.
+  ".cm-table-resize-overlay": {
     position: "absolute",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    opacity: "0",
-    transition: "opacity 0.1s",
-    userSelect: "none",
-    zIndex: "3",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "4",
   },
-  ".cm-table-add-btn:hover": {
+  ".cm-table-resize-handle": {
+    position: "absolute",
+    // Inert until the table is hovered/focused, so the invisible hit strips
+    // don't swallow clicks meant for cell text near a boundary.
+    pointerEvents: "none",
+    boxSizing: "border-box",
+    backgroundColor: "var(--accent)",
+    backgroundClip: "content-box",
+    opacity: "0",
+    transition: "opacity 0.12s",
+  },
+  ".cm-table-resize-handle--col": {
+    width: "7px",
+    marginLeft: "-3.5px",
+    padding: "0 2.5px",
+    cursor: "col-resize",
+  },
+  ".cm-table-resize-handle--row": {
+    height: "7px",
+    marginTop: "-3.5px",
+    padding: "2.5px 0",
+    cursor: "row-resize",
+  },
+  ".cm-typst-table-wrap:hover .cm-table-resize-handle, .cm-typst-table-wrap:focus-within .cm-table-resize-handle": {
+    opacity: "0.25",
+    pointerEvents: "auto",
+  },
+  ".cm-table-resize-handle:hover, .cm-table-resize-handle.cm-table-resize-handle--active": {
     opacity: "1 !important",
   },
-  ".cm-table-add-btn span": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "16px",
-    height: "16px",
-    borderRadius: "50%",
-    backgroundColor: "var(--accent)",
-    color: "var(--pill-fg, #fff)",
-    fontSize: "var(--text-base)",
-    fontWeight: "bold",
-    lineHeight: "1",
+  // While actively dragging, fatten the line and add a soft glow so the
+  // gesture clearly reads as a resize in progress.
+  ".cm-table-resize-handle--col.cm-table-resize-handle--active": {
+    padding: "0 2px",
+    boxShadow: "0 0 3px var(--accent)",
   },
-  ".cm-table-add-btn--col": {
-    top: "0",
-    bottom: "0",
-    width: "16px",
-    marginLeft: "-8px",
+  ".cm-table-resize-handle--row.cm-table-resize-handle--active": {
+    padding: "2px 0",
+    boxShadow: "0 0 3px var(--accent)",
   },
-  ".cm-table-col-header-cell .cm-table-add-btn--col:first-child": {
-    left: "-1px",
-  },
-  ".cm-table-col-header-cell .cm-table-add-btn--col:last-child": {
-    right: "-9px",
-  },
-  ".cm-table-add-btn--row": {
-    left: "0",
-    right: "0",
-    height: "16px",
-    marginTop: "-8px",
-  },
-  ".cm-table-row-handle-cell .cm-table-add-btn--row:first-child": {
-    top: "-1px",
-  },
-  ".cm-table-row-handle-cell .cm-table-add-btn--row:last-child": {
-    bottom: "-9px",
-    top: "auto",
-    marginTop: "0",
+  // The column/row whose edge is being dragged is tinted for the duration.
+  ".cm-table-cell--resizing": {
+    backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
   },
 
   // ── Angle bracket warning ──

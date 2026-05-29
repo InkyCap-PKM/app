@@ -210,6 +210,17 @@
   --highlight-bg: #f9e8cc;
   --highlight-mark: #8a9e9a;
 
+  /* Highlighter palette presets (see PRESET_HIGHLIGHT_VARS in
+     visual-colors.ts). Light mode shows the literal fill that the Typst
+     source carries; dark mode substitutes a slightly muted equivalent so
+     the marker doesn't glare against the dark editor. Text on highlights is
+     pinned near-black, so dark-mode values stay light enough to read on. */
+  --hl-yellow: #f2ed61;
+  --hl-green: #c8f0c8;
+  --hl-blue: #c8dcff;
+  --hl-pink: #ffd1e0;
+  --hl-orange: #ffd6a8;
+
   --block-id: #8a9e9a;
   --footnote-ref: var(--accent-color, #1D7874);
   --footnote-def: #4d706a;
@@ -347,6 +358,15 @@
   --callout-type: #F4C095;
   --highlight-bg: #3d2e18;
   --highlight-mark: #4d706a;
+
+  /* Muted dark-mode equivalents of the highlighter palette (see light
+     theme above). Kept light enough for the pinned near-black highlight
+     text to remain legible. */
+  --hl-yellow: #e8e29a;
+  --hl-green: #b3dcb3;
+  --hl-blue: #b6cdf2;
+  --hl-pink: #ecbccb;
+  --hl-orange: #ecc599;
 
   --block-id: #4d706a;
   --footnote-ref: color-mix(in srgb, var(--accent-color, #1D7874) 40%, white);

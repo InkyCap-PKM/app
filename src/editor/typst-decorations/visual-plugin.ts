@@ -39,7 +39,7 @@ import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { isNoteboxImportLine, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { computePreambleImportRanges, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -301,16 +301,14 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   const activeFormatting = { bold: false, italic: false, strike: false, highlight: false, headingLevel: 0 };
   let consumedUntil = -1;
 
-  for (let i = 1; i <= Math.min(state.doc.lines, 5); i++) {
-    const line = state.doc.line(i);
-    if (isNoteboxImportLine(line.text)) {
-      let hideEnd = line.to;
-      if (hideEnd < state.doc.length) {
-        hideEnd = Math.min(hideEnd + 1, state.doc.length);
-      }
-      if (!onlyRanges || nodeOverlapsRanges(line.from, hideEnd, onlyRanges)) {
-        decos.push(hide.range(line.from, hideEnd));
-      }
+  // Hide the leading import block — the notebox import plus any package
+  // imports (e.g. `#import "@preview/mitex:…": …`) a user or template added.
+  // They stay visible/editable in the source editor; here they're collapsed
+  // away so the visual editor opens on the document body. (Locking is handled
+  // by computeProtectedRanges, which covers the same ranges.)
+  for (const r of computePreambleImportRanges(state)) {
+    if (!onlyRanges || nodeOverlapsRanges(r.from, r.to, onlyRanges)) {
+      decos.push(hide.range(r.from, r.to));
     }
   }
 

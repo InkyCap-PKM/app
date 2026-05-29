@@ -14,6 +14,37 @@ export function isNoteboxImportLine(text: string): boolean {
   );
 }
 
+/** True for any `#import …` line (the notebox import, a `@preview/…`
+ *  package, a local module — anything). The `\b` stops `#important`-style
+ *  false matches. */
+export function isImportLine(text: string): boolean {
+  return /^#import\b/.test(text.trimStart());
+}
+
+/**
+ * Byte ranges (line + trailing newline) of the leading run of `#import`
+ * lines at the very top of the note — the notebox import plus any package
+ * imports a user or a template added. Blank lines inside the run are
+ * tolerated; the run ends at the first line that is neither blank nor an
+ * import (typically the `#note(...)` properties call or the first body
+ * line). These are hidden and locked in the visual editor so the preamble
+ * reads as a clean document, while the source editor leaves them fully
+ * visible and editable (only the notebox import is also locked in source,
+ * via `importLineGuard`).
+ */
+export function computePreambleImportRanges(state: EditorState): ProtectedRange[] {
+  const ranges: ProtectedRange[] = [];
+  const docLen = state.doc.length;
+  for (let i = 1; i <= state.doc.lines; i++) {
+    const line = state.doc.line(i);
+    if (line.text.trim() === "") continue; // blank gap within the preamble
+    if (!isImportLine(line.text)) break;   // first real content ends the run
+    const to = line.to < docLen ? Math.min(line.to + 1, docLen) : line.to;
+    ranges.push({ from: line.from, to });
+  }
+  return ranges;
+}
+
 export function computeProtectedRanges(
   state: EditorState,
   expandedPos: number | null,
@@ -21,16 +52,19 @@ export function computeProtectedRanges(
   const ranges: ProtectedRange[] = [];
   const docLen = state.doc.length;
 
+  // Lock the whole leading import block (notebox import + any package
+  // imports). Hidden in the visual editor; here it's also made uneditable.
+  ranges.push(...computePreambleImportRanges(state));
+
   const maxScanLine = Math.min(state.doc.lines, 30);
   for (let i = 1; i <= maxScanLine; i++) {
     const line = state.doc.line(i);
     const trimmed = line.text.trimStart();
 
-    const isImport = isNoteboxImportLine(line.text);
     const isNote = trimmed.startsWith("#note(");
     const isBibliography = trimmed.startsWith("#bibliography(");
 
-    if (!isImport && !isNote && !isBibliography) continue;
+    if (!isNote && !isBibliography) continue;
 
     let hideEnd = line.to;
 

@@ -55,6 +55,31 @@ export function parseTypstColor(raw: string): string | null {
 /** Base highlight decoration – applies the `.cm-typst-highlight` CSS class. */
 export const highlight = Decoration.mark({ class: "cm-typst-highlight" });
 
+/**
+ * The fixed highlighter palette (see `HIGHLIGHT_COLORS` in pill-options.ts)
+ * maps each preset fill to a themed CSS variable. The Typst source keeps the
+ * literal light-mode colour — that is what compiles to PDF/HTML on white
+ * paper — but the *editor* renders the preset through a `--hl-*` variable so
+ * the dark theme can substitute a less-glaring equivalent. The visual editor
+ * is a WYSIWYM authoring aid, not a faithful renderer, so a theme-tuned
+ * appearance here is by design. Custom (non-preset) fills are rendered with
+ * their literal value, unchanged.
+ */
+const PRESET_HIGHLIGHT_VARS: Record<string, string> = {
+  "#f2ed61": "--hl-yellow",
+  "#c8f0c8": "--hl-green",
+  "#c8dcff": "--hl-blue",
+  "#ffd1e0": "--hl-pink",
+  "#ffd6a8": "--hl-orange",
+};
+
+/** Resolve a parsed fill colour to a themed `var(--hl-*, <literal>)`
+ *  expression when it matches a palette preset, else the literal value. */
+function themedHighlightFill(fill: string): string {
+  const v = PRESET_HIGHLIGHT_VARS[fill.toLowerCase()];
+  return v ? `var(${v}, ${fill})` : fill;
+}
+
 /** Extract `fill`, `stroke`, and `radius` parameters from the argument text
  *  of a `#highlight(…)[…]` call. */
 export function extractHighlightParams(text: string): { fill?: string; stroke?: string; radius?: string } {
@@ -101,7 +126,9 @@ export function buildHighlightMark(text: string): Decoration {
   if (!params.fill && !params.stroke && !params.radius) return highlight;
 
   const parts: string[] = [];
-  parts.push(`background-color: ${params.fill ?? "var(--bg-search-match)"}`);
+  // No explicit fill (e.g. only a radius/stroke set) means the default
+  // yellow, same as the bare `.cm-typst-highlight` class.
+  parts.push(`background-color: ${params.fill ? themedHighlightFill(params.fill) : "var(--hl-yellow)"}`);
   if (params.stroke) parts.push(`outline: 1px solid ${params.stroke}`);
   parts.push(`border-radius: ${params.radius ?? "2px"}`);
   parts.push("padding: 0 2px");
