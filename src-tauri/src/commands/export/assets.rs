@@ -17,11 +17,13 @@ use super::helpers::extract_image_paths;
 pub async fn export_self_contained_typ(
     path: String,
     output_path: String,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
+    let content = super::helpers::apply_review_mode(&content, review_mode.as_deref());
     let notebox_root = state.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
     drop(notebox_root);

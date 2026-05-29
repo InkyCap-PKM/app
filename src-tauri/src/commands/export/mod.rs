@@ -32,96 +32,34 @@ pub use pdf::{
 };
 pub use site::export_collection_static_site;
 
+/// Number of collaboration review-markup constructs (`#suggestion`,
+/// `#annotation`, `#review-decision`) in a note. The export dialog calls this
+/// when opening so it only shows its "Review markup" control for notes that
+/// actually carry tracked changes.
+#[tauri::command]
+pub async fn count_note_review_markup(
+    path: String,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> Result<usize, crate::errors::InkyCapError> {
+    use crate::storage::traits::NoteboxStorage;
+    let storage = state.get_storage().await?;
+    let content = storage
+        .read_file(&std::path::PathBuf::from(&path))
+        .await?;
+    Ok(crate::typst_pipeline::review_markup::count_review_markup(&content))
+}
+
 #[cfg(test)]
 mod tests {
     use super::helpers::*;
     use super::assets::inline_package;
     use super::pandoc::{
-        inject_docx_core_properties, inject_odt_meta_properties, preprocess_for_pandoc,
-        strip_inkycap_functions,
+        inject_docx_core_properties, inject_odt_meta_properties, mirror_img_style_size_to_attrs,
     };
     use super::pdf::{
         check_pdf_standard_requirements, ensure_document_date_for_standard,
     };
     use crate::typst_pipeline::compiler::PdfStandardPreset;
-
-    #[test]
-    fn preprocess_strips_import_line() {
-        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#import"));
-        assert!(result.contains("= Hello"));
-    }
-
-    #[test]
-    fn preprocess_strips_note_call() {
-        let source = "#note(title: \"Test\", tags: (\"a\", \"b\"))\n\n= Hello\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#note("));
-        assert!(result.contains("= Hello"));
-    }
-
-    #[test]
-    fn preprocess_strips_multiline_note_call() {
-        let source = concat!(
-            "#note(\n",
-            "  title: \"Test\",\n",
-            "  tag: (\"dogtag\", \"animal\"),\n",
-            "  date: \"2026-04-28\",\n",
-            "  to-do: false,\n",
-            "  alias: \"\",\n",
-            ")\n",
-            "\n= Hello\n",
-        );
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#note("), "should strip #note call");
-        assert!(!result.contains("dogtag"), "should strip note args");
-        assert!(!result.contains("to-do"), "should strip note args");
-        assert!(result.contains("= Hello"));
-    }
-
-    #[test]
-    fn preprocess_replaces_wikilink_with_text() {
-        let source = "See #wikilink(\"Other Note\") for details.\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(result.contains("See Other Note for details."));
-    }
-
-    #[test]
-    fn preprocess_wikilink_display_label() {
-        let source = "See #wikilink(\"Other Note\", display: \"the note\") for details.\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(result.contains("See the note for details."));
-    }
-
-    /// `#wikilink(name, label: "...")` (heading-deep-link form) used to leak
-    /// through the Pandoc preprocessor because the regex only matched the
-    /// `display:` keyword. Bracket-balanced stripping must drop the whole
-    /// call regardless of which named args appear.
-    #[test]
-    fn preprocess_wikilink_with_label_arg() {
-        let source = "See #wikilink(\"Other Note\", label: \"section-2\") here.\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#wikilink"), "wikilink must be stripped: {result}");
-        assert!(result.contains("See Other Note here."));
-    }
-
-    #[test]
-    fn preprocess_wikilink_display_and_label_args() {
-        let source = "See #wikilink(\"foo\", display: \"the foo\", label: \"intro\").\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#wikilink"));
-        assert!(result.contains("See the foo."));
-    }
-
-    #[test]
-    fn preprocess_strips_tags() {
-        let source = "Some text #tag(\"physics\") and more.\n";
-        let result = preprocess_for_pandoc(source);
-        assert!(!result.contains("#tag"));
-        assert!(result.contains("Some text"));
-        assert!(result.contains("and more."));
-    }
 
     #[test]
     fn extract_image_paths_finds_all() {
@@ -489,41 +427,25 @@ Some text.
     }
 
     #[test]
-    fn strip_callout_to_blockquote() {
-        let source = r#"#callout("info")[This is important.]"#;
-        let result = strip_inkycap_functions(source);
-        assert!(result.contains("#quote(block: true)[This is important.]"));
-        assert!(!result.contains("#callout"));
+    fn img_style_width_mirrored_to_attribute() {
+        // Typst HTML export sizes images via inline CSS; Pandoc needs the
+        // width as an attribute or it embeds at intrinsic (huge) size.
+        let html = r#"<img src="data:image/png;base64,AAAA" style="width: 25%">"#;
+        let out = mirror_img_style_size_to_attrs(html);
+        assert!(out.contains(r#"width="25%""#), "got: {out}");
     }
 
     #[test]
-    fn strip_callout_with_title() {
-        let source = r#"#callout("warning", title: "Watch out")[Be careful.]"#;
-        let result = strip_inkycap_functions(source);
-        assert!(result.contains("#quote(block: true)[Be careful.]"));
-        assert!(!result.contains("#callout"));
+    fn img_existing_width_attr_not_duplicated() {
+        let html = r#"<img src="x.png" width="100" style="width: 25%">"#;
+        let out = mirror_img_style_size_to_attrs(html);
+        assert_eq!(out.matches("width=").count(), 1, "got: {out}");
     }
 
     #[test]
-    fn strip_callout_nested_brackets() {
-        let source = r#"#callout("info")[Has [nested] brackets.]"#;
-        let result = strip_inkycap_functions(source);
-        assert!(result.contains("#quote(block: true)[Has [nested] brackets.]"));
-    }
-
-    #[test]
-    fn strip_verse_string_arg() {
-        let source = r#"#verse("roses are red")"#;
-        let result = strip_inkycap_functions(source);
-        assert!(result.contains("#quote(block: true)[roses are red]"));
-        assert!(!result.contains("#verse"));
-    }
-
-    #[test]
-    fn strip_set_notebox() {
-        let source = "#set-notebox(show-inline-tags: false)\n= Hello\n";
-        let result = strip_inkycap_functions(source);
-        assert!(!result.contains("#set-notebox"));
-        assert!(result.contains("= Hello"));
+    fn img_auto_width_skipped() {
+        let html = r#"<img src="x.png" style="width: auto">"#;
+        let out = mirror_img_style_size_to_attrs(html);
+        assert!(!out.contains("width=\""), "auto should be skipped: {out}");
     }
 }

@@ -1,18 +1,29 @@
 import { Component, createSignal, onMount, onCleanup, Show } from "solid-js";
 import { save } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
-import type { PdfStandardPreset } from "../lib/ipc";
+import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
 
-export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "html" | "odt" | "docx" | "latex" | "pandoc-pdf";
+export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
+
+const REVIEW_MARKUP_LABELS: Record<ReviewMarkupMode, string> = {
+  keep: "Keep tracked changes",
+  accept: "Accept all changes",
+  reject: "Reject all changes",
+};
+
+const REVIEW_MARKUP_HINTS: Record<ReviewMarkupMode, string> = {
+  keep: "Suggestions and review notes render as tracked-change marks in the output.",
+  accept: "Suggested changes are applied and review notes removed — a clean published copy.",
+  reject: "Suggested changes are discarded (original text kept) and review notes removed.",
+};
 
 const FORMAT_INFO: Record<ExportFormat, { label: string; ext: string; pandoc: boolean }> = {
   pdf: { label: "PDF (.pdf)", ext: "pdf", pandoc: false },
   typ: { label: "Self-contained (.typ)", ext: "typ", pandoc: false },
   "typst-html": { label: "HTML (.html)", ext: "html", pandoc: false },
   markdown: { label: "Markdown (.md)", ext: "md", pandoc: false },
-  html: { label: "HTML (.html)", ext: "html", pandoc: true },
   odt: { label: "OpenDocument (.odt)", ext: "odt", pandoc: true },
   docx: { label: "Word (.docx)", ext: "docx", pandoc: true },
   latex: { label: "LaTeX (.tex)", ext: "tex", pandoc: true },
@@ -31,10 +42,6 @@ const METADATA_HINTS: Partial<Record<ExportFormat, Partial<Record<MetadataMode, 
   },
   "typst-html": {
     exclude: "The #note() properties will not appear in the HTML.",
-    properties: "Properties will appear as <meta> tags in the HTML <head>.",
-  },
-  html: {
-    exclude: "The #note() properties will be stripped from the output.",
     properties: "Properties will appear as <meta> tags in the HTML <head>.",
   },
   docx: {
@@ -80,6 +87,8 @@ const ExportDialog: Component = () => {
   const [markdownPreserveTypst, setMarkdownPreserveTypst] = createSignal(true);
   const [pdfStandard, setPdfStandard] = createSignal<PdfStandardPreset>("standard");
   const [includeBibliography, setIncludeBibliography] = createSignal(true);
+  const [reviewMode, setReviewMode] = createSignal<ReviewMarkupMode>("keep");
+  const [reviewMarkupCount, setReviewMarkupCount] = createSignal(0);
 
   function fileName(): string {
     const p = filePath();
@@ -99,9 +108,14 @@ const ExportDialog: Component = () => {
     setMetadataMode("exclude");
     setPdfStandard("standard");
     setIncludeBibliography(true);
+    setReviewMode("keep");
+    setReviewMarkupCount(0);
     setVisible(true);
 
     ipc.detectPandoc().then((path) => setPandocAvailable(path !== null));
+    ipc.countNoteReviewMarkup(detail.path)
+      .then((n) => setReviewMarkupCount(n))
+      .catch(() => setReviewMarkupCount(0));
   }
 
   onMount(() => {
@@ -152,7 +166,7 @@ const ExportDialog: Component = () => {
         if (!outputPath) return;
 
         setExporting(true);
-        await ipc.exportSelfContainedTyp(filePath(), outputPath);
+        await ipc.exportSelfContainedTyp(filePath(), outputPath, reviewMode());
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "pdf") {
         const outputPath = await save({
@@ -165,9 +179,9 @@ const ExportDialog: Component = () => {
         const std = pdfStandard() === "standard" ? undefined : pdfStandard();
         const includeBib = includeBibliography() ? undefined : false;
         if (collectionPath()) {
-          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std, includeBib);
+          await ipc.exportCollectionNotePdf(filePath(), collectionPath()!, outputPath, metadataMode(), std, includeBib, reviewMode());
         } else {
-          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib);
+          await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib, reviewMode());
         }
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "markdown") {
@@ -182,6 +196,7 @@ const ExportDialog: Component = () => {
           filePath(),
           outputPath,
           markdownPreserveTypst() ? "preserve" : "omit",
+          reviewMode(),
         );
         setSuccess(`Exported to ${outputPath}`);
       } else if (fmt === "typst-html") {
@@ -193,7 +208,7 @@ const ExportDialog: Component = () => {
 
         setExporting(true);
         const includeBib = includeBibliography() ? undefined : false;
-        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib);
+        await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib, reviewMode());
         setSuccess(`Exported to ${outputPath}`);
       } else {
         // Pandoc formats (including pandoc-pdf)
@@ -204,7 +219,7 @@ const ExportDialog: Component = () => {
         if (!outputPath) return;
 
         setExporting(true);
-        await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode());
+        await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode(), reviewMode());
         setSuccess(`Exported to ${outputPath}`);
       }
 
@@ -262,7 +277,6 @@ const ExportDialog: Component = () => {
                   { value: "typ", label: FORMAT_INFO.typ.label, group: "Typst" },
                   { value: "typst-html", label: FORMAT_INFO["typst-html"].label, group: "Typst" },
                   { value: "markdown", label: FORMAT_INFO.markdown.label, group: "Typst" },
-                  { value: "html", label: FORMAT_INFO.html.label, group: "Via Pandoc" },
                   { value: "odt", label: FORMAT_INFO.odt.label, group: "Via Pandoc" },
                   { value: "docx", label: FORMAT_INFO.docx.label, group: "Via Pandoc" },
                   { value: "latex", label: FORMAT_INFO.latex.label, group: "Via Pandoc" },
@@ -272,6 +286,24 @@ const ExportDialog: Component = () => {
                 ariaLabel="Export format"
               />
             </div>
+
+            <Show when={reviewMarkupCount() > 0}>
+              <div class="export-dialog__field">
+                <label>Review markup</label>
+                <Dropdown<ReviewMarkupMode>
+                  class="dropdown--block"
+                  value={reviewMode()}
+                  options={[
+                    { value: "keep", label: REVIEW_MARKUP_LABELS.keep },
+                    { value: "accept", label: REVIEW_MARKUP_LABELS.accept },
+                    { value: "reject", label: REVIEW_MARKUP_LABELS.reject },
+                  ]}
+                  onChange={setReviewMode}
+                  ariaLabel="Review markup"
+                />
+                <span class="export-dialog__hint">{REVIEW_MARKUP_HINTS[reviewMode()]}</span>
+              </div>
+            </Show>
 
             <Show when={supportsPdfStandard(format())}>
               <div class="export-dialog__field">
@@ -346,7 +378,7 @@ const ExportDialog: Component = () => {
               </label>
             </div>
 
-            <Show when={format() === "typst-html" || format() === "html"}>
+            <Show when={format() === "typst-html"}>
               <div class="export-dialog__field">
                 <label class="export-dialog__checkbox">
                   <input

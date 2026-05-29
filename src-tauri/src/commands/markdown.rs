@@ -309,11 +309,16 @@ pub async fn export_note_markdown_to_file(
     path: String,
     output_path: String,
     unconvertible_mode: UnconvertibleMode,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), InkyCapError> {
     let storage = state.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
+    let content = crate::commands::export::helpers::apply_review_mode(
+        &content,
+        review_mode.as_deref(),
+    );
 
     let options = TypstToMarkdownOptions {
         unconvertible: unconvertible_mode,

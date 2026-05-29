@@ -1119,12 +1119,18 @@ export async function exportNotePdf(
 /// on the Rust side (kebab-case serde).
 export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1";
 
+/// How an export should treat the collaboration review layer (inline
+/// `#suggestion` tracked changes plus `#annotation` / `#review-decision`
+/// notes). Mirrors `ReviewMarkupMode::from_opt` on the Rust side.
+export type ReviewMarkupMode = "accept" | "reject" | "keep";
+
 export async function exportNotePdfToFile(
   path: string,
   outputPath: string,
   metadataMode: string = "exclude",
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
   return invoke<void>("export_note_pdf_to_file", {
     path,
@@ -1132,14 +1138,20 @@ export async function exportNotePdfToFile(
     metadataMode,
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
+    reviewMode: reviewMode ?? null,
   });
 }
 
 export async function exportSelfContainedTyp(
   path: string,
   outputPath: string,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
-  return invoke<void>("export_self_contained_typ", { path, outputPath });
+  return invoke<void>("export_self_contained_typ", {
+    path,
+    outputPath,
+    reviewMode: reviewMode ?? null,
+  });
 }
 
 export async function exportNoteHtml(
@@ -1148,6 +1160,7 @@ export async function exportNoteHtml(
   metadataMode: string = "exclude",
   stripWikilinks: boolean = false,
   includeBibliography?: boolean,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
   return invoke<void>("export_note_html", {
     path,
@@ -1155,7 +1168,15 @@ export async function exportNoteHtml(
     metadataMode,
     stripWikilinks,
     includeBibliography: includeBibliography ?? null,
+    reviewMode: reviewMode ?? null,
   });
+}
+
+/// Count of collaboration review-markup constructs in a note (suggestions +
+/// annotations + review decisions). Drives whether the export dialog shows its
+/// "Review markup" control.
+export async function countNoteReviewMarkup(path: string): Promise<number> {
+  return invoke<number>("count_note_review_markup", { path });
 }
 
 export async function exportCollectionNotePdf(
@@ -1165,6 +1186,7 @@ export async function exportCollectionNotePdf(
   metadataMode?: string,
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
   return invoke<void>("export_collection_note_pdf", {
     notePath,
@@ -1173,6 +1195,7 @@ export async function exportCollectionNotePdf(
     metadataMode: metadataMode ?? null,
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
+    reviewMode: reviewMode ?? null,
   });
 }
 
@@ -1381,8 +1404,15 @@ export async function exportViaPandoc(
   outputPath: string,
   format: string,
   metadataMode: string = "exclude",
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
-  return invoke<void>("export_via_pandoc", { path, outputPath, format, metadataMode });
+  return invoke<void>("export_via_pandoc", {
+    path,
+    outputPath,
+    format,
+    metadataMode,
+    reviewMode: reviewMode ?? null,
+  });
 }
 
 export async function exportFigures(
@@ -1510,11 +1540,13 @@ export async function exportNoteMarkdownToFile(
   path: string,
   outputPath: string,
   unconvertibleMode: UnconvertibleMode,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<void> {
   return invoke<void>("export_note_markdown_to_file", {
     path,
     outputPath,
     unconvertibleMode,
+    reviewMode: reviewMode ?? null,
   });
 }
 

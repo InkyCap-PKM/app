@@ -346,6 +346,7 @@ pub fn run() {
             commands::export::csv::export_collection_csv_to_file,
             commands::export::pandoc::detect_pandoc,
             commands::export::pandoc::export_via_pandoc,
+            commands::export::count_note_review_markup,
             commands::export::assets::export_figures,
             commands::typst::compile_typst_svg,
             commands::typst::compile_typst_html,
