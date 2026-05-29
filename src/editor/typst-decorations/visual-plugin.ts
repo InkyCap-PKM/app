@@ -795,9 +795,14 @@ function handleFuncCall(
 
   const funcName = text.substring(hashOffset, delimIdx).trim();
 
+  // `#align(left|center|right)[#image(...)]` is treated as a placed image —
+  // it renders as the image block widget (with the alignment applied), not a
+  // generic align pill. Any other `#align` use stays generic.
+  const alignedImage = funcName === "align" ? parseAlignedImage(text) : null;
+
   if (INTERACTIVE_FUNCS.has(funcName)) {
     if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
-  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation") {
+  } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation" || alignedImage) {
     // image, callout, quote, annotation use the pill-above-element pattern:
     // the element stays rendered; a pill is shown above it on cursor
     // entry; clicking the pill exposes the raw markup for editing while
@@ -819,7 +824,7 @@ function handleFuncCall(
   // handle their pill placement themselves below.
   const showPill = onCursor && hashOffset === 1
     && !BLOCK_FUNCS.has(funcName) && !INTERACTIVE_FUNCS.has(funcName)
-    && !BLOCK_WIDGET_FUNCS.has(funcName);
+    && !BLOCK_WIDGET_FUNCS.has(funcName) && !alignedImage;
 
   // Decoration recipe for block elements (image, callout, quote)
   // that uses the pill-above-element pattern. Three states:
@@ -1301,6 +1306,26 @@ function handleFuncCall(
       }).range(from, to));
       return false;
     }
+    case "align": {
+      // A lone aligned image renders as the image block widget, with the
+      // alignment applied. The pill anchors at `from` (the `#align`) so its
+      // menu — built via imageOptions, which detects the wrapper — edits the
+      // image's file/alt/width and the alignment together. Other `#align`
+      // uses fall through to the generic content-bracket handling below.
+      if (alignedImage) {
+        const path = extractFirstStringArg(alignedImage.imgText);
+        if (path) {
+          const imgAlt = extractNamedStringArg(alignedImage.imgText, "alt");
+          const imgWidth = extractNamedBareArg(alignedImage.imgText, "width");
+          const imgHeight = extractNamedBareArg(alignedImage.imgText, "height");
+          pushBlockElement((withPill) =>
+            new ImageBlockWidget(path, from, withPill, imgAlt, imgWidth, imgHeight, alignedImage.kw));
+          return false;
+        }
+      }
+      // falls through to default
+    }
+    // eslint-disable-next-line no-fallthrough
     default: {
       if (!hashOffset) return false;
       const content = extractContentBracket(text, from);
@@ -1475,6 +1500,55 @@ function extractNamedBareArg(text: string, name: string): string | null {
   const re = new RegExp(`${name}\\s*:\\s*([^,)\\]]+)`);
   const m = text.match(re);
   return m ? m[1].trim() : null;
+}
+
+/** Index just past the closing `)` of the first `(...)` call in `s`,
+ *  starting from `start`. Balanced-paren and string aware. -1 if none. */
+function callParenEnd(s: string, start: number): number {
+  const open = s.indexOf("(", start);
+  if (open < 0) return -1;
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"' && s[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/** Recognize `#align(left|center|right)[ #image(...) ]` wrapping a lone
+ *  image — the source form for a horizontally-placed image (CLAUDE.md
+ *  Typst-first: `#align` is Typst's native placement primitive). Returns
+ *  the keyword and the inner image source, or null for any other `#align`
+ *  use (which keeps the generic content-bracket pill). */
+function parseAlignedImage(
+  text: string,
+): { kw: "left" | "center" | "right"; imgText: string } | null {
+  const m = text.match(/^#align\s*\(\s*(left|center|right)\s*\)\s*\[/);
+  if (!m) return null;
+  const kw = m[1] as "left" | "center" | "right";
+  const bodyStart = m[0].length;
+  // Find the `]` matching the body-opening `[`.
+  let depth = 1;
+  let inStr = false;
+  let end = -1;
+  for (let i = bodyStart; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' && text[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "[") depth++;
+    else if (ch === "]") { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end < 0) return null;
+  if (text.slice(end + 1).trim() !== "") return null; // trailing content → not a lone image
+  const body = text.slice(bodyStart, end).trim();
+  if (!body.startsWith("#image")) return null;
+  // The image call must span the whole body (no extra siblings after it).
+  if (callParenEnd(body, 0) !== body.length) return null;
+  return { kw, imgText: body };
 }
 
 function extractNamedBracketArg(text: string, name: string): string | null {

@@ -10,6 +10,7 @@
 import { type EditorView } from "@codemirror/view";
 import {
   applyCallTransform,
+  findCallEnd,
   readNamedArg,
   readFirstPositionalString,
   replaceFirstPositionalString,
@@ -95,9 +96,14 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   sym:       symOptions,
 };
 
-/** Returns option sections for the named pill, or an empty array if the
- *  function has no registered options yet. Verse is intentionally absent
- *  here — its options live on the widget itself (see VerseWidget). */
+/** Returns option sections for the named pill. Functions with a curated
+ *  builder (image, callout, …) get their hand-designed menu; every other
+ *  function falls back to `genericArgsOptions`, which surfaces whatever
+ *  named arguments the user typed in source mode as editable fields. That
+ *  keeps advanced Typst usage editable from the pill without burdening
+ *  beginners — a call with no named args shows no parameter section.
+ *  Verse is intentionally absent here — its options live on the widget
+ *  itself (see VerseWidget). */
 export function getPillOptions(
   funcName: string,
   view: EditorView,
@@ -105,7 +111,75 @@ export function getPillOptions(
   callTo: number,
 ): PillMenuSection[] {
   const builder = REGISTRY[funcName];
-  return builder ? builder(view, callFrom, callTo) : [];
+  if (builder) return builder(view, callFrom, callTo);
+  return genericArgsOptions(view, callFrom, callTo);
+}
+
+/** Split a call's `(...)` arg-list inner text into top-level argument
+ *  segments, respecting nested parens/brackets and string literals so a
+ *  comma inside `rgb("a,b")` or `(1, 2)` doesn't split an argument. */
+function splitTopLevelArgs(argsText: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inStr = false;
+  let start = 0;
+  for (let i = 0; i < argsText.length; i++) {
+    const ch = argsText[i];
+    if (ch === '"' && argsText[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth--;
+    else if (ch === "," && depth === 0) {
+      out.push(argsText.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(argsText.slice(start));
+  return out;
+}
+
+/** Parse the named arguments (`name: value`) from a call's source, in
+ *  source order. Positional arguments are skipped — they have no stable
+ *  label to show and stay editable via "Edit source". */
+function parseNamedArgs(callSource: string): { name: string; value: string }[] {
+  const argsText = findArgListInSource(callSource);
+  if (argsText === null) return [];
+  const named: { name: string; value: string }[] = [];
+  for (const seg of splitTopLevelArgs(argsText)) {
+    // `name:` must be a bare identifier followed by a top-level colon. The
+    // colon check below the match guards against `:` inside a value (e.g.
+    // a dict) being mistaken for the arg separator.
+    const m = seg.match(/^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*([\s\S]+)$/);
+    if (!m) continue;
+    named.push({ name: m[1], value: m[2].trim() });
+  }
+  return named;
+}
+
+/** Fallback options for any function without a curated builder: one text
+ *  input per named argument the user already wrote, committing the raw
+ *  Typst literal back via `upsertNamedArg`. Clearing a field drops the
+ *  argument. Returns no section when the call has no named arguments. */
+function genericArgsOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
+  const src = readCallSource(view, from, to);
+  const named = parseNamedArgs(src);
+  if (named.length === 0) return [];
+  return [{
+    heading: "Parameters",
+    items: named.map((arg) => ({
+      label: arg.name,
+      title: `Typst argument “${arg.name}” — edit the raw value`,
+      input: {
+        value: arg.value,
+        placeholder: arg.name,
+        onCommit: (v) => {
+          const t = v.trim();
+          applyCallTransform(view, from, (s) =>
+            upsertNamedArg(s, arg.name, t === "" ? null : t));
+        },
+      },
+    })),
+  }];
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -336,11 +410,76 @@ function buildAttributionExpr(text: string, url: string): string | null {
   return quote(t);
 }
 
+/** Slice the `#image(...)` call out of a wrapper source, given the offset
+ *  of its leading `#`. Balanced-paren aware; image has no trailing `[]`. */
+function sliceImageCallSource(src: string, start: number): string {
+  const open = src.indexOf("(", start);
+  if (open < 0) return src.slice(start);
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '"' && src[i - 1] !== "\\") { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") { depth--; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  return src.slice(start);
+}
+
+/** Add, rewrite, or remove the `#align(...)` wrapper to place an image
+ *  left / centre / right. `callFrom` is the pill anchor — the wrapper's `#`
+ *  when already wrapped, else the image's `#`. Left is the natural default
+ *  so it unwraps to a bare image; centre/right add or rewrite the wrapper. */
+function applyImageAlignment(
+  view: EditorView,
+  callFrom: number,
+  wrapped: boolean,
+  keyword: string,
+): void {
+  const len = view.state.doc.length;
+  const safeFrom = Math.max(0, Math.min(callFrom, len));
+  const safeTo = Math.max(safeFrom, Math.min(findCallEnd(view, safeFrom), len));
+  const cur = view.state.doc.sliceString(safeFrom, safeTo);
+
+  let next: string;
+  if (keyword === "left") {
+    if (!wrapped) return; // already a bare (left-aligned) image
+    const idx = cur.indexOf("#image");
+    if (idx < 0) return;
+    next = sliceImageCallSource(cur, idx); // unwrap to the bare image
+  } else if (wrapped) {
+    next = replaceFirstPositionalKeyword(cur, keyword); // swap the keyword only
+  } else {
+    next = `#align(${keyword})[${cur}]`; // wrap the bare image
+  }
+  if (next === cur) return;
+  view.dispatch({ changes: { from: safeFrom, to: safeTo, insert: next } });
+  view.focus();
+}
+
 function imageOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
   const src = readCallSource(view, from, to);
-  const path = readFirstPositionalString(src) ?? "";
-  const alt = unquote(readNamedArg(src, "alt")) ?? "";
-  const width = readNamedArg(src, "width") ?? "";
+  // The pill may represent a bare `#image(...)` or an alignment-wrapped
+  // `#align(kw)[#image(...)]`. When wrapped, the File/Alt/Width fields must
+  // edit the inner image (at `imgFrom`), while the Alignment radio edits the
+  // wrapper — so locate the inner image first.
+  const wrapped = /^\s*#align\b/.test(src);
+  let imgFrom = from;
+  let imgSrc = src;
+  let currentAlign: "left" | "center" | "right" = "left";
+  if (wrapped) {
+    const kw = src.match(/^\s*#align\s*\(\s*([a-z]+)/)?.[1];
+    currentAlign = kw === "center" || kw === "right" ? kw : "left";
+    const idx = src.indexOf("#image");
+    if (idx >= 0) {
+      imgFrom = from + idx;
+      imgSrc = sliceImageCallSource(src, idx);
+    }
+  }
+  const path = readFirstPositionalString(imgSrc) ?? "";
+  const alt = unquote(readNamedArg(imgSrc, "alt")) ?? "";
+  const width = readNamedArg(imgSrc, "width") ?? "";
   // R12: image is a call-only form (no body bracket), so every meaningful
   // argument must surface in the menu — including the positional path,
   // which would otherwise force the user into "Edit source" for a
@@ -355,7 +494,7 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
         onCommit: (v) => {
           const trimmed = v.trim();
           if (trimmed === "") return;
-          applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, trimmed));
+          applyCallTransform(view, imgFrom, (s) => replaceFirstPositionalString(s, trimmed));
         },
       },
     }, {
@@ -363,7 +502,7 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
       input: {
         value: alt,
         placeholder: "Describe the image",
-        onCommit: (v) => applyCallTransform(view, from, (s) =>
+        onCommit: (v) => applyCallTransform(view, imgFrom, (s) =>
           upsertNamedArg(s, "alt", v.trim() === "" ? null : quote(v))),
       },
     }, {
@@ -376,11 +515,21 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
         placeholder: "e.g. 50% or 8cm",
         onCommit: (v) => {
           const t = v.trim();
-          applyCallTransform(view, from, (s) =>
+          applyCallTransform(view, imgFrom, (s) =>
             upsertNamedArg(s, "width", t === "" ? null : t));
         },
       },
     }],
+  }, {
+    heading: "Alignment",
+    // Typst has no alignment argument on `image`; horizontal placement is
+    // `#align(left|center|right)[…]` (CLAUDE.md Typst-first). The visual
+    // editor mirrors the wrapper so the choice is reflected while authoring.
+    items: ALIGNMENTS.map((a) => ({
+      label: a.label,
+      isActive: currentAlign === a.keyword,
+      onSelect: () => applyImageAlignment(view, from, wrapped, a.keyword),
+    })),
   }];
 }
 

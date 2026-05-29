@@ -334,6 +334,8 @@ export class ImageWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+export type ImageAlign = "left" | "center" | "right";
+
 export class ImageBlockWidget extends WidgetType {
   constructor(
     readonly path: string,
@@ -342,6 +344,10 @@ export class ImageBlockWidget extends WidgetType {
     readonly alt: string | null = null,
     readonly width: string | null = null,
     readonly height: string | null = null,
+    // Horizontal placement, mirroring the source's `#align(...)` wrapper so
+    // the visual editor reflects how the image will actually sit on the page.
+    // A bare `#image(...)` is left-aligned, matching Typst's inline layout.
+    readonly align: ImageAlign = "left",
   ) {
     super();
   }
@@ -349,7 +355,8 @@ export class ImageBlockWidget extends WidgetType {
   eq(other: ImageBlockWidget) {
     return this.path === other.path && this.pos === other.pos
       && this.withPill === other.withPill && this.alt === other.alt
-      && this.width === other.width && this.height === other.height;
+      && this.width === other.width && this.height === other.height
+      && this.align === other.align;
   }
 
   get estimatedHeight(): number { return this.withPill ? 224 : 200; }
@@ -372,7 +379,7 @@ export class ImageBlockWidget extends WidgetType {
     if (this.withPill) wrap.appendChild(makeBlockPillRow("image", this.pos, view));
 
     const inner = document.createElement("div");
-    inner.style.textAlign = "center";
+    inner.style.textAlign = this.align;
 
     const label = document.createElement("div");
     label.className = "cm-typst-image-label";
@@ -386,6 +393,10 @@ export class ImageBlockWidget extends WidgetType {
       img.className = "cm-typst-image-img";
       img.alt = this.alt ?? imgPath;
       img.src = convertFileSrc(absPath);
+      // The base style centres the image (margin: 0 auto); override per the
+      // alignment so left/right sit flush to their margin.
+      if (this.align === "left") { img.style.marginLeft = "0"; img.style.marginRight = "auto"; }
+      else if (this.align === "right") { img.style.marginLeft = "auto"; img.style.marginRight = "0"; }
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
       // Preserve aspect ratio when only one axis is constrained — Typst scales
