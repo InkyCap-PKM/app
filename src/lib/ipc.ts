@@ -1206,6 +1206,7 @@ export async function exportCollectionBatchPdf(
   metadataMode?: string,
   pdfStandard?: PdfStandardPreset,
   includeBibliography?: boolean,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<string[]> {
   return invoke<string[]>("export_collection_batch_pdf", {
     collectionPath,
@@ -1214,6 +1215,7 @@ export async function exportCollectionBatchPdf(
     metadataMode: metadataMode ?? null,
     pdfStandard: pdfStandard ?? null,
     includeBibliography: includeBibliography ?? null,
+    reviewMode: reviewMode ?? null,
   });
 }
 
@@ -1249,6 +1251,9 @@ export interface BookExportOverrides {
   /// but the rendered bibliography is suppressed via a Typst show rule.
   /// Defaults to `true` when omitted.
   includeBibliography?: boolean;
+  /// Review-markup policy applied to every note before it's inlined into the
+  /// book. Omitted → keep tracked-change marks.
+  reviewMode?: ReviewMarkupMode;
 }
 
 /// Outcome of a book export. `outputPath` is set when the PDF was written.
@@ -1555,12 +1560,14 @@ export async function exportCollectionBatchMarkdown(
   viewName: string,
   outputDir: string,
   unconvertibleMode: UnconvertibleMode,
+  reviewMode?: ReviewMarkupMode,
 ): Promise<string[]> {
   return invoke<string[]>("export_collection_batch_markdown", {
     collectionPath,
     viewName,
     outputDir,
     unconvertibleMode,
+    reviewMode: reviewMode ?? null,
   });
 }
 

@@ -339,6 +339,7 @@ pub async fn export_collection_batch_markdown(
     view_name: String,
     output_dir: String,
     unconvertible_mode: UnconvertibleMode,
+    review_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, InkyCapError> {
     let storage = state.get_storage().await?;
@@ -369,6 +370,10 @@ pub async fn export_collection_batch_markdown(
             }
         };
 
+        let content = crate::commands::export::helpers::apply_review_mode(
+            &content,
+            review_mode.as_deref(),
+        );
         let markdown = typst_to_markdown(&content, &options);
         let md_name = row
             .file_name
