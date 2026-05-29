@@ -12,6 +12,19 @@ export const documentUriFacet = Facet.define<string, string>({
   combine: (values) => values[0] ?? "",
 });
 
+/**
+ * True when the editor is in visual mode. The visual editor is a WYSIWYM
+ * authoring surface, not a code editor, so the Tinymist code-completion popup
+ * (function names, package symbols, the notebox internals) is noise there —
+ * the user asked to keep it in source mode only. The visual compartment
+ * provides `visualModeFacet.of(true)`; the LSP completion source and its
+ * trigger short-circuit when it's set. InkyCap's own `[[wikilink]]` and `@`
+ * citation suggesters are separate sources and stay active.
+ */
+export const visualModeFacet = Facet.define<boolean, boolean>({
+  combine: (values) => values.some((v) => v),
+});
+
 const lspDiagnosticsEffect = StateEffect.define<Diagnostic[]>();
 
 const lspDiagnosticsField = StateField.define<Diagnostic[]>({
@@ -57,6 +70,8 @@ function extractDocString(doc: LspCompletionItem["documentation"]): string | und
 }
 
 function lspCompletionSource(ctx: CompletionContext): Promise<CompletionResult | null> {
+  // Suppressed in visual mode — code completion belongs to the source editor.
+  if (ctx.state.facet(visualModeFacet)) return Promise.resolve(null);
   const client = ctx.state.facet(lspClientFacet);
   const uri = ctx.state.facet(documentUriFacet);
   if (!client || !uri || !client.isRunning()) return Promise.resolve(null);
@@ -109,7 +124,7 @@ const LSP_TRIGGER_CHARS = new Set(["#", "(", ".", ","]);
 
 const lspTriggerExtension = EditorView.inputHandler.of(
   (view, _from, _to, text) => {
-    if (LSP_TRIGGER_CHARS.has(text)) {
+    if (LSP_TRIGGER_CHARS.has(text) && !view.state.facet(visualModeFacet)) {
       const client = view.state.facet(lspClientFacet);
       if (client?.isRunning()) {
         setTimeout(() => startCompletion(view), 0);

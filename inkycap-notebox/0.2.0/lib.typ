@@ -724,7 +724,7 @@
 // requiring this wrapper to track Typst's full signature.
 #let highlight(
   body,
-  fill: rgb("#fff066"),
+  fill: rgb("#f2ed61"),
   radius: 0pt,
   extent: 0pt,
   ..rest,

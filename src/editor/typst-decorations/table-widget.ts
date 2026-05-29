@@ -1,7 +1,52 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { type TableData, type TableCell, serializeTable, parseClipboardAsGrid, parseTsvToGrid } from "./table-parser";
 
+// Lucide grip glyphs for the reorder handles — crisper and less fragile than
+// hand-laid dot grids. `grip-horizontal` suits the wide/short column handle,
+// `grip-vertical` the narrow/tall row handle. (static-only: lucide grip-*)
+const GRIP_HORIZONTAL =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="9" r="1.5"/><circle cx="12" cy="9" r="1.5"/><circle cx="19" cy="9" r="1.5"/><circle cx="5" cy="15" r="1.5"/><circle cx="12" cy="15" r="1.5"/><circle cx="19" cy="15" r="1.5"/></svg>';
+const GRIP_VERTICAL =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>';
+
+/** CSS absolute/relative length units that both Typst and CSS understand, so
+ *  an explicit column width / row height can be applied to the preview DOM
+ *  verbatim. `fr` and `auto` are content-driven and left to natural layout. */
+const CSS_SHARED_LENGTH = /^\d+(?:\.\d+)?(pt|mm|cm|in|em|%|px)$/;
+function asCssLength(size: string): string | null {
+  return CSS_SHARED_LENGTH.test(size.trim()) ? size.trim() : null;
+}
+
+/** Typst point. CSS `pt` and Typst `pt` are both 1/72in, so the px→pt factor
+ *  is the CSS px (1/96in) ratio: 1px = 0.75pt. */
+function pxToTypstPt(px: number): string {
+  return `${Math.round(px * 0.75 * 10) / 10}pt`;
+}
+
+/** Minimum drag size so a column/row can't be collapsed to nothing. */
+const MIN_RESIZE_PX = 24;
+
+/** The widget wrapper stashes its ResizeObserver here so `destroy` can find
+ *  and disconnect it. */
+type DomWithObserver = HTMLElement & { __cmTableResizeObserver?: ResizeObserver };
+
 const EMPTY_CELL: TableCell = { content: "", relFrom: 0, relTo: 0 };
+
+/**
+ * Cross-rebuild focus target.
+ *
+ * Editing a cell and then advancing (Tab / Enter / arrow) blurs the cell,
+ * which dispatches a doc change to sync the edit. That dispatch rebuilds the
+ * whole table widget — the old cell DOM is torn down and a fresh `toDOM`
+ * runs. Focusing a cell element captured *before* the blur therefore targets
+ * a detached node, focus silently falls back to CM's contentDOM, and the user
+ * appears to be ejected from the table. Instead the navigator records the
+ * destination here (keyed by the table's stable start offset); the rebuilt
+ * widget's `toDOM` consumes it and focuses the correct fresh cell. When the
+ * blur triggers no rebuild (content unchanged), the navigator clears this and
+ * focuses directly.
+ */
+let pendingCellFocus: { tableFrom: number; row: number; col: number } | null = null;
 
 /**
  * Forward a keyboard shortcut to the CM6 editor by refocusing it and
@@ -70,7 +115,24 @@ export class TableWidget extends WidgetType {
     const table = document.createElement("table");
     table.className = "cm-typst-table";
 
-    // ── Control row (column handles + add-buttons) ──
+    // ── Column-width carrier ──
+    // A <colgroup> lets explicit column widths (the `columns:` lengths the
+    // user sets by dragging) drive the preview without per-cell styling.
+    // The first <col> spans the row-handle gutter; the rest map 1:1 to data
+    // columns. `auto`/`fr` columns are left content-driven.
+    const colgroup = document.createElement("colgroup");
+    const gutterCol = document.createElement("col");
+    gutterCol.className = "cm-table-gutter-col";
+    colgroup.appendChild(gutterCol);
+    for (let c = 0; c < colCount; c++) {
+      const col = document.createElement("col");
+      const css = asCssLength(this.data.columns[c]);
+      if (css) col.style.width = css;
+      colgroup.appendChild(col);
+    }
+    table.appendChild(colgroup);
+
+    // ── Control row (column reorder handles) ──
     const controlRow = document.createElement("tr");
     controlRow.className = "cm-table-control-row";
 
@@ -83,14 +145,9 @@ export class TableWidget extends WidgetType {
       td.className = "cm-table-col-header-cell";
       td.dataset.col = String(c);
 
-      if (c === 0) {
-        const addBefore = this.makeAddColBtn(view, 0);
-        td.appendChild(addBefore);
-      }
-
       const handle = document.createElement("div");
       handle.className = "cm-table-col-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip cm-table-handle-grip--col"><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span></span>';
+      handle.innerHTML = `<span class="cm-table-handle-grip">${GRIP_HORIZONTAL}</span>`;
       handle.title = "Right-click for options · drag to reorder";
       const colIdx = c;
 
@@ -108,9 +165,6 @@ export class TableWidget extends WidgetType {
       });
       td.appendChild(handle);
 
-      const addAfter = this.makeAddColBtn(view, c + 1);
-      td.appendChild(addAfter);
-
       controlRow.appendChild(td);
     }
     table.appendChild(controlRow);
@@ -123,17 +177,17 @@ export class TableWidget extends WidgetType {
       const tr = document.createElement("tr");
       tr.dataset.logicalRow = String(r);
 
+      // Apply an explicit row height (set by dragging a row edge) to the
+      // preview. `auto` rows fit their content naturally.
+      const rowCss = this.data.rowSizes ? asCssLength(this.data.rowSizes[r] ?? "auto") : null;
+      if (rowCss) tr.style.height = rowCss;
+
       const handleCell = document.createElement("td");
       handleCell.className = "cm-table-row-handle-cell";
 
-      if (r === 0) {
-        const addBefore = this.makeAddRowBtn(view, 0);
-        handleCell.appendChild(addBefore);
-      }
-
       const handle = document.createElement("div");
       handle.className = "cm-table-row-handle";
-      handle.innerHTML = '<span class="cm-table-handle-grip cm-table-handle-grip--row"><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span><span>•</span></span>';
+      handle.innerHTML = `<span class="cm-table-handle-grip">${GRIP_VERTICAL}</span>`;
       handle.title = "Right-click for options · drag to reorder";
       const rowIdx = r;
 
@@ -150,9 +204,6 @@ export class TableWidget extends WidgetType {
         this.showRowMenu(view, wrap, rowIdx, handle);
       });
       handleCell.appendChild(handle);
-
-      const addAfter = this.makeAddRowBtn(view, r + 1);
-      handleCell.appendChild(addAfter);
 
       tr.appendChild(handleCell);
 
@@ -181,9 +232,34 @@ export class TableWidget extends WidgetType {
     this.setupCellSelection(wrap);
     this.setupTableNavigation(view, wrap);
     this.setupClipboard(view, wrap);
+    this.setupResize(view, wrap, table, colCount);
 
+    // If a prior cell-to-cell navigation triggered a rebuild (see
+    // `pendingCellFocus`), restore focus to the intended destination cell in
+    // this freshly-built DOM once it is mounted.
+    if (pendingCellFocus && pendingCellFocus.tableFrom === this.from) {
+      const { row, col } = pendingCellFocus;
+      pendingCellFocus = null;
+      queueMicrotask(() => {
+        const target = getCellAt(wrap, row, col);
+        if (target && document.body.contains(target)) {
+          target.focus({ preventScroll: true });
+          selectAllContent(target);
+        }
+      });
+    }
 
     return wrap;
+  }
+
+  destroy(dom: HTMLElement) {
+    // Tear down the ResizeObserver that keeps resize handles aligned, so it
+    // doesn't outlive the widget DOM.
+    const ro = (dom as DomWithObserver).__cmTableResizeObserver;
+    if (ro) {
+      ro.disconnect();
+      delete (dom as DomWithObserver).__cmTableResizeObserver;
+    }
   }
 
   ignoreEvent(e: Event) {
@@ -218,33 +294,167 @@ export class TableWidget extends WidgetType {
   }
 
   // ────────────────────────────────────────────────────────
-  // Small button factories
+  // Edge-drag resize (column width / row height)
   // ────────────────────────────────────────────────────────
 
-  private makeAddColBtn(view: EditorView, atCol: number): HTMLElement {
-    const btn = document.createElement("div");
-    btn.className = "cm-table-add-btn cm-table-add-btn--col";
-    btn.innerHTML = "<span>+</span>"; // static-only
-    btn.title = atCol === 0 ? "Add column before" : "Add column after";
-    btn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.insertColumn(view, atCol);
-    });
-    return btn;
+  /**
+   * Build the draggable boundary lines that let the user override a column's
+   * width or a row's height. Handles live in an overlay pinned over the
+   * table; a ResizeObserver keeps them aligned as the table reflows. Columns
+   * and rows are content-fit (`auto`) by default — dragging writes an
+   * explicit length into the `columns:` / `rows:` arguments, and
+   * double-clicking a handle clears the override back to `auto`.
+   */
+  private setupResize(view: EditorView, wrap: HTMLElement, table: HTMLTableElement, colCount: number) {
+    const overlay = document.createElement("div");
+    overlay.className = "cm-table-resize-overlay";
+    wrap.appendChild(overlay);
+
+    const colHandles: HTMLElement[] = [];
+    const rowHandles: HTMLElement[] = [];
+
+    for (let c = 0; c < colCount; c++) {
+      const h = document.createElement("div");
+      h.className = "cm-table-resize-handle cm-table-resize-handle--col";
+      h.title = "Drag to set column width · double-click to fit content";
+      this.bindColumnResize(view, wrap, table, h, c);
+      overlay.appendChild(h);
+      colHandles.push(h);
+    }
+
+    const rowCount = this.getAllRows().length;
+    for (let r = 0; r < rowCount; r++) {
+      const h = document.createElement("div");
+      h.className = "cm-table-resize-handle cm-table-resize-handle--row";
+      h.title = "Drag to set row height · double-click to fit content";
+      this.bindRowResize(view, wrap, table, h, r);
+      overlay.appendChild(h);
+      rowHandles.push(h);
+    }
+
+    const layout = () => {
+      const wrapRect = wrap.getBoundingClientRect();
+      const tableRect = table.getBoundingClientRect();
+      const top = tableRect.top - wrapRect.top;
+      const left = tableRect.left - wrapRect.left;
+      const height = tableRect.height;
+      const width = tableRect.width;
+
+      for (let c = 0; c < colHandles.length; c++) {
+        const cell = wrap.querySelector<HTMLElement>(`tr[data-logical-row] [data-col="${c}"]`);
+        if (!cell) continue;
+        const x = cell.getBoundingClientRect().right - wrapRect.left;
+        const h = colHandles[c];
+        h.style.left = `${x}px`;
+        h.style.top = `${top}px`;
+        h.style.height = `${height}px`;
+      }
+      for (let r = 0; r < rowHandles.length; r++) {
+        const tr = wrap.querySelector<HTMLElement>(`tr[data-logical-row="${r}"]`);
+        if (!tr) continue;
+        const y = tr.getBoundingClientRect().bottom - wrapRect.top;
+        const h = rowHandles[r];
+        h.style.top = `${y}px`;
+        h.style.left = `${left}px`;
+        h.style.width = `${width}px`;
+      }
+    };
+
+    const ro = new ResizeObserver(() => layout());
+    ro.observe(table);
+    (wrap as DomWithObserver).__cmTableResizeObserver = ro;
+    requestAnimationFrame(layout);
   }
 
-  private makeAddRowBtn(view: EditorView, atRow: number): HTMLElement {
-    const btn = document.createElement("div");
-    btn.className = "cm-table-add-btn cm-table-add-btn--row";
-    btn.innerHTML = "<span>+</span>"; // static-only
-    btn.title = atRow === 0 ? "Add row above" : "Add row below";
-    btn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
-    btn.addEventListener("click", (e) => {
+  private bindColumnResize(view: EditorView, wrap: HTMLElement, table: HTMLTableElement, handle: HTMLElement, colIdx: number) {
+    handle.addEventListener("dblclick", (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      this.insertRow(view, atRow);
+      this.setColumnSize(view, colIdx, "auto");
     });
-    return btn;
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const cell = wrap.querySelector<HTMLElement>(`tr[data-logical-row] [data-col="${colIdx}"]`);
+      if (!cell) return;
+      const col = table.querySelectorAll<HTMLElement>("colgroup col")[colIdx + 1];
+      const startX = e.clientX;
+      const startWidth = cell.getBoundingClientRect().width;
+      let width = startWidth;
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("cm-table-resize-handle--active");
+
+      // Make the in-progress resize unmistakable: tint the affected column,
+      // lock the body cursor, and suppress stray text selection.
+      const tinted = wrap.querySelectorAll<HTMLElement>(`tr[data-logical-row] [data-col="${colIdx}"]`);
+      tinted.forEach((c) => c.classList.add("cm-table-cell--resizing"));
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const onMove = (ev: PointerEvent) => {
+        width = Math.max(MIN_RESIZE_PX, startWidth + (ev.clientX - startX));
+        if (col) col.style.width = `${width}px`;
+      };
+      const onUp = () => {
+        handle.releasePointerCapture(e.pointerId);
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        handle.classList.remove("cm-table-resize-handle--active");
+        tinted.forEach((c) => c.classList.remove("cm-table-cell--resizing"));
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        this.setColumnSize(view, colIdx, pxToTypstPt(width));
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  private bindRowResize(view: EditorView, wrap: HTMLElement, _table: HTMLTableElement, handle: HTMLElement, rowIdx: number) {
+    handle.addEventListener("dblclick", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.setRowSize(view, rowIdx, "auto");
+    });
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const tr = wrap.querySelector<HTMLElement>(`tr[data-logical-row="${rowIdx}"]`);
+      if (!tr) return;
+      const startY = e.clientY;
+      const startHeight = tr.getBoundingClientRect().height;
+      let height = startHeight;
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("cm-table-resize-handle--active");
+
+      const tinted = Array.from(tr.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
+      tinted.forEach((c) => c.classList.add("cm-table-cell--resizing"));
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+
+      const onMove = (ev: PointerEvent) => {
+        height = Math.max(MIN_RESIZE_PX, startHeight + (ev.clientY - startY));
+        tr.style.height = `${height}px`;
+      };
+      const onUp = () => {
+        handle.releasePointerCapture(e.pointerId);
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        handle.classList.remove("cm-table-resize-handle--active");
+        tinted.forEach((c) => c.classList.remove("cm-table-cell--resizing"));
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        this.setRowSize(view, rowIdx, pxToTypstPt(height));
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
   }
 
   // ────────────────────────────────────────────────────────
@@ -428,22 +638,31 @@ export class TableWidget extends WidgetType {
 
       if (e.key === "Tab") {
         e.preventDefault();
-        const cells = Array.from(
-          wrap.querySelectorAll<HTMLElement>(".cm-typst-table-cell"),
-        );
-        const idx = cells.indexOf(cellDiv);
-        const nextIdx = e.shiftKey ? idx - 1 : idx + 1;
-        if (nextIdx >= 0 && nextIdx < cells.length) {
-          cellDiv.blur();
-          cells[nextIdx].focus();
-          selectAllContent(cells[nextIdx]);
+        const { row, col } = this.cellPosition(wrap, el);
+        const { rows, cols } = this.gridSize(wrap);
+        if (e.shiftKey) {
+          let r = row, c = col - 1;
+          if (c < 0) { c = cols - 1; r--; }
+          if (r < 0) { cellDiv.blur(); this.exitToEditor(view, "before"); return; }
+          this.moveToCell(view, wrap, cellDiv, r, c);
+        } else {
+          let r = row, c = col + 1;
+          if (c >= cols) { c = 0; r++; }
+          if (r >= rows) { this.commitWithNewRow(view, cellDiv, cell, row, col); return; }
+          this.moveToCell(view, wrap, cellDiv, r, c);
         }
         return;
       }
 
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        this.navigateCell(wrap, el, 1, 0, view);
+        const { row, col } = this.cellPosition(wrap, el);
+        const { rows } = this.gridSize(wrap);
+        if (row + 1 >= rows) {
+          this.commitWithNewRow(view, cellDiv, cell, row, col);
+        } else {
+          this.moveToCell(view, wrap, cellDiv, row + 1, col);
+        }
         return;
       }
 
@@ -485,30 +704,79 @@ export class TableWidget extends WidgetType {
   }
 
   private navigateCell(wrap: HTMLElement, currentTd: HTMLElement, rowDelta: number, colDelta: number, view?: EditorView) {
-    const table = currentTd.closest("table")!;
-    const allRows = Array.from(table.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
-    const row = currentTd.closest<HTMLElement>("tr[data-logical-row]")!;
-    const rowIdx = allRows.indexOf(row);
-    const dataCells = Array.from(row.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
-    const colIdx = dataCells.indexOf(currentTd);
+    const { row, col } = this.cellPosition(wrap, currentTd);
+    const { rows, cols } = this.gridSize(wrap);
 
-    const newRow = rowIdx + rowDelta;
-    const newCol = colIdx + colDelta;
+    const newRow = row + rowDelta;
+    const newCol = Math.min(Math.max(0, col + colDelta), cols - 1);
 
-    if (newRow < 0 || newRow >= allRows.length) {
-      if (view) this.exitToEditor(view, newRow < 0 ? "before" : "after");
+    if (newRow < 0 || newRow >= rows) {
+      if (view) {
+        const cellDiv = currentTd.querySelector<HTMLElement>(".cm-typst-table-cell");
+        cellDiv?.blur();
+        this.exitToEditor(view, newRow < 0 ? "before" : "after");
+      }
       return;
     }
-    const targetRow = allRows[newRow];
-    const targetCells = targetRow.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)");
-    const targetCol = Math.min(Math.max(0, newCol), targetCells.length - 1);
-    const targetCell = targetCells[targetCol]?.querySelector<HTMLElement>(".cm-typst-table-cell");
-    if (targetCell) {
-      const currentCell = currentTd.querySelector<HTMLElement>(".cm-typst-table-cell");
-      if (currentCell) currentCell.blur();
-      targetCell.focus();
-      selectAllContent(targetCell);
+    const cellDiv = currentTd.querySelector<HTMLElement>(".cm-typst-table-cell");
+    if (cellDiv && view) this.moveToCell(view, wrap, cellDiv, newRow, newCol);
+  }
+
+  /** Logical (row, col) of the data cell containing `cellOrTd`. */
+  private cellPosition(wrap: HTMLElement, cellOrTd: HTMLElement): { row: number; col: number } {
+    const td = cellOrTd.closest<HTMLElement>("td, th")!;
+    const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
+    const tr = td.closest<HTMLElement>("tr[data-logical-row]")!;
+    const row = allRows.indexOf(tr);
+    const dataCells = Array.from(tr.querySelectorAll<HTMLElement>("th, td:not(.cm-table-row-handle-cell)"));
+    return { row, col: dataCells.indexOf(td) };
+  }
+
+  /** Current rendered grid dimensions (logical rows × data columns). */
+  private gridSize(wrap: HTMLElement): { rows: number; cols: number } {
+    const allRows = Array.from(wrap.querySelectorAll<HTMLElement>("tr[data-logical-row]"));
+    const cols = allRows[0]?.querySelectorAll("th, td:not(.cm-table-row-handle-cell)").length ?? 0;
+    return { rows: allRows.length, cols };
+  }
+
+  /**
+   * Move edit focus from the current cell to the cell at (targetRow,
+   * targetCol). Blurring the source cell may dispatch a sync change that
+   * rebuilds the widget; in that case the rebuilt `toDOM` honours
+   * `pendingCellFocus`. If no rebuild happens (content unchanged), the token
+   * survives the blur and we focus the destination directly.
+   */
+  private moveToCell(view: EditorView, wrap: HTMLElement, fromCellDiv: HTMLElement, targetRow: number, targetCol: number) {
+    pendingCellFocus = { tableFrom: this.from, row: targetRow, col: targetCol };
+    fromCellDiv.blur();
+    if (pendingCellFocus) {
+      pendingCellFocus = null;
+      const target = getCellAt(wrap, targetRow, targetCol);
+      if (target) {
+        target.focus({ preventScroll: true });
+        selectAllContent(target);
+      }
     }
+  }
+
+  /**
+   * Append a fresh row and move into its first cell — used when Tab/Enter
+   * runs off the end of the table. The current cell's pending edit is folded
+   * into the same re-serialise (and written onto `cell` to suppress the
+   * blur handler's now-redundant surgical dispatch), so the whole gesture is
+   * a single doc change.
+   */
+  private commitWithNewRow(view: EditorView, cellDiv: HTMLElement, cell: TableCell, curRow: number, curCol: number) {
+    cell.content = cellDiv.textContent ?? cell.content;
+    const allRows = this.getAllRows();
+    if (allRows[curRow]?.[curCol]) {
+      allRows[curRow][curCol] = { content: cell.content, relFrom: 0, relTo: 0 };
+    }
+    allRows.push(this.data.columns.map(() => ({ ...EMPTY_CELL })));
+    const rs = this.currentRowSizes();
+    if (rs) rs.push("auto");
+    pendingCellFocus = { tableFrom: this.from, row: allRows.length - 1, col: 0 };
+    this.replaceTable(view, this.rebuildFromAllRows(allRows, this.data.header !== null, rs));
   }
 
   private exitToEditor(view: EditorView, direction: "before" | "after") {
@@ -775,7 +1043,9 @@ export class TableWidget extends WidgetType {
       }
     }
 
-    this.replaceTable(view, this.rebuildFromAllRows(allRows, this.data.header !== null));
+    const rs = this.currentRowSizes();
+    if (rs) { while (rs.length < allRows.length) rs.push("auto"); }
+    this.replaceTable(view, this.rebuildFromAllRows(allRows, this.data.header !== null, rs));
   }
 
   // ────────────────────────────────────────────────────────
@@ -953,9 +1223,14 @@ export class TableWidget extends WidgetType {
       : [...this.data.rows];
   }
 
-  private rebuildFromAllRows(allRows: TableCell[][], headerPresent: boolean): TableData {
+  private rebuildFromAllRows(
+    allRows: TableCell[][],
+    headerPresent: boolean,
+    rowSizes: string[] | null = this.data.rowSizes,
+  ): TableData {
     return {
       ...this.data,
+      rowSizes: rowSizes && rowSizes.some((s) => s !== "auto") ? rowSizes : null,
       header: headerPresent ? allRows[0] ?? null : null,
       rows: headerPresent ? allRows.slice(1) : allRows,
     };
@@ -965,19 +1240,18 @@ export class TableWidget extends WidgetType {
     const newRow: TableCell[] = this.data.columns.map(() => ({ ...EMPTY_CELL }));
     const all = this.getAllRows();
     all.splice(atLogical, 0, newRow);
-    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null));
-  }
-
-  private addRowAtEnd(view: EditorView) {
-    const newRow: TableCell[] = this.data.columns.map(() => ({ ...EMPTY_CELL }));
-    this.replaceTable(view, { ...this.data, rows: [...this.data.rows, newRow] });
+    const rs = this.currentRowSizes();
+    if (rs) rs.splice(atLogical, 0, "auto");
+    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null, rs));
   }
 
   private deleteRow(view: EditorView, logicalRow: number) {
     const all = this.getAllRows();
     if (all.length <= 1) return;
     all.splice(logicalRow, 1);
-    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null && logicalRow !== 0));
+    const rs = this.currentRowSizes();
+    if (rs) rs.splice(logicalRow, 1);
+    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null && logicalRow !== 0, rs));
   }
 
   private deleteRows(view: EditorView, rowIndices: number[]) {
@@ -985,14 +1259,17 @@ export class TableWidget extends WidgetType {
     if (all.length - rowIndices.length < 1) return;
     const toDelete = new Set(rowIndices);
     const remaining = all.filter((_, i) => !toDelete.has(i));
-    this.replaceTable(view, this.rebuildFromAllRows(remaining, this.data.header !== null && !toDelete.has(0)));
+    const rs = this.currentRowSizes()?.filter((_, i) => !toDelete.has(i)) ?? null;
+    this.replaceTable(view, this.rebuildFromAllRows(remaining, this.data.header !== null && !toDelete.has(0), rs));
   }
 
   private duplicateRow(view: EditorView, logicalRow: number) {
     const all = this.getAllRows();
     const dup = all[logicalRow].map((c) => ({ ...c, relFrom: 0, relTo: 0 }));
     all.splice(logicalRow + 1, 0, dup);
-    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null));
+    const rs = this.currentRowSizes();
+    if (rs) rs.splice(logicalRow + 1, 0, rs[logicalRow]);
+    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null, rs));
   }
 
   private moveRow(view: EditorView, from: number, to: number) {
@@ -1000,7 +1277,9 @@ export class TableWidget extends WidgetType {
     if (to < 0 || to >= all.length) return;
     const [row] = all.splice(from, 1);
     all.splice(to, 0, row);
-    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null));
+    const rs = this.currentRowSizes();
+    if (rs) { const [s] = rs.splice(from, 1); rs.splice(to, 0, s); }
+    this.replaceTable(view, this.rebuildFromAllRows(all, this.data.header !== null, rs));
   }
 
   private insertColumn(view: EditorView, atCol: number) {
@@ -1077,6 +1356,32 @@ export class TableWidget extends WidgetType {
     this.replaceTable(view, { ...this.data, align: next });
   }
 
+  /** Set (or clear, with `"auto"`) the explicit width of a column. */
+  private setColumnSize(view: EditorView, colIdx: number, size: string) {
+    const cols = [...this.data.columns];
+    cols[colIdx] = size;
+    this.replaceTable(view, { ...this.data, columns: cols });
+  }
+
+  /** Set (or clear, with `"auto"`) the explicit height of a logical row. The
+   *  `rows:` array drops to `null` once every entry is back to `auto`. */
+  private setRowSize(view: EditorView, logicalRow: number, size: string) {
+    const rs = this.currentRowSizes() ?? this.getAllRows().map(() => "auto");
+    rs[logicalRow] = size;
+    const allAuto = rs.every((s) => s === "auto");
+    this.replaceTable(view, { ...this.data, rowSizes: allAuto ? null : rs });
+  }
+
+  /** Row-size array normalised to the current logical row count (padded with
+   *  `auto`), or `null` when the table carries no `rows:` argument. */
+  private currentRowSizes(): string[] | null {
+    if (!this.data.rowSizes) return null;
+    const n = this.getAllRows().length;
+    const rs = this.data.rowSizes.slice(0, n);
+    while (rs.length < n) rs.push("auto");
+    return rs;
+  }
+
   private sortColumn(view: EditorView, colIdx: number, dir: "asc" | "desc") {
     const sorted = [...this.data.rows].sort((a, b) => {
       const cmp = (a[colIdx]?.content ?? "").localeCompare(b[colIdx]?.content ?? "");
@@ -1087,6 +1392,8 @@ export class TableWidget extends WidgetType {
 
   private toggleHeaderRow(view: EditorView, logicalRow: number) {
     if (this.data.header && logicalRow === 0) {
+      // Demote the header to a body row — logical row order is unchanged, so
+      // any explicit row heights stay aligned.
       this.replaceTable(view, {
         ...this.data,
         header: null,
@@ -1095,7 +1402,9 @@ export class TableWidget extends WidgetType {
     } else {
       const all = this.getAllRows();
       const [newHeader] = all.splice(logicalRow, 1);
-      this.replaceTable(view, { ...this.data, header: newHeader, rows: all });
+      const rs = this.currentRowSizes();
+      if (rs) { const [s] = rs.splice(logicalRow, 1); rs.unshift(s); }
+      this.replaceTable(view, this.rebuildFromAllRows([newHeader, ...all], true, rs));
     }
   }
 }

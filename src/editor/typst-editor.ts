@@ -127,7 +127,7 @@ import { annotationTracker } from "./typst-decorations/annotation-tracker";
 import { headingFold } from "./typst-decorations/heading-fold";
 import { wordCountTracker } from "./typst-decorations/word-count";
 import { cursorPositionTracker } from "./typst-decorations/cursor-position";
-import { lspExtension } from "./lsp";
+import { lspExtension, visualModeFacet } from "./lsp";
 import type { LspClient } from "./lsp";
 import { inkycapSearch } from "./search-panel";
 import {
@@ -596,7 +596,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest, headingFold()] : [];
+  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true)] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)
@@ -719,7 +719,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       }
       view.dispatch({
         effects: [
-          visualCompartment.reconfigure(enabled ? [typstVisualMode(), verseFocusRouter] : []),
+          visualCompartment.reconfigure(enabled ? [typstVisualMode(), verseFocusRouter, visualModeFacet.of(true)] : []),
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
           selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
