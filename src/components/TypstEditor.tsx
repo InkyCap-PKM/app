@@ -441,10 +441,25 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       active !== "all" && enabled.includes(active) ? [active] : enabled;
     try {
       const userWords = await ipc.listUserDictionary().catch(() => []);
+      console.info("[spellcheck] building checker for", codes);
       const checker = await buildChecker(codes, userWords);
-      if (gen === spellGen) editorHandle?.setSpellChecker(checker);
-    } catch {
-      if (gen === spellGen) editorHandle?.setSpellChecker(null);
+      if (gen !== spellGen) return;
+      if (!checker) {
+        console.warn("[spellcheck] no dictionary could be loaded for", codes);
+        toastError(
+          "Spellcheck unavailable",
+          `Could not load dictionaries: ${codes.join(", ")}`,
+        );
+      } else {
+        console.info("[spellcheck] checker ready for", codes);
+      }
+      editorHandle?.setSpellChecker(checker);
+    } catch (err) {
+      console.error("[spellcheck] build failed", err);
+      if (gen === spellGen) {
+        editorHandle?.setSpellChecker(null);
+        toastError("Spellcheck failed to load", err);
+      }
     }
   }
 
