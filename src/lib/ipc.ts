@@ -48,6 +48,7 @@ import type {
   GitIdentity,
   GitSetupResult,
   GitPackageExportResult,
+  GitBundlePackagesResult,
   AnnotationScope,
 } from "./types";
 
@@ -713,6 +714,21 @@ export async function gitGetReviewIncoming(): Promise<boolean> {
 /** Set whether the open notebox reviews incoming changes before merging. */
 export async function gitSetReviewIncoming(enabled: boolean): Promise<void> {
   return invoke<void>("git_set_review_incoming", { enabled });
+}
+
+/** Whether the open notebox bundles its Typst packages on share (a per-machine
+ *  preference; off by default). */
+export async function gitGetBundlePackages(): Promise<boolean> {
+  return invoke<boolean>("git_get_bundle_packages");
+}
+
+/** Set whether the open notebox bundles its Typst packages when sharing.
+ *  Enabling vendors current packages immediately; returns what was bundled and
+ *  any specs that couldn't be located. */
+export async function gitSetBundlePackages(
+  enabled: boolean,
+): Promise<GitBundlePackagesResult> {
+  return invoke<GitBundlePackagesResult>("git_set_bundle_packages", { enabled });
 }
 
 /** Reconstruct an in-progress review from the on-disk staging folder (so a

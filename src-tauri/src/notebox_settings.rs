@@ -128,6 +128,15 @@ pub struct NoteboxLocalState {
     /// this. `None` until the first export. Server-backed noteboxes use the
     /// remote-tracking ref instead, so they never set this.
     pub last_shared_oid: Option<String>,
+    /// When set, every share gesture (Sync push and package export) first
+    /// vendors the Typst packages this notebox imports into
+    /// `.inkycap/packages/` — including transitive dependencies — so the
+    /// notebox stays self-contained and a recipient can compile without
+    /// fetching them. The vendored files are ordinary tracked content, so they
+    /// then travel through any transport. A per-machine sharing preference (the
+    /// sharer decides whether to bundle), off by default. Read by
+    /// `commands::git::run_sync` and `git_export_package`.
+    pub bundle_packages: bool,
 }
 
 /// Journal Scroll settings. Entirely per-notebox: each notebox has its own

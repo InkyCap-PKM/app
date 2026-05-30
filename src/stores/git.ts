@@ -85,6 +85,11 @@ const [actionsOpen, setActionsOpen] = createSignal(false);
  *  every incoming change for review instead of auto-merging. Loaded on open. */
 const [reviewIncoming, setReviewIncomingSignal] = createSignal(false);
 
+/** Per-machine "bundle Typst packages on share" preference for the open
+ *  notebox (off by default). When on, Sync push and package export first
+ *  vendor the notebox's packages into it. Loaded on open. */
+const [bundlePackages, setBundlePackagesSignal] = createSignal(false);
+
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
 export function collaborative(): boolean {
@@ -174,10 +179,13 @@ export async function resetGitOnOpen(): Promise<void> {
   setManageOpen(false);
   setActionsOpen(false);
   setReviewIncomingSignal(false);
+  setBundlePackagesSignal(false);
   if (collaborative()) {
     await refreshStatus();
     // Load the per-machine review-incoming preference for this notebox.
     setReviewIncomingSignal(await ipc.gitGetReviewIncoming().catch(() => false));
+    // Load the per-machine bundle-packages preference for this notebox.
+    setBundlePackagesSignal(await ipc.gitGetBundlePackages().catch(() => false));
     // Recover an in-progress review left on disk (a paused Sync/import that
     // outlived an app restart), so the list of notes to review reappears — e.g.
     // when the user opens the panel from the status bar.
@@ -340,7 +348,9 @@ export async function checkUpdates(): Promise<void> {
 
 /** Export the open notebox (with its full git history) to a package file.
  *  Commits any pending edits first, so the package is current. `password`
- *  enables AES-256; the recipient needs it out-of-band. */
+ *  enables AES-256; the recipient needs it out-of-band. If the notebox is set
+ *  to bundle packages, the Typst packages it uses are vendored in first so they
+ *  travel with the export. */
 export async function exportPackage(dest: string, password?: string): Promise<void> {
   setGitSyncing(true);
   try {
@@ -348,6 +358,20 @@ export async function exportPackage(dest: string, password?: string): Promise<vo
     await awaitAllPendingWrites();
     const res = await ipc.gitExportPackage(dest, password);
     showToast("success", t("git.toast.exported", { path: res.path }));
+    if (res.vendoredPackages.length > 0) {
+      showToast(
+        "success",
+        t("git.toast.packagesVendored", { count: res.vendoredPackages.length }),
+      );
+    }
+    if (res.unresolvedPackages.length > 0) {
+      showToast(
+        "warning",
+        t("git.toast.packagesUnresolved", {
+          specs: res.unresolvedPackages.join(", "),
+        }),
+      );
+    }
     setActionsOpen(false);
     // A dirty notebox was committed during export — refresh the status chip.
     await refreshStatus();
@@ -485,6 +509,31 @@ export async function setReviewIncoming(enabled: boolean): Promise<void> {
   }
 }
 
+/** Toggle the per-machine "bundle Typst packages on share" preference. Enabling
+ *  vendors current packages immediately and reports what was bundled (or what
+ *  couldn't be located). Optimistic; reverts + toasts on failure. */
+export async function setBundlePackages(enabled: boolean): Promise<void> {
+  setBundlePackagesSignal(enabled);
+  try {
+    const res = await ipc.gitSetBundlePackages(enabled);
+    if (enabled && res.vendored.length > 0) {
+      showToast(
+        "success",
+        t("git.toast.packagesVendored", { count: res.vendored.length }),
+      );
+    }
+    if (enabled && res.unresolved.length > 0) {
+      showToast(
+        "warning",
+        t("git.toast.packagesUnresolved", { specs: res.unresolved.join(", ") }),
+      );
+    }
+  } catch (err) {
+    setBundlePackagesSignal(!enabled);
+    toastError(t("git.bundle.toggleFailed"), err);
+  }
+}
+
 /** Store an HTTPS token for the remote host (re-auth). Throws on failure. */
 export async function signIn(token: string): Promise<void> {
   await ipc.gitSignIn(token);
@@ -536,4 +585,5 @@ export {
   actionsOpen,
   setActionsOpen,
   reviewIncoming,
+  bundlePackages,
 };

@@ -672,6 +672,21 @@ export interface GitPackageExportResult {
   fileCount: number;
   /** Uncompressed bytes of `.git` packaged. */
   bytes: number;
+  /** When packages were included: canonical specs (`@ns/name:ver`) vendored
+   *  into the notebox so they travel with the export. */
+  vendoredPackages: string[];
+  /** Imported package specs that couldn't be located locally and so were NOT
+   *  bundled — the recipient may be unable to compile notes that need them. */
+  unresolvedPackages: string[];
+}
+
+/** Outcome of enabling "bundle packages" (`gitSetBundlePackages`). Mirrors
+ *  `commands/git.rs::BundlePackagesResult`. */
+export interface GitBundlePackagesResult {
+  /** Canonical specs (`@ns/name:ver`) newly vendored into the notebox. */
+  vendored: string[];
+  /** Imported specs that couldn't be located locally and so were NOT bundled. */
+  unresolved: string[];
 }
 
 // ============================================================================

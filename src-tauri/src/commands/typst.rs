@@ -8,6 +8,7 @@ use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::bibliography::extract_citations;
+use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
 use crate::typst_pipeline::{TypstCompileResult, TypstDiagnostic, TypstHtmlResult};
 
@@ -69,9 +70,11 @@ pub async fn compile_typst_svg(
         .as_mut()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
-    let mut result = compiler
-        .compile_svg(&canonical, source)
-        .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    let mut result = compile_with_auto_packages(compiler, |c| {
+        c.compile_svg(&canonical, source.clone())
+    })
+    .await
+    .map_err(|err| InkyCapError::Typst(err.to_string()))?;
     remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
     Ok(result)
 }
@@ -260,9 +263,11 @@ pub async fn compile_typst_html(
         .as_mut()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     ensure_system_fonts_if_needed(compiler, &state).await;
-    let mut result = compiler
-        .compile_html(&canonical, source)
-        .map_err(|err| InkyCapError::Typst(err.to_string()))?;
+    let mut result = compile_with_auto_packages(compiler, |c| {
+        c.compile_html(&canonical, source.clone())
+    })
+    .await
+    .map_err(|err| InkyCapError::Typst(err.to_string()))?;
     remap_diagnostic_lines(&mut result.diagnostics, injected_line_offset);
     Ok(result)
 }

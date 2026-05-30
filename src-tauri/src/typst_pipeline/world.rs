@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Datelike, Local};
-use typst::diag::{FileError, FileResult};
+use typst::diag::{FileError, FileResult, PackageError};
 use typst::foundations::{Bytes, Datetime};
+use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
@@ -20,6 +21,7 @@ use typst::{Library, LibraryExt, World};
 use typst_library::Feature;
 
 use crate::storage::path::validate_notebox_path;
+use crate::typst_packages::package_search_dirs;
 use crate::typst_pipeline::fonts::{self, FontSlot};
 
 /// Per-FileId cached source text. Held under a Mutex so `World::source` can
@@ -110,6 +112,14 @@ pub struct NoteboxWorld {
     now: Mutex<Option<DateTime<Local>>>,
     /// Whether system + notebox fonts have been loaded (on-demand, not at startup).
     system_fonts_loaded: bool,
+    /// Remote-namespace packages the resolver couldn't locate in any known
+    /// directory (notebox-vendored, Typst data dir, or Typst cache dir).
+    /// Drained by the compile command layer via [`take_missing_packages`],
+    /// which downloads them into the shared Typst cache and recompiles. This
+    /// is what makes transitive dependencies resolve: each compile pass
+    /// surfaces the next missing package. `@local` packages are never recorded
+    /// — they have no registry to download from.
+    missing_packages: Mutex<Vec<PackageSpec>>,
 }
 
 impl NoteboxWorld {
@@ -135,6 +145,34 @@ impl NoteboxWorld {
             main: Mutex::new(placeholder),
             now: Mutex::new(None),
             system_fonts_loaded: false,
+            missing_packages: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Drain the set of remote packages the resolver failed to find since the
+    /// last call. The compile command layer downloads these into the shared
+    /// Typst cache and recompiles (the World caches only successful reads, so a
+    /// plain recompile picks up a freshly-downloaded package — no explicit
+    /// cache eviction needed).
+    pub fn take_missing_packages(&self) -> Vec<PackageSpec> {
+        self.missing_packages
+            .lock()
+            .map(|mut v| std::mem::take(&mut *v))
+            .unwrap_or_default()
+    }
+
+    /// Record a package the resolver couldn't locate, for later download.
+    /// Only remote namespaces are recorded — `@local` has no registry URL,
+    /// so a missing `@local` package is a genuine "not found" the user must
+    /// resolve by providing the files (it stays an unrecoverable compile error).
+    fn record_missing_package(&self, spec: &PackageSpec) {
+        if spec.namespace.as_str() == "local" {
+            return;
+        }
+        if let Ok(mut v) = self.missing_packages.lock() {
+            if !v.iter().any(|s| s == spec) {
+                v.push(spec.clone());
+            }
         }
     }
 
@@ -227,36 +265,58 @@ impl NoteboxWorld {
         })
     }
 
-    /// Resolve a package file to a local path under `.inkycap/packages/`.
+    /// Resolve a package file to a local path, searching three roots in
+    /// priority order:
     ///
-    /// Layout: `<notebox>/.inkycap/packages/<namespace>/<name>/<version>/<vpath>`
+    /// 1. **Notebox-vendored** — `<notebox>/.inkycap/packages/<ns>/<name>/<ver>/`.
+    ///    Packages bundled with the notebox (travels under sync, highest
+    ///    priority so a notebox can pin its own copy).
+    /// 2. **Typst data dir** — `dirs::data_dir()/typst/packages/...`, where
+    ///    `@local` packages and manually-persisted installs live.
+    /// 3. **Typst cache dir** — `dirs::cache_dir()/typst/packages/...`, where
+    ///    downloaded `@preview` packages land (shared with `typst-cli` and
+    ///    Tinymist).
     ///
-    /// This matches the Typst-canonical layout used by `typst-cli`, Tinymist,
-    /// and `typst.ts`. All user-authored content (templates and libraries)
-    /// lives under `@local/`; Universe content under `@preview/`; custom
-    /// namespaces resolve identically.
+    /// The three-level `<namespace>/<name>/<version>/<vpath>` layout under each
+    /// root is the Typst-canonical one used by `typst-cli`, Tinymist, and
+    /// `typst.ts`, so a package found in any of them compiles identically here.
+    ///
+    /// On a total miss the spec is recorded via [`record_missing_package`] so
+    /// the compile command layer can download it and recompile (tier-B
+    /// on-demand resolution), then `NotFound` is returned for this attempt.
     fn resolve_package_path(
         &self,
-        spec: &typst::syntax::package::PackageSpec,
+        spec: &PackageSpec,
         vpath: &VirtualPath,
     ) -> FileResult<PathBuf> {
         let rel_file = vpath.as_rootless_path();
+        let roots = package_search_dirs(
+            &self.canonical_notebox_root,
+            spec.namespace.as_str(),
+            spec.name.as_str(),
+            &spec.version.to_string(),
+        );
 
-        let pkg_dir = self.canonical_notebox_root
-            .join(".inkycap/packages")
-            .join(spec.namespace.as_str())
-            .join(spec.name.as_str())
-            .join(spec.version.to_string());
-
-        if pkg_dir.is_dir() {
-            let joined = pkg_dir.join(rel_file);
-            return validate_notebox_path(&self.canonical_notebox_root, &joined)
+        for pkg_dir in &roots {
+            if !pkg_dir.is_dir() {
+                continue;
+            }
+            // Containment-validate against this package root (not the notebox
+            // root — the cache/data dirs live outside it) so a `..` in the
+            // package's own vpath can't escape its directory. Canonicalize the
+            // root first; `validate_notebox_path` needs a canonical prefix for
+            // the `starts_with` check to hold when the path contains symlinks.
+            let canon_root = match std::fs::canonicalize(pkg_dir) {
+                Ok(p) => p,
+                Err(err) => return Err(FileError::from_io(err, pkg_dir)),
+            };
+            let joined = canon_root.join(rel_file);
+            return validate_notebox_path(&canon_root, &joined)
                 .map_err(|_| FileError::AccessDenied);
         }
 
-        Err(FileError::Package(typst::diag::PackageError::NotFound(
-            spec.clone(),
-        )))
+        self.record_missing_package(spec);
+        Err(FileError::Package(PackageError::NotFound(spec.clone())))
     }
 
     fn read_source(&self, id: FileId) -> FileResult<Source> {
@@ -412,6 +472,67 @@ mod tests {
             svg.contains("data:image/png;base64,"),
             "expected base64-embedded PNG in SVG output; got first 200 chars: {}",
             &svg[..200.min(svg.len())]
+        );
+    }
+
+    fn spec(s: &str) -> PackageSpec {
+        s.parse().expect("valid package spec")
+    }
+
+    #[test]
+    fn resolves_notebox_vendored_package() {
+        let tmp = tempdir().expect("tempdir");
+        let root = canonicalize_root(tmp.path()).expect("canonicalize");
+        // Vendored layout: .inkycap/packages/<ns>/<name>/<ver>/lib.typ
+        let pkg = root.join(".inkycap/packages/preview/foo/1.0.0");
+        fs::create_dir_all(&pkg).expect("create pkg dir");
+        fs::write(pkg.join("lib.typ"), "#let x = 1").expect("write lib");
+
+        let world = NoteboxWorld::new(root);
+        let resolved = world
+            .resolve_package_path(&spec("@preview/foo:1.0.0"), &VirtualPath::new("/lib.typ"))
+            .expect("vendored package should resolve");
+        assert!(resolved.ends_with("preview/foo/1.0.0/lib.typ"));
+        // A hit must not be recorded as missing.
+        assert!(world.take_missing_packages().is_empty());
+    }
+
+    #[test]
+    fn records_missing_remote_package() {
+        let tmp = tempdir().expect("tempdir");
+        let root = canonicalize_root(tmp.path()).expect("canonicalize");
+        let world = NoteboxWorld::new(root);
+
+        let err = world
+            .resolve_package_path(
+                &spec("@preview/nope:9.9.9"),
+                &VirtualPath::new("/lib.typ"),
+            )
+            .expect_err("absent package must not resolve");
+        assert!(matches!(err, FileError::Package(PackageError::NotFound(_))));
+
+        let missing = world.take_missing_packages();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].name.as_str(), "nope");
+        // Draining is one-shot.
+        assert!(world.take_missing_packages().is_empty());
+    }
+
+    #[test]
+    fn local_package_miss_is_not_recorded_for_download() {
+        // `@local` packages have no registry, so a miss is a genuine
+        // unrecoverable error — never queued for download.
+        let tmp = tempdir().expect("tempdir");
+        let root = canonicalize_root(tmp.path()).expect("canonicalize");
+        let world = NoteboxWorld::new(root);
+
+        let _ = world.resolve_package_path(
+            &spec("@local/mylib:0.1.0"),
+            &VirtualPath::new("/lib.typ"),
+        );
+        assert!(
+            world.take_missing_packages().is_empty(),
+            "@local misses must not be queued for auto-download"
         );
     }
 }

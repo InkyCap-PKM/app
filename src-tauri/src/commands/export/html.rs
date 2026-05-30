@@ -5,6 +5,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
+use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 
 use super::helpers::{
     apply_review_mode, escape_html_attr, escape_html_content, extract_metadata_raw,
@@ -52,9 +53,11 @@ pub async fn export_note_html(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-    let result = compiler
-        .compile_html(&path_buf, source)
-        .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+    let result = compile_with_auto_packages(compiler, |c| {
+        c.compile_html(&path_buf, source.clone())
+    })
+    .await
+    .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     if !result.ok {
         let msgs: Vec<_> = result.diagnostics.iter().map(|d| d.message.clone()).collect();

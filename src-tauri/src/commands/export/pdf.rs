@@ -6,6 +6,7 @@ use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::compiler::PdfStandardPreset;
+use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
@@ -39,9 +40,11 @@ pub async fn export_note_pdf(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-    let pdf_bytes = compiler
-        .compile_pdf(&path_buf, source, PdfStandardPreset::default())
-        .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+    let pdf_bytes = compile_with_auto_packages(compiler, |c| {
+        c.compile_pdf(&path_buf, source.clone(), PdfStandardPreset::default())
+    })
+    .await
+    .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     Ok(pdf_bytes)
 }
@@ -85,9 +88,11 @@ pub async fn export_note_pdf_to_file(
     let standard = pdf_standard.unwrap_or_default();
     let source = ensure_document_date_for_standard(source, standard);
     check_pdf_standard_requirements(&source, standard)?;
-    let pdf_bytes = compiler
-        .compile_pdf(&path_buf, source, standard)
-        .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+    let pdf_bytes = compile_with_auto_packages(compiler, |c| {
+        c.compile_pdf(&path_buf, source.clone(), standard)
+    })
+    .await
+    .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     tokio::fs::write(&output_path, &pdf_bytes)
         .await

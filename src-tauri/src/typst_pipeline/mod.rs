@@ -15,6 +15,8 @@ pub mod contributors;
 pub mod diagnostic;
 pub mod fonts;
 pub mod note_rewriter;
+pub mod package_fetch;
+pub mod package_vendor;
 pub mod path_rebase;
 pub mod query;
 pub mod recovery;
