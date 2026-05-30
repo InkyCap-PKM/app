@@ -172,8 +172,9 @@ pub fn inject_style_rules(
     source: &str,
     defaults_rules: Option<&str>,
     collection_rules: Option<&str>,
+    custom_typst: Option<&str>,
 ) -> String {
-    let injection = build_injection_block(defaults_rules, collection_rules);
+    let injection = build_injection_block(defaults_rules, collection_rules, custom_typst);
     if injection.is_empty() {
         return source.to_string();
     }
@@ -242,6 +243,7 @@ pub fn inject_cite_tagging(source: &str) -> String {
 fn build_injection_block(
     defaults_rules: Option<&str>,
     collection_rules: Option<&str>,
+    custom_typst: Option<&str>,
 ) -> String {
     let mut parts = Vec::new();
 
@@ -253,6 +255,16 @@ fn build_injection_block(
     if let Some(collection) = collection_rules {
         if !collection.is_empty() {
             parts.push(collection.to_string());
+        }
+    }
+    // The collection's custom Typst comes last so it overrides the generated
+    // app + collection rules above it. In the non-book export paths a template
+    // is imported (symbols only) ahead of this block, so custom rules win there
+    // too; the book path emits custom Typst after its `#show: template` call
+    // separately (see book_wrapper::build_book_source).
+    if let Some(custom) = custom_typst {
+        if !custom.trim().is_empty() {
+            parts.push(custom.to_string());
         }
     }
 
@@ -324,6 +336,7 @@ mod tests {
             source,
             Some("#show: apply-notebox-defaults.with(text-font: \"Inter\")"),
             None,
+            None,
         );
         let import_pos = result.find("inkycap-notebox").unwrap();
         let show_pos = result.find("#show: apply-notebox-defaults").unwrap();
@@ -337,10 +350,26 @@ mod tests {
             source,
             Some("#show: apply-notebox-defaults.with(page-paper: \"a4\")"),
             Some("#show: apply-collection-style.with(page-args: (paper: \"us-letter\"))"),
+            None,
         );
         let defaults_pos = result.find("apply-notebox-defaults").unwrap();
         let collection_pos = result.find("apply-collection-style").unwrap();
         assert!(collection_pos > defaults_pos);
+    }
+
+    #[test]
+    fn custom_typst_injected_after_collection_rules() {
+        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let result = inject_style_rules(
+            source,
+            Some("#show: apply-notebox-defaults.with(page-paper: \"a4\")"),
+            Some("#show: apply-collection-style.with(par-args: (justify: true))"),
+            Some("#show heading.where(level: 1): set text(navy)"),
+        );
+        let collection_pos = result.find("apply-collection-style").unwrap();
+        let custom_pos = result.find("set text(navy)").unwrap();
+        // Custom Typst must come after the generated collection rules so it wins.
+        assert!(custom_pos > collection_pos);
     }
 
     /// End-to-end: compile a note with the hybrid injection approach —
@@ -408,7 +437,7 @@ mod tests {
             heading: None,
         };
         let rules = style.to_typst_show_call();
-        // Page geometry: direct #set rule
+        // Page geometry: direct #set rule. Numbering patterns are quoted.
         assert!(rules.contains(
             "#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"
         ));
@@ -418,5 +447,28 @@ mod tests {
             "text-args: (font: \"Times New Roman\", size: 12pt, lang: \"fr\", region: \"CA\")"
         ));
         assert!(rules.contains("par-args: (justify: true)"));
+    }
+
+    #[test]
+    fn numbering_none_emits_bare_keyword() {
+        // The "None" preset must suppress numbering via Typst's `none` keyword,
+        // not the literal pattern string "none" (which would print the word).
+        let style = CollectionStyle {
+            page: Some(crate::collection_parser::model::PageStyle {
+                paper: None,
+                margin: None,
+                columns: None,
+                numbering: Some("none".to_string()),
+            }),
+            text: None,
+            paragraph: None,
+            heading: Some(crate::collection_parser::model::HeadingStyle {
+                numbering: Some("none".to_string()),
+            }),
+        };
+        let rules = style.to_typst_show_call();
+        assert!(rules.contains("numbering: none"));
+        assert!(!rules.contains("numbering: \"none\""));
+        assert!(rules.contains("heading-args: (numbering: none)"));
     }
 }

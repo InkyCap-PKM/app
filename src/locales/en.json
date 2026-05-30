@@ -50,6 +50,14 @@
 
   "collection.tab.title": "Collection",
 
+  "property.file.name": "File Name",
+  "property.file.folder": "Folder Name",
+  "property.file.path": "File-system Path",
+  "property.file.ext": "File Extension",
+  "property.file.size": "Size",
+  "property.file.ctime": "Created Date",
+  "property.file.mtime": "Modified Date",
+
   "journalScroll.tab.title": "Journal Scroll",
   "journalScroll.group": "Journal Scroll",
   "journalScroll.toggle.start": "Journal Scroll anchored from this note",

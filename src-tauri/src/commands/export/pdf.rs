@@ -133,6 +133,7 @@ pub async fn export_collection_note_pdf(
         &source,
         if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
         collection_rules.as_deref().filter(|r| !r.is_empty()),
+        base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
     );
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
 
@@ -247,6 +248,7 @@ pub async fn export_collection_batch_pdf(
             &source,
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
+            base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
         );
         let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
         let source = prepare_bibliography(
@@ -338,7 +340,6 @@ pub struct BookExportOverrides {
     #[serde(rename = "abstract")]
     pub abstract_text: Option<String>,
     pub toc_depth: Option<u8>,
-    pub number_chapters: Option<bool>,
     pub inject_chapter_heading: Option<crate::collection_parser::model::InjectChapterHeading>,
     pub wikilink_mode: Option<crate::collection_parser::model::BookWikilinkMode>,
     pub include_title_page: Option<bool>,
@@ -407,7 +408,6 @@ pub async fn export_collection_book_pdf(
         if ov.date.is_some() { options.date = ov.date; }
         if ov.abstract_text.is_some() { options.abstract_text = ov.abstract_text; }
         if let Some(v) = ov.toc_depth { options.toc_depth = v; }
-        if let Some(v) = ov.number_chapters { options.number_chapters = v; }
         if let Some(v) = ov.inject_chapter_heading { options.inject_chapter_heading = v; }
         if let Some(v) = ov.wikilink_mode { options.wikilink_mode = v; }
         if let Some(v) = ov.include_title_page { options.include_title_page = v; }
@@ -552,6 +552,7 @@ pub async fn export_collection_book_pdf(
         &notes,
         &options,
         if style_rules.is_empty() { None } else { Some(&style_rules) },
+        base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
         template_import_line.as_deref(),
         bib_path_for_wrapper.as_deref(),
         base.bibliography_style.as_deref(),

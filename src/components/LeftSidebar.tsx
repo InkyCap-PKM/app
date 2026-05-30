@@ -1271,9 +1271,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                         <RuleIcon iconEmoji={col.icon ?? "lucide:folder-pen"} name={col.name} size={14} />
                       </span>
                       <span class="sidebar-item__label">{col.name}</span>
-                      <Show when={col.view_count > 1}>
-                        <span class="sidebar-item__badge">{col.view_count}</span>
-                      </Show>
                     </div>
                   }
                 >

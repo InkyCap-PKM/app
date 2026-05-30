@@ -952,6 +952,40 @@ svg.lucide {
   display: flex;
   gap: 2px;
   align-items: center;
+  /* Outer wrapper: takes the row's free width. The scroll-area inside it holds
+     the tabs; chevron buttons and the add-view "+" sit outside it so they stay
+     put while the tabs scroll. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The scrolling track for the view tabs. `overflow: hidden` (not auto) keeps
+   the tabs scrollable programmatically via the chevron buttons / wheel without
+   a visible scrollbar eating into the row — mirrors the file tab strip. */
+.collection-table__view-tabs-scroll {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Chevron scroll buttons, shown only when the tabs overflow that side. */
+.collection-table__view-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.collection-table__view-scroll:hover {
+  color: var(--fg-primary);
 }
 
 .collection-table__view-tab {
@@ -959,14 +993,20 @@ svg.lucide {
   align-items: center;
   gap: 4px;
   background: none;
-  border: 1px solid transparent;
+  /* A visible border (matching the Filter/Columns/Export toolbar buttons
+     beside them) so the view switchers read clearly as clickable tab-buttons
+     rather than plain text. The active tab strengthens it below. */
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   color: var(--fg-muted);
   cursor: pointer;
   padding: 3px 6px 3px 10px;
   font-size: var(--text-base);
   line-height: 1.4;
-  min-width: 0;
+  /* Keep each tab at its natural single-line width so a long view name doesn't
+     wrap or compress; overflow scrolls the row instead. */
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .collection-table__view-tab:hover {
@@ -978,6 +1018,20 @@ svg.lucide {
   color: var(--fg-primary);
   border-color: var(--border-input);
   background: var(--bg-highlight);
+}
+
+/* Drag-to-reorder feedback (mirrors the table column reorder): the dragged tab
+   dims, and a coloured edge marks where it will drop. */
+.collection-table__view-tab--dragging {
+  opacity: 0.4;
+}
+
+.collection-table__view-tab--drop-before {
+  box-shadow: -2px 0 0 var(--accent);
+}
+
+.collection-table__view-tab--drop-after {
+  box-shadow: 2px 0 0 var(--accent);
 }
 
 .collection-table__view-tab--add {
@@ -1027,6 +1081,8 @@ svg.lucide {
 .collection-table__toolbar {
   display: flex;
   gap: 4px;
+  /* Stays at its natural size while the view-tabs row scrolls beside it. */
+  flex-shrink: 0;
 }
 
 .collection-table__toolbar-btn {
@@ -1064,6 +1120,8 @@ svg.lucide {
 .collection-table__add-view-wrap {
   position: relative;
   display: inline-flex;
+  /* Stays put beside the scrolling tab track. */
+  flex-shrink: 0;
 }
 
 .collection-table__add-view-menu {
@@ -1619,6 +1677,12 @@ svg.lucide {
 }
 
 .filter-builder__input--property {
+  width: 160px;
+}
+
+/* The property picker is a themed Dropdown (not a text input), sized to match
+   the old free-text field so the row layout is unchanged. */
+.filter-builder__property-dropdown {
   width: 160px;
 }
 
@@ -4381,11 +4445,33 @@ svg.lucide {
    horizontal scrollbar. In a collection field, let text inputs shrink to the
    space available — small fixed-width inputs (sizes, languages) keep their
    inline width because they never need to shrink. */
-.collection-meta__row .settings__text-input,
-.collection-meta__add-row .settings__text-input {
+.collection-meta__row .settings__text-input {
   flex-shrink: 1;
   min-width: 0;
   max-width: 100%;
+}
+
+/* Style Overrides controls: a length field (number + unit dropdown) and a
+   preset picker (dropdown + optional revealed custom field). Both follow the
+   row label and fill the remaining width, shrinking with the narrow panel. */
+.length-input,
+.preset-select {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.length-input__num {
+  width: 64px;
+  flex-shrink: 0;
+}
+
+.preset-select__custom {
+  flex: 1;
+  min-width: 100px;
 }
 
 .collection-meta__row--top {
@@ -4436,6 +4522,20 @@ svg.lucide {
   flex-shrink: 0;
 }
 
+/* Label paired with an inline help "?" — the group keeps the label column's
+   width so controls stay aligned, while the "?" sits right beside the word. */
+.collection-meta__label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.collection-meta__label-group .collection-meta__label {
+  min-width: 0;
+}
+
 .collection-meta__icon-field {
   display: flex;
   align-items: center;
@@ -4451,26 +4551,6 @@ svg.lucide {
   margin-top: 4px;
   padding-bottom: 2px;
   border-bottom: 1px solid var(--border-primary);
-}
-
-.collection-meta__remove-btn {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 0 4px;
-  font-size: var(--text-lg);
-  line-height: 1;
-}
-
-.collection-meta__remove-btn:hover {
-  color: var(--fg-danger, #e55);
-}
-
-.collection-meta__add-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* Inline-suggestion Accept/Reject menu (SuggestionWidget). Portalled to
@@ -4727,35 +4807,6 @@ svg.lucide {
   font-size: var(--text-md);
   color: var(--fg-secondary);
   margin-top: 2px;
-}
-
-.collection-meta__add-key {
-  flex: 0 0 110px;
-}
-
-.collection-meta__add-value {
-  flex: 1;
-}
-
-.collection-meta__add-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  padding: 4px 10px;
-  font-size: var(--text-base);
-  white-space: nowrap;
-}
-
-.collection-meta__add-btn:hover:not(:disabled) {
-  border-color: var(--border-input);
-  color: var(--fg-primary);
-}
-
-.collection-meta__add-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .collection-meta__hint {
@@ -9120,6 +9171,29 @@ svg.lucide {
   box-shadow: var(--modal-shadow);
   display: flex;
   flex-direction: column;
+}
+
+/* Custom Typst editor modal — wider than the default app-modal and with a
+   tall scrolling CodeMirror so a power-user can author rules comfortably. */
+.custom-typst-modal {
+  width: 720px;
+}
+
+.custom-typst-modal__editor {
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  height: 50vh;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.custom-typst-modal__editor .cm-editor {
+  height: 100%;
+}
+
+.custom-typst-modal__editor .cm-scroller {
+  overflow: auto;
 }
 
 .app-modal__header {

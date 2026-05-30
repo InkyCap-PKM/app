@@ -26,8 +26,9 @@ interface AgendaListProps {
   loading: boolean;
   /** Message shown when there are no items at all. */
   emptyMessage: string;
-  /** Invoked when a row is activated. */
-  onOpen: (item: AgendaItem) => void;
+  /** Invoked when a row is activated. `opts.newTab` requests opening the note
+   *  in a new tab (ctrl/cmd-click, middle-click, or the context-menu entry). */
+  onOpen: (item: AgendaItem, opts?: { newTab?: boolean }) => void;
 }
 
 /** All sort orders the Agenda offers. Each carries its own direction in
@@ -67,6 +68,11 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   const [showSortMenu, setShowSortMenu] = createSignal(false);
   const [showTaskMenu, setShowTaskMenu] = createSignal(false);
   const [showTagsMenu, setShowTagsMenu] = createSignal(false);
+  const [rowContextMenu, setRowContextMenu] = createSignal<{
+    x: number;
+    y: number;
+    item: AgendaItem;
+  } | null>(null);
   let sortBtnRef: HTMLButtonElement | undefined;
   let taskBtnRef: HTMLButtonElement | undefined;
   let tagsBtnRef: HTMLButtonElement | undefined;
@@ -384,7 +390,16 @@ const AgendaList: Component<AgendaListProps> = (props) => {
               <div
                 class="sidebar-item agenda__item"
                 classList={{ "agenda__item--done": it.done }}
-                onClick={() => props.onOpen(it)}
+                onClick={(e) => props.onOpen(it, { newTab: e.ctrlKey || e.metaKey })}
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return; // middle-click → new tab
+                  e.preventDefault();
+                  props.onOpen(it, { newTab: true });
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setRowContextMenu({ x: e.clientX, y: e.clientY, item: it });
+                }}
                 title={it.note_title}
               >
                 <span class="sidebar-item__icon">
@@ -413,6 +428,35 @@ const AgendaList: Component<AgendaListProps> = (props) => {
             )}
           </For>
         </Show>
+      </Show>
+
+      <Show when={rowContextMenu()}>
+        {(menu) => (
+          <div
+            class="context-menu"
+            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+            use:clickOutside={{ onDismiss: () => setRowContextMenu(null) }}
+          >
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                props.onOpen(menu().item);
+                setRowContextMenu(null);
+              }}
+            >
+              Open
+            </button>
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                props.onOpen(menu().item, { newTab: true });
+                setRowContextMenu(null);
+              }}
+            >
+              Open in new tab
+            </button>
+          </div>
+        )}
       </Show>
     </>
   );

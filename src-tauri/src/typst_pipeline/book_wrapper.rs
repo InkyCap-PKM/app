@@ -57,7 +57,6 @@ pub struct BookExportOptions {
     pub date: Option<String>,
     pub abstract_text: Option<String>,
     pub toc_depth: u8,
-    pub number_chapters: bool,
     pub inject_chapter_heading: InjectChapterHeading,
     pub wikilink_mode: BookWikilinkMode,
     pub include_title_page: bool,
@@ -82,7 +81,6 @@ impl BookExportOptions {
             date: cfg.date,
             abstract_text: cfg.abstract_text,
             toc_depth: cfg.toc_depth.unwrap_or(2),
-            number_chapters: cfg.number_chapters.unwrap_or(true),
             inject_chapter_heading: cfg.inject_chapter_heading.unwrap_or_default(),
             wikilink_mode: cfg.wikilink_mode.unwrap_or_default(),
             include_title_page: cfg.include_title_page.unwrap_or(true),
@@ -475,6 +473,10 @@ pub fn build_book_source(
     notes: &[BookNote],
     options: &BookExportOptions,
     style_rules: Option<&str>,
+    // The collection's raw custom Typst, emitted after the template's
+    // `#show: template` call so it overrides both the generated style rules and
+    // the template — the last styling layer before the chapters.
+    custom_typst: Option<&str>,
     template_import: Option<&str>,
     bibliography_path: Option<&str>,
     bibliography_style: Option<&str>,
@@ -488,11 +490,10 @@ pub fn build_book_source(
     // uses RomanThenArabic. Defaults to "1" if None.
     body_page_numbering_pattern: Option<&str>,
     // Heading-numbering pattern from the collection's Style Overrides
-    // (e.g. "1.1", "I.A.1", "1.a."). Used when the book is configured
-    // to number chapters; falls back to "1.1" when None. Only consulted
-    // if `options.number_chapters` is true — otherwise the book wrapper
-    // does not emit a #set heading rule at all and any style override
-    // applies untouched.
+    // (e.g. "1.1", "I.A.1", "1.a."). The sole control for chapter numbering:
+    // a pattern numbers chapters with it, the explicit "none" disables
+    // numbering, and an unset value (None / Inherit) defaults to "1.1" since
+    // books conventionally number their chapters.
     heading_numbering_pattern: Option<&str>,
 ) -> String {
     let mut s = String::with_capacity(8 * 1024);
@@ -568,15 +569,20 @@ pub fn build_book_source(
             }
         }
     }
-    if options.number_chapters {
-        // Use the user's Style Overrides pattern when present so a
-        // custom format like "I.A.1" survives; only fall back to the
-        // wrapper default "1.1" when the user has expressed no
-        // preference.
-        let heading_pattern = heading_numbering_pattern.unwrap_or("1.1");
+    // Chapter/heading numbering is driven solely by the collection's heading
+    // numbering style (Style Overrides → Heading numbering) — there is no
+    // separate book toggle. Books conventionally number chapters, so an unset
+    // value (Inherit) defaults to "1.1"; the explicit "none" disables it; any
+    // other value is used as the pattern verbatim.
+    let heading_pattern = match heading_numbering_pattern.map(str::trim) {
+        Some("none") => None,
+        Some(p) if !p.is_empty() => Some(p),
+        _ => Some("1.1"),
+    };
+    if let Some(pattern) = heading_pattern {
         s.push_str(&format!(
             "#set heading(numbering: \"{}\")\n",
-            typst_escape(heading_pattern)
+            typst_escape(pattern)
         ));
     }
 
@@ -585,6 +591,18 @@ pub fn build_book_source(
         s.push_str(import_line);
         if !import_line.ends_with('\n') {
             s.push('\n');
+        }
+    }
+
+    // The collection's custom Typst — emitted after the template so the user's
+    // own rules win over both the generated style and the template. This is the
+    // final styling layer before page numbering and the chapter bodies.
+    if let Some(custom) = custom_typst {
+        if !custom.trim().is_empty() {
+            s.push_str(custom);
+            if !custom.ends_with('\n') {
+                s.push('\n');
+            }
         }
     }
 
@@ -1183,6 +1201,7 @@ After
             &options(),
             None,
             None,
+            None,
             Some("refs.bib"),
             Some("ieee"),
             false,
@@ -1213,7 +1232,7 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Fallback;
         let mut n = note("methods", "Body without heading.\n");
         n.title = Some("Methods".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         // Anchor is emitted via the package function (label()-based, so
         // space/paren stems survive), and the heading is injected separately.
         assert!(src.contains("#chapter-anchor(\"methods\")"));
@@ -1226,7 +1245,7 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Fallback;
         let mut n = note("intro", "= Introduction\nBody.\n");
         n.title = Some("Introduction".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         // Fallback mode must NOT inject a heading when the note already has
         // one — so `= Introduction` appears exactly once (the note's own),
         // not a second injected copy. The anchor is still emitted.
@@ -1244,7 +1263,7 @@ After
         opts.inject_chapter_heading = InjectChapterHeading::Always;
         let mut n = note("intro", "= Author's Heading\nBody.\n");
         n.title = Some("Introduction".to_string());
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         assert!(src.contains("#chapter-anchor(\"intro\")"));
         // Always-inject adds the title heading even though the note has its
         // own different heading.
@@ -1338,7 +1357,7 @@ After
     #[test]
     fn build_book_emits_merged_context_set() {
         let n = note("a", "#note()\n= A\n");
-        let src = build_book_source(&[n], &options(), None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &options(), None, None, None, None, None, false, None, None);
         assert!(src.contains("#set-merged-context(active: true,"));
         assert!(src.contains("\"a\""));
     }
@@ -1348,7 +1367,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::RomanThenArabic;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         // Front matter in roman, body switches to arabic and resets.
         assert!(src.contains("#set page(numbering: \"i\")"));
         assert!(src.contains("#set page(numbering: \"1\")"));
@@ -1360,7 +1379,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::ArabicFromChapters;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         assert!(src.contains("#set page(numbering: none)"));
         assert!(src.contains("#set page(numbering: \"1\")"));
         assert!(src.contains("#counter(page).update(1)"));
@@ -1377,6 +1396,7 @@ After
         let src = build_book_source(
             &[n],
             &opts,
+            None,
             None,
             None,
             None,
@@ -1416,6 +1436,7 @@ After
             None,
             None,
             None,
+            None,
             false,
             Some("-- 1 --"),
             None,
@@ -1440,7 +1461,7 @@ After
         let mut opts = options();
         opts.page_numbering = BookPageNumbering::RomanThenArabic;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         assert!(src.contains("#set page(numbering: \"i\")"));
         assert!(src.contains("#set page(numbering: \"1\")"));
     }
@@ -1456,6 +1477,7 @@ After
         let src = build_book_source(
             &[n],
             &options(),
+            None,
             None,
             None,
             None,
@@ -1476,7 +1498,7 @@ After
         let mut opts = options();
         opts.include_outline = false;
         let n = note("a", "= A\n");
-        let src = build_book_source(&[n], &opts, None, None, None, None, false, None, None);
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         assert!(
             !src.contains("outline-with-bare-page-numbers"),
             "outline helper leaked when outline was disabled:\n{}",
@@ -1486,15 +1508,14 @@ After
 
     #[test]
     fn build_book_uses_style_override_heading_pattern() {
-        // A user pattern from Style Overrides → Heading numbering must
-        // replace the wrapper's default "1.1" when the book is set to
-        // number chapters.
-        let mut opts = options();
-        opts.number_chapters = true;
+        // A user pattern from Style Overrides → Heading numbering is used
+        // verbatim, replacing the wrapper's "1.1" default.
+        let opts = options();
         let n = note("a", "= A\n");
         let src = build_book_source(
             &[n],
             &opts,
+            None,
             None,
             None,
             None,
@@ -1516,12 +1537,25 @@ After
     }
 
     #[test]
-    fn build_book_skips_heading_rule_when_chapter_numbering_off() {
-        // When the book disables chapter numbering, the wrapper must not
-        // emit any heading-numbering set rule — that lets the style
-        // override (or Typst's default of `none`) take effect.
-        let mut opts = options();
-        opts.number_chapters = false;
+    fn build_book_defaults_to_numbered_chapters() {
+        // No heading numbering style set (Inherit) → books default to "1.1".
+        let opts = options();
+        let n = note("a", "= A\n");
+        let src = build_book_source(
+            &[n], &opts, None, None, None, None, None, false, None, None,
+        );
+        assert!(
+            src.contains("#set heading(numbering: \"1.1\")"),
+            "expected default chapter numbering:\n{}",
+            src
+        );
+    }
+
+    #[test]
+    fn build_book_skips_heading_rule_when_numbering_none() {
+        // Heading numbering "none" (the replacement for the old number-chapters
+        // = false toggle) must suppress the wrapper's #set heading rule.
+        let opts = options();
         let n = note("a", "= A\n");
         let src = build_book_source(
             &[n],
@@ -1530,14 +1564,14 @@ After
             None,
             None,
             None,
+            None,
             false,
             None,
-            Some("I.A.1"),
+            Some("none"),
         );
         assert!(
             !src.contains("#set heading(numbering:"),
-            "wrapper should not override heading numbering when book \
-             toggle is off:\n{}",
+            "wrapper should not number chapters when heading numbering is none:\n{}",
             src
         );
     }

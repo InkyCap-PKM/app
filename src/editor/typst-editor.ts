@@ -624,6 +624,35 @@ export function readOnlyTypstExtensions(): Extension[] {
   ];
 }
 
+/// Minimal *editable* Typst extensions for a standalone editor that isn't a
+/// note — e.g. the collection's "Custom Typst" modal. Reuses the same parser,
+/// highlight style, and theme as the main editor so markup reads identically,
+/// but omits the note-only machinery (visual mode, LSP, wikilinks, decoration
+/// trackers). Editing essentials only: history, bracket matching/closing,
+/// indentation, and the standard keymaps.
+export function editableTypstExtensions(): Extension[] {
+  return [
+    lineNumbers(),
+    history(),
+    indentOnInput(),
+    bracketMatching(),
+    closeBrackets(),
+    // CM's own drawn cursor/selection, same as the main editor — renders the
+    // caret reliably on focus instead of leaning on the native one.
+    drawSelection(),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      indentWithTab,
+    ]),
+    typstLanguage(),
+    syntaxHighlighting(inkycapHighlight),
+    inkycapTheme,
+    EditorView.lineWrapping,
+  ];
+}
+
 export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandle {
   const visualCompartment = new Compartment();
   const autoExpandCompartment = new Compartment();

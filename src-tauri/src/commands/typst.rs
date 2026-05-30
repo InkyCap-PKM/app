@@ -267,59 +267,32 @@ pub async fn compile_typst_html(
     Ok(result)
 }
 
-/// Inject the style cascade: app document defaults, then collection style
-/// overrides. Both are injected after the inkycap-notebox import line so that
-/// collection overrides beat app defaults, and any template import or user
-/// `#set` rules later in the document win over both.
-pub(crate) async fn inject_style_cascade(source: &str, note_path: &std::path::Path, state: &AppState) -> String {
+/// Inject app-level document defaults (font, size, page) after the
+/// inkycap-notebox import line.
+///
+/// Collection-level style is intentionally NOT applied here. A note's
+/// `collection:` property is one-directional: it lets a collection *include*
+/// the note, but the note's own reading view and standalone export must not
+/// inherit that collection's styling. Doing so would also be ill-defined for a
+/// note that belongs to several collections (`collection: (a, b)`) — there's no
+/// non-arbitrary winner. Collection style and custom Typst are applied only by
+/// the collection export commands, against the one collection being exported
+/// (see `commands::export`).
+///
+/// This is the standalone-note path: live preview (`compile_typst_svg`/`_html`)
+/// and exporting a single note on its own (PDF/HTML/Pandoc). Any template import
+/// or user `#set` rules later in the document still win over the app defaults
+/// via Typst's cascade.
+pub(crate) async fn inject_style_cascade(source: &str, _note_path: &std::path::Path, state: &AppState) -> String {
     let settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&settings);
-
-    let collection_rules = resolve_collection_style(note_path, state).await;
 
     style_injection::inject_style_rules(
         source,
         if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
-        collection_rules.as_deref(),
+        None,
+        None,
     )
-}
-
-/// Look up which collection a note belongs to and return the collection's
-/// style overrides as Typst `#set` rules, if any.
-async fn resolve_collection_style(note_path: &std::path::Path, state: &AppState) -> Option<String> {
-    // Find the note's collection property
-    let idx = state.property_index.read().await;
-    let note = idx.notes.get(note_path)?;
-    let collection_val = note.properties.get("collection")?;
-
-    let collection_name = match collection_val {
-        crate::models::note::PropertyValue::String(s) => s.clone(),
-        crate::models::note::PropertyValue::List(list) => {
-            list.first()?.as_str()?.to_string()
-        }
-        _ => return None,
-    };
-    drop(idx);
-
-    if collection_name.is_empty() {
-        return None;
-    }
-
-    // Resolve the `.collection` file from the authoritative list (collections
-    // live under `.inkycap/collections/`, not the notebox root), matching by
-    // file stem — the same value the `collection` property carries.
-    let storage = state.get_storage().await.ok()?;
-    let collection_files = state.collection_files.read().await.clone();
-    let collection_path = collection_files
-        .iter()
-        .find(|p| p.file_stem().and_then(|s| s.to_str()) == Some(collection_name.as_str()))?;
-    let collection_content = storage.read_file(collection_path).await.ok()?;
-
-    let base = crate::collection_parser::model::parse_collection_file(&collection_content).ok()?;
-    let style = base.style?;
-    let call = style.to_typst_show_call();
-
-    if call.is_empty() { None } else { Some(call) }
 }
 
 /// Inject `#set-notebox(...)` after the `#import` line when the user has toggled

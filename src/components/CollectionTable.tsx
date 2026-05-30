@@ -8,6 +8,7 @@ import {
   Show,
   onCleanup,
 } from "solid-js";
+import { ChevronLeft, ChevronRight } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
@@ -20,11 +21,17 @@ import { openTab } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
+import { propertyLabel } from "../lib/property-labels";
 import { clickOutside } from "../lib/clickOutside";
 import AgendaList from "./AgendaList";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
 import { Dropdown } from "./Dropdown";
+
+// Remember the last active view per collection for the session, so switching
+// to another tab and back doesn't reset the collection to its first view.
+// Keyed by collection path; an empty value means "the default (first) view".
+const lastActiveViewByCollection = new Map<string, string>();
 
 // ── Cell rendering ─────────────────────────────────────────────────
 
@@ -122,7 +129,23 @@ const InlineCell: Component<{
     return (
       <a
         class="collection-table__link"
-        onClick={() => openTab({ type: "file", title: props.fileName, path: props.filePath })}
+        onClick={(e) => {
+          // Ctrl/Cmd-click (or middle-click) opens the note in a new tab
+          // rather than replacing the current one.
+          const newTab = e.ctrlKey || e.metaKey;
+          openTab(
+            { type: "file", title: props.fileName, path: props.filePath },
+            newTab ? { forceNewTab: true, newTabAction: true } : undefined,
+          );
+        }}
+        onAuxClick={(e) => {
+          if (e.button !== 1) return; // middle-click only
+          e.preventDefault();
+          openTab(
+            { type: "file", title: props.fileName, path: props.filePath },
+            { forceNewTab: true, newTabAction: true },
+          );
+        }}
       >
         {props.fileName}
       </a>
@@ -188,7 +211,7 @@ const ColumnPicker: Component<{
                 checked={props.visibleColumns.includes(key)}
                 onChange={() => props.onToggle(key)}
               />
-              <span>{key}</span>
+              <span title={key}>{propertyLabel(key)}</span>
             </label>
           )}
         </For>
@@ -200,7 +223,16 @@ const ColumnPicker: Component<{
 // ── Main CollectionTable component ─────────────────────────────────
 
 const CollectionTable: Component<{ path: string }> = (props) => {
-  const [activeView, setActiveView] = createSignal("");
+  // Seed from the per-collection session cache so the last-used view persists
+  // across tab switches; `setActiveView` writes through to the cache.
+  const [activeViewRaw, setActiveViewRaw] = createSignal(
+    lastActiveViewByCollection.get(props.path) ?? "",
+  );
+  const activeView = activeViewRaw;
+  const setActiveView = (name: string) => {
+    lastActiveViewByCollection.set(props.path, name);
+    return setActiveViewRaw(name);
+  };
   const [showColumnPicker, setShowColumnPicker] = createSignal(false);
   const [showFilterBuilder, setShowFilterBuilder] = createSignal(false);
   const [editingViewName, setEditingViewName] = createSignal<string | null>(null);
@@ -441,6 +473,89 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     const next = [...cols.slice(0, insertAt), src, ...cols.slice(insertAt)];
     await ipc.updateViewColumns(props.path, activeView(), next);
     refresh();
+  }
+
+  // ── View drag-reorder (mirrors the column reorder above) ──
+  const [draggingView, setDraggingView] = createSignal<string | null>(null);
+  const [dragOverView, setDragOverView] = createSignal<string | null>(null);
+  const [viewDropSide, setViewDropSide] = createSignal<"before" | "after">("before");
+
+  function handleViewDragStart(e: DragEvent, name: string) {
+    setDraggingView(name);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", name);
+    }
+  }
+
+  function handleViewDragEnd() {
+    setDraggingView(null);
+    setDragOverView(null);
+  }
+
+  function handleViewDragOver(e: DragEvent, name: string) {
+    if (!draggingView() || draggingView() === name) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setViewDropSide(e.clientX < rect.left + rect.width / 2 ? "before" : "after");
+    setDragOverView(name);
+  }
+
+  async function handleViewDrop(e: DragEvent, targetName: string) {
+    e.preventDefault();
+    const src = draggingView();
+    setDragOverView(null);
+    setDraggingView(null);
+    if (!src || src === targetName) return;
+    const d = data();
+    if (!d) return;
+    const names = d.views.map((v) => v.name).filter((n) => n !== src);
+    const targetIdx = names.indexOf(targetName);
+    if (targetIdx === -1) return;
+    const insertAt = viewDropSide() === "before" ? targetIdx : targetIdx + 1;
+    const next = [...names.slice(0, insertAt), src, ...names.slice(insertAt)];
+    await ipc.reorderViews(props.path, next);
+    refresh();
+  }
+
+  // ── View-tab overflow scrolling (chevron buttons, no visible scrollbar —
+  //    mirrors the file tab strip so the bar's width isn't eaten by a bar) ──
+  let viewScrollRef: HTMLDivElement | undefined;
+  const [canScrollViewsLeft, setCanScrollViewsLeft] = createSignal(false);
+  const [canScrollViewsRight, setCanScrollViewsRight] = createSignal(false);
+
+  function updateViewScrollState() {
+    const el = viewScrollRef;
+    if (!el) return;
+    setCanScrollViewsLeft(el.scrollLeft > 0);
+    setCanScrollViewsRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }
+
+  function scrollViews(direction: -1 | 1) {
+    viewScrollRef?.scrollBy({ left: direction * 160, behavior: "smooth" });
+  }
+
+  // Wire the overflow tracking through the `ref` callback rather than onMount:
+  // the scroll area lives inside `<Show when={data()}>`, so it doesn't exist at
+  // mount time. The ref fires when the element actually attaches (and again if
+  // it remounts), at which point we observe size/child changes. The
+  // ResizeObserver's own initial callback gives the first measurement after
+  // layout, so the chevrons appear as soon as the tabs overflow.
+  function attachViewScroll(el: HTMLDivElement) {
+    viewScrollRef = el;
+    el.addEventListener("scroll", updateViewScrollState);
+    el.addEventListener("scrollend", updateViewScrollState);
+    const ro = new ResizeObserver(updateViewScrollState);
+    ro.observe(el);
+    const mo = new MutationObserver(updateViewScrollState);
+    mo.observe(el, { childList: true, subtree: true });
+    onCleanup(() => {
+      el.removeEventListener("scroll", updateViewScrollState);
+      el.removeEventListener("scrollend", updateViewScrollState);
+      ro.disconnect();
+      mo.disconnect();
+    });
   }
 
   // ── View management ──
@@ -729,24 +844,58 @@ const CollectionTable: Component<{ path: string }> = (props) => {
             {/* View tabs — always shown */}
             <div class="collection-table__view-bar">
               <div class="collection-table__view-tabs">
+                <Show when={canScrollViewsLeft()}>
+                  <button
+                    class="collection-table__view-scroll collection-table__view-scroll--left"
+                    onClick={() => scrollViews(-1)}
+                    aria-label="Scroll views left"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                </Show>
+                <div
+                  class="collection-table__view-tabs-scroll"
+                  ref={attachViewScroll}
+                  onWheel={(e) => {
+                    // A vertical mouse wheel scrolls the row horizontally; the
+                    // chevron buttons cover the no-visible-scrollbar case.
+                    if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY;
+                  }}
+                >
                 <For each={d().views}>
-                  {(view) => (
+                  {(view, index) => (
                     <Show
                       when={editingViewName() === view.name}
                       fallback={
                         <button
-                          class={`collection-table__view-tab ${
-                            activeView() === view.name ||
-                            (activeView() === "" && d().views[0]?.name === view.name)
-                              ? "collection-table__view-tab--active"
-                              : ""
-                          }`}
+                          class="collection-table__view-tab"
+                          classList={{
+                            "collection-table__view-tab--active":
+                              activeView() === view.name ||
+                              (activeView() === "" && d().views[0]?.name === view.name),
+                            "collection-table__view-tab--dragging":
+                              draggingView() === view.name,
+                            "collection-table__view-tab--drop-before":
+                              dragOverView() === view.name && viewDropSide() === "before",
+                            "collection-table__view-tab--drop-after":
+                              dragOverView() === view.name && viewDropSide() === "after",
+                          }}
+                          draggable={true}
                           onClick={() => setActiveView(view.name)}
                           onDblClick={() => startRenameView(view.name)}
                           onContextMenu={(e) => handleViewContext(e, view.name)}
+                          onDragStart={(e) => handleViewDragStart(e, view.name)}
+                          onDragEnd={handleViewDragEnd}
+                          onDragOver={(e) => handleViewDragOver(e, view.name)}
+                          onDrop={(e) => handleViewDrop(e, view.name)}
+                          onDragLeave={() => {
+                            if (dragOverView() === view.name) setDragOverView(null);
+                          }}
                         >
                           {view.name || "Default"}
-                          <Show when={d().views.length > 1}>
+                          {/* The first view is the collection's default and is
+                              never deletable, so at least one view always remains. */}
+                          <Show when={index() > 0}>
                             <span
                               class="collection-table__view-delete"
                               onClick={(e) => {
@@ -776,6 +925,16 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     </Show>
                   )}
                 </For>
+                </div>
+                <Show when={canScrollViewsRight()}>
+                  <button
+                    class="collection-table__view-scroll collection-table__view-scroll--right"
+                    onClick={() => scrollViews(1)}
+                    aria-label="Scroll views right"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </Show>
                 <div class="collection-table__add-view-wrap">
                   <button
                     ref={addViewBtnRef}
@@ -943,12 +1102,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   items={agendaItems() ?? []}
                   loading={agendaItems.loading}
                   emptyMessage={t("agenda.emptyView")}
-                  onOpen={(it) =>
-                    openTab({
-                      type: "file",
-                      title: it.note_title,
-                      path: it.note_path,
-                    })
+                  onOpen={(it, opts) =>
+                    openTab(
+                      { type: "file", title: it.note_title, path: it.note_path },
+                      opts?.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
+                    )
                   }
                 />
               </div>
@@ -980,9 +1138,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                             if (dragOverCol() === col) setDragOverCol(null);
                           }}
                           onClick={() => handleSort(col)}
-                          title={`Sort by ${col} — drag to reorder`}
+                          title={`Sort by ${propertyLabel(col)} — drag to reorder`}
                         >
-                          {col}
+                          {propertyLabel(col)}
                           <span class="collection-table__sort-indicator">
                             {sortIndicator(col, currentSortRules())}
                           </span>
@@ -1077,6 +1235,18 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               }}
             >
               Open note
+            </button>
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                openTab(
+                  { type: "file", title: menu().fileName, path: menu().filePath },
+                  { forceNewTab: true, newTabAction: true },
+                );
+                setRowContextMenu(null);
+              }}
+            >
+              Open in new tab
             </button>
             <div class="context-menu__separator" />
             <button

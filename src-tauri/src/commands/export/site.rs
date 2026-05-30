@@ -76,6 +76,7 @@ pub async fn export_collection_static_site(
             &content,
             if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
+            base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
         );
         let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
         let source = prepare_bibliography(content, None, None, true, &state).await;

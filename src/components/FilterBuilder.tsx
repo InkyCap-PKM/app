@@ -1,6 +1,7 @@
-import { Component, For, Index, Show, createSignal } from "solid-js";
+import { Component, Index, Show, createSignal } from "solid-js";
 import type { FilterGroup, FilterNode } from "../lib/types";
 import { Dropdown } from "./Dropdown";
+import { propertyLabel } from "../lib/property-labels";
 
 /** Operators available in the filter builder. */
 const OPERATORS = [
@@ -171,8 +172,27 @@ function groupToFilter(node: GroupNode): FilterGroup | null {
 
 // ── Leaf row editor ───────────────────────────────────────────────────
 
+/** Build the property-picker options for a leaf row. `file.*` keys get their
+ *  friendly label (matching the column headers); user-authored properties show
+ *  verbatim. The two are split into "Properties" and "File" groups, and the
+ *  row's current property is injected if it isn't in `allKeys` — so editing a
+ *  filter that references a since-removed property never silently drops it. */
+function propertyOptions(allKeys: string[], current: string) {
+  const keys = current && !allKeys.includes(current) ? [...allKeys, current] : allKeys;
+  const toOption = (key: string, group: string) => ({
+    value: key,
+    label: propertyLabel(key),
+    group,
+  });
+  return [
+    ...keys.filter((k) => !k.startsWith("file.")).map((k) => toOption(k, "Properties")),
+    ...keys.filter((k) => k.startsWith("file.")).map((k) => toOption(k, "File")),
+  ];
+}
+
 const FilterRowEditor: Component<{
   row: FilterRow;
+  allKeys: string[];
   onChange: (row: FilterRow) => void;
   onRemove: () => void;
 }> = (props) => {
@@ -181,13 +201,13 @@ const FilterRowEditor: Component<{
 
   return (
     <div class="filter-builder__row">
-      <input
-        class="filter-builder__input filter-builder__input--property"
-        type="text"
-        list="filter-property-keys"
+      <Dropdown<string>
+        class="filter-builder__property-dropdown"
         value={props.row.property}
-        onInput={(e) => update("property", e.currentTarget.value)}
+        options={propertyOptions(props.allKeys, props.row.property)}
+        onChange={(v) => update("property", v)}
         placeholder="property"
+        ariaLabel="Filter property"
       />
 
       <Dropdown
@@ -223,6 +243,7 @@ const FilterRowEditor: Component<{
 
 const FilterGroupEditor: Component<{
   group: GroupNode;
+  allKeys: string[];
   onChange: (group: GroupNode) => void;
   /** Remove this group from its parent. Absent for the root group. */
   onRemove?: () => void;
@@ -304,6 +325,7 @@ const FilterGroupEditor: Component<{
               fallback={
                 <FilterRowEditor
                   row={(member() as LeafNode).row}
+                  allKeys={props.allKeys}
                   onChange={(row) => updateMember(index, { kind: "leaf", row })}
                   onRemove={() => removeMember(index)}
                 />
@@ -311,6 +333,7 @@ const FilterGroupEditor: Component<{
             >
               <FilterGroupEditor
                 group={member() as GroupNode}
+                allKeys={props.allKeys}
                 onChange={(g) => updateMember(index, g)}
                 onRemove={() => removeMember(index)}
                 depth={props.depth + 1}
@@ -360,12 +383,7 @@ const FilterBuilder: Component<{
         </div>
       </div>
 
-      <FilterGroupEditor group={root()} onChange={setRoot} depth={0} />
-
-      {/* Datalist for property key suggestions, shared by every leaf row. */}
-      <datalist id="filter-property-keys">
-        <For each={props.allKeys}>{(key) => <option value={key} />}</For>
-      </datalist>
+      <FilterGroupEditor group={root()} allKeys={props.allKeys} onChange={setRoot} depth={0} />
     </div>
   );
 };
