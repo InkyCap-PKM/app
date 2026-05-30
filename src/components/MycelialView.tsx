@@ -28,6 +28,7 @@ import {
   setContextEdges,
   setHoveredGraphNode,
   hoveredContextNote,
+  setExcludedTerms,
   type MycelialContextNote,
 } from "../stores/mycelial";
 import type { LatentLink, SourceMention, FlowEdge } from "../lib/types";
@@ -124,10 +125,6 @@ export default function MycelialView(props: MycelialViewProps) {
   // rather than only being able to isolate a single kind.
   const [hidden, setHidden] = createSignal<Set<BoxKind>>(new Set());
 
-  // Arbitrary stopword entry, opened from the legend row.
-  const [stopwordOpen, setStopwordOpen] = createSignal(false);
-  const [stopwordDraft, setStopwordDraft] = createSignal("");
-
   // "What am I looking at?" help panel, opened from the legend's info icon.
   const [helpOpen, setHelpOpen] = createSignal(false);
 
@@ -221,19 +218,6 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   }
 
-  // Dismiss the stopword popup on an outside click (it lives in the legend,
-  // outside the canvas, so the canvas click-handler doesn't reach it).
-  createEffect(() => {
-    if (!stopwordOpen()) return;
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest(".mycelial-view__legend-tools")) {
-        setStopwordOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown, true);
-    onCleanup(() => document.removeEventListener("mousedown", onDown, true));
-  });
-
   // Dismiss the help panel on an outside click or the Escape key.
   createEffect(() => {
     if (!helpOpen()) return;
@@ -252,20 +236,6 @@ export default function MycelialView(props: MycelialViewProps) {
       document.removeEventListener("keydown", onKey, true);
     });
   });
-
-  /** Append a user-typed term to the notebox stopword list and recompute. */
-  async function addArbitraryStopword() {
-    const term = stopwordDraft().trim();
-    if (!term) return;
-    setStopwordOpen(false);
-    setStopwordDraft("");
-    try {
-      await ipc.addMycelialStopword(term);
-      loadData();
-    } catch (err) {
-      console.error("Failed to add stopword", err);
-    }
-  }
 
   async function loadData(path?: string) {
     const targetPath = path ?? centerPath();
@@ -293,6 +263,7 @@ export default function MycelialView(props: MycelialViewProps) {
         }),
       );
       setContextEdges(data.context_edges);
+      setExcludedTerms(data.excluded_terms ?? []);
 
       const computed = computeMycelialLayout(
         data.center,
@@ -362,12 +333,19 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   });
 
+  // Recompute when the Concept Filtering pane rescues a term or edits the
+  // stopword list — the suppressed-term set and the graph both change.
+  const onMycelialReload = () => loadData();
+  document.addEventListener("inkycap:mycelial-reload", onMycelialReload);
+
   onCleanup(() => {
     if (loadedPath) cacheView(loadedPath);
     setContextNotes([]);
     setContextEdges([]);
+    setExcludedTerms([]);
     setHoveredGraphNode(null);
     clearTimeout(pulseTimer);
+    document.removeEventListener("inkycap:mycelial-reload", onMycelialReload);
   });
 
   function recenter(path: string) {
@@ -1224,8 +1202,9 @@ export default function MycelialView(props: MycelialViewProps) {
                   <b>Depth:</b> how many wikilink hops out to scan.
                 </li>
                 <li>
-                  <b>+ Stopword:</b> exclude a word from concept
-                  detection when it's too generic to be useful.
+                  <b>Concept Filtering</b> (right panel): see which words were
+                  held back from concept detection, rescue ones that matter, and
+                  add your own words to ignore.
                 </li>
               </ul>
             </div>
@@ -1273,60 +1252,6 @@ export default function MycelialView(props: MycelialViewProps) {
           )}
         </For>
 
-        {/* Arbitrary stopword entry — sits at the right edge of the row. */}
-        <div class="mycelial-view__legend-tools">
-          <button
-            class="mycelial-view__legend-stopword"
-            title="Add a word to the mycelial stopword list"
-            onClick={() => setStopwordOpen((v) => !v)}
-          >
-            + Stopword
-          </button>
-          <Show when={stopwordOpen()}>
-            <div
-              class="mycelial-picker mycelial-namer mycelial-view__stopword-pop"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div class="mycelial-picker__header">Add stopword</div>
-              <div class="mycelial-picker__hint">
-                Stopwords are excluded from concept detection.
-              </div>
-              <input
-                class="mycelial-namer__input"
-                type="text"
-                placeholder="word to ignore"
-                value={stopwordDraft()}
-                onInput={(e) => setStopwordDraft(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addArbitraryStopword();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setStopwordOpen(false);
-                  }
-                }}
-                ref={(el) => queueMicrotask(() => el.focus())}
-              />
-              <div class="mycelial-namer__actions">
-                <button
-                  class="app-modal__btn app-modal__btn--secondary"
-                  onClick={() => setStopwordOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  class="app-modal__btn app-modal__btn--primary"
-                  disabled={!stopwordDraft().trim()}
-                  onClick={addArbitraryStopword}
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </Show>
-        </div>
       </div>
     </div>
   );

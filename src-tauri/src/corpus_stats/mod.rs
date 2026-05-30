@@ -97,10 +97,30 @@ pub struct LatentCandidate {
     pub is_bigram: bool,
 }
 
-/// The two kinds of growth signal surfaced for a note's neighborhood.
+/// A term that *would* have surfaced as an emergent concept (it clears the same
+/// document-frequency and neighborhood-recurrence bars) but was dropped because
+/// it is a stopword. Surfaced so the user can see what the filter suppressed and
+/// rescue a word that actually matters in their notebox.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExcludedTerm {
+    pub term: String,
+    pub score: f64,
+    /// Neighborhood notes the term recurs in — the "is this worth rescuing?"
+    /// signal shown to the user.
+    pub doc_count: usize,
+    /// Which layer filtered it — `"builtin"` (the bundled EN/FR lists, rescued
+    /// by force-including via `dictionary.txt`) or `"user"` (the notebox's
+    /// `mycelial-stopwords.txt`, rescued by removing the line). Drives which
+    /// rescue action the UI offers.
+    pub source: String,
+}
+
+/// The growth signals surfaced for a note's neighborhood, plus the terms the
+/// stopword filter held back (so the UI can make that filtering visible).
 pub struct NeighborhoodAnalysis {
     pub emergent: Vec<EmergentConcept>,
     pub latent: Vec<LatentCandidate>,
+    pub excluded: Vec<ExcludedTerm>,
 }
 
 impl CorpusStats {
@@ -398,6 +418,7 @@ impl CorpusStats {
         let empty = || NeighborhoodAnalysis {
             emergent: Vec::new(),
             latent: Vec::new(),
+            excluded: Vec::new(),
         };
         if self.total_docs < config.min_corpus_size {
             return empty();
@@ -412,6 +433,7 @@ impl CorpusStats {
 
         let mut emergent: Vec<EmergentConcept> = Vec::new();
         let mut latent: Vec<LatentCandidate> = Vec::new();
+        let mut excluded: Vec<ExcludedTerm> = Vec::new();
 
         // Score unigrams.
         if config.include_unigrams {
@@ -420,6 +442,35 @@ impl CorpusStats {
                     continue;
                 }
                 if self.stopwords.contains(term) {
+                    // The term cleared the df window but is a stopword. If it
+                    // also recurs across the neighborhood like a real emergent
+                    // concept would (and isn't already a page), record it as a
+                    // *suppressed* candidate so the UI can surface it for rescue.
+                    let neighborhood_count = self.count_neighborhood_presence(
+                        term,
+                        &neighborhood_set,
+                        &self.doc_unigrams,
+                    );
+                    if neighborhood_count >= config.min_neighborhood_presence
+                        && !existing_pages.contains_key(term)
+                    {
+                        let proximity = neighborhood_count as f64 / neighborhood_size as f64;
+                        let avg_tfidf = self.avg_tfidf_in_neighborhood(term, &neighborhood_set);
+                        let score =
+                            config.tfidf_weight * avg_tfidf + config.proximity_weight * proximity;
+                        if score > 0.0 {
+                            excluded.push(ExcludedTerm {
+                                term: term.clone(),
+                                score,
+                                doc_count: neighborhood_count,
+                                source: if stopwords::is_builtin_stopword(term) {
+                                    "builtin".to_string()
+                                } else {
+                                    "user".to_string()
+                                },
+                            });
+                        }
+                    }
                     continue;
                 }
                 let neighborhood_count = self.count_neighborhood_presence(
@@ -612,7 +663,19 @@ impl CorpusStats {
         latent.truncate(config.top_k * 3);
         normalize_scores(latent.iter_mut().map(|c| &mut c.score));
 
-        NeighborhoodAnalysis { emergent, latent }
+        excluded.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.term.cmp(&b.term))
+        });
+        excluded.truncate(config.top_k);
+
+        NeighborhoodAnalysis {
+            emergent,
+            latent,
+            excluded,
+        }
     }
 
     /// Count neighborhood notes whose `sets` entry contains `term`. `sets` is

@@ -82,6 +82,19 @@ pub struct EmergentConcept {
     pub mentions: Vec<SourceMention>,
 }
 
+/// A term the stopword filter held back that would otherwise have surfaced as
+/// an emergent concept. Shown in the Concept Filtering pane so the user can see
+/// what was suppressed and rescue a word that matters in their notebox.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExcludedTerm {
+    pub term: String,
+    /// Neighborhood notes the term recurs in — the "worth rescuing?" signal.
+    pub doc_count: usize,
+    /// `"builtin"` (bundled EN/FR list — rescue via dictionary.txt) or `"user"`
+    /// (the notebox's mycelial-stopwords.txt — rescue by removing the line).
+    pub source: String,
+}
+
 /// Complete data for the Mycelial View rendering.
 #[derive(Debug, Clone, Serialize)]
 pub struct MycelialData {
@@ -95,6 +108,9 @@ pub struct MycelialData {
     pub context_edges: Vec<FlowEdge>,
     pub latent_links: Vec<LatentLink>,
     pub emergent_concepts: Vec<EmergentConcept>,
+    /// Terms the stopword filter suppressed (would-be concepts) — surfaced for
+    /// the Concept Filtering pane.
+    pub excluded_terms: Vec<ExcludedTerm>,
 }
 
 #[tauri::command]
@@ -290,6 +306,16 @@ pub async fn get_mycelial_data(
         a.source.cmp(&b.source).then_with(|| a.target.cmp(&b.target))
     });
 
+    let excluded_terms: Vec<ExcludedTerm> = analysis
+        .excluded
+        .into_iter()
+        .map(|e| ExcludedTerm {
+            term: e.term,
+            doc_count: e.doc_count,
+            source: e.source,
+        })
+        .collect();
+
     Ok(MycelialData {
         center: path,
         source_notes,
@@ -297,6 +323,7 @@ pub async fn get_mycelial_data(
         context_edges,
         latent_links,
         emergent_concepts,
+        excluded_terms,
     })
 }
 
@@ -412,37 +439,27 @@ fn trim_snippet(line: &str) -> String {
     out
 }
 
-#[tauri::command]
-pub async fn add_mycelial_stopword(
-    term: String,
-    state: State<'_, AppState>,
-) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
-    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
-
-    // Ensure parent directory exists.
-    if let Some(parent) = stopwords_path.parent() {
+/// Append `term` (lowercased) as its own line to a word-list file (stopwords or
+/// dictionary), creating the file and parent directory if needed and skipping
+/// the write when the word is already present. Shared by the stopword-add,
+/// term-rescue, and spellcheck add-to-dictionary commands.
+pub(crate) async fn append_unique_word(path: &Path, term: &str) -> Result<(), InkyCapError> {
+    if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-
-    // Read existing content to avoid duplicates.
-    let existing = tokio::fs::read_to_string(&stopwords_path)
-        .await
-        .unwrap_or_default();
+    let existing = tokio::fs::read_to_string(path).await.unwrap_or_default();
     let lowered = term.to_lowercase();
-    let already = existing
+    if existing
         .lines()
-        .any(|line| line.trim().to_lowercase() == lowered);
-    if already {
+        .any(|line| line.trim().to_lowercase() == lowered)
+    {
         return Ok(());
     }
-
-    // Append the term on its own line.
     use tokio::io::AsyncWriteExt;
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&stopwords_path)
+        .open(path)
         .await?;
     let line = if existing.ends_with('\n') || existing.is_empty() {
         format!("{lowered}\n")
@@ -450,10 +467,102 @@ pub async fn add_mycelial_stopword(
         format!("\n{lowered}\n")
     };
     file.write_all(line.as_bytes()).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_mycelial_stopword(
+    term: String,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+    append_unique_word(&stopwords_path, &term).await?;
 
     // Reload stopwords in the corpus stats engine.
     let mut corpus = state.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
 
     Ok(())
+}
+
+/// Rescue a term suppressed by a *built-in* stopword: force-include it by
+/// appending to the notebox's `dictionary.txt`, which removes it from the
+/// active stopword set even though a bundled list contains it. The term can
+/// then surface as an emergent concept / latent link.
+#[tauri::command]
+pub async fn rescue_mycelial_term(
+    term: String,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let dict_path = storage.root().join(".inkycap").join("dictionary.txt");
+    append_unique_word(&dict_path, &term).await?;
+
+    let mut corpus = state.corpus_stats.write().await;
+    corpus.reload_stopwords(Some(storage.root()));
+
+    Ok(())
+}
+
+/// Rescue a term the user themselves added to `mycelial-stopwords.txt` by
+/// removing its line, rather than masking it via the dictionary. No-op if the
+/// term isn't present (e.g. it was a built-in stopword — use rescue instead).
+#[tauri::command]
+pub async fn remove_mycelial_stopword(
+    term: String,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+    let Ok(contents) = tokio::fs::read_to_string(&path).await else {
+        return Ok(());
+    };
+    let lowered = term.to_lowercase();
+    let kept: Vec<&str> = contents
+        .lines()
+        .filter(|line| line.trim().to_lowercase() != lowered)
+        .collect();
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    tokio::fs::write(&path, out).await?;
+
+    let mut corpus = state.corpus_stats.write().await;
+    corpus.reload_stopwords(Some(storage.root()));
+
+    Ok(())
+}
+
+/// Ensure the user's mycelial stopword file exists and return its path so the
+/// frontend can open it for editing. The file is the user-editable layer on
+/// top of the built-in stopword lists (one lowercase word per line, `#`
+/// comments) — exposing it directly lets the user inspect and prune it without
+/// a bespoke editor UI. When absent we create it with a short explanatory
+/// header so the first thing the user sees is the format, not a blank file.
+#[tauri::command]
+pub async fn ensure_mycelial_stopwords_file(
+    state: State<'_, AppState>,
+) -> Result<String, InkyCapError> {
+    let storage = state.get_storage().await?;
+    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+
+    if !stopwords_path.exists() {
+        if let Some(parent) = stopwords_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let header = "# Mycelial View stopwords\n\
+                      #\n\
+                      # Words listed here are excluded from emergent-concept and\n\
+                      # latent-link detection, in addition to the built-in lists.\n\
+                      # One word per line; lines starting with # are ignored.\n\
+                      # To rescue a word the built-in lists filter, add it to\n\
+                      # .inkycap/dictionary.txt instead.\n\
+                      #\n\
+                      # Edits take effect the next time the Mycelial View loads.\n";
+        tokio::fs::write(&stopwords_path, header).await?;
+    }
+
+    Ok(to_frontend_string(&stopwords_path))
 }

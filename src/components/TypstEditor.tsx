@@ -11,6 +11,7 @@ import {
   Show,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
+import { buildChecker } from "../lib/spellchecker";
 import { loadMediaObjectUrl, revokeMediaBlobs } from "../lib/media-src";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
@@ -275,6 +276,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       visualMode: currentMode() === "live",
       smartIndentLists: settings.editor.smart_indent_lists,
       enterInsertsLineBreak: settings.editor.enter_inserts_line_break,
+      typewriterMode: settings.editor.typewriter_mode,
       selectionToolbar: settings.editor.selection_toolbar,
       commandPalette: settings.editor.command_palette,
       lspClient: client,
@@ -405,6 +407,62 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         }
       },
     ),
+  );
+
+  createEffect(
+    on([() => settings.editor.typewriter_mode, currentMode], ([enabled, editorMode]) => {
+      // Typewriter scrolling only applies in the visual editor; the handle
+      // gates on its own visual-mode flag, but we also pass the live setting
+      // through so toggling it (or switching modes) reconfigures immediately.
+      editorHandle?.setTypewriterMode(enabled && editorMode === "live");
+    }),
+  );
+
+  // Spellcheck: build a Hunspell-backed checker from the active dictionaries +
+  // the notebox user dictionary, then install it on the editor. Rebuilds when
+  // the toggle or language set changes, or when the dictionary file changes
+  // (Mycelial rescue / "Add to dictionary" dispatch `inkycap:dictionary-changed`).
+  // A generation counter discards a stale async build if settings change again
+  // before it finishes.
+  let spellGen = 0;
+  async function rebuildSpellChecker() {
+    const gen = ++spellGen;
+    if (!editorHandle) return;
+    const enabled = settings.editor.spellcheck_languages ?? [];
+    if (!settings.editor.spellcheck || enabled.length === 0) {
+      editorHandle.setSpellChecker(null);
+      return;
+    }
+    // The status-bar chip narrows checking to one language, or "all" (union of
+    // enabled). A stale active code (its dictionary was disabled) falls back to
+    // the full enabled set.
+    const active = settings.editor.spellcheck_active || "all";
+    const codes =
+      active !== "all" && enabled.includes(active) ? [active] : enabled;
+    try {
+      const userWords = await ipc.listUserDictionary().catch(() => []);
+      const checker = await buildChecker(codes, userWords);
+      if (gen === spellGen) editorHandle?.setSpellChecker(checker);
+    } catch {
+      if (gen === spellGen) editorHandle?.setSpellChecker(null);
+    }
+  }
+
+  createEffect(
+    on(
+      [
+        () => settings.editor.spellcheck,
+        () => settings.editor.spellcheck_languages,
+        () => settings.editor.spellcheck_active,
+      ],
+      () => void rebuildSpellChecker(),
+    ),
+  );
+
+  const onDictionaryChanged = () => void rebuildSpellChecker();
+  document.addEventListener("inkycap:dictionary-changed", onDictionaryChanged);
+  onCleanup(() =>
+    document.removeEventListener("inkycap:dictionary-changed", onDictionaryChanged),
   );
 
   createEffect(

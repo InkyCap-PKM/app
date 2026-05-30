@@ -265,6 +265,33 @@ function enumItemNumber(state: EditorState, markerFrom: number): string {
   return `${count}.`;
 }
 
+/**
+ * Amplify nested-list indentation in the visual editor so the levels are easy
+ * to tell apart at a glance. Typst encodes nesting purely as leading
+ * whitespace, which renders at the (narrow, proportional) space width of the
+ * body font — too subtle to read as distinct levels, especially next to a tool
+ * like Obsidian that indents by a fixed, generous step. We add left padding to
+ * the list line proportional to its leading whitespace, which roughly doubles
+ * the visual step per level without touching the source. The marker and text
+ * still sit after the original whitespace, so editing the raw line is
+ * unchanged; this is a display-only nicety (visual editor as a friendliness
+ * tool — see CLAUDE.md). `LIST_INDENT_CH` is the amount added per leading
+ * column, in `ch` units (wider than a proportional space, which is what gives
+ * the amplification).
+ */
+const LIST_INDENT_CH = 1.2;
+
+function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFrom: number) {
+  const line = state.doc.lineAt(markerFrom);
+  const cols = markerFrom - line.from; // leading-whitespace width, in chars
+  if (cols <= 0) return;
+  decos.push(
+    Decoration.line({
+      attributes: { style: `padding-left: ${(cols * LIST_INDENT_CH).toFixed(2)}ch` },
+    }).range(line.from),
+  );
+}
+
 function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: number }[]): DecorationSet {
   const focused = cursorLines(state);
   const cursors = cursorPositions(state);
@@ -372,12 +399,14 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             break;
           }
           case "ListMarker": {
+            pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget("•") }).range(node.from, node.to),
             );
             return false;
           }
           case "EnumMarker": {
+            pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(node.from, node.to),
             );

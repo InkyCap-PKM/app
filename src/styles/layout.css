@@ -549,6 +549,45 @@ body.is-resizing-pane .pane-resizer {
   flex-shrink: 0;
 }
 
+/* Spellcheck language chip — same borderless status-bar button language as the
+   count toggle, opening the language menu upward. */
+.status-bar__spell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--status-fg);
+  font-size: var(--text-base);
+  padding: 0 6px;
+  height: 100%;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.status-bar__spell:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+.status-bar__spell--off {
+  opacity: 0.55;
+}
+
+.status-bar__spell-icon {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.status-bar__spell-label {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+}
+
+.status-bar__spell-chevron {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
 .status-bar__count-value {
   font-variant-numeric: tabular-nums;
 }
@@ -1478,6 +1517,16 @@ svg.lucide {
   height: 1px;
   background: var(--popup-border-color);
   margin: 4px 0;
+}
+
+/* Non-interactive explanatory line inside a context menu (e.g. an empty-state
+   hint). */
+.context-menu__hint {
+  display: block;
+  padding: 4px 10px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  max-width: 220px;
 }
 
 /* Nested submenu (Property type selector). */
@@ -2807,6 +2856,90 @@ svg.lucide {
 .settings__description {
   font-size: var(--text-sm);
   color: var(--fg-dim);
+}
+
+.settings__field-hint {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.settings__dict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.settings__dict-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.settings__dict-row:hover {
+  background: var(--bg-hover);
+}
+
+.settings__dict-name {
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+}
+
+.settings__dict-code {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  font-family: var(--mono-font, monospace);
+}
+
+.settings__dict-badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  background: var(--bg-highlight);
+  border-radius: var(--radius-control);
+  padding: 0 5px;
+}
+
+/* Personal-dictionary word rows: the word with a trailing "Remove" link. */
+.settings__userword-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: var(--radius-control);
+}
+
+.settings__userword-row:hover {
+  background: var(--bg-hover);
+}
+
+.settings__userword {
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__userword-remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.settings__userword-remove:hover {
+  color: var(--accent-danger, var(--fg-primary));
 }
 
 /* Transient post-action notice (e.g. markdown-import result). Styled as a
@@ -6503,39 +6636,11 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-/* Arbitrary stopword entry — pinned to the right edge of the legend row so
-   the type-filter items stay centred. */
-.mycelial-view__legend-tools {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.mycelial-view__legend-stopword {
-  background: none;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--popup-radius, 5px);
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-  padding: 3px 9px;
-  cursor: pointer;
-}
-
-.mycelial-view__legend-stopword:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
-/* The add-stopword popup opens upward from its button. */
-.mycelial-view__stopword-pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-}
+/* Stopword entry moved to the right-panel Concept Filtering pane (see
+   .concept-filtering); the legend "+ Stopword" button and its popup are gone. */
 
 /* "What am I looking at?" help — pinned to the left edge of the legend so
-   the type-filter items stay centred (mirrors .mycelial-view__legend-tools). */
+   the type-filter items stay centred. */
 .mycelial-view__legend-help {
   position: absolute;
   left: 12px;
@@ -6970,6 +7075,114 @@ svg.lucide {
 .mycelial-picker__hint code {
   font-family: var(--mono-font, monospace);
   font-size: 0.9em;
+}
+
+/* ── Concept Filtering pane (Mycelial right panel) ───────────────────────── */
+.concept-filtering__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.concept-filtering__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px;
+  border-radius: var(--radius-control);
+}
+
+.concept-filtering__row:hover {
+  background: var(--bg-hover);
+}
+
+.concept-filtering__term {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.concept-filtering__word {
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.concept-filtering__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Why-badge: distinguishes a built-in filter from a word the user added. Per
+   the no-all-caps rule, it leans on weight/colour/background, not capitals. */
+.concept-filtering__badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  background: var(--bg-highlight);
+  border-radius: var(--radius-control);
+  padding: 0 5px;
+}
+
+.concept-filtering__badge--user {
+  color: var(--accent, var(--fg-primary));
+}
+
+.concept-filtering__count {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+}
+
+.concept-filtering__rescue {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.concept-filtering__rescue:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+  border-color: var(--accent, var(--border-input));
+}
+
+.concept-filtering__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.concept-filtering__add .property-editor__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.concept-filtering__editlink {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--accent, var(--fg-primary));
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.concept-filtering__editlink:hover {
+  color: var(--fg-primary);
 }
 
 .mycelial-picker__item {

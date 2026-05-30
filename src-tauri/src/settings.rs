@@ -23,8 +23,16 @@ pub struct EditorSettings {
     pub readable_line_length: bool,
     /// Maximum line width in characters (used when readable_line_length is true).
     pub max_line_width: u32,
-    /// Enable browser-native spellcheck.
+    /// Master on/off for in-editor spell checking.
     pub spellcheck: bool,
+    /// Dictionary codes the user has enabled (e.g. `["en_CA", "fr"]`) — the set
+    /// the status-bar language switcher offers.
+    pub spellcheck_languages: Vec<String>,
+    /// Which enabled dictionary is actively checking, set from the status-bar
+    /// chip: `"all"` checks against every enabled dictionary (a word passes if
+    /// any accepts it — for bilingual notes), or a single dictionary code to
+    /// narrow checking to one language. Off is the `spellcheck` master toggle.
+    pub spellcheck_active: String,
     /// Auto-close brackets and quotes.
     pub auto_pair_brackets: bool,
     /// Auto-close Typst formatting delimiters (*, _, `, $).
@@ -50,6 +58,9 @@ pub struct EditorSettings {
     pub show_inline_wikilinks: bool,
     /// Show tags inline in rendered (reading/export) output.
     pub show_inline_tags: bool,
+    /// Keep the cursor line vertically centred in the visual editor while
+    /// typing (typewriter scrolling).
+    pub typewriter_mode: bool,
     /// Focus mode for the visual editor: "none", "line", or "section".
     pub focus_mode: String,
     /// Dim unfocused text in the visual editor when focus mode is active.
@@ -70,6 +81,8 @@ impl Default for EditorSettings {
             readable_line_length: true,
             max_line_width: 80,
             spellcheck: false,
+            spellcheck_languages: vec!["en_CA".to_string()],
+            spellcheck_active: "all".to_string(),
             auto_pair_brackets: true,
             auto_pair_typst: true,
             smart_indent_lists: true,
@@ -78,6 +91,7 @@ impl Default for EditorSettings {
             default_reading_format: "svg".to_string(),
             show_inline_wikilinks: true,
             show_inline_tags: true,
+            typewriter_mode: false,
             focus_mode: "none".to_string(),
             focus_dim: false,
             auto_expand_markup: false,

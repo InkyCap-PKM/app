@@ -57,10 +57,13 @@ import {
   MessagesSquare,
   Settings2,
   Ligature,
+  Waypoints,
+  Filter,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import CollectionSettings from "./CollectionSettings";
+import MycelialFilteringPanel from "./MycelialFilteringPanel";
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -169,6 +172,11 @@ const RightPanel: Component = () => {
     }
     prevScrollOn = scrollOn;
   });
+
+  // Mycelial-view sub-tab: the graph-context list vs the Concept Filtering
+  // pane. Local (session-scoped) — defaults to context on each panel mount.
+  const [mycelialPanelTab, setMycelialPanelTab] =
+    createSignal<"context" | "filtering">("context");
 
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
@@ -1212,6 +1220,27 @@ const RightPanel: Component = () => {
             );
           })()}
         </Show>
+
+        {/* Mycelial-view tabs — Linked Context (the default graph-context pane)
+            and Concept Filtering (suppressed terms + the stopword editor). */}
+        <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
+          <button
+            class={`right-panel__tab${mycelialPanelTab() === "context" ? " right-panel__tab--active" : ""}`}
+            onClick={() => setMycelialPanelTab("context")}
+            title="Linked Context"
+            aria-label="Linked Context"
+          >
+            <Waypoints size={18} />
+          </button>
+          <button
+            class={`right-panel__tab${mycelialPanelTab() === "filtering" ? " right-panel__tab--active" : ""}`}
+            onClick={() => setMycelialPanelTab("filtering")}
+            title="Concept Filtering"
+            aria-label="Concept Filtering"
+          >
+            <Filter size={18} />
+          </button>
+        </Show>
       </div>
 
       {/* Annotations tab content — its own fill container so the pane can pin
@@ -1223,8 +1252,15 @@ const RightPanel: Component = () => {
         </div>
       </Show>
 
+      {/* Concept Filtering pane — suppressed terms + stopword editor. */}
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "filtering"}>
+        <div class="right-panel__tab-content">
+          <MycelialFilteringPanel />
+        </div>
+      </Show>
+
       {/* Mycelial context notes — shown when a mycelial tab is active */}
-      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial"}>
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "context"}>
         {(() => {
           const [contextFilter, setContextFilter] = createSignal("");
           const [contextSort, setContextSort] = createSignal<"name" | "connections">("connections");
