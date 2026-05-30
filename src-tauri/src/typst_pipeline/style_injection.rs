@@ -165,9 +165,9 @@ pub fn build_defaults_show_call_resolved(user: &UserSettings) -> String {
 ///
 /// Both are optional and only injected when non-empty. The injection point
 /// is immediately after the inkycap-notebox import line — recognized via
-/// [`crate::notebox_package::is_notebox_import_line`], which accepts both the
-/// canonical `/.inkycap/notebox.typ` form and the legacy versioned package
-/// path. If no such line is found, rules are prepended to the source.
+/// [`crate::notebox_package::is_notebox_import_line`] (the canonical
+/// `/.inkycap/notebox.typ` form). If no such line is found, rules are
+/// prepended to the source.
 pub fn inject_style_rules(
     source: &str,
     defaults_rules: Option<&str>,
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn inject_after_import() {
-        let source = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
+        let source = r#"#import "/.inkycap/notebox.typ": *
 
 = Hello
 "#;
@@ -338,14 +338,14 @@ mod tests {
             None,
             None,
         );
-        let import_pos = result.find("inkycap-notebox").unwrap();
+        let import_pos = result.find("/.inkycap/notebox.typ").unwrap();
         let show_pos = result.find("#show: apply-notebox-defaults").unwrap();
         assert!(show_pos > import_pos);
     }
 
     #[test]
     fn collection_overrides_after_defaults() {
-        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/notebox.typ\": *\n\n= Hello\n";
         let result = inject_style_rules(
             source,
             Some("#show: apply-notebox-defaults.with(page-paper: \"a4\")"),
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn custom_typst_injected_after_collection_rules() {
-        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
+        let source = "#import \"/.inkycap/notebox.typ\": *\n\n= Hello\n";
         let result = inject_style_rules(
             source,
             Some("#show: apply-notebox-defaults.with(page-paper: \"a4\")"),

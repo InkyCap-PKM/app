@@ -5,13 +5,8 @@ import { expandFunc } from "./effects";
 export interface ProtectedRange { from: number; to: number }
 
 const CANONICAL_IMPORT_PREFIX = '#import "/.inkycap/notebox.typ"';
-const LEGACY_IMPORT_PREFIX = '#import "/.inkycap/packages/inkycap-notebox/';
 export function isNoteboxImportLine(text: string): boolean {
-  const trimmed = text.trimStart();
-  return (
-    trimmed.startsWith(CANONICAL_IMPORT_PREFIX) ||
-    trimmed.startsWith(LEGACY_IMPORT_PREFIX)
-  );
+  return text.trimStart().startsWith(CANONICAL_IMPORT_PREFIX);
 }
 
 /** True for any `#import …` line (the notebox import, a `@preview/…`

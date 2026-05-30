@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn rewrite_tag_in_typst_content() {
-        let content = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(\n  tags: (\"foo\", \"bar\"),\n)\n\nSome content with #foo inline.\n";
+        let content = "#import \"/.inkycap/notebox.typ\": *\n#note(\n  tags: (\"foo\", \"bar\"),\n)\n\nSome content with #foo inline.\n";
         let out = rewrite_tag_in_content(content, "foo", Some("baz"));
         assert!(out.contains("#baz inline"));
         assert!(!out.contains("#foo inline"));

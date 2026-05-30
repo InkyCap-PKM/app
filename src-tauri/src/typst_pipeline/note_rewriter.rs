@@ -439,7 +439,7 @@ pub fn typst_value_to_plain_text(raw: &str) -> String {
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
+    const SAMPLE: &str = r#"#import "/.inkycap/notebox.typ": *
 #note(
   title: "Reading notes on Heidegger",
   date: datetime(year: 2026, month: 4, day: 29),
@@ -511,7 +511,7 @@ Some body text here.
 
     #[test]
     fn remove_last_property_dematerializes() {
-        let content = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(title: \"Hello\")\n\n= Body\n";
+        let content = "#import \"/.inkycap/notebox.typ\": *\n#note(title: \"Hello\")\n\n= Body\n";
         let updated = remove_note_property(content, "title");
         assert!(!updated.contains("#note"));
         assert!(updated.contains("= Body"));
@@ -520,7 +520,7 @@ Some body text here.
     #[test]
     fn materialize_note_call() {
         let content =
-            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Body\n";
+            "#import \"/.inkycap/notebox.typ\": *\n\n= Body\n";
         let updated = update_note_property(
             content,
             "title",
@@ -580,7 +580,7 @@ Some body text here.
     /// so slicing into the source is safe.
     #[test]
     fn roundtrip_preserves_unicode() {
-        let src = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
+        let src = r#"#import "/.inkycap/notebox.typ": *
 #note(
   title: "L'« Être » et le temps — α/β/γ",
   description: "中文 العربية русский",
@@ -646,7 +646,7 @@ Some body text here.
     /// the AST hands us byte ranges that ignore the comments.
     #[test]
     fn tolerates_inline_comments() {
-        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\
+        let src = "#import \"/.inkycap/notebox.typ\": *\n\
             #note(\n  title: \"X\", // inline comment\n  status: \"draft\",\n)\n\n= H\n";
         let updated =
             update_note_property(src, "status", &PropertyValue::String("done".into()));

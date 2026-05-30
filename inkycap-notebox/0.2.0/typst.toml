@@ -1,7 +1,0 @@
-[package]
-name = "inkycap-notebox"
-version = "0.1.0"
-entrypoint = "lib.typ"
-authors = ["InkyCap"]
-description = "Notebox primitives for InkyCap notes: metadata, tags, wikilinks, embeds, and callouts."
-categories = ["utility"]

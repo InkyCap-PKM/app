@@ -18,7 +18,7 @@ import {
   type PillMenuSection,
 } from "./pill";
 
-// Callout kinds come straight from inkycap-notebox/0.1.0/lib.typ's
+// Callout kinds come straight from inkycap-notebox/lib.typ's
 // `_callout-colors` dict. Keeping this list in lockstep with the notebox
 // is the team's job — when a kind is added or removed there, update
 // this constant too.

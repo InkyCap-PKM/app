@@ -74,18 +74,9 @@ Some text.
         assert_eq!(paths, vec!["figures/fig1.png", "/assets/photo.jpg"]);
     }
 
-    #[test]
-    fn inline_package_replaces_import() {
-        let source = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Hello\n";
-        let result = inline_package(source);
-        assert!(result.contains("inkycap-notebox package (inlined for portability)"));
-        assert!(!result.contains("#import \"/.inkycap/packages"));
-        assert!(result.contains("= Hello"));
-    }
-
-    /// Notes created since the path migration use the canonical
-    /// `/.inkycap/notebox.typ` import. `inline_package` must recognize that
-    /// form too.
+    /// Notes import the inkycap-notebox library via the canonical
+    /// `/.inkycap/notebox.typ` path; `inline_package` must replace that line
+    /// with the inlined package source.
     #[test]
     fn inline_package_replaces_canonical_import() {
         let source = "#import \"/.inkycap/notebox.typ\": *\n\n= Hello\n";
@@ -155,7 +146,7 @@ Some text.
     #[test]
     fn inject_document_metadata_sets_title_and_author() {
         let source = concat!(
-            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n",
+            "#import \"/.inkycap/notebox.typ\": *\n",
             "#note(title: \"My Paper\", author: \"Jane Doe\")\n",
             "\n= Hello\n",
         );
@@ -174,7 +165,7 @@ Some text.
     #[test]
     fn inject_document_metadata_multiline_note_with_mixed_types() {
         let source = concat!(
-            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n",
+            "#import \"/.inkycap/notebox.typ\": *\n",
             "#note(\n",
             "  tag: (\"dogtag\", \"animal\"),\n",
             "  date: \"2026-04-28\",\n",

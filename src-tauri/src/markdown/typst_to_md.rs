@@ -768,7 +768,7 @@ mod tests {
 
     #[test]
     fn headings() {
-        let input = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\n= Title\n\n== Subtitle";
+        let input = "#import \"/.inkycap/notebox.typ\": *\n\n= Title\n\n== Subtitle";
         let result = convert(input);
         assert!(result.contains("# Title"));
         assert!(result.contains("## Subtitle"));
@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn note_to_frontmatter() {
-        let input = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
+        let input = r#"#import "/.inkycap/notebox.typ": *
 
 #note(
   title: "My Note",

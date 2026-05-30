@@ -1,4 +1,6 @@
-// inkycap-notebox 0.1.0 — Typst package for InkyCap notes.
+// inkycap-notebox — Typst package for InkyCap notes.
+// Version is tracked solely by `notebox_package::VERSION` in the Rust backend
+// (a migration/diagnostics marker); it is deliberately not duplicated here.
 //
 // Public API:
 //   #note(...)            document-level metadata
