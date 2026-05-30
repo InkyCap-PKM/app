@@ -29,6 +29,31 @@ import {
 import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
 import { t } from "../lib/i18n";
 
+/** Consistent gap, in px, between an upward-opening status-bar menu's bottom
+ *  edge and the top of its trigger. */
+const STATUS_MENU_GAP = 4;
+
+/** Position an upward-opening status-bar menu so its bottom edge sits a
+ *  consistent {@link STATUS_MENU_GAP}px above the status bar. Menus carry
+ *  varying numbers of entries and separators, so we measure the real rendered
+ *  height instead of estimating it — that keeps the bottom baseline identical
+ *  across every status-bar menu (notebox switcher, spellcheck language picker,
+ *  …) while letting the top edge fall where it must.
+ *
+ *  Called from the menu element's `ref`. Measurement is deferred to a
+ *  microtask because the menu's dynamic rows (`<For>`/`<Show>`) are inserted
+ *  after the ref fires; reading `offsetHeight` synchronously would see a
+ *  near-empty element and place the menu too low (opening downward). The menu
+ *  stays `visibility: hidden` until placed, so there's no flicker. */
+function placeUpwardStatusMenu(el: HTMLElement, anchorTop: number) {
+  queueMicrotask(() => {
+    if (!document.body.contains(el)) return;
+    const top = Math.max(STATUS_MENU_GAP, anchorTop - el.offsetHeight - STATUS_MENU_GAP);
+    el.style.top = `${top}px`;
+    el.style.visibility = "visible";
+  });
+}
+
 const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
   const stats = wordCountStats;
@@ -56,9 +81,12 @@ const StatusBar: Component = () => {
     return entry?.display_name ?? info.name;
   });
 
+  // `anchorTop` is the trigger's top edge; the menu element measures its own
+  // height at mount and positions its bottom just above it (see
+  // placeUpwardStatusMenu).
   const [switcherMenu, setSwitcherMenu] = createSignal<{
     x: number;
-    y: number;
+    anchorTop: number;
   } | null>(null);
 
   function toggleSwitcher(e: MouseEvent) {
@@ -69,10 +97,7 @@ const StatusBar: Component = () => {
       return;
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const entries = noteboxRegistry();
-    const estimatedHeight = (entries.length + 1) * 32 + 12;
-    const y = rect.top - estimatedHeight - 4;
-    setSwitcherMenu({ x: rect.left, y: Math.max(4, y) });
+    setSwitcherMenu({ x: rect.left, anchorTop: statusBarTop() });
     setTimeout(() => {
       const onDocClick = () => {
         setSwitcherMenu(null);
@@ -87,7 +112,7 @@ const StatusBar: Component = () => {
   // and opens an upward menu — like the notebox switcher — to pick a single
   // language, "All" (check against every enabled dictionary), or turn it off.
   const [spellDicts] = createResource(() => ipc.listSpellcheckDictionaries());
-  const [spellMenu, setSpellMenu] = createSignal<{ x: number; y: number } | null>(null);
+  const [spellMenu, setSpellMenu] = createSignal<{ x: number; anchorTop: number } | null>(null);
 
   /** Enabled dictionaries (those checked in Settings → Language), with names. */
   const enabledDicts = createMemo(() => {
@@ -126,10 +151,7 @@ const StatusBar: Component = () => {
       return;
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    // Rows: each enabled language + "All" + separator + "Off".
-    const rows = enabledDicts().length + 2;
-    const estimatedHeight = rows * 30 + 14;
-    setSpellMenu({ x: rect.left, y: Math.max(4, rect.top - estimatedHeight - 4) });
+    setSpellMenu({ x: rect.left, anchorTop: statusBarTop() });
     setTimeout(() => {
       const onDocClick = () => {
         setSpellMenu(null);
@@ -258,8 +280,16 @@ const StatusBar: Component = () => {
     );
   }
 
+  // The status bar element itself is the shared baseline for upward-opening
+  // menus: every menu's bottom edge aligns to its top, regardless of where the
+  // individual trigger sits within the bar.
+  let statusBarEl: HTMLDivElement | undefined;
+  const statusBarTop = () =>
+    statusBarEl?.getBoundingClientRect().top ?? window.innerHeight;
+
   return (
     <div
+      ref={statusBarEl}
       class="status-bar"
       classList={{ "status-bar--distraction-free": distractionFree() }}
     >
@@ -430,11 +460,13 @@ const StatusBar: Component = () => {
       <Show when={switcherMenu()}>
         {(menu) => (
           <div
+            ref={(el) => placeUpwardStatusMenu(el, menu().anchorTop)}
             class="context-menu"
             style={{
               position: "fixed",
               left: `${menu().x}px`,
-              top: `${menu().y}px`,
+              top: "0px",
+              visibility: "hidden",
             }}
           >
             <For each={noteboxRegistry()}>
@@ -462,8 +494,9 @@ const StatusBar: Component = () => {
       <Show when={spellMenu()}>
         {(menu) => (
           <div
+            ref={(el) => placeUpwardStatusMenu(el, menu().anchorTop)}
             class="context-menu"
-            style={{ position: "fixed", left: `${menu().x}px`, top: `${menu().y}px` }}
+            style={{ position: "fixed", left: `${menu().x}px`, top: "0px", visibility: "hidden" }}
           >
             <Show
               when={enabledDicts().length > 0}
