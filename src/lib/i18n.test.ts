@@ -33,11 +33,11 @@ describe("static t()", () => {
   });
 
   it("substitutes single-brace placeholders", () => {
-    expect(t("editor.stylePreamble.count", { count: 3 })).toBe("3 rules");
+    expect(t("wikilink.suggest.create", { name: "Foo" })).toBe("Create: Foo");
   });
 
   it("leaves an unprovided placeholder intact (parity with the original stub)", () => {
-    expect(t("editor.stylePreamble.count")).toBe("{count} rules");
+    expect(t("wikilink.suggest.create")).toBe("Create: {name}");
   });
 });
 
@@ -63,7 +63,7 @@ describe("setLocale", () => {
     setLocale("en-XX");
     expect(t("settings.language.ui.label")).toMatch(/^⟦.*⟧$/);
     // The placeholder survives pseudo-ization, so substitution still works.
-    expect(t("editor.stylePreamble.count", { count: 7 })).toContain("7");
+    expect(t("wikilink.suggest.create", { name: "Foo" })).toContain("Foo");
     setLocale("en");
     expect(t("settings.language.ui.label")).toBe("Interface language");
   });
@@ -84,8 +84,19 @@ describe("AVAILABLE_LOCALES registry gating", () => {
 });
 
 describe("tPlural", () => {
-  // Real `.one`/`.other` keys arrive with the Phase 1 plural migration; for now
-  // this pins the fallback + no-throw contract across plural categories.
+  it("selects the English .one / .other category by count", () => {
+    setLocale("en");
+    expect(tPlural("references.entry", 1)).toBe("entry");
+    expect(tPlural("references.entry", 0)).toBe("entries");
+    expect(tPlural("references.entry", 2)).toBe("entries");
+  });
+
+  it("substitutes {count} into the chosen plural form", () => {
+    setLocale("en");
+    expect(tPlural("common.note", 1)).toBe("1 note");
+    expect(tPlural("common.note", 5)).toBe("5 notes");
+  });
+
   it("returns the key when no plural sub-keys exist", () => {
     expect(tPlural("no.such.plural", 2)).toBe("no.such.plural");
   });

@@ -1,7 +1,7 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { buildPillButton, findCallEnd } from "./pill";
 import { getPillOptions } from "./pill-options";
-import { t } from "../../lib/i18n";
+import { t, tPlural } from "../../lib/i18n";
 
 export class FuncPillWidget extends WidgetType {
   constructor(readonly pos: number, readonly funcName: string) { super(); }
@@ -62,10 +62,7 @@ export class StylePreambleWidget extends WidgetType {
 
     const count = document.createElement("span");
     count.className = "cm-typst-style-preamble-count";
-    count.textContent = t(
-      this.count === 1 ? "editor.stylePreamble.countOne" : "editor.stylePreamble.count",
-      { count: this.count },
-    );
+    count.textContent = tPlural("editor.stylePreamble.count", this.count);
 
     const btn = buildPillButton(
       "set",

@@ -22,13 +22,16 @@ export type LinksSortMode =
   | "created-desc"
   | "created-asc";
 
-export const LINKS_SORT_OPTIONS: { value: LinksSortMode; label: string }[] = [
-  { value: "name-asc", label: "Name (A – Z)" },
-  { value: "name-desc", label: "Name (Z – A)" },
-  { value: "modified-desc", label: "Modified (new – old)" },
-  { value: "modified-asc", label: "Modified (old – new)" },
-  { value: "created-desc", label: "Created (new – old)" },
-  { value: "created-asc", label: "Created (old – new)" },
+// `labelKey` (not a resolved string) so the label is translated at the render
+// site and these modes share one vocabulary with the file-tree sort menu —
+// see the `sort.*` keys in en.json.
+export const LINKS_SORT_OPTIONS: { value: LinksSortMode; labelKey: string }[] = [
+  { value: "name-asc", labelKey: "sort.name.asc" },
+  { value: "name-desc", labelKey: "sort.name.desc" },
+  { value: "modified-desc", labelKey: "sort.modified.desc" },
+  { value: "modified-asc", labelKey: "sort.modified.asc" },
+  { value: "created-desc", labelKey: "sort.created.desc" },
+  { value: "created-asc", labelKey: "sort.created.asc" },
 ];
 
 export type LinksSection = "inbound" | "outbound" | "potential";

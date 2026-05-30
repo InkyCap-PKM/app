@@ -34,6 +34,7 @@ import type { SearchResult, AnnotationScope } from "../lib/types";
 import { pathEquals } from "../lib/paths";
 import { clickOutside } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
+import { t } from "../lib/i18n";
 import { openTab } from "../stores/tabs";
 import { indexReady } from "../stores/notebox";
 import {
@@ -134,14 +135,14 @@ const SYNTAX_TIPS: { label: string; description: string }[] = [
   },
 ];
 
-const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: "relevance", label: "Relevance" },
-  { value: "name-asc", label: "File name (A – Z)" },
-  { value: "name-desc", label: "File name (Z – A)" },
-  { value: "modified-desc", label: "Modified time (new – old)" },
-  { value: "modified-asc", label: "Modified time (old – new)" },
-  { value: "created-desc", label: "Created time (new – old)" },
-  { value: "created-asc", label: "Created time (old – new)" },
+const SORT_OPTIONS: { value: SortMode; labelKey: string }[] = [
+  { value: "relevance", labelKey: "search.sort.relevance" },
+  { value: "name-asc", labelKey: "search.sort.nameAsc" },
+  { value: "name-desc", labelKey: "search.sort.nameDesc" },
+  { value: "modified-desc", labelKey: "search.sort.modifiedDesc" },
+  { value: "modified-asc", labelKey: "search.sort.modifiedAsc" },
+  { value: "created-desc", labelKey: "search.sort.createdDesc" },
+  { value: "created-asc", labelKey: "search.sort.createdAsc" },
 ];
 
 const ANNOTATION_SCOPE_OPTIONS: {
@@ -641,7 +642,8 @@ const SearchPanel: Component = () => {
   });
 
   function activeSortLabel(): string {
-    return SORT_OPTIONS.find((o) => o.value === sortMode())?.label ?? "Sort";
+    const opt = SORT_OPTIONS.find((o) => o.value === sortMode());
+    return opt ? t(opt.labelKey) : t("sort.label");
   }
 
   function chooseAnnotationScope(scope: AnnotationScope) {
@@ -945,7 +947,7 @@ const SearchPanel: Component = () => {
                       setShowSortMenu(false);
                     }}
                   >
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </button>
                 )}
               </For>
