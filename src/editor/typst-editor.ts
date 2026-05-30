@@ -122,6 +122,9 @@ import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
 import { importLineGuard } from "./typst-decorations/import-line-guard";
 import { focusModeExtension, type FocusMode } from "./typst-decorations/focus-mode";
+import { typewriterMode } from "./typst-decorations/typewriter-mode";
+import { spellcheck, spellCheckerFacet } from "./typst-decorations/spellcheck";
+import type { SpellChecker } from "../lib/spellchecker";
 import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "./typst-decorations/keymaps";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { citationSuggest } from "./typst-decorations/citation-suggest";
@@ -149,6 +152,10 @@ export interface TypstEditorHandle {
   setVisualMode(enabled: boolean): void;
   setAutoExpand(enabled: boolean): void;
   setFocusMode(mode: FocusMode, dim: boolean): void;
+  setTypewriterMode(enabled: boolean): void;
+  /** Install (or clear with null) the spell checker that drives misspelling
+   *  underlines. Built async from the active dictionaries by the caller. */
+  setSpellChecker(checker: SpellChecker | null): void;
   setSmartIndentLists(enabled: boolean): void;
   setEnterInsertsLineBreak(enabled: boolean): void;
   setSelectionToolbar(enabled: boolean): void;
@@ -177,6 +184,7 @@ export interface TypstEditorOptions {
   visualMode?: boolean;
   smartIndentLists?: boolean;
   enterInsertsLineBreak?: boolean;
+  typewriterMode?: boolean;
   selectionToolbar?: boolean;
   commandPalette?: boolean;
   lspClient?: LspClient | null;
@@ -658,6 +666,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const autoExpandCompartment = new Compartment();
   const lspCompartment = new Compartment();
   const focusModeCompartment = new Compartment();
+  const typewriterCompartment = new Compartment();
+  const spellcheckCompartment = new Compartment();
   const activeLineCompartment = new Compartment();
   const smartIndentCompartment = new Compartment();
   const enterLineBreakCompartment = new Compartment();
@@ -676,6 +686,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   let isVisual = !!options.visualMode;
   let toolbarEnabled = options.selectionToolbar !== false;
   let paletteEnabled = options.commandPalette !== false;
+  let typewriterEnabled = !!options.typewriterMode;
   // The auto-`\` linebreak is a *visual-mode* affordance: pressing Enter there
   // inserts a Typst linebreak that the visual editor renders invisibly and
   // manages as an atomic "soft break" (see visual-plugin.ts), so the writer
@@ -695,6 +706,10 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       autoExpandCompartment.of(autoExpandFacet.of(false)),
       lspCompartment.of(lspExts),
       focusModeCompartment.of([]),
+      typewriterCompartment.of(options.typewriterMode && isVisual ? typewriterMode() : []),
+      // Spellcheck underlining is installed later via setSpellChecker once the
+      // dictionaries have loaded (async); starts empty.
+      spellcheckCompartment.of([]),
       activeLineCompartment.of(activeLineExts),
       smartIndentCompartment.of(smartIndentListsFacet.of(!!options.smartIndentLists)),
       enterLineBreakCompartment.of(enterInsertsLineBreakFacet.of(enterLineBreakSetting && isVisual)),
@@ -794,6 +809,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
           selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
+          // Typewriter scrolling is visual-mode only, like focus mode.
+          typewriterCompartment.reconfigure(enabled && typewriterEnabled ? typewriterMode() : []),
           // Auto-linebreak is visual-mode only; entering visual mode turns it
           // on (subject to the setting), leaving it returns Enter to a plain
           // newline in source mode.
@@ -812,6 +829,21 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
         : [];
       view.dispatch({
         effects: focusModeCompartment.reconfigure(ext),
+      });
+    },
+    setTypewriterMode(enabled: boolean) {
+      typewriterEnabled = enabled;
+      // Typewriter scrolling is a visual-editor affordance (mirrors focus
+      // mode's gating) — source mode keeps ordinary scroll behaviour.
+      view.dispatch({
+        effects: typewriterCompartment.reconfigure(enabled && isVisual ? typewriterMode() : []),
+      });
+    },
+    setSpellChecker(checker: SpellChecker | null) {
+      view.dispatch({
+        effects: spellcheckCompartment.reconfigure(
+          checker ? [spellcheck, spellCheckerFacet.of(checker)] : [],
+        ),
       });
     },
     setSmartIndentLists(enabled: boolean) {

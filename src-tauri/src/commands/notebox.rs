@@ -833,6 +833,17 @@ pub async fn seed_notebox_from_source(
         copied_files += 1;
     }
 
+    // User word lists — the shared dictionary (spellcheck + Mycelial rescue
+    // allow-list) and the Mycelial stopword list. Both are personal vocabulary
+    // the user has curated, worth carrying into a notebox seeded from this one.
+    for name in ["dictionary.txt", "mycelial-stopwords.txt"] {
+        let src = source_inkycap.join(name);
+        if src.is_file() {
+            std::fs::copy(&src, target_inkycap.join(name))?;
+            copied_files += 1;
+        }
+    }
+
     // Scaffolds folder — copy every `.typ` file (creation rules reference
     // these by name, so the rules-copy above won't make sense without
     // them).

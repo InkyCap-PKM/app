@@ -49,35 +49,48 @@ interface DropdownItem {
   separator?: boolean;
 }
 
-function insertAtLineStart(view: EditorView, prefix: string) {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  view.dispatch({
-    changes: { from: line.from, to: line.from, insert: prefix },
-  });
+// Existing block-prefix markup the line-prefix actions strip before applying a
+// new one: headings (`= `), list markers (`- ` / `+ ` / explicit `1. `), and
+// task checkboxes. Stripping explicit enum markers too means an ordered list
+// the user hand-numbered converts cleanly to a bullet list (no `- 1. item`).
+const BLOCK_PREFIX = /^(=+ |[+\-] |\d+\. |\[[ x]\] )/;
+
+// Apply `transform` to every line the selection touches, as a single
+// transaction. The block-type actions (lists, headings, regular text) are
+// per-line operations, so a multi-line selection must convert *all* the lines
+// it spans — not just the one under the selection anchor. Each transform keeps
+// the line's leading whitespace intact so nested list items stay nested.
+function eachSelectedLine(view: EditorView, transform: (rest: string, indent: string) => string) {
+  const { from, to } = view.state.selection.main;
+  const startLine = view.state.doc.lineAt(from).number;
+  const endLine = view.state.doc.lineAt(to).number;
+  const changes: ChangeSpec[] = [];
+  for (let n = startLine; n <= endLine; n++) {
+    const line = view.state.doc.line(n);
+    const indent = line.text.match(/^[ \t]*/)?.[0] ?? "";
+    const rest = line.text.slice(indent.length);
+    // Skip blank lines so list/heading conversion never sprays stray markers
+    // onto empty rows inside the selection.
+    if (rest.length === 0) continue;
+    const next = indent + transform(rest, indent);
+    if (next !== line.text) {
+      changes.push({ from: line.from, to: line.to, insert: next });
+    }
+  }
+  if (changes.length) view.dispatch({ changes });
   view.focus();
+}
+
+function insertAtLineStart(view: EditorView, prefix: string) {
+  eachSelectedLine(view, (rest) => prefix + rest);
 }
 
 function replaceLinePrefix(view: EditorView, newPrefix: string) {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  const text = line.text;
-  const stripped = text.replace(/^(=+ |[+\-] |\[[ x]\] )/, "");
-  view.dispatch({
-    changes: { from: line.from, to: line.to, insert: newPrefix + stripped },
-  });
-  view.focus();
+  eachSelectedLine(view, (rest) => newPrefix + rest.replace(BLOCK_PREFIX, ""));
 }
 
 function clearLinePrefix(view: EditorView) {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  const text = line.text;
-  const stripped = text.replace(/^(=+ |[+\-] |\[[ x]\] )/, "");
-  view.dispatch({
-    changes: { from: line.from, to: line.to, insert: stripped },
-  });
-  view.focus();
+  eachSelectedLine(view, (rest) => rest.replace(BLOCK_PREFIX, ""));
 }
 
 function wrapSelection(view: EditorView, before: string, after: string) {

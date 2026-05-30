@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createMemo } from "solid-js";
+import { Component, Show, For, createSignal, createMemo, createResource } from "solid-js";
 import {
   ArchiveRestore,
   Archive,
@@ -9,6 +9,7 @@ import {
   ChevronUp,
   Maximize,
   Minimize,
+  SpellCheck,
 } from "lucide-solid";
 import { TextCountIcon } from "./icons";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
@@ -18,7 +19,7 @@ import { getActiveTab, renameTabPath } from "../stores/tabs";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals } from "../lib/paths";
 import { toastError } from "../stores/toasts";
-import { settings } from "../stores/settings";
+import { settings, updateSetting } from "../stores/settings";
 import {
   distractionFree,
   toggleDistractionFree,
@@ -75,6 +76,63 @@ const StatusBar: Component = () => {
     setTimeout(() => {
       const onDocClick = () => {
         setSwitcherMenu(null);
+        document.removeEventListener("click", onDocClick);
+      };
+      document.addEventListener("click", onDocClick);
+    }, 0);
+  }
+
+  // ── Spellcheck language switcher ──────────────────────────────────────
+  // The chip near the word count shows the active spellcheck language (or Off)
+  // and opens an upward menu — like the notebox switcher — to pick a single
+  // language, "All" (check against every enabled dictionary), or turn it off.
+  const [spellDicts] = createResource(() => ipc.listSpellcheckDictionaries());
+  const [spellMenu, setSpellMenu] = createSignal<{ x: number; y: number } | null>(null);
+
+  /** Enabled dictionaries (those checked in Settings → Language), with names. */
+  const enabledDicts = createMemo(() => {
+    const enabled = settings.editor.spellcheck_languages ?? [];
+    const infos = spellDicts() ?? [];
+    return enabled.map(
+      (code) => infos.find((d) => d.code === code) ?? { code, name: code, bundled: false },
+    );
+  });
+
+  /** Short 2-letter label for the chip: the active language code, "All", or
+   *  "Off". */
+  const spellLabel = createMemo(() => {
+    if (!settings.editor.spellcheck) return "Off";
+    const active = settings.editor.spellcheck_active || "all";
+    if (active === "all") return "All";
+    return active.slice(0, 2).toUpperCase();
+  });
+
+  function setSpellActive(code: string) {
+    setSpellMenu(null);
+    updateSetting("editor", "spellcheck", true);
+    updateSetting("editor", "spellcheck_active", code);
+  }
+
+  function turnSpellOff() {
+    setSpellMenu(null);
+    updateSetting("editor", "spellcheck", false);
+  }
+
+  function toggleSpellMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (spellMenu()) {
+      setSpellMenu(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Rows: each enabled language + "All" + separator + "Off".
+    const rows = enabledDicts().length + 2;
+    const estimatedHeight = rows * 30 + 14;
+    setSpellMenu({ x: rect.left, y: Math.max(4, rect.top - estimatedHeight - 4) });
+    setTimeout(() => {
+      const onDocClick = () => {
+        setSpellMenu(null);
         document.removeEventListener("click", onDocClick);
       };
       document.addEventListener("click", onDocClick);
@@ -313,6 +371,18 @@ const StatusBar: Component = () => {
       </Show>
 
       <Show when={isFileTab()}>
+        {/* Spellcheck language chip — pick the active language, "All", or Off. */}
+        <button
+          class="status-bar__spell"
+          classList={{ "status-bar__spell--off": !settings.editor.spellcheck }}
+          onClick={toggleSpellMenu}
+          title="Spellcheck language"
+        >
+          <SpellCheck size={13} class="status-bar__spell-icon" />
+          <span class="status-bar__spell-label">{spellLabel()}</span>
+          <ChevronUp size={12} class="status-bar__spell-chevron" />
+        </button>
+
         {/* Word & character counts share one slot at the right edge; clicking
             toggles which is shown (default words). */}
         <button
@@ -384,6 +454,54 @@ const StatusBar: Component = () => {
             <button class="context-menu__item" onClick={openManageNoteboxes}>
               <Archive size={14} style={{ "margin-right": "6px", opacity: "0.6", "flex-shrink": "0" }} />
               Manage noteboxes...
+            </button>
+          </div>
+        )}
+      </Show>
+
+      <Show when={spellMenu()}>
+        {(menu) => (
+          <div
+            class="context-menu"
+            style={{ position: "fixed", left: `${menu().x}px`, top: `${menu().y}px` }}
+          >
+            <Show
+              when={enabledDicts().length > 0}
+              fallback={
+                <span class="context-menu__hint">
+                  No dictionaries enabled — see Settings → Language.
+                </span>
+              }
+            >
+              <button
+                class="context-menu__item"
+                onClick={() => setSpellActive("all")}
+              >
+                <span>All languages</span>
+                <Show when={settings.editor.spellcheck && (settings.editor.spellcheck_active || "all") === "all"}>
+                  <Check size={14} class="context-menu__check" />
+                </Show>
+              </button>
+              <For each={enabledDicts()}>
+                {(dict) => (
+                  <button
+                    class="context-menu__item"
+                    onClick={() => setSpellActive(dict.code)}
+                  >
+                    <span>{dict.name}</span>
+                    <Show when={settings.editor.spellcheck && settings.editor.spellcheck_active === dict.code}>
+                      <Check size={14} class="context-menu__check" />
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </Show>
+            <div class="context-menu__separator" />
+            <button class="context-menu__item" onClick={turnSpellOff}>
+              <span>Off</span>
+              <Show when={!settings.editor.spellcheck}>
+                <Check size={14} class="context-menu__check" />
+              </Show>
             </button>
           </div>
         )}

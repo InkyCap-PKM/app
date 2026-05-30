@@ -91,11 +91,14 @@ interface SettingsPanelProps {
   initialTab?: string;
 }
 
-type SettingsTab = "overview" | "editor" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
+type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "editor", label: "Editor" },
+  // "Language" is the home for spellcheck today and any future language work
+  // (UI translations, per-language typography, etc.).
+  { id: "language", label: "Language" },
   { id: "appearance", label: "Appearance" },
   { id: "files", label: "Files & Links" },
   { id: "citations", label: "Citations" },
@@ -116,6 +119,9 @@ type TabSettingGroups = {
 const TAB_SETTING_GROUPS: Record<SettingsTab, TabSettingGroups> = {
   overview: { user: [], notebox: [] },
   editor: { user: ["editor"], notebox: [] },
+  // Spellcheck settings live in the `editor` group, but resetting from this tab
+  // would wipe all editor settings — so it offers no per-tab reset (use Editor).
+  language: { user: [], notebox: [] },
   appearance: { user: ["appearance", "document"], notebox: [] },
   files: { user: ["files"], notebox: ["files"] },
   citations: { user: ["citations"], notebox: ["citations"] },
@@ -202,6 +208,9 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 <Show when={activeTab() === "editor"}>
                   <EditorSettingsSection />
                 </Show>
+                <Show when={activeTab() === "language"}>
+                  <LanguageSettingsSection />
+                </Show>
                 <Show when={activeTab() === "appearance"}>
                   <AppearanceSettingsSection />
                 </Show>
@@ -281,17 +290,6 @@ function OverviewSection() {
           <span class="settings__description">Help links and documentation will appear here.</span>
         </div>
       </div>
-
-      {/* Language */}
-      <div class="settings__section-header">
-        <span class="settings__label" >Language</span>
-      </div>
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <span class="settings__description">Language settings will appear here.</span>
-        </div>
-      </div>
-
 
       <NoteboxManagementSection />
     </div>
@@ -952,6 +950,130 @@ function NoteboxManagementSection() {
   );
 }
 
+function LanguageSettingsSection() {
+  // Available dictionaries (bundled + user-installed), loaded once for the
+  // language table.
+  const [spellDicts] = createResource(() => ipc.listSpellcheckDictionaries());
+
+  /** Toggle a dictionary code in the active spellcheck-languages list. */
+  function toggleSpellLanguage(code: string, on: boolean) {
+    const current = settings.editor.spellcheck_languages ?? [];
+    const next = on
+      ? [...new Set([...current, code])]
+      : current.filter((c) => c !== code);
+    updateSetting("editor", "spellcheck_languages", next);
+  }
+
+  async function openDictionaryFolder() {
+    try {
+      const dir = await ipc.spellcheckDictionaryFolder();
+      await ipc.showInExplorer(dir);
+    } catch {
+      /* best-effort reveal */
+    }
+  }
+
+  // Personal dictionary (the shared allow-list). Refetches when its version
+  // bumps — on our own edits and on external changes (right-click "Add to
+  // dictionary", Mycelial rescue) signalled via `inkycap:dictionary-changed`.
+  const [dictVersion, setDictVersion] = createSignal(0);
+  const [userWords] = createResource(dictVersion, () => ipc.listUserDictionary());
+  const onDictionaryChanged = () => setDictVersion((v) => v + 1);
+  onMount(() => document.addEventListener("inkycap:dictionary-changed", onDictionaryChanged));
+  onCleanup(() => document.removeEventListener("inkycap:dictionary-changed", onDictionaryChanged));
+
+  async function removeUserWord(word: string) {
+    try {
+      await ipc.removeUserDictionaryWord(word);
+      // Bumps our list (via the listener) and rebuilds open editors' checkers.
+      document.dispatchEvent(new CustomEvent("inkycap:dictionary-changed"));
+    } catch {
+      /* best-effort removal */
+    }
+  }
+
+  return (
+    <div class="settings__section">
+      <SettingToggle
+        label="Spellcheck"
+        description="Check spelling as you type, using bundled Hunspell dictionaries. Misspellings are underlined; right-click for suggestions."
+        value={settings.editor.spellcheck}
+        onChange={(v) => updateSetting("editor", "spellcheck", v)}
+      />
+      <Show when={settings.editor.spellcheck}>
+        <div class="settings__section-header">
+          <span class="settings__label">Dictionaries</span>
+        </div>
+        <p class="settings__field-hint">
+          Select the languages to check against. A word is accepted if any
+          enabled dictionary knows it — enable more than one for bilingual notes.
+        </p>
+        <div class="settings__dict-list">
+          <For each={spellDicts() ?? []}>
+            {(dict) => (
+              <label class="settings__dict-row">
+                <input
+                  type="checkbox"
+                  checked={(settings.editor.spellcheck_languages ?? []).includes(dict.code)}
+                  onChange={(e) => toggleSpellLanguage(dict.code, e.currentTarget.checked)}
+                />
+                <span class="settings__dict-name">{dict.name}</span>
+                <span class="settings__dict-code">{dict.code}</span>
+                <Show when={!dict.bundled}>
+                  <span class="settings__dict-badge">installed</span>
+                </Show>
+              </label>
+            )}
+          </For>
+        </div>
+
+        <div class="settings__section-header">
+          <span class="settings__label">Install dictionaries</span>
+        </div>
+        <p class="settings__field-hint">
+          Add more Hunspell dictionaries (matching <code>.dic</code> +{" "}
+          <code>.aff</code> files) to the dictionary folder; they appear above
+          after a restart.
+        </p>
+        <button class="settings__detect-btn" onClick={openDictionaryFolder}>
+          Open dictionary folder…
+        </button>
+      </Show>
+
+      <div class="settings__section-header">
+        <span class="settings__label">Personal dictionary</span>
+      </div>
+      <p class="settings__field-hint">
+        Words you accept here are recognized throughout this notebox — by both
+        spellcheck and concept detection — and travel with it. Add words from the
+        editor's right-click menu; remove them here.
+      </p>
+      <Show
+        when={(userWords() ?? []).length > 0}
+        fallback={<p class="settings__field-hint">No custom words yet.</p>}
+      >
+        <div class="settings__dict-list">
+          <For each={userWords()}>
+            {(word) => (
+              <div class="settings__userword-row">
+                <span class="settings__userword">{word}</span>
+                <button
+                  class="settings__userword-remove"
+                  onClick={() => removeUserWord(word)}
+                  title="Remove from personal dictionary"
+                  aria-label={`Remove ${word}`}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 function EditorSettingsSection() {
   return (
     <div class="settings__section">
@@ -971,12 +1093,6 @@ function EditorSettingsSection() {
           onChange={(v) => updateSetting("editor", "max_line_width", v)}
         />
       </Show>
-      <SettingToggle
-        label="Spellcheck"
-        description="Enable browser-native spell checking."
-        value={settings.editor.spellcheck}
-        onChange={(v) => updateSetting("editor", "spellcheck", v)}
-      />
       <SettingToggle
         label="Auto-pair brackets"
         description="Automatically close brackets and quotes."
@@ -1022,6 +1138,12 @@ function EditorSettingsSection() {
             v as "source" | "live-preview",
           )
         }
+      />
+      <SettingToggle
+        label="Typewriter mode"
+        description="Keep the line you're typing on at the vertical centre of the Visual Editor — the text scrolls up beneath a fixed caret line instead of the caret drifting down the page."
+        value={settings.editor.typewriter_mode}
+        onChange={(v) => updateSetting("editor", "typewriter_mode", v)}
       />
       <SettingSelect
         label="Focus mode"

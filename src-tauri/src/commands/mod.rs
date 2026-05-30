@@ -17,6 +17,7 @@ pub mod mycelial;
 pub mod properties;
 pub mod search;
 pub mod settings;
+pub mod spellcheck;
 pub mod system_color;
 pub mod typ_audit;
 pub mod typst;

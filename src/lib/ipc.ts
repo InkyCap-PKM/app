@@ -1117,6 +1117,68 @@ export async function addMycelialStopword(term: string): Promise<void> {
   return invoke<void>("add_mycelial_stopword", { term });
 }
 
+/** Ensure the user's mycelial stopword file exists and return its path so it
+ *  can be opened for editing (via {@link openFileExternally}). */
+export async function ensureMycelialStopwordsFile(): Promise<string> {
+  return invoke<string>("ensure_mycelial_stopwords_file");
+}
+
+/** Rescue a term suppressed by a *built-in* stopword by force-including it via
+ *  the notebox dictionary, so it can surface as a concept again. */
+export async function rescueMycelialTerm(term: string): Promise<void> {
+  return invoke<void>("rescue_mycelial_term", { term });
+}
+
+/** Rescue a term the user added to their stopword list by removing that line. */
+export async function removeMycelialStopword(term: string): Promise<void> {
+  return invoke<void>("remove_mycelial_stopword", { term });
+}
+
+// ── Spellcheck dictionaries ───────────────────────────────────────────────
+
+/** An installable spellcheck dictionary (bundled or user-installed). */
+export interface DictionaryInfo {
+  code: string;
+  name: string;
+  bundled: boolean;
+}
+
+/** Raw Hunspell text for a dictionary, to feed to the frontend checker. */
+export interface DictionaryData {
+  aff: string;
+  dic: string;
+}
+
+/** List every spellcheck dictionary available to enable. */
+export async function listSpellcheckDictionaries(): Promise<DictionaryInfo[]> {
+  return invoke<DictionaryInfo[]>("list_spellcheck_dictionaries");
+}
+
+/** Load a dictionary's Hunspell .aff/.dic text by code. */
+export async function readSpellcheckDictionary(code: string): Promise<DictionaryData> {
+  return invoke<DictionaryData>("read_spellcheck_dictionary", { code });
+}
+
+/** Ensure and return the user dictionary-install folder path (to reveal it). */
+export async function spellcheckDictionaryFolder(): Promise<string> {
+  return invoke<string>("spellcheck_dictionary_folder");
+}
+
+/** The notebox's personal dictionary words (.inkycap/dictionary.txt). */
+export async function listUserDictionary(): Promise<string[]> {
+  return invoke<string[]>("list_user_dictionary");
+}
+
+/** Add a word to the notebox user dictionary (shared spell + Mycelial rescue). */
+export async function addUserDictionaryWord(word: string): Promise<void> {
+  return invoke<void>("add_user_dictionary_word", { word });
+}
+
+/** Remove a word from the notebox user dictionary. */
+export async function removeUserDictionaryWord(word: string): Promise<void> {
+  return invoke<void>("remove_user_dictionary_word", { word });
+}
+
 // Export
 
 export async function exportNotePdf(

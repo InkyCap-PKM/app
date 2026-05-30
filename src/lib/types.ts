@@ -242,6 +242,10 @@ export interface EditorSettings {
   readable_line_length: boolean;
   max_line_width: number;
   spellcheck: boolean;
+  spellcheck_languages: string[];
+  /** Active dictionary from the status-bar switcher: "all" (union of enabled)
+   *  or a single dictionary code. Off is the `spellcheck` master toggle. */
+  spellcheck_active: string;
   auto_pair_brackets: boolean;
   auto_pair_typst: boolean;
   smart_indent_lists: boolean;
@@ -250,6 +254,7 @@ export interface EditorSettings {
   default_reading_format: "svg" | "html";
   show_inline_wikilinks: boolean;
   show_inline_tags: boolean;
+  typewriter_mode: boolean;
   focus_mode: "none" | "line" | "section";
   focus_dim: boolean;
   auto_expand_markup: boolean;
@@ -866,6 +871,17 @@ export interface EmergentConcept {
   mentions: SourceMention[];
 }
 
+/** A term the stopword filter suppressed that would otherwise have surfaced as
+ *  an emergent concept — shown in the Concept Filtering pane for rescue. */
+export interface ExcludedTerm {
+  term: string;
+  /** Neighborhood notes the term recurs in — the "worth rescuing?" signal. */
+  doc_count: number;
+  /** "builtin" (bundled EN/FR list — rescue via dictionary) or "user" (the
+   *  notebox's mycelial-stopwords.txt — rescue by removing the line). */
+  source: "builtin" | "user";
+}
+
 export interface MycelialData {
   center: string;
   /** Notes a signal emerged from — inner provenance nodes. */
@@ -876,6 +892,9 @@ export interface MycelialData {
   context_edges: FlowEdge[];
   latent_links: LatentLink[];
   emergent_concepts: EmergentConcept[];
+  /** Terms the stopword filter held back — surfaced for the Concept
+   *  Filtering pane so the user can see and rescue them. */
+  excluded_terms: ExcludedTerm[];
 }
 
 // Bibliography (Phase 6)
