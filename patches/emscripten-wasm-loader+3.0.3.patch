@@ -1,0 +1,20 @@
+diff --git a/node_modules/emscripten-wasm-loader/dist/esm/path/mountBuffer.js b/node_modules/emscripten-wasm-loader/dist/esm/path/mountBuffer.js
+index a494e92..9bb5c01 100644
+--- a/node_modules/emscripten-wasm-loader/dist/esm/path/mountBuffer.js
++++ b/node_modules/emscripten-wasm-loader/dist/esm/path/mountBuffer.js
+@@ -1,4 +1,4 @@
+-import * as nanoid from 'nanoid';
++import nanoid from 'nanoid';
+ import { log } from '../util/logger';
+ import { isMounted } from './isMounted';
+ /**
+diff --git a/node_modules/emscripten-wasm-loader/src/path/mountBuffer.ts b/node_modules/emscripten-wasm-loader/src/path/mountBuffer.ts
+index 2504332..b851229 100644
+--- a/node_modules/emscripten-wasm-loader/src/path/mountBuffer.ts
++++ b/node_modules/emscripten-wasm-loader/src/path/mountBuffer.ts
+@@ -1,4 +1,4 @@
+-import * as nanoid from 'nanoid';
++import nanoid from 'nanoid';
+ import { FS } from '../BaseAsmModule';
+ import { log } from '../util/logger';
+ import { isMounted } from './isMounted';
