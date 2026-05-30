@@ -224,6 +224,8 @@ pub fn run() {
             commands::git::git_setup_package_handoff,
             commands::git::git_get_review_incoming,
             commands::git::git_set_review_incoming,
+            commands::git::git_get_bundle_packages,
+            commands::git::git_set_bundle_packages,
             commands::git::git_pending_review,
             commands::notebox::open_notebox,
             commands::notebox::get_notebox_info,

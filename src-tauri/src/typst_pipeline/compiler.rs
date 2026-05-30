@@ -109,6 +109,14 @@ impl TypstCompiler {
         self.world.notebox_root()
     }
 
+    /// Borrow the underlying World. Used by on-demand package resolution
+    /// ([`crate::typst_pipeline::package_fetch`]) to drain the set of packages
+    /// a compile pass failed to resolve, so they can be downloaded and the
+    /// compile retried.
+    pub fn world(&self) -> &NoteboxWorld {
+        &self.world
+    }
+
     /// Load system and notebox-local fonts on demand. No-op if already loaded.
     pub fn ensure_system_fonts(&mut self) {
         self.world.load_system_fonts();

@@ -307,6 +307,9 @@
   "git.review.toggleLabel": "Review incoming changes before merging",
   "git.review.toggleHint": "When on, a Sync or package import pauses and shows every incoming change as a suggestion to accept or reject, instead of merging automatically. Your own edits are never dropped — accepting takes a collaborator's change on top of yours. Applies to both Git-server sync and package handoff. A per-device setting; it doesn't affect collaborators.",
   "git.review.toggleFailed": "Could not change the review setting",
+  "git.bundle.toggleLabel": "Bundle Typst packages on share",
+  "git.bundle.toggleHint": "When on, sharing this notebox (Sync push or package export) first copies the Typst packages it uses — and their dependencies — into the notebox, so collaborators can compile without downloading anything. Off by default: published @preview packages download automatically on each person's side. Turn this on for @local packages (which can't be downloaded) or offline sharing. A per-device setting; turning it on bundles the current packages right away.",
+  "git.bundle.toggleFailed": "Could not change the package-bundling setting",
   "git.review.heading": "Review incoming changes",
   "git.review.intro": "Open each note and accept or reject its incoming changes in the Changes panel on the right. Your notebox stays on its current content until you Accept reviewed & finish below — that step merges every reviewed note and brings your notebox up to date.",
   "git.review.incomingBadge": "incoming",
@@ -383,6 +386,8 @@
   "git.toast.exported": "Package exported to {path}",
   "git.toast.exportFailed": "Could not export the package",
   "git.toast.importFailed": "Could not import the package",
+  "git.toast.packagesVendored": "Bundled {count} Typst package(s) into the notebox",
+  "git.toast.packagesUnresolved": "Could not bundle: {specs} — not installed locally, so collaborators may be unable to compile notes that use them",
 
   "command.git.setup": "Git: Set up collaboration for this notebox",
   "command.git.sync": "Git: Sync",

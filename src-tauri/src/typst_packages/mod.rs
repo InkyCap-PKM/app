@@ -122,6 +122,86 @@ impl PackageSpec {
     }
 }
 
+/// The shared Typst package directories, matching the layout `typst-cli` and
+/// Tinymist use so InkyCap reads — and writes — the same on-disk store rather
+/// than a private copy. A package found here compiles identically in any Typst
+/// tool on the machine.
+///
+/// - data dir  (`dirs::data_dir()/typst/packages`): `@local` packages and
+///   manually-persisted installs.
+/// - cache dir (`dirs::cache_dir()/typst/packages`): where `@preview`
+///   downloads land (e.g. `~/.cache/typst/packages/preview/<name>/<ver>`).
+///
+/// Each returns `None` when the platform directory can't be resolved (rare —
+/// headless environments without `HOME`/`XDG_*`).
+pub fn typst_packages_data_dir() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join("typst").join("packages"))
+}
+
+/// See [`typst_packages_data_dir`]; this is the cache-dir sibling that holds
+/// downloaded Universe (`@preview`) packages.
+pub fn typst_packages_cache_dir() -> Option<PathBuf> {
+    dirs::cache_dir().map(|d| d.join("typst").join("packages"))
+}
+
+/// The package directories searched for a `<namespace>/<name>/<version>`
+/// triple, in priority order: notebox-vendored first (a notebox can pin its
+/// own copy), then the shared Typst data dir (`@local` + persisted installs),
+/// then the cache dir (`@preview` downloads).
+///
+/// Both the compile resolver ([`crate::typst_pipeline::world`]) and the
+/// collab-export vendoring pass ([`crate::typst_pipeline::package_vendor`])
+/// derive their candidate paths from here, so the "where does a package live"
+/// answer can never drift between the two.
+pub fn package_search_dirs(
+    notebox_root: &Path,
+    namespace: &str,
+    name: &str,
+    version: &str,
+) -> Vec<PathBuf> {
+    let sub = Path::new(namespace).join(name).join(version);
+    let mut dirs = Vec::with_capacity(3);
+    dirs.push(notebox_root.join(".inkycap").join("packages").join(&sub));
+    if let Some(data) = typst_packages_data_dir() {
+        dirs.push(data.join(&sub));
+    }
+    if let Some(cache) = typst_packages_cache_dir() {
+        dirs.push(cache.join(&sub));
+    }
+    dirs
+}
+
+/// First existing directory among [`package_search_dirs`], or `None` if the
+/// package isn't present anywhere locally.
+pub fn locate_package_dir(
+    notebox_root: &Path,
+    namespace: &str,
+    name: &str,
+    version: &str,
+) -> Option<PathBuf> {
+    package_search_dirs(notebox_root, namespace, name, version)
+        .into_iter()
+        .find(|d| d.is_dir())
+}
+
+/// Recursively copy a directory tree. Used to install a local-tarball package
+/// across a filesystem boundary and to vendor packages into a notebox for
+/// collaboration export.
+pub fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dst_path = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst_path)?;
+        } else if ty.is_file() {
+            fs::copy(entry.path(), dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 fn is_safe_segment(s: &str) -> bool {
     !s.is_empty()
         && s.chars()

@@ -157,7 +157,7 @@ pub async fn install_typst_package_from_file(
             "package install: cross-mount move, falling back to copy ({})",
             rename_err
         );
-        copy_dir_all(&temp_root, &install_dir).map_err(InkyCapError::Io)?;
+        typst_packages::copy_dir_all(&temp_root, &install_dir).map_err(InkyCapError::Io)?;
     }
 
     Ok(InstalledPackage {
@@ -405,18 +405,3 @@ const PACKAGE_LIB_TYP: &str = "// Local Typst package. Import in a note with:\n/
 const TEMPLATE_LIB_TYP: &str = "// Local Typst document template. Apply at the top of a note:\n//   #import \"@local/<name>:<version>\": apply\n//   #show: apply.with(title: \"My document\")\n\n#let apply(title: none, body) = {\n  set page(margin: 1in)\n  set text(font: \"Inter\", size: 11pt)\n  if title != none {\n    align(center)[#text(size: 18pt, weight: \"bold\", title)]\n    v(1em)\n  }\n  body\n}\n";
 
 const TEMPLATE_MAIN_TYP: &str = "#import \"../lib.typ\": *\n\n#show: apply.with(title: \"Untitled\")\n\nStart writing here.\n";
-
-fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let dst_path = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &dst_path)?;
-        } else if ty.is_file() {
-            std::fs::copy(entry.path(), dst_path)?;
-        }
-    }
-    Ok(())
-}

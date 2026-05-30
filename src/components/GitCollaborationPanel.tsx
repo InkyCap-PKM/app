@@ -64,6 +64,8 @@ import {
   setActionsOpen,
   reviewIncoming,
   setReviewIncoming,
+  bundlePackages,
+  setBundlePackages,
 } from "../stores/git";
 import type { GitReviewItem, GitDigestEntry, GitBinaryDecision } from "../lib/types";
 
@@ -393,6 +395,7 @@ const SyncView: Component = () => {
                       auto-merging. */}
                   <div class="git-panel__label-row git-panel__review-toggle">
                     <label class="settings__label">{t("git.review.toggleLabel")}</label>
+                    <HelpButton label={t("git.review.toggleLabel")}>{t("git.review.toggleHint")}</HelpButton>
                     <label class="settings__toggle" title={t("git.review.toggleHint")}>
                       <input
                         type="checkbox"
@@ -401,7 +404,23 @@ const SyncView: Component = () => {
                       />
                       <span class="settings__toggle-slider" />
                     </label>
-                    <HelpButton label={t("git.review.toggleLabel")}>{t("git.review.toggleHint")}</HelpButton>
+                  </div>
+
+                  {/* Per-device sharing preference (applies to Sync push and
+                      package export): vendor the notebox's Typst packages into
+                      it so they travel and a recipient can compile offline /
+                      with @local packages. */}
+                  <div class="git-panel__label-row git-panel__review-toggle">
+                    <label class="settings__label">{t("git.bundle.toggleLabel")}</label>
+                    <HelpButton label={t("git.bundle.toggleLabel")}>{t("git.bundle.toggleHint")}</HelpButton>
+                    <label class="settings__toggle" title={t("git.bundle.toggleHint")}>
+                      <input
+                        type="checkbox"
+                        checked={bundlePackages()}
+                        onChange={(e) => void setBundlePackages(e.currentTarget.checked)}
+                      />
+                      <span class="settings__toggle-slider" />
+                    </label>
                   </div>
                 </div>
               </Show>

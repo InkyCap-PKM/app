@@ -23,6 +23,7 @@ use crate::git::backend::{
 };
 use crate::git::json_merge::{self, KeyConflict};
 use crate::git::{history, package, staging, suggest};
+use crate::typst_pipeline::package_vendor;
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::AppState;
 use crate::storage::{canonicalize_root, to_frontend_string, validate_notebox_path};
@@ -754,7 +755,21 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool, review: bool) -> Re
 
     let mut out = SyncOutcome::default();
 
+    // 0. When bundling is on, vendor the notebox's Typst packages (and their
+    //    transitive deps) into `.inkycap/packages/` so they travel with the
+    //    push. Gated on a dirty tree: new package imports always arrive as
+    //    dirty note edits, so a no-op sync skips the scan entirely. Best-effort
+    //    — a copy failure logs but must not block syncing notes.
+    if backend.status_summary()?.dirty
+        && crate::notebox_settings::load_local_state(root).bundle_packages
+    {
+        if let Err(err) = package_vendor::vendor_notebox_packages(root) {
+            log::warn!("package bundling during sync failed: {err}");
+        }
+    }
+
     // 1. Commit local working edits, if any → M (so the merge includes them).
+    //    Picks up any files the vendoring step above just added.
     let m: Option<git2::Oid> = if backend.status_summary()?.dirty {
         let sig = backend.author_signature(&git.remote)?;
         backend.stage_all()?;
@@ -1742,6 +1757,13 @@ pub struct PackageExportResult {
     pub file_count: u64,
     /// Uncompressed bytes of `.git` packaged.
     pub bytes: u64,
+    /// When `include_packages` was set: canonical specs (`@ns/name:ver`) of the
+    /// Typst packages vendored into the notebox so they travel with the export.
+    pub vendored_packages: Vec<String>,
+    /// Package specs the notebox imports but that couldn't be located locally
+    /// (e.g. a never-installed `@local` package) and so were NOT bundled. The
+    /// recipient may be unable to compile notes that need them.
+    pub unresolved_packages: Vec<String>,
 }
 
 /// Export the open notebox — with its full git history — to a single
@@ -1761,8 +1783,18 @@ pub async fn git_export_package(
     }
     let password = password.filter(|p| !p.is_empty());
 
-    let (path, summary) = tokio::task::spawn_blocking(
-        move || -> Result<(PathBuf, package::PackageSummary)> {
+    let (path, summary, vendor) = tokio::task::spawn_blocking(
+        move || -> Result<(PathBuf, package::PackageSummary, package_vendor::VendorReport)> {
+            // When the notebox is set to bundle packages, vendor them into
+            // `.inkycap/packages/` first so the commit below captures them and
+            // they travel inside the exported history. Done before the dirty
+            // check so any newly-copied files are part of the package.
+            let vendor = if crate::notebox_settings::load_local_state(&root).bundle_packages {
+                package_vendor::vendor_notebox_packages(&root)?
+            } else {
+                package_vendor::VendorReport::default()
+            };
+
             // Commit my working edits, if any, so the package is current.
             let backend = GitBackend::open(&root)?;
             if backend.status_summary()?.dirty {
@@ -1774,7 +1806,7 @@ pub async fn git_export_package(
             // Record the shared baseline so the status reads "shared" until the
             // next edit (package mode has no remote ref to track this).
             record_shared_head(&backend, &root)?;
-            Ok((dest_path, summary))
+            Ok((dest_path, summary, vendor))
         },
     )
     .await
@@ -1784,6 +1816,8 @@ pub async fn git_export_package(
         path: to_frontend_string(&path),
         file_count: summary.file_count,
         bytes: summary.uncompressed_bytes,
+        vendored_packages: vendor.vendored,
+        unresolved_packages: vendor.unresolved,
     })
 }
 
@@ -1966,6 +2000,64 @@ pub async fn git_set_review_incoming(enabled: bool, state: State<'_, AppState>) 
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("review-incoming task failed: {e}")))?
+}
+
+/// Result of [`git_set_bundle_packages`] when enabling: what the immediate
+/// vendor pass copied in, so the UI can confirm or warn.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BundlePackagesResult {
+    /// Canonical specs (`@ns/name:ver`) newly vendored into the notebox.
+    pub vendored: Vec<String>,
+    /// Imported specs that couldn't be located locally (e.g. a never-installed
+    /// `@local` package) and so were NOT bundled.
+    pub unresolved: Vec<String>,
+}
+
+/// Whether the open notebox bundles its Typst packages on share
+/// (`NoteboxLocalState::bundle_packages`, per-machine). Off by default.
+#[tauri::command]
+pub async fn git_get_bundle_packages(state: State<'_, AppState>) -> Result<bool> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    Ok(crate::notebox_settings::load_local_state(&root).bundle_packages)
+}
+
+/// Set whether the open notebox bundles its Typst packages when sharing (Sync
+/// push or package export). Stored per-machine. Enabling vendors the notebox's
+/// current packages immediately so the toggle takes visible effect now rather
+/// than only on the next share; the returned report says what was bundled.
+#[tauri::command]
+pub async fn git_set_bundle_packages(
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<BundlePackagesResult> {
+    let root = state
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    tokio::task::spawn_blocking(move || -> Result<BundlePackagesResult> {
+        let mut local = crate::notebox_settings::load_local_state(&root);
+        local.bundle_packages = enabled;
+        crate::notebox_settings::save_local_state(&root, &local)?;
+        if enabled {
+            let report = package_vendor::vendor_notebox_packages(&root)?;
+            Ok(BundlePackagesResult {
+                vendored: report.vendored,
+                unresolved: report.unresolved,
+            })
+        } else {
+            Ok(BundlePackagesResult::default())
+        }
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("bundle-packages task failed: {e}")))?
 }
 
 /// Reconstruct an in-progress review from the on-disk staging folder, so a
