@@ -40,7 +40,8 @@ import {
 
 /** Register all built-in commands. Callbacks for toggling UI panels
  *  are passed in so this module doesn't depend on component state. */
-export function registerBuiltinCommands(callbacks: {
+/** Callbacks for the built-in commands. */
+export interface BuiltinCommandCallbacks {
   toggleQuickOpen: () => void;
   toggleSettings: () => void;
   toggleCommandPalette: () => void;
@@ -50,7 +51,14 @@ export function registerBuiltinCommands(callbacks: {
   openTypAudit: () => void;
   openScaffoldPicker: () => void;
   openCollaborationPanel: () => void;
-}): void {
+}
+
+// Retained so `relocalizeCommands()` can re-register built-in commands with
+// fresh translated titles after a UI-language switch — see that function.
+let lastBuiltinCallbacks: BuiltinCommandCallbacks | null = null;
+
+export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): void {
+  lastBuiltinCallbacks = callbacks;
   // ── File commands ──
 
   registerCommand({
@@ -606,6 +614,20 @@ export function registerBuiltinCommands(callbacks: {
 
   // ── Markup insertion commands ──
   registerMarkupCommands();
+}
+
+/**
+ * Re-register the built-in commands so their titles pick up the active locale's
+ * strings. Built-in commands capture their `t(...)` titles as frozen values in
+ * the registry Map at registration time, so a language switch leaves them stale
+ * until re-registered. `registerCommand` overwrites by id and bumps
+ * `commandVersion`, so this is idempotent and prompts the command palette to
+ * re-render. Called from src/stores/locale.ts on locale change. No-op before
+ * the first `registerBuiltinCommands`. Creation-rule commands carry user-authored
+ * titles (not translated), so they are intentionally left untouched.
+ */
+export function relocalizeCommands(): void {
+  if (lastBuiltinCallbacks) registerBuiltinCommands(lastBuiltinCallbacks);
 }
 
 function insertMarkup(template: string, cursorOffset: number) {

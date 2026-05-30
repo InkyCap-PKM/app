@@ -23,7 +23,8 @@ import type {
   FileTreeNode,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
-import { t } from "../lib/i18n";
+import { t, useI18n, AVAILABLE_LOCALES } from "../lib/i18n";
+import { setUiLocale } from "../stores/locale";
 import { modifierKey } from "../lib/platform";
 import { formatUserDate, formatUserDateTime, DEFAULT_DATE_FORMAT } from "../lib/dates";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -951,6 +952,12 @@ function NoteboxManagementSection() {
 }
 
 function LanguageSettingsSection() {
+  // Reactive translator: the interface-language row re-renders live when the
+  // user switches language, demonstrating the seam end-to-end. (The rest of
+  // this panel still uses the static `t` and refreshes on reopen — migrating
+  // those to `useI18n()` is a later phase.)
+  const trans = useI18n();
+
   // Available dictionaries (bundled + user-installed), loaded once for the
   // language table.
   const [spellDicts] = createResource(() => ipc.listSpellcheckDictionaries());
@@ -994,6 +1001,13 @@ function LanguageSettingsSection() {
 
   return (
     <div class="settings__section">
+      <SettingSelect
+        label={trans("settings.language.ui.label")}
+        description={trans("settings.language.ui.description")}
+        value={settings.appearance.ui_locale}
+        options={AVAILABLE_LOCALES.map((l) => ({ value: l.code, label: l.nativeName }))}
+        onChange={setUiLocale}
+      />
       <SettingToggle
         label="Spellcheck"
         description="Check spelling as you type, using bundled Hunspell dictionaries. Misspellings are underlined; right-click for suggestions."

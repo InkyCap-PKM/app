@@ -2,7 +2,12 @@ import { Compartment, EditorState, Prec, StateField, Transaction, type Extension
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import { searchKeymap } from "@codemirror/search";
+import {
+  searchKeymap,
+  searchPanelOpen,
+  openSearchPanel,
+  closeSearchPanel,
+} from "@codemirror/search";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { lintKeymap, lintGutter } from "@codemirror/lint";
 import { TypstParser, typstHighlight } from "codemirror-lang-typst";
@@ -160,6 +165,13 @@ export interface TypstEditorHandle {
   setEnterInsertsLineBreak(enabled: boolean): void;
   setSelectionToolbar(enabled: boolean): void;
   setCommandPalette(enabled: boolean): void;
+  /** Refresh editor-owned UI that captured translated strings, after a
+   *  UI-language switch. Today that's the search panel (its labels are built
+   *  on open); a panel that's open during the switch is rebuilt so its strings
+   *  update live. This is the editor-side extension point for i18n: as more
+   *  CM6 surfaces (selection toolbar, command palette) move onto `t(...)` in a
+   *  later phase, their compartment reconfigures belong here too. */
+  relocalize(): void;
   ensureParsed(timeout?: number): void;
   /** Force the visual decoration field to rebuild from a fully-parsed tree.
    *  Call after setText() during external reloads (sidebar property edits)
@@ -822,6 +834,16 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       view.dispatch({
         effects: autoExpandCompartment.reconfigure(autoExpandFacet.of(enabled)),
       });
+    },
+    relocalize() {
+      // The search panel builds its labels via `t(...)` in its constructor,
+      // so a panel opened AFTER the switch already shows the new language.
+      // Only an already-open panel is stale — close and reopen it to rebuild.
+      // Both commands preserve the active query.
+      if (searchPanelOpen(view.state)) {
+        closeSearchPanel(view);
+        openSearchPanel(view);
+      }
     },
     setFocusMode(mode: FocusMode, dim: boolean) {
       const ext = isVisual && mode !== "none"

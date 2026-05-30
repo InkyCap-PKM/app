@@ -306,6 +306,13 @@ export interface AppearanceSettings {
    * ss, dddd, ddd. Any non-token characters are kept verbatim.
    */
   date_format: string;
+  /**
+   * BCP-47 code for the user-interface language (e.g. "en", "fr"). Selects
+   * which locale dictionary the frontend loads; "en" is the default and the
+   * fallback for any code without a shipped translation. UI chrome only — it
+   * does not affect note content.
+   */
+  ui_locale: string;
 }
 
 /** Typst-facing document defaults — text size and page size. User-global

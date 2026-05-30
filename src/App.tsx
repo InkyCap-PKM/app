@@ -33,6 +33,7 @@ import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
 import { initNotebox, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
+import { initLocale, syncLocaleFromSettings } from "./stores/locale";
 import {
   initSettings,
   onSettingsChange,
@@ -167,6 +168,11 @@ const App: Component = () => {
     await applyFontSettings(settings.fonts);
     onSettingsChange((s) => applyFontSettings(s.fonts));
     initTheme();
+    // Apply the UI language before registering commands below, so command
+    // titles are built from the correct dictionary on first paint. React to
+    // external changes (e.g. a settings import) live.
+    initLocale();
+    onSettingsChange(syncLocaleFromSettings);
     // openNotebox now runs applyStartupBehavior internally on every
     // successful open (initial launch and subsequent switches alike),
     // so we don't need to call it separately here.
