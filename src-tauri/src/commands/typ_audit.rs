@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn detects_present_notebox_import() {
-        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n= Hello\n";
+        let src = "#import \"/.inkycap/notebox.typ\": *\n= Hello\n";
         assert!(has_notebox_import(src));
     }
 
@@ -542,14 +542,14 @@ mod tests {
 
     #[test]
     fn repair_only_adds_note_when_import_present() {
-        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n= Body\n";
+        let src = "#import \"/.inkycap/notebox.typ\": *\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
         // Import line not duplicated.
-        assert_eq!(out.matches("inkycap-notebox").count(), 1);
+        assert_eq!(out.matches("/.inkycap/notebox.typ").count(), 1);
         assert!(note_call_span(&out).is_some());
         // Stub note inserted directly after the import line.
         assert!(out.starts_with(
-            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n"
+            "#import \"/.inkycap/notebox.typ\": *\n#note()\n"
         ));
     }
 
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn repair_idempotent_on_conformant_file() {
-        let src = "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note(title: \"X\")\n= Body\n";
+        let src = "#import \"/.inkycap/notebox.typ\": *\n#note(title: \"X\")\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
         assert_eq!(out, src);
     }

@@ -55,16 +55,15 @@ pub fn scaffolds_dir(notebox_root: &Path) -> PathBuf {
     notebox_root.join(scaffolds_relpath())
 }
 
-/// Match any line that imports the inkycap-notebox library, across any
-/// version subdirectory. Used by detection code to find a note's preamble
-/// import regardless of which package version it was created against.
+/// Match the line that imports the inkycap-notebox library. Used by detection
+/// code to find a note's preamble import via the single canonical, version-less
+/// path emitted by [`import_line`].
 pub fn is_notebox_import_line(line: &str) -> bool {
     let trimmed = line.trim_start();
     if !trimmed.starts_with("#import") {
         return false;
     }
     trimmed.contains("/.inkycap/notebox.typ")
-        || trimmed.contains("/.inkycap/packages/inkycap-notebox/")
 }
 
 /// Ensure the source contains an inkycap-notebox import line. If missing,
@@ -77,7 +76,7 @@ pub fn ensure_import(source: &str) -> String {
     format!("{}\n{}", import_line(), source)
 }
 
-static LIB_TYP: &[u8] = include_bytes!("../../inkycap-notebox/0.2.0/lib.typ");
+static LIB_TYP: &[u8] = include_bytes!("../../inkycap-notebox/lib.typ");
 
 /// Default scaffold seeded for the built-in "New Note" creation rule.
 /// Written to `<notebox>/.inkycap/scaffolds/new-note.typ` on first notebox open
@@ -339,15 +338,12 @@ mod tests {
     }
 
     #[test]
-    fn detects_legacy_and_canonical_imports() {
+    fn detects_canonical_import() {
         assert!(is_notebox_import_line(
             "#import \"/.inkycap/notebox.typ\": *"
         ));
         assert!(is_notebox_import_line(
-            "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *"
-        ));
-        assert!(is_notebox_import_line(
-            "#import \"/.inkycap/packages/inkycap-notebox/9.9.9/lib.typ\": tag"
+            "  #import \"/.inkycap/notebox.typ\": tag"
         ));
         assert!(!is_notebox_import_line("#import \"other.typ\": *"));
         assert!(!is_notebox_import_line("= heading"));

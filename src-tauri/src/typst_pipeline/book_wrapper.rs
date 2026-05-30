@@ -1094,7 +1094,7 @@ mod tests {
         // not corrupt any of the multi-byte content.
         for fixture in UNICODE_BODY_FIXTURES {
             let src = format!(
-                "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n\
+                "#import \"/.inkycap/notebox.typ\": *\n\
                  #note(title: \"Title\")\n\
                  = Heading\n\
                  {}\n\
@@ -1124,7 +1124,7 @@ mod tests {
 
     #[test]
     fn prepare_note_strips_preamble_and_bibliography() {
-        let src = r#"#import "/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ": *
+        let src = r#"#import "/.inkycap/notebox.typ": *
 #note(title: "Foo")
 
 = Heading
@@ -1193,8 +1193,8 @@ After
     #[test]
     fn build_book_emits_one_bibliography() {
         let notes = vec![
-            note("alpha", "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n= Alpha\nA"),
-            note("beta",  "#import \"/.inkycap/packages/inkycap-notebox/0.1.0/lib.typ\": *\n#note()\n= Beta\nB\n#bibliography(\"refs.bib\")"),
+            note("alpha", "#import \"/.inkycap/notebox.typ\": *\n#note()\n= Alpha\nA"),
+            note("beta",  "#import \"/.inkycap/notebox.typ\": *\n#note()\n= Beta\nB\n#bibliography(\"refs.bib\")"),
         ];
         let src = build_book_source(
             &notes,

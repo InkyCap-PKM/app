@@ -4,7 +4,7 @@
 //
 // Per CLAUDE.md's Typst-first principle, we use `typst query` to *extract*
 // outgoing wikilinks from each note (via `<inkycap-link>` metadata in the
-// notebox package — see `inkycap-notebox/0.1.0/lib.typ`). What Typst cannot do
+// notebox package — see `inkycap-notebox/lib.typ`). What Typst cannot do
 // is *resolve* a wikilink target string like `"Reading notes"` to an actual
 // file path on disk: that resolution is notebox-specific (filename matching,
 // disambiguation, alias lookup) and Typst has no view of the notebox as a
