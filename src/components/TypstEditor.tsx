@@ -15,6 +15,7 @@ import { buildChecker } from "../lib/spellchecker";
 import { loadMediaObjectUrl, revokeMediaBlobs } from "../lib/media-src";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
+import { localeVersion } from "../lib/i18n";
 import {
   tabs,
   openTab,
@@ -502,6 +503,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     on(() => settings.editor.command_palette, (enabled) => {
       editorHandle?.setCommandPalette(enabled);
     }),
+  );
+
+  // Refresh editor-owned translated UI when the user switches UI language.
+  // `defer: true` skips the initial run — the editor is built with the active
+  // locale already, so only subsequent switches need a refresh.
+  createEffect(
+    on(localeVersion, () => editorHandle?.relocalize(), { defer: true }),
   );
 
   // ── File loading ───────────────────────────────────────

@@ -127,6 +127,11 @@ pub struct AppearanceSettings {
     /// Does not affect how dates are stored — only their presentation.
     /// E.g. "D MMM YYYY" → "8 Nov 2024"; "YYYY-MM-DD" → "2024-11-08".
     pub date_format: String,
+    /// BCP-47 code for the user-interface language (e.g. "en", "fr"). Drives
+    /// which locale dictionary the frontend loads. "en" is the default and the
+    /// fallback for any code without a shipped translation. Affects UI chrome
+    /// only, not note content or how anything is stored.
+    pub ui_locale: String,
 }
 
 impl Default for AppearanceSettings {
@@ -140,6 +145,7 @@ impl Default for AppearanceSettings {
             zoom_target: "content".to_string(),
             folder_grouping: "before".to_string(),
             date_format: "D MMM YYYY".to_string(),
+            ui_locale: "en".to_string(),
         }
     }
 }

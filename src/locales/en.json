@@ -5,6 +5,9 @@
   "settings.appearance.theme.option.dark": "Dark",
   "settings.appearance.theme.option.system": "Follow system",
 
+  "settings.language.ui.label": "Interface language",
+  "settings.language.ui.description": "Language used for InkyCap's menus, buttons, and panels. Your note content is unaffected.",
+
   "settings.notebox.helpLabel": "About notebox management",
   "settings.notebox.help": "'New notebox' creates an empty notebox on your local filesystem. Start fresh or copy your files from a notebox elsewhere. 'Clone from remote' downloads an existing notebox from a Git repository for collaboration. 'Import package' creates a local notebox from an InkyCap package sent by a collaborator.",
   "settings.notebox.collaboration": "Collaboration",

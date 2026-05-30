@@ -54,6 +54,7 @@ const DEFAULTS: UserSettings = {
     zoom_target: "content",
     folder_grouping: "before",
     date_format: "D MMM YYYY",
+    ui_locale: "en",
   },
   files: {
     auto_update_links_on_rename: true,
