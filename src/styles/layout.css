@@ -416,6 +416,23 @@ body.is-resizing-pane .pane-resizer {
   flex-direction: column;
 }
 
+/* The tab bar's own border-bottom is clipped 40px short of the right edge
+   (see .right-panel__tabs clip-path, which keeps overflowing tab icons out
+   of the collapse-toggle's zone). Draw the divider on the un-clipped panel
+   container instead so it reaches the window edge — matching the left
+   sidebar's mode-bar border. The 38px height mirrors .right-panel__tabs
+   min-height so the line lands exactly where the tab bar ends. */
+.right-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  border-bottom: 1px solid var(--border-primary);
+  pointer-events: none;
+}
+
 .app-shell--right-collapsed .right-panel {
   display: none;
 }
@@ -5204,7 +5221,9 @@ svg.lucide {
 .right-panel__tabs {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border-primary);
+  /* The bottom divider is drawn full-width by .right-panel::after — this
+     element is clipped 40px short of the right edge (clip-path below), so its
+     own border-bottom would stop short of the window edge. */
   min-height: 38px;
   gap: 2px;
   padding: 0 40px 0 8px;
