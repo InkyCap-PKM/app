@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-InkyCap is a Tauri-based, notebox-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features include:
+InkyCap is a Tauri-based, personal knowledge management-style **Typst editor** optimized for writing, academic, and research note-taking. Its distinguishing features include:
 
 1. Reciprocal note-linking with wikilinks and automatic backlinks at the center of the navigation model
 2. Typed, notebox-queryable metadata that's portable to any Typst tool (via the `inkycap-notebox` Typst package)
-3. Three editor modes: source (full Typst), visual (WYSIWYM with honest fallback to raw markup), reading (rendered)
+3. Three editor modes: source (full Typst), visual (WYSIWYM with fallback to raw markup), reading (rendered)
 4. First-class bibliography with a dedicated References sidebar tab
-5. Self-contained noteboxes that compile in any Typst environment
+5. Self-contained noteboxes that compile in any Typst environment and support collaboration
 6. Academic publishing and research-specific workflows
 7. First-class free-form writing options with a verse mode that respects idiosyncratic spacing.
 

@@ -250,6 +250,7 @@ pub fn run() {
             commands::collections::add_view,
             commands::collections::remove_view,
             commands::collections::rename_view,
+            commands::collections::reorder_views,
             commands::collections::get_all_property_keys,
             commands::collections::get_notebox_index,
             commands::files::read_file_content,

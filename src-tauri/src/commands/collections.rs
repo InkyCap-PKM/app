@@ -596,6 +596,35 @@ pub async fn rename_view(
     Ok(())
 }
 
+/// Reorder the views in a .collection file to match `ordered_names` (the view
+/// switcher's drag-and-drop order). Any view not present in the list keeps its
+/// relative position at the end — defensive against a stale client list, so a
+/// reorder never drops a view.
+#[tauri::command]
+pub async fn reorder_views(
+    collection_path: String,
+    ordered_names: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<(), InkyCapError> {
+    let storage = state.get_storage().await?;
+    let path = sanitize_notebox_arg(&collection_path)?;
+    let content = storage.read_file(&path).await?;
+    let mut base = parse_collection_file(&content)?;
+
+    // Stable sort by position in the requested order; unknown names rank last
+    // and keep their existing relative order.
+    base.views.sort_by_key(|v| {
+        ordered_names
+            .iter()
+            .position(|n| n == &v.name)
+            .unwrap_or(usize::MAX)
+    });
+
+    let updated = serialize_collection_file(&base)?;
+    storage.write_file(&path, &updated).await?;
+    Ok(())
+}
+
 /// Get notebox index data: tags with counts and property keys with counts.
 #[tauri::command]
 pub async fn get_notebox_index(
@@ -640,6 +669,7 @@ pub async fn get_all_property_keys(
         "file.name",
         "file.folder",
         "file.path",
+        "file.ext",
         "file.ctime",
         "file.mtime",
         "file.size",

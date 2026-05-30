@@ -12,7 +12,6 @@
 import {
   Component,
   createSignal,
-  For,
   Match,
   Show,
   Switch,
@@ -36,7 +35,10 @@ import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
 import { CITATION_STYLES } from "./SettingsPanel";
 import { Dropdown } from "./Dropdown";
+import { LengthInput } from "./LengthInput";
+import { PresetSelect, type PresetOption } from "./PresetSelect";
 import HelpButton from "./HelpButton";
+import CustomTypstModal from "./CustomTypstModal";
 
 // ── Collection style editor ───────────────────────────────────────
 
@@ -50,6 +52,63 @@ const COLLECTION_PAGE_SIZES = [
   { value: "b5", label: "B5" },
 ];
 
+// Preset numbering patterns. Values are Typst numbering pattern strings; the
+// special "none" suppresses numbering (emitted as the bare `none` keyword by
+// the backend). "" means inherit the app/template default.
+const PAGE_NUMBERING_PRESETS: PresetOption[] = [
+  { value: "", label: "Inherit" },
+  { value: "none", label: "None" },
+  { value: "1", label: "1, 2, 3" },
+  { value: "i", label: "i, ii, iii" },
+  { value: "I", label: "I, II, III" },
+  { value: "— 1 —", label: "— 1 —" },
+];
+
+const HEADING_NUMBERING_PRESETS: PresetOption[] = [
+  { value: "", label: "Inherit" },
+  { value: "none", label: "None" },
+  { value: "1.", label: "1.  2.  3." },
+  { value: "1.1", label: "1.1  1.2" },
+  { value: "1.1.1", label: "1.1.1" },
+  { value: "I.", label: "I.  II." },
+  { value: "a.", label: "a.  b." },
+  { value: "A.", label: "A.  B." },
+];
+
+// Common languages and regions, emitting the ISO codes Typst expects. The
+// list is deliberately short — anything missing is reachable via "Other…".
+const LANGUAGE_PRESETS: PresetOption[] = [
+  { value: "", label: "Inherit" },
+  { value: "en", label: "English" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "it", label: "Italian" },
+  { value: "pt", label: "Portuguese" },
+  { value: "nl", label: "Dutch" },
+  { value: "ru", label: "Russian" },
+  { value: "zh", label: "Chinese" },
+  { value: "ja", label: "Japanese" },
+  { value: "ar", label: "Arabic" },
+];
+
+// Inherit first, then alphabetical by name; "Other…" is appended by
+// PresetSelect as the final escape hatch.
+const REGION_PRESETS: PresetOption[] = [
+  { value: "", label: "Inherit" },
+  { value: "AU", label: "Australia" },
+  { value: "BR", label: "Brazil" },
+  { value: "CA", label: "Canada" },
+  { value: "CN", label: "China" },
+  { value: "FR", label: "France" },
+  { value: "DE", label: "Germany" },
+  { value: "IT", label: "Italy" },
+  { value: "JP", label: "Japan" },
+  { value: "ES", label: "Spain" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "US", label: "United States" },
+];
+
 const CollectionStyleEditor: Component<{
   style: CollectionStyle | null;
   onSave: (style: CollectionStyle | null) => void;
@@ -57,9 +116,17 @@ const CollectionStyleEditor: Component<{
   /// expand/collapse header (used when embedded inside a tab whose
   /// visibility is already managed by the parent).
   alwaysExpanded?: boolean;
+  /// The collection's raw custom Typst (power-user escape hatch) and its
+  /// saver. Edited in a modal, not inline — the sidebar is too narrow for code.
+  customTypst?: string;
+  onSaveCustomTypst?: (value: string) => void;
+  collectionName?: string;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const isOpen = () => props.alwaysExpanded || expanded();
+  const [advancedOpen, setAdvancedOpen] = createSignal(false);
+  const [showCustomTypstModal, setShowCustomTypstModal] = createSignal(false);
+  const hasCustomTypst = () => (props.customTypst ?? "").trim().length > 0;
 
   function update(path: string, value: string | number | boolean | null) {
     const style: CollectionStyle = structuredClone(props.style ?? {});
@@ -129,13 +196,21 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">Margins</label>
+              <span class="collection-meta__label-group">
+                <label class="collection-meta__label">Margins</label>
+                <HelpButton label="About margins">
+                  A single length applies to all four sides (e.g.{" "}
+                  <code>2cm</code>, <code>1in</code>). For different margins per
+                  side, use a Typst dictionary:{" "}
+                  <code>(top: 2cm, bottom: 2cm, left: 3cm, right: 3cm)</code>.
+                </HelpButton>
+              </span>
               <input
                 type="text"
                 class="settings__text-input"
                 value={val("page", "margin")}
                 onInput={(e) => update("page.margin", e.currentTarget.value)}
-                placeholder='e.g. 2cm or (top: 2cm, bottom: 2cm)'
+                placeholder="e.g. 2cm"
               />
             </div>
 
@@ -157,12 +232,12 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Page numbering</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("page", "numbering")}
-                onInput={(e) => update("page.numbering", e.currentTarget.value)}
-                placeholder='e.g. "1" or "-- 1 --"'
+              <PresetSelect
+                value={String(val("page", "numbering"))}
+                options={PAGE_NUMBERING_PRESETS}
+                onChange={(v) => update("page.numbering", v)}
+                customPlaceholder='e.g. "1 of 1"'
+                ariaLabel="Page numbering"
               />
             </div>
           </div>
@@ -182,37 +257,35 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Size</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("text", "size")}
-                onInput={(e) => update("text.size", e.currentTarget.value)}
-                placeholder="e.g. 12pt"
-                style={{ width: "80px" }}
+              <LengthInput
+                value={String(val("text", "size"))}
+                units={["pt", "em"]}
+                onChange={(v) => update("text.size", v)}
+                placeholder="Inherit"
               />
             </div>
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Language</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("text", "lang")}
-                onInput={(e) => update("text.lang", e.currentTarget.value)}
-                placeholder="e.g. en, fr"
-                style={{ width: "80px" }}
+              <PresetSelect
+                value={String(val("text", "lang"))}
+                options={LANGUAGE_PRESETS}
+                onChange={(v) => update("text.lang", v)}
+                customLabel="Other…"
+                customPlaceholder="e.g. sv"
+                ariaLabel="Language"
               />
             </div>
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Region</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("text", "region")}
-                onInput={(e) => update("text.region", e.currentTarget.value)}
-                placeholder="e.g. CA, US"
-                style={{ width: "80px" }}
+              <PresetSelect
+                value={String(val("text", "region"))}
+                options={REGION_PRESETS}
+                onChange={(v) => update("text.region", v)}
+                customLabel="Other…"
+                customPlaceholder="e.g. NZ"
+                ariaLabel="Region"
               />
             </div>
           </div>
@@ -239,37 +312,31 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Line spacing</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("paragraph", "leading")}
-                onInput={(e) => update("paragraph.leading", e.currentTarget.value)}
-                placeholder="e.g. 0.65em"
-                style={{ width: "80px" }}
+              <LengthInput
+                value={String(val("paragraph", "leading"))}
+                units={["em", "pt", "cm", "mm"]}
+                onChange={(v) => update("paragraph.leading", v)}
+                placeholder="Inherit"
               />
             </div>
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Paragraph spacing</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("paragraph", "spacing")}
-                onInput={(e) => update("paragraph.spacing", e.currentTarget.value)}
-                placeholder="e.g. 1.2em"
-                style={{ width: "80px" }}
+              <LengthInput
+                value={String(val("paragraph", "spacing"))}
+                units={["em", "pt", "cm", "mm"]}
+                onChange={(v) => update("paragraph.spacing", v)}
+                placeholder="Inherit"
               />
             </div>
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">First line indent</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("paragraph", "first_line_indent")}
-                onInput={(e) => update("paragraph.first_line_indent", e.currentTarget.value)}
-                placeholder="e.g. 1em"
-                style={{ width: "80px" }}
+              <LengthInput
+                value={String(val("paragraph", "first_line_indent"))}
+                units={["em", "pt", "cm", "mm"]}
+                onChange={(v) => update("paragraph.first_line_indent", v)}
+                placeholder="Inherit"
               />
             </div>
           </div>
@@ -280,17 +347,64 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <label class="collection-meta__label">Numbering</label>
-              <input
-                type="text"
-                class="settings__text-input"
-                value={val("heading", "numbering")}
-                onInput={(e) => update("heading.numbering", e.currentTarget.value)}
-                placeholder='e.g. "1.1"'
-                style={{ width: "80px" }}
+              <PresetSelect
+                value={String(val("heading", "numbering"))}
+                options={HEADING_NUMBERING_PRESETS}
+                onChange={(v) => update("heading.numbering", v)}
+                customPlaceholder='e.g. "1.a"'
+                ariaLabel="Heading numbering"
               />
             </div>
           </div>
         </div>
+
+        {/* Advanced — the raw Typst escape hatch, edited in a modal because the
+            sidebar is too narrow to author code in. Only offered where a saver
+            is wired (the Style Overrides tab). */}
+        <Show when={props.onSaveCustomTypst}>
+          <div class="collection-meta__section-label">
+            <button
+              class="collection-meta__section-toggle"
+              onClick={() => setAdvancedOpen(!advancedOpen())}
+            >
+              <Show when={advancedOpen()} fallback={<ChevronRight size={10} />}>
+                <ChevronDown size={10} />
+              </Show>
+              Advanced
+            </button>
+          </div>
+          <Show when={advancedOpen()}>
+            <div class="collection-meta__row">
+              <span class="collection-meta__label-group">
+                <label class="collection-meta__label">Custom Typst</label>
+                <HelpButton label="About custom Typst">
+                  Raw Typst injected after this collection's Style Overrides on
+                  every export — it overrides those settings and any template.
+                  The escape hatch for styling the controls above don't cover
+                  (custom <code>#show</code> rules, running headers, and so on).
+                </HelpButton>
+              </span>
+              <button
+                class="settings__detect-btn"
+                onClick={() => setShowCustomTypstModal(true)}
+              >
+                {hasCustomTypst() ? "Edit…" : "Add…"}
+              </button>
+              <Show when={hasCustomTypst()}>
+                <span class="collection-meta__hint">in use</span>
+              </Show>
+            </div>
+          </Show>
+        </Show>
+      </Show>
+
+      <Show when={showCustomTypstModal()}>
+        <CustomTypstModal
+          value={props.customTypst ?? ""}
+          collectionName={props.collectionName ?? "Collection"}
+          onSave={(v) => props.onSaveCustomTypst?.(v)}
+          onClose={() => setShowCustomTypstModal(false)}
+        />
       </Show>
     </>
   );
@@ -332,9 +446,6 @@ const CollectionBookEditor: Component<{
   const [abstractText, setAbstractText] = createSignal(cfg().abstract ?? "");
 
   const [tocDepth, setTocDepth] = createSignal(cfg().toc_depth ?? 2);
-  const [numberChapters, setNumberChapters] = createSignal(
-    cfg().number_chapters ?? true,
-  );
   const [includeTitlePage, setIncludeTitlePage] = createSignal(
     cfg().include_title_page ?? true,
   );
@@ -378,7 +489,6 @@ const CollectionBookEditor: Component<{
       date: date() || null,
       abstract: abstractText() || null,
       toc_depth: tocDepth(),
-      number_chapters: numberChapters(),
       inject_chapter_heading: injectMode(),
       wikilink_mode: wikilinkMode(),
       include_title_page: includeTitlePage(),
@@ -508,20 +618,6 @@ const CollectionBookEditor: Component<{
         </Show>
       </div>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">Numbering</label>
-        <label class="collection-meta__inline-check">
-          <input
-            type="checkbox"
-            checked={numberChapters()}
-            onChange={(e) => {
-              setNumberChapters(e.currentTarget.checked);
-              flush();
-            }}
-          />
-          Number chapters and headings
-        </label>
-      </div>
-      <div class="collection-meta__row">
         <label class="collection-meta__label">Bibliography</label>
         <label class="collection-meta__inline-check">
           <input
@@ -576,6 +672,11 @@ const CollectionBookEditor: Component<{
       </div>
 
       <div class="collection-meta__section-label">Page numbering</div>
+      <p class="collection-meta__hint" style={{ margin: "0 0 6px" }}>
+        Controls only the merged book's numbering scheme (where roman vs arabic
+        applies). The number format and chapter/heading numbering come from
+        Style Overrides → Page numbering and Heading numbering.
+      </p>
       <div class="collection-meta__row">
         <label class="collection-meta__label">Style</label>
         <Dropdown<PageStyle>
@@ -623,8 +724,6 @@ const CollectionCharacteristicsEditor: Component<{
   collectionPath: string;
   onSaved: () => void;
 }> = (props) => {
-  const [newMetaKey, setNewMetaKey] = createSignal("");
-  const [newMetaValue, setNewMetaValue] = createSignal("");
   const [customCslMode, setCustomCslMode] = createSignal(false);
 
   function notifySidebar() {
@@ -643,33 +742,6 @@ const CollectionCharacteristicsEditor: Component<{
     await ipc.saveCollectionFile(props.collectionPath, updated);
     props.onSaved();
     notifySidebar();
-  }
-
-  async function saveMetadataField(key: string, value: string) {
-    const meta = { ...(props.collectionFile.metadata ?? {}) };
-    if (value === "") {
-      delete meta[key];
-    } else {
-      meta[key] = value;
-    }
-    const updated = {
-      ...props.collectionFile,
-      metadata: Object.keys(meta).length > 0 ? meta : null,
-    };
-    await ipc.saveCollectionFile(props.collectionPath, updated);
-    props.onSaved();
-  }
-
-  function addMetadataField() {
-    const key = newMetaKey().trim();
-    if (!key) return;
-    saveMetadataField(key, newMetaValue().trim());
-    setNewMetaKey("");
-    setNewMetaValue("");
-  }
-
-  async function removeMetadataField(key: string) {
-    await saveMetadataField(key, "");
   }
 
   const bibStyleValue = () => {
@@ -796,53 +868,6 @@ const CollectionCharacteristicsEditor: Component<{
           notes in this collection.
         </HelpButton>
       </div>
-
-      <div class="collection-meta__section-label">Custom Metadata</div>
-      <For each={Object.entries(props.collectionFile.metadata ?? {})}>
-        {([key, value]) => (
-          <div class="collection-meta__row">
-            <label class="collection-meta__label">{key}</label>
-            <input
-              type="text"
-              class="settings__text-input"
-              value={value}
-              onChange={(e) => saveMetadataField(key, e.currentTarget.value)}
-            />
-            <button
-              class="collection-meta__remove-btn"
-              onClick={() => removeMetadataField(key)}
-              title={`Remove ${key}`}
-            >
-              &times;
-            </button>
-          </div>
-        )}
-      </For>
-      <div class="collection-meta__add-row">
-        <input
-          type="text"
-          class="settings__text-input collection-meta__add-key"
-          value={newMetaKey()}
-          onInput={(e) => setNewMetaKey(e.currentTarget.value)}
-          placeholder="Field name"
-          onKeyDown={(e) => { if (e.key === "Enter") addMetadataField(); }}
-        />
-        <input
-          type="text"
-          class="settings__text-input collection-meta__add-value"
-          value={newMetaValue()}
-          onInput={(e) => setNewMetaValue(e.currentTarget.value)}
-          placeholder="Value"
-          onKeyDown={(e) => { if (e.key === "Enter") addMetadataField(); }}
-        />
-        <button
-          class="collection-meta__add-btn"
-          onClick={addMetadataField}
-          disabled={!newMetaKey().trim()}
-        >
-          Add
-        </button>
-      </div>
     </>
   );
 };
@@ -882,6 +907,19 @@ const CollectionSettings: Component<{
     }
   }
 
+  async function saveCustomTypst(value: string) {
+    const cf = collectionFile();
+    if (!cf) return;
+    const trimmed = value.trim();
+    const updated = { ...cf, custom_typst: trimmed === "" ? undefined : value };
+    try {
+      await ipc.saveCollectionFile(props.collectionPath, updated);
+      onSaved();
+    } catch (e) {
+      toastError("Failed to save custom Typst", e);
+    }
+  }
+
   async function saveBook(book: BookExportConfig | null) {
     const cf = collectionFile();
     if (!cf) return;
@@ -917,6 +955,9 @@ const CollectionSettings: Component<{
                 alwaysExpanded
                 style={cf().style ?? null}
                 onSave={saveStyle}
+                customTypst={cf().custom_typst ?? ""}
+                onSaveCustomTypst={saveCustomTypst}
+                collectionName={props.collectionName}
               />
             </div>
           )}

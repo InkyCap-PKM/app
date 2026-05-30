@@ -89,7 +89,7 @@ impl CollectionStyle {
                 args.push(format!("columns: {}", cols));
             }
             if let Some(ref numbering) = page.numbering {
-                args.push(format!("numbering: \"{}\"", sanitize_typst_string(numbering)));
+                args.push(format!("numbering: {}", format_numbering(numbering)));
             }
             if !args.is_empty() {
                 lines.push(format!("#set page({})", args.join(", ")));
@@ -140,8 +140,8 @@ impl CollectionStyle {
         if let Some(ref heading) = self.heading {
             if let Some(ref numbering) = heading.numbering {
                 show_args.push(format!(
-                    "heading-args: (numbering: \"{}\")",
-                    sanitize_typst_string(numbering)
+                    "heading-args: (numbering: {})",
+                    format_numbering(numbering)
                 ));
             }
         }
@@ -154,6 +154,21 @@ impl CollectionStyle {
         }
 
         lines.join("\n")
+    }
+}
+
+/// Format a numbering pattern for emission into a Typst `numbering:` argument.
+/// The literal value `none` is emitted as the bare `none` keyword (suppressing
+/// numbering), matching the "None" preset in the style editor; every other
+/// value is a Typst numbering pattern string and is quoted. A user who hand-
+/// types the word `none` as a custom pattern almost certainly means the
+/// keyword, so collapsing the two is the intuitive behaviour.
+fn format_numbering(value: &str) -> String {
+    use crate::typst_pipeline::style_injection::sanitize_typst_string;
+    if value.trim() == "none" {
+        "none".to_string()
+    } else {
+        format!("\"{}\"", sanitize_typst_string(value))
     }
 }
 
@@ -243,8 +258,6 @@ pub struct BookExportConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toc_depth: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub number_chapters: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inject_chapter_heading: Option<InjectChapterHeading>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wikilink_mode: Option<BookWikilinkMode>,
@@ -300,14 +313,19 @@ pub struct CollectionFile {
     pub bibliography_file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<CollectionStyle>,
+    /// Raw Typst injected verbatim at export, after the generated style rules
+    /// and after any template, so it overrides both. The escape hatch for
+    /// power-users who want styling the Style Overrides UI doesn't expose
+    /// (custom `#show` rules, running headers, etc.). InkyCap never parses
+    /// this back — it is written by the user and emitted as-is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_typst: Option<String>,
     /// Settings for the "Export as book" action — merged single-PDF output
     /// drawn from the collection's notes. None means the user hasn't
     /// configured book export for this collection (defaults are supplied at
     /// dialog time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<BookExportConfig>,
-    #[serde(default)]
-    pub metadata: Option<HashMap<String, String>>,
     #[serde(default)]
     pub filters: Option<FilterGroup>,
     #[serde(default)]
@@ -412,8 +430,8 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
         bibliography_style: None,
         bibliography_file: None,
         style: None,
+        custom_typst: None,
         book: None,
-        metadata: None,
         filters: Some(FilterGroup {
             and: Some(vec![
                 serde_yaml::Value::String("file.name != this.file.name".to_string()),
@@ -447,8 +465,8 @@ pub fn default_collection_file() -> CollectionFile {
         bibliography_style: None,
         bibliography_file: None,
         style: None,
+        custom_typst: None,
         book: None,
-        metadata: None,
         filters: None,
         formulas: None,
         summaries: None,
@@ -600,9 +618,6 @@ views:
 icon: "lucide:book"
 typst_template: "@preview/charged-ieee:0.1.0"
 bibliography_style: ieee
-metadata:
-  journal: "Nature"
-  deadline: "2026-06-01"
 views:
   - type: table
     name: "Table"
@@ -611,8 +626,5 @@ views:
         assert_eq!(base.icon.as_deref(), Some("lucide:book"));
         assert_eq!(base.typst_template.as_deref(), Some("@preview/charged-ieee:0.1.0"));
         assert_eq!(base.bibliography_style.as_deref(), Some("ieee"));
-        let meta = base.metadata.unwrap();
-        assert_eq!(meta.get("journal").unwrap(), "Nature");
-        assert_eq!(meta.get("deadline").unwrap(), "2026-06-01");
     }
 }

@@ -45,8 +45,11 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
         items={items() ?? []}
         loading={items.loading}
         emptyMessage={t("agenda.noItems")}
-        onOpen={(it) =>
-          openTab({ type: "file", title: it.note_title, path: it.note_path })
+        onOpen={(it, opts) =>
+          openTab(
+            { type: "file", title: it.note_title, path: it.note_path },
+            opts?.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
+          )
         }
       />
     </>

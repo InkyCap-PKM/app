@@ -267,6 +267,14 @@ export async function renameView(
   return invoke<void>("rename_view", { collectionPath, oldName, newName });
 }
 
+/** Reorder the collection's views to match `orderedNames` (drag-and-drop). */
+export async function reorderViews(
+  collectionPath: string,
+  orderedNames: string[],
+): Promise<void> {
+  return invoke<void>("reorder_views", { collectionPath, orderedNames });
+}
+
 export async function getAllPropertyKeys(): Promise<string[]> {
   return invoke<string[]>("get_all_property_keys");
 }
@@ -1246,7 +1254,6 @@ export interface BookExportOverrides {
   date?: string | null;
   abstract?: string | null;
   tocDepth?: number;
-  numberChapters?: boolean;
   injectChapterHeading?: InjectChapterHeading;
   wikilinkMode?: BookWikilinkMode;
   includeTitlePage?: boolean;

@@ -176,8 +176,11 @@ export interface CollectionFile {
   bibliography_style?: string | null;
   bibliography_file?: string | null;
   style?: CollectionStyle | null;
+  /** Raw Typst injected verbatim at export, after the generated style rules and
+   *  any template, so it overrides both. The power-user escape hatch for
+   *  styling the Style Overrides UI doesn't expose. */
+  custom_typst?: string | null;
   book?: BookExportConfig | null;
-  metadata?: Record<string, string> | null;
   filters?: FilterGroup | null;
   formulas?: Record<string, string> | null;
   summaries?: Record<string, string> | null;
@@ -215,7 +218,6 @@ export interface BookExportConfig {
   date?: string | null;
   abstract?: string | null;
   toc_depth?: number | null;
-  number_chapters?: boolean | null;
   inject_chapter_heading?: "always" | "fallback" | "never" | null;
   wikilink_mode?: "internal" | "external" | "plain" | null;
   include_title_page?: boolean | null;
