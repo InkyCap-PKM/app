@@ -784,7 +784,15 @@ const CollectionCharacteristicsEditor: Component<{
       </div>
 
       <div class="collection-meta__row">
-        <label class="collection-meta__label">Typst Template</label>
+        <span class="collection-meta__label-group">
+          <label class="collection-meta__label">Typst Template</label>
+          <HelpButton label="About the Typst template">
+            A template name, resolved from the notebox's templates folder, or a
+            notebox path starting with <code>/</code> (for example{" "}
+            <code>/templates/ieee.typ</code>). Applied to every note in this
+            collection.
+          </HelpButton>
+        </span>
         <input
           type="text"
           class="settings__text-input"
@@ -793,12 +801,6 @@ const CollectionCharacteristicsEditor: Component<{
           onInput={(e) => saveField("typst_template", e.currentTarget.value)}
           placeholder="e.g. ieee or /templates/ieee.typ"
         />
-        <HelpButton label="About the Typst template">
-          A template name, resolved from the notebox's templates folder, or a
-          notebox path starting with <code>/</code> (for example{" "}
-          <code>/templates/ieee.typ</code>). Applied to every note in this
-          collection.
-        </HelpButton>
       </div>
 
       <div class="collection-meta__row">
@@ -837,7 +839,14 @@ const CollectionCharacteristicsEditor: Component<{
       </div>
 
       <div class="collection-meta__row">
-        <label class="collection-meta__label">Bibliography File</label>
+        <span class="collection-meta__label-group">
+          <label class="collection-meta__label">Bibliography File</label>
+          <HelpButton label="About the bibliography file">
+            Path to a <code>.bib</code> file, relative to the notebox root.
+            Setting it here overrides the global bibliography file or Zotero for
+            notes in this collection.
+          </HelpButton>
+        </span>
         <div style={{ display: "flex", gap: "6px", "align-items": "center", flex: "1" }}>
           <input
             type="text"
@@ -862,11 +871,6 @@ const CollectionCharacteristicsEditor: Component<{
             Browse…
           </button>
         </div>
-        <HelpButton label="About the bibliography file">
-          Path to a <code>.bib</code> file, relative to the notebox root.
-          Setting it here overrides the global bibliography file or Zotero for
-          notes in this collection.
-        </HelpButton>
       </div>
     </>
   );
