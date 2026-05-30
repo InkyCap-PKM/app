@@ -76,7 +76,7 @@ function fmtSettingValue(v: unknown): string {
 }
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
-import { t } from "../lib/i18n";
+import { t, tPlural } from "../lib/i18n";
 
 /** Filename filter for package archives, shared by the export/import dialogs. A
  *  package is a plain `.zip` (of the notebox's `.git`); `.inkypkg` is still
@@ -380,7 +380,7 @@ const SyncView: Component = () => {
                       <Show when={incomingCount() > 0}>
                         <div class="git-panel__banner">
                           <span class="git-panel__banner-author">
-                            {incomingCount() === 1 ? t("git.check.one") : t("git.check.n", { n: incomingCount() })}
+                            {tPlural("git.check", incomingCount())}
                           </span>
                           <span class="git-panel__banner-msg">{t("git.check.hint")}</span>
                         </div>

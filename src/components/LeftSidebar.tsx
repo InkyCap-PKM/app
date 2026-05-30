@@ -60,6 +60,7 @@ import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
+import { t } from "../lib/i18n";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -111,20 +112,23 @@ type FileSortMode =
 
 type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
 
-const FILE_SORT_OPTIONS: { value: FileSortMode; label: string }[] = [
-  { value: "name-asc", label: "Name (A – Z)" },
-  { value: "name-desc", label: "Name (Z – A)" },
-  { value: "modified-desc", label: "Modified (new – old)" },
-  { value: "modified-asc", label: "Modified (old – new)" },
-  { value: "created-desc", label: "Created (new – old)" },
-  { value: "created-asc", label: "Created (old – new)" },
+// `labelKey` (resolved at the render site). The file-tree modes share the
+// `sort.*` vocabulary with the links panel; the tag/property list uses its own
+// alphabetical/quantity wording. See en.json.
+const FILE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
+  { value: "name-asc", labelKey: "sort.name.asc" },
+  { value: "name-desc", labelKey: "sort.name.desc" },
+  { value: "modified-desc", labelKey: "sort.modified.desc" },
+  { value: "modified-asc", labelKey: "sort.modified.asc" },
+  { value: "created-desc", labelKey: "sort.created.desc" },
+  { value: "created-asc", labelKey: "sort.created.asc" },
 ];
 
-const LIST_SORT_OPTIONS: { value: ListSortMode; label: string }[] = [
-  { value: "name-asc", label: "Alphabetical (A – Z)" },
-  { value: "name-desc", label: "Alphabetical (Z – A)" },
-  { value: "count-desc", label: "Quantity (high – low)" },
-  { value: "count-asc", label: "Quantity (low – high)" },
+const LIST_SORT_OPTIONS: { value: ListSortMode; labelKey: string }[] = [
+  { value: "name-asc", labelKey: "sort.alpha.asc" },
+  { value: "name-desc", labelKey: "sort.alpha.desc" },
+  { value: "count-desc", labelKey: "sort.quantity.desc" },
+  { value: "count-asc", labelKey: "sort.quantity.asc" },
 ];
 
 /// Sort one level of a file tree. The `grouping` parameter controls
@@ -1191,7 +1195,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             setShowCollectionSortMenu(false);
                           }}
                         >
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </button>
                       )}
                     </For>
@@ -1336,7 +1340,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             setShowFileSortMenu(false);
                           }}
                         >
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </button>
                       )}
                     </For>
@@ -1527,7 +1531,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             setShowTagSortMenu(false);
                           }}
                         >
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </button>
                       )}
                     </For>
@@ -1653,7 +1657,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                             setShowPropSortMenu(false);
                           }}
                         >
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </button>
                       )}
                     </For>

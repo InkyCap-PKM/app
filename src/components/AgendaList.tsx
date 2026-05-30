@@ -77,22 +77,24 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   let taskBtnRef: HTMLButtonElement | undefined;
   let tagsBtnRef: HTMLButtonElement | undefined;
 
-  const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-    { value: "due-asc", label: t("agenda.sort.dueAsc") },
-    { value: "due-desc", label: t("agenda.sort.dueDesc") },
-    { value: "created-asc", label: t("agenda.sort.createdAsc") },
-    { value: "created-desc", label: t("agenda.sort.createdDesc") },
-    { value: "zid-asc", label: t("agenda.sort.zidAsc") },
-    { value: "zid-desc", label: t("agenda.sort.zidDesc") },
-    { value: "name-asc", label: t("agenda.sort.nameAsc") },
-    { value: "name-desc", label: t("agenda.sort.nameDesc") },
+  // `labelKey` resolved at the render site (not eager `t()` at array build —
+  // that snapshotted the launch locale and wouldn't follow a switch).
+  const SORT_OPTIONS: { value: SortMode; labelKey: string }[] = [
+    { value: "due-asc", labelKey: "agenda.sort.dueAsc" },
+    { value: "due-desc", labelKey: "agenda.sort.dueDesc" },
+    { value: "created-asc", labelKey: "agenda.sort.createdAsc" },
+    { value: "created-desc", labelKey: "agenda.sort.createdDesc" },
+    { value: "zid-asc", labelKey: "agenda.sort.zidAsc" },
+    { value: "zid-desc", labelKey: "agenda.sort.zidDesc" },
+    { value: "name-asc", labelKey: "agenda.sort.nameAsc" },
+    { value: "name-desc", labelKey: "agenda.sort.nameDesc" },
   ];
 
-  const TASK_OPTIONS: { value: TaskListFilter; label: string }[] = [
-    { value: "all", label: t("agenda.task.all") },
-    { value: "todo", label: t("agenda.task.todo") },
-    { value: "done", label: t("agenda.task.done") },
-    { value: "dates", label: t("agenda.task.dates") },
+  const TASK_OPTIONS: { value: TaskListFilter; labelKey: string }[] = [
+    { value: "all", labelKey: "agenda.task.all" },
+    { value: "todo", labelKey: "agenda.task.todo" },
+    { value: "done", labelKey: "agenda.task.done" },
+    { value: "dates", labelKey: "agenda.task.dates" },
   ];
 
   /** Every tag that appears on at least one of the current items. */
@@ -113,9 +115,10 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     setSelectedTags(new Set<string>());
   }
 
-  const taskLabel = createMemo(
-    () => TASK_OPTIONS.find((o) => o.value === taskFilter())?.label ?? "",
-  );
+  const taskLabel = createMemo(() => {
+    const opt = TASK_OPTIONS.find((o) => o.value === taskFilter());
+    return opt ? t(opt.labelKey) : "";
+  });
 
   const tagsLabel = createMemo(() => {
     const sel = selectedTags();
@@ -273,7 +276,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                   setShowSortMenu(false);
                 }}
               >
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             )}
           </For>
@@ -301,7 +304,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                   setShowTaskMenu(false);
                 }}
               >
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             )}
           </For>

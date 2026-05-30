@@ -677,9 +677,8 @@ const RightPanel: Component = () => {
   let linksFilterInputRef: HTMLInputElement | undefined;
 
   function activeLinksSortLabel(): string {
-    return (
-      LINKS_SORT_OPTIONS.find((o) => o.value === linksSortMode())?.label ?? "Sort"
-    );
+    const opt = LINKS_SORT_OPTIONS.find((o) => o.value === linksSortMode());
+    return opt ? t(opt.labelKey) : t("sort.label");
   }
 
   function openLinkedFile(link: { path: string; name: string }, e?: MouseEvent) {
@@ -1665,7 +1664,7 @@ const RightPanel: Component = () => {
                           setShowLinksSortMenu(false);
                         }}
                       >
-                        {opt.label}
+                        {t(opt.labelKey)}
                       </button>
                     )}
                   </For>

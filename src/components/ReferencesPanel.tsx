@@ -5,7 +5,7 @@ import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
-import { t } from "../lib/i18n";
+import { t, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { RefreshCw } from "lucide-solid";
@@ -26,15 +26,15 @@ const SORT_PREF_KEY = "inkycap:references-panel:sort";
 /// as an app-drawn `.context-menu` (see `anchorPanelMenu`) to match the
 /// left sidebar's File/Tag/Property sort menus — a native <select> popup
 /// is OS-themed and can't follow the InkyCap theme on WebKitGTK.
-const SORT_OPTIONS: { value: SortKey; i18nKey: string }[] = [
-  { value: "added-desc", i18nKey: "references.sort.addedNewest" },
-  { value: "added-asc", i18nKey: "references.sort.addedOldest" },
-  { value: "title-asc", i18nKey: "references.sort.titleAZ" },
-  { value: "title-desc", i18nKey: "references.sort.titleZA" },
-  { value: "author-asc", i18nKey: "references.sort.authorAZ" },
-  { value: "author-desc", i18nKey: "references.sort.authorZA" },
-  { value: "year-desc", i18nKey: "references.sort.yearNewest" },
-  { value: "year-asc", i18nKey: "references.sort.yearOldest" },
+const SORT_OPTIONS: { value: SortKey; labelKey: string }[] = [
+  { value: "added-desc", labelKey: "references.sort.addedNewest" },
+  { value: "added-asc", labelKey: "references.sort.addedOldest" },
+  { value: "title-asc", labelKey: "references.sort.titleAZ" },
+  { value: "title-desc", labelKey: "references.sort.titleZA" },
+  { value: "author-asc", labelKey: "references.sort.authorAZ" },
+  { value: "author-desc", labelKey: "references.sort.authorZA" },
+  { value: "year-desc", labelKey: "references.sort.yearNewest" },
+  { value: "year-asc", labelKey: "references.sort.yearOldest" },
 ];
 
 function nullsLast(
@@ -86,7 +86,7 @@ const ReferencesPanel: Component = () => {
   const sortLabel = createMemo(() => {
     const key = sortKey();
     const opt = SORT_OPTIONS.find((o) => o.value === key);
-    return opt ? t(opt.i18nKey) : "";
+    return opt ? t(opt.labelKey) : "";
   });
 
   function loadSortPreference(): SortKey {
@@ -336,7 +336,7 @@ const ReferencesPanel: Component = () => {
               </div>
               <div class="references-panel__toolbar">
                 <span class="references-panel__count">
-                  {totalCount()} {totalCount() === 1 ? t("references.entry") : t("references.entries")}
+                  {totalCount()} {tPlural("references.entry", totalCount())}
                   <span class="references-panel__source-badge">
                     {isZoteroSource() ? "Zotero" : "File"}
                   </span>
@@ -388,7 +388,7 @@ const ReferencesPanel: Component = () => {
                               setShowSortMenu(false);
                             }}
                           >
-                            {t(opt.i18nKey)}
+                            {t(opt.labelKey)}
                           </button>
                         )}
                       </For>

@@ -18,6 +18,7 @@ import * as ipc from "../lib/ipc";
 import type { ExcludedTerm } from "../lib/types";
 import { excludedTerms, requestMycelialReload } from "../stores/mycelial";
 import { toastError } from "../stores/toasts";
+import { tPlural } from "../lib/i18n";
 
 const MycelialFilteringPanel: Component = () => {
   const [draft, setDraft] = createSignal("");
@@ -100,7 +101,7 @@ const MycelialFilteringPanel: Component = () => {
                         {term.source === "user" ? "your list" : "built-in"}
                       </span>
                       <span class="concept-filtering__count">
-                        {term.doc_count} {term.doc_count === 1 ? "note" : "notes"}
+                        {tPlural("common.note", term.doc_count)}
                       </span>
                     </span>
                   </div>
