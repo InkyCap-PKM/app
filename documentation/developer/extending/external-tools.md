@@ -30,14 +30,21 @@ Each tool is:
   "command": "/usr/bin/mytool", // absolute path to the executable
   "args": ["--lang", "en"],   // passed as a vector (no shell)
   "input": "selection",       // "selection" | "note" | "none"  → stdin
-  "output": "replace"         // "replace" | "insert" | "notify" → result
+  "output": "replace"         // "replace" | "insert" | "notify" | "panel" → result
 }
 ```
 
 - **`input`** — what InkyCap writes to stdin: the current `selection`, the whole
   `note`, or `none`.
-- **`output`** — what InkyCap does with stdout: `replace` the selection, `insert`
-  at the cursor, or `notify` (show it, leave the document untouched).
+- **`output`** — what InkyCap does with stdout:
+  - `replace` — overwrite the selection with the result.
+  - `insert` — drop the result in at the cursor.
+  - `notify` — show it as a transient toast; the document is untouched. Best for
+    one-line results.
+  - `panel` — show it in a **persistent right-panel pane** (a tab named after the
+    tool, beside Properties / Outline / Links). The document is untouched.
+    Best for multi-line output you want to keep visible while editing (a
+    grammar or lint report). Re-running the tool refreshes the same pane.
 
 ### Argument placeholders
 
@@ -74,7 +81,8 @@ text-transform just reads stdin.
 
 **Grammar check via a local LanguageTool server** — a tiny wrapper script that
 reads stdin, POSTs to `http://localhost:8081/v2/check`, and prints a report;
-register it with `input: "note"`, `output: "notify"`.
+register it with `input: "note"`, `output: "panel"` so the report stays open in
+a side pane while you fix the note.
 
 **AI rewrite** — a script that reads the selection from stdin, calls your LLM
 provider of choice (key from *your* environment, not InkyCap), and prints the

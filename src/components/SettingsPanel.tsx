@@ -2679,6 +2679,7 @@ function ExtensionsSettingsSection() {
                 { value: "replace", label: t("settings.extensions.output.replace") },
                 { value: "insert", label: t("settings.extensions.output.insert") },
                 { value: "notify", label: t("settings.extensions.output.notify") },
+                { value: "panel", label: t("settings.extensions.output.panel") },
               ]}
               onChange={(v) => patch(i(), { output: v as ExternalTool["output"] })}
             />

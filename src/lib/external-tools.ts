@@ -11,6 +11,7 @@ import { getActiveTab } from "../stores/tabs";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { runExternalTool } from "./ipc";
 import { registerPaletteSource } from "../editor/typst-decorations/palette-registry";
+import { showToolOutputPane } from "../components/ToolOutputPane";
 import { t } from "./i18n";
 import type { ExternalTool } from "./types";
 
@@ -34,6 +35,12 @@ async function runTool(view: EditorView, tool: ExternalTool): Promise<void> {
       // Show the output (trimmed/capped); never touch the document.
       const text = result.stdout.trim();
       toastSuccess(text ? text.slice(0, 500) : tool.name);
+      return;
+    }
+    if (result.output === "panel") {
+      // Persistent right-panel pane — for multi-line output you want to keep
+      // visible while editing. Never touches the document.
+      showToolOutputPane(tool.id, tool.name, result.stdout);
       return;
     }
     // "replace" overwrites the selection; "insert" drops the result in at the

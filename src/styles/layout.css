@@ -2049,6 +2049,17 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* External-tool output pane ("panel" output disposition). Monospace,
+   soft-wrapped stdout that the user can read while editing. */
+.tool-output__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+  margin: 0;
+}
+
 .right-panel__add-btn {
   background: none;
   border: 1px dashed var(--border-input);

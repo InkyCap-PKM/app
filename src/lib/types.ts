@@ -449,8 +449,10 @@ export interface ExternalTool {
   args: string[];
   /** What is written to the tool's stdin. */
   input: "selection" | "note" | "none";
-  /** What InkyCap does with the tool's stdout. */
-  output: "insert" | "replace" | "notify";
+  /** What InkyCap does with the tool's stdout: insert at the cursor, replace
+   *  the selection, show it transiently (`notify`), or show it in a persistent
+   *  right-panel pane (`panel`). */
+  output: "insert" | "replace" | "notify" | "panel";
 }
 
 /** User-global registry of external tools. */
@@ -463,7 +465,7 @@ export interface ExternalToolResult {
   /** The tool's stdout. */
   stdout: string;
   /** The configured output disposition, echoed from the tool's settings. */
-  output: "insert" | "replace" | "notify";
+  output: "insert" | "replace" | "notify" | "panel";
 }
 
 // ============================================================================
