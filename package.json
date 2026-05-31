@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "i18n:check": "node scripts/i18n-check.mjs",
     "postinstall": "patch-package",
     "tauri": "tauri",
     "icons": "npx tauri icon design-assets/inkycap-tile-ink.svg",
