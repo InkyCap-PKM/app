@@ -1,7 +1,7 @@
 import { Component, Show } from "solid-js";
 import { tabs, setTabDirty, type Tab } from "../../stores/tabs";
 import { focusPane, focusedPaneId, type LeafPane } from "../../stores/panes";
-import { t } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n";
 import { modifierKey } from "../../lib/platform";
 import CollectionTable from "../CollectionTable";
 import TypstEditor from "../TypstEditor";
@@ -11,11 +11,12 @@ import TabStrip from "./TabStrip";
 /// Tabula-rasa view shown when a pane's active tab is the `empty`
 /// placeholder (or it has no tab). The modifier glyph adapts to the host OS.
 const EmptyState: Component = () => {
+  const t = useI18n();
   const modifier = modifierKey();
   return (
     <div class="empty-state">
       <p class="empty-state__primary">{t("mainContent.emptyState")}</p>
-      <p>&nbsp;</p>
+      <p>{" "}</p>
       <p class="empty-state__hint">{t("mainContent.emptyState.shortcuts")}</p>
       <p class="empty-state__hint">{t("mainContent.emptyState.openFileHint", { modifier })}</p>
       <p class="empty-state__hint">{t("mainContent.emptyState.createFileHint", { modifier })}</p>

@@ -10,7 +10,7 @@ import {
   type Tab,
 } from "../../stores/tabs";
 import { focusPane, moveTabWithinLeaf, moveTab, type LeafPane } from "../../stores/panes";
-import { t } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n";
 import { isEnabled as isJournalScrollTab } from "../../stores/journal-scroll";
 import {
   BrainCircuit,
@@ -35,6 +35,7 @@ interface TabDragPayload {
  * new-tab button, and the pane menu (`PanelTopOpen`) at the right edge.
  */
 const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
+  const t = useI18n();
   // Drag state is local to this strip; it only drives the visual insertion
   // cue. The actual move reads the tab id + source pane from the dataTransfer
   // payload, so a drag that started in another pane lands correctly here.
@@ -177,7 +178,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
         <button
           class="tab-bar__scroll tab-bar__scroll--left"
           onClick={() => scrollTabs(-1)}
-          aria-label="Scroll tabs left"
+          aria-label={t("tabStrip.scrollLeft")}
         >
           <ChevronLeft size={14} />
         </button>
@@ -237,7 +238,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
         <button
           class="tab-bar__scroll tab-bar__scroll--right"
           onClick={() => scrollTabs(1)}
-          aria-label="Scroll tabs right"
+          aria-label={t("tabStrip.scrollRight")}
         >
           <ChevronRight size={14} />
         </button>
@@ -248,7 +249,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
           focusPane(props.leaf.id);
           createEmptyTab();
         }}
-        title="New tab"
+        title={t("tabStrip.newTab")}
       >
         {"+"}
       </button>

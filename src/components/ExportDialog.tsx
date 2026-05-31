@@ -4,65 +4,52 @@ import { exportDefault, rememberExportFile } from "../lib/dialog-defaults";
 import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
+import { t } from "../lib/i18n";
 
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
 
-const REVIEW_MARKUP_LABELS: Record<ReviewMarkupMode, string> = {
-  keep: "Keep tracked changes",
-  accept: "Accept all changes",
-  reject: "Reject all changes",
+// The review-markup labels match the collection-table export menu, so they
+// reuse the same `collection.table.reviewMarkup.*` keys (resolved inline).
+const REVIEW_MARKUP_HINT_KEYS: Record<ReviewMarkupMode, string> = {
+  keep: "export.reviewHint.keep",
+  accept: "export.reviewHint.accept",
+  reject: "export.reviewHint.reject",
 };
 
-const REVIEW_MARKUP_HINTS: Record<ReviewMarkupMode, string> = {
-  keep: "Suggestions and review notes render as tracked-change marks in the output.",
-  accept: "Suggested changes are applied and review notes removed — a clean published copy.",
-  reject: "Suggested changes are discarded (original text kept) and review notes removed.",
+// `labelKey` resolves the display name (also used as the file-dialog filter
+// name); `ext`/`pandoc` are logic. See `formatLabel`.
+const FORMAT_INFO: Record<ExportFormat, { labelKey: string; ext: string; pandoc: boolean }> = {
+  pdf: { labelKey: "export.format.pdf", ext: "pdf", pandoc: false },
+  typ: { labelKey: "export.format.typ", ext: "typ", pandoc: false },
+  "typst-html": { labelKey: "export.format.typstHtml", ext: "html", pandoc: false },
+  markdown: { labelKey: "export.format.markdown", ext: "md", pandoc: false },
+  odt: { labelKey: "export.format.odt", ext: "odt", pandoc: true },
+  docx: { labelKey: "export.format.docx", ext: "docx", pandoc: true },
+  latex: { labelKey: "export.format.latex", ext: "tex", pandoc: true },
+  "pandoc-pdf": { labelKey: "export.format.pandocPdf", ext: "pdf", pandoc: true },
 };
 
-const FORMAT_INFO: Record<ExportFormat, { label: string; ext: string; pandoc: boolean }> = {
-  pdf: { label: "PDF (.pdf)", ext: "pdf", pandoc: false },
-  typ: { label: "Self-contained (.typ)", ext: "typ", pandoc: false },
-  "typst-html": { label: "HTML (.html)", ext: "html", pandoc: false },
-  markdown: { label: "Markdown (.md)", ext: "md", pandoc: false },
-  odt: { label: "OpenDocument (.odt)", ext: "odt", pandoc: true },
-  docx: { label: "Word (.docx)", ext: "docx", pandoc: true },
-  latex: { label: "LaTeX (.tex)", ext: "tex", pandoc: true },
-  "pandoc-pdf": { label: "PDF with properties (.pdf)", ext: "pdf", pandoc: true },
+const formatLabel = (fmt: ExportFormat): string => t(FORMAT_INFO[fmt].labelKey);
+
+const METADATA_LABEL_KEYS: Record<MetadataMode, string> = {
+  exclude: "export.metadata.exclude",
+  properties: "export.metadata.properties",
 };
 
-const METADATA_LABELS: Record<MetadataMode, string> = {
-  exclude: "Exclude metadata",
-  properties: "Include as document properties",
+// i18n keys for the per-format metadata hints (format ids → camelCase segment).
+const METADATA_HINT_KEYS: Partial<Record<ExportFormat, Partial<Record<MetadataMode, string>>>> = {
+  pdf: { exclude: "export.metaHint.pdf.exclude", properties: "export.metaHint.pdf.properties" },
+  "typst-html": { exclude: "export.metaHint.typstHtml.exclude", properties: "export.metaHint.typstHtml.properties" },
+  docx: { exclude: "export.metaHint.docx.exclude", properties: "export.metaHint.docx.properties" },
+  odt: { exclude: "export.metaHint.odt.exclude", properties: "export.metaHint.odt.properties" },
+  "pandoc-pdf": { exclude: "export.metaHint.pandocPdf.exclude", properties: "export.metaHint.pandocPdf.properties" },
 };
 
-const METADATA_HINTS: Partial<Record<ExportFormat, Partial<Record<MetadataMode, string>>>> = {
-  pdf: {
-    exclude: "The #note() properties will not appear in the PDF metadata.",
-    properties: "Title, author, date, and tags from #note() will be set as PDF document properties.",
-  },
-  "typst-html": {
-    exclude: "The #note() properties will not appear in the HTML.",
-    properties: "Properties will appear as <meta> tags in the HTML <head>.",
-  },
-  docx: {
-    exclude: "The #note() properties will be stripped from the output.",
-    properties: "Properties like title, author, date will be set as Word document properties (File > Properties).",
-  },
-  odt: {
-    exclude: "The #note() properties will be stripped from the output.",
-    properties: "Properties like title, author, date will be set as document properties (File > Properties).",
-  },
-  "pandoc-pdf": {
-    exclude: "The #note() properties will be stripped from the output.",
-    properties: "Title, author, date, and tags will be set as PDF document properties via Pandoc/LaTeX.",
-  },
-};
-
-const PDF_STANDARD_OPTIONS: { value: PdfStandardPreset; label: string; description: string }[] = [
-  { value: "standard", label: "Standard (PDF 1.7)", description: "Default Typst output. Widely compatible." },
-  { value: "pdf-a4", label: "PDF/A-4 (archival)", description: "Long-term archival format based on PDF 2.0. Suitable for institutional repositories." },
-  { value: "pdf-ua1", label: "PDF/UA-1 (accessible)", description: "Universal Accessibility. Produces fully tagged, structured PDF for assistive technologies." },
+const PDF_STANDARD_OPTIONS: { value: PdfStandardPreset; labelKey: string; descKey: string }[] = [
+  { value: "standard", labelKey: "collection.table.pdfStandard.standard", descKey: "export.pdfDesc.standard" },
+  { value: "pdf-a4", labelKey: "collection.table.pdfStandard.pdfa4", descKey: "export.pdfDesc.pdfa4" },
+  { value: "pdf-ua1", labelKey: "collection.table.pdfStandard.pdfua1", descKey: "export.pdfDesc.pdfua1" },
 ];
 
 function supportsMetadataMode(fmt: ExportFormat): boolean {
@@ -141,10 +128,11 @@ const ExportDialog: Component = () => {
     if (e.key === "Escape") close();
   }
 
-  function metadataHint(): string | undefined {
+  /** i18n key for the active format+mode metadata hint, or undefined. */
+  function metadataHintKey(): string | undefined {
     const fmt = format();
     const mode = metadataMode();
-    return METADATA_HINTS[fmt]?.[mode];
+    return METADATA_HINT_KEYS[fmt]?.[mode];
   }
 
   async function doExport() {
@@ -154,7 +142,7 @@ const ExportDialog: Component = () => {
     setSuccess(null);
 
     if (info.pandoc && !pandocAvailable()) {
-      setError("Pandoc is not installed or not found. Install Pandoc or set a custom path in Settings > Export.");
+      setError(t("export.pandocNotInstalled"));
       return;
     }
 
@@ -162,18 +150,18 @@ const ExportDialog: Component = () => {
       if (fmt === "typ") {
         const outputPath = await save({
           defaultPath: await exportDefault(`${fileName()}.typ`),
-          filters: [{ name: "Typst", extensions: ["typ"] }],
+          filters: [{ name: t("export.filter.typst"), extensions: ["typ"] }],
         });
         if (!outputPath) return;
         await rememberExportFile(outputPath);
 
         setExporting(true);
         await ipc.exportSelfContainedTyp(filePath(), outputPath, reviewMode());
-        setSuccess(`Exported to ${outputPath}`);
+        setSuccess(t("export.exportedTo", { path: outputPath }));
       } else if (fmt === "pdf") {
         const outputPath = await save({
           defaultPath: await exportDefault(`${fileName()}.pdf`),
-          filters: [{ name: "PDF", extensions: ["pdf"] }],
+          filters: [{ name: t("export.filter.pdf"), extensions: ["pdf"] }],
         });
         if (!outputPath) return;
         await rememberExportFile(outputPath);
@@ -186,11 +174,11 @@ const ExportDialog: Component = () => {
         } else {
           await ipc.exportNotePdfToFile(filePath(), outputPath, metadataMode(), std, includeBib, reviewMode());
         }
-        setSuccess(`Exported to ${outputPath}`);
+        setSuccess(t("export.exportedTo", { path: outputPath }));
       } else if (fmt === "markdown") {
         const outputPath = await save({
           defaultPath: await exportDefault(`${fileName()}.md`),
-          filters: [{ name: "Markdown", extensions: ["md"] }],
+          filters: [{ name: t("export.filter.markdown"), extensions: ["md"] }],
         });
         if (!outputPath) return;
         await rememberExportFile(outputPath);
@@ -202,11 +190,11 @@ const ExportDialog: Component = () => {
           markdownPreserveTypst() ? "preserve" : "omit",
           reviewMode(),
         );
-        setSuccess(`Exported to ${outputPath}`);
+        setSuccess(t("export.exportedTo", { path: outputPath }));
       } else if (fmt === "typst-html") {
         const outputPath = await save({
           defaultPath: await exportDefault(`${fileName()}.html`),
-          filters: [{ name: "HTML", extensions: ["html"] }],
+          filters: [{ name: t("export.filter.html"), extensions: ["html"] }],
         });
         if (!outputPath) return;
         await rememberExportFile(outputPath);
@@ -214,19 +202,19 @@ const ExportDialog: Component = () => {
         setExporting(true);
         const includeBib = includeBibliography() ? undefined : false;
         await ipc.exportNoteHtml(filePath(), outputPath, metadataMode(), stripWikilinks(), includeBib, reviewMode());
-        setSuccess(`Exported to ${outputPath}`);
+        setSuccess(t("export.exportedTo", { path: outputPath }));
       } else {
         // Pandoc formats (including pandoc-pdf)
         const outputPath = await save({
           defaultPath: await exportDefault(`${fileName()}.${info.ext}`),
-          filters: [{ name: info.label, extensions: [info.ext] }],
+          filters: [{ name: formatLabel(fmt), extensions: [info.ext] }],
         });
         if (!outputPath) return;
         await rememberExportFile(outputPath);
 
         setExporting(true);
         await ipc.exportViaPandoc(filePath(), outputPath, fmt, metadataMode(), reviewMode());
-        setSuccess(`Exported to ${outputPath}`);
+        setSuccess(t("export.exportedTo", { path: outputPath }));
       }
 
       if (extractFigures()) {
@@ -239,12 +227,12 @@ const ExportDialog: Component = () => {
           const figDir = `${dir}/${fileName()}-figures`;
           const figures = await ipc.exportFigures(filePath(), figDir);
           if (figures.length > 0) {
-            setSuccess((prev) => `${prev}\nExtracted ${figures.length} figure(s) to ${figDir}`);
+            setSuccess((prev) => `${prev}\n${t("export.extractedFigures", { count: figures.length, dir: figDir })}`);
           }
         }
       }
     } catch (e: any) {
-      setError(e?.toString() ?? "Export failed");
+      setError(e?.toString() ?? t("export.exportFailed"));
     } finally {
       setExporting(false);
     }
@@ -259,8 +247,8 @@ const ExportDialog: Component = () => {
       >
         <div class="export-dialog">
           <div class="export-dialog__header">
-            <h3>Export</h3>
-            <button class="export-dialog__close" onClick={close}>&times;</button>
+            <h3>{t("export.title")}</h3>
+            <button class="export-dialog__close" onClick={close} aria-label={t("common.close")}>×</button>
           </div>
 
           <div class="export-dialog__body">
@@ -270,88 +258,91 @@ const ExportDialog: Component = () => {
 
             <Show when={collectionPath()}>
               <div class="export-dialog__hint">
-                Exporting with collection template and bibliography style applied.
+                {t("export.collectionHint")}
               </div>
             </Show>
 
             <div class="export-dialog__field">
-              <label>Format</label>
+              <label>{t("export.formatLabel")}</label>
               <Dropdown<ExportFormat>
                 class="dropdown--block"
                 value={format()}
                 options={[
-                  { value: "pdf", label: FORMAT_INFO.pdf.label, group: "Typst" },
-                  { value: "typ", label: FORMAT_INFO.typ.label, group: "Typst" },
-                  { value: "typst-html", label: FORMAT_INFO["typst-html"].label, group: "Typst" },
-                  { value: "markdown", label: FORMAT_INFO.markdown.label, group: "Typst" },
-                  { value: "odt", label: FORMAT_INFO.odt.label, group: "Via Pandoc" },
-                  { value: "docx", label: FORMAT_INFO.docx.label, group: "Via Pandoc" },
-                  { value: "latex", label: FORMAT_INFO.latex.label, group: "Via Pandoc" },
-                  { value: "pandoc-pdf", label: FORMAT_INFO["pandoc-pdf"].label, group: "Via Pandoc" },
+                  { value: "pdf", label: formatLabel("pdf"), group: t("export.group.typst") },
+                  { value: "typ", label: formatLabel("typ"), group: t("export.group.typst") },
+                  { value: "typst-html", label: formatLabel("typst-html"), group: t("export.group.typst") },
+                  { value: "markdown", label: formatLabel("markdown"), group: t("export.group.typst") },
+                  { value: "odt", label: formatLabel("odt"), group: t("export.group.pandoc") },
+                  { value: "docx", label: formatLabel("docx"), group: t("export.group.pandoc") },
+                  { value: "latex", label: formatLabel("latex"), group: t("export.group.pandoc") },
+                  { value: "pandoc-pdf", label: formatLabel("pandoc-pdf"), group: t("export.group.pandoc") },
                 ]}
                 onChange={setFormat}
-                ariaLabel="Export format"
+                ariaLabel={t("export.formatAria")}
               />
             </div>
 
             <Show when={reviewMarkupCount() > 0}>
               <div class="export-dialog__field">
-                <label>Review markup</label>
+                <label>{t("collection.table.reviewMarkup")}</label>
                 <Dropdown<ReviewMarkupMode>
                   class="dropdown--block"
                   value={reviewMode()}
                   options={[
-                    { value: "keep", label: REVIEW_MARKUP_LABELS.keep },
-                    { value: "accept", label: REVIEW_MARKUP_LABELS.accept },
-                    { value: "reject", label: REVIEW_MARKUP_LABELS.reject },
+                    { value: "keep", label: t("collection.table.reviewMarkup.keep") },
+                    { value: "accept", label: t("collection.table.reviewMarkup.accept") },
+                    { value: "reject", label: t("collection.table.reviewMarkup.reject") },
                   ]}
                   onChange={setReviewMode}
-                  ariaLabel="Review markup"
+                  ariaLabel={t("collection.table.reviewMarkup")}
                 />
-                <span class="export-dialog__hint">{REVIEW_MARKUP_HINTS[reviewMode()]}</span>
+                <span class="export-dialog__hint">{t(REVIEW_MARKUP_HINT_KEYS[reviewMode()])}</span>
               </div>
             </Show>
 
             <Show when={supportsPdfStandard(format())}>
               <div class="export-dialog__field">
-                <label>PDF standard</label>
+                <label>{t("collection.table.pdfStandard")}</label>
                 <Dropdown<PdfStandardPreset>
                   class="dropdown--block"
                   value={pdfStandard()}
                   options={PDF_STANDARD_OPTIONS.map((opt) => ({
                     value: opt.value,
-                    label: opt.label,
+                    label: t(opt.labelKey),
                   }))}
                   onChange={setPdfStandard}
-                  ariaLabel="PDF standard"
+                  ariaLabel={t("collection.table.pdfStandard")}
                 />
                 <span class="export-dialog__hint">
-                  {PDF_STANDARD_OPTIONS.find((o) => o.value === pdfStandard())?.description}
+                  {(() => {
+                    const o = PDF_STANDARD_OPTIONS.find((o) => o.value === pdfStandard());
+                    return o ? t(o.descKey) : "";
+                  })()}
                 </span>
               </div>
             </Show>
 
             <Show when={FORMAT_INFO[format()].pandoc && !pandocAvailable()}>
               <div class="export-dialog__warning">
-                Pandoc not found. Install it or set a custom path in Settings.
+                {t("export.pandocNotFoundWarn")}
               </div>
             </Show>
 
             <Show when={supportsMetadataMode(format())}>
               <div class="export-dialog__field">
-                <label>Note metadata</label>
+                <label>{t("export.noteMetadata")}</label>
                 <Dropdown<MetadataMode>
                   class="dropdown--block"
                   value={metadataMode()}
                   options={[
-                    { value: "exclude", label: METADATA_LABELS.exclude },
-                    { value: "properties", label: METADATA_LABELS.properties },
+                    { value: "exclude", label: t(METADATA_LABEL_KEYS.exclude) },
+                    { value: "properties", label: t(METADATA_LABEL_KEYS.properties) },
                   ]}
                   onChange={setMetadataMode}
-                  ariaLabel="Note metadata"
+                  ariaLabel={t("export.noteMetadata")}
                 />
-                <Show when={metadataHint()}>
-                  <span class="export-dialog__hint">{metadataHint()}</span>
+                <Show when={metadataHintKey()}>
+                  <span class="export-dialog__hint">{t(metadataHintKey()!)}</span>
                 </Show>
               </div>
             </Show>
@@ -364,12 +355,12 @@ const ExportDialog: Component = () => {
                     checked={includeBibliography()}
                     onChange={(e) => setIncludeBibliography(e.currentTarget.checked)}
                   />
-                  Include bibliography in output
+                  {t("export.includeBib")}
                 </label>
                 <span class="export-dialog__hint">
                   {includeBibliography()
-                    ? "The bibliography will appear at the end of the document."
-                    : "Citations resolve normally, but the rendered bibliography is omitted from the output."}
+                    ? t("export.includeBibOn")
+                    : t("export.includeBibOff")}
                 </span>
               </div>
             </Show>
@@ -381,7 +372,7 @@ const ExportDialog: Component = () => {
                   checked={extractFigures()}
                   onChange={(e) => setExtractFigures(e.currentTarget.checked)}
                 />
-                Extract figures alongside export
+                {t("export.extractFigures")}
               </label>
             </div>
 
@@ -393,7 +384,7 @@ const ExportDialog: Component = () => {
                     checked={stripWikilinks()}
                     onChange={(e) => setStripWikilinks(e.currentTarget.checked)}
                   />
-                  Remove internal links (wikilinks)
+                  {t("export.stripWikilinks")}
                 </label>
               </div>
             </Show>
@@ -406,12 +397,12 @@ const ExportDialog: Component = () => {
                     checked={markdownPreserveTypst()}
                     onChange={(e) => setMarkdownPreserveTypst(e.currentTarget.checked)}
                   />
-                  Preserve unconvertible Typst markup (as code blocks)
+                  {t("export.preserveTypst")}
                 </label>
                 <span class="export-dialog__hint">
                   {markdownPreserveTypst()
-                    ? "Typst-only constructs will be wrapped in ```typst code blocks so no content is lost."
-                    : "Typst-only constructs will be omitted for a cleaner markdown file."}
+                    ? t("export.preserveTypstOn")
+                    : t("export.preserveTypstOff")}
                 </span>
               </div>
             </Show>
@@ -422,8 +413,8 @@ const ExportDialog: Component = () => {
                 <button
                   type="button"
                   class="export-dialog__error-close"
-                  aria-label="Dismiss error"
-                  title="Dismiss"
+                  aria-label={t("collection.table.dismissError")}
+                  title={t("common.dismiss")}
                   onClick={() => setError(null)}
                 >
                   ✕
@@ -438,14 +429,14 @@ const ExportDialog: Component = () => {
 
           <div class="export-dialog__footer">
             <button class="export-dialog__btn--secondary" onClick={close}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               class="export-dialog__btn--primary"
               onClick={doExport}
               disabled={exporting() || (FORMAT_INFO[format()].pandoc && !pandocAvailable())}
             >
-              {exporting() ? "Exporting..." : "Export"}
+              {exporting() ? t("export.exporting") : t("export.title")}
             </button>
           </div>
         </div>

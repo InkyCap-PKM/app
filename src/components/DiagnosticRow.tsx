@@ -4,8 +4,11 @@
 
 import { Component, For, Show } from "solid-js";
 import type { TypstDiagnostic } from "../lib/types";
+import { useI18n } from "../lib/i18n";
 
-export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => (
+export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => {
+  const t = useI18n();
+  return (
   <div
     class="typst-reading__diagnostic"
     classList={{
@@ -29,9 +32,10 @@ export const DiagnosticRow: Component<{ d: TypstDiagnostic }> = (props) => (
     <Show when={props.d.hints.length > 0}>
       <div class="typst-reading__diagnostic-hints">
         <For each={props.d.hints}>
-          {(h) => <div>hint: {h}</div>}
+          {(h) => <div>{t("diagnostic.hint", { text: h })}</div>}
         </For>
       </div>
     </Show>
   </div>
-);
+  );
+};

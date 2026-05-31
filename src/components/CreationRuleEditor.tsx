@@ -21,6 +21,7 @@ import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
 import { Dropdown } from "./Dropdown";
 import { toastError, toastWarning } from "../stores/toasts";
+import { useI18n } from "../lib/i18n";
 
 // ── Hotkey conflict detection ──────────────────────────────────
 
@@ -34,6 +35,32 @@ function findHotkeyConflict(
 }
 
 const CreationRuleEditor: Component = () => {
+  const t = useI18n();
+  // Built-in rules ship English name/description seeded by the backend
+  // (src-tauri/src/creation_rules/mod.rs). Translate them for display ONLY
+  // while the stored value still matches that seed — once a user edits the
+  // field, their text is shown verbatim. If the backend seed ever changes,
+  // the comparison simply misses and we fall back to the raw value, so this
+  // degrades to untranslated rather than breaking.
+  const BUILTIN_SEED: Record<string, { name: string; description: string }> = {
+    "new-note": {
+      name: "New Note",
+      description:
+        "Create a new note. This rule is used by the file tree's New Note button and Ctrl+N.",
+    },
+    "daily-note": {
+      name: "Daily Note",
+      description: "Create or open today's daily note",
+    },
+  };
+  const displayRuleName = (rule: CreationRule) =>
+    rule.builtin && BUILTIN_SEED[rule.id]?.name === rule.name
+      ? t(`creationRules.builtin.${rule.id}.name`)
+      : rule.name;
+  const displayRuleDescription = (rule: CreationRule) =>
+    rule.builtin && BUILTIN_SEED[rule.id]?.description === rule.description
+      ? t(`creationRules.builtin.${rule.id}.description`)
+      : rule.description || rule.filename_pattern;
   const [refreshTick, setRefreshTick] = createSignal(0);
   const [editingRule, setEditingRule] = createSignal<CreationRule | null>(null);
   const [hotkeyConflict, setHotkeyConflict] = createSignal<string | null>(null);
@@ -136,7 +163,7 @@ const CreationRuleEditor: Component = () => {
           return;
         }
       } catch (e) {
-        toastError("Failed to fetch default rule", e);
+        toastError(t("creationRules.fetchDefaultFailed"), e);
         return;
       }
     }
@@ -150,7 +177,7 @@ const CreationRuleEditor: Component = () => {
       refresh();
       void loadCreationRules();
     } catch (e) {
-      toastError("Failed to update rule", e);
+      toastError(t("creationRules.updateFailed"), e);
     }
   }
 
@@ -166,7 +193,7 @@ const CreationRuleEditor: Component = () => {
       if (conflict) {
         setHotkeyConflict(conflict);
         toastWarning(
-          `Cannot save: ${rule.hotkey} is already bound to "${conflict}". Clear the hotkey or pick another.`,
+          t("creationRules.cannotSaveConflict", { hotkey: rule.hotkey, conflict }),
         );
         return;
       }
@@ -177,19 +204,19 @@ const CreationRuleEditor: Component = () => {
       refresh();
       void loadCreationRules();
     } catch (e) {
-      toastError("Failed to save rule", e);
+      toastError(t("creationRules.saveFailed"), e);
     }
   }
 
   async function deleteRule(id: string) {
-    const confirmed = confirm("Delete this creation rule?");
+    const confirmed = confirm(t("creationRules.deleteConfirm"));
     if (!confirmed) return;
     try {
       await ipc.deleteCreationRule(id);
       refresh();
       void loadCreationRules();
     } catch (e) {
-      toastError("Failed to delete rule", e);
+      toastError(t("creationRules.deleteFailed"), e);
     }
   }
 
@@ -232,7 +259,7 @@ const CreationRuleEditor: Component = () => {
         // closes silently otherwise, which reads as "did it take?").
         setHotkeyConflict(conflict);
         toastWarning(
-          `${combo} is already bound to "${conflict}". Pick another combination or clear that binding first.`,
+          t("creationRules.hotkeyConflictToast", { combo, conflict }),
         );
         setRecordingHotkey(false);
         return;
@@ -252,22 +279,22 @@ const CreationRuleEditor: Component = () => {
   return (
     <div class="settings__section">
       <div class="creation-rules__header">
-        <span class="settings__label">Creation Rules</span>
+        <span class="settings__label">{t("creationRules.heading")}</span>
         <button
           class="creation-rules__add-btn"
           onClick={startNew}
           disabled={editingRule() !== null}
           title={
             editingRule() !== null
-              ? "Save or cancel the current rule before creating another"
+              ? t("creationRules.addDisabledTooltip")
               : undefined
           }
         >
-          + New Rule
+          {t("creationRules.add")}
         </button>
       </div>
       <p class="settings__description" style={{ "margin-bottom": "12px" }}>
-        Define your presets for creating new notes.
+        {t("creationRules.intro")}
       </p>
 
       {/* Editing form */}
@@ -276,28 +303,28 @@ const CreationRuleEditor: Component = () => {
           <div class="creation-rules__form">
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Name</label>
+                <label class="settings__label">{t("creationRules.name")}</label>
               </div>
               <input
                 type="text"
                 class="settings__text-input"
                 value={rule().name}
                 onInput={(e) => updateField("name", e.currentTarget.value)}
-                placeholder="My Rule"
+                placeholder={t("creationRules.namePlaceholder")}
               />
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Icon</label>
+                <label class="settings__label">{t("creationRules.icon")}</label>
                 <span class="settings__description">
-                  Default: first 2 characters of name. Override with text or pick an SVG icon.
+                  {t("creationRules.iconDescription")}
                 </span>
               </div>
               <div class="creation-rules__icon-field">
                 <span
                   class="creation-rules__icon-preview"
                   aria-hidden="true"
-                  title="Current icon"
+                  title={t("creationRules.iconCurrentTitle")}
                 >
                   <RuleIcon
                     iconEmoji={rule().icon_emoji}
@@ -313,7 +340,7 @@ const CreationRuleEditor: Component = () => {
                   onInput={(e) =>
                     updateField("icon_emoji", e.currentTarget.value)
                   }
-                  placeholder={rule().name.slice(0, 2) || "Ab"}
+                  placeholder={rule().name.slice(0, 2) || t("creationRules.iconPlaceholderFallback")}
                 />
                 <LucideIconPicker
                   value={rule().icon_emoji}
@@ -323,10 +350,11 @@ const CreationRuleEditor: Component = () => {
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Filename pattern</label>
+                <label class="settings__label">{t("creationRules.filenamePattern")}</label>
                 <span class="settings__description">
-                  Variables: {"{{title}}"}, {"{{slug}}"}, {"{{date}}"},
-                  {"{{date:FORMAT}}"}, {"{{time}}"}, {"{{zid}}"} or leave blank to be prompted on creation.
+                  {t("creationRules.filenamePatternDescription", {
+                    vars: "{{title}}, {{slug}}, {{date}}, {{date:FORMAT}}, {{time}}, {{zid}}",
+                  })}
                 </span>
               </div>
               <input
@@ -336,18 +364,20 @@ const CreationRuleEditor: Component = () => {
                 onInput={(e) =>
                   updateField("filename_pattern", e.currentTarget.value)
                 }
-                placeholder="{{date:YYYYMMDDHHmmss}}"
+                placeholder={"{{date:YYYYMMDDHHmmss}}" /* i18n-exempt: pattern-token example */}
               />
             </div>
 
             {/* Target folder with autocomplete */}
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Target folder</label>
+                <label class="settings__label">{t("creationRules.targetFolder")}</label>
                 <span class="settings__description">
-                  Relative to notebox root. Empty falls back to{" "}
-                  <em>New note location</em> from Files & Links. Supports{" "}
-                  {"{{date:FORMAT}}"}, {"{{title}}"}, {"{{slug}}"} variables.
+                  {t("creationRules.targetFolderDescriptionBefore")}{" "}
+                  <em>{t("creationRules.newNoteLocation")}</em>{" "}
+                  {t("creationRules.targetFolderDescriptionAfter", {
+                    vars: "{{date:FORMAT}}, {{title}}, {{slug}}",
+                  })}
                 </span>
               </div>
               <div style={{ position: "relative", width: "200px", "flex-shrink": 0 }}>
@@ -367,7 +397,7 @@ const CreationRuleEditor: Component = () => {
                   onBlur={() => {
                     setTimeout(() => setFolderDropdownOpen(false), 150);
                   }}
-                  placeholder="e.g. Daily/{{date:YYYY}}"
+                  placeholder={t("creationRules.targetFolderPlaceholder")}
                 />
                 <Show when={folderDropdownOpen() && filteredFolders().length > 0}>
                   <div class="creation-rules__folder-dropdown">
@@ -391,28 +421,28 @@ const CreationRuleEditor: Component = () => {
 
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Scaffold file</label>
+                <label class="settings__label">{t("creationRules.scaffold")}</label>
                 <span class="settings__description">
-                  Starting content for new notes. Supports {"{{title}}"},{" "}
-                  {"{{slug}}"}, {"{{date}}"}, {"{{cursor}}"}, {"{{zid}}"} placeholders.
+                  {t("creationRules.scaffoldDescription", {
+                    vars: "{{title}}, {{slug}}, {{date}}, {{cursor}}, {{zid}}",
+                  })}
                 </span>
               </div>
               <Dropdown<string>
                 value={rule().scaffold_path}
                 options={[
-                  { value: "", label: "None" },
+                  { value: "", label: t("common.none") },
                   ...(scaffolds() ?? []).map((s) => ({ value: s, label: s })),
                 ]}
                 onChange={(v) => updateField("scaffold_path", v)}
-                ariaLabel="Scaffold file"
+                ariaLabel={t("creationRules.scaffold")}
               />
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Typst template</label>
+                <label class="settings__label">{t("creationRules.typstTemplate")}</label>
                 <span class="settings__description">
-                  Template name (e.g. "ieee") resolved from your templates folder,
-                  or a full notebox path (e.g. "/templates/ieee.typ").
+                  {t("creationRules.typstTemplateDescription")}
                 </span>
               </div>
               <input
@@ -422,30 +452,30 @@ const CreationRuleEditor: Component = () => {
                 onInput={(e) =>
                   updateField("typst_template", e.currentTarget.value)
                 }
-                placeholder="e.g. ieee or /templates/ieee.typ"
+                placeholder={t("creationRules.typstTemplatePlaceholder")}
               />
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Creation mode</label>
+                <label class="settings__label">{t("creationRules.creationMode")}</label>
               </div>
               <Dropdown<"create" | "create_and_open">
                 value={rule().creation_mode}
                 options={[
-                  { value: "create_and_open", label: "Create and open" },
-                  { value: "create", label: "Create only" },
+                  { value: "create_and_open", label: t("creationRules.creationMode.createAndOpen") },
+                  { value: "create", label: t("creationRules.creationMode.create") },
                 ]}
                 onChange={(v) => updateField("creation_mode", v)}
-                ariaLabel="Creation mode"
+                ariaLabel={t("creationRules.creationMode")}
               />
             </div>
 
             {/* Hotkey capture */}
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Hotkey</label>
+                <label class="settings__label">{t("creationRules.hotkey")}</label>
                 <span class="settings__description">
-                  Click to record. Backspace to clear. Esc to cancel.
+                  {t("creationRules.hotkeyDescription")}
                 </span>
               </div>
               <div style={{ width: "200px", "flex-shrink": 0 }}>
@@ -471,12 +501,12 @@ const CreationRuleEditor: Component = () => {
                   }}
                 >
                   {recordingHotkey()
-                    ? "Press key combination..."
-                    : rule().hotkey ?? "None"}
+                    ? t("creationRules.hotkeyRecording")
+                    : rule().hotkey ?? t("common.none")}
                 </button>
                 <Show when={hotkeyConflict()}>
                   <span class="creation-rules__hotkey-conflict">
-                    Conflicts with: {hotkeyConflict()}
+                    {t("creationRules.hotkeyConflictBefore", { conflict: hotkeyConflict()! })}
                   </span>
                 </Show>
               </div>
@@ -484,7 +514,7 @@ const CreationRuleEditor: Component = () => {
 
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Show button in toolbar</label>
+                <label class="settings__label">{t("creationRules.showInToolbar")}</label>
               </div>
               <label class="settings__toggle">
                 <input
@@ -499,7 +529,7 @@ const CreationRuleEditor: Component = () => {
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">Description</label>
+                <label class="settings__label">{t("creationRules.description")}</label>
               </div>
               <textarea
                 class="settings__text-input creation-rules__description"
@@ -508,7 +538,7 @@ const CreationRuleEditor: Component = () => {
                 onInput={(e) =>
                   updateField("description", e.currentTarget.value)
                 }
-                placeholder="Optional description"
+                placeholder={t("creationRules.descriptionPlaceholder")}
               />
             </div>
 
@@ -518,24 +548,24 @@ const CreationRuleEditor: Component = () => {
                 onClick={saveRule}
                 disabled={!rule().name.trim()}
               >
-                Save
+                {t("common.save")}
               </button>
               <button
                 class="creation-rules__cancel-btn"
                 onClick={() => setEditingRule(null)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 class="creation-rules__restore-btn"
                 onClick={restoreDefaults}
                 title={
                   rule().builtin
-                    ? "Restore this built-in rule's seeded values"
-                    : "Reset all fields to a fresh rule template"
+                    ? t("creationRules.restoreBuiltinTooltip")
+                    : t("creationRules.restoreUserTooltip")
                 }
               >
-                Restore Defaults
+                {t("creationRules.restoreDefaults")}
               </button>
             </div>
           </div>
@@ -555,13 +585,13 @@ const CreationRuleEditor: Component = () => {
                 </span>
                 <div class="creation-rules__info">
                   <span class="creation-rules__name">
-                    {rule.name}
+                    {displayRuleName(rule)}
                     <Show when={rule.disabled}>
-                      <span class="creation-rules__disabled-tag"> (disabled)</span>
+                      <span class="creation-rules__disabled-tag">{t("creationRules.disabledTag")}</span>
                     </Show>
                   </span>
                   <span class="creation-rules__desc">
-                    {rule.description || rule.filename_pattern}
+                    {displayRuleDescription(rule)}
                   </span>
                 </div>
                 <Show when={rule.hotkey && !rule.disabled}>
@@ -573,7 +603,7 @@ const CreationRuleEditor: Component = () => {
                     onClick={() => startEdit(rule)}
                     disabled={editingRule() !== null}
                   >
-                    Edit
+                    {t("common.edit")}
                   </button>
                   {/* The new-note rule backs the file tree's New Note button
                       and Ctrl+N — disabling or deleting it would leave those
@@ -587,7 +617,7 @@ const CreationRuleEditor: Component = () => {
                           onClick={() => deleteRule(rule.id)}
                           disabled={editingRule() !== null}
                         >
-                          Delete
+                          {t("common.delete")}
                         </button>
                       }
                     >
@@ -597,11 +627,11 @@ const CreationRuleEditor: Component = () => {
                         disabled={editingRule() !== null}
                         title={
                           rule.disabled
-                            ? "Re-enable this built-in rule"
-                            : "Hide this built-in rule from the toolbar, command palette, and hotkeys"
+                            ? t("creationRules.enableTooltip")
+                            : t("creationRules.disableTooltip")
                         }
                       >
-                        {rule.disabled ? "Enable" : "Disable"}
+                        {rule.disabled ? t("creationRules.enable") : t("creationRules.disable")}
                       </button>
                     </Show>
                   </Show>

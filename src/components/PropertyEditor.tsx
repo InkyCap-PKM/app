@@ -4,6 +4,7 @@ import { propertyType } from "../stores/propertyTypes";
 import { sanitizeAlias } from "../lib/typst";
 import * as ipc from "../lib/ipc";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
+import { useI18n } from "../lib/i18n";
 import DatePicker from "./DatePicker";
 
 export interface PropertyEditorProps {
@@ -34,6 +35,9 @@ export function isTemplatePlaceholder(value: PropertyValue): value is string {
   return typeof value === "string" && /^\s*\{\{[^{}]+\}\}\s*$/.test(value);
 }
 
+/** Validate a value against its declared type. Returns an i18n key for the
+ *  error message (resolved by the caller through `useI18n`), or null when the
+ *  value is acceptable. */
 function validateValue(value: PropertyValue, declaredType: string): string | null {
   if (value === null || value === undefined || value === "") return null;
   // Template placeholders are valid in any field — they're not concrete
@@ -41,30 +45,31 @@ function validateValue(value: PropertyValue, declaredType: string): string | nul
   if (isTemplatePlaceholder(value)) return null;
   switch (declaredType) {
     case "number":
-      if (typeof value === "string" && isNaN(Number(value))) return "Expected a number";
+      if (typeof value === "string" && isNaN(Number(value))) return "property.editor.expectedNumber";
       break;
     case "checkbox":
-      if (typeof value !== "boolean") return "Expected true or false";
+      if (typeof value !== "boolean") return "property.editor.expectedBool";
       break;
     case "date":
       if (typeof value === "string" && !/^\d{4}-\d{2}-\d{2}$/.test(value))
-        return "Expected date (YYYY-MM-DD)";
+        return "property.editor.expectedDate";
       break;
     case "datetime":
       if (typeof value === "string" && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value))
-        return "Expected date and time";
+        return "property.editor.expectedDatetime";
       break;
     case "list":
-      if (!Array.isArray(value)) return "Expected a list";
+      if (!Array.isArray(value)) return "property.editor.expectedList";
       break;
     case "text":
-      if (typeof value !== "string" && !Array.isArray(value)) return "Expected text";
+      if (typeof value !== "string" && !Array.isArray(value)) return "property.editor.expectedText";
       break;
   }
   return null;
 }
 
 const PropertyEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   // If the registry declares an explicit type for this key, use it.
   // Otherwise fall back to inferring from the actual value (legacy
   // behavior) so untyped properties still render sensibly.
@@ -136,7 +141,7 @@ const PropertyEditor: Component<PropertyEditorProps> = (props) => {
         <CollectionEditor {...props} />
       </Show>
       <Show when={validationError()}>
-        {(err) => <span class="property-editor__error">{err()}</span>}
+        {(err) => <span class="property-editor__error">{t(err())}</span>}
       </Show>
     </div>
   );
@@ -179,6 +184,7 @@ function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
 }
 
 const StringEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   const [editing, setEditing] = createSignal(false);
 
   const displayValue = (): string => {
@@ -239,7 +245,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
               class={`property-editor__value${isEmpty() ? " property-editor__value--empty" : ""}`}
               onClick={startEdit}
             >
-              {isEmpty() ? "Empty" : displayValue()}
+              {isEmpty() ? t("property.editor.empty") : displayValue()}
             </span>
           }
         >
@@ -267,7 +273,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
         onInput={(e) => setDraft(e.currentTarget.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        placeholder="Empty"
+        placeholder={t("property.editor.empty")}
         ref={(el) => setTimeout(() => el.focus(), 0)}
       />
     </Show>
@@ -275,6 +281,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
 };
 
 const NumberEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal(String(props.value ?? ""));
   const [error, setError] = createSignal<string | null>(null);
@@ -310,7 +317,7 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
     }
     const num = parseFloat(raw);
     if (isNaN(num)) {
-      setError("Not a valid number");
+      setError("property.editor.notANumber");
       return;
     }
     setError(null);
@@ -333,7 +340,7 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
           class={`property-editor__value${isEmpty() ? " property-editor__value--empty" : ""}`}
           onClick={startEdit}
         >
-          {isEmpty() ? "Empty" : String(props.value)}
+          {isEmpty() ? t("property.editor.empty") : String(props.value)}
         </span>
       }
     >
@@ -345,11 +352,11 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
         onInput={(e) => setDraft(e.currentTarget.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        placeholder="Empty"
+        placeholder={t("property.editor.empty")}
         ref={(el) => setTimeout(() => el.focus(), 0)}
       />
       <Show when={error()}>
-        {(msg) => <span class="property-editor__error">{msg()}</span>}
+        {(msg) => <span class="property-editor__error">{t(msg())}</span>}
       </Show>
     </Show>
   );
@@ -376,6 +383,7 @@ const BooleanEditor: Component<PropertyEditorProps> = (props) => {
 const [listPickerOpen, setListPickerOpen] = createSignal<string | null>(null);
 
 const ListEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   let containerRef: HTMLDivElement | undefined;
   let inputRef: HTMLInputElement | undefined;
 
@@ -494,7 +502,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
         </For>
         <Show when={currentItems().length === 0}>
           <span class="property-editor__value property-editor__value--empty">
-            Empty
+            {t("property.editor.empty")}
           </span>
         </Show>
       </div>
@@ -504,7 +512,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
           <input
             class="property-editor__input list-picker__filter"
             type="text"
-            placeholder="Filter or add new…"
+            placeholder={t("property.editor.filterOrAdd")}
             value={filter()}
             onInput={(e) => setFilter(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
@@ -512,7 +520,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
           />
           <For each={candidates()} fallback={
             <Show when={!canCreate()}>
-              <span class="collection-picker__empty">No values yet</span>
+              <span class="collection-picker__empty">{t("property.editor.noValues")}</span>
             </Show>
           }>
             {(val) => (
@@ -532,7 +540,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
               onClick={commitNew}
               type="button"
             >
-              + Add "{filter().trim()}"
+              {t("property.editor.addValue", { value: filter().trim() })}
             </button>
           </Show>
         </div>
@@ -552,6 +560,7 @@ const DateEditor: Component<PropertyEditorProps & { withTime: boolean }> = (prop
 };
 
 const NullEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal("");
 
@@ -575,7 +584,7 @@ const NullEditor: Component<PropertyEditorProps> = (props) => {
           class="property-editor__value property-editor__value--empty"
           onClick={() => setEditing(true)}
         >
-          Empty
+          {t("property.editor.empty")}
         </span>
       }
     >
@@ -586,7 +595,7 @@ const NullEditor: Component<PropertyEditorProps> = (props) => {
         onInput={(e) => setDraft(e.currentTarget.value)}
         onBlur={commit}
         onKeyDown={handleKeyDown}
-        placeholder="Enter value..."
+        placeholder={t("property.editor.enterValue")}
         ref={(el) => setTimeout(() => el.focus(), 0)}
       />
     </Show>
@@ -597,6 +606,7 @@ const NullEditor: Component<PropertyEditorProps> = (props) => {
 const [collectionPickerOpen, setCollectionPickerOpen] = createSignal(false);
 
 const CollectionEditor: Component<PropertyEditorProps> = (props) => {
+  const t = useI18n();
   let containerRef: HTMLDivElement | undefined;
 
   const [collections] = createResource(async () => {
@@ -649,7 +659,7 @@ const CollectionEditor: Component<PropertyEditorProps> = (props) => {
         </For>
         <Show when={currentItems().length === 0}>
           <span class="property-editor__value property-editor__value--empty">
-            Click to assign collections
+            {t("property.editor.assignCollections")}
           </span>
         </Show>
       </div>
@@ -657,7 +667,7 @@ const CollectionEditor: Component<PropertyEditorProps> = (props) => {
       <Show when={collectionPickerOpen()}>
         <div class="collection-picker__dropdown">
           <For each={collections() ?? []} fallback={
-            <span class="collection-picker__empty">No collections defined</span>
+            <span class="collection-picker__empty">{t("property.editor.noCollections")}</span>
           }>
             {(col) => (
               <label class="collection-picker__item">

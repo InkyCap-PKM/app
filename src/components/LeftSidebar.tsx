@@ -60,7 +60,7 @@ import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -176,6 +176,7 @@ function collectDirPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): S
 }
 
 const LeftSidebar: Component<LeftSidebarProps> = (props) => {
+  const t = useI18n();
   const mode = props.mode;
   const setMode = props.setMode;
   const [refreshTick, setRefreshTick] = createSignal(0);
@@ -502,11 +503,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     setRenamingTag(null);
     if (!oldTag || !newTag || oldTag === newTag) return;
 
-    const existing = noteboxIndex()?.tags.find(([t]) => t === newTag);
+    const existing = noteboxIndex()?.tags.find(([tg]) => tg === newTag);
     if (existing) {
       const ok = await ask(
-        `A tag already exists with the name "${newTag}". Renaming "${oldTag}" will merge tags into "${newTag}". Continue?`,
-        { title: "Merge tags", kind: "warning" },
+        t("leftSidebar.mergeTagsBody", { newTag, oldTag }),
+        { title: t("leftSidebar.mergeTagsTitle"), kind: "warning" },
       );
       if (!ok) return;
     }
@@ -516,15 +517,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
       refetchNoteboxIndex();
     } catch (err) {
-      toastError("Failed to rename tag", err);
+      toastError(t("leftSidebar.renameTagFailed"), err);
     }
   }
 
   async function handleDeleteTag(tag: string) {
     setTagMenu(null);
     const ok = await ask(
-      `Delete tag "${tag}" from every note that uses it? This cannot be undone.`,
-      { title: "Delete tag", kind: "warning" },
+      t("leftSidebar.deleteTagBody", { tag }),
+      { title: t("leftSidebar.deleteTagTitle"), kind: "warning" },
     );
     if (!ok) return;
     try {
@@ -532,7 +533,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
       refetchNoteboxIndex();
     } catch (err) {
-      toastError("Failed to delete tag", err);
+      toastError(t("leftSidebar.deleteTagFailed"), err);
     }
   }
 
@@ -554,9 +555,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       const newType = allPropertyTypes()[newKey];
       const typeConflict = oldType && newType && oldType !== newType;
       const msg = typeConflict
-        ? `A property already exists with the name "${newKey}" (type: ${propertyTypeLabel(newType)}). Renaming "${oldKey}" (type: ${propertyTypeLabel(oldType)}) will merge properties into "${newKey}" using the "${propertyTypeLabel(newType)}" type. Values may need manual correction. Continue?`
-        : `A property already exists with the name "${newKey}". Renaming "${oldKey}" will merge properties into "${newKey}". Continue?`;
-      const ok = await ask(msg, { title: "Merge properties", kind: "warning" });
+        ? t("leftSidebar.mergePropsBodyType", {
+            newKey,
+            oldKey,
+            newType: propertyTypeLabel(newType),
+            oldType: propertyTypeLabel(oldType),
+          })
+        : t("leftSidebar.mergePropsBody", { newKey, oldKey });
+      const ok = await ask(msg, { title: t("leftSidebar.mergePropsTitle"), kind: "warning" });
       if (!ok) return;
     }
 
@@ -567,15 +573,15 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
       refetchNoteboxIndex();
     } catch (err) {
-      toastError("Failed to rename property", err);
+      toastError(t("leftSidebar.renamePropFailed"), err);
     }
   }
 
   async function handleDeleteProperty(key: string) {
     setPropMenu(null);
     const ok = await ask(
-      `Delete property "${key}" from every note that uses it? This cannot be undone.`,
-      { title: "Delete property", kind: "warning" },
+      t("leftSidebar.deletePropBody", { key }),
+      { title: t("leftSidebar.deletePropTitle"), kind: "warning" },
     );
     if (!ok) return;
     try {
@@ -585,7 +591,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
       refetchNoteboxIndex();
     } catch (err) {
-      toastError("Failed to delete property", err);
+      toastError(t("leftSidebar.deletePropFailed"), err);
     }
   }
 
@@ -596,7 +602,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       await reloadPropertyTypes();
       refresh();
     } catch (err) {
-      toastError("Failed to change property type", err);
+      toastError(t("leftSidebar.changeTypeFailed"), err);
     }
   }
 
@@ -761,7 +767,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const slash = node.path.lastIndexOf("/");
     const currentParent = slash >= 0 ? node.path.slice(0, slash) : root;
     const dest = await pickFolder({
-      title: node.is_dir ? "Move folder to..." : "Move file to...",
+      title: node.is_dir ? t("leftSidebar.moveFolder") : t("leftSidebar.moveFile"),
       disallowPrefix: node.is_dir ? node.path : undefined,
       currentParent,
     });
@@ -781,7 +787,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (items.length === 0) return;
     const root = noteboxInfo()?.path ?? "";
     const dest = await pickFolder({
-      title: "Move files to...",
+      title: t("leftSidebar.moveFiles"),
       disallowPrefix:
         items.length === 1 && items[0].is_dir ? items[0].path : undefined,
     });
@@ -819,7 +825,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         src.is_dir &&
         (destDir === src.path || destDir.startsWith(src.path + "/"))
       ) {
-        toastError("Cannot move a folder into itself");
+        toastError(t("leftSidebar.moveIntoSelf"));
         continue;
       }
       try {
@@ -830,7 +836,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         }
         moved = true;
       } catch (e) {
-        toastError("Failed to move item", e);
+        toastError(t("leftSidebar.moveItemFailed"), e);
       }
     }
     if (moved) {
@@ -844,9 +850,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   async function createCollection() {
     if (!noteboxInfo()) return;
     const name = await promptText({
-      title: "New collection",
-      label: "Collection name",
-      confirmLabel: "Create",
+      title: t("leftSidebar.newCollectionTitle"),
+      label: t("leftSidebar.collectionNameLabel"),
+      confirmLabel: t("common.create"),
     });
     if (!name?.trim()) return;
     try {
@@ -854,13 +860,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refresh();
       openCollection(col);
     } catch (e) {
-      toastError("Failed to create collection", e);
+      toastError(t("leftSidebar.createCollectionFailed"), e);
     }
   }
 
   async function deleteCollection(col: CollectionInfo) {
     setContextMenu(null);
-    const confirmed = await ask(`Delete collection "${col.name}"?`, { title: "Delete collection", kind: "warning" });
+    const confirmed = await ask(t("leftSidebar.deleteCollectionBody", { name: col.name }), { title: t("leftSidebar.deleteCollectionTitle"), kind: "warning" });
     if (!confirmed) return;
     try {
       await ipc.deleteCollectionFile(col.path);
@@ -871,7 +877,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       if (openCollTab) closeTab(openCollTab.id);
       refresh();
     } catch (e) {
-      toastError("Failed to delete collection", e);
+      toastError(t("leftSidebar.deleteCollectionFailed"), e);
     }
   }
 
@@ -890,7 +896,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       await ipc.renameCollectionFile(path, newName);
       refresh();
     } catch (e) {
-      toastError("Failed to rename collection", e);
+      toastError(t("leftSidebar.renameCollectionFailed"), e);
     }
   }
 
@@ -959,7 +965,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       });
       if (!result) return;
       refresh();
-      const title = result.path.split(/[/\\]/).pop() ?? "New Note";
+      const title = result.path.split(/[/\\]/).pop() ?? t("leftSidebar.newNoteFallback");
       openTab(
         { type: "file", title, path: result.path },
         {
@@ -968,23 +974,23 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         },
       );
     } catch (e) {
-      toastError("Failed to create note", e);
+      toastError(t("rightPanel.toast.createNoteFailed"), e);
     }
   }
 
   async function createNewFolder(parentFolder: string) {
     setFileContextMenu(null);
     const name = await promptText({
-      title: "New folder",
-      label: "Folder name",
-      confirmLabel: "Create",
+      title: t("leftSidebar.newFolderTitle"),
+      label: t("leftSidebar.folderNameLabel"),
+      confirmLabel: t("common.create"),
     });
     if (!name?.trim()) return;
     try {
       await ipc.createFolder(name.trim(), parentFolder);
       refresh();
     } catch (e) {
-      toastError("Failed to create folder", e);
+      toastError(t("leftSidebar.createFolderFailed"), e);
     }
   }
 
@@ -1013,7 +1019,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       }
       refresh();
     } catch (e) {
-      toastError("Failed to rename", e);
+      toastError(t("leftSidebar.renameFailed"), e);
     }
   }
 
@@ -1027,9 +1033,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     if (settings.files.confirm_before_delete) {
       const message =
         items.length === 1
-          ? `Move "${items[0].path.split("/").pop()}" to trash?`
-          : `Move ${items.length} items to trash?`;
-      const confirmed = await ask(message, { title: "Delete", kind: "warning" });
+          ? t("leftSidebar.deleteOneBody", { name: items[0].path.split("/").pop() ?? "" })
+          : t("leftSidebar.deleteManyBody", { count: items.length });
+      const confirmed = await ask(message, { title: t("leftSidebar.deleteTitle"), kind: "warning" });
       if (!confirmed) return;
     }
     let deleted = false;
@@ -1047,7 +1053,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         }
         deleted = true;
       } catch (e) {
-        toastError("Failed to delete", e);
+        toastError(t("leftSidebar.deleteFailed"), e);
       }
     }
     if (deleted) {
@@ -1071,12 +1077,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         refresh();
         toastSuccess(
           saved.length === 1
-            ? `Uploaded ${saved[0]}`
-            : `Uploaded ${saved.length} files`,
+            ? t("leftSidebar.uploadedOne", { name: saved[0] })
+            : t("leftSidebar.uploadedMany", { count: saved.length }),
         );
       }
     } catch (e) {
-      toastError("Failed to upload", e);
+      toastError(t("leftSidebar.uploadFailed"), e);
     }
   }
 
@@ -1109,48 +1115,48 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         <button
           class={`left-sidebar__mode-btn ${mode() === "filetree" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("filetree")}
-          title="File Tree"
-          aria-label="File Tree"
+          title={t("leftSidebar.fileTree")}
+          aria-label={t("leftSidebar.fileTree")}
         >
           <FolderTree size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "collections" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("collections")}
-          title="Collections"
-          aria-label="Collections"
+          title={t("leftSidebar.collections")}
+          aria-label={t("leftSidebar.collections")}
         >
           <LibraryBig size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "agenda" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("agenda")}
-          title="Agenda"
-          aria-label="Agenda"
+          title={t("leftSidebar.agenda")}
+          aria-label={t("leftSidebar.agenda")}
         >
           <CalendarCheck size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "properties" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("properties")}
-          title="Properties"
-          aria-label="Properties"
+          title={t("leftSidebar.properties")}
+          aria-label={t("leftSidebar.properties")}
         >
           <NotebookTabs size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "tags" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("tags")}
-          title="Tags"
-          aria-label="Tags"
+          title={t("leftSidebar.tags")}
+          aria-label={t("leftSidebar.tags")}
         >
           <Tags size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "bookmarks" ? "left-sidebar__mode-btn--active" : ""}`}
           onClick={() => setMode("bookmarks")}
-          title="Bookmarks"
-          aria-label="Bookmarks"
+          title={t("leftSidebar.bookmarks")}
+          aria-label={t("leftSidebar.bookmarks")}
         >
           <BookMarked size={18} />
         </button>
@@ -1158,7 +1164,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       <div class="left-sidebar__content">
         <Show when={mode() === "collections"}>
           <div class="left-sidebar__section-header">
-            <span>Collections</span>
+            <span>{t("leftSidebar.collections")}</span>
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
@@ -1168,8 +1174,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     e.stopPropagation();
                     setShowCollectionSortMenu((v) => !v);
                   }}
-                  title="Sort collections"
-                  aria-label="Sort collections"
+                  title={t("leftSidebar.sortCollections")}
+                  aria-label={t("leftSidebar.sortCollections")}
                 >
                   <ArrowDownNarrowWide size={18} />
                 </button>
@@ -1209,8 +1215,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   setShowCollectionSearch(next);
                   if (!next) setCollectionFilter("");
                 }}
-                title="Filter collections"
-                aria-label="Filter collections"
+                title={t("leftSidebar.filterCollections")}
+                aria-label={t("leftSidebar.filterCollections")}
                 aria-pressed={showCollectionSearch()}
               >
                 <Search size={14} />
@@ -1218,8 +1224,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <button
                 class="pane-action-btn left-sidebar__add-btn"
                 onClick={createCollection}
-                title="New collection"
-                aria-label="New collection"
+                title={t("leftSidebar.newCollection")}
+                aria-label={t("leftSidebar.newCollection")}
               >
                 <LibraryPlusIcon size={18} />
               </button>
@@ -1230,7 +1236,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <input
                 class="left-sidebar__filter-input"
                 type="text"
-                placeholder="Filter collections..."
+                placeholder={t("leftSidebar.filterCollectionsPlaceholder")}
                 value={collectionFilter()}
                 onInput={(e) => setCollectionFilter(e.currentTarget.value)}
                 autofocus
@@ -1239,8 +1245,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 <button
                   class="left-sidebar__filter-clear"
                   onMouseDown={(e) => { e.preventDefault(); setCollectionFilter(""); }}
-                  title="Clear filter"
-                  aria-label="Clear filter"
+                  title={t("references.clearFilter")}
+                  aria-label={t("references.clearFilter")}
                 >
                   <X size={12} />
                 </button>
@@ -1249,11 +1255,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           </Show>
           <Show
             when={!collections.loading}
-            fallback={<p class="sidebar-hint">Loading...</p>}
+            fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
           >
             <For
               each={sortedFilteredCollections()}
-              fallback={<p class="sidebar-hint">No collections found</p>}
+              fallback={<p class="sidebar-hint">{t("leftSidebar.noCollections")}</p>}
             >
               {(col) => (
                 <Show
@@ -1304,7 +1310,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "filetree"}>
           <div class="left-sidebar__section-header">
-            <span>Files</span>
+            <span>{t("leftSidebar.files")}</span>
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
@@ -1314,8 +1320,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     e.stopPropagation();
                     setShowFileSortMenu((v) => !v);
                   }}
-                  title="Sort files"
-                  aria-label="Sort files"
+                  title={t("leftSidebar.sortFiles")}
+                  aria-label={t("leftSidebar.sortFiles")}
                 >
                   <ArrowDownNarrowWide size={18} />
                 </button>
@@ -1352,8 +1358,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 onClick={() =>
                   allDirsExpanded() ? collapseAllDirs() : expandAllDirs()
                 }
-                title={allDirsExpanded() ? "Collapse all folders" : "Expand all folders"}
-                aria-label={allDirsExpanded() ? "Collapse all folders" : "Expand all folders"}
+                title={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
+                aria-label={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
               >
                 <Show
                   when={allDirsExpanded()}
@@ -1372,9 +1378,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   title={(() => {
                     const rule = creationRules().find((r) => r.id === "new-note");
                     const hotkey = rule?.hotkey ?? "Ctrl+N";
-                    return `New note (${hotkey})`;
+                    return t("leftSidebar.newNoteTitle", { hotkey });
                   })()}
-                  aria-label="New note"
+                  aria-label={t("leftSidebar.newNote")}
                 >
                   <FilePlus2 size={14} />
                 </button>
@@ -1385,8 +1391,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     e.stopPropagation();
                     setShowNewMenu((v) => !v);
                   }}
-                  title="More options"
-                  aria-label="More create options"
+                  title={t("leftSidebar.moreOptions")}
+                  aria-label={t("leftSidebar.moreCreateOptions")}
                   aria-haspopup="menu"
                   aria-expanded={showNewMenu()}
                 >
@@ -1404,7 +1410,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       onClick={createNewFolderAtRoot}
                     >
                       <Folder size={14} />
-                      <span>New folder</span>
+                      <span>{t("leftSidebar.newFolder")}</span>
                     </button>
                     <button
                       class="context-menu__item context-menu__item--icon"
@@ -1412,7 +1418,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       onClick={uploadIntoNotebox}
                     >
                       <Upload size={14} />
-                      <span>Copy into notebox</span>
+                      <span>{t("leftSidebar.copyIntoNotebox")}</span>
                     </button>
                   </div>
                 </Show>
@@ -1421,7 +1427,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           </div>
           <Show
             when={!fileTree.loading}
-            fallback={<p class="sidebar-hint">Loading...</p>}
+            fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
           >
             {/* Root drop zone: a drag released outside any folder row
                 lands here and moves the item to the notebox root. Rows
@@ -1495,7 +1501,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "tags"}>
           <div class="left-sidebar__section-header">
-            <span>Tags</span>
+            <span>{t("leftSidebar.tags")}</span>
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
@@ -1505,8 +1511,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     e.stopPropagation();
                     setShowTagSortMenu((v) => !v);
                   }}
-                  title="Sort tags"
-                  aria-label="Sort tags"
+                  title={t("leftSidebar.sortTags")}
+                  aria-label={t("leftSidebar.sortTags")}
                 >
                   <ArrowDownNarrowWide size={18} />
                 </button>
@@ -1545,8 +1551,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   setShowTagSearch(next);
                   if (!next) setTagFilter("");
                 }}
-                title="Filter tags"
-                aria-label="Filter tags"
+                title={t("leftSidebar.filterTags")}
+                aria-label={t("leftSidebar.filterTags")}
                 aria-pressed={showTagSearch()}
               >
                 <Search size={14} />
@@ -1558,7 +1564,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <input
                 class="left-sidebar__filter-input"
                 type="text"
-                placeholder="Filter tags..."
+                placeholder={t("leftSidebar.filterTagsPlaceholder")}
                 value={tagFilter()}
                 onInput={(e) => setTagFilter(e.currentTarget.value)}
                 autofocus
@@ -1567,19 +1573,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 <button
                   class="left-sidebar__filter-clear"
                   onMouseDown={(e) => { e.preventDefault(); setTagFilter(""); }}
-                  title="Clear filter"
-                  aria-label="Clear filter"
+                  title={t("references.clearFilter")}
+                  aria-label={t("references.clearFilter")}
                 >
                   <X size={12} />
                 </button>
               </Show>
             </div>
           </Show>
-          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
+          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
             {(idx) => (
               <For
                 each={sortAndFilterList(idx().tags, tagSortMode(), tagFilter())}
-                fallback={<p class="sidebar-hint">No tags found</p>}
+                fallback={<p class="sidebar-hint">{t("leftSidebar.noTags")}</p>}
               >
                 {([tag, count]) => (
                   <Show
@@ -1621,7 +1627,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "properties"}>
           <div class="left-sidebar__section-header">
-            <span>Properties</span>
+            <span>{t("leftSidebar.properties")}</span>
             <div class="left-sidebar__header-actions">
               <div class="left-sidebar__sort-wrap">
                 <button
@@ -1631,8 +1637,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     e.stopPropagation();
                     setShowPropSortMenu((v) => !v);
                   }}
-                  title="Sort properties"
-                  aria-label="Sort properties"
+                  title={t("leftSidebar.sortProperties")}
+                  aria-label={t("leftSidebar.sortProperties")}
                 >
                   <ArrowDownNarrowWide size={18} />
                 </button>
@@ -1671,8 +1677,8 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   setShowPropSearch(next);
                   if (!next) setPropFilter("");
                 }}
-                title="Filter properties"
-                aria-label="Filter properties"
+                title={t("leftSidebar.filterProperties")}
+                aria-label={t("leftSidebar.filterProperties")}
                 aria-pressed={showPropSearch()}
               >
                 <Search size={14} />
@@ -1684,7 +1690,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <input
                 class="left-sidebar__filter-input"
                 type="text"
-                placeholder="Filter properties..."
+                placeholder={t("leftSidebar.filterPropertiesPlaceholder")}
                 value={propFilter()}
                 onInput={(e) => setPropFilter(e.currentTarget.value)}
                 autofocus
@@ -1693,19 +1699,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 <button
                   class="left-sidebar__filter-clear"
                   onMouseDown={(e) => { e.preventDefault(); setPropFilter(""); }}
-                  title="Clear filter"
-                  aria-label="Clear filter"
+                  title={t("references.clearFilter")}
+                  aria-label={t("references.clearFilter")}
                 >
                   <X size={12} />
                 </button>
               </Show>
             </div>
           </Show>
-          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">Loading...</p>}>
+          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
             {(idx) => (
               <For
                 each={sortAndFilterList(idx().property_keys, propSortMode(), propFilter())}
-                fallback={<p class="sidebar-hint">No properties found</p>}
+                fallback={<p class="sidebar-hint">{t("leftSidebar.noProperties")}</p>}
               >
                 {([key, count]) => (
                   <Show
@@ -1744,7 +1750,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "bookmarks"}>
           <div class="left-sidebar__section-header">
-            <span>Bookmarks</span>
+            <span>{t("leftSidebar.bookmarks")}</span>
           </div>
           <BookmarksPanel refreshTick={refreshTick()} />
         </Show>
@@ -1784,19 +1790,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 }
               }}
             >
-              Bookmark
+              {t("leftSidebar.bookmark")}
             </button>
             <button
               class="context-menu__item"
               onClick={() => startRename(menu().collection)}
             >
-              Rename
+              {t("common.rename")}
             </button>
             <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => deleteCollection(menu().collection)}
             >
-              Delete
+              {t("common.delete")}
             </button>
           </div>
         )}
@@ -1814,13 +1820,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               class="context-menu__item"
               onClick={() => startTagRename(menu().tag)}
             >
-              Rename
+              {t("common.rename")}
             </button>
             <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleDeleteTag(menu().tag)}
             >
-              Delete
+              {t("common.delete")}
             </button>
           </div>
         )}
@@ -1843,7 +1849,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 setPropMenu({ ...menu(), typeSubmenuOpen: false })
               }
             >
-              Property type
+              {t("rightPanel.propertyType")}
               <span class="context-menu__chevron">{"\u25B8"}</span>
               <Show when={menu().typeSubmenuOpen}>
                 <div
@@ -1875,13 +1881,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               class="context-menu__item"
               onClick={() => startPropertyRename(menu().key)}
             >
-              Rename
+              {t("common.rename")}
             </button>
             <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleDeleteProperty(menu().key)}
             >
-              Delete
+              {t("common.delete")}
             </button>
           </div>
         )}
@@ -1911,7 +1917,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   class="context-menu__item"
                   onClick={() => moveSelectionViaDialog()}
                 >
-                  Move files to...
+                  {t("leftSidebar.moveFiles")}
                 </button>
                 <div class="context-menu__separator" />
                 <button
@@ -1925,7 +1931,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     )
                   }
                 >
-                  Delete {selectedNodes().length} items
+                  {t("leftSidebar.deleteItems", { count: selectedNodes().length })}
                 </button>
               </Show>
               <Show when={!isMultiSelection()}>
@@ -1937,7 +1943,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     openFileInNewTab(node);
                   }}
                 >
-                  Open in new tab
+                  {t("wikilink.menu.openNewTab")}
                 </button>
                 <button
                   class="context-menu__item"
@@ -1955,7 +1961,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     });
                   }}
                 >
-                  Open in new window
+                  {t("search.openNewWindow")}
                 </button>
                 <div class="context-menu__separator" />
               </Show>
@@ -1963,13 +1969,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 class="context-menu__item"
                 onClick={() => createNewNote(folderPath)}
               >
-                New Note
+                {t("leftSidebar.menuNewNote")}
               </button>
               <button
                 class="context-menu__item"
                 onClick={() => createNewFolder(folderPath)}
               >
-                New Folder
+                {t("leftSidebar.menuNewFolder")}
               </button>
               <Show when={!node.is_dir && isNoteFile(node.name)}>
                 <button
@@ -1989,7 +1995,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     }
                   }}
                 >
-                  Bookmark
+                  {t("leftSidebar.bookmark")}
                 </button>
               </Show>
               <div class="context-menu__separator" />
@@ -1997,13 +2003,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 class="context-menu__item"
                 onClick={() => moveNodeViaDialog(node)}
               >
-                {node.is_dir ? "Move folder to..." : "Move file to..."}
+                {node.is_dir ? t("leftSidebar.moveFolder") : t("leftSidebar.moveFile")}
               </button>
               <button
                 class="context-menu__item"
                 onClick={() => startFileRename(node)}
               >
-                Rename
+                {t("common.rename")}
               </button>
               <button
                 class="context-menu__item context-menu__item--danger"
@@ -2011,7 +2017,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   deleteItems([{ path: node.path, is_dir: node.is_dir }])
                 }
               >
-                Delete
+                {t("common.delete")}
               </button>
               </Show>
             </div>

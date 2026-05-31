@@ -63,7 +63,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "file:quick-open",
-    title: "Quick Open",
+    title: t("command.file.quick-open"),
     category: "File",
     keybinding: "Ctrl+O",
     execute: callbacks.toggleQuickOpen,
@@ -78,7 +78,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "file:close-tab",
-    title: "Close Tab",
+    title: t("command.file.close-tab"),
     category: "File",
     keybinding: "Ctrl+W",
     execute: () => {
@@ -89,7 +89,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "file:new-empty-tab",
-    title: "New Empty Tab",
+    title: t("command.file.new-empty-tab"),
     category: "File",
     keybinding: "Ctrl+T",
     execute: () => {
@@ -101,7 +101,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   // a single "Ctrl+…" binding also covers the macOS Cmd equivalent.
   registerCommand({
     id: "file:reopen-closed-tab",
-    title: "Reopen Closed Tab",
+    title: t("command.file.reopen-closed-tab"),
     category: "File",
     keybinding: "Ctrl+Shift+T",
     execute: reopenClosedTab,
@@ -109,7 +109,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "file:move",
-    title: "Move File to...",
+    title: t("command.file.move"),
     category: "File",
     keybinding: "Ctrl+M",
     execute: () => {
@@ -119,7 +119,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "file:delete",
-    title: "Delete File",
+    title: t("command.file.delete"),
     category: "File",
     keybinding: "Ctrl+Shift+D",
     execute: () => {
@@ -131,7 +131,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "navigate:next-tab",
-    title: "Next Tab",
+    title: t("command.navigate.next-tab"),
     category: "Navigate",
     keybinding: "Ctrl+Tab",
     execute: switchToNextTab,
@@ -139,7 +139,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "navigate:prev-tab",
-    title: "Previous Tab",
+    title: t("command.navigate.prev-tab"),
     category: "Navigate",
     keybinding: "Ctrl+Shift+Tab",
     execute: switchToPrevTab,
@@ -192,7 +192,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:command-palette",
-    title: "Command Palette",
+    title: t("command.view.command-palette"),
     category: "View",
     keybinding: "Ctrl+P",
     execute: callbacks.toggleCommandPalette,
@@ -200,7 +200,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:settings",
-    title: "Settings",
+    title: t("command.view.settings"),
     category: "View",
     keybinding: "Ctrl+,",
     execute: callbacks.toggleSettings,
@@ -208,7 +208,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:search",
-    title: "Search in Notebox",
+    title: t("command.view.search"),
     category: "View",
     keybinding: "Ctrl+Shift+F",
     execute: callbacks.openSearch,
@@ -216,7 +216,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:search-replace",
-    title: "Search and Replace (notebox-wide)",
+    title: t("command.view.search-replace"),
     category: "View",
     execute: () => {
       setShowReplace(true);
@@ -228,14 +228,14 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:toggle-theme",
-    title: "Toggle Theme (Dark/Light)",
+    title: t("command.view.toggle-theme"),
     category: "View",
     execute: toggleTheme,
   });
 
   registerCommand({
     id: "view:toggle-source-mode",
-    title: "Toggle Source/Live Preview Mode",
+    title: t("command.view.toggle-source-mode"),
     category: "View",
     execute: () => {
       const tab = getActiveTab();
@@ -248,7 +248,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:toggle-reading-mode",
-    title: "Toggle Reading Mode",
+    title: t("command.view.toggle-reading-mode"),
     category: "View",
     execute: () => {
       const tab = getActiveTab();
@@ -262,7 +262,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "view:toggle-distraction-free",
-    title: "Toggle Distraction-Free Mode",
+    title: t("command.view.toggle-distraction-free"),
     category: "View",
     execute: toggleDistractionFree,
   });
@@ -280,7 +280,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   // fires regardless of which physical keystroke the user makes.
   registerCommand({
     id: "edit:zoom-in",
-    title: "Zoom In",
+    title: t("command.edit.zoom-in"),
     category: "Edit",
     keybinding: ["Ctrl+=", "Ctrl++", "Ctrl+Shift++"],
     execute: () => {
@@ -300,7 +300,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "edit:zoom-out",
-    title: "Zoom Out",
+    title: t("command.edit.zoom-out"),
     category: "Edit",
     keybinding: "Ctrl+-",
     execute: () => {
@@ -320,7 +320,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "edit:reset-zoom",
-    title: "Reset Zoom",
+    title: t("command.edit.reset-zoom"),
     category: "Edit",
     keybinding: "Ctrl+0",
     execute: () => {
@@ -336,7 +336,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "edit:paste-as-markdown",
-    title: "Paste from Markdown",
+    title: t("command.edit.paste-as-markdown"),
     category: "Edit",
     execute: async () => {
       const handle = activeEditorView();
@@ -365,28 +365,28 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   // no-ops when no editor is focused, so the templates stay in one place.
   registerCommand({
     id: "edit:add-annotation",
-    title: "Add Annotation",
+    title: t("command.edit.add-annotation"),
     category: "Edit",
     execute: () => insertAnnotationMarkup(activeEditorView()?.view, "annotation"),
   });
 
   registerCommand({
     id: "edit:suggest-insertion",
-    title: "Suggest Insertion",
+    title: t("command.edit.suggest-insertion"),
     category: "Edit",
     execute: () => insertAnnotationMarkup(activeEditorView()?.view, "insert"),
   });
 
   registerCommand({
     id: "edit:suggest-deletion",
-    title: "Suggest Deletion",
+    title: t("command.edit.suggest-deletion"),
     category: "Edit",
     execute: () => insertAnnotationMarkup(activeEditorView()?.view, "delete"),
   });
 
   registerCommand({
     id: "edit:suggest-replacement",
-    title: "Suggest Replacement",
+    title: t("command.edit.suggest-replacement"),
     category: "Edit",
     execute: () => insertAnnotationMarkup(activeEditorView()?.view, "replace"),
   });
@@ -395,7 +395,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "tools:audit-typ-files",
-    title: "Audit .typ files for InkyCap compatibility",
+    title: t("command.tools.audit-typ-files"),
     category: "Tools",
     execute: callbacks.openTypAudit,
   });
@@ -464,7 +464,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "tools:insert-scaffold",
-    title: "Insert Scaffold",
+    title: t("command.tools.insert-scaffold"),
     category: "Tools",
     keybinding: "Ctrl+\\",
     execute: callbacks.openScaffoldPicker,
@@ -472,7 +472,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "tools:mycelial-view",
-    title: "Open Mycelial View",
+    title: t("command.tools.mycelial-view"),
     category: "Tools",
     execute: () => {
       const tab = getActiveTab();
@@ -492,7 +492,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "references:cite",
-    title: "Search references & cite",
+    title: t("command.references.cite"),
     category: "References",
     keybinding: "Ctrl+Shift+C",
     execute: callbacks.openCitationPicker,
@@ -500,7 +500,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "references:import-note",
-    title: "Import note text from reference",
+    title: t("command.references.import-note"),
     category: "References",
     execute: callbacks.openRefNotePicker,
   });
@@ -508,7 +508,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "tools:export-pdf",
-    title: "Export Note as PDF",
+    title: t("command.tools.export-pdf"),
     category: "Tools",
     execute: async () => {
       const tab = getActiveTab();
@@ -522,7 +522,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "tools:export-self-contained",
-    title: "Export Self-Contained .typ",
+    title: t("command.tools.export-self-contained"),
     category: "Tools",
     execute: async () => {
       const tab = getActiveTab();
@@ -595,7 +595,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
 
   registerCommand({
     id: "edit:insert-zid",
-    title: "Insert Zettelkasten ID",
+    title: t("command.edit.insert-zid"),
     category: "Edit",
     execute: async () => {
       const handle = activeEditorView();
@@ -738,8 +738,12 @@ function registerMarkupCommands() {
       : () => insertMarkup(item.insert, item.cursorOffset);
 
     registerCommand({
+      // `item.title` stays as the English source (mirrored in en.json under
+      // `command.markup.<id>`); the registered title is the localized form,
+      // resolved here so `relocalizeCommands()` refreshes it on a UI-language
+      // switch. The translated label also drives the palette's fuzzy search.
       id: `markup:${item.id}`,
-      title: item.title,
+      title: t(`command.markup.${item.id}`),
       category: item.category,
       shortcut: item.shortcut,
       execute,

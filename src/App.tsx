@@ -51,8 +51,10 @@ import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/com
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
+import { useI18n } from "./lib/i18n";
 
 const App: Component = () => {
+  const t = useI18n();
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
   const [quickOpenVisible, setQuickOpenVisible] = createSignal(false);
   const [settingsVisible, setSettingsVisible] = createSignal(false);
@@ -273,9 +275,9 @@ const App: Component = () => {
       fallback={(err) => (
         <div class="app-shell" style={{ display: "flex", "align-items": "center", "justify-content": "center", height: "100vh", padding: "2rem", "text-align": "center" }}>
           <div>
-            <h2 style={{ "margin-bottom": "0.5rem" }}>Something went wrong</h2>
+            <h2 style={{ "margin-bottom": "0.5rem" }}>{t("app.error.title")}</h2>
             <p style={{ color: "var(--fg-muted)", "margin-bottom": "1rem" }}>{err?.message ?? String(err)}</p>
-            <button onClick={() => window.location.reload()} style={{ padding: "6px 16px", cursor: "pointer" }}>Reload</button>
+            <button onClick={() => window.location.reload()} style={{ padding: "6px 16px", cursor: "pointer" }}>{t("app.error.reload")}</button>
           </div>
         </div>
       )}
@@ -301,8 +303,8 @@ const App: Component = () => {
         <button
           class="right-panel-toggle"
           onClick={toggleRightCollapsed}
-          title={rightCollapsed() ? "Show right sidebar" : "Hide right sidebar"}
-          aria-label={rightCollapsed() ? "Show right sidebar" : "Hide right sidebar"}
+          title={rightCollapsed() ? t("app.rightSidebar.show") : t("app.rightSidebar.hide")}
+          aria-label={rightCollapsed() ? t("app.rightSidebar.show") : t("app.rightSidebar.hide")}
         >
           <PanelRightDashed size={16} />
         </button>

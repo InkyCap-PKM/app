@@ -17,6 +17,7 @@ import { createStore } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import type { PropertyType } from "../lib/types";
 import { Dropdown, type DropdownOption } from "./Dropdown";
+import { useI18n, tPlural } from "../lib/i18n";
 
 /** An InkyCap property the YAML key can be mapped onto. */
 export interface TargetOption {
@@ -37,23 +38,24 @@ interface PropertyMappingDialogProps {
 const CREATE = "::create";
 const SKIP = "::skip";
 
-const TYPE_LABELS: Record<PropertyType, string> = {
-  auto: "Auto",
-  text: "Text",
-  number: "Number",
-  list: "List",
-  commalist: "Comma list",
-  date: "Date",
-  datetime: "Date & time",
-  checkbox: "Checkbox",
+const TYPE_LABEL_KEYS: Record<PropertyType, string> = {
+  auto: "property.type.auto",
+  text: "property.type.text",
+  number: "property.type.number",
+  list: "property.type.list",
+  commalist: "property.type.commalist",
+  date: "property.type.date",
+  datetime: "property.type.datetime",
+  checkbox: "property.type.checkbox",
 };
 
 // Concrete types the user may assign to a newly-created property. "auto" is
 // intentionally excluded — a new property always gets a concrete type
-// (defaulting to the type inferred from the YAML values).
-const TYPE_OPTIONS: DropdownOption<PropertyType>[] = (
-  ["text", "number", "list", "commalist", "date", "datetime", "checkbox"] as PropertyType[]
-).map((value) => ({ value, label: TYPE_LABELS[value] }));
+// (defaulting to the type inferred from the YAML values). Labels resolve
+// through i18n at render time.
+const TYPE_VALUES: PropertyType[] = [
+  "text", "number", "list", "commalist", "date", "datetime", "checkbox",
+];
 
 /** Mirror of the backend `sanitize_ident` so "Create new" names are valid
  *  Typst identifiers and match what the importer would register. */
@@ -88,6 +90,10 @@ interface RowSelection {
 }
 
 export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
+  const t = useI18n();
+  const typeLabel = (type: PropertyType) => t(TYPE_LABEL_KEYS[type]);
+  const typeOptions = (): DropdownOption<PropertyType>[] =>
+    TYPE_VALUES.map((value) => ({ value, label: typeLabel(value) }));
   const [sel, setSel] = createStore<RowSelection[]>(
     props.rows.map((row) => ({
       choice: row.will_create ? CREATE : row.suggested_target,
@@ -113,10 +119,10 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
   // to the YAML key) — alongside mapping onto any existing system/user property
   // or excluding it.
   const targetOptions = (): DropdownOption<string>[] => [
-    { value: CREATE, label: "Create new property", group: "New / exclude" },
-    { value: SKIP, label: "Don't import", group: "New / exclude" },
-    ...systemTargets().map((t) => ({ value: t.key, label: t.key, group: "System properties" })),
-    ...userTargets().map((t) => ({ value: t.key, label: t.key, group: "Your properties" })),
+    { value: CREATE, label: t("import.mapping.createNew"), group: t("import.mapping.groupNewExclude") },
+    { value: SKIP, label: t("import.mapping.dontImport"), group: t("import.mapping.groupNewExclude") },
+    ...systemTargets().map((opt) => ({ value: opt.key, label: opt.key, group: t("import.mapping.groupSystem") })),
+    ...userTargets().map((opt) => ({ value: opt.key, label: opt.key, group: t("import.mapping.groupUser") })),
   ];
 
   // The effective value type a row will be formatted as — fixed for an
@@ -138,9 +144,9 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
   const createNameError = (i: number): string | null => {
     if (sel[i].choice !== CREATE) return null;
     const name = sel[i].createName.trim();
-    if (!name) return "Enter a property name";
+    if (!name) return t("import.mapping.errEmpty");
     if (systemNames().has(name.toLowerCase())) {
-      return `"${name}" is a system property — map onto it instead of creating it`;
+      return t("import.mapping.errSystem", { name });
     }
     return null;
   };
@@ -177,19 +183,17 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
     <div class="app-modal__backdrop" onClick={(e) => e.target === e.currentTarget && props.onCancel()}>
       <div class="app-modal property-map-dialog">
         <div class="app-modal__header">
-          <h3>Map imported properties</h3>
+          <h3>{t("import.mapping.title")}</h3>
         </div>
         <div class="app-modal__body">
           <p class="app-modal__hint">
-            InkyCap found these properties in your files' YAML frontmatter. Confirm how each maps to
-            an InkyCap property, change the type of any new properties, or exclude ones you don't
-            want to import.
+            {t("import.mapping.hint")}
           </p>
           <div class="property-map">
             <div class="property-map__head">
-              <div>YAML property</div>
-              <div>Maps to</div>
-              <div>Type</div>
+              <div>{t("import.mapping.yamlProperty")}</div>
+              <div>{t("import.mapping.mapsTo")}</div>
+              <div>{t("import.mapping.type")}</div>
             </div>
             <For each={props.rows}>
               {(row, i) => (
@@ -198,10 +202,10 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
                     <span class="property-map__key">{row.source_key}</span>
                     <span class="property-map__meta">
                       {row.sample_value
-                        ? `e.g. ${row.sample_value}`
-                        : "no value"}
+                        ? t("import.mapping.eg", { value: row.sample_value })
+                        : t("import.mapping.noValue")}
                       {" · "}
-                      {row.occurrences} file{row.occurrences === 1 ? "" : "s"}
+                      {tPlural("common.file", row.occurrences)}
                     </span>
                   </div>
                   <div class="property-map__target">
@@ -210,17 +214,17 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
                       value={sel[i()].choice}
                       options={targetOptions()}
                       onChange={(v) => setSel(i(), "choice", v)}
-                      ariaLabel={`Map ${row.source_key} to`}
+                      ariaLabel={t("import.mapping.mapAria", { key: row.source_key })}
                     />
                     <Show when={sel[i()].choice === CREATE}>
                       <input
                         class="property-map__name-input"
                         classList={{ "property-map__name-input--error": createNameError(i()) !== null }}
                         value={sel[i()].createName}
-                        placeholder="New property name"
+                        placeholder={t("import.mapping.newNamePlaceholder")}
                         spellcheck={false}
                         onInput={(e) => setSel(i(), "createName", e.currentTarget.value)}
-                        aria-label={`Name for new property from ${row.source_key}`}
+                        aria-label={t("import.mapping.newNameAria", { key: row.source_key })}
                       />
                     </Show>
                     <Show
@@ -229,10 +233,10 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
                         <Show when={sel[i()].choice !== SKIP}>
                           <span class="property-map__status">
                             {sel[i()].choice === CREATE
-                              ? "New property"
-                              : props.targets.find((t) => t.key === sel[i()].choice)?.isSystem
-                                ? "System property"
-                                : "Existing property"}
+                              ? t("import.mapping.statusNew")
+                              : props.targets.find((opt) => opt.key === sel[i()].choice)?.isSystem
+                                ? t("import.mapping.statusSystem")
+                                : t("import.mapping.statusExisting")}
                           </span>
                         </Show>
                       }
@@ -248,20 +252,20 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
                           class="property-map__type-locked"
                           title={
                             sel[i()].choice === SKIP
-                              ? "Not imported"
-                              : "Determined by the target property"
+                              ? t("import.mapping.notImported")
+                              : t("import.mapping.determinedByTarget")
                           }
                         >
-                          {sel[i()].choice === SKIP ? "—" : TYPE_LABELS[effectiveType(i())]}
+                          {sel[i()].choice === SKIP ? "—" : typeLabel(effectiveType(i()))}
                         </span>
                       }
                     >
                       <Dropdown
                         class="dropdown--block dropdown--sm"
                         value={sel[i()].createType}
-                        options={TYPE_OPTIONS}
+                        options={typeOptions()}
                         onChange={(v) => setSel(i(), "createType", v)}
-                        ariaLabel={`Type for ${row.source_key}`}
+                        ariaLabel={t("import.mapping.typeAria", { key: row.source_key })}
                       />
                     </Show>
                   </div>
@@ -272,14 +276,14 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
         </div>
         <div class="app-modal__footer">
           <button class="app-modal__btn app-modal__btn--secondary" onClick={props.onCancel}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             class="app-modal__btn app-modal__btn--primary"
             onClick={confirm}
             disabled={hasErrors()}
           >
-            Import {includedCount()} propert{includedCount() === 1 ? "y" : "ies"}
+            {tPlural("import.mapping.importBtn", includedCount())}
           </button>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
-import { t, tPlural } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { RefreshCw } from "lucide-solid";
@@ -75,6 +75,7 @@ function sortEntries(entries: BibEntry[], key: SortKey): BibEntry[] {
 }
 
 const ReferencesPanel: Component = () => {
+  const t = useI18n();
   const [showAll, setShowAll] = createSignal(false);
   const [browseQuery, setBrowseQuery] = createSignal("");
   const [refreshing, setRefreshing] = createSignal(false);
@@ -275,13 +276,13 @@ const ReferencesPanel: Component = () => {
               setVisibleCount(PAGE_SIZE);
             }}
           >
-            {showAll() ? "Hide" : "Browse"} references
+            {showAll() ? t("references.hideRefs") : t("references.browseRefs")}
           </button>
           <button
             class="references-panel__refresh"
             onClick={handleRefresh}
             disabled={refreshing()}
-            title="Refresh bibliography"
+            title={t("references.refresh")}
           >
             <RefreshCw
               size={14}
@@ -292,18 +293,18 @@ const ReferencesPanel: Component = () => {
         <Show when={showAll()}>
           <Show when={browseError()}>
             <p class="sidebar-hint sidebar-hint--error">
-              Failed to load bibliography: {browseError()}
+              {t("references.loadFailed", { error: browseError()! })}
             </p>
           </Show>
           <Show when={allEntries.loading}>
-            <p class="sidebar-hint">Loading bibliography…</p>
+            <p class="sidebar-hint">{t("refNotes.loading")}</p>
           </Show>
           <Show when={!browseError() && !allEntries.loading}>
             <Show
               when={(allEntries() ?? []).length > 0}
               fallback={
                 <p class="sidebar-hint">
-                  No bibliography configured. Check Settings &rsaquo; Citations.
+                  {t("refNotes.noBibliography")}
                 </p>
               }
             >
@@ -338,14 +339,14 @@ const ReferencesPanel: Component = () => {
                 <span class="references-panel__count">
                   {totalCount()} {tPlural("references.entry", totalCount())}
                   <span class="references-panel__source-badge">
-                    {isZoteroSource() ? "Zotero" : "File"}
+                    {isZoteroSource() ? t("references.source.zotero") : t("references.source.file")}
                   </span>
                   <Show when={skippedCount() > 0}>
                     <span
                       class="references-panel__skip-warning"
-                      title={`${skippedCount()} entries skipped because of BibTeX type errors. Check settings or the source file.`}
+                      title={t("references.skippedTitle", { count: skippedCount() })}
                     >
-                      ({skippedCount()} skipped)
+                      {t("references.skippedCount", { count: skippedCount() })}
                     </span>
                   </Show>
                 </span>
@@ -407,7 +408,7 @@ const ReferencesPanel: Component = () => {
                       zoteroItemKey: entry.zotero_item_key,
                     }}
                     onActivate={() => insertCitation(entry.key)}
-                    title={`Insert @${entry.key}`}
+                    title={t("references.insertCite", { key: entry.key })}
                   />
                 )}
               </For>
@@ -434,18 +435,18 @@ const ReferencesPanel: Component = () => {
       {/* Citations in current file */}
       <div class="right-panel__section">
         <div class="right-panel__heading">
-          Citations
+          {t("references.citations")}
           <Show when={citations()?.length}>
             <span class="right-panel__count"> ({citations()!.length})</span>
           </Show>
         </div>
         <Show when={citationError()}>
-          <p class="sidebar-hint sidebar-hint--error">Failed to load citations: {citationError()}</p>
+          <p class="sidebar-hint sidebar-hint--error">{t("references.citationsLoadFailed", { error: citationError()! })}</p>
         </Show>
         <Show when={!citationError()}>
           <Show
             when={citations()?.length}
-            fallback={<p class="sidebar-hint">No citations in this file</p>}
+            fallback={<p class="sidebar-hint">{t("references.noCitations")}</p>}
           >
             <For each={citations()}>
               {(cite) => (

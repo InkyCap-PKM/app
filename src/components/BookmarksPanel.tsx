@@ -8,6 +8,7 @@ import { openTab } from "../stores/tabs";
 import type { Bookmark } from "../lib/types";
 import { FileText, Search } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
+import { useI18n } from "../lib/i18n";
 
 interface BookmarksPanelProps {
   /** Trigger a refresh from the parent (e.g. after adding a bookmark). */
@@ -15,6 +16,7 @@ interface BookmarksPanelProps {
 }
 
 const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
+  const t = useI18n();
   const [bookmarks, { refetch }] = createResource(
     () => props.refreshTick,
     async () => ipc.listBookmarks(),
@@ -104,13 +106,13 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     switch (bm.type) {
       case "Note":
       case "Collection":
-        return bm.data.name ?? bm.data.path ?? "Untitled";
+        return bm.data.name ?? bm.data.path ?? t("bookmarks.untitled");
       case "Search":
-        return bm.data.query ?? "Search";
+        return bm.data.query ?? t("bookmarks.searchFallback");
       case "Heading":
         return `${bm.data.name ?? ""} > ${bm.data.heading ?? ""}`;
       default:
-        return "Bookmark";
+        return t("bookmarks.bookmarkFallback");
     }
   }
 
@@ -119,14 +121,14 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
       case "Note":
         openTab({
           type: "file",
-          title: bm.data.name ?? "Note",
+          title: bm.data.name ?? t("bookmarks.noteFallback"),
           path: bm.data.path,
         });
         break;
       case "Collection":
         openTab({
           type: "collection",
-          title: bm.data.name ?? "Collection",
+          title: bm.data.name ?? t("collection.defaultName"),
           path: bm.data.path,
         });
         break;
@@ -134,7 +136,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         // Open file and scroll to heading (simplified — just opens the file)
         openTab({
           type: "file",
-          title: bm.data.name ?? "Note",
+          title: bm.data.name ?? t("bookmarks.noteFallback"),
           path: bm.data.path,
         });
         break;
@@ -165,7 +167,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         when={bookmarks() && bookmarks()!.length > 0}
         fallback={
           <div class="bookmarks-panel__empty">
-            No bookmarks yet. Right-click a file or collection to bookmark it.
+            {t("bookmarks.empty")}
           </div>
         }
       >
@@ -194,7 +196,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
                   property-row reorder. */}
               <span
                 class="bookmark-item__icon"
-                title="Drag to reorder"
+                title={t("bookmarks.dragToReorder")}
                 draggable={true}
                 onDragStart={(e) => handleDragStart(e, bm.id)}
                 onDragEnd={handleDragEnd}
@@ -205,7 +207,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
               <button
                 class="bookmark-item__remove"
                 onClick={(e) => handleRemove(e, bm)}
-                title="Remove bookmark"
+                title={t("bookmarks.remove")}
               >
                 {"\u00D7"}
               </button>

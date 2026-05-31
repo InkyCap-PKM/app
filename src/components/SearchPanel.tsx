@@ -34,7 +34,7 @@ import type { SearchResult, AnnotationScope } from "../lib/types";
 import { pathEquals } from "../lib/paths";
 import { clickOutside } from "../lib/clickOutside";
 import * as ipc from "../lib/ipc";
-import { t } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 import { openTab } from "../stores/tabs";
 import { indexReady } from "../stores/notebox";
 import {
@@ -81,58 +81,29 @@ import {
 type FilterHint = {
   prefix: string;
   insert: string;
-  description: string;
+  /** i18n key for the human description, resolved at render. */
+  descKey: string;
 };
 
 const FILTER_HINTS: FilterHint[] = [
-  { prefix: "tag:", insert: "tag:", description: "search by tag" },
-  {
-    prefix: "property:",
-    insert: "property:",
-    description: "match a note property. Use property:key=value",
-  },
-  {
-    prefix: "section:",
-    insert: "section:",
-    description: "match files with a heading based on its <value>",
-  },
-  { prefix: "file:", insert: "file:", description: "match by file name" },
-  { prefix: "path:", insert: "path:", description: "match by the file path" },
-  {
-    prefix: "annotation:",
-    insert: "annotation:",
-    description: "match text inside an annotation or suggestion",
-  },
-  {
-    prefix: "collection:",
-    insert: "collection:",
-    description: "scope results to notes belonging to a collection",
-  },
+  { prefix: "tag:", insert: "tag:", descKey: "search.filterHint.tag" },
+  { prefix: "property:", insert: "property:", descKey: "search.filterHint.property" },
+  { prefix: "section:", insert: "section:", descKey: "search.filterHint.section" },
+  { prefix: "file:", insert: "file:", descKey: "search.filterHint.file" },
+  { prefix: "path:", insert: "path:", descKey: "search.filterHint.path" },
+  { prefix: "annotation:", insert: "annotation:", descKey: "search.filterHint.annotation" },
+  { prefix: "collection:", insert: "collection:", descKey: "search.filterHint.collection" },
 ];
 
 /// Informational tips (non-insertable) describing query syntax beyond
-/// the filter prefixes. Rendered below FILTER_HINTS in the tips panel.
-const SYNTAX_TIPS: { label: string; description: string }[] = [
-  {
-    label: '"…"',
-    description: "phrase search: find an exact phrase by enclosing it in double quotes",
-  },
-  {
-    label: "AND OR NOT",
-    description: "boolean operators (uppercase). Use ( ) to group. Multiple words with no operator are treated as AND",
-  },
-  {
-    label: "-term",
-    description: "minus symbol excludes a term (shorthand for NOT)",
-  },
-  {
-    label: "word*",
-    description: "truncation: match any suffix after the stem: ink* finds ink or inkycap but ink find only ink",
-  },
-  {
-    label: "a W/5 b",
-    description: "proximity: a within 5 words of b (W=ordered, N=any order)",
-  },
+/// the filter prefixes. The `label` is a literal syntax token (not
+/// translated); `descKey` resolves the human description at render.
+const SYNTAX_TIPS: { label: string; descKey: string }[] = [
+  { label: '"…"', descKey: "search.syntaxTip.phrase" },
+  { label: "AND OR NOT", descKey: "search.syntaxTip.boolean" },
+  { label: "-term", descKey: "search.syntaxTip.exclude" },
+  { label: "word*", descKey: "search.syntaxTip.truncation" },
+  { label: "a W/5 b", descKey: "search.syntaxTip.proximity" },
 ];
 
 const SORT_OPTIONS: { value: SortMode; labelKey: string }[] = [
@@ -147,23 +118,16 @@ const SORT_OPTIONS: { value: SortMode; labelKey: string }[] = [
 
 const ANNOTATION_SCOPE_OPTIONS: {
   value: AnnotationScope;
-  label: string;
-  description: string;
+  labelKey: string;
+  descKey: string;
 }[] = [
-  { value: "all", label: "All text", description: "Search everything" },
-  {
-    value: "only",
-    label: "Annotations only",
-    description: "Only annotations and suggestions",
-  },
-  {
-    value: "exclude",
-    label: "Exclude annotations",
-    description: "Hide annotation and suggestion text",
-  },
+  { value: "all", labelKey: "search.scope.all", descKey: "search.scope.allDesc" },
+  { value: "only", labelKey: "search.scope.only", descKey: "search.scope.onlyDesc" },
+  { value: "exclude", labelKey: "search.scope.exclude", descKey: "search.scope.excludeDesc" },
 ];
 
 const SearchPanel: Component = () => {
+  const t = useI18n();
   // UI-only ephemeral state — these don't need to persist across mode
   // switches because they're transient overlays. Loading/showSettings
   // etc. revert to defaults when the panel re-mounts; that matches what
@@ -656,11 +620,11 @@ const SearchPanel: Component = () => {
   function annotationScopeTitle(): string {
     switch (annotationScope()) {
       case "only":
-        return "Annotation scope: annotations only (empty query lists them all)";
+        return t("search.scopeTitle.only");
       case "exclude":
-        return "Annotation scope: annotations excluded";
+        return t("search.scopeTitle.exclude");
       default:
-        return "Annotation scope: all text";
+        return t("search.scopeTitle.all");
     }
   }
 
@@ -672,7 +636,7 @@ const SearchPanel: Component = () => {
             ref={(el) => (inputRef = el)}
             class="search-panel__input"
             type="text"
-            placeholder="Search notebox..."
+            placeholder={t("search.placeholder")}
             value={searchQuery()}
             onInput={(e) => handleInput(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
@@ -685,8 +649,8 @@ const SearchPanel: Component = () => {
                 e.preventDefault();
                 clearQuery();
               }}
-              title="Clear search"
-              aria-label="Clear search"
+              title={t("search.clearSearch")}
+              aria-label={t("search.clearSearch")}
             >
               <X size={12} />
             </button>
@@ -698,7 +662,7 @@ const SearchPanel: Component = () => {
             setCaseSensitive(!caseSensitive());
             executeSearch();
           }}
-          title="Case sensitive"
+          title={t("search.caseSensitive")}
           aria-pressed={caseSensitive()}
         >
           <CaseSensitive size={18} />
@@ -706,7 +670,7 @@ const SearchPanel: Component = () => {
         <button
           class={`icon-btn ${showSettings() ? "icon-btn--active" : ""}`}
           onClick={() => setShowSettings(!showSettings())}
-          title="Search options"
+          title={t("search.options")}
           aria-pressed={showSettings()}
         >
           <Settings2 size={18} />
@@ -714,7 +678,7 @@ const SearchPanel: Component = () => {
         <button
           class={`icon-btn ${showTips() ? "icon-btn--active" : ""}`}
           onClick={() => setShowTips(!showTips())}
-          title="Search tips"
+          title={t("search.tips")}
           aria-pressed={showTips()}
         >
           <Info size={18} />
@@ -726,17 +690,17 @@ const SearchPanel: Component = () => {
           <input
             class="search-panel__input"
             type="text"
-            placeholder="Replace with..."
+            placeholder={t("search.replaceWith")}
             value={replacement()}
             onInput={(e) => setReplacement(e.currentTarget.value)}
           />
           <button
             class="search-panel__replace-btn"
             onClick={replaceAll}
-            title="Replace all"
+            title={t("search.replaceAll")}
             disabled={!searchQuery().trim() || loading()}
           >
-            Replace all
+            {t("search.replaceAll")}
           </button>
           <button
             class="icon-btn"
@@ -745,8 +709,8 @@ const SearchPanel: Component = () => {
               setReplacement("");
               setReplaceResults(null);
             }}
-            title="Close replace"
-            aria-label="Close replace"
+            title={t("search.closeReplace")}
+            aria-label={t("search.closeReplace")}
           >
             <X size={18} />
           </button>
@@ -765,8 +729,8 @@ const SearchPanel: Component = () => {
               setExpandOverrides(new Set<string>());
               setCollapseResults(!collapseResults());
             }}
-            title={collapseResults() ? "Expand results" : "Collapse results"}
-            aria-label={collapseResults() ? "Expand results" : "Collapse results"}
+            title={collapseResults() ? t("search.expandResults") : t("search.collapseResults")}
+            aria-label={collapseResults() ? t("search.expandResults") : t("search.collapseResults")}
           >
             <Show
               when={collapseResults()}
@@ -778,7 +742,7 @@ const SearchPanel: Component = () => {
           <button
             class={`icon-btn ${showMoreContext() ? "icon-btn--active" : ""}`}
             onClick={() => setShowMoreContext(!showMoreContext())}
-            title="Show more context"
+            title={t("search.showMoreContext")}
             aria-pressed={showMoreContext()}
           >
             <LayersPlus size={18} />
@@ -789,7 +753,7 @@ const SearchPanel: Component = () => {
               setUseRegex(!useRegex());
               executeSearch();
             }}
-            title="Use regex"
+            title={t("search.useRegex")}
             aria-pressed={useRegex()}
           >
             <Regex size={18} />
@@ -800,7 +764,7 @@ const SearchPanel: Component = () => {
               class={`icon-btn ${annotationScope() !== "all" ? "icon-btn--active" : ""}`}
               onClick={() => setShowScopeMenu(!showScopeMenu())}
               title={annotationScopeTitle()}
-              aria-label="Annotation scope"
+              aria-label={t("search.annotationScope")}
               aria-haspopup="menu"
               aria-expanded={showScopeMenu()}
             >
@@ -823,9 +787,9 @@ const SearchPanel: Component = () => {
                           annotationScope() === opt.value,
                       }}
                       onClick={() => chooseAnnotationScope(opt.value)}
-                      title={opt.description}
+                      title={t(opt.descKey)}
                     >
-                      <span>{opt.label}</span>
+                      <span>{t(opt.labelKey)}</span>
                       <Show when={annotationScope() === opt.value}>
                         <Check size={14} class="context-menu__check" />
                       </Show>
@@ -840,16 +804,16 @@ const SearchPanel: Component = () => {
 
       <Show when={showTips()}>
         <div class="search-panel__hints">
-          <div class="search-panel__hints-title">Search Tips</div>
+          <div class="search-panel__hints-title">{t("search.tipsTitle")}</div>
           <For each={FILTER_HINTS}>
             {(hint) => (
               <button
                 class="search-panel__hint"
                 onClick={() => insertHint(hint)}
-                title={hint.description}
+                title={t(hint.descKey)}
               >
                 <span class="search-panel__hint-prefix">{hint.prefix}</span>
-                <span class="search-panel__hint-desc">{hint.description}</span>
+                <span class="search-panel__hint-desc">{t(hint.descKey)}</span>
               </button>
             )}
           </For>
@@ -858,7 +822,7 @@ const SearchPanel: Component = () => {
             {(tip) => (
               <div class="search-panel__hint search-panel__hint--static">
                 <span class="search-panel__hint-prefix">{tip.label}</span>
-                <span class="search-panel__hint-desc">{tip.description}</span>
+                <span class="search-panel__hint-desc">{t(tip.descKey)}</span>
               </div>
             )}
           </For>
@@ -868,19 +832,21 @@ const SearchPanel: Component = () => {
       <Show when={replaceResults()}>
         {(res) => (
           <div class="search-panel__replace-info">
-            Replaced in {res().length} file{res().length !== 1 ? "s" : ""}
-            ({res().reduce((sum, r) => sum + r.replacements, 0)} occurrences)
+            {tPlural("search.replacedInfo", res().length, {
+              files: res().length,
+              occurrences: res().reduce((sum, r) => sum + r.replacements, 0),
+            })}
           </div>
         )}
       </Show>
 
       <div class="search-panel__status">
         <Show when={!indexReady()}>
-          <span>{"Indexing notebox…"}</span>
+          <span>{t("search.indexing")}</span>
         </Show>
         <Show when={indexReady() && loading()}>
           <span class="search-panel__busy">
-            {replacing() ? "Replacing" : "Searching"}
+            {replacing() ? t("search.replacing") : t("search.searching")}
             <span class="search-panel__dot search-panel__dot--1">.</span>
             <span class="search-panel__dot search-panel__dot--2">.</span>
             <span class="search-panel__dot search-panel__dot--3">.</span>
@@ -890,12 +856,16 @@ const SearchPanel: Component = () => {
           <button
             ref={overflowBtnRef}
             class="search-panel__overflow-btn"
-            title="More actions"
+            title={t("search.moreActions")}
             onClick={() => setShowOverflowMenu(!showOverflowMenu())}
           >
             {searchTotalCount() > searchResultCount()
-              ? `${searchOffset() + 1}–${searchOffset() + searchResultCount()} of ${searchTotalCount()} results`
-              : `${searchResultCount()} result${searchResultCount() !== 1 ? "s" : ""}`} {"⌄"}
+              ? t("search.resultsRange", {
+                  from: searchOffset() + 1,
+                  to: searchOffset() + searchResultCount(),
+                  total: searchTotalCount(),
+                })
+              : tPlural("search.resultCount", searchResultCount())} {"⌄"}
           </button>
           <Show when={showOverflowMenu()}>
             <div
@@ -909,13 +879,13 @@ const SearchPanel: Component = () => {
                 class="context-menu__item"
                 onClick={copyResultsToClipboard}
               >
-                Copy search results
+                {t("search.copyResults")}
               </button>
               <button
                 class="context-menu__item"
                 onClick={bookmarkCurrentSearch}
               >
-                Bookmark search expression&hellip;
+                {t("search.bookmarkSearch")}
               </button>
             </div>
           </Show>
@@ -923,7 +893,7 @@ const SearchPanel: Component = () => {
             ref={sortBtnRef}
             class="search-panel__sort-btn"
             onClick={() => setShowSortMenu(!showSortMenu())}
-            title="Sort order"
+            title={t("search.sortOrder")}
           >
             {activeSortLabel()} {"⌄"}
           </button>
@@ -963,14 +933,14 @@ const SearchPanel: Component = () => {
             disabled={searchOffset() === 0}
             onClick={() => executeSearch(Math.max(0, searchOffset() - PAGE_SIZE))}
           >
-            Previous
+            {t("search.previous")}
           </button>
           <button
             class="search-panel__page-btn"
             disabled={searchOffset() + searchResultCount() >= searchTotalCount()}
             onClick={() => executeSearch(searchOffset() + PAGE_SIZE)}
           >
-            Next
+            {t("search.next")}
           </button>
         </div>
       </Show>
@@ -999,7 +969,7 @@ const SearchPanel: Component = () => {
                       e.stopPropagation();
                       toggleFileExpansion(group.path);
                     }}
-                    title={expanded() ? "Collapse" : "Expand"}
+                    title={expanded() ? t("search.collapse") : t("search.expand")}
                     aria-expanded={expanded()}
                   >
                     <Show when={expanded()} fallback={<ChevronRight size={14} />}>
@@ -1022,9 +992,9 @@ const SearchPanel: Component = () => {
                         e.stopPropagation();
                         replaceInFile(group.path);
                       }}
-                      title="Replace in this file"
+                      title={t("search.replaceInFile")}
                     >
-                      Replace
+                      {t("search.replace")}
                     </button>
                   </Show>
                 </div>
@@ -1069,13 +1039,13 @@ const SearchPanel: Component = () => {
                 openResult(r, fake);
               }}
             >
-              Open in new tab
+              {t("wikilink.menu.openNewTab")}
             </button>
             <button
               class="context-menu__item"
               onClick={() => openInNewWindow(menu().result)}
             >
-              Open in new window
+              {t("search.openNewWindow")}
             </button>
           </div>
         )}

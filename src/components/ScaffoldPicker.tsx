@@ -19,6 +19,7 @@ import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
 import { toastError, showToast } from "../stores/toasts";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
+import { useI18n } from "../lib/i18n";
 
 interface ScaffoldPickerProps {
   visible: boolean;
@@ -26,6 +27,7 @@ interface ScaffoldPickerProps {
 }
 
 const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
+  const t = useI18n();
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [entries] = createResource(
@@ -62,7 +64,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
   async function insertScaffold(entry: ipc.TemplateEntry) {
     const handle = activeEditorView();
     if (!handle) {
-      showToast("warning", "Open a note first");
+      showToast("warning", t("scaffoldPicker.openNoteFirst"));
       close();
       return;
     }
@@ -74,7 +76,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
     const tab = getActiveTab();
     const title = tab?.path
       ? (tab.path.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
-      : (tab?.title ?? "Untitled");
+      : (tab?.title ?? t("bookmarks.untitled"));
 
     try {
       const result = await ipc.prepareScaffoldInsert({
@@ -98,7 +100,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
       view.focus();
       close();
     } catch (e) {
-      toastError("Failed to insert scaffold", e);
+      toastError(t("scaffoldPicker.insertFailed"), e);
     }
   }
 
@@ -142,16 +144,16 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
           class="quick-open scaffold-picker"
           role="dialog"
           aria-modal="true"
-          aria-label="Insert scaffold"
+          aria-label={t("scaffoldPicker.title")}
         >
           <div class="scaffold-picker__header">
-            <span class="scaffold-picker__title">Insert scaffold</span>
-            <span class="scaffold-picker__hint">Type to filter, ↑↓ to choose, Enter to insert, Esc to cancel</span>
+            <span class="scaffold-picker__title">{t("scaffoldPicker.title")}</span>
+            <span class="scaffold-picker__hint">{t("scaffoldPicker.hint")}</span>
           </div>
           <input
             class="quick-open__input"
             type="text"
-            placeholder="Filter scaffolds..."
+            placeholder={t("scaffoldPicker.filterPlaceholder")}
             value={query()}
             onInput={(e) => {
               setQuery(e.currentTarget.value);
@@ -169,12 +171,11 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
                     when={query().trim().length > 0}
                     fallback={
                       <div class="quick-open__empty">
-                        No scaffolds in <code>.inkycap/scaffolds/</code>. Create one
-                        from the Templates panel.
+                        {t("scaffoldPicker.emptyBefore")} <code>{".inkycap/scaffolds/"}</code>{t("scaffoldPicker.emptyAfter")}
                       </div>
                     }
                   >
-                    <div class="quick-open__empty">No matching scaffolds</div>
+                    <div class="quick-open__empty">{t("scaffoldPicker.noMatching")}</div>
                   </Show>
                 </Show>
               }

@@ -13,8 +13,10 @@
 import { Component, Show } from "solid-js";
 import { AlertTriangle } from "lucide-solid";
 import { noteboxLost } from "../stores/notebox";
+import { useI18n } from "../lib/i18n";
 
 const NoteboxLostBanner: Component = () => {
+  const t = useI18n();
   return (
     <Show when={noteboxLost()}>
       {(path) => (
@@ -22,12 +24,11 @@ const NoteboxLostBanner: Component = () => {
           <AlertTriangle size={18} class="notebox-lost-banner__icon" />
           <div class="notebox-lost-banner__body">
             <span class="notebox-lost-banner__title">
-              Notebox is missing from disk
+              {t("noteboxLost.title")}
             </span>
             <span class="notebox-lost-banner__detail">
               <span class="notebox-lost-banner__path">{path()}</span>{" "}
-              no longer exists. Your open notes cannot be saved — copy any
-              content you want to keep into another location or notebox.
+              {t("noteboxLost.detail")}
             </span>
           </div>
         </div>

@@ -33,6 +33,7 @@ import {
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
+import { useI18n, tPlural } from "../lib/i18n";
 import { onFileChanged } from "../lib/events";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import {
@@ -213,6 +214,7 @@ interface JournalScrollViewProps {
 }
 
 const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
+  const t = useI18n();
   let containerRef: HTMLDivElement | undefined;
   let bottomSentinelRef: HTMLDivElement | undefined;
   // Stop fn for the currently-running `holdEntry` correction loop, if any.
@@ -628,7 +630,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
       onScroll={captureScrollPosition}
     >
       <Show when={isLoading(props.tabId) && getEntries(props.tabId).length === 0}>
-        <div class="journal-scroll__loading">Loading…</div>
+        <div class="journal-scroll__loading">{t("common.loading")}</div>
       </Show>
       <For each={stableEntries()}>
         {(entry) => (
@@ -647,7 +649,7 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
         }
       >
         <div class="journal-scroll__empty">
-          No notes match the current scroll filter.
+          {t("journalScroll.empty")}
         </div>
       </Show>
       <div ref={bottomSentinelRef} class="journal-scroll__sentinel" />
@@ -667,31 +669,31 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
 const CONNECTION_BADGES: ReadonlyArray<{
   key: "is_anchor" | "links_to_anchor" | "linked_from_anchor" | "shares_tags";
   Icon: Component<{ size?: number }>;
-  label: string;
+  labelKey: string;
   cls: string;
 }> = [
   {
     key: "is_anchor",
     Icon: Anchor,
-    label: "Anchor note: journal is scrolling relative to this note",
+    labelKey: "journalScroll.badge.anchor",
     cls: "anchor",
   },
   {
     key: "links_to_anchor",
     Icon: SquareArrowOutUpRight,
-    label: "Links to the anchor note",
+    labelKey: "journalScroll.badge.linksTo",
     cls: "links-to-anchor",
   },
   {
     key: "linked_from_anchor",
     Icon: SquareArrowInDownLeft,
-    label: "Linked from the anchor note",
+    labelKey: "journalScroll.badge.linkedFrom",
     cls: "linked-from-anchor",
   },
   {
     key: "shares_tags",
     Icon: Tags,
-    label: "Shares a tag with the anchor note",
+    labelKey: "journalScroll.badge.sharesTags",
     cls: "shares-tags",
   },
 ];
@@ -709,6 +711,7 @@ interface JournalScrollEntryViewProps {
 const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
   props,
 ) => {
+  const t = useI18n();
   let frameRef: HTMLDivElement | undefined;
   let bodyRef: HTMLDivElement | undefined;
   const [result, setResult] = createSignal<TypstHtmlResult | null>(null);
@@ -848,7 +851,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
         <button
           class="journal-scroll__entry-title"
           onClick={handleTitleClick}
-          title="Open in new tab"
+          title={t("wikilink.menu.openNewTab")}
         >
           {props.entry.title}
         </button>
@@ -859,11 +862,14 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
               class="journal-scroll__entry-warning"
               classList={{ "is-error": hasError() }}
               onClick={() => setShowDiag((v) => !v)}
-              title={`${diagnostics().length} compile ${
-                hasError() ? "issue" : "warning"
-              }${diagnostics().length === 1 ? "" : "s"} — click to ${
-                showDiag() ? "hide" : "view"
-              }`}
+              title={tPlural(
+                hasError() ? "journalScroll.diag.issue" : "journalScroll.diag.warning",
+                diagnostics().length,
+                {
+                  count: diagnostics().length,
+                  action: t(showDiag() ? "journalScroll.diag.hide" : "journalScroll.diag.view"),
+                },
+              )}
               aria-expanded={showDiag()}
             >
               <MessageSquareWarning size={15} />
@@ -875,8 +881,8 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
                 {(b) => (
                   <span
                     class={`journal-scroll__entry-connection journal-scroll__entry-connection--${b.cls}`}
-                    title={b.label}
-                    aria-label={b.label}
+                    title={t(b.labelKey)}
+                    aria-label={t(b.labelKey)}
                   >
                     <b.Icon size={14} />
                   </span>
@@ -888,7 +894,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
       </div>
       <Show when={result()} fallback={
         <div class="journal-scroll__entry-loading">
-          {near() ? "Compiling…" : "…"}
+          {near() ? t("journalScroll.compiling") : "…"}
         </div>
       }>
         {(r) => (
@@ -900,8 +906,7 @@ const JournalScrollEntryView: Component<JournalScrollEntryViewProps> = (
               <div class="typst-reading__diagnostics">
                 <Show when={r().recovered}>
                   <div class="typst-reading__recovered-note">
-                    Showing a partial render — the errored content below was
-                    skipped so the rest of the entry stays visible.
+                    {t("journalScroll.recoveredNote")}
                   </div>
                 </Show>
                 <For each={r().diagnostics}>

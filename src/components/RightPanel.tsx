@@ -35,7 +35,7 @@ import {
   scrollToAnchor,
   toggleScrollDirection,
 } from "../stores/journal-scroll";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 import {
   EllipsisVertical,
   NotebookTabs,
@@ -147,6 +147,7 @@ interface BacklinkWithContext extends LinkInfo {
 }
 
 const RightPanel: Component = () => {
+  const t = useI18n();
   const activePanel = rightPanelTab;
   const setActivePanel = (tab: RightPanelTab) => setRightPanelTab(tab);
 
@@ -321,7 +322,7 @@ const RightPanel: Component = () => {
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
       );
     } catch (err) {
-      toastError("Failed to reorder properties", err);
+      toastError(t("rightPanel.toast.reorderFailed"), err);
     }
   }
 
@@ -751,7 +752,7 @@ const RightPanel: Component = () => {
       const path = await ipc.createNote(target, "", undefined);
       openTab({ type: "file", title: target, path }, { forceNewTab: true });
     } catch (e) {
-      toastError("Failed to create note", e);
+      toastError(t("rightPanel.toast.createNoteFailed"), e);
     }
   }
 
@@ -779,7 +780,7 @@ const RightPanel: Component = () => {
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
       );
     } catch (err) {
-      toastError("Failed to update property", err);
+      toastError(t("rightPanel.toast.updatePropFailed"), err);
     }
   }
 
@@ -804,7 +805,7 @@ const RightPanel: Component = () => {
         new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
       );
     } catch (err) {
-      toastError("Failed to remove property", err);
+      toastError(t("rightPanel.toast.removePropFailed"), err);
     }
   }
 
@@ -815,7 +816,7 @@ const RightPanel: Component = () => {
       await reloadPropertyTypes();
       refetchMetadata();
     } catch (err) {
-      toastError("Failed to set property type", err);
+      toastError(t("rightPanel.toast.setTypeFailed"), err);
     }
   }
 
@@ -872,7 +873,7 @@ const RightPanel: Component = () => {
         await ipc.setPropertyType(key, ty);
         await reloadPropertyTypes();
       } catch (err) {
-        toastError("Failed to set property type", err);
+        toastError(t("rightPanel.toast.setTypeFailed"), err);
       }
     }
     handlePropertySave(key, defaultValue);
@@ -992,10 +993,10 @@ const RightPanel: Component = () => {
     if (!tab || tab.collab) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     const newName = await promptText({
-      title: "Rename note",
-      label: "New name",
+      title: t("rightPanel.renameTitle"),
+      label: t("rightPanel.renameLabel"),
       initialValue: oldName,
-      confirmLabel: "Rename",
+      confirmLabel: t("common.rename"),
     });
     if (!newName || newName === oldName) return;
     try {
@@ -1003,7 +1004,7 @@ const RightPanel: Component = () => {
       closeTab(tab.id);
       openTab({ type: "file", title: newName, path: newPath }, { forceNewTab: true });
     } catch (err) {
-      toastError("Rename failed", err);
+      toastError(t("statusBar.renameFailed"), err);
     }
   }
 
@@ -1020,7 +1021,7 @@ const RightPanel: Component = () => {
       const name = tab.title.replace(/\.[^.]+$/, "");
       await ipc.addBookmark({ type: "Note", data: { path: tab.path, name } });
     } catch (err) {
-      toastError("Bookmark failed", err);
+      toastError(t("rightPanel.toast.bookmarkFailed"), err);
     }
   }
 
@@ -1052,7 +1053,7 @@ const RightPanel: Component = () => {
     try {
       await ipc.showInExplorer(tab.path);
     } catch (err) {
-      toastError("Show in explorer failed", err);
+      toastError(t("rightPanel.toast.showExplorerFailed"), err);
     }
   }
 
@@ -1093,8 +1094,8 @@ const RightPanel: Component = () => {
               <>
                 <div
                   class="right-panel__tab right-panel__tab--indicator"
-                  title="Scroll context — linked notes for the entry in view"
-                  aria-label="Scroll context"
+                  title={t("rightPanel.scrollContextIndicator")}
+                  aria-label={t("rightPanel.scrollContext")}
                 >
                   <Newspaper size={18} />
                 </div>
@@ -1142,40 +1143,40 @@ const RightPanel: Component = () => {
             <button
               class="right-panel__tab"
               onClick={openFileMenu}
-              title="File actions"
-              aria-label="File actions"
+              title={t("rightPanel.fileActions")}
+              aria-label={t("rightPanel.fileActions")}
             >
               <EllipsisVertical size={18} />
             </button>
             <button
               class={`right-panel__tab${activePanel() === "outline" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("outline")}
-              title="Outline"
-              aria-label="Outline"
+              title={t("outlinePanel.title")}
+              aria-label={t("outlinePanel.title")}
             >
               <TableOfContents size={18} />
             </button>
             <button
               class={`right-panel__tab${activePanel() === "properties" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("properties")}
-              title="Properties"
-              aria-label="Properties"
+              title={t("rightPanel.tab.properties")}
+              aria-label={t("rightPanel.tab.properties")}
             >
               <NotebookTabs size={18} />
             </button>
             <button
               class={`right-panel__tab${activePanel() === "links" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("links")}
-              title="Links"
-              aria-label="Links"
+              title={t("rightPanel.tab.links")}
+              aria-label={t("rightPanel.tab.links")}
             >
               <Link size={18} />
             </button>
             <button
               class={`right-panel__tab${activePanel() === "references" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("references")}
-              title="References"
-              aria-label="References"
+              title={t("rightPanel.tab.references")}
+              aria-label={t("rightPanel.tab.references")}
             >
               <Quote size={18} />
             </button>
@@ -1212,9 +1213,9 @@ const RightPanel: Component = () => {
             );
             return (
               <>
-                {collTab("characteristics", "Characteristics", Settings2)}
-                {collTab("style", "Style Overrides", Ligature)}
-                {collTab("book", "Book Metadata", NotebookTabs)}
+                {collTab("characteristics", t("rightPanel.coll.characteristics"), Settings2)}
+                {collTab("style", t("collection.style.overrides"), Ligature)}
+                {collTab("book", t("rightPanel.coll.book"), NotebookTabs)}
               </>
             );
           })()}
@@ -1226,16 +1227,16 @@ const RightPanel: Component = () => {
           <button
             class={`right-panel__tab${mycelialPanelTab() === "context" ? " right-panel__tab--active" : ""}`}
             onClick={() => setMycelialPanelTab("context")}
-            title="Linked Context"
-            aria-label="Linked Context"
+            title={t("rightPanel.mycelial.context")}
+            aria-label={t("rightPanel.mycelial.context")}
           >
             <Waypoints size={18} />
           </button>
           <button
             class={`right-panel__tab${mycelialPanelTab() === "filtering" ? " right-panel__tab--active" : ""}`}
             onClick={() => setMycelialPanelTab("filtering")}
-            title="Concept Filtering"
-            aria-label="Concept Filtering"
+            title={t("rightPanel.mycelial.filtering")}
+            aria-label={t("rightPanel.mycelial.filtering")}
           >
             <Filter size={18} />
           </button>
@@ -1304,7 +1305,7 @@ const RightPanel: Component = () => {
             <div class="right-panel__tab-content">
               <div class="right-panel__section">
                 <div class="right-panel__section-header">
-                  <span>Linked context</span>
+                  <span>{t("rightPanel.linkedContext")}</span>
                   <span class="right-panel__count">{contextNotes().length}</span>
                 </div>
                 <div class="mycelial-context__controls">
@@ -1312,7 +1313,7 @@ const RightPanel: Component = () => {
                     <input
                       class="mycelial-context__filter"
                       type="text"
-                      placeholder="Filter…"
+                      placeholder={t("annotations.filterPlaceholder")}
                       value={contextFilter()}
                       onInput={(e) => setContextFilter(e.currentTarget.value)}
                     />
@@ -1320,8 +1321,8 @@ const RightPanel: Component = () => {
                       <button
                         class="mycelial-context__filter-clear"
                         onMouseDown={(e) => { e.preventDefault(); setContextFilter(""); }}
-                        title="Clear filter"
-                        aria-label="Clear filter"
+                        title={t("references.clearFilter")}
+                        aria-label={t("references.clearFilter")}
                       >
                         <X size={12} />
                       </button>
@@ -1331,16 +1332,16 @@ const RightPanel: Component = () => {
                     class="dropdown--sm"
                     value={contextSort()}
                     options={[
-                      { value: "connections", label: "By connections" },
-                      { value: "name", label: "By name" },
+                      { value: "connections", label: t("rightPanel.sortContext.byConnections") },
+                      { value: "name", label: t("rightPanel.sortContext.byName") },
                     ]}
                     onChange={setContextSort}
-                    ariaLabel="Sort context notes"
+                    ariaLabel={t("rightPanel.sortContextAria")}
                   />
                 </div>
                 <Show
                   when={sortedFiltered().length > 0}
-                  fallback={<p class="sidebar-hint">No context notes</p>}
+                  fallback={<p class="sidebar-hint">{t("rightPanel.noContextNotes")}</p>}
                 >
                   <div class="search-panel__results">
                     <For each={sortedFiltered()}>
@@ -1369,7 +1370,7 @@ const RightPanel: Component = () => {
                                     e.stopPropagation();
                                     toggleExpanded(note.path);
                                   }}
-                                  title={expanded() ? "Collapse" : "Expand"}
+                                  title={expanded() ? t("search.collapse") : t("search.expand")}
                                   aria-expanded={expanded()}
                                 >
                                   <Show
@@ -1448,7 +1449,7 @@ const RightPanel: Component = () => {
               activePanel() !== "annotations"
             }
           >
-            <p class="sidebar-hint">No file selected</p>
+            <p class="sidebar-hint">{t("rightPanel.noFileSelected")}</p>
           </Show>
         }
       >
@@ -1458,7 +1459,7 @@ const RightPanel: Component = () => {
           <Show when={activePanel() === "properties"}>
             <div class="right-panel__section">
               <div class="right-panel__section-header">
-                <span>Properties</span>
+                <span>{t("rightPanel.properties")}</span>
                 {/* Reserved for future per-pane actions to keep the header
                     bar visually aligned with the left sidebar's pattern. */}
                 <div class="right-panel__header-actions" />
@@ -1498,7 +1499,7 @@ const RightPanel: Component = () => {
                             <div class="property-row__name">
                               <span
                                 class="property-row__icon property-row__drag-handle"
-                                title={`Type: ${propertyTypeLabel(ty())} \u2014 drag to reorder`}
+                                title={t("rightPanel.propTypeDragTitle", { type: propertyTypeLabel(ty()) })}
                                 draggable={true}
                                 onDragStart={(e) => handleDragStart(e, key)}
                                 onDragEnd={handleDragEnd}
@@ -1518,7 +1519,7 @@ const RightPanel: Component = () => {
                             </div>
                             <button
                               class="property-row__type-btn"
-                              title="Property options"
+                              title={t("rightPanel.propertyOptions")}
                               onClick={(e) => openRowMenu(e, key)}
                             >
                               {"\u22EE"}
@@ -1538,7 +1539,7 @@ const RightPanel: Component = () => {
                     class="right-panel__add-btn"
                     onClick={() => { loadPropertyKeysForAutocomplete(); setAddingProp(true); }}
                   >
-                    + Add property
+                    {t("rightPanel.addProperty")}
                   </button>
                 }
               >
@@ -1546,7 +1547,7 @@ const RightPanel: Component = () => {
                   <input
                     class="property-editor__input"
                     type="text"
-                    placeholder="Create new or select existing property..."
+                    placeholder={t("rightPanel.addPropertyPlaceholder")}
                     value={newPropKey()}
                     onInput={(e) => onNewPropKeyInput(e.currentTarget.value)}
                     onKeyDown={handleAddKeyDown}
@@ -1578,7 +1579,7 @@ const RightPanel: Component = () => {
                             </span>
                             <span>{key}</span>
                             <Show when={KNOWN_FIELDS.has(key)}>
-                              <span class="add-prop-suggestions__badge">system</span>
+                              <span class="add-prop-suggestions__badge">{t("rightPanel.systemBadge")}</span>
                             </Show>
                           </button>
                         )}
@@ -1596,7 +1597,7 @@ const RightPanel: Component = () => {
                         label: propertyTypeLabel(ty),
                       }))}
                       onChange={setNewPropType}
-                      ariaLabel="New property type"
+                      ariaLabel={t("rightPanel.newPropertyType")}
                     />
                   </Show>
                 </div>
@@ -1612,7 +1613,7 @@ const RightPanel: Component = () => {
           {/* Links tab */}
           <Show when={activePanel() === "links"}>
             <Show when={!indexReady()}>
-              <p class="sidebar-hint">{"Indexing notebox\u2026"}</p>
+              <p class="sidebar-hint">{t("search.indexing")}</p>
             </Show>
 
             {/* Toolbar: Sort, Expand/Collapse, More Context, Filter.
@@ -1629,8 +1630,8 @@ const RightPanel: Component = () => {
                   e.stopPropagation();
                   setShowLinksSortMenu((v) => !v);
                 }}
-                title={`Sort links \u2014 ${activeLinksSortLabel()}`}
-                aria-label="Sort links"
+                title={t("rightPanel.sortLinksTitle", { label: activeLinksSortLabel() })}
+                aria-label={t("rightPanel.sortLinks")}
                 aria-haspopup="menu"
                 aria-expanded={showLinksSortMenu()}
               >
@@ -1675,13 +1676,13 @@ const RightPanel: Component = () => {
                 onClick={() => setLinksCollapsePreviews(!linksCollapsePreviews())}
                 title={
                   linksCollapsePreviews()
-                    ? "Expand previews"
-                    : "Collapse previews"
+                    ? t("rightPanel.expandPreviews")
+                    : t("rightPanel.collapsePreviews")
                 }
                 aria-label={
                   linksCollapsePreviews()
-                    ? "Expand previews"
-                    : "Collapse previews"
+                    ? t("rightPanel.expandPreviews")
+                    : t("rightPanel.collapsePreviews")
                 }
               >
                 <Show
@@ -1694,7 +1695,7 @@ const RightPanel: Component = () => {
               <button
                 class={`right-panel__icon-btn${linksShowMoreContext() ? " right-panel__icon-btn--active" : ""}`}
                 onClick={() => setLinksShowMoreContext(!linksShowMoreContext())}
-                title="Show more context"
+                title={t("search.showMoreContext")}
                 aria-pressed={linksShowMoreContext()}
               >
                 <LayersPlus size={18} />
@@ -1708,7 +1709,7 @@ const RightPanel: Component = () => {
                     setTimeout(() => linksFilterInputRef?.focus(), 0);
                   }
                 }}
-                title="Filter links by name"
+                title={t("rightPanel.filterLinksByName")}
                 aria-pressed={linksShowFilter()}
               >
                 <Search size={18} />
@@ -1721,8 +1722,8 @@ const RightPanel: Component = () => {
                   ref={(el) => (linksFilterInputRef = el)}
                   class="right-panel__links-filter-input"
                   type="text"
-                  placeholder="Search within links..."
-                  title="Same query syntax as the left search panel (phrase quotes, AND/OR/NOT, tag:, file:, path:, property:, section:, /regex/); results are filtered to this note's links."
+                  placeholder={t("rightPanel.searchWithinLinks")}
+                  title={t("rightPanel.searchWithinLinksTitle")}
                   value={linksFilterQuery()}
                   onInput={(e) => setLinksFilterQuery(e.currentTarget.value)}
                   onKeyDown={(e) => {
@@ -1743,8 +1744,8 @@ const RightPanel: Component = () => {
                       setLinksFilterQuery("");
                       linksFilterInputRef?.focus();
                     }}
-                    title="Clear filter"
-                    aria-label="Clear filter"
+                    title={t("references.clearFilter")}
+                    aria-label={t("references.clearFilter")}
                   >
                     <X size={12} />
                   </button>
@@ -1768,7 +1769,7 @@ const RightPanel: Component = () => {
                 aria-expanded={linksSectionExpanded().inbound}
               >
                 <span>
-                  Inbound Links
+                  {t("rightPanel.inboundLinks")}
                   <Show when={sortedBacklinks().length}>
                     <span class="right-panel__count">
                       {" "}({sortedBacklinks().length})
@@ -1800,7 +1801,7 @@ const RightPanel: Component = () => {
                           onDblClick={() =>
                             toggleLinksPreviewOverride(`inbound::${link.path}`)
                           }
-                          title="Click to open, Ctrl/Cmd+click for new tab, right-click for more, double-click to toggle preview"
+                          title={t("rightPanel.rowTitle.full")}
                         >
                           <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
                           <span class="sidebar-item__label">{link.name}</span>
@@ -1829,8 +1830,8 @@ const RightPanel: Component = () => {
                 <Show when={sortedBacklinks().length === 0}>
                   <p class="sidebar-hint">
                     {linksFilterQuery().trim()
-                      ? "No matching inbound links"
-                      : "No inbound links"}
+                      ? t("rightPanel.noMatchingInbound")
+                      : t("rightPanel.noInbound")}
                   </p>
                 </Show>
               </Show>
@@ -1852,7 +1853,7 @@ const RightPanel: Component = () => {
                 aria-expanded={linksSectionExpanded().outbound}
               >
                 <span>
-                  Outbound Links
+                  {t("rightPanel.outboundLinks")}
                   <Show when={sortedForwardLinks().length}>
                     <span class="right-panel__count">
                       {" "}({sortedForwardLinks().length})
@@ -1897,8 +1898,8 @@ const RightPanel: Component = () => {
                           }}
                           title={
                             link.resolved
-                              ? "Click to open, Ctrl/Cmd+click for new tab, right-click for more"
-                              : "Click to create this note"
+                              ? t("rightPanel.rowTitle.resolved")
+                              : t("rightPanel.rowTitle.unresolved")
                           }
                         >
                           <span class="sidebar-item__icon" innerHTML={link.resolved
@@ -1914,7 +1915,7 @@ const RightPanel: Component = () => {
                                 createUnresolvedNote(link.target);
                               }}
                             >
-                              create
+                              {t("rightPanel.create")}
                             </button>
                           </Show>
                         </div>
@@ -1942,8 +1943,8 @@ const RightPanel: Component = () => {
                 <Show when={sortedForwardLinks().length === 0}>
                   <p class="sidebar-hint">
                     {linksFilterQuery().trim()
-                      ? "No matching outbound links"
-                      : "No outbound links"}
+                      ? t("rightPanel.noMatchingOutbound")
+                      : t("rightPanel.noOutbound")}
                   </p>
                 </Show>
               </Show>
@@ -1967,7 +1968,7 @@ const RightPanel: Component = () => {
                 aria-expanded={linksSectionExpanded().potential}
               >
                 <span>
-                  Possible wikilinks
+                  {t("rightPanel.possibleWikilinks")}
                   <Show when={sortedPotentialLinks().length}>
                     <span class="right-panel__count">
                       {" "}({sortedPotentialLinks().length})
@@ -1999,7 +2000,7 @@ const RightPanel: Component = () => {
                           onDblClick={() =>
                             toggleLinksPreviewOverride(`potential::${link.path}`)
                           }
-                          title="Click to open, Ctrl/Cmd+click for new tab, right-click for more, double-click to toggle preview"
+                          title={t("rightPanel.rowTitle.full")}
                         >
                           <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
                           <span class="sidebar-item__label">{link.name}</span>
@@ -2026,7 +2027,7 @@ const RightPanel: Component = () => {
                   }}
                 </For>
                 <Show when={sortedPotentialLinks().length === 0}>
-                  <p class="sidebar-hint">No possible wikilinks</p>
+                  <p class="sidebar-hint">{t("rightPanel.noPossibleWikilinks")}</p>
                 </Show>
               </Show>
             </div>
@@ -2071,37 +2072,37 @@ const RightPanel: Component = () => {
                 (properties, citations, the editor itself) stay enabled. */}
             <Show when={!activeFileTab()?.collab}>
               <button class="context-menu__item" onClick={menuRename}>
-                Rename...
+                {t("rightPanel.menu.rename")}
               </button>
               <button class="context-menu__item" onClick={menuMoveFile}>
-                Move file to...
+                {t("rightPanel.menu.move")}
               </button>
             </Show>
             <button class="context-menu__item" onClick={menuBookmark}>
-              Bookmark...
+              {t("rightPanel.menu.bookmark")}
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuExport}>
-              Export...
+              {t("rightPanel.menu.export")}
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuFind}>
-              Find...
+              {t("rightPanel.menu.find")}
             </button>
             <button class="context-menu__item" onClick={menuReplace}>
-              Replace...
+              {t("rightPanel.menu.replace")}
             </button>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={menuShowInFileTree}>
-              Show in file tree
+              {t("rightPanel.menu.showInTree")}
             </button>
             <button class="context-menu__item" onClick={menuShowInExplorer}>
-              Show in system file manager
+              {t("rightPanel.menu.showInExplorer")}
             </button>
             <Show when={!activeFileTab()?.collab}>
               <div class="context-menu__separator" />
               <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
-                Delete file
+                {t("rightPanel.menu.delete")}
               </button>
             </Show>
           </div>
@@ -2126,13 +2127,13 @@ const RightPanel: Component = () => {
                 );
               }}
             >
-              Open in new tab
+              {t("wikilink.menu.openNewTab")}
             </button>
             <button
               class="context-menu__item"
               onClick={() => openLinkRowInNewWindow(menu().path, menu().name)}
             >
-              Open in new window
+              {t("search.openNewWindow")}
             </button>
           </div>
         )}
@@ -2155,7 +2156,7 @@ const RightPanel: Component = () => {
                   setRowMenu({ ...menu(), typeSubmenuOpen: false })
                 }
               >
-                Property type
+                {t("rightPanel.propertyType")}
                 <span class="context-menu__chevron">{"\u25B8"}</span>
                 <Show when={menu().typeSubmenuOpen}>
                   <div
@@ -2182,7 +2183,7 @@ const RightPanel: Component = () => {
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleRemoveProperty(menu().key)}
             >
-              Remove
+              {t("common.remove")}
             </button>
           </div>
         )}

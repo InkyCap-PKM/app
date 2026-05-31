@@ -23,7 +23,7 @@ import type {
   FileTreeNode,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
-import { t, useI18n, AVAILABLE_LOCALES } from "../lib/i18n";
+import { useI18n, AVAILABLE_LOCALES } from "../lib/i18n";
 import { setUiLocale } from "../stores/locale";
 import { modifierKey } from "../lib/platform";
 import { formatUserDate, formatUserDateTime, DEFAULT_DATE_FORMAT } from "../lib/dates";
@@ -94,18 +94,18 @@ interface SettingsPanelProps {
 
 type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "editor", label: "Editor" },
+const TABS: { id: SettingsTab; labelKey: string }[] = [
+  { id: "overview", labelKey: "settings.tab.overview" },
+  { id: "editor", labelKey: "settings.tab.editor" },
   // "Language" is the home for spellcheck today and any future language work
   // (UI translations, per-language typography, etc.).
-  { id: "language", label: "Language" },
-  { id: "appearance", label: "Appearance" },
-  { id: "files", label: "Files & Links" },
-  { id: "citations", label: "Citations" },
-  { id: "export", label: "Import/Export & Backup" },
-  { id: "creation-rules", label: "Creation Rules" },
-  { id: "behaviour", label: "Behaviour" },
+  { id: "language", labelKey: "settings.tab.language" },
+  { id: "appearance", labelKey: "settings.tab.appearance" },
+  { id: "files", labelKey: "settings.tab.files" },
+  { id: "citations", labelKey: "settings.tab.citations" },
+  { id: "export", labelKey: "settings.tab.export" },
+  { id: "creation-rules", labelKey: "settings.tab.creationRules" },
+  { id: "behaviour", labelKey: "settings.tab.behaviour" },
 ];
 
 /** Which settings groups a tab's "Reset to defaults" button resets.
@@ -146,6 +146,7 @@ function resetTabSettings(tab: SettingsTab) {
 }
 
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
+  const t = useI18n();
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
 
   createEffect(() => {
@@ -179,9 +180,9 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       >
         <div class="settings__panel">
           <div class="settings__header">
-            <h2 class="settings__title">Settings</h2>
-            <button class="settings__close" onClick={props.onClose}>
-              &times;
+            <h2 class="settings__title">{t("settings.title")}</h2>
+            <button class="settings__close" onClick={props.onClose} aria-label={t("common.close")}>
+              ×
             </button>
           </div>
 
@@ -194,7 +195,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                     class={`settings__tab ${activeTab() === tab.id ? "settings__tab--active" : ""}`}
                     onClick={() => setActiveTab(tab.id)}
                   >
-                    {tab.label}
+                    {t(tab.labelKey)}
                   </button>
                 )}
               </For>
@@ -228,7 +229,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 <Show when={activeTab() === "creation-rules"}>
                   <div class="settings__section">
                     <p class="settings__section-note">
-                      Creation rules simplify repetitive note creation processes. Each rule specifies a filename pattern, a scaffold of properties or content to insert, an optional Typst template, a target folder, and a shortcut.
+                      {t("settings.creationRules.intro")}
                     </p>
                   </div>
                   <CreationRuleEditor />
@@ -245,7 +246,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                     class="settings__reset-btn"
                     onClick={() => resetTabSettings(activeTab())}
                   >
-                    Reset to Defaults
+                    {t("settings.resetToDefaults")}
                   </button>
                 </Show>
               </div>
@@ -260,35 +261,37 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 // --- Section Components ---
 
 function OverviewSection() {
+  const t = useI18n();
   return (
     <div class="settings__section">
       {/* Branding + Version */}
       <div class="settings__overview-header">
         <div>
           <div class="settings__section-header">
-            <span class="settings__label">Version</span>
+            <span class="settings__label">{t("settings.overview.version")}</span>
           </div>
           <div class="settings__row">
             <div class="settings__row-info">
+              {/* i18n-exempt: brand name */}
               <label class="settings__label">InkyCap</label>
-              <span class="settings__description">Version information will appear here.</span>
+              <span class="settings__description">{t("settings.overview.versionPlaceholder")}</span>
             </div>
           </div>
         </div>
         <img
           src={inkycapLogo}
-          alt="InkyCap"
+          alt={"InkyCap" /* i18n-exempt: brand name */}
           class="settings__overview-logo"
         />
       </div>
 
       {/* Help */}
       <div class="settings__section-header">
-        <span class="settings__label" >Help</span>
+        <span class="settings__label" >{t("settings.overview.help")}</span>
       </div>
       <div class="settings__row">
         <div class="settings__row-info">
-          <span class="settings__description">Help links and documentation will appear here.</span>
+          <span class="settings__description">{t("settings.overview.helpPlaceholder")}</span>
         </div>
       </div>
 
@@ -298,6 +301,7 @@ function OverviewSection() {
 }
 
 function NoteboxManagementSection() {
+  const t = useI18n();
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [addPath, setAddPath] = createSignal("");
   const [addName, setAddName] = createSignal("");
@@ -337,7 +341,7 @@ function NoteboxManagementSection() {
       await ipc.updateNoteboxEntry(path, name);
       await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", `Failed to rename notebox: ${err}`);
+      showToast("error", t("settings.notebox.renameFailed", { error: String(err) }));
     }
     setEditingPath(null);
   }
@@ -359,7 +363,7 @@ function NoteboxManagementSection() {
       }
       await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", `Failed to remove notebox: ${err}`);
+      showToast("error", t("settings.notebox.removeFailed", { error: String(err) }));
     }
   }
 
@@ -367,7 +371,7 @@ function NoteboxManagementSection() {
     try {
       await ipc.showInExplorer(path);
     } catch (err) {
-      showToast("error", `Failed to open file manager: ${err}`);
+      showToast("error", t("settings.notebox.openFileManagerFailed", { error: String(err) }));
     }
   }
 
@@ -380,7 +384,7 @@ function NoteboxManagementSection() {
       try {
         await openNotebox(entry.path);
       } catch (err) {
-        showToast("error", `Failed to open notebox: ${err}`);
+        showToast("error", t("settings.notebox.openFailed", { error: String(err) }));
         return;
       }
     }
@@ -406,7 +410,7 @@ function NoteboxManagementSection() {
       try {
         await openNotebox(entry.path);
       } catch (err) {
-        showToast("error", `Failed to open notebox: ${err}`);
+        showToast("error", t("settings.notebox.openFailed", { error: String(err) }));
         input.checked = wasOn;
         return;
       }
@@ -439,7 +443,7 @@ function NoteboxManagementSection() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select new location for notebox",
+      title: t("settings.notebox.selectNewLocationTitle"),
       defaultPath: entry.path,
     });
     if (!selected) return;
@@ -455,9 +459,9 @@ function NoteboxManagementSection() {
       if (result.was_active) {
         await openNotebox(result.new_path);
       }
-      showToast("info", `Notebox moved to ${result.new_path}`);
+      showToast("info", t("settings.notebox.moved", { path: result.new_path }));
     } catch (err) {
-      showToast("error", `Failed to move notebox: ${err}`);
+      showToast("error", t("settings.notebox.moveFailed", { error: String(err) }));
     }
   }
 
@@ -468,7 +472,7 @@ function NoteboxManagementSection() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select notebox folder",
+      title: t("settings.notebox.selectFolderTitle"),
       defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
@@ -481,7 +485,7 @@ function NoteboxManagementSection() {
     const path = addPath().trim();
     const name = addName().trim();
     if (!path) {
-      showToast("error", "Please select a notebox folder.");
+      showToast("error", t("settings.notebox.selectFolderError"));
       return;
     }
     // Offer the seed-from-existing prompt before registering so the new
@@ -495,7 +499,7 @@ function NoteboxManagementSection() {
       setAddPath("");
       setAddName("");
     } catch (err) {
-      showToast("error", `Failed to add notebox: ${err}`);
+      showToast("error", t("settings.notebox.addFailed", { error: String(err) }));
     }
   }
 
@@ -509,7 +513,7 @@ function NoteboxManagementSection() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select an empty folder for the cloned notebox",
+      title: t("settings.notebox.selectCloneFolderTitle"),
       defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
@@ -523,12 +527,12 @@ function NoteboxManagementSection() {
       if (!empty) {
         showToast(
           "error",
-          "That folder already contains files. Choose or create an empty folder for the cloned notebox.",
+          t("settings.notebox.folderNotEmptyClone"),
         );
         return;
       }
     } catch (err) {
-      showToast("error", `Couldn't inspect that folder: ${err}`);
+      showToast("error", t("settings.notebox.inspectFolderFailed", { error: String(err) }));
       return;
     }
     setCloneDest(selected);
@@ -545,11 +549,11 @@ function NoteboxManagementSection() {
     const remote = cloneRemote().trim();
     const dest = cloneDest().trim();
     if (!remote) {
-      showToast("error", "Enter a remote URL to clone.");
+      showToast("error", t("settings.notebox.cloneRemoteRequired"));
       return;
     }
     if (!dest) {
-      showToast("error", "Choose an empty folder for the clone.");
+      showToast("error", t("settings.notebox.cloneFolderRequired"));
       return;
     }
     // Display name defaults to the destination folder's basename (the backend
@@ -569,9 +573,9 @@ function NoteboxManagementSection() {
       await loadNoteboxRegistry();
       resetCloneForm();
       await openNotebox(path);
-      showToast("success", `Cloned and opened ${name}.`);
+      showToast("success", t("settings.notebox.cloneOpened", { name }));
     } catch (err) {
-      showToast("error", `Clone failed: ${err}`);
+      showToast("error", t("settings.notebox.cloneFailed", { error: String(err) }));
     } finally {
       setCloning(false);
     }
@@ -580,9 +584,9 @@ function NoteboxManagementSection() {
   async function browseForImportArchive() {
     const selected = await open({
       multiple: false,
-      title: "Select a notebox package to import",
+      title: t("settings.notebox.selectPackageTitle"),
       defaultPath: await homeDirDefault(),
-      filters: [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }],
+      filters: [{ name: t("settings.notebox.packageFilterName"), extensions: ["zip", "inkypkg"] }],
     });
     if (typeof selected !== "string") return;
     setImportArchive(selected);
@@ -592,7 +596,7 @@ function NoteboxManagementSection() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select an empty folder for the imported notebox",
+      title: t("settings.notebox.selectImportFolderTitle"),
       defaultPath: await homeDirDefault(),
     });
     if (!selected) return;
@@ -604,12 +608,12 @@ function NoteboxManagementSection() {
       if (!empty) {
         showToast(
           "error",
-          "That folder already contains files. Choose or create an empty folder for the imported notebox.",
+          t("settings.notebox.folderNotEmptyImport"),
         );
         return;
       }
     } catch (err) {
-      showToast("error", `Couldn't inspect that folder: ${err}`);
+      showToast("error", t("settings.notebox.inspectFolderFailed", { error: String(err) }));
       return;
     }
     setImportDest(selected);
@@ -626,11 +630,11 @@ function NoteboxManagementSection() {
     const archive = importArchive().trim();
     const dest = importDest().trim();
     if (!archive) {
-      showToast("error", "Choose a package file to import.");
+      showToast("error", t("settings.notebox.importFileRequired"));
       return;
     }
     if (!dest) {
-      showToast("error", "Choose an empty folder for the imported notebox.");
+      showToast("error", t("settings.notebox.importFolderRequired"));
       return;
     }
     const name = dest.split("/").pop() || "Notebox";
@@ -647,9 +651,9 @@ function NoteboxManagementSection() {
       await loadNoteboxRegistry();
       resetImportForm();
       await openNotebox(path);
-      showToast("success", `Imported and opened ${name}.`);
+      showToast("success", t("settings.notebox.importOpened", { name }));
     } catch (err) {
-      showToast("error", `Import failed: ${err}`);
+      showToast("error", t("settings.notebox.importFailed", { error: String(err) }));
     } finally {
       setImporting(false);
     }
@@ -659,7 +663,7 @@ function NoteboxManagementSection() {
     <>
       <div class="settings__section-header">
         <span class="settings__section-title">
-          <span class="settings__label">Notebox Management</span>
+          <span class="settings__label">{t("settings.notebox.management")}</span>
           <HelpButton label={t("settings.notebox.helpLabel")}>
             {t("settings.notebox.help")}
           </HelpButton>
@@ -670,7 +674,7 @@ function NoteboxManagementSection() {
             onClick={() => setShowAddForm(true)}
             disabled={showAddForm()}
           >
-            New notebox
+            {t("settings.notebox.new")}
           </button>
           <button
             class="settings__detect-btn"
@@ -679,17 +683,17 @@ function NoteboxManagementSection() {
               setCloneBranch("main");
             }}
             disabled={showCloneForm()}
-            title="Join a collaborative notebox by cloning its git remote"
+            title={t("settings.notebox.cloneTooltip")}
           >
-            Clone from remote
+            {t("settings.notebox.clone")}
           </button>
           <button
             class="settings__detect-btn"
             onClick={() => setShowImportForm(true)}
             disabled={showImportForm()}
-            title="Join a notebox shared offline by importing its package file"
+            title={t("settings.notebox.importTooltip")}
           >
-            Import package
+            {t("settings.notebox.import")}
           </button>
         </div>
       </div>
@@ -724,14 +728,14 @@ function NoteboxManagementSection() {
                         <button
                           class="notebox-row__icon-btn"
                           onClick={() => saveEdit(entry.path)}
-                          title="Save"
+                          title={t("common.save")}
                         >
                           <Check size={14} />
                         </button>
                         <button
                           class="notebox-row__icon-btn notebox-row__icon-btn--cancel"
                           onClick={cancelEdit}
-                          title="Cancel"
+                          title={t("common.cancel")}
                         >
                           <X size={14} />
                         </button>
@@ -742,12 +746,12 @@ function NoteboxManagementSection() {
                     <button
                       class="notebox-row__edit-btn"
                       onClick={() => startEdit(entry)}
-                      title="Rename notebox"
+                      title={t("settings.notebox.rename")}
                     >
                       <Pencil size={12} />
                     </button>
                     <Show when={isActive()}>
-                      <span class="notebox-row__active-badge">active</span>
+                      <span class="notebox-row__active-badge">{t("settings.notebox.activeBadge")}</span>
                     </Show>
                   </Show>
                 </div>
@@ -789,19 +793,19 @@ function NoteboxManagementSection() {
                   class="settings__detect-btn"
                   onClick={() => handleShowInFilesystem(entry.path)}
                 >
-                  Show
+                  {t("common.show")}
                 </button>
                 <button
                   class="settings__detect-btn"
                   onClick={() => handleMove(entry)}
                 >
-                  Move
+                  {t("common.move")}
                 </button>
                 <button
                   class="settings__detect-btn"
                   onClick={() => handleRemove(entry.path)}
                 >
-                  Remove
+                  {t("common.remove")}
                 </button>
               </div>
             </div>
@@ -814,7 +818,7 @@ function NoteboxManagementSection() {
           <div class="settings__row-info">
             <input
               class="settings__text-input"
-              placeholder="Display name"
+              placeholder={t("settings.notebox.displayNamePlaceholder")}
               value={addName()}
               onInput={(e) => setAddName(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -823,12 +827,12 @@ function NoteboxManagementSection() {
               }}
             />
             <span class="settings__description">
-              {addPath() || "No folder selected"}
+              {addPath() || t("settings.notebox.noFolderSelected")}
             </span>
           </div>
           <div class="notebox-row__actions">
             <button class="settings__detect-btn" onClick={browseForNewNotebox}>
-              Location
+              {t("settings.notebox.location")}
             </button>
             <button
               class="settings__detect-btn"
@@ -841,10 +845,10 @@ function NoteboxManagementSection() {
               onClick={confirmAdd}
               disabled={!addPath()}
             >
-              Add
+              {t("common.add")}
             </button>
             <button class="settings__detect-btn" onClick={cancelAdd}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -855,13 +859,13 @@ function NoteboxManagementSection() {
           <div class="settings__row-info">
             <input
               class="settings__text-input"
-              placeholder="Remote URL (git@host:owner/repo.git or https://…)"
+              placeholder={t("settings.notebox.remotePlaceholder")}
               value={cloneRemote()}
               onInput={(e) => setCloneRemote(e.currentTarget.value)}
             />
             <input
               class="settings__text-input"
-              placeholder="Branch (default: main)"
+              placeholder={t("settings.notebox.branchPlaceholder")}
               value={cloneBranch()}
               onInput={(e) => setCloneBranch(e.currentTarget.value)}
             />
@@ -869,19 +873,19 @@ function NoteboxManagementSection() {
               class="settings__text-input"
               type="password"
               autocomplete="off"
-              placeholder="HTTPS access token (optional; SSH uses your key)"
+              placeholder={t("settings.notebox.tokenPlaceholder")}
               value={cloneToken()}
               onInput={(e) => setCloneToken(e.currentTarget.value)}
             />
             <span class="settings__description">
               {cloneDest()
-                ? `Clones into: ${cloneDest()}`
-                : "No folder selected (must be an empty folder)"}
+                ? t("settings.notebox.cloneInto", { path: cloneDest() })
+                : t("settings.notebox.cloneNoFolder")}
             </span>
           </div>
           <div class="notebox-row__actions">
             <button class="settings__detect-btn" onClick={browseForCloneDest}>
-              Location
+              {t("settings.notebox.location")}
             </button>
             <button
               class="settings__detect-btn"
@@ -892,10 +896,10 @@ function NoteboxManagementSection() {
               onClick={confirmClone}
               disabled={cloning() || !cloneRemote().trim() || !cloneDest()}
             >
-              {cloning() ? "Cloning…" : "Clone & open"}
+              {cloning() ? t("settings.notebox.cloning") : t("settings.notebox.cloneOpen")}
             </button>
             <button class="settings__detect-btn" onClick={resetCloneForm} disabled={cloning()}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -906,29 +910,29 @@ function NoteboxManagementSection() {
           <div class="settings__row-info">
             <span class="settings__description">
               {importArchive()
-                ? `Package: ${importArchive()}`
-                : "No package file selected"}
+                ? t("settings.notebox.packageLabel", { path: importArchive() })
+                : t("settings.notebox.noPackageSelected")}
             </span>
             <input
               class="settings__text-input"
               type="password"
               autocomplete="off"
-              placeholder="Archive password (only if the package is encrypted)"
+              placeholder={t("settings.notebox.archivePasswordPlaceholder")}
               value={importPassword()}
               onInput={(e) => setImportPassword(e.currentTarget.value)}
             />
             <span class="settings__description">
               {importDest()
-                ? `Imports into: ${importDest()}`
-                : "No folder selected (must be an empty folder)"}
+                ? t("settings.notebox.importInto", { path: importDest() })
+                : t("settings.notebox.cloneNoFolder")}
             </span>
           </div>
           <div class="notebox-row__actions">
             <button class="settings__detect-btn" onClick={browseForImportArchive}>
-              Package
+              {t("settings.notebox.package")}
             </button>
             <button class="settings__detect-btn" onClick={browseForImportDest}>
-              Location
+              {t("settings.notebox.location")}
             </button>
             <button
               class="settings__detect-btn"
@@ -939,10 +943,10 @@ function NoteboxManagementSection() {
               onClick={confirmImport}
               disabled={importing() || !importArchive() || !importDest()}
             >
-              {importing() ? "Importing…" : "Import & open"}
+              {importing() ? t("settings.notebox.importing") : t("settings.notebox.importOpen")}
             </button>
             <button class="settings__detect-btn" onClick={resetImportForm} disabled={importing()}>
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -1009,18 +1013,17 @@ function LanguageSettingsSection() {
         onChange={setUiLocale}
       />
       <SettingToggle
-        label="Spellcheck"
-        description="Check spelling as you type, using bundled Hunspell dictionaries. Misspellings are underlined; right-click for suggestions."
+        label={trans("settings.spellcheck.label")}
+        description={trans("settings.spellcheck.description")}
         value={settings.editor.spellcheck}
         onChange={(v) => updateSetting("editor", "spellcheck", v)}
       />
       <Show when={settings.editor.spellcheck}>
         <div class="settings__section-header">
-          <span class="settings__label">Dictionaries</span>
+          <span class="settings__label">{trans("settings.spellcheck.dictionaries")}</span>
         </div>
         <p class="settings__field-hint">
-          Select the languages to check against. A word is accepted if any
-          enabled dictionary knows it — enable more than one for bilingual notes.
+          {trans("settings.spellcheck.dictionariesHint")}
         </p>
         <div class="settings__dict-list">
           <For each={spellDicts() ?? []}>
@@ -1034,7 +1037,7 @@ function LanguageSettingsSection() {
                 <span class="settings__dict-name">{dict.name}</span>
                 <span class="settings__dict-code">{dict.code}</span>
                 <Show when={!dict.bundled}>
-                  <span class="settings__dict-badge">installed</span>
+                  <span class="settings__dict-badge">{trans("settings.spellcheck.installedBadge")}</span>
                 </Show>
               </label>
             )}
@@ -1042,29 +1045,26 @@ function LanguageSettingsSection() {
         </div>
 
         <div class="settings__section-header">
-          <span class="settings__label">Install dictionaries</span>
+          <span class="settings__label">{trans("settings.spellcheck.install")}</span>
         </div>
         <p class="settings__field-hint">
-          Add more Hunspell dictionaries (matching <code>.dic</code> +{" "}
-          <code>.aff</code> files) to the dictionary folder; they appear above
-          after a restart.
+          {/* i18n-exempt: literal Hunspell file extensions */}
+          {trans("settings.spellcheck.installHintBefore")} <code>.dic</code> + <code>.aff</code> {trans("settings.spellcheck.installHintAfter")}
         </p>
         <button class="settings__detect-btn" onClick={openDictionaryFolder}>
-          Open dictionary folder…
+          {trans("settings.spellcheck.openFolder")}
         </button>
       </Show>
 
       <div class="settings__section-header">
-        <span class="settings__label">Personal dictionary</span>
+        <span class="settings__label">{trans("settings.spellcheck.personal")}</span>
       </div>
       <p class="settings__field-hint">
-        Words you accept here are recognized throughout this notebox — by both
-        spellcheck and concept detection — and travel with it. Add words from the
-        editor's right-click menu; remove them here.
+        {trans("settings.spellcheck.personalHint")}
       </p>
       <Show
         when={(userWords() ?? []).length > 0}
-        fallback={<p class="settings__field-hint">No custom words yet.</p>}
+        fallback={<p class="settings__field-hint">{trans("settings.spellcheck.noCustomWords")}</p>}
       >
         <div class="settings__dict-list">
           <For each={userWords()}>
@@ -1074,10 +1074,10 @@ function LanguageSettingsSection() {
                 <button
                   class="settings__userword-remove"
                   onClick={() => removeUserWord(word)}
-                  title="Remove from personal dictionary"
-                  aria-label={`Remove ${word}`}
+                  title={trans("settings.spellcheck.removeWord")}
+                  aria-label={trans("settings.spellcheck.removeWordAria", { word })}
                 >
-                  Remove
+                  {trans("common.remove")}
                 </button>
               </div>
             )}
@@ -1089,18 +1089,19 @@ function LanguageSettingsSection() {
 }
 
 function EditorSettingsSection() {
+  const t = useI18n();
   return (
     <div class="settings__section">
       <SettingToggle
-        label="Comfortable line length"
-        description="Limit line width for a more readable display."
+        label={t("settings.editor.readableLineLength.label")}
+        description={t("settings.editor.readableLineLength.description")}
         value={settings.editor.readable_line_length}
         onChange={(v) => updateSetting("editor", "readable_line_length", v)}
       />
       <Show when={settings.editor.readable_line_length}>
         <SettingNumber
-          label="Max line length"
-          description="Maximum characters allowed per line."
+          label={t("settings.editor.maxLineLength.label")}
+          description={t("settings.editor.maxLineLength.description")}
           value={settings.editor.max_line_width}
           min={40}
           max={200}
@@ -1108,42 +1109,42 @@ function EditorSettingsSection() {
         />
       </Show>
       <SettingToggle
-        label="Auto-pair brackets"
-        description="Automatically close brackets and quotes."
+        label={t("settings.editor.autoPairBrackets.label")}
+        description={t("settings.editor.autoPairBrackets.description")}
         value={settings.editor.auto_pair_brackets}
         onChange={(v) => updateSetting("editor", "auto_pair_brackets", v)}
       />
       <SettingToggle
-        label="Auto-pair Typst markup"
-        description="Automatically close *, _, `, $ formatting delimiters."
+        label={t("settings.editor.autoPairTypst.label")}
+        description={t("settings.editor.autoPairTypst.description")}
         value={settings.editor.auto_pair_typst}
         onChange={(v) => updateSetting("editor", "auto_pair_typst", v)}
       />
       <SettingToggle
-        label="Auto-expand markup"
-        description="Automatically reveal Typst function source in the Visual Editor when the cursor enters a pill."
+        label={t("settings.editor.autoExpandMarkup.label")}
+        description={t("settings.editor.autoExpandMarkup.description")}
         value={settings.editor.auto_expand_markup}
         onChange={(v) => updateSetting("editor", "auto_expand_markup", v)}
       />
       <SettingToggle
-        label="Intuitive list indentation"
-        description="When indenting a list item with Tab/Shift-Tab, also move its nested children."
+        label={t("settings.editor.smartIndentLists.label")}
+        description={t("settings.editor.smartIndentLists.description")}
         value={settings.editor.smart_indent_lists}
         onChange={(v) => updateSetting("editor", "smart_indent_lists", v)}
       />
       <SettingToggle
-        label="Enter key inserts a line break"
-        description="Typst normally treats a single Enter as a space on the same line and two Enters as a new paragraph. When this is on, pressing Enter in the visual editor inserts a real line break — your next line wraps as a new line in the rendered output, and the underlying Typst marker stays hidden and managed for you. Pressing Enter twice still starts a new paragraph. Source mode is unaffected: Enter stays a plain newline there, and the marker simply shows as a trailing backslash."
+        label={t("settings.editor.enterLineBreak.label")}
+        description={t("settings.editor.enterLineBreak.description")}
         value={settings.editor.enter_inserts_line_break}
         onChange={(v) => updateSetting("editor", "enter_inserts_line_break", v)}
       />
       <SettingSelect
-        label="Editing mode preference"
-        description="How notes open by default."
+        label={t("settings.editor.editingMode.label")}
+        description={t("settings.editor.editingMode.description")}
         value={settings.editor.default_editing_mode}
         options={[
-          { value: "live-preview", label: "Visual Edit" },
-          { value: "source", label: "Source Mode" },
+          { value: "live-preview", label: t("settings.editor.editingMode.option.visual") },
+          { value: "source", label: t("settings.editor.editingMode.option.source") },
         ]}
         onChange={(v) =>
           updateSetting(
@@ -1154,48 +1155,48 @@ function EditorSettingsSection() {
         }
       />
       <SettingToggle
-        label="Typewriter mode"
-        description="Keep the line you're typing on at the vertical centre of the Visual Editor — the text scrolls up beneath a fixed caret line instead of the caret drifting down the page."
+        label={t("settings.editor.typewriter.label")}
+        description={t("settings.editor.typewriter.description")}
         value={settings.editor.typewriter_mode}
         onChange={(v) => updateSetting("editor", "typewriter_mode", v)}
       />
       <SettingSelect
-        label="Focus mode"
-        description="Adjust how the Visual Editor presents content."
+        label={t("settings.editor.focusMode.label")}
+        description={t("settings.editor.focusMode.description")}
         value={settings.editor.focus_mode}
         options={[
-          { value: "none", label: "Off" },
-          { value: "line", label: "Line" },
-          { value: "section", label: "Section" },
+          { value: "none", label: t("settings.editor.focusMode.option.off") },
+          { value: "line", label: t("settings.editor.focusMode.option.line") },
+          { value: "section", label: t("settings.editor.focusMode.option.section") },
         ]}
         onChange={(v) => updateSetting("editor", "focus_mode", v as "none" | "line" | "section")}
       />
       <SettingToggle
-        label="Dim unfocused text"
-        description="Reduce visibility of text outside the focused area."
+        label={t("settings.editor.focusDim.label")}
+        description={t("settings.editor.focusDim.description")}
         value={settings.editor.focus_dim}
         onChange={(v) => updateSetting("editor", "focus_dim", v)}
       />
 
       {/* Visual editor convenience */}
       <div class="settings__section-header">
-        <span class="settings__label">Visual editor convenience</span>
+        <span class="settings__label">{t("settings.editor.convenience")}</span>
       </div>
       <SettingToggle
-        label="Popup toolbar on selected text"
-        description="Show a formatting toolbar when text is selected in visual mode."
+        label={t("settings.editor.selectionToolbar.label")}
+        description={t("settings.editor.selectionToolbar.description")}
         value={settings.editor.selection_toolbar}
         onChange={(v) => updateSetting("editor", "selection_toolbar", v)}
       />
       <SettingToggle
-        label="Slash / command shortcut"
-        description="Type / to open a quick formatting palette in visual mode."
+        label={t("settings.editor.commandPalette.label")}
+        description={t("settings.editor.commandPalette.description")}
         value={settings.editor.command_palette}
         onChange={(v) => updateSetting("editor", "command_palette", v)}
       />
       <Show when={!settings.editor.selection_toolbar && !settings.editor.command_palette}>
         <p class="settings__section-note settings__section-note--warn">
-          Some visual editor conveniences are only accessible through these tools.
+          {t("settings.editor.conveniencesWarn")}
         </p>
       </Show>
     </div>
@@ -1203,17 +1204,18 @@ function EditorSettingsSection() {
 }
 
 const PAGE_SIZE_OPTIONS = [
-  { value: "", label: "Default (A4)" },
-  { value: "a4", label: "A4" },
-  { value: "us-letter", label: "US Letter" },
-  { value: "a5", label: "A5" },
-  { value: "us-legal", label: "US Legal" },
-  { value: "us-executive", label: "US Executive" },
-  { value: "a3", label: "A3" },
-  { value: "b5", label: "B5" },
+  { value: "", labelKey: "settings.appearance.pageSize.default" },
+  { value: "a4", labelKey: "settings.appearance.pageSize.a4" },
+  { value: "us-letter", labelKey: "settings.appearance.pageSize.usLetter" },
+  { value: "a5", labelKey: "settings.appearance.pageSize.a5" },
+  { value: "us-legal", labelKey: "settings.appearance.pageSize.usLegal" },
+  { value: "us-executive", labelKey: "settings.appearance.pageSize.usExecutive" },
+  { value: "a3", labelKey: "settings.appearance.pageSize.a3" },
+  { value: "b5", labelKey: "settings.appearance.pageSize.b5" },
 ];
 
 function AppearanceSettingsSection() {
+  const t = useI18n();
   const [sysDefaults] = createResource<SystemFontDefaults>(() => ipc.systemFontDefaults());
 
   const updateFontChoice = (
@@ -1223,101 +1225,105 @@ function AppearanceSettingsSection() {
     updateSetting("fonts", role, next);
   };
 
+  const systemLabel = (name?: string) =>
+    name ? t("settings.appearance.font.systemNamed", { name }) : t("settings.appearance.font.system");
+  const inkycapLabel = (name: string) => t("settings.appearance.font.inkycap", { name });
+
   const interfaceOptions = (): FontRoleOption[] => {
     const sys = sysDefaults();
     return [
-      { value: "system", label: sys ? `System (${sys.sans})` : "System" },
-      { value: "bundled", label: `InkyCap (${BUNDLED_INTERFACE})` },
-      { value: "custom", label: "Custom…" },
+      { value: "system", label: systemLabel(sys?.sans) },
+      { value: "bundled", label: inkycapLabel(BUNDLED_INTERFACE) },
+      { value: "custom", label: t("settings.appearance.font.custom") },
     ];
   };
   const editorOptions = (): FontRoleOption[] => {
     const sys = sysDefaults();
     return [
-      { value: "system", label: sys ? `System (${sys.sans})` : "System" },
-      { value: "bundled", label: `InkyCap (${BUNDLED_INTERFACE})` },
-      { value: "custom", label: "Custom…" },
+      { value: "system", label: systemLabel(sys?.sans) },
+      { value: "bundled", label: inkycapLabel(BUNDLED_INTERFACE) },
+      { value: "custom", label: t("settings.appearance.font.custom") },
     ];
   };
   const monoOptions = (): FontRoleOption[] => {
     const sys = sysDefaults();
     return [
-      { value: "system", label: sys ? `System (${sys.mono})` : "System" },
-      { value: "bundled", label: `InkyCap (${BUNDLED_MONO})` },
-      { value: "custom", label: "Custom…" },
+      { value: "system", label: systemLabel(sys?.mono) },
+      { value: "bundled", label: inkycapLabel(BUNDLED_MONO) },
+      { value: "custom", label: t("settings.appearance.font.custom") },
     ];
   };
   const textOptions = (): FontRoleOption[] => [
-    { value: "bundled", label: `InkyCap (${BUNDLED_TEXT})` },
-    { value: "typst-default", label: "Typst default" },
-    { value: "custom", label: "Custom…" },
+    { value: "bundled", label: inkycapLabel(BUNDLED_TEXT) },
+    { value: "typst-default", label: t("settings.appearance.font.typstDefault") },
+    { value: "custom", label: t("settings.appearance.font.custom") },
   ];
   const verseOptions = (): FontRoleOption[] => [
-    { value: "follow", label: "Follow Text font" },
-    { value: "bundled", label: `InkyCap (${BUNDLED_VERSE})` },
-    { value: "custom", label: "Custom…" },
+    { value: "follow", label: t("settings.appearance.font.followText") },
+    { value: "bundled", label: inkycapLabel(BUNDLED_VERSE) },
+    { value: "custom", label: t("settings.appearance.font.custom") },
   ];
 
   return (
     <div class="settings__section">
       {/* InkyCap Appearance */}
       <div class="settings__section-header">
-        <span class="settings__label" >InkyCap Appearance</span>
+        <span class="settings__label" >{t("settings.appearance.heading")}</span>
       </div>
       <p class="settings__section-note">
-        Controls how the editor interface looks. These settings do not affect compiled output or exports.
+        {t("settings.appearance.intro")}
       </p>
 
       <SettingSelect
-        label="Theme"
-        description="Light, dark, or follow your operating system automatically."
+        label={t("settings.appearance.theme.label")}
+        description={t("settings.appearance.theme.description")}
         value={settings.appearance.theme}
         options={[
-          { value: "dark", label: "Dark" },
-          { value: "light", label: "Light" },
-          { value: "system", label: "Follow system" },
+          { value: "dark", label: t("settings.appearance.theme.option.dark") },
+          { value: "light", label: t("settings.appearance.theme.option.light") },
+          { value: "system", label: t("settings.appearance.theme.option.system") },
         ]}
         onChange={(v) => setThemePreference(v as "dark" | "light" | "system")}
       />
       <SettingSelect
-        label="Background (light theme)"
-        description="Default (cool gray) or Warm (coffee beige)."
+        label={t("settings.appearance.bgLight.label")}
+        description={t("settings.appearance.bgLight.description")}
         value={settings.appearance.bg_palette_light}
         options={[
-          { value: "default", label: "Default" },
-          { value: "warm", label: "Warm" },
+          { value: "default", label: t("settings.appearance.bg.option.default") },
+          { value: "warm", label: t("settings.appearance.bg.option.warm") },
         ]}
         onChange={(v) => setBgPaletteLight(v as BgPalette)}
       />
       <SettingSelect
-        label="Background (dark theme)"
-        description="Default (teal-ink) or Warm (charcoal)."
+        label={t("settings.appearance.bgDark.label")}
+        description={t("settings.appearance.bgDark.description")}
         value={settings.appearance.bg_palette_dark}
         options={[
-          { value: "default", label: "Default" },
-          { value: "warm", label: "Warm" },
+          { value: "default", label: t("settings.appearance.bg.option.default") },
+          { value: "warm", label: t("settings.appearance.bg.option.warm") },
         ]}
         onChange={(v) => setBgPaletteDark(v as BgPalette)}
       />
       <AccentSettingRow />
 
       <FontRoleRow
-        label="Interface font"
-        description="Font for sidebars, menus, and UI elements."
+        label={t("settings.appearance.font.interface.label")}
+        description={t("settings.appearance.font.interface.description")}
         options={interfaceOptions()}
         choice={settings.fonts.interface}
         onChange={(c) => updateFontChoice("interface", c)}
       />
       <FontRoleRow
-        label="Editor font"
-        description="Font for the note content area."
+        label={t("settings.appearance.font.editor.label")}
+        description={t("settings.appearance.font.editor.description")}
         options={editorOptions()}
         choice={settings.fonts.editor}
         onChange={(c) => updateFontChoice("editor", c)}
       />
       <SettingCombobox
-        label="Editor font size"
-        description="Font size for note content in pixels."
+        label={t("settings.appearance.editorFontSize.label")}
+        description={t("settings.appearance.editorFontSize.description")}
         value={settings.editor.body_font_size}
         presets={[10, 12, 14, 15, 16, 18, 20, 24]}
         min={8}
@@ -1325,22 +1331,22 @@ function AppearanceSettingsSection() {
         onChange={(v) => updateSetting("editor", "body_font_size", v)}
       />
       <FontRoleRow
-        label="Monospace font"
-        description="Font for code blocks in the editor and compiled output."
+        label={t("settings.appearance.font.mono.label")}
+        description={t("settings.appearance.font.mono.description")}
         options={monoOptions()}
         choice={settings.fonts.monospace}
         onChange={(c) => updateFontChoice("monospace", c)}
       />
       <FontRoleRow
-        label="Verse font"
-        description="Font used inside #verse(…) blocks. Defaults to follow the Text font output choice."
+        label={t("settings.appearance.font.verse.label")}
+        description={t("settings.appearance.font.verse.description")}
         options={verseOptions()}
         choice={settings.fonts.verse}
         onChange={(c) => updateFontChoice("verse", c)}
       />
       <SettingCombobox
-        label="User interface scale"
-        description="Scale InkyCap's interface."
+        label={t("settings.appearance.uiScale.label")}
+        description={t("settings.appearance.uiScale.description")}
         value={settings.editor.font_size}
         presets={[10, 11, 12, 13, 14, 15, 16, 18, 20]}
         min={10}
@@ -1348,24 +1354,24 @@ function AppearanceSettingsSection() {
         onChange={(v) => updateSetting("editor", "font_size", v)}
       />
       <SettingSelect
-        label="Zoom shortcut target"
-        description="What Ctrl+/Ctrl- adjusts."
+        label={t("settings.appearance.zoomTarget.label")}
+        description={t("settings.appearance.zoomTarget.description")}
         value={settings.appearance.zoom_target}
         options={[
-          { value: "content", label: "Content only" },
-          { value: "interface", label: "Interface only" },
-          { value: "both", label: "Both" },
+          { value: "content", label: t("settings.appearance.zoomTarget.option.content") },
+          { value: "interface", label: t("settings.appearance.zoomTarget.option.interface") },
+          { value: "both", label: t("settings.appearance.zoomTarget.option.both") },
         ]}
         onChange={(v) => updateSetting("appearance", "zoom_target", v as "content" | "interface" | "both")}
       />
       <SettingSelect
-        label="File tree folder grouping"
-        description="How folders are placed relative to files when the sidebar's sort mode is applied."
+        label={t("settings.appearance.folderGrouping.label")}
+        description={t("settings.appearance.folderGrouping.description")}
         value={settings.appearance.folder_grouping}
         options={[
-          { value: "before", label: "Folders before files" },
-          { value: "after", label: "Folders after files" },
-          { value: "inline", label: "Inline (mixed with files)" },
+          { value: "before", label: t("settings.appearance.folderGrouping.option.before") },
+          { value: "after", label: t("settings.appearance.folderGrouping.option.after") },
+          { value: "inline", label: t("settings.appearance.folderGrouping.option.inline") },
         ]}
         onChange={(v) => updateSetting("appearance", "folder_grouping", v as "before" | "after" | "inline")}
       />
@@ -1373,19 +1379,19 @@ function AppearanceSettingsSection() {
 
       {/* Rendering Defaults */}
       <div class="settings__section-header" style={{ "margin-top": "24px" }}>
-        <span class="settings__label" >Rendering Defaults</span>
+        <span class="settings__label" >{t("settings.rendering.heading")}</span>
       </div>
       <p class="settings__section-note">
-        Preferences for compiled output and reading view. Override per collection or per note.
+        {t("settings.rendering.intro")}
       </p>
 
       <SettingSelect
-        label="Reading view format preference"
-        description="SVG shows paginated, precise output; HTML shows copyable text."
+        label={t("settings.rendering.readingFormat.label")}
+        description={t("settings.rendering.readingFormat.description")}
         value={settings.editor.default_reading_format}
         options={[
-          { value: "svg", label: "SVG" },
-          { value: "html", label: "HTML" },
+          { value: "svg", label: t("readingFormat.svg") },
+          { value: "html", label: t("readingFormat.html") },
         ]}
         onChange={(v) =>
           updateSetting(
@@ -1396,29 +1402,29 @@ function AppearanceSettingsSection() {
         }
       />
       <SettingToggle
-        label="Show inline wikilinks"
-        description="Display wikilinks in rendered output (reading mode and export)."
+        label={t("settings.rendering.showWikilinks.label")}
+        description={t("settings.rendering.showWikilinks.description")}
         value={settings.editor.show_inline_wikilinks}
         onChange={(v) => updateSetting("editor", "show_inline_wikilinks", v)}
       />
       <SettingToggle
-        label="Show inline tags"
-        description="Display tags in rendered output (reading mode and export)."
+        label={t("settings.rendering.showTags.label")}
+        description={t("settings.rendering.showTags.description")}
         value={settings.editor.show_inline_tags}
         onChange={(v) => updateSetting("editor", "show_inline_tags", v)}
       />
 
       <FontRoleRow
-        label="Text font"
-        description="Font for compiled documents (reading view, exports). This setting is for convenience, you can set other fonts for output within the document using standard Typst functions and markup."
+        label={t("settings.appearance.font.text.label")}
+        description={t("settings.appearance.font.text.description")}
         options={textOptions()}
         choice={settings.fonts.text}
         onChange={(c) => updateFontChoice("text", c)}
-        customPlaceholder="Family name (e.g. EB Garamond)"
+        customPlaceholder={t("settings.appearance.font.text.placeholder")}
       />
       <SettingCombobox
-        label="Text size"
-        description="Base text size for compiled documents in points."
+        label={t("settings.rendering.textSize.label")}
+        description={t("settings.rendering.textSize.description")}
         value={settings.document.text_size ?? 11}
         presets={[10, 10.5, 11, 12, 14]}
         min={6}
@@ -1428,10 +1434,10 @@ function AppearanceSettingsSection() {
         placeholder="11"
       />
       <SettingSelect
-        label="Page size"
-        description="Default paper size for compiled documents and exports."
+        label={t("settings.rendering.pageSize.label")}
+        description={t("settings.rendering.pageSize.description")}
         value={settings.document.page_size ?? ""}
-        options={PAGE_SIZE_OPTIONS}
+        options={PAGE_SIZE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
         onChange={(v) => updateSetting("document", "page_size", v || null)}
       />
     </div>
@@ -1439,19 +1445,20 @@ function AppearanceSettingsSection() {
 }
 
 function FileSettingsSection() {
+  const t = useI18n();
   const [tree] = createResource(() => ipc.getFileTree());
   const folderSuggestions = () => tree() ? collectPaths(tree()!, true) : [];
 
   return (
     <div class="settings__section">
       <SettingSelect
-        label="New note location"
-        description="Where new notes are created."
+        label={t("settings.files.newNoteLocation.label")}
+        description={t("settings.files.newNoteLocation.description")}
         value={noteboxSettings.files.new_note_location}
         options={[
-          { value: "root", label: "Notebox root" },
-          { value: "current", label: "Current folder" },
-          { value: "specified", label: "Specified folder" },
+          { value: "root", label: t("settings.files.newNoteLocation.option.root") },
+          { value: "current", label: t("settings.files.newNoteLocation.option.current") },
+          { value: "specified", label: t("settings.files.newNoteLocation.option.specified") },
         ]}
         onChange={(v) =>
           updateNoteboxSetting(
@@ -1464,8 +1471,8 @@ function FileSettingsSection() {
       />
       <Show when={noteboxSettings.files.new_note_location === "specified"}>
         <SettingPathText
-          label="New note folder"
-          description="Folder path relative to notebox root."
+          label={t("settings.files.newNoteFolder.label")}
+          description={t("settings.files.newNoteFolder.description")}
           value={noteboxSettings.files.new_note_folder}
           onChange={(v) => updateNoteboxSetting("files", "new_note_folder", v)}
           suggestions={folderSuggestions}
@@ -1474,42 +1481,42 @@ function FileSettingsSection() {
       </Show>
       <AttachmentFolderField value={noteboxSettings.files.attachment_folder} />
       <SettingToggle
-        label="Auto-update links on rename"
-        description="Automatically update wikilinks when a file is renamed."
+        label={t("settings.files.autoUpdateLinks.label")}
+        description={t("settings.files.autoUpdateLinks.description")}
         value={settings.files.auto_update_links_on_rename}
         onChange={(v) =>
           updateSetting("files", "auto_update_links_on_rename", v)
         }
       />
       <SettingToggle
-        label="Confirm before delete"
-        description="Show a confirmation dialog before deleting files."
+        label={t("settings.files.confirmDelete.label")}
+        description={t("settings.files.confirmDelete.description")}
         value={settings.files.confirm_before_delete}
         onChange={(v) => updateSetting("files", "confirm_before_delete", v)}
       />
       <SettingToggle
-        label="Display filename extensions in file tree"
-        description="When off, file names appear without their trailing extension (e.g. .typ). Folders are always shown verbatim."
+        label={t("settings.files.showExtensions.label")}
+        description={t("settings.files.showExtensions.description")}
         value={settings.files.show_file_extensions}
         onChange={(v) => updateSetting("files", "show_file_extensions", v)}
       />
 
       {/* Zettelkasten IDs */}
       <div class="settings__section-header">
-        <span class="settings__label">Zettelkasten IDs</span>
+        <span class="settings__label">{t("settings.files.zettelkasten")}</span>
       </div>
       <SettingToggle
-        label="Enable Zettelkasten IDs"
-        description="Automatically assign a unique ID to a property (zid) in new notes based on the pattern you define."
+        label={t("settings.files.zettelkastenEnabled.label")}
+        description={t("settings.files.zettelkastenEnabled.description")}
         value={settings.files.zettelkasten_enabled}
         onChange={(v) => updateSetting("files", "zettelkasten_enabled", v)}
       />
       <Show when={settings.files.zettelkasten_enabled}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">Zettelkasten ID pattern</label>
+            <label class="settings__label">{t("settings.files.zidPattern.label")}</label>
             <span class="settings__description">
-              Format for auto-generated IDs. Available tokens: YYYY (4-digit year), YY (2-digit year), MMMM (full month name), MMM (short month name), MM (2-digit month), DD (2-digit day), HH (24-hour), mm (minute), ss (second), dddd (full weekday), ddd (short weekday). Any other characters remain verbatim.
+              {t("settings.files.zidPattern.description")}
             </span>
           </div>
           <input
@@ -1517,12 +1524,12 @@ function FileSettingsSection() {
             class="settings__text-input"
             value={settings.files.zid_pattern}
             onInput={(e) => updateSetting("files", "zid_pattern", e.currentTarget.value)}
-            placeholder="YYYYMMDDHHmmss"
+            placeholder={t("settings.files.zidPattern.placeholder")}
           />
         </div>
         <SettingToggle
-          label="Auto-title new notes as ZID"
-          description="Use the generated ZID as the filename for new notes, skipping the filename prompt."
+          label={t("settings.files.autoTitleZid.label")}
+          description={t("settings.files.autoTitleZid.description")}
           value={settings.files.auto_title_as_zid}
           onChange={(v) => updateSetting("files", "auto_title_as_zid", v)}
         />
@@ -1548,6 +1555,7 @@ export const CITATION_STYLES = [
 ];
 
 function CitationsSettingsSection() {
+  const t = useI18n();
   const [detectingZotero, setDetectingZotero] = createSignal(false);
 
   async function handleDetectZotero() {
@@ -1582,12 +1590,12 @@ function CitationsSettingsSection() {
   return (
     <div class="settings__section">
       <SettingSelect
-        label="Citation source"
-        description="Source to use for loading bibliographic information."
+        label={t("settings.citations.source.label")}
+        description={t("settings.citations.source.description")}
         value={noteboxSettings.citations.source}
         options={[
-          { value: "file", label: "Bibliography file (.bib, .yml, .json)" },
-          { value: "zotero", label: "Zotero database" },
+          { value: "file", label: t("settings.citations.source.option.file") },
+          { value: "zotero", label: t("settings.citations.source.option.zotero") },
         ]}
         onChange={(v) => updateNoteboxSetting("citations", "source", v as "file" | "zotero")}
         scope="notebox"
@@ -1597,11 +1605,11 @@ function CitationsSettingsSection() {
         <div class="settings__row">
           <div class="settings__row-info">
             <label class="settings__label">
-              Bibliography file
-              <span class="settings__scope-badge">this notebox</span>
+              {t("settings.citations.bibFile.label")}
+              <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
             </label>
             <span class="settings__description">
-              Notebox-relative path (e.g. references.bib). Leave empty for auto-detection.
+              {t("settings.citations.bibFile.description")}
             </span>
           </div>
           <div class="settings__input-with-button">
@@ -1618,7 +1626,7 @@ function CitationsSettingsSection() {
               onClick={async () => {
                 const selected = await open({
                   multiple: false,
-                  filters: [{ name: "Bibliography", extensions: ["bib", "yml", "yaml", "json"] }],
+                  filters: [{ name: t("settings.citations.bibFilterName"), extensions: ["bib", "yml", "yaml", "json"] }],
                   defaultPath: await noteboxRootDefault(),
                 });
                 if (typeof selected === "string" && selected) {
@@ -1632,7 +1640,7 @@ function CitationsSettingsSection() {
                 }
               }}
             >
-              Browse
+              {t("common.browse")}
             </button>
           </div>
         </div>
@@ -1641,9 +1649,9 @@ function CitationsSettingsSection() {
       <Show when={noteboxSettings.citations.source === "zotero"}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">Zotero database path</label>
+            <label class="settings__label">{t("settings.citations.zoteroPath.label")}</label>
             <span class="settings__description">
-              Absolute path to zotero.sqlite. Click Detect to find it automatically.
+              {t("settings.citations.zoteroPath.description")}
             </span>
           </div>
           <div class="settings__input-with-button">
@@ -1660,15 +1668,15 @@ function CitationsSettingsSection() {
               onClick={handleDetectZotero}
               disabled={detectingZotero()}
             >
-              {detectingZotero() ? "Detecting…" : "Detect"}
+              {detectingZotero() ? t("settings.citations.detecting") : t("settings.citations.detect")}
             </button>
           </div>
         </div>
       </Show>
 
       <SettingSelect
-        label="Citation style"
-        description="Style to use as a default for the bibliography format. This can be overridden in rendered output per file or by collection."
+        label={t("settings.citations.style.label")}
+        description={t("settings.citations.style.description")}
         value={styleValue()}
         options={CITATION_STYLES}
         onChange={handleStyleChange}
@@ -1678,10 +1686,10 @@ function CitationsSettingsSection() {
         <div class="settings__row">
           <div class="settings__row-info">
             <label class="settings__label">
-              Custom CSL file
-              <span class="settings__scope-badge">this notebox</span>
+              {t("settings.citations.customCsl.label")}
+              <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
             </label>
-            <span class="settings__description">Path to a .csl citation style file</span>
+            <span class="settings__description">{t("settings.citations.customCsl.description")}</span>
           </div>
           <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
             <input
@@ -1689,7 +1697,7 @@ function CitationsSettingsSection() {
               class="settings__text-input"
               value={noteboxSettings.citations.custom_csl_path ?? ""}
               onInput={(e) => updateNoteboxSetting("citations", "custom_csl_path", e.currentTarget.value || null)}
-              placeholder="Path to .csl file"
+              placeholder={t("settings.citations.customCsl.placeholder")}
             />
             <button
               type="button"
@@ -1697,16 +1705,16 @@ function CitationsSettingsSection() {
               onClick={async () => {
                 const { open } = await import("@tauri-apps/plugin-dialog");
                 const result = await open({
-                  title: "Select CSL citation style file",
+                  title: t("settings.citations.cslPickerTitle"),
                   defaultPath: await noteboxRootDefault(),
-                  filters: [{ name: "CSL Files", extensions: ["csl"] }],
+                  filters: [{ name: t("settings.citations.cslFilterName"), extensions: ["csl"] }],
                 });
                 if (result) {
                   updateNoteboxSetting("citations", "custom_csl_path", result as string);
                 }
               }}
             >
-              Browse…
+              {t("common.browseEllipsis")}
             </button>
           </div>
         </div>
@@ -1716,7 +1724,8 @@ function CitationsSettingsSection() {
 }
 
 function ExportSettingsSection() {
-  const [pandocStatus, setPandocStatus] = createSignal<string>("Checking...");
+  const t = useI18n();
+  const [pandocStatus, setPandocStatus] = createSignal<string>(t("settings.export.pandocChecking"));
   const [importStatus, setImportStatus] = createSignal<string | null>(null);
   const [importing, setImporting] = createSignal(false);
   // Selected source file path and the dialect preselected from
@@ -1735,23 +1744,23 @@ function ExportSettingsSection() {
     try {
       const { detectPandoc } = await import("../lib/ipc");
       const path = await detectPandoc();
-      setPandocStatus(path ? `Found: ${path}` : "Not found");
+      setPandocStatus(path ? t("settings.export.pandocFound", { path }) : t("settings.export.pandocNotFound"));
     } catch {
-      setPandocStatus("Detection failed");
+      setPandocStatus(t("settings.export.pandocDetectionFailed"));
     }
   });
 
   async function pickFile() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const zipPath = await open({
-      title: "Select markdown notebox archive",
+      title: t("settings.export.archivePickerTitle"),
       defaultPath: await homeDirDefault(),
       // Tauri filter extensions match the final dot-segment only — `tar.gz`
       // wouldn't match `.tar.gz` files. We list `gz` (covers `.tar.gz`) plus
       // `tgz`; the backend validates the actual archive shape and rejects
       // bare `.gz` files that aren't tarballs.
       filters: [
-        { name: "Notebox archive", extensions: ["zip", "gz", "tgz"] },
+        { name: t("settings.export.archiveFilterName"), extensions: ["zip", "gz", "tgz"] },
       ],
     });
     if (!zipPath) return;
@@ -1780,12 +1789,12 @@ function ExportSettingsSection() {
 
     const info = await ipc.getNoteboxInfo();
     if (!info) {
-      setImportStatus("No notebox is open. Open a notebox first.");
+      setImportStatus(t("settings.export.noNoteboxOpen"));
       return;
     }
 
     setImporting(true);
-    setImportStatus("Scanning properties...");
+    setImportStatus(t("settings.export.scanningProperties"));
     try {
       const rows = await ipc.scanMarkdownFrontmatter(source);
       if (rows.length === 0) {
@@ -1797,7 +1806,7 @@ function ExportSettingsSection() {
       setImportStatus(null);
       setShowMapping(true);
     } catch (e: any) {
-      setImportStatus(`Import failed: ${e}`);
+      setImportStatus(t("settings.export.importFailed", { error: String(e) }));
     } finally {
       setImporting(false);
     }
@@ -1811,21 +1820,27 @@ function ExportSettingsSection() {
     const source = pickedFile();
     if (!source) return;
     setImporting(true);
-    setImportStatus("Importing...");
+    setImportStatus(t("settings.export.importingEllipsis"));
     try {
       const result = await ipc.importMarkdownNotebox(source, targetPath, dialect(), mappings);
-      let msg = `Imported ${result.notes_converted} note(s) and ${result.files_copied} file(s).`;
+      let msg = t("settings.export.importedSummary", {
+        notes: result.notes_converted,
+        files: result.files_copied,
+      });
       if (result.math_as_code > 0) {
-        msg += ` ${result.math_as_code} LaTeX equation(s) were kept as code blocks because the mitex package isn't installed. To render LaTeX, first install the @preview/mitex package in InkyCap and re-import, or rewrite as Typst math.`;
+        msg += t("settings.export.mathAsCode", { count: result.math_as_code });
       }
       if (result.errors.length > 0) {
-        msg += ` ${result.errors.length} error(s): ${result.errors.slice(0, 3).join("; ")}`;
+        msg += t("settings.export.importErrors", {
+          count: result.errors.length,
+          details: result.errors.slice(0, 3).join("; "),
+        });
       }
       setImportStatus(msg);
       setPickedFile(null);
       setAutoDetected(null);
     } catch (e: any) {
-      setImportStatus(`Import failed: ${e}`);
+      setImportStatus(t("settings.export.importFailed", { error: String(e) }));
     } finally {
       setImporting(false);
     }
@@ -1836,7 +1851,7 @@ function ExportSettingsSection() {
     setShowMapping(false);
     const info = await ipc.getNoteboxInfo();
     if (!info) {
-      setImportStatus("No notebox is open. Open a notebox first.");
+      setImportStatus(t("settings.export.noNoteboxOpen"));
       return;
     }
     await doImport(mappings, info.path);
@@ -1852,11 +1867,11 @@ function ExportSettingsSection() {
   return (
     <div class="settings__section">
       <div class="settings__section-header">
-        <div class="settings__label">Import and export settings</div>
+        <div class="settings__label">{t("settings.export.heading")}</div>
       </div>
-      <div class="settings__label" style={{ "margin-top": "8px" }}>Import markdown files</div>
+      <div class="settings__label" style={{ "margin-top": "8px" }}>{t("settings.export.importMarkdown")}</div>
       <span class="settings__description">
-        Create an archive (.tar.gz or .zip) of the markdown files that you would like to import then click the button to select it. InkyCap will convert the files into Typst files in your notebox and map YAML frontmatter to InkyCap properties as best as possible.
+        {t("settings.export.importMarkdownDescription")}
       </span>
       <Show when={!pickedFile()}>
         <div style={{ "margin-top": "8px" }}>
@@ -1865,7 +1880,7 @@ function ExportSettingsSection() {
             onClick={pickFile}
             disabled={importing()}
           >
-            Choose archive…
+            {t("settings.export.chooseArchive")}
           </button>
         </div>
       </Show>
@@ -1880,17 +1895,18 @@ function ExportSettingsSection() {
           }}
         >
           <div class="settings__description" style={{ "margin-bottom": "8px" }}>
-            <strong>Source:</strong> {pickedFile()}
+            <strong>{t("settings.export.sourceLabel")}</strong> {pickedFile()}
           </div>
           <div class="settings__label" style={{ "margin-bottom": "4px" }}>
-            Source dialect
+            {t("settings.export.sourceDialect")}
             <Show when={autoDetected()}>
               <span class="settings__description" style={{ "margin-left": "8px", "font-weight": "normal" }}>
-                (auto-detected: {autoDetected()})
+                {t("settings.export.autoDetected", { dialect: autoDetected()! })}
               </span>
             </Show>
           </div>
           <span class="settings__description">
+            {/* i18n-exempt: code-symbol-dense dialect reference; inline <code> styling is load-bearing — revisit with a rich-text i18n mechanism */}
             Obsidian dialect recognizes <code>#tag</code> syntax, <code>$math$</code>, and <code>%%comments%%</code>; literal <code>#</code> in source is expected to be <code>\#</code>-escaped. Standard treats every <code>#</code> as a literal character (preserved as <code>\#</code> in the imported file) — pick this for non-Obsidian markdown so prices like <code>$3000</code> and refs like <code>#42</code> survive.
           </span>
           <div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
@@ -1902,7 +1918,7 @@ function ExportSettingsSection() {
                 onChange={() => setDialect("standard")}
                 disabled={importing()}
               />
-              Standard
+              {t("settings.export.dialectStandard")}
             </label>
             <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
               <input
@@ -1912,7 +1928,7 @@ function ExportSettingsSection() {
                 onChange={() => setDialect("obsidian")}
                 disabled={importing()}
               />
-              Obsidian
+              {t("settings.export.dialectObsidian")}
             </label>
           </div>
           <div style={{ "margin-top": "10px", display: "flex", gap: "8px" }}>
@@ -1921,14 +1937,14 @@ function ExportSettingsSection() {
               onClick={runImport}
               disabled={importing()}
             >
-              {importing() ? "Importing..." : "Run import"}
+              {importing() ? t("settings.export.importingEllipsis") : t("settings.export.runImport")}
             </button>
             <button
               class="settings__detect-btn"
               onClick={cancelPick}
               disabled={importing()}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -1946,7 +1962,7 @@ function ExportSettingsSection() {
         />
       </Show>
 
-      <div class="settings__label" style={{ "margin-top": "24px" }}>Export</div>
+      <div class="settings__label" style={{ "margin-top": "24px" }}>{t("settings.export.heading2")}</div>
       {/* Pandoc path + live-detection status share one settings row.
           Inlining the status as a second description line keeps it
           *inside* the row, so the row's bottom border draws below the
@@ -1954,19 +1970,19 @@ function ExportSettingsSection() {
           made the border look like it ran through the hint text). */}
       <div class="settings__row">
         <div class="settings__row-info">
-          <label class="settings__label">Pandoc path</label>
+          <label class="settings__label">{t("settings.export.pandocPath")}</label>
           <span class="settings__description">
-            In addition to native Typst exports, you can choose to use Pandoc to export files or collections. To use your local Pandoc installation, enter the location of your Pandoc binary. Leave empty to auto-detect from PATH.
+            {t("settings.export.pandocDescription")}
           </span>
           <span class="settings__description" style={{ "margin-top": "4px" }}>
-            Pandoc status: {pandocStatus()}
+            {t("settings.export.pandocStatus", { status: pandocStatus() })}
           </span>
         </div>
         <input
           type="text"
           class="settings__text-input"
           value={settings.export?.pandoc_path ?? ""}
-          placeholder="Auto-detect from PATH"
+          placeholder={t("settings.export.pandocPlaceholder")}
           onInput={(e) =>
             updateSetting("export", "pandoc_path", e.currentTarget.value || null)
           }
@@ -1977,6 +1993,7 @@ function ExportSettingsSection() {
 }
 
 function BackupSettingsSection() {
+  const t = useI18n();
   // Keyed on the active notebox path so switching noteboxes refetches —
   // the backup state is per-notebox and the backend returns the open
   // notebox's record, so the "Last backup" line must follow the notebox.
@@ -2231,7 +2248,7 @@ function BackupSettingsSection() {
         })}
         value={settings.backup.filename_pattern}
         onChange={(v) => updateSetting("backup", "filename_pattern", v)}
-        placeholder="inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip"
+        placeholder={"inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip" /* i18n-exempt: filename-pattern example with literal tokens */}
       />
 
       {/* Password section — toggle reflects keychain state; the actual
@@ -2336,6 +2353,7 @@ function BackupSettingsSection() {
 }
 
 function BehaviourSettingsSection() {
+  const t = useI18n();
   const [tree] = createResource(() => ipc.getFileTree());
   const [creationRules] = createResource(() => ipc.listCreationRules());
   const allFiles = () => tree() ? collectPaths(tree()!, false) : [];
@@ -2345,8 +2363,8 @@ function BehaviourSettingsSection() {
 
   const targetDescription = () => {
     switch (settings.startup.behavior) {
-      case "specific-page": return "File path to open on startup";
-      case "specific-collection": return "Collection to open on startup";
+      case "specific-page": return t("settings.behaviour.startup.targetPage");
+      case "specific-collection": return t("settings.behaviour.startup.targetCollection");
       default: return "";
     }
   };
@@ -2387,15 +2405,15 @@ function BehaviourSettingsSection() {
   return (
     <div class="settings__section">
       <SettingSelect
-        label="Startup behaviour"
-        description="What do you prefer InkyCap to do or display upon starting?"
+        label={t("settings.behaviour.startup.label")}
+        description={t("settings.behaviour.startup.description")}
         value={settings.startup.behavior}
         options={[
-          { value: "default", label: "Tabula rasa (file tree)" },
-          { value: "last-file", label: "Last opened file" },
-          { value: "creation-rule", label: "Launch a rule" },
-          { value: "specific-page", label: "Open a specific page" },
-          { value: "specific-collection", label: "Open a specific collection" },
+          { value: "default", label: t("settings.behaviour.startup.option.default") },
+          { value: "last-file", label: t("settings.behaviour.startup.option.lastFile") },
+          { value: "creation-rule", label: t("settings.behaviour.startup.option.creationRule") },
+          { value: "specific-page", label: t("settings.behaviour.startup.option.specificPage") },
+          { value: "specific-collection", label: t("settings.behaviour.startup.option.specificCollection") },
         ]}
         onChange={(v) =>
           updateSetting(
@@ -2410,14 +2428,13 @@ function BehaviourSettingsSection() {
           when={ruleOptions().length > 0}
           fallback={
             <p class="settings__section-note">
-              No creation rules are defined yet. Add one in the Rules tab to
-              use it as a startup action.
+              {t("settings.behaviour.startup.noRules")}
             </p>
           }
         >
           <SettingSelect
-            label="Rule"
-            description="The creation rule to execute on startup."
+            label={t("settings.behaviour.startup.ruleLabel")}
+            description={t("settings.behaviour.startup.ruleDescription")}
             value={noteboxSettings.startup.target}
             options={ruleOptions()}
             onChange={(v) => updateNoteboxSetting("startup", "target", v)}
@@ -2427,7 +2444,7 @@ function BehaviourSettingsSection() {
       </Show>
       <Show when={showTarget()}>
         <SettingPathText
-          label="Target"
+          label={t("settings.behaviour.startup.target")}
           description={targetDescription()}
           value={noteboxSettings.startup.target}
           onChange={(v) => updateNoteboxSetting("startup", "target", v)}
@@ -2438,33 +2455,31 @@ function BehaviourSettingsSection() {
 
       {/* Tab settings */}
       <div class="settings__section-header">
-        <span class="settings__label">Tabs</span>
+        <span class="settings__label">{t("settings.behaviour.tabs")}</span>
       </div>
       <SettingToggle
-        label="Switch to new tabs immediately"
-        description="When on, if you Ctrl/Cmd+click or use a right-click 'open in new tab' action, focus switches to the new tab right away. When off, the new tab opens in the background and you stay on the current note."
+        label={t("settings.behaviour.switchToNewTab.label")}
+        description={t("settings.behaviour.switchToNewTab.description")}
         value={settings.behaviour.switch_to_new_tab}
         onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
       />
 
       {/* Journal Scroll settings */}
       <div class="settings__section-header">
-        <span class="settings__label">Journal Scroll</span>
+        <span class="settings__label">{t("settings.behaviour.journalScroll")}</span>
       </div>
       <p class="settings__section-note">
-        Read your notes as a continuous timeline feed. Clicking the Journal Scroll button 
-        anchors the view to the active note; the feed shows notes around it, sorted
-        by the axis you set below. Scrolling moves forward or backward through notes in time.
+        {t("settings.behaviour.journalScroll.intro")}
       </p>
       <SettingSelect
-        label="Sort by"
-        description="The axis the feed is ordered along. Notes missing the chosen property are placed at the end, ordered by file creation date. If you imported your notes from another system, the file creation and modification dates will have been reset to the same date."
+        label={t("settings.behaviour.journalScroll.sortBy.label")}
+        description={t("settings.behaviour.journalScroll.sortBy.description")}
         value={noteboxSettings.journal_scroll.date_sort}
         options={[
-          { value: "created", label: "File creation date" },
-          { value: "modified", label: "File modification date" },
-          { value: "zid", label: "Note's zid property" },
-          { value: "note_date", label: "Note's date property" },
+          { value: "created", label: t("settings.behaviour.journalScroll.sortBy.option.created") },
+          { value: "modified", label: t("settings.behaviour.journalScroll.sortBy.option.modified") },
+          { value: "zid", label: t("settings.behaviour.journalScroll.sortBy.option.zid") },
+          { value: "note_date", label: t("settings.behaviour.journalScroll.sortBy.option.noteDate") },
         ]}
         onChange={(v) =>
           updateNoteboxSetting(
@@ -2476,13 +2491,13 @@ function BehaviourSettingsSection() {
         scope="notebox"
       />
       <SettingSelect
-        label="Anchor scope"
-        description="The largest set of notes the feed may show. 'All' spans the whole notebox; the others confine it to a folder."
+        label={t("settings.behaviour.journalScroll.anchorScope.label")}
+        description={t("settings.behaviour.journalScroll.anchorScope.description")}
         value={noteboxSettings.journal_scroll.anchor_scope}
         options={[
-          { value: "all", label: "All notes" },
-          { value: "daily", label: "Daily Notes folder" },
-          { value: "custom", label: "Custom folder" },
+          { value: "all", label: t("settings.behaviour.journalScroll.anchorScope.option.all") },
+          { value: "daily", label: t("settings.behaviour.journalScroll.anchorScope.option.daily") },
+          { value: "custom", label: t("settings.behaviour.journalScroll.anchorScope.option.custom") },
         ]}
         onChange={(v) =>
           updateNoteboxSetting(
@@ -2500,9 +2515,9 @@ function BehaviourSettingsSection() {
         }
       >
         <p class="settings__section-note">
-          The feed will be confined to{" "}
-          <code>{dailyNotesFolder()}</code> and its subfolders — the target
-          folder of your Daily Note creation rule.
+          {t("settings.behaviour.journalScroll.dailyScopeNoteBefore")}{" "}
+          <code>{dailyNotesFolder()}</code>{" "}
+          {t("settings.behaviour.journalScroll.dailyScopeNoteAfter")}
         </p>
       </Show>
       <Show
@@ -2512,16 +2527,13 @@ function BehaviourSettingsSection() {
         }
       >
         <p class="settings__section-note settings__section-note--warn">
-          Your Daily Note creation rule has no fixed target folder set, so
-          there is no folder to scope to. Set a target folder on the Daily
-          Note rule (under Creation rules) for this option to take effect —
-          until then the feed falls back to all notes.
+          {t("settings.behaviour.journalScroll.dailyScopeWarn")}
         </p>
       </Show>
       <Show when={noteboxSettings.journal_scroll.anchor_scope === "custom"}>
         <SettingPathText
-          label="Custom scope folder"
-          description="Folder path relative to notebox root. The feed is confined to this folder and its subfolders."
+          label={t("settings.behaviour.journalScroll.customScope.label")}
+          description={t("settings.behaviour.journalScroll.customScope.description")}
           value={noteboxSettings.journal_scroll.custom_scope_folder}
           onChange={(v) =>
             updateNoteboxSetting("journal_scroll", "custom_scope_folder", v)
@@ -2545,11 +2557,12 @@ type SettingScope = "user" | "notebox";
  *  scope badge. All setting helpers go through this so the badge
  *  placement and styling stay consistent. */
 function SettingLabel(props: { label: string; scope?: SettingScope }) {
+  const t = useI18n();
   return (
     <label class="settings__label">
       {props.label}
       <Show when={props.scope === "notebox"}>
-        <span class="settings__scope-badge">this notebox</span>
+        <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
       </Show>
     </label>
   );
@@ -2775,19 +2788,14 @@ function SettingSelect(props: {
  * (Agenda, backup archive list, last-backup indicator).
  */
 function DateFormatSettingRow() {
+  const t = useI18n();
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">Date format</label>
+        <label class="settings__label">{t("settings.appearance.dateFormat.label")}</label>
         <span class="settings__description">
-          Your preferred format for how the interface displays dates. Functions on agenda dates, the
-          modification-time line shown next to each archive in the Browse
-          backups dialog, and the "Last backup" indicator. Does not affect
-          backup filenames nor how dates are stored inside notes. Available tokens: YYYY
-          (4-digit year), YY (2-digit year), MMMM (full month name), MMM
-          (short month name), MM (2-digit month), DD (2-digit day), D
-          (day, no padding), HH (24-hour), mm (minute), ss (second), dddd
-          (full weekday), ddd (short weekday). Preview: <strong>{formatUserDate(new Date())}</strong>
+          {t("settings.appearance.dateFormat.description")}{" "}
+          {t("settings.appearance.dateFormat.previewLabel")} <strong>{formatUserDate(new Date())}</strong>
         </span>
       </div>
       <input
@@ -2811,24 +2819,25 @@ function DateFormatSettingRow() {
  * non-KDE Linux desktop), the segment is disabled with a hint.
  */
 function AccentSettingRow() {
+  const t = useI18n();
   // Probe OS-accent availability lazily. `null` from the IPC means "no
   // source on this platform"; any string means we got a usable color.
   const [osProbe] = createResource(() => ipc.getOsAccentColor());
   const osAvailable = () => osProbe.state === "ready" && osProbe() !== null;
   const osHint = () =>
     osProbe.state === "ready" && osProbe() === null
-      ? "Not available on this desktop environment"
+      ? t("settings.appearance.accent.unavailable")
       : undefined;
 
   return (
     <div class="settings__row settings__row--stack-control">
       <div class="settings__row-info">
-        <label class="settings__label">Accent color</label>
+        <label class="settings__label">{t("settings.appearance.accent.label")}</label>
         <span class="settings__description">
-          Use InkyCap's default, pick a custom color, or follow your OS accent.
+          {t("settings.appearance.accent.description")}
         </span>
       </div>
-      <div class="settings__segmented" role="radiogroup" aria-label="Accent color source">
+      <div class="settings__segmented" role="radiogroup" aria-label={t("settings.appearance.accent.sourceLabel")}>
         <button
           type="button"
           role="radio"
@@ -2840,7 +2849,7 @@ function AccentSettingRow() {
           }
           onClick={() => setAccentSource("default")}
         >
-          Default
+          {t("settings.appearance.accent.default")}
         </button>
         <button
           type="button"
@@ -2853,7 +2862,7 @@ function AccentSettingRow() {
           }
           onClick={() => setAccentSource("custom")}
         >
-          Custom
+          {t("settings.appearance.accent.custom")}
         </button>
         <button
           type="button"
@@ -2871,7 +2880,7 @@ function AccentSettingRow() {
           }
           onClick={() => setAccentSource("os" as AccentSource)}
         >
-          Match OS
+          {t("settings.appearance.accent.os")}
         </button>
       </div>
       <Show when={osHint()}>

@@ -16,6 +16,7 @@ import { onMount, onCleanup } from "solid-js";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editableTypstExtensions } from "../editor/typst-editor";
+import { useI18n } from "../lib/i18n";
 
 interface CustomTypstModalProps {
   value: string;
@@ -25,6 +26,7 @@ interface CustomTypstModalProps {
 }
 
 export default function CustomTypstModal(props: CustomTypstModalProps) {
+  const t = useI18n();
   let editorParent: HTMLDivElement | undefined;
   let view: EditorView | undefined;
 
@@ -60,22 +62,21 @@ export default function CustomTypstModal(props: CustomTypstModalProps) {
     >
       <div class="app-modal custom-typst-modal">
         <div class="app-modal__header">
-          <h3>Custom Typst — {props.collectionName}</h3>
+          <h3>{t("customTypst.title", { name: props.collectionName })}</h3>
         </div>
         <div class="app-modal__body">
           <p class="app-modal__hint">
-            Injected after this collection's Style Overrides on every export, so
-            it overrides those settings and any template. Raw Typst — e.g.{" "}
-            <code>#show heading.where(level: 1): set text(navy)</code>.
+            {t("customTypst.hintBefore")}{" "}
+            <code>{"#show heading.where(level: 1): set text(navy)"}</code>.
           </p>
           <div ref={editorParent} class="custom-typst-modal__editor" />
         </div>
         <div class="app-modal__footer">
           <button class="app-modal__btn app-modal__btn--secondary" onClick={props.onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button class="app-modal__btn app-modal__btn--primary" onClick={save}>
-            Save
+            {t("common.save")}
           </button>
         </div>
       </div>

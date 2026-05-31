@@ -93,55 +93,10 @@ function collectTsx(dir: string, acc: string[] = []): string[] {
 const rel = (abs: string) => relative(ROOT, abs).split(sep).join("/");
 
 // ── Not-yet-migrated backlog (Phase 1/2 baseline) ────────────────────
-// Files still holding hardcoded UI text. Phase 3 empties this set file by
-// file. Do NOT add new files here — route their text through t()/useI18n().
-const UNMIGRATED = new Set<string>([
-  "src/App.tsx",
-  "src/components/AgendaList.tsx",
-  "src/components/AnnotationsPanel.tsx",
-  "src/components/AttachmentFolderField.tsx",
-  "src/components/BookmarksPanel.tsx",
-  "src/components/CollectionSettings.tsx",
-  "src/components/CollectionTable.tsx",
-  "src/components/ColorPicker.tsx",
-  "src/components/CommandPalette.tsx",
-  "src/components/ContributorsEditor.tsx",
-  "src/components/CreationRuleEditor.tsx",
-  "src/components/CustomTypstModal.tsx",
-  "src/components/DatePicker.tsx",
-  "src/components/DiagnosticRow.tsx",
-  "src/components/ExportDialog.tsx",
-  "src/components/FilterBuilder.tsx",
-  "src/components/FolderPickerHost.tsx",
-  "src/components/FontPicker.tsx",
-  "src/components/JournalScrollView.tsx",
-  "src/components/LeftSidebar.tsx",
-  "src/components/LucideIconPicker.tsx",
-  "src/components/MycelialFilteringPanel.tsx",
-  "src/components/MycelialView.tsx",
-  "src/components/NoteboxLostBanner.tsx",
-  "src/components/NoteboxRequiredOverlay.tsx",
-  "src/components/NoteboxSeedHost.tsx",
-  "src/components/OutlinePanel.tsx",
-  "src/components/panes/PaneLeaf.tsx",
-  "src/components/panes/TabStrip.tsx",
-  "src/components/PropertyEditor.tsx",
-  "src/components/PropertyMappingDialog.tsx",
-  "src/components/QuickOpen.tsx",
-  "src/components/ReferencesPanel.tsx",
-  "src/components/RefNotePicker.tsx",
-  "src/components/RightPanel.tsx",
-  "src/components/ScaffoldPicker.tsx",
-  "src/components/ScrollContextPanel.tsx",
-  "src/components/SearchPanel.tsx",
-  "src/components/SettingCombobox.tsx",
-  "src/components/SettingsPanel.tsx",
-  "src/components/StatusBar.tsx",
-  "src/components/TemplatesPanel.tsx",
-  "src/components/TypAuditDialog.tsx",
-  "src/components/TypstEditor.tsx",
-  "src/components/VerticalToolbar.tsx",
-]);
+// EMPTY: Phase 3 migrated every backlog .tsx through t()/useI18n(). Every
+// enforced .tsx now stays clean. Do NOT add files here — route their text
+// through t()/useI18n(), or annotate `// i18n-exempt: <reason>`.
+const UNMIGRATED = new Set<string>([]);
 
 describe("i18n coverage scanner", () => {
   it("flags bare JSX text and target-attribute string literals", () => {

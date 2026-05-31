@@ -27,10 +27,12 @@ import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { promptText } from "../stores/prompt";
 import { toastError, showToast } from "../stores/toasts";
+import { useI18n } from "../lib/i18n";
 
 type SubTab = "scaffolds" | "templates" | "packages";
 
 const TemplatesPanel: Component = () => {
+  const t = useI18n();
   const [refreshKey, setRefreshKey] = createSignal(0);
   const [tab, setTab] = createSignal<SubTab>("scaffolds");
   const [showHelp, setShowHelp] = createSignal(false);
@@ -73,11 +75,11 @@ const TemplatesPanel: Component = () => {
 
   async function newScaffold() {
     const name = await promptText({
-      title: "New scaffold",
-      label: "Filename",
+      title: t("templates.prompt.newScaffold.title"),
+      label: t("templates.prompt.newScaffold.label"),
       placeholder: "daily-note",
-      hint: "A .typ extension is added if you omit it.",
-      confirmLabel: "Create",
+      hint: t("templates.prompt.newScaffold.hint"),
+      confirmLabel: t("common.create"),
     });
     if (!name) return;
     try {
@@ -88,28 +90,28 @@ const TemplatesPanel: Component = () => {
         { forceNewTab: false },
       );
     } catch (e) {
-      toastError("Failed to create scaffold", e);
+      toastError(t("templates.createScaffoldFailed"), e);
     }
   }
 
   async function installBySpec() {
     const spec = await promptText({
-      title: "Install Typst Universe package",
-      label: "Package spec",
+      title: t("templates.prompt.installSpec.title"),
+      label: t("templates.prompt.installSpec.label"),
       placeholder: "@preview/cetz:0.2.0",
-      hint: "Fetched from packages.typst.org. Works for both templates and libraries.",
-      confirmLabel: "Install",
+      hint: t("templates.prompt.installSpec.hint"),
+      confirmLabel: t("templates.install"),
     });
     if (!spec) return;
     try {
       const result = await ipc.installTypstPackageBySpec(spec);
       showToast(
         "success",
-        `Installed ${result.spec} (${result.files_written} files)`,
+        t("templates.installed", { spec: result.spec, files: result.files_written }),
       );
       refresh();
     } catch (e) {
-      toastError("Failed to install package", e);
+      toastError(t("templates.installFailed"), e);
     }
   }
 
@@ -120,33 +122,33 @@ const TemplatesPanel: Component = () => {
     // destination is fixed by the backend (the notebox's package dir). The
     // source archive lives on the user's computer, so default to home.
     const path = await openDialog({
-      title: "Install Typst package from local archive",
+      title: t("templates.prompt.installFromFile.title"),
       defaultPath: await homeDirDefault(),
       // Tauri filter extensions match the final dot-segment only — `tar.gz`
       // wouldn't match. List `gz`+`tgz`; backend validates actual shape.
-      filters: [{ name: "Tarball", extensions: ["gz", "tgz"] }],
+      filters: [{ name: t("templates.prompt.tarball"), extensions: ["gz", "tgz"] }],
     });
     if (!path) return;
     try {
       const result = await ipc.installTypstPackageFromFile(path as string);
       showToast(
         "success",
-        `Installed ${result.spec} (${result.files_written} files)`,
+        t("templates.installed", { spec: result.spec, files: result.files_written }),
       );
       refresh();
     } catch (e) {
-      toastError("Failed to install package", e);
+      toastError(t("templates.installFailed"), e);
     }
   }
 
   async function newLocalPackage(asTemplate: boolean) {
     const placeholder = asTemplate ? "letter-layout" : "my-utils";
     const spec = await promptText({
-      title: asTemplate ? "New local template" : "New local package",
-      label: "Name or spec",
+      title: asTemplate ? t("templates.prompt.newLocalTemplate.title") : t("templates.prompt.newLocalPackage.title"),
+      label: t("templates.prompt.newLocal.label"),
       placeholder,
-      hint: `Bare name becomes @local/<name>:0.1.0. You can also pass a full spec like @myorg/${placeholder}:1.0.0.`,
-      confirmLabel: "Create",
+      hint: t("templates.prompt.newLocal.hint", { placeholder }),
+      confirmLabel: t("common.create"),
     });
     if (!spec) return;
     try {
@@ -160,7 +162,7 @@ const TemplatesPanel: Component = () => {
       );
     } catch (e) {
       toastError(
-        asTemplate ? "Failed to create template" : "Failed to create package",
+        asTemplate ? t("templates.createTemplateFailed") : t("templates.createPackageFailed"),
         e,
       );
     }
@@ -170,9 +172,9 @@ const TemplatesPanel: Component = () => {
     namespace: string,
     kind: "template" | "library",
   ): string {
-    if (namespace === "preview") return "Typst Universe";
+    if (namespace === "preview") return t("templates.ns.universe");
     if (namespace === "local") {
-      return kind === "template" ? "Your template" : "Your package";
+      return kind === "template" ? t("templates.ns.yourTemplate") : t("templates.ns.yourPackage");
     }
     return `@${namespace}`;
   }
@@ -180,24 +182,24 @@ const TemplatesPanel: Component = () => {
   async function uninstall(pkg: ipc.InstalledPackageEntry) {
     if (
       !window.confirm(
-        `Uninstall ${pkg.spec}?\n\nThis deletes the package directory.`,
+        t("templates.uninstallConfirm", { spec: pkg.spec }),
       )
     ) {
       return;
     }
     try {
       await ipc.uninstallTypstPackage(pkg.spec);
-      showToast("success", `Uninstalled ${pkg.spec}`);
+      showToast("success", t("templates.uninstalled", { spec: pkg.spec }));
       refresh();
     } catch (e) {
-      toastError("Failed to uninstall package", e);
+      toastError(t("templates.uninstallFailed"), e);
     }
   }
 
   function copyImport(text: string) {
     navigator.clipboard.writeText(text).then(
-      () => showToast("info", "Import line copied"),
-      (err) => toastError("Failed to copy", err),
+      () => showToast("info", t("templates.importCopied")),
+      (err) => toastError(t("templates.copyFailed"), err),
     );
   }
 
@@ -208,11 +210,11 @@ const TemplatesPanel: Component = () => {
   function title(): string {
     switch (tab()) {
       case "scaffolds":
-        return "Scaffolds";
+        return t("templates.title.scaffolds");
       case "templates":
-        return "Document Templates";
+        return t("templates.title.templates");
       case "packages":
-        return "Packages";
+        return t("templates.title.packages");
     }
   }
 
@@ -226,8 +228,8 @@ const TemplatesPanel: Component = () => {
             onClick={() => setTab("scaffolds")}
             role="tab"
             aria-selected={tab() === "scaffolds"}
-            title="Scaffolds"
-            aria-label="Scaffolds"
+            title={t("templates.title.scaffolds")}
+            aria-label={t("templates.title.scaffolds")}
           >
             <Pyramid size={14} />
           </button>
@@ -236,8 +238,8 @@ const TemplatesPanel: Component = () => {
             onClick={() => setTab("templates")}
             role="tab"
             aria-selected={tab() === "templates"}
-            title="Document Templates"
-            aria-label="Document Templates"
+            title={t("templates.title.templates")}
+            aria-label={t("templates.title.templates")}
           >
             <Layers2 size={14} />
           </button>
@@ -246,8 +248,8 @@ const TemplatesPanel: Component = () => {
             onClick={() => setTab("packages")}
             role="tab"
             aria-selected={tab() === "packages"}
-            title="Packages"
-            aria-label="Packages"
+            title={t("templates.title.packages")}
+            aria-label={t("templates.title.packages")}
           >
             <Box size={14} />
           </button>
@@ -256,16 +258,16 @@ const TemplatesPanel: Component = () => {
         <button
           class="left-sidebar__icon-btn"
           onClick={refresh}
-          title="Refresh"
-          aria-label="Refresh"
+          title={t("templates.refresh")}
+          aria-label={t("templates.refresh")}
         >
           <RefreshCw size={14} />
         </button>
         <button
           class={`left-sidebar__icon-btn${showHelp() ? " left-sidebar__icon-btn--active" : ""}`}
           onClick={() => setShowHelp((v) => !v)}
-          title={showHelp() ? "Hide help" : "Show help"}
-          aria-label="Toggle help"
+          title={showHelp() ? t("templates.hideHelp") : t("templates.showHelp")}
+          aria-label={t("templates.toggleHelp")}
           aria-pressed={showHelp()}
         >
           <Info size={14} />
@@ -277,41 +279,41 @@ const TemplatesPanel: Component = () => {
           <button
             class="templates-panel__new-btn"
             onClick={newScaffold}
-            title="New scaffold"
+            title={t("templates.newScaffoldTitle")}
           >
-            <Plus size={12} /> New
+            <Plus size={12} /> {t("templates.new")}
           </button>
         </Show>
         <Show when={tab() === "templates"}>
           <button
             class="templates-panel__new-btn"
             onClick={() => newLocalPackage(true)}
-            title="New local template (@local/<name>:0.1.0)"
+            title={t("templates.newLocalTemplateTitle")}
           >
-            <Plus size={12} /> New
+            <Plus size={12} /> {t("templates.new")}
           </button>
         </Show>
         <Show when={tab() === "packages"}>
           <button
             class="templates-panel__new-btn"
             onClick={() => newLocalPackage(false)}
-            title="New local package (@local/<name>:0.1.0)"
+            title={t("templates.newLocalPackageTitle")}
           >
-            <Plus size={12} /> New
+            <Plus size={12} /> {t("templates.new")}
           </button>
           <button
             class="templates-panel__new-btn"
             onClick={installBySpec}
-            title="Install from packages.typst.org by spec"
+            title={t("templates.installBySpecTitle")}
           >
-            <Download size={12} /> Install
+            <Download size={12} /> {t("templates.install")}
           </button>
           <button
             class="templates-panel__new-btn"
             onClick={installFromFile}
-            title="Install from a local .tar.gz file"
+            title={t("templates.installFromFileTitle")}
           >
-            <FolderInput size={12} /> From file
+            <FolderInput size={12} /> {t("templates.fromFile")}
           </button>
         </Show>
       </div>
@@ -320,29 +322,22 @@ const TemplatesPanel: Component = () => {
         <div class="templates-pane__help">
           <Show when={tab() === "scaffolds"}>
             <p>
-              Note-body content. Supports <code>{`{{title}}`}</code>,{" "}
+              {t("templates.help.scaffoldsBefore")} <code>{`{{title}}`}</code>,{" "}
               <code>{`{{date}}`}</code>, <code>{`{{zid}}`}</code>,{" "}
-              <code>{`{{cursor}}`}</code>. Insert into the current note with
-              Ctrl+\.
+              <code>{`{{cursor}}`}</code>{t("templates.help.scaffoldsAfter")}
             </p>
           </Show>
           <Show when={tab() === "templates"}>
             <p>
-              Whole-document wrappers (page layout, fonts, styling). Typst
-              packages whose <code>typst.toml</code> declares{" "}
-              <code>[template]</code>. Install Universe templates from the
-              Packages tab.
+              {t("templates.help.templates1")} <code>{"typst.toml"}</code> {t("templates.help.templates2")}{" "}
+              <code>{"[template]"}</code>{t("templates.help.templates3")}
             </p>
           </Show>
           <Show when={tab() === "packages"}>
             <p>
-              Typst Universe libraries (CeTZ for diagrams, codly for code
-              blocks, etc.). Import with{" "}
-              <code>#import "@preview/name:version": *</code>. Both packages
-              and templates land under{" "}
-              <code>
-                .inkycap/packages/&lt;ns&gt;/&lt;name&gt;/&lt;version&gt;/
-              </code>
+              {t("templates.help.packages1")}{" "}
+              <code>{'#import "@preview/name:version": *'}</code>{t("templates.help.packages2")}{" "}
+              <code>{".inkycap/packages/<ns>/<name>/<version>/"}</code>
               .
             </p>
           </Show>
@@ -356,7 +351,7 @@ const TemplatesPanel: Component = () => {
             fallback={
               <Show when={!scaffolds.loading}>
                 <p class="sidebar-hint">
-                  No scaffolds yet. Click <b>New</b> to create one.
+                  {t("templates.empty.scaffoldsBefore")} <b>{t("templates.new")}</b> {t("templates.empty.scaffoldsAfter")}
                 </p>
               </Show>
             }
@@ -366,7 +361,7 @@ const TemplatesPanel: Component = () => {
                 <div
                   class="sidebar-item"
                   onClick={() => openScaffold(entry)}
-                  title="Open scaffold"
+                  title={t("templates.openScaffold")}
                 >
                   <span class="sidebar-item__icon">
                     <Pyramid size={12} />
@@ -384,9 +379,7 @@ const TemplatesPanel: Component = () => {
             fallback={
               <Show when={!packages.loading}>
                 <p class="sidebar-hint">
-                  No document templates yet. Install one from the Typst
-                  Universe (e.g. <code>@preview/charged-ieee:0.1.0</code>) via
-                  the Packages tab.
+                  {t("templates.empty.templatesBefore")} <code>{"@preview/charged-ieee:0.1.0"}</code>{t("templates.empty.templatesAfter")}
                 </p>
               </Show>
             }
@@ -396,7 +389,7 @@ const TemplatesPanel: Component = () => {
                 <div
                   class="sidebar-item templates-pane__item"
                   onClick={() => openPackageManifest(pkg)}
-                  title="Open typst.toml"
+                  title={t("templates.openManifest")}
                 >
                   <span class="sidebar-item__icon">
                     <Layers2 size={12} />
@@ -414,9 +407,9 @@ const TemplatesPanel: Component = () => {
                       e.stopPropagation();
                       copyImport(packageImportLine(pkg));
                     }}
-                    title={`Copy: ${packageImportLine(pkg)}`}
+                    title={t("templates.copyTitle", { line: packageImportLine(pkg) })}
                   >
-                    Copy
+                    {t("templates.copy")}
                   </button>
                   <button
                     class="templates-panel__item-icon"
@@ -424,8 +417,8 @@ const TemplatesPanel: Component = () => {
                       e.stopPropagation();
                       uninstall(pkg);
                     }}
-                    title={`Uninstall ${pkg.spec}`}
-                    aria-label={`Uninstall ${pkg.spec}`}
+                    title={t("templates.uninstallTitle", { spec: pkg.spec })}
+                    aria-label={t("templates.uninstallTitle", { spec: pkg.spec })}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -441,9 +434,9 @@ const TemplatesPanel: Component = () => {
             fallback={
               <Show when={!packages.loading}>
                 <p class="sidebar-hint">
-                  No libraries installed. Try{" "}
-                  <code>@preview/cetz:0.2.0</code> for diagrams or{" "}
-                  <code>@preview/codly:1.0.0</code> for code blocks.
+                  {t("templates.empty.packages1")}{" "}
+                  <code>{"@preview/cetz:0.2.0"}</code> {t("templates.empty.packages2")}{" "}
+                  <code>{"@preview/codly:1.0.0"}</code> {t("templates.empty.packages3")}
                 </p>
               </Show>
             }
@@ -453,7 +446,7 @@ const TemplatesPanel: Component = () => {
                 <div
                   class="sidebar-item templates-pane__item"
                   onClick={() => openPackageManifest(pkg)}
-                  title="Open typst.toml"
+                  title={t("templates.openManifest")}
                 >
                   <span class="sidebar-item__icon">
                     <Box size={12} />
@@ -471,9 +464,9 @@ const TemplatesPanel: Component = () => {
                       e.stopPropagation();
                       copyImport(packageImportLine(pkg));
                     }}
-                    title={`Copy: ${packageImportLine(pkg)}`}
+                    title={t("templates.copyTitle", { line: packageImportLine(pkg) })}
                   >
-                    Copy
+                    {t("templates.copy")}
                   </button>
                   <button
                     class="templates-panel__item-icon"
@@ -481,8 +474,8 @@ const TemplatesPanel: Component = () => {
                       e.stopPropagation();
                       uninstall(pkg);
                     }}
-                    title={`Uninstall ${pkg.spec}`}
-                    aria-label={`Uninstall ${pkg.spec}`}
+                    title={t("templates.uninstallTitle", { spec: pkg.spec })}
+                    aria-label={t("templates.uninstallTitle", { spec: pkg.spec })}
                   >
                     <Trash2 size={13} />
                   </button>

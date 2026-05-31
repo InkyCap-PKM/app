@@ -18,6 +18,7 @@ import { activeFolderPicker, resolveFolderPicker } from "../stores/folderPicker"
 import { noteboxInfo } from "../stores/notebox";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
+import { useI18n } from "../lib/i18n";
 import type { FileTreeNode } from "../lib/types";
 
 /** A selectable destination folder. */
@@ -31,6 +32,7 @@ interface FolderEntry {
 }
 
 const FolderPickerHost: Component = () => {
+  const t = useI18n();
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [folders, setFolders] = createSignal<FolderEntry[]>([]);
@@ -81,7 +83,7 @@ const FolderPickerHost: Component = () => {
       // Pin the notebox root as the first entry so the user can always
       // move an item to the top of the notebox, unless the root itself is
       // the item's current parent (moving there would be a no-op).
-      const rootEntry: FolderEntry = { abs: root, rel: "", label: "Notebox root" };
+      const rootEntry: FolderEntry = { abs: root, rel: "", label: t("folderPicker.noteboxRoot") };
       const showRoot = !pathEquals(p.currentParent, root);
       setFolders(showRoot ? [rootEntry, ...filtered] : filtered);
     });
@@ -151,7 +153,7 @@ const FolderPickerHost: Component = () => {
               ref={inputRef}
               class="quick-open__input"
               type="text"
-              placeholder={p().placeholder ?? "Type to filter and find a folder"}
+              placeholder={p().placeholder ?? t("folderPicker.placeholder")}
               value={query()}
               onInput={(e) => {
                 setQuery(e.currentTarget.value);
@@ -173,13 +175,13 @@ const FolderPickerHost: Component = () => {
                 )}
               </For>
               <Show when={results().length === 0}>
-                <div class="quick-open__empty">No matching folders</div>
+                <div class="quick-open__empty">{t("folderPicker.noMatch")}</div>
               </Show>
             </div>
             <div class="folder-picker__footer">
-              <span>↑↓ select</span>
-              <span>↵ move now</span>
-              <span>esc to cancel</span>
+              <span>{t("folderPicker.selectHint")}</span>
+              <span>{t("folderPicker.moveNowHint")}</span>
+              <span>{t("folderPicker.cancelHint")}</span>
             </div>
           </div>
         </div>
