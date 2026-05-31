@@ -1166,6 +1166,7 @@
   "settings.extensions.output.replace": "Replace the selection",
   "settings.extensions.output.insert": "Insert at the cursor",
   "settings.extensions.output.notify": "Show it (don't change the note)",
+  "settings.extensions.output.panel": "Show it in a side panel",
   "settings.extensions.add": "Add a tool",
 
   "settings.overview.version": "Version",

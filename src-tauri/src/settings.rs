@@ -456,8 +456,10 @@ pub struct ExternalTool {
     /// `"none"`.
     pub input: String,
     /// What InkyCap does with the tool's stdout: `"insert"` (at the cursor),
-    /// `"replace"` (the selection), or `"notify"` (show it, leave the document
-    /// untouched).
+    /// `"replace"` (the selection), `"notify"` (transient toast, document
+    /// untouched), or `"panel"` (a persistent right-panel pane). The backend
+    /// does not act on this — it echoes the value to the frontend, which
+    /// applies the disposition.
     pub output: String,
 }
 
