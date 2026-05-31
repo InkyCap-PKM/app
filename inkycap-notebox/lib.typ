@@ -73,6 +73,10 @@
   if text-font != none { set text(font: text-font) }
   if text-size != none { set text(size: text-size) }
   if page-paper != none { set page(paper: page-paper) }
+  // Keep the same bullet at every nesting depth. Typst's default
+  // `list.marker` is the cycling tuple `([•], [‣], [–])`, so deeper items
+  // switch glyph each level; a single-content marker applies `•` uniformly.
+  set list(marker: [•])
   if monospace-font != none {
     show raw: set text(font: monospace-font)
     body

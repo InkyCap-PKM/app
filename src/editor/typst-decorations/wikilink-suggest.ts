@@ -2,7 +2,7 @@ import { EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirror/vie
 import { type ChangeSpec, type Extension, Prec } from "@codemirror/state";
 import { fileList } from "../../stores/filelist";
 import { aliases } from "../../stores/aliases";
-import { fuzzyMatch } from "../../lib/fuzzy";
+import { wikilinkScore } from "./wikilink-match";
 import { typstStringEscape } from "../../lib/typst";
 import { t } from "../../lib/i18n";
 import * as ipc from "../../lib/ipc";
@@ -238,8 +238,8 @@ async function showPopup(view: EditorView, state: SuggestState) {
       if (query === "") {
         scored.push({ name, notePath: entry.path, score: 0 });
       } else {
-        const m = fuzzyMatch(query, name);
-        if (m) scored.push({ name, notePath: entry.path, score: m.score });
+        const s = wikilinkScore(query, name);
+        if (s !== null) scored.push({ name, notePath: entry.path, score: s });
       }
     }
 
@@ -258,18 +258,18 @@ async function showPopup(view: EditorView, state: SuggestState) {
           subtitle: aliasSubtitle,
         });
       } else {
-        const m = fuzzyMatch(query, entry.alias);
-        if (m) {
+        const s = wikilinkScore(query, entry.alias);
+        if (s !== null) {
           // If the same note already matched by filename, skip the alias
           // unless the alias match scores higher
           const existingIdx = scored.findIndex(
-            (s) => s.notePath === entry.note_path && !s.displayText,
+            (item) => item.notePath === entry.note_path && !item.displayText,
           );
-          if (existingIdx >= 0 && scored[existingIdx].score >= m.score) continue;
+          if (existingIdx >= 0 && scored[existingIdx].score >= s) continue;
           scored.push({
             name: entry.note_name,
             notePath: entry.note_path,
-            score: m.score,
+            score: s,
             displayText: entry.alias,
             subtitle: aliasSubtitle,
           });
@@ -334,6 +334,22 @@ async function showPopup(view: EditorView, state: SuggestState) {
     el.appendChild(row);
   }
 
+  // Prompt the user toward the linking affordances they can't otherwise
+  // discover — `::` to jump to a heading, and the Tab shortcut that fills the
+  // `::` in for the selected page (each hint is its own line).
+  const footer = document.createElement("div");
+  footer.className = "wikilink-suggest__footer";
+  const hintKeys = state.mode === "heading"
+    ? ["wikilink.suggest.hint_heading"]
+    : ["wikilink.suggest.hint_note", "wikilink.suggest.hint_tab"];
+  for (const key of hintKeys) {
+    const line = document.createElement("div");
+    line.className = "wikilink-suggest__hint-line";
+    line.textContent = t(key);
+    footer.appendChild(line);
+  }
+  el.appendChild(footer);
+
   positionPopup(view, state, el);
 }
 
@@ -395,10 +411,39 @@ function updateSelection(delta: number) {
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
 }
 
-const wikilinkBracketHandler = EditorView.inputHandler.of((view, from, _to, text) => {
+// High precedence so this beats `closeBrackets()` for the second `[`. Without
+// the wrapper, closeBrackets' default-precedence inputHandler (added in
+// baseExtensions, ahead of the visual-mode wikilinkSuggest) runs first and
+// turns `[[` into `[[]]`, leaving a stray auto-paired `]]` that the wikilink
+// flow never asked for. Winning here keeps the typed shorthand a clean `[[`
+// that the picker completes into a `#wikilink(...)` call.
+const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== "[") return false;
   if (from === 0 || view.state.doc.sliceString(from - 1, from) !== "[") return false;
 
+  // Selection-wrap case. On the first `[`, closeBrackets wrapped the selection
+  // as `[sel]` and kept `sel` selected (so `from..to` still spans it, with the
+  // auto-paired `]` sitting at `to`). Forming the second `[` here must produce
+  // `[[sel]]` — insert the inner `[` before the selection and a second `]`
+  // after the existing one — and drop the caret just after `sel` so the picker
+  // queries it. Without this we'd insert a lone `[` and lose the closing `]`,
+  // leaving the broken `[[sel]` seen in practice.
+  if (from !== to) {
+    const closer = view.state.doc.sliceString(to, to + 1) === "]" ? to + 1 : to;
+    view.dispatch({
+      changes: [
+        { from, to: from, insert: "[" },
+        { from: closer, to: closer, insert: "]" },
+      ],
+      // `to` shifts +1 from the inner `[` inserted before the selection, so the
+      // caret lands immediately after `sel`, before the `]]`.
+      selection: { anchor: to + 1 },
+    });
+    return true;
+  }
+
+  // No selection: collapse the auto-paired `]` so `[[` stays clean (the picker
+  // completes the closing brackets on accept).
   const after = view.state.doc.sliceString(from, from + 1);
   const deleteTo = after === "]" ? from + 1 : from;
 
@@ -407,7 +452,7 @@ const wikilinkBracketHandler = EditorView.inputHandler.of((view, from, _to, text
     selection: { anchor: from + 1 },
   });
   return true;
-});
+}));
 
 const suggestKeyHandler = Prec.highest(keymap.of([
   {

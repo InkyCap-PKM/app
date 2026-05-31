@@ -782,7 +782,11 @@ const BLOCK_FUNCS = new Set([
 // pill-options.ts taskOptions / dueOptions). Their case branches handle
 // both decorations explicitly, mirroring how `cite` combines a pill with
 // the citation widget.
-const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "suggestion"]);
+// `footnote` joins this set so it renders as its compact widget but reveals
+// the raw `#footnote[…]` source the moment the cursor is adjacent or inside —
+// the same temporary-expand-on-cursor affordance wikilinks use — instead of
+// staying an opaque widget that can only be edited from source mode.
+const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "suggestion", "footnote"]);
 
 /** Best-effort extraction of an ISO `YYYY-MM-DD` date from a snippet of
  *  Typst source — recognizes a `datetime(...)` call (positional or named

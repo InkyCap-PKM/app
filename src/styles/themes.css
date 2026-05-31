@@ -538,6 +538,25 @@
   font-style: italic;
 }
 
+/* Discoverability hint pinned to the bottom of the suggestion list (e.g.
+   "Type :: to link to a heading"). Sticky so it stays visible while the
+   item list scrolls. */
+.wikilink-suggest__footer {
+  position: sticky;
+  bottom: calc(-1 * var(--popup-padding-block));
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--popup-bg);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  letter-spacing: 0.3px;
+}
+
+.wikilink-suggest__hint-line + .wikilink-suggest__hint-line {
+  margin-top: 2px;
+}
+
 .citation-suggest-preview {
   position: fixed;
   background: var(--popup-bg);

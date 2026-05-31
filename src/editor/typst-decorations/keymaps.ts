@@ -290,6 +290,24 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
     };
   }
 
+  // Double-Enter exit, visual-mode tolerant. The first Enter on the last item
+  // inserts an empty `- ` bullet below; the second is meant to end the list.
+  // In the visual editor that new bullet renders as an atomic widget, and CM
+  // can leave the logical cursor back on this (non-empty) item rather than on
+  // the empty line — so the same-line check above never sees the empty marker.
+  // Detect it on the line *below* the cursor instead: clear that empty bullet
+  // and drop the caret onto the now-blank line as regular text.
+  if (from === line.to && line.number < state.doc.lines) {
+    const below = state.doc.line(line.number + 1);
+    const belowMatch = below.text.match(/^(\s*)([-+]|\d+\.)(?:\s|$)/);
+    if (belowMatch && below.text.trim() === belowMatch[2]) {
+      return {
+        changes: { from: below.from, to: below.to, insert: "" },
+        selection: { anchor: below.from },
+      };
+    }
+  }
+
   // Bullets and `+` repeat their marker; an explicit number increments so the
   // writer gets 1., 2., 3.… as they go (Typst renumbers from the source).
   const numMatch = marker.match(/^(\d+)\.$/);
