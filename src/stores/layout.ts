@@ -13,9 +13,15 @@ export type RightPanelTab =
   | "links"
   | "references"
   | "scroll-context"
-  | "annotations";
+  | "annotations"
+  // A runtime-contributed panel id (plugin / external tool). The `(string & {})`
+  // keeps autocomplete on the built-in literals above while allowing any id.
+  // Contributed ids are deliberately excluded from BUILT_IN_RIGHT_PANEL_TABS, so
+  // they reset to the default tab on reload rather than persisting (the
+  // contribution re-registers at runtime; a stale id would point at nothing).
+  | (string & {});
 
-const RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
+const BUILT_IN_RIGHT_PANEL_TABS: readonly RightPanelTab[] = [
   "properties",
   "outline",
   "links",
@@ -76,7 +82,7 @@ function load(): LayoutState {
     // annotations or collab membership). Never restore them on startup, or the
     // pane shows before the editor is mounted with no owning context.
     if (
-      !RIGHT_PANEL_TABS.includes(merged.rightPanelTab) ||
+      !BUILT_IN_RIGHT_PANEL_TABS.includes(merged.rightPanelTab) ||
       merged.rightPanelTab === "scroll-context" ||
       merged.rightPanelTab === "annotations"
     ) {

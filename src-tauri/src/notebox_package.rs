@@ -19,6 +19,36 @@ use std::path::{Path, PathBuf};
 /// of notebox content. Not part of the import path.
 pub const VERSION: &str = "0.2.0";
 
+/// External, file-readable notebox **format contract** version. Distinct from
+/// [`VERSION`] (the embedded library's build version): this is the number an
+/// *outside* tool keys on to decide whether it understands the on-disk layout
+/// and the queryable metadata labels. Bump it only on a breaking change to the
+/// `.inkycap/` layout or the label/dict surface, paired with a migration note.
+/// Surfaced on disk via `.inkycap/format.json` (see `write_format_marker`) so
+/// programs that operate on a notebox *without InkyCap running* can detect it.
+/// Documented in `documentation/developer/extending/notebox-format.md`.
+pub const FORMAT_VERSION: &str = "1";
+
+/// The stable Typst label names InkyCap emits and queries (e.g.
+/// `typst query <file> "<inkycap-note>"`). Part of the documented open-format
+/// contract; mirrored into `.inkycap/format.json` so external tools can
+/// discover them without parsing the library. Keep in sync with the labels in
+/// `inkycap-notebox/lib.typ`.
+pub const QUERY_LABELS: &[&str] = &[
+    "inkycap-note",
+    "inkycap-tag",
+    "inkycap-link",
+    "inkycap-agenda",
+    "inkycap-annotation",
+    "inkycap-review-decision",
+    "inkycap-suggestion",
+];
+
+/// Relative path of the on-disk format marker inside a notebox.
+pub fn format_marker_relpath() -> &'static str {
+    ".inkycap/format.json"
+}
+
 /// The canonical import line auto-prepended to new `.typ` notes.
 pub fn import_line() -> String {
     "#import \"/.inkycap/notebox.typ\": *".to_string()
@@ -135,6 +165,10 @@ pub fn scaffold(notebox_root: &Path) {
     }
 
     write_if_changed(&library_path(notebox_root), LIB_TYP);
+
+    // Refresh the externally-readable format marker so out-of-app tools can
+    // detect the format contract version and the queryable label set.
+    write_format_marker(notebox_root);
 
     // Ensure the scaffolds directory exists for user-authored note templates.
     let scaffolds = scaffolds_dir(notebox_root);
@@ -255,6 +289,27 @@ fn write_if_absent(path: &Path, bytes: &[u8]) {
     }
 }
 
+/// Write the `.inkycap/format.json` marker documenting the open-format
+/// contract for external tools. Refreshed (not write-once) so the recorded
+/// versions track the running build. The shape is itself part of the contract:
+/// see `documentation/developer/extending/notebox-format.md`.
+fn write_format_marker(notebox_root: &Path) {
+    let marker = serde_json::json!({
+        "notebox_format_version": FORMAT_VERSION,
+        "library_version": VERSION,
+        "import_line": import_line(),
+        "query_labels": QUERY_LABELS,
+        "docs": "documentation/developer/extending/notebox-format.md",
+    });
+    match serde_json::to_vec_pretty(&marker) {
+        Ok(mut bytes) => {
+            bytes.push(b'\n');
+            write_if_changed(&notebox_root.join(format_marker_relpath()), &bytes);
+        }
+        Err(err) => log::warn!("notebox format marker: failed to serialize: {err}"),
+    }
+}
+
 fn write_if_changed(path: &Path, expected: &[u8]) {
     let needs_write = match std::fs::read(path) {
         Ok(existing) => existing != expected,
@@ -282,6 +337,22 @@ mod tests {
         let lib = dir.path().join(".inkycap/notebox.typ");
         assert!(lib.exists());
         assert_eq!(std::fs::read(&lib).unwrap(), LIB_TYP);
+    }
+
+    #[test]
+    fn scaffold_writes_format_marker() {
+        let dir = tempdir().expect("tempdir");
+        scaffold(dir.path());
+        let marker = dir.path().join(".inkycap/format.json");
+        assert!(marker.exists());
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
+        assert_eq!(parsed["notebox_format_version"], FORMAT_VERSION);
+        assert_eq!(parsed["library_version"], VERSION);
+        // The queryable label set is part of the documented contract.
+        let labels = parsed["query_labels"].as_array().unwrap();
+        assert!(labels.iter().any(|l| l == "inkycap-note"));
+        assert_eq!(labels.len(), QUERY_LABELS.len());
     }
 
     #[test]

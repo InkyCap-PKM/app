@@ -15,6 +15,8 @@ import { toolbarRules, triggerCreationRule } from "../stores/creation-rules";
 import { useI18n } from "../lib/i18n";
 import RuleIcon from "./RuleIcon";
 import { toastError } from "../stores/toasts";
+import { sidebarContributions } from "./sidebar-registry";
+import { Dynamic } from "solid-js/web";
 
 export type SidebarMode =
   | "collections"
@@ -25,7 +27,10 @@ export type SidebarMode =
   | "search"
   | "bookmarks"
   | "templates"
-  | "collaboration";
+  | "collaboration"
+  // A runtime-contributed mode id (plugin / manifest query-view). `(string & {})`
+  // keeps autocomplete on the built-in literals while allowing any id.
+  | (string & {});
 
 interface VerticalToolbarProps {
   mode: () => SidebarMode;
@@ -95,6 +100,28 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
                   aria-label={rule.name}
                 >
                   <RuleIcon iconEmoji={rule.icon_emoji} name={rule.name} size={18} />
+                </button>
+              )}
+            </For>
+          </Show>
+
+          {/* Contributed sidebar modes (plugins / manifest query-views).
+              Renders nothing when the registry is empty, leaving the toolbar
+              unchanged by default. */}
+          <Show when={sidebarContributions().length > 0}>
+            <div class="vertical-toolbar__divider" />
+            <For each={sidebarContributions()}>
+              {(c) => (
+                <button
+                  class={`vertical-toolbar__btn${props.mode() === c.id ? " vertical-toolbar__btn--active" : ""}`}
+                  onClick={() => {
+                    props.setMode(c.id);
+                    if (leftCollapsed()) setLeftCollapsed(false);
+                  }}
+                  title={c.label}
+                  aria-label={c.label}
+                >
+                  <Dynamic component={c.icon} size={18} />
                 </button>
               )}
             </For>

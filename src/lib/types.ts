@@ -428,6 +428,42 @@ export interface UserSettings {
   fonts: FontSettings;
   behaviour: BehaviourSettings;
   backup: BackupSettings;
+  external_tools: ExternalToolSettings;
+}
+
+/** A user-registered external program the external-tool bridge can pipe text
+ *  through. InkyCap ships no concrete tools — the user points at an executable
+ *  they trust (same model as the Pandoc/Zotero paths). The executable is
+ *  spawned from Rust and resolved by `id`, never by a frontend-supplied path.
+ *  See `documentation/developer/extending/external-tools.md`. */
+export interface ExternalTool {
+  /** Stable identifier used to invoke the tool (the UI generates it). */
+  id: string;
+  /** Human-readable name shown in the command palette / menu. */
+  name: string;
+  /** Absolute path to the executable. */
+  command: string;
+  /** Arguments (passed as a vector, never a shell string). May contain the
+   *  placeholders `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE`,
+   *  `$INKYCAP_SELECTION`. */
+  args: string[];
+  /** What is written to the tool's stdin. */
+  input: "selection" | "note" | "none";
+  /** What InkyCap does with the tool's stdout. */
+  output: "insert" | "replace" | "notify";
+}
+
+/** User-global registry of external tools. */
+export interface ExternalToolSettings {
+  tools: ExternalTool[];
+}
+
+/** Result of running an external tool (see {@link ExternalTool}). */
+export interface ExternalToolResult {
+  /** The tool's stdout. */
+  stdout: string;
+  /** The configured output disposition, echoed from the tool's settings. */
+  output: "insert" | "replace" | "notify";
 }
 
 // ============================================================================

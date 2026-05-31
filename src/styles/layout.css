@@ -3065,6 +3065,76 @@ svg.lucide {
   border-color: var(--accent);
 }
 
+/* Extensions tab — external-tool cards. A list of user-registered tools, each
+   a bordered card of standard settings rows. Token-based so it tracks the
+   theme; no hardcoded colours. */
+.settings__section-intro {
+  margin: 0 0 12px;
+}
+
+.settings__tool-card {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings__tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The name input leads the card and grows to fill the row width. */
+.settings__tool-card-head .settings__text-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.settings__path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings__path-row .settings__text-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.settings__textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+
+.settings__inline-btn,
+.settings__add-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+  flex-shrink: 0;
+}
+
+.settings__add-btn {
+  border-style: dashed;
+  color: var(--fg-muted);
+  align-self: flex-start;
+}
+
+.settings__inline-btn:hover,
+.settings__add-btn:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg-secondary);
+}
+
 .settings__path-input {
   position: relative;
   display: inline-flex;

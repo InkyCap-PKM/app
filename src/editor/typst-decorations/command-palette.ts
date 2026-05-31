@@ -4,9 +4,10 @@ import { expandFunc } from "./effects";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
 import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
 import { CURATED_SYMBOLS } from "./symbols";
+import { getRegisteredPaletteItems } from "./palette-registry";
 import { t } from "../../lib/i18n";
 
-interface PaletteItem {
+export interface PaletteItem {
   /** Stable English identifier — also the group/expanded-state key, so it must
    *  NOT be localized. Display text comes from `labelKey` when present (symbol
    *  rows keep their glyph+name `label` directly). */
@@ -50,6 +51,12 @@ interface PaletteItem {
   submenu?: PaletteItem[];
   /** Render this row indented — used for a group's children when expanded. */
   indent?: boolean;
+  /** When set, accepting the item runs this action instead of inserting
+   *  markup. Used by runtime-contributed items (external-tool bridge, plugin
+   *  commands) that *do* something rather than insert a template. Takes
+   *  precedence over `insert` / `dynamic` / `pickAttachment`. The slash trigger
+   *  text (`/query`) is removed before the action runs. */
+  action?: (view: EditorView) => void;
 }
 
 /** Shorthand for the annotation/suggestion palette entries — builds the markup
@@ -64,6 +71,7 @@ const CATEGORY_KEYS: Record<string, string> = {
   Symbol: "slash.cat.symbol",
   InkyCap: "slash.cat.inkycap",
   Style: "slash.cat.style",
+  Tools: "slash.cat.tools",
 };
 
 /** Displayed label for a palette row: localized via `labelKey`, else the raw
@@ -236,11 +244,15 @@ function detectPaletteContext(view: EditorView): PaletteState {
 }
 
 function buildDisplayList(query: string): PaletteItem[] {
+  // Built-in items plus any contributed at runtime (external-tool bridge,
+  // plugin manifests). Registered items are appended so they group after the
+  // built-in categories.
+  const all = [...PALETTE_ITEMS, ...getRegisteredPaletteItems()];
   // Querying: flatten group rows into their children so submenu items
   // (curated symbols) remain directly searchable, then filter everything.
   if (query !== "") {
     const q = query.toLowerCase();
-    const flattened = PALETTE_ITEMS.flatMap((item) => item.submenu ?? [item]);
+    const flattened = all.flatMap((item) => item.submenu ?? [item]);
     return flattened.filter(
       (item) =>
         itemLabel(item).toLowerCase().includes(q) ||
@@ -250,7 +262,7 @@ function buildDisplayList(query: string): PaletteItem[] {
   // Empty query: browse view — group rows stay collapsed unless expanded, in
   // which case their children are spliced in directly beneath them.
   const out: PaletteItem[] = [];
-  for (const item of PALETTE_ITEMS) {
+  for (const item of all) {
     out.push(item);
     if (item.submenu && expandedGroups.has(item.label)) {
       out.push(...item.submenu);
@@ -349,6 +361,16 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   const expand = built ? built.expand : item.expandOnInsert;
   const deleteFrom = state.from;
   const deleteTo = view.state.selection.main.from;
+
+  // Action items (external-tool bridge, plugin commands) perform work instead
+  // of inserting a template. Remove the slash trigger first, then run the
+  // action against the now-clean document.
+  if (item.action) {
+    hidePopup();
+    view.dispatch({ changes: { from: deleteFrom, to: deleteTo, insert: "" } as ChangeSpec });
+    item.action(view);
+    return;
+  }
 
   // Image: open the attachment picker and replace the slash trigger with a
   // notebox-root-absolute call. The picker is async; hide the popup first so

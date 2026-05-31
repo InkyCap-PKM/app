@@ -98,6 +98,9 @@ const DEFAULTS: UserSettings = {
     password_protected: false,
     filename_pattern: "inkycap-{notebox}-{YYYY}{MM}{DD}-{HH}{mm}.zip",
   },
+  external_tools: {
+    tools: [],
+  },
 };
 
 // ── Per-notebox defaults ─────────────────────────────────────────────

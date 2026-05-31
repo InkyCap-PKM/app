@@ -22,6 +22,7 @@ import type {
   BgPalette,
   NoteboxRegistryEntry,
   FileTreeNode,
+  ExternalTool,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { useI18n, AVAILABLE_LOCALES } from "../lib/i18n";
@@ -93,7 +94,7 @@ interface SettingsPanelProps {
   initialTab?: string;
 }
 
-type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour";
+type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour" | "extensions";
 
 const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "overview", labelKey: "settings.tab.overview" },
@@ -107,6 +108,7 @@ const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "export", labelKey: "settings.tab.export" },
   { id: "creation-rules", labelKey: "settings.tab.creationRules" },
   { id: "behaviour", labelKey: "settings.tab.behaviour" },
+  { id: "extensions", labelKey: "settings.tab.extensions" },
 ];
 
 /** Which settings groups a tab's "Reset to defaults" button resets.
@@ -133,6 +135,7 @@ const TAB_SETTING_GROUPS: Record<SettingsTab, TabSettingGroups> = {
     user: ["startup", "behaviour"],
     notebox: ["startup", "journal_scroll"],
   },
+  extensions: { user: ["external_tools"], notebox: [] },
 };
 
 function tabHasResettableGroups(tab: SettingsTab): boolean {
@@ -237,6 +240,9 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 </Show>
                 <Show when={activeTab() === "behaviour"}>
                   <BehaviourSettingsSection />
+                </Show>
+                <Show when={activeTab() === "extensions"}>
+                  <ExtensionsSettingsSection />
                 </Show>
               </div>
 
@@ -2565,6 +2571,125 @@ function SettingLabel(props: { label: string; scope?: SettingScope }) {
         <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
       </Show>
     </label>
+  );
+}
+
+/** Extensions tab — manage the external-tool bridge. InkyCap ships no tools;
+ *  the user registers executables they trust (the same authorization model as
+ *  the Pandoc / Zotero paths). Each registered tool becomes a `/`-palette
+ *  command. See documentation/developer/extending/external-tools.md. */
+function ExtensionsSettingsSection() {
+  const t = useI18n();
+  const tools = (): ExternalTool[] => settings.external_tools?.tools ?? [];
+  const commit = (next: ExternalTool[]) =>
+    updateSetting("external_tools", "tools", next);
+  const patch = (i: number, p: Partial<ExternalTool>) =>
+    commit(tools().map((tool, idx) => (idx === i ? { ...tool, ...p } : tool)));
+  const remove = (i: number) => commit(tools().filter((_, idx) => idx !== i));
+  const add = () =>
+    commit([
+      ...tools(),
+      {
+        id: crypto.randomUUID(),
+        name: "",
+        command: "",
+        args: [],
+        input: "selection",
+        output: "replace",
+      },
+    ]);
+
+  async function browse(i: number) {
+    const picked = await open({ multiple: false, directory: false });
+    if (typeof picked === "string") patch(i, { command: picked });
+  }
+
+  return (
+    <div class="settings__section">
+      <p class="settings__description settings__section-intro">
+        {t("settings.extensions.intro")}
+      </p>
+
+      <For each={tools()}>
+        {(tool, i) => (
+          <div class="settings__tool-card">
+            <div class="settings__tool-card-head">
+              <input
+                type="text"
+                class="settings__text-input"
+                value={tool.name}
+                placeholder={t("settings.extensions.namePlaceholder")}
+                aria-label={t("settings.extensions.name")}
+                onInput={(e) => patch(i(), { name: e.currentTarget.value })}
+              />
+              <button
+                class="icon-btn"
+                title={t("common.remove")}
+                aria-label={t("common.remove")}
+                onClick={() => remove(i())}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <label class="settings__label">{t("settings.extensions.command")}</label>
+            <div class="settings__path-row">
+              <input
+                type="text"
+                class="settings__text-input"
+                value={tool.command}
+                placeholder={t("settings.extensions.commandPlaceholder")}
+                onInput={(e) => patch(i(), { command: e.currentTarget.value })}
+              />
+              <button class="settings__inline-btn" onClick={() => void browse(i())}>
+                {t("common.browse")}
+              </button>
+            </div>
+
+            <label class="settings__label">{t("settings.extensions.args")}</label>
+            <span class="settings__description">{t("settings.extensions.argsHelp")}</span>
+            <textarea
+              class="settings__text-input settings__textarea"
+              rows={2}
+              value={tool.args.join("\n")}
+              placeholder={"--flag\n$INKYCAP_FILE" /* i18n-exempt: literal argument/placeholder syntax */}
+              onInput={(e) =>
+                patch(i(), {
+                  args: e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                })
+              }
+            />
+
+            <SettingSelect
+              label={t("settings.extensions.input")}
+              description={t("settings.extensions.inputHelp")}
+              value={tool.input}
+              options={[
+                { value: "selection", label: t("settings.extensions.input.selection") },
+                { value: "note", label: t("settings.extensions.input.note") },
+                { value: "none", label: t("settings.extensions.input.none") },
+              ]}
+              onChange={(v) => patch(i(), { input: v as ExternalTool["input"] })}
+            />
+            <SettingSelect
+              label={t("settings.extensions.output")}
+              description={t("settings.extensions.outputHelp")}
+              value={tool.output}
+              options={[
+                { value: "replace", label: t("settings.extensions.output.replace") },
+                { value: "insert", label: t("settings.extensions.output.insert") },
+                { value: "notify", label: t("settings.extensions.output.notify") },
+              ]}
+              onChange={(v) => patch(i(), { output: v as ExternalTool["output"] })}
+            />
+          </div>
+        )}
+      </For>
+
+      <button class="settings__add-btn" onClick={add}>
+        {t("settings.extensions.add")}
+      </button>
+    </div>
   );
 }
 

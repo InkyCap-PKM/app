@@ -49,6 +49,8 @@ import { initTauriDragDrop } from "./lib/tauri-drag-drop";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
+import { registerExternalToolPalette } from "./lib/external-tools";
+import { loadPlugins } from "./lib/plugins";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
 import { loadCreationRules, triggerCreationRule } from "./stores/creation-rules";
@@ -99,6 +101,15 @@ const App: Component = () => {
     if (m !== "collections") lastBrowseMode = m;
     setSidebarMode(m);
   };
+
+  // (Re)load declarative plugins on startup and whenever the open notebox
+  // changes — per-notebox manifests live under the notebox's `.inkycap/plugins`,
+  // so a switch must re-discover them. User-global manifests are picked up on
+  // the first run. loadPlugins disposes prior registrations before re-applying.
+  createEffect(() => {
+    noteboxInfo()?.path; // track: re-run on notebox change
+    void loadPlugins();
+  });
 
   createEffect(() => {
     const id = activeTabId();
@@ -205,6 +216,11 @@ const App: Component = () => {
     // without needing a relaunch (the dispatcher reads live from the
     // registry on every keydown).
     registerCreationRuleCommands();
+
+    // Surface any user-registered external tools as `/`-palette commands
+    // (the external-tool bridge). Reads the live settings list on each palette
+    // open, so this one-time registration covers tools added later too.
+    registerExternalToolPalette();
 
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();

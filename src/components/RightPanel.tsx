@@ -64,6 +64,7 @@ import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import CollectionSettings from "./CollectionSettings";
 import MycelialFilteringPanel from "./MycelialFilteringPanel";
+import { rightPanelContributions, rightPanelContribution } from "./right-panel-registry";
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -211,6 +212,15 @@ const RightPanel: Component = () => {
     const tab = getActiveTab();
     return tab?.type === "file" ? tab : undefined;
   };
+
+  // Contributed right-panel tab (plugin / manifest query-view) whose id is the
+  // current active panel, if any. Built-in ids resolve to undefined, so the
+  // built-in panes render exactly as before when nothing is contributed.
+  const activeContributed = () => rightPanelContribution(activePanel());
+  // Contributed tabs whose `when` gate currently passes — file-scoped, shown in
+  // the same tab group as Properties/Links/etc.
+  const visibleContributions = () =>
+    rightPanelContributions().filter((c) => !c.when || c.when());
 
   const activeCollectionTab = () => {
     const tab = getActiveTab();
@@ -1189,6 +1199,21 @@ const RightPanel: Component = () => {
             >
               <MessagesSquare size={18} />
             </button>
+            {/* Contributed tabs (plugins / manifest query-views). Renders
+                nothing when the registry is empty, so the built-in tab row is
+                unchanged by default. */}
+            <For each={visibleContributions()}>
+              {(c) => (
+                <button
+                  class={`right-panel__tab${activePanel() === c.id ? " right-panel__tab--active" : ""}`}
+                  onClick={() => setActivePanel(c.id)}
+                  title={c.label}
+                  aria-label={c.label}
+                >
+                  <Dynamic component={c.icon} size={18} />
+                </button>
+              )}
+            </For>
           </Show>
         </Show>
 
@@ -1455,6 +1480,12 @@ const RightPanel: Component = () => {
       >
 
         <div class="right-panel__tab-content">
+          {/* Contributed pane (plugin / manifest query-view). Renders only when
+              its tab is the active panel; built-in ids never match, so the
+              built-in panes below are unaffected. */}
+          <Show when={activeContributed()}>
+            {(c) => <Dynamic component={c().component} />}
+          </Show>
           {/* Properties tab */}
           <Show when={activePanel() === "properties"}>
             <div class="right-panel__section">

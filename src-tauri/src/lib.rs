@@ -9,6 +9,7 @@ pub mod config;
 pub mod creation_rules;
 pub mod errors;
 pub mod events;
+pub mod external_tools;
 pub mod font_resolver;
 pub mod git;
 pub mod link_index;
@@ -275,6 +276,8 @@ pub fn run() {
             commands::files::get_all_aliases,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::plugins::read_plugin_manifests,
+            external_tools::run_external_tool,
             commands::settings::get_notebox_settings,
             commands::settings::update_notebox_settings,
             commands::settings::generate_zid,
