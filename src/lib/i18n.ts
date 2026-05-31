@@ -26,7 +26,8 @@
 //
 // Adding a language is one step: drop `<code>.json` next to `en.json` (it is
 // auto-discovered by the glob below) and add a `LOCALE_META` entry so it
-// appears in the Settings → Language picker. See CONTRIBUTING-translations.md.
+// appears in the Settings → Language picker. See
+// documentation/developer/CONTRIBUTING-translations.md.
 //
 // This module must NOT import the settings store: the command registry imports
 // it, and the settings store imports the command registry, so a settings
