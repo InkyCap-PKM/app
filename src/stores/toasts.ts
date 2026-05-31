@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { errorText } from "../lib/errors";
 
 export type ToastLevel = "error" | "warning" | "info" | "success";
 
@@ -70,7 +71,7 @@ export function dismissToast(id: number) {
 }
 
 export function toastError(message: string, err?: unknown) {
-  const detail = err instanceof Error ? err.message : err ? String(err) : undefined;
+  const detail = err != null ? errorText(err) : undefined;
   showToast("error", message, detail);
 }
 

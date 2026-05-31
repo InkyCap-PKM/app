@@ -13,6 +13,7 @@ import {
 import { setThemePreference, setAccentColor, setAccentSource, setBgPaletteLight, setBgPaletteDark } from "../stores/theme";
 import { noteboxInfo, noteboxRegistry, loadNoteboxRegistry, openNotebox, closeActiveNotebox } from "../stores/notebox";
 import { pathEquals, pathStartsWith } from "../lib/paths";
+import { errorText, errorCode } from "../lib/errors";
 import { maybeSeedNotebox } from "../stores/notebox-seed";
 import type {
   UserSettings,
@@ -341,7 +342,7 @@ function NoteboxManagementSection() {
       await ipc.updateNoteboxEntry(path, name);
       await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", t("settings.notebox.renameFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.renameFailed", { error: errorText(err) }));
     }
     setEditingPath(null);
   }
@@ -363,7 +364,7 @@ function NoteboxManagementSection() {
       }
       await loadNoteboxRegistry();
     } catch (err) {
-      showToast("error", t("settings.notebox.removeFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.removeFailed", { error: errorText(err) }));
     }
   }
 
@@ -371,7 +372,7 @@ function NoteboxManagementSection() {
     try {
       await ipc.showInExplorer(path);
     } catch (err) {
-      showToast("error", t("settings.notebox.openFileManagerFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.openFileManagerFailed", { error: errorText(err) }));
     }
   }
 
@@ -384,7 +385,7 @@ function NoteboxManagementSection() {
       try {
         await openNotebox(entry.path);
       } catch (err) {
-        showToast("error", t("settings.notebox.openFailed", { error: String(err) }));
+        showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
         return;
       }
     }
@@ -410,7 +411,7 @@ function NoteboxManagementSection() {
       try {
         await openNotebox(entry.path);
       } catch (err) {
-        showToast("error", t("settings.notebox.openFailed", { error: String(err) }));
+        showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
         input.checked = wasOn;
         return;
       }
@@ -461,7 +462,7 @@ function NoteboxManagementSection() {
       }
       showToast("info", t("settings.notebox.moved", { path: result.new_path }));
     } catch (err) {
-      showToast("error", t("settings.notebox.moveFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.moveFailed", { error: errorText(err) }));
     }
   }
 
@@ -499,7 +500,7 @@ function NoteboxManagementSection() {
       setAddPath("");
       setAddName("");
     } catch (err) {
-      showToast("error", t("settings.notebox.addFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.addFailed", { error: errorText(err) }));
     }
   }
 
@@ -532,7 +533,7 @@ function NoteboxManagementSection() {
         return;
       }
     } catch (err) {
-      showToast("error", t("settings.notebox.inspectFolderFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.inspectFolderFailed", { error: errorText(err) }));
       return;
     }
     setCloneDest(selected);
@@ -575,7 +576,7 @@ function NoteboxManagementSection() {
       await openNotebox(path);
       showToast("success", t("settings.notebox.cloneOpened", { name }));
     } catch (err) {
-      showToast("error", t("settings.notebox.cloneFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.cloneFailed", { error: errorText(err) }));
     } finally {
       setCloning(false);
     }
@@ -613,7 +614,7 @@ function NoteboxManagementSection() {
         return;
       }
     } catch (err) {
-      showToast("error", t("settings.notebox.inspectFolderFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.inspectFolderFailed", { error: errorText(err) }));
       return;
     }
     setImportDest(selected);
@@ -653,7 +654,7 @@ function NoteboxManagementSection() {
       await openNotebox(path);
       showToast("success", t("settings.notebox.importOpened", { name }));
     } catch (err) {
-      showToast("error", t("settings.notebox.importFailed", { error: String(err) }));
+      showToast("error", t("settings.notebox.importFailed", { error: errorText(err) }));
     } finally {
       setImporting(false);
     }
@@ -1806,7 +1807,7 @@ function ExportSettingsSection() {
       setImportStatus(null);
       setShowMapping(true);
     } catch (e: any) {
-      setImportStatus(t("settings.export.importFailed", { error: String(e) }));
+      setImportStatus(t("settings.export.importFailed", { error: errorText(e) }));
     } finally {
       setImporting(false);
     }
@@ -1840,7 +1841,7 @@ function ExportSettingsSection() {
       setPickedFile(null);
       setAutoDetected(null);
     } catch (e: any) {
-      setImportStatus(t("settings.export.importFailed", { error: String(e) }));
+      setImportStatus(t("settings.export.importFailed", { error: errorText(e) }));
     } finally {
       setImporting(false);
     }
@@ -2075,7 +2076,7 @@ function BackupSettingsSection() {
       setPwStatus(t("backup.password.saved"));
       void refetchHasPassword();
     } catch (e) {
-      setPwStatus(t("backup.password.failed", { error: String(e) }));
+      setPwStatus(t("backup.password.failed", { error: errorText(e) }));
     }
   }
 
@@ -2095,7 +2096,7 @@ function BackupSettingsSection() {
       setPwStatus(t("backup.password.cleared"));
       void refetchHasPassword();
     } catch (e) {
-      setPwStatus(t("backup.password.failed", { error: String(e) }));
+      setPwStatus(t("backup.password.failed", { error: errorText(e) }));
     }
   }
 
@@ -2151,14 +2152,13 @@ function BackupSettingsSection() {
       }
     } catch (e) {
       dismissToast(progressId);
-      const msg = String(e);
-      // Cancellation by the user isn't an error to surface. The
-      // backend returns InkyCapError::Cancelled which Display-prints
-      // as the literal string "Cancelled".
-      if (cancelRequested || /\bcancelled\b/i.test(msg)) {
+      // Cancellation by the user isn't an error to surface. The backend
+      // returns InkyCapError::Cancelled, carried over IPC as the stable
+      // machine code "cancelled" (no longer matched on localized text).
+      if (cancelRequested || errorCode(e) === "cancelled") {
         showToast("info", t("backup.toast.cancelled"));
       } else {
-        showToast("error", t("backup.toast.failed", { error: msg }));
+        showToast("error", t("backup.toast.failed", { error: errorText(e) }));
       }
     } finally {
       setRunning(false);

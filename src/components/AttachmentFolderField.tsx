@@ -9,6 +9,7 @@
 //
 // See Phase C of .claude/plans/portable-paths-2026-05-12.md.
 
+import { errorText } from "../lib/errors";
 import {
   Component,
   Show,
@@ -71,7 +72,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
             setPreviewError(null);
           } catch (err) {
             setPreview(null);
-            setPreviewError(String(err));
+            setPreviewError(errorText(err));
           }
         }, PREVIEW_DEBOUNCE_MS);
         onCleanup(() => clearTimeout(t));
@@ -119,7 +120,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
         );
       }
     } catch (err) {
-      showToast("error", t("attachmentFolder.renameFailed"), String(err));
+      showToast("error", t("attachmentFolder.renameFailed"), errorText(err));
     } finally {
       setApplying(false);
     }

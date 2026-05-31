@@ -19,6 +19,7 @@
 // jumps back to an earlier note as off-screen entries finish compiling.
 // ---------------------------------------------------------------------------
 
+import { errorText } from "../lib/errors";
 import {
   Component,
   For,
@@ -120,7 +121,7 @@ async function runOneWorker() {
         diagnostics: [
           {
             severity: "error",
-            message: err instanceof Error ? err.message : String(err),
+            message: errorText(err),
             primary: null,
             trace: [],
             hints: [],

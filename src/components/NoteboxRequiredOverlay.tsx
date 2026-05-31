@@ -5,6 +5,7 @@
 // no notebox behind it, so it is deliberately non-dismissable (no backdrop
 // click, no Escape) until a notebox is opened or created.
 
+import { errorText } from "../lib/errors";
 import { Component, Show, For, createSignal } from "solid-js";
 import { FolderOpen, FolderPlus } from "lucide-solid";
 import {
@@ -29,7 +30,7 @@ const NoteboxRequiredOverlay: Component = () => {
     try {
       await openNotebox(path);
     } catch (err) {
-      showToast("error", t("noteboxRequired.openFailed", { error: String(err) }));
+      showToast("error", t("noteboxRequired.openFailed", { error: errorText(err) }));
     } finally {
       setBusy(false);
     }
@@ -45,7 +46,7 @@ const NoteboxRequiredOverlay: Component = () => {
       // single action covers both "open existing" and "create new".
       await pickAndOpenNotebox();
     } catch (err) {
-      showToast("error", t("noteboxRequired.openFailed", { error: String(err) }));
+      showToast("error", t("noteboxRequired.openFailed", { error: errorText(err) }));
     } finally {
       setBusy(false);
     }

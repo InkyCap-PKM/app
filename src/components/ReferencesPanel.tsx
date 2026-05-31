@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
 import CitationRow from "./CitationRow";
 import { getActiveTab } from "../stores/tabs";
@@ -133,7 +134,7 @@ const ReferencesPanel: Component = () => {
         return await ipc.getFileCitations(path);
       } catch (err) {
         console.error("Failed to load file citations:", err);
-        setCitationError(String(err));
+        setCitationError(errorText(err));
         return [];
       }
     },
@@ -158,7 +159,7 @@ const ReferencesPanel: Component = () => {
         return entries;
       } catch (err) {
         console.error("Failed to load bibliography:", err);
-        setBrowseError(String(err));
+        setBrowseError(errorText(err));
         return [];
       }
     },

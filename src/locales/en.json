@@ -1848,5 +1848,19 @@
   "datePicker.prevMonth": "Previous month",
   "datePicker.nextMonth": "Next month",
   "datePicker.today": "Today",
-  "datePicker.clear": "Clear"
+  "datePicker.clear": "Clear",
+
+  "errors.io": "I/O error: {detail}",
+  "errors.yaml": "YAML parse error: {detail}",
+  "errors.json": "JSON error: {detail}",
+  "errors.notebox-not-open": "Notebox not open",
+  "errors.file-not-found": "File not found: {detail}",
+  "errors.invalid-path": "Invalid path: {detail}",
+  "errors.filter-parse": "Filter parse error: {detail}",
+  "errors.cache": "Metadata cache error: {detail}",
+  "errors.typst": "Typst compile error: {detail}",
+  "errors.export-failed": "Export failed: {detail}",
+  "errors.git": "Git error: {detail}",
+  "errors.bad-request": "{detail}",
+  "errors.cancelled": "Cancelled"
 }
