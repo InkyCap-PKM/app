@@ -41,6 +41,12 @@ const ICON_CHEVRON = `<svg viewBox="0 0 10 10" width="8" height="8" fill="none" 
 
 const ICON_BULLET = `<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><circle cx="4" cy="4.5" r="2"/><rect x="8" y="3.5" width="6" height="2" rx="1"/><circle cx="4" cy="11.5" r="2"/><rect x="8" y="10.5" width="6" height="2" rx="1"/></svg>`;
 
+const ICON_SUPERSCRIPT = `<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><text x="0" y="17" font-size="14" font-family="serif">x</text><text x="11" y="8" font-size="9" font-family="serif">2</text></svg>`;
+
+const ICON_SUBSCRIPT = `<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><text x="0" y="13" font-size="14" font-family="serif">x</text><text x="11" y="18" font-size="9" font-family="serif">2</text></svg>`;
+
+const ICON_FOOTNOTE = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="3" y="6" width="9" height="1.6" rx="0.8"/><rect x="3" y="11" width="11" height="1.6" rx="0.8"/><rect x="3" y="16" width="7" height="1.6" rx="0.8"/><text x="15" y="9" font-size="9" font-family="serif">1</text></svg>`;
+
 
 /* ── Dropdown block/structure items ─────────────────────── */
 
@@ -262,6 +268,26 @@ function getToolbar(): HTMLElement {
         closeAllPopups();
         if (!activeView) return;
         applyWrap(activeView, action.wrap[0], action.wrap[1]);
+      });
+      toolbar.appendChild(btn);
+    }
+
+    /* ── Superscript / subscript / footnote ──
+     * Content-bracket inserts wrapping the selection. `applyWrap` toggles them
+     * off when the selection already carries the markup, matching B/I/U/S —
+     * so they sit alongside the other inline character formatting. */
+    const wrapButtons: { svg: string; titleKey: string; wrap: [string, string] }[] = [
+      { svg: ICON_SUPERSCRIPT, titleKey: "selToolbar.superscript", wrap: ["#super[", "]"] },
+      { svg: ICON_SUBSCRIPT, titleKey: "selToolbar.subscript", wrap: ["#sub[", "]"] },
+      { svg: ICON_FOOTNOTE, titleKey: "selToolbar.footnote", wrap: ["#footnote[", "]"] },
+    ];
+    for (const b of wrapButtons) {
+      const btn = createSvgButton(b.svg, t(b.titleKey));
+      btn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        closeAllPopups();
+        if (!activeView) return;
+        applyWrap(activeView, b.wrap[0], b.wrap[1]);
       });
       toolbar.appendChild(btn);
     }
