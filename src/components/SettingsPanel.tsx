@@ -1,7 +1,7 @@
 // Settings panel — modal overlay for configuring user preferences.
 // Organized into tabs.
 
-import { Component, Show, createSignal, createEffect, createResource, For, onMount, onCleanup } from "solid-js";
+import { Component, JSX, Show, createSignal, createEffect, createResource, For, onMount, onCleanup } from "solid-js";
 import {
   settings,
   updateSetting,
@@ -1141,7 +1141,7 @@ function EditorSettingsSection() {
       />
       <SettingToggle
         label={t("settings.editor.enterLineBreak.label")}
-        description={t("settings.editor.enterLineBreak.description")}
+        help={t("settings.editor.enterLineBreak.description")}
         value={settings.editor.enter_inserts_line_break}
         onChange={(v) => updateSetting("editor", "enter_inserts_line_break", v)}
       />
@@ -1521,7 +1521,10 @@ function FileSettingsSection() {
       <Show when={settings.files.zettelkasten_enabled}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">{t("settings.files.zidPattern.label")}</label>
+            <SettingLabel
+              label={t("settings.files.zidPattern.label")}
+              help={t("settings.files.zidPattern.help")}
+            />
             <span class="settings__description">
               {t("settings.files.zidPattern.description")}
             </span>
@@ -1977,11 +1980,11 @@ function ExportSettingsSection() {
           made the border look like it ran through the hint text). */}
       <div class="settings__row">
         <div class="settings__row-info">
-          <label class="settings__label">{t("settings.export.pandocPath")}</label>
+          <SettingLabel
+            label={t("settings.export.pandocPath")}
+            help={t("settings.export.pandocDescription")}
+          />
           <span class="settings__description">
-            {t("settings.export.pandocDescription")}
-          </span>
-          <span class="settings__description" style={{ "margin-top": "4px" }}>
             {t("settings.export.pandocStatus", { status: pandocStatus() })}
           </span>
         </div>
@@ -2178,9 +2181,9 @@ function BackupSettingsSection() {
           {t("backup.section.title")}
         </div>
       </div>
-      <span class="settings__description">
+      <p class="settings__section-note">
         {t("backup.section.intro", { modifier })}
-      </span>
+      </p>
 
       {/* Master toggle. Sits outside the collapse so the user can flip
           it back on without the section first having to be visible. */}
@@ -2480,6 +2483,7 @@ function BehaviourSettingsSection() {
       <SettingSelect
         label={t("settings.behaviour.journalScroll.sortBy.label")}
         description={t("settings.behaviour.journalScroll.sortBy.description")}
+        help={t("settings.behaviour.journalScroll.sortBy.help")}
         value={noteboxSettings.journal_scroll.date_sort}
         options={[
           { value: "created", label: t("settings.behaviour.journalScroll.sortBy.option.created") },
@@ -2562,15 +2566,31 @@ type SettingScope = "user" | "notebox";
 /** Inline label render: the field's display name plus an optional
  *  scope badge. All setting helpers go through this so the badge
  *  placement and styling stay consistent. */
-function SettingLabel(props: { label: string; scope?: SettingScope }) {
+function SettingLabel(props: {
+  label: string;
+  scope?: SettingScope;
+  /** When set, a circled "?" trigger renders beside the label holding this
+   *  detail, keeping the row terse (mirrors the notebox-management header). */
+  help?: JSX.Element;
+  /** Accessible name for the help trigger; defaults to the label text. */
+  helpLabel?: string;
+}) {
   const t = useI18n();
-  return (
+  const label = (
     <label class="settings__label">
       {props.label}
       <Show when={props.scope === "notebox"}>
         <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
       </Show>
     </label>
+  );
+  return (
+    <Show when={props.help} fallback={label}>
+      <span class="settings__label-row">
+        {label}
+        <HelpButton label={props.helpLabel ?? props.label}>{props.help}</HelpButton>
+      </span>
+    </Show>
   );
 }
 
@@ -2606,7 +2626,7 @@ function ExtensionsSettingsSection() {
 
   return (
     <div class="settings__section">
-      <p class="settings__description settings__section-intro">
+      <p class="settings__section-note">
         {t("settings.extensions.intro")}
       </p>
 
@@ -2696,16 +2716,20 @@ function ExtensionsSettingsSection() {
 
 function SettingToggle(props: {
   label: string;
-  description: string;
+  description?: string;
   value: boolean;
   onChange: (v: boolean) => void;
   scope?: SettingScope;
+  /** Long explanation moved behind a "?" trigger; the row stays terse. */
+  help?: JSX.Element;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <SettingLabel label={props.label} scope={props.scope} />
-        <span class="settings__description">{props.description}</span>
+        <SettingLabel label={props.label} scope={props.scope} help={props.help} />
+        <Show when={props.description}>
+          <span class="settings__description">{props.description}</span>
+        </Show>
       </div>
       <label class="settings__toggle">
         <input
@@ -2889,11 +2913,13 @@ function SettingSelect(props: {
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
   scope?: SettingScope;
+  /** Extra detail moved behind a "?" trigger; the row stays terse. */
+  help?: JSX.Element;
 }) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <SettingLabel label={props.label} scope={props.scope} />
+        <SettingLabel label={props.label} scope={props.scope} help={props.help} />
         <span class="settings__description">{props.description}</span>
       </div>
       <Dropdown
@@ -2918,7 +2944,10 @@ function DateFormatSettingRow() {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">{t("settings.appearance.dateFormat.label")}</label>
+        <SettingLabel
+          label={t("settings.appearance.dateFormat.label")}
+          help={t("settings.appearance.dateFormat.help")}
+        />
         <span class="settings__description">
           {t("settings.appearance.dateFormat.description")}{" "}
           {t("settings.appearance.dateFormat.previewLabel")} <strong>{formatUserDate(new Date())}</strong>
