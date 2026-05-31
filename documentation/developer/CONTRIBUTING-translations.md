@@ -1,7 +1,7 @@
 # Translating InkyCap
 
 InkyCap's interface can be shown in any language. All user-facing strings live in
-flat JSON dictionaries under [`src/locales/`](src/locales/), one file per locale,
+flat JSON dictionaries under [`src/locales/`](../../src/locales/), one file per locale,
 keyed by a dotted ID:
 
 ```json
@@ -29,7 +29,7 @@ is a JSON file plus a one-line registration.
 2. **Translate the values, not the keys.** Change only the right-hand strings.
    Never rename a key — keys are how the code finds the string.
 
-3. **Register it** in [`src/lib/i18n.ts`](src/lib/i18n.ts). Add one entry to
+3. **Register it** in [`src/lib/i18n.ts`](../../src/lib/i18n.ts). Add one entry to
    `LOCALE_META` with the language's endonym (its name *in that language*) and
    text direction:
 

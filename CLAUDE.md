@@ -347,7 +347,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
   (escape a genuine non-string with `// i18n-exempt: <reason>`).
   `npm run i18n:check` validates `en.json` and diffs translations (keys +
   placeholders). Adding a language is a JSON file plus a `LOCALE_META` entry —
-  see [CONTRIBUTING-translations.md](CONTRIBUTING-translations.md).
+  see [CONTRIBUTING-translations.md](documentation/developer/CONTRIBUTING-translations.md).
 
 ### General
 - Use Canadian English spellings as the standard base.
