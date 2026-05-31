@@ -2864,6 +2864,16 @@ svg.lucide {
   font-weight: 500;
 }
 
+/* A setting label paired with an inline "?" help trigger (HelpButton). Keeps
+   the label text and the circled "?" on one baseline, mirroring the spacing
+   of the notebox-management section title. */
+.settings__label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .settings__description {
   font-size: var(--text-sm);
   color: var(--fg-dim);
@@ -3079,10 +3089,6 @@ svg.lucide {
 /* Extensions tab — external-tool cards. A list of user-registered tools, each
    a bordered card of standard settings rows. Token-based so it tracks the
    theme; no hardcoded colours. */
-.settings__section-intro {
-  margin: 0 0 12px;
-}
-
 .settings__tool-card {
   border: 1px solid var(--border-input);
   border-radius: var(--radius-control);

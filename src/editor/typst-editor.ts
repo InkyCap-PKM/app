@@ -351,10 +351,12 @@ const inkycapTheme = EditorView.theme({
   },
   // Each text field is wrapped so a clear button can sit at its right edge.
   // Find and Replace share one width so the two rows align cleanly.
+  // Wraps a text field + its clear button; the relative box the absolutely
+  // positioned clear button centres against. A plain block, so its height is
+  // exactly the input's — like the references-panel filter field.
   ".cm-search__field": {
     position: "relative",
-    display: "inline-flex",
-    alignItems: "center",
+    display: "block",
     width: "20em",
   },
   ".cm-panel.cm-search .cm-textfield": {
@@ -366,15 +368,30 @@ const inkycapTheme = EditorView.theme({
     padding: "5px 26px 5px 8px",
     fontSize: "var(--text-md)",
     outline: "none",
+    display: "block",
     width: "100%",
     boxSizing: "border-box",
+    // @codemirror/search's base theme sets `margin: .2em .6em .2em 0` on every
+    // input/button/label under .cm-panel.cm-search; clear it so the field's
+    // box height is exactly the input and nothing is nudged off-axis.
+    margin: "0",
   },
-  ".cm-search__clear": {
+  // Selector is qualified with `.cm-panel.cm-search` so it out-specifies
+  // @codemirror/search's base-theme rule `.cm-panel.cm-search button`
+  // (0,2,1), which sets `margin: .2em .6em .2em 0` on every button in the
+  // panel. On this absolutely positioned button that .2em top margin pushed
+  // it ~3px below centre; a bare `.cm-search__clear` (0,2,0) loses the
+  // cascade, so the margin reset below only takes effect at this specificity.
+  ".cm-panel.cm-search .cm-search__clear": {
     // Absolutely positioned inside the field wrapper (which is
     // position:relative) over the input's reserved 26px right padding, so it
     // sits *within* the text-entry box rather than after it. Being out of
     // normal flow, toggling its visibility with the field's contents never
     // reflows the row — the Next/Previous/All buttons stay put.
+    //
+    // Vertically centred against the (block) wrapper, which is exactly the
+    // input's height — the same recipe the references-panel filter clear uses.
+    margin: "0",
     position: "absolute",
     right: "6px",
     top: "50%",
@@ -391,11 +408,11 @@ const inkycapTheme = EditorView.theme({
     cursor: "pointer",
     padding: "0",
   },
-  ".cm-search__clear:hover": {
+  ".cm-panel.cm-search .cm-search__clear:hover": {
     background: "var(--bg-hover)",
     color: "var(--fg-primary)",
   },
-  ".cm-search__clear[hidden]": {
+  ".cm-panel.cm-search .cm-search__clear[hidden]": {
     display: "none",
   },
   ".cm-panel.cm-search .cm-textfield:focus": {
