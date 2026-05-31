@@ -8,6 +8,8 @@ import {
   Show,
   onCleanup,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import { sidebarContributions } from "./sidebar-registry";
 import {
   LibraryBig,
   FolderTree,
@@ -1762,6 +1764,18 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         <Show when={mode() === "collaboration"}>
           <GitCollaborationPanel />
         </Show>
+
+        {/* Contributed sidebar panes (plugins / manifest query-views). Each
+            renders only when its mode is active; built-in mode ids never match
+            a contributed id, so the built-in panes above are unaffected. When
+            the registry is empty this renders nothing. */}
+        <For each={sidebarContributions()}>
+          {(c) => (
+            <Show when={mode() === c.id}>
+              <Dynamic component={c.component} />
+            </Show>
+          )}
+        </For>
       </div>
 
       {/* Context menu for collections */}

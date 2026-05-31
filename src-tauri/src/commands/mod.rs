@@ -14,6 +14,7 @@ pub mod git;
 pub mod journal_scroll;
 pub mod markdown;
 pub mod mycelial;
+pub mod plugins;
 pub mod properties;
 pub mod search;
 pub mod settings;

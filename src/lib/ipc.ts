@@ -16,6 +16,7 @@ import type {
   FilterGroup,
   NoteboxIndex,
   UserSettings,
+  ExternalToolResult,
   NoteboxSettings,
   SearchResult,
   SearchResponse,
@@ -478,6 +479,38 @@ export async function getSettings(): Promise<UserSettings> {
 
 export async function updateSettings(settings: UserSettings): Promise<void> {
   return invoke<void>("update_settings", { settings });
+}
+
+/** One discovered declarative-plugin manifest file (raw, unvalidated). */
+export interface PluginManifestFile {
+  /** Frontend-canonical path of the manifest, for diagnostics. */
+  path: string;
+  /** Raw JSON contents — the frontend owns parsing + validation. */
+  contents: string;
+}
+
+/** Discover declarative-plugin manifests (`*.json`) from the user-global and
+ *  per-notebox plugins directories. Returns raw files; the caller validates. */
+export async function readPluginManifests(): Promise<PluginManifestFile[]> {
+  return invoke<PluginManifestFile[]>("read_plugin_manifests");
+}
+
+/** Run a registered external tool (the external-tool bridge). Resolves the
+ *  executable server-side by `toolId`; `inputText` is piped to its stdin and
+ *  `selection`/`filePath` feed the argument placeholders. Returns the tool's
+ *  stdout plus its configured output disposition. */
+export async function runExternalTool(
+  toolId: string,
+  inputText: string,
+  selection: string,
+  filePath: string | null,
+): Promise<ExternalToolResult> {
+  return invoke<ExternalToolResult>("run_external_tool", {
+    toolId,
+    inputText,
+    selection,
+    filePath,
+  });
 }
 
 export async function getNoteboxSettings(): Promise<NoteboxSettings> {

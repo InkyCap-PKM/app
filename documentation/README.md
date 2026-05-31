@@ -10,6 +10,10 @@ This folder holds InkyCap's living documentation, split by audience.
 ## Developer documentation
 
 - [Visual Editor — Pill System](developer/visual-editor/pill-system.md) — the universal `#` pill: kinds, consistency rules (R1–R11), registry, and how to add new pills.
+- [Extending InkyCap](developer/extending/README.md) — the four ways to extend InkyCap without modifying it:
+  - [The open notebox format](developer/extending/notebox-format.md) — read/write notes & metadata from any program.
+  - [Declarative plugins](developer/extending/declarative-plugins.md) — add `/`-commands, snippets, and query-views via a JSON manifest.
+  - [External tools](developer/extending/external-tools.md) — pipe note text through your own program (grammar, AI, dictation, linters…).
 
 ## Conventions
 

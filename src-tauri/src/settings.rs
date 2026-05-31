@@ -425,6 +425,60 @@ pub struct UserSettings {
     pub fonts: FontSettings,
     pub behaviour: BehaviourSettings,
     pub backup: BackupSettings,
+    pub external_tools: ExternalToolSettings,
+}
+
+/// A user-registered external program InkyCap can pipe text through — the
+/// generic "external tool" bridge. InkyCap ships *no* concrete tools; the user
+/// points at an executable they trust, the same authorization model as the
+/// Pandoc and Zotero paths. The executable is spawned from Rust (it is never
+/// reachable from the webview shell allowlist), and the path lives only in
+/// persisted settings — the frontend invokes a tool by `id`, never by path, so
+/// it cannot ask InkyCap to run an arbitrary binary. See
+/// `documentation/developer/extending/external-tools.md` and
+/// [`crate::external_tools`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExternalTool {
+    /// Stable identifier the frontend uses to invoke the tool. Opaque; the UI
+    /// generates it.
+    pub id: String,
+    /// Human-readable name shown in the command palette / menu.
+    pub name: String,
+    /// Absolute path to the executable to run.
+    pub command: String,
+    /// Arguments passed as a vector (never a shell string — no shell is
+    /// involved). Each entry may contain the placeholders
+    /// `$INKYCAP_NOTEBOX_ROOT`, `$INKYCAP_FILE`, and `$INKYCAP_SELECTION`,
+    /// substituted at run time.
+    pub args: Vec<String>,
+    /// What InkyCap writes to the tool's stdin: `"selection"`, `"note"`, or
+    /// `"none"`.
+    pub input: String,
+    /// What InkyCap does with the tool's stdout: `"insert"` (at the cursor),
+    /// `"replace"` (the selection), or `"notify"` (show it, leave the document
+    /// untouched).
+    pub output: String,
+}
+
+impl Default for ExternalTool {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            input: "selection".to_string(),
+            output: "replace".to_string(),
+        }
+    }
+}
+
+/// User-global registry of external tools (the "external tool" bridge).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExternalToolSettings {
+    pub tools: Vec<ExternalTool>,
 }
 
 // --- Persistence ---
