@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import {
   Component,
   createEffect,
@@ -1206,7 +1207,7 @@ function ipcErrorToResult(err: unknown): TypstCompileResult {
     diagnostics: [
       {
         severity: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         primary: null,
         trace: [],
         hints: [],
@@ -1223,7 +1224,7 @@ function ipcErrorToHtmlResult(err: unknown): TypstHtmlResult {
     diagnostics: [
       {
         severity: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorText(err),
         primary: null,
         trace: [],
         hints: [],

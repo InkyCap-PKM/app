@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { Component, createSignal, createResource, createMemo, For, Show } from "solid-js";
 import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
@@ -32,7 +33,7 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
         return await ipc.getBibliographyEntries();
       } catch (err) {
         console.error("Failed to load bibliography entries:", err);
-        setLoadError(String(err));
+        setLoadError(errorText(err));
         return [];
       }
     },

@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { TypAuditReport } from "../lib/ipc";
@@ -78,7 +79,7 @@ const TypAuditDialog: Component<{
       const r = await ipc.auditTypFiles();
       setReport(r);
     } catch (e: any) {
-      setError(typeof e === "string" ? e : (e?.message ?? String(e)));
+      setError(errorText(e));
     } finally {
       setPhase("idle");
     }
@@ -101,7 +102,7 @@ const TypAuditDialog: Component<{
       // Re-run audit so the lists reflect the fixes.
       await runAudit();
     } catch (e: any) {
-      setError(typeof e === "string" ? e : (e?.message ?? String(e)));
+      setError(errorText(e));
       setPhase("idle");
     }
   }
@@ -120,7 +121,7 @@ const TypAuditDialog: Component<{
       setResultMessage(parts.join("\n"));
       await runAudit();
     } catch (e: any) {
-      setError(typeof e === "string" ? e : (e?.message ?? String(e)));
+      setError(errorText(e));
       setPhase("idle");
     }
   }

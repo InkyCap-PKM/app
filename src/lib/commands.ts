@@ -3,6 +3,7 @@
 
 import { registerCommand } from "./command-registry";
 import { t } from "./i18n";
+import { errorText, errorCode } from "./errors";
 import {
   openTab,
   closeTab,
@@ -452,11 +453,10 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
         );
       } catch (e) {
         dismissToast(progressId);
-        const msg = String(e);
-        if (cancelRequested || /\bcancelled\b/i.test(msg)) {
+        if (cancelRequested || errorCode(e) === "cancelled") {
           showToast("info", t("backup.toast.cancelled"));
         } else {
-          showToast("error", t("backup.toast.failed", { error: msg }));
+          showToast("error", t("backup.toast.failed", { error: errorText(e) }));
         }
       }
     },

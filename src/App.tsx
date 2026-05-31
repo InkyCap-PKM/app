@@ -1,3 +1,4 @@
+import { errorText } from "./lib/errors";
 import { Component, createEffect, createSignal, ErrorBoundary, onCleanup, onMount, Show } from "solid-js";
 import LeftSidebar from "./components/LeftSidebar";
 import MainContent from "./components/MainContent";
@@ -276,7 +277,7 @@ const App: Component = () => {
         <div class="app-shell" style={{ display: "flex", "align-items": "center", "justify-content": "center", height: "100vh", padding: "2rem", "text-align": "center" }}>
           <div>
             <h2 style={{ "margin-bottom": "0.5rem" }}>{t("app.error.title")}</h2>
-            <p style={{ color: "var(--fg-muted)", "margin-bottom": "1rem" }}>{err?.message ?? String(err)}</p>
+            <p style={{ color: "var(--fg-muted)", "margin-bottom": "1rem" }}>{errorText(err)}</p>
             <button onClick={() => window.location.reload()} style={{ padding: "6px 16px", cursor: "pointer" }}>{t("app.error.reload")}</button>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import {
   Component,
   createEffect,
@@ -646,7 +647,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(t("collection.export.csvDone", { label, path: outputPath }));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      reportExportError(t("collection.export.csvFailed", { label, error: String(e) }));
+      reportExportError(t("collection.export.csvFailed", { label, error: errorText(e) }));
     }
   }
 
@@ -672,7 +673,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(tPlural("collection.export.pdfDone", exported.length));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      const msg = errorText(e);
       reportExportError(t("collection.export.pdfFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
@@ -743,7 +744,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         for (const n of failing) if (!excluded.includes(n)) excluded.push(n);
       }
     } catch (e: any) {
-      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      const msg = errorText(e);
       reportExportError(t("collection.export.bookFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
@@ -783,7 +784,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         setTimeout(() => setExportStatus(null), 4000);
       }
     } catch (e: any) {
-      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      const msg = errorText(e);
       reportExportError(t("collection.export.siteFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
@@ -810,7 +811,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       setExportStatus(tPlural("collection.export.markdownDone", exported.length));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      const msg = typeof e === "string" ? e : (e?.message ?? String(e));
+      const msg = errorText(e);
       reportExportError(t("collection.export.markdownFailed", { error: msg }));
     } finally {
       setBusyMessage(null);

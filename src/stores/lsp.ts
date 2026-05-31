@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { createSignal } from "solid-js";
 import { LspClient, filePathToUri } from "../editor/lsp";
 
@@ -22,7 +23,7 @@ export async function startLsp(noteboxPath: string): Promise<void> {
     setLspError(null);
     console.log("[LSP] Tinymist initialized, ready for", noteboxPath);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorText(err);
     console.error("[LSP] Failed to start Tinymist:", msg);
     setLspError(msg);
     client = null;

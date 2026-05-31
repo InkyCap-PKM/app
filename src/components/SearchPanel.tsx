@@ -6,6 +6,7 @@
 // search exactly as they left it. State only resets when the user
 // clears the search box.
 
+import { errorText } from "../lib/errors";
 import {
   Component,
   createEffect,
@@ -274,7 +275,7 @@ const SearchPanel: Component = () => {
       setSearchTotalCount(resp.total_count);
       setSearchOffset(off);
     } catch (e) {
-      setSearchError(String(e));
+      setSearchError(errorText(e));
       setSearchResults([]);
       setSearchResultCount(0);
       setSearchTotalCount(0);
@@ -424,7 +425,7 @@ const SearchPanel: Component = () => {
       setReplacing(false);
       await executeSearch();
     } catch (e) {
-      setSearchError(String(e));
+      setSearchError(errorText(e));
     } finally {
       setReplacing(false);
       setLoading(false);
@@ -442,7 +443,7 @@ const SearchPanel: Component = () => {
       setReplacing(false);
       await executeSearch(searchOffset());
     } catch (e) {
-      setSearchError(String(e));
+      setSearchError(errorText(e));
     } finally {
       setReplacing(false);
     }
@@ -456,7 +457,7 @@ const SearchPanel: Component = () => {
       await ipc.addBookmark({ type: "Search", data: { query: q } });
       document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
     } catch (e) {
-      setSearchError(String(e));
+      setSearchError(errorText(e));
     }
   }
 
@@ -474,7 +475,7 @@ const SearchPanel: Component = () => {
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
-      setSearchError(String(e));
+      setSearchError(errorText(e));
     }
   }
 

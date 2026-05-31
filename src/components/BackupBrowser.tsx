@@ -11,6 +11,7 @@
 // password (for encrypted archives) is read from the OS keychain by
 // the backend — this component never touches the secret.
 
+import { errorText } from "../lib/errors";
 import { Component, For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { backupDefault, homeDirDefault } from "../lib/dialog-defaults";
@@ -224,7 +225,7 @@ const BackupBrowser: Component<Props> = (props) => {
       );
       setSelected(new Set<string>());
     } catch (e) {
-      showToast("error", t("backup.browse.restoreFailed", { error: String(e) }));
+      showToast("error", t("backup.browse.restoreFailed", { error: errorText(e) }));
     } finally {
       setRestoring(false);
     }
