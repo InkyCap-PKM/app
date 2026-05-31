@@ -322,8 +322,34 @@ InkyCap is built to be picked up and extended by future human contributors who h
   strings alike. Adding a new menu means referencing them, not copying
   literal values from a neighbour.
 
+### Internationalization (i18n)
+- **Every user-facing string flows through the locale seam** in
+  [src/lib/i18n.ts](src/lib/i18n.ts) — JSX text, `title`/`placeholder`/
+  `aria-label`/`alt` attributes, toast/dialog/confirm messages, command titles.
+  No hardcoded English reaches the DOM. Two faces: components use
+  `const t = useI18n();` (reactive — live-updates on language switch); CM6
+  extensions, stores, and the command registry use the static `import { t }`
+  and refresh out-of-band off `localeVersion()`.
+- **Strings live in flat `src/locales/<code>.json`**, keyed by dotted ID and
+  namespaced by FEATURE AREA (`settings.*`, `collection.*`, `errors.*`), never
+  by component. `en.json` is the source of truth. Reuse shared vocabulary
+  (`common.*`, `sort.*`) — never copy a string under a second key. Placeholders
+  are single-brace `{name}`; plurals use `.one`/`.other` sub-keys via `tPlural`.
+- **Backend errors are localized too.** `InkyCapError` crosses IPC as
+  `{ code, message, detail }` (see [src-tauri/src/errors.rs](src-tauri/src/errors.rs));
+  the frontend resolves `errors.<code>` through
+  [src/lib/errors.ts](src/lib/errors.ts)'s `errorText()` (with the English
+  `message` as fallback) and branches on `errorCode()` rather than matching
+  localized text. Use `errorText(err)` to display any caught value — never
+  `String(err)` at a display site.
+- **Enforcement:** `src/lib/i18n-coverage.test.ts` fails CI on bare JSX text or
+  untranslated `title`/`placeholder`/`aria-label`/`alt` literals in `.tsx`
+  (escape a genuine non-string with `// i18n-exempt: <reason>`).
+  `npm run i18n:check` validates `en.json` and diffs translations (keys +
+  placeholders). Adding a language is a JSON file plus a `LOCALE_META` entry —
+  see [CONTRIBUTING-translations.md](CONTRIBUTING-translations.md).
+
 ### General
-- All user-facing text should go through i18n from the start (even if only English is supported initially)
 - Use Canadian English spellings as the standard base.
 - Test the Typst compile pipeline against representative documents — round-trip identity (source ↔ visual mode) is a load-bearing invariant
 - Document properties round-trip through `#note(...)` — the property editor must preserve untouched fields and whitespace byte-for-byte
