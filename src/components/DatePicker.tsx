@@ -1,6 +1,7 @@
 import { Component, createSignal, createMemo, createEffect, Show, For, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight } from "lucide-solid";
+import { useI18n } from "../lib/i18n";
 
 // A self-contained calendar date picker.
 //
@@ -76,6 +77,7 @@ const WEEKDAY_LABELS = Array.from({ length: 7 }, (_, i) =>
 );
 
 const DatePicker: Component<DatePickerProps> = (props) => {
+  const t = useI18n();
   let triggerRef: HTMLSpanElement | undefined;
   let popupRef: HTMLDivElement | undefined;
 
@@ -240,7 +242,7 @@ const DatePicker: Component<DatePickerProps> = (props) => {
           }
         }}
       >
-        {isEmpty() ? "Empty" : props.value.replace("T", " ")}
+        {isEmpty() ? t("datePicker.empty") : props.value.replace("T", " ")}
       </span>
 
       <Show when={open()}>
@@ -256,7 +258,7 @@ const DatePicker: Component<DatePickerProps> = (props) => {
               <button
                 type="button"
                 class="date-picker__nav"
-                title="Previous month"
+                title={t("datePicker.prevMonth")}
                 onClick={() => setView(addMonths(view(), -1))}
               >
                 <ChevronLeft size={16} />
@@ -265,7 +267,7 @@ const DatePicker: Component<DatePickerProps> = (props) => {
               <button
                 type="button"
                 class="date-picker__nav"
-                title="Next month"
+                title={t("datePicker.nextMonth")}
                 onClick={() => setView(addMonths(view(), 1))}
               >
                 <ChevronRight size={16} />
@@ -311,10 +313,10 @@ const DatePicker: Component<DatePickerProps> = (props) => {
 
             <div class="date-picker__footer">
               <button type="button" class="date-picker__action" onClick={() => commit(today())}>
-                Today
+                {t("datePicker.today")}
               </button>
               <button type="button" class="date-picker__action" onClick={clearValue}>
-                Clear
+                {t("datePicker.clear")}
               </button>
             </div>
           </div>

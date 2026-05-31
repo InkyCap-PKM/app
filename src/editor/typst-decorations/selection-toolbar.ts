@@ -2,13 +2,15 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { StateField, type ChangeSpec, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { VERSE_ICON_SVG } from "../../components/icons/verse";
+import { t, localeVersion } from "../../lib/i18n";
 
 /* ── Inline format actions (always-visible buttons) ─────── */
 
 interface InlineAction {
   icon: string;
   svgIcon?: string;
-  title: string;
+  /** i18n key for the button tooltip, resolved at DOM-build time. */
+  titleKey: string;
   wrap: [string, string];
   styleBold?: boolean;
   styleItalic?: boolean;
@@ -17,10 +19,10 @@ interface InlineAction {
 }
 
 const INLINE_ACTIONS: InlineAction[] = [
-  { icon: "B", title: "Bold (Ctrl+B)", wrap: ["*", "*"], styleBold: true },
-  { icon: "I", title: "Italic (Ctrl+I)", wrap: ["_", "_"], styleItalic: true },
-  { icon: "U", title: "Underline (Ctrl+U)", wrap: ["#underline[", "]"], styleUnderline: true },
-  { icon: "S", title: "Strikethrough (Ctrl+Shift+X)", wrap: ["#strike[", "]"], styleStrike: true },
+  { icon: "B", titleKey: "selToolbar.bold", wrap: ["*", "*"], styleBold: true },
+  { icon: "I", titleKey: "selToolbar.italic", wrap: ["_", "_"], styleItalic: true },
+  { icon: "U", titleKey: "selToolbar.underline", wrap: ["#underline[", "]"], styleUnderline: true },
+  { icon: "S", titleKey: "selToolbar.strike", wrap: ["#strike[", "]"], styleStrike: true },
 ];
 
 /* ── SVG icons ──────────────────────────────────────────── */
@@ -43,7 +45,12 @@ const ICON_BULLET = `<svg viewBox="0 0 16 16" width="12" height="12" fill="curre
 /* ── Dropdown block/structure items ─────────────────────── */
 
 interface DropdownItem {
+  /** Stable English identifier — also drives per-item styling (heading-level
+   *  parsing below), so it must NOT be localized. Display text comes from
+   *  `labelKey`. */
   label: string;
+  /** i18n key for the displayed label, resolved at DOM-build time. */
+  labelKey?: string;
   icon?: string;
   action: (view: EditorView) => void;
   separator?: boolean;
@@ -106,52 +113,63 @@ function wrapSelection(view: EditorView, before: string, after: string) {
 const DROPDOWN_ITEMS: DropdownItem[] = [
   {
     label: "Bulleted list",
+    labelKey: "selToolbar.bulletedList",
     icon: ICON_BULLET,
     action: (v) => replaceLinePrefix(v, "- "),
   },
   {
     label: "Numbered list",
+    labelKey: "selToolbar.numberedList",
     icon: `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><text x="2" y="6" font-size="7" font-family="serif">1.</text><rect x="8" y="3.5" width="6" height="2" rx="1"/><text x="2" y="13" font-size="7" font-family="serif">2.</text><rect x="8" y="10.5" width="6" height="2" rx="1"/></svg>`,
     action: (v) => replaceLinePrefix(v, "+ "),
   },
   { label: "", separator: true, action: () => {} },
   {
     label: "Highlight",
+    labelKey: "selToolbar.highlight",
     icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
     action: (v) => wrapSelection(v, "#highlight[", "]"),
   },
   {
     label: "Callout",
+    labelKey: "selToolbar.callout",
     icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg>`,
     action: (v) => wrapSelection(v, '#callout("note")[', "]"),
   },
   { label: "", separator: true, action: () => {} },
   {
     label: "Regular Text",
+    labelKey: "selToolbar.regularText",
     action: (v) => clearLinePrefix(v),
   },
   {
     label: "Heading 1",
+    labelKey: "selToolbar.heading1",
     action: (v) => replaceLinePrefix(v, "= "),
   },
   {
     label: "Heading 2",
+    labelKey: "selToolbar.heading2",
     action: (v) => replaceLinePrefix(v, "== "),
   },
   {
     label: "Heading 3",
+    labelKey: "selToolbar.heading3",
     action: (v) => replaceLinePrefix(v, "=== "),
   },
   {
     label: "Heading 4",
+    labelKey: "selToolbar.heading4",
     action: (v) => replaceLinePrefix(v, "==== "),
   },
   {
     label: "Heading 5",
+    labelKey: "selToolbar.heading5",
     action: (v) => replaceLinePrefix(v, "===== "),
   },
   {
     label: "Heading 6",
+    labelKey: "selToolbar.heading6",
     action: (v) => replaceLinePrefix(v, "====== "),
   },
 ];
@@ -162,6 +180,27 @@ let toolbar: HTMLElement | null = null;
 let dropdown: HTMLElement | null = null;
 let alignPopup: HTMLElement | null = null;
 let activeView: EditorView | null = null;
+
+// The toolbar/dropdown/popup DOM is built once and cached. Their labels are
+// resolved at build time via `t()`, so on a UI-locale switch the cached nodes
+// would keep the old language. Track the locale version they were built under
+// and tear them down when it changes, so the next `showToolbar` rebuilds them
+// in the new locale. (CM6 extensions live outside Solid's reactive scope, so
+// this version check is the out-of-band refresh hook — mirrors how the editor
+// search panel refreshes via `relocalize`.)
+let builtLocaleVersion = -1;
+
+function ensureFreshLocale() {
+  const v = localeVersion();
+  if (v === builtLocaleVersion) return;
+  builtLocaleVersion = v;
+  toolbar?.remove();
+  dropdown?.remove();
+  alignPopup?.remove();
+  toolbar = null;
+  dropdown = null;
+  alignPopup = null;
+}
 
 function closeDropdown() {
   if (dropdown) dropdown.style.display = "none";
@@ -185,6 +224,7 @@ function createSvgButton(svgHtml: string, title: string): HTMLButtonElement {
 }
 
 function getToolbar(): HTMLElement {
+  ensureFreshLocale();
   if (!toolbar) {
     toolbar = document.createElement("div");
     toolbar.className = "selection-toolbar";
@@ -194,7 +234,7 @@ function getToolbar(): HTMLElement {
     const dropdownTrigger = document.createElement("button");
     dropdownTrigger.className = "selection-toolbar__btn selection-toolbar__dropdown-trigger";
     dropdownTrigger.innerHTML = ICON_BULLET + ICON_CHEVRON;
-    dropdownTrigger.title = "Block type";
+    dropdownTrigger.title = t("selToolbar.blockType");
     dropdownTrigger.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -211,7 +251,7 @@ function getToolbar(): HTMLElement {
       const btn = document.createElement("button");
       btn.className = "selection-toolbar__btn";
       btn.textContent = action.icon;
-      btn.title = action.title;
+      btn.title = t(action.titleKey);
       if (action.styleBold) btn.style.fontWeight = "bold";
       if (action.styleItalic) btn.style.fontStyle = "italic";
       if (action.styleStrike) btn.style.textDecoration = "line-through";
@@ -230,7 +270,7 @@ function getToolbar(): HTMLElement {
     toolbar.appendChild(createSeparator());
 
     /* ── Link button ── */
-    const linkBtn = createSvgButton(ICON_LINK, "Link (Ctrl+K)");
+    const linkBtn = createSvgButton(ICON_LINK, t("selToolbar.link"));
     linkBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       closeAllPopups();
@@ -240,7 +280,7 @@ function getToolbar(): HTMLElement {
     toolbar.appendChild(linkBtn);
 
     /* ── Alignment button ── */
-    const alignBtn = createSvgButton(ICON_ALIGN_LEFT, "Text alignment");
+    const alignBtn = createSvgButton(ICON_ALIGN_LEFT, t("selToolbar.align"));
     alignBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -253,7 +293,7 @@ function getToolbar(): HTMLElement {
     toolbar.appendChild(createSeparator());
 
     /* ── Verse button ── */
-    const verseBtn = createSvgButton(VERSE_ICON_SVG, "Insert verse");
+    const verseBtn = createSvgButton(VERSE_ICON_SVG, t("selToolbar.verse"));
     verseBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       closeAllPopups();
@@ -270,7 +310,7 @@ function getToolbar(): HTMLElement {
     toolbar.appendChild(verseBtn);
 
     /* ── Code button ── */
-    const codeBtn = createSvgButton(ICON_CODE, "Inline code (Ctrl+E)");
+    const codeBtn = createSvgButton(ICON_CODE, t("selToolbar.code"));
     codeBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       closeAllPopups();
@@ -283,7 +323,7 @@ function getToolbar(): HTMLElement {
     const mathBtn = document.createElement("button");
     mathBtn.className = "selection-toolbar__btn";
     mathBtn.textContent = "∑";
-    mathBtn.title = "Inline math (Ctrl+Shift+M)";
+    mathBtn.title = t("selToolbar.math");
     mathBtn.addEventListener("mousedown", (e) => {
       e.preventDefault();
       closeAllPopups();
@@ -343,7 +383,7 @@ function getDropdown(): HTMLElement {
 
       const labelSpan = document.createElement("span");
       labelSpan.className = "selection-toolbar__menu-label";
-      labelSpan.textContent = item.label;
+      labelSpan.textContent = item.labelKey ? t(item.labelKey) : item.label;
 
       if (item.label === "Title") {
         labelSpan.style.fontWeight = "700";
@@ -379,14 +419,14 @@ function getAlignPopup(anchorBtn: HTMLElement): HTMLElement {
     alignPopup.className = "selection-toolbar__align-popup";
     alignPopup.style.display = "none";
 
-    const aligns: { icon: string; label: string; value: string }[] = [
-      { icon: ICON_ALIGN_LEFT, label: "Left", value: "left" },
-      { icon: ICON_ALIGN_CENTER, label: "Center", value: "center" },
-      { icon: ICON_ALIGN_RIGHT, label: "Right", value: "right" },
+    const aligns: { icon: string; labelKey: string; value: string }[] = [
+      { icon: ICON_ALIGN_LEFT, labelKey: "selToolbar.alignLeft", value: "left" },
+      { icon: ICON_ALIGN_CENTER, labelKey: "selToolbar.alignCenter", value: "center" },
+      { icon: ICON_ALIGN_RIGHT, labelKey: "selToolbar.alignRight", value: "right" },
     ];
 
     for (const a of aligns) {
-      const btn = createSvgButton(a.icon, a.label);
+      const btn = createSvgButton(a.icon, t(a.labelKey));
       btn.addEventListener("mousedown", (e) => {
         e.preventDefault();
         closeAllPopups();

@@ -18,9 +18,10 @@ import * as ipc from "../lib/ipc";
 import type { ExcludedTerm } from "../lib/types";
 import { excludedTerms, requestMycelialReload } from "../stores/mycelial";
 import { toastError } from "../stores/toasts";
-import { tPlural } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 
 const MycelialFilteringPanel: Component = () => {
+  const t = useI18n();
   const [draft, setDraft] = createSignal("");
 
   /** Rescue a suppressed term. A built-in stopword is force-included via the
@@ -37,7 +38,7 @@ const MycelialFilteringPanel: Component = () => {
       }
       requestMycelialReload();
     } catch (err) {
-      toastError("Failed to rescue term", err);
+      toastError(t("mycelialFilter.rescueFailed"), err);
     }
   }
 
@@ -49,7 +50,7 @@ const MycelialFilteringPanel: Component = () => {
       await ipc.addMycelialStopword(term);
       requestMycelialReload();
     } catch (err) {
-      toastError("Failed to add stopword", err);
+      toastError(t("mycelialFilter.addFailed"), err);
     }
   }
 
@@ -60,7 +61,7 @@ const MycelialFilteringPanel: Component = () => {
       const path = await ipc.ensureMycelialStopwordsFile();
       await ipc.openFileExternally(path);
     } catch (err) {
-      toastError("Failed to open stopword list", err);
+      toastError(t("mycelialFilter.openListFailed"), err);
     }
   }
 
@@ -68,15 +69,14 @@ const MycelialFilteringPanel: Component = () => {
     <div class="concept-filtering">
       <div class="right-panel__section">
         <div class="right-panel__section-header">
-          <span>Excluded terms</span>
+          <span>{t("mycelialFilter.excludedTerms")}</span>
           <div class="right-panel__header-actions" />
         </div>
         <Show
           when={excludedTerms().length > 0}
           fallback={
             <p class="sidebar-hint">
-              Nothing was filtered out of this note's neighbourhood. Words shown
-              here recur enough to be concepts but were held back as stopwords.
+              {t("mycelialFilter.empty")}
             </p>
           }
         >
@@ -94,11 +94,11 @@ const MycelialFilteringPanel: Component = () => {
                         }}
                         title={
                           term.source === "user"
-                            ? "On your stopword list"
-                            : "On a built-in (English/French) stopword list"
+                            ? t("mycelialFilter.badgeUserTitle")
+                            : t("mycelialFilter.badgeBuiltinTitle")
                         }
                       >
-                        {term.source === "user" ? "your list" : "built-in"}
+                        {term.source === "user" ? t("mycelialFilter.badgeUser") : t("mycelialFilter.badgeBuiltin")}
                       </span>
                       <span class="concept-filtering__count">
                         {tPlural("common.note", term.doc_count)}
@@ -110,11 +110,11 @@ const MycelialFilteringPanel: Component = () => {
                     onClick={() => rescue(term)}
                     title={
                       term.source === "user"
-                        ? "Remove from your stopword list so this can surface as a concept"
-                        : "Treat as a concept — adds it to the notebox dictionary so it's no longer filtered"
+                        ? t("mycelialFilter.rescueUserTitle")
+                        : t("mycelialFilter.rescueBuiltinTitle")
                     }
                   >
-                    {term.source === "user" ? "Remove" : "Rescue"}
+                    {term.source === "user" ? t("common.remove") : t("mycelialFilter.rescue")}
                   </button>
                 </div>
               )}
@@ -125,15 +125,15 @@ const MycelialFilteringPanel: Component = () => {
 
       <div class="right-panel__section">
         <div class="right-panel__section-header">
-          <span>Stopwords</span>
+          <span>{t("mycelialFilter.stopwords")}</span>
           <div class="right-panel__header-actions" />
         </div>
-        <p class="sidebar-hint">Words to exclude from concept detection.</p>
+        <p class="sidebar-hint">{t("mycelialFilter.stopwordsHint")}</p>
         <div class="concept-filtering__add">
           <input
             class="property-editor__input"
             type="text"
-            placeholder="Word to ignore…"
+            placeholder={t("mycelialFilter.addPlaceholder")}
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -148,11 +148,11 @@ const MycelialFilteringPanel: Component = () => {
             disabled={!draft().trim()}
             onClick={addStopword}
           >
-            Add
+            {t("common.add")}
           </button>
         </div>
         <button class="concept-filtering__editlink" onClick={openStopwordFile}>
-          Edit the full list…
+          {t("mycelialFilter.editList")}
         </button>
       </div>
     </div>

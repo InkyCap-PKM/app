@@ -16,8 +16,10 @@ import {
   pickAndOpenNotebox,
 } from "../stores/notebox";
 import { showToast } from "../stores/toasts";
+import { useI18n } from "../lib/i18n";
 
 const NoteboxRequiredOverlay: Component = () => {
+  const t = useI18n();
   const [busy, setBusy] = createSignal(false);
   const blocked = () => busy() || isLoading();
 
@@ -27,7 +29,7 @@ const NoteboxRequiredOverlay: Component = () => {
     try {
       await openNotebox(path);
     } catch (err) {
-      showToast("error", `Failed to open notebox: ${err}`);
+      showToast("error", t("noteboxRequired.openFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -43,7 +45,7 @@ const NoteboxRequiredOverlay: Component = () => {
       // single action covers both "open existing" and "create new".
       await pickAndOpenNotebox();
     } catch (err) {
-      showToast("error", `Failed to open notebox: ${err}`);
+      showToast("error", t("noteboxRequired.openFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -59,16 +61,15 @@ const NoteboxRequiredOverlay: Component = () => {
           aria-labelledby="notebox-required-title"
         >
           <div class="app-modal__header">
-            <h3 id="notebox-required-title">Open a notebox to continue</h3>
+            <h3 id="notebox-required-title">{t("noteboxRequired.title")}</h3>
           </div>
           <div class="app-modal__body">
             <p class="app-modal__text">
-              InkyCap always works inside a notebox. Choose a folder to open or
-              create one, or pick one of your existing noteboxes below.
+              {t("noteboxRequired.text")}
             </p>
 
             <Show when={noteboxRegistry().length > 0}>
-              <span class="app-modal__label">Your noteboxes</span>
+              <span class="app-modal__label">{t("noteboxRequired.yourNoteboxes")}</span>
               <div class="notebox-required__list">
                 <For each={noteboxRegistry()}>
                   {(entry) => (
@@ -102,7 +103,7 @@ const NoteboxRequiredOverlay: Component = () => {
               disabled={blocked()}
             >
               <FolderPlus size={15} />
-              {blocked() ? "Opening…" : "Open or create a notebox…"}
+              {blocked() ? t("noteboxRequired.opening") : t("noteboxRequired.openOrCreate")}
             </button>
           </div>
         </div>

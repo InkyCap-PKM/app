@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import type { Contributor } from "../lib/types";
 import { Dropdown } from "./Dropdown";
+import { useI18n } from "../lib/i18n";
 
 /// Sentinel value for the role select's "Other…" entry. A row in this mode
 /// stores a free-text `biblio_role` the user types, instead of one of the
@@ -24,6 +25,7 @@ const ContributorsEditor: Component<{
   includeCreditStatement: boolean;
   onChange: (contributors: Contributor[], includeCreditStatement: boolean) => void;
 }> = (props) => {
+  const t = useI18n();
   const [catalogs] = createResource(() => ipc.contributorCatalogs());
   // Normalize the wire shape: the backend omits `credit_roles` from JSON when
   // it's empty (serde `skip_serializing_if`), so it can arrive `undefined`.
@@ -95,7 +97,7 @@ const ContributorsEditor: Component<{
             <input
               type="text"
               class="settings__text-input contributors-editor__name"
-              placeholder="Name"
+              placeholder={t("contributors.namePlaceholder")}
               value={row.name}
               onInput={(e) => setRows(i(), "name", e.currentTarget.value)}
               onBlur={flush}
@@ -105,7 +107,7 @@ const ContributorsEditor: Component<{
               value={roleSelectValue(row.biblio_role)}
               options={[
                 ...(catalogs()?.biblio_roles ?? []).map((o) => ({ value: o.value, label: o.label })),
-                { value: OTHER_ROLE, label: "Other…" },
+                { value: OTHER_ROLE, label: t("common.other") },
               ]}
               onChange={(v) => {
                 if (v === OTHER_ROLE) {
@@ -118,13 +120,13 @@ const ContributorsEditor: Component<{
                 }
                 flush();
               }}
-              ariaLabel="Bibliographic role"
+              ariaLabel={t("contributors.roleAria")}
             />
             <Show when={roleSelectValue(row.biblio_role) === OTHER_ROLE}>
               <input
                 type="text"
                 class="settings__text-input contributors-editor__role-other"
-                placeholder="Custom role"
+                placeholder={t("contributors.customRolePlaceholder")}
                 value={row.biblio_role ?? ""}
                 onInput={(e) => setRows(i(), "biblio_role", e.currentTarget.value)}
                 onBlur={flush}
@@ -133,15 +135,15 @@ const ContributorsEditor: Component<{
             <button
               type="button"
               class="collection-table__toolbar-btn contributors-editor__btn"
-              title="CRediT contribution roles"
+              title={t("contributors.creditTitle")}
               onClick={() => setExpanded(expanded() === i() ? -1 : i())}
             >
-              CRediT ({row.credit_roles.length})
+              {t("contributors.creditBtn", { count: row.credit_roles.length })}
             </button>
             <button
               type="button"
               class="collection-table__toolbar-btn contributors-editor__btn contributors-editor__remove"
-              title="Remove contributor"
+              title={t("contributors.remove")}
               onClick={() => removeRow(i())}
             >
               ✕
@@ -169,7 +171,7 @@ const ContributorsEditor: Component<{
 
       <div class="collection-meta__row contributors-editor__actions">
         <button type="button" class="collection-table__toolbar-btn contributors-editor__btn" onClick={addRow}>
-          + Add contributor
+          {t("contributors.add")}
         </button>
       </div>
 
@@ -182,7 +184,7 @@ const ContributorsEditor: Component<{
             flush();
           }}
         />
-        Include CRediT contributions statement in book export
+        {t("contributors.includeCreditStatement")}
       </label>
     </div>
   );

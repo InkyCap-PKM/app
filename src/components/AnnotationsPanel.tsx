@@ -24,7 +24,7 @@ import { applyCallTransform } from "../editor/typst-decorations/pill";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
 import NoteHistory from "./NoteHistory";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 
 /** Semantic tone for a kind's icon + badge (mirrors the inline colours). */
 function tone(kind: AnnotationKind): string {
@@ -38,10 +38,6 @@ function tone(kind: AnnotationKind): string {
     default:
       return "comment";
   }
-}
-
-function kindLabel(kind: AnnotationKind): string {
-  return t(`annotations.kind.${kind}`);
 }
 
 const KindIcon: Component<{ kind: AnnotationKind }> = (props) => {
@@ -58,6 +54,8 @@ const KindIcon: Component<{ kind: AnnotationKind }> = (props) => {
 };
 
 const AnnotationsPanel: Component = () => {
+  const t = useI18n();
+  const kindLabel = (kind: AnnotationKind): string => t(`annotations.kind.${kind}`);
   const [filter, setFilter] = createSignal("");
   // Which half of the pane is showing: live "Changes" (annotations + tracked
   // changes, the default) or the note's "History" (past versions from git).
@@ -203,8 +201,8 @@ const AnnotationsPanel: Component = () => {
           <button
             class="right-panel__links-filter-clear"
             onClick={() => setFilter("")}
-            title="Clear filter"
-            aria-label="Clear filter"
+            title={t("references.clearFilter")}
+            aria-label={t("references.clearFilter")}
           >
             <X size={12} />
           </button>

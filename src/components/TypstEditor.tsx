@@ -177,7 +177,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         );
       } catch (err) {
         console.error("[TypstEditor] flush save failed:", err);
-        toastError("Save failed", err);
+        toastError(t("editor.toast.saveFailed"), err);
       }
     })();
     trackWrite(targetPath, writePromise);
@@ -207,7 +207,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             new CustomEvent("inkycap:note-saved", { detail: { path: targetPath } }),
           );
         } catch (err) {
-          toastError("Auto-save failed", err);
+          toastError(t("editor.toast.autoSaveFailed"), err);
         }
       })();
       trackWrite(targetPath, writePromise);
@@ -459,7 +459,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       console.error("[spellcheck] build failed", err);
       if (gen === spellGen) {
         editorHandle?.setSpellChecker(null);
-        toastError("Spellcheck failed to load", err);
+        toastError(t("editor.toast.spellcheckFailed"), err);
       }
     }
   }
@@ -527,7 +527,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       try {
         return await ipc.readFileContent(path);
       } catch (err) {
-        toastError("Could not open file", err);
+        toastError(t("editor.toast.openFailed"), err);
         closeTab(props.tabId);
         return undefined;
       }
@@ -880,15 +880,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
       <div class="editor-header">
-        <div class="editor-header__nav" role="group" aria-label="Navigation">
+        <div class="editor-header__nav" role="group" aria-label={t("editor.nav.label")}>
           <button
             type="button"
             class="editor-header__nav-btn"
             classList={{ "is-disabled": !navCanBack() }}
             disabled={!navCanBack()}
             onClick={() => doNavBack()}
-            title="Go back"
-            aria-label="Go back"
+            title={t("editor.nav.back")}
+            aria-label={t("editor.nav.back")}
           >
             <ArrowLeft size={14} />
           </button>
@@ -898,8 +898,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             classList={{ "is-disabled": !navCanForward() }}
             disabled={!navCanForward()}
             onClick={() => doNavForward()}
-            title="Go forward"
-            aria-label="Go forward"
+            title={t("editor.nav.forward")}
+            aria-label={t("editor.nav.forward")}
           >
             <ArrowRight size={14} />
           </button>
@@ -979,13 +979,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           </div>
         </Show>
         <Show when={!isScrollEnabled(props.tabId)}>
-        <div class="editor-header__mode-toggle" role="group" aria-label="Editing mode">
+        <div class="editor-header__mode-toggle" role="group" aria-label={t("editor.mode.label")}>
           <button
             type="button"
             class="editor-header__mode-seg"
             classList={{ "is-active": currentMode() === "source" }}
             onClick={() => setMode("source")}
-            title="Source edit"
+            title={t("editor.mode.source")}
             aria-pressed={currentMode() === "source"}
           >
             <Code size={14} />
@@ -995,7 +995,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             class="editor-header__mode-seg"
             classList={{ "is-active": currentMode() === "live" }}
             onClick={() => setMode("live")}
-            title="Visual edit"
+            title={t("editor.mode.visual")}
             aria-pressed={currentMode() === "live"}
           >
             <PenLine size={14} />
@@ -1005,7 +1005,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             class="editor-header__mode-seg"
             classList={{ "is-active": currentMode() === "reading" }}
             onClick={() => setMode("reading")}
-            title="Reading view"
+            title={t("editor.mode.reading")}
             aria-pressed={currentMode() === "reading"}
           >
             <Eye size={14} />
@@ -1061,7 +1061,7 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
   return (
     <div class="typst-reading">
       <Show when={props.loading && !props.result}>
-        <div class="typst-reading__status">Compiling…</div>
+        <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
       </Show>
       <Show when={props.result}>
         {(r) => (
@@ -1070,8 +1070,7 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
               <div class="typst-reading__diagnostics">
                 <Show when={r().recovered}>
                   <div class="typst-reading__recovered-note">
-                    Showing a partial render — the errored content below was
-                    skipped so the rest of the document stays visible.
+                    {t("editor.reading.recovered")}
                   </div>
                 </Show>
                 <For each={r().diagnostics}>
@@ -1102,7 +1101,7 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
               </For>
               <Show when={r().ok && r().frames.length === 0}>
                 <div class="typst-reading__status">
-                  (No pages produced.)
+                  {t("editor.reading.noPages")}
                 </div>
               </Show>
             </div>
@@ -1151,7 +1150,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
   return (
     <div class="typst-reading typst-reading--html">
       <Show when={props.loading && !props.result}>
-        <div class="typst-reading__status">Compiling…</div>
+        <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
       </Show>
       <Show when={props.result}>
         {(r) => (
@@ -1160,8 +1159,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
               <div class="typst-reading__diagnostics">
                 <Show when={r().recovered}>
                   <div class="typst-reading__recovered-note">
-                    Showing a partial render — the errored content below was
-                    skipped so the rest of the document stays visible.
+                    {t("editor.reading.recovered")}
                   </div>
                 </Show>
                 <For each={r().diagnostics}>
@@ -1190,7 +1188,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
             </Show>
             <Show when={r().ok && !r().html}>
               <div class="typst-reading__status">
-                (No HTML produced.)
+                {t("editor.reading.noHtml")}
               </div>
             </Show>
           </>

@@ -5,6 +5,7 @@
 import { Component, createSignal, createMemo, For, Show } from "solid-js";
 import { searchCommands, primaryKeybinding, type Command } from "../lib/command-registry";
 import { fuzzyMatch } from "../lib/fuzzy";
+import { useI18n } from "../lib/i18n";
 
 interface CommandPaletteProps {
   visible: boolean;
@@ -35,12 +36,35 @@ function categoryRank(cat: string): number {
   return idx >= 0 ? idx : CATEGORY_ORDER.length;
 }
 
+/** Command category id (stable English, the grouping/sort key) → i18n key for
+ *  the displayed header. Mirrors the registry's `CommandCategory` union. */
+const CATEGORY_KEYS: Record<string, string> = {
+  File: "command.cat.file",
+  Edit: "command.cat.edit",
+  View: "command.cat.view",
+  Navigate: "command.cat.navigate",
+  Tools: "command.cat.tools",
+  References: "command.cat.references",
+  Format: "command.cat.format",
+  Structure: "command.cat.structure",
+  Insert: "command.cat.insert",
+  Style: "command.cat.style",
+  InkyCap: "command.cat.inkycap",
+  "Creation Rules": "command.cat.creationRules",
+  Git: "command.cat.git",
+  Symbol: "command.cat.symbol",
+};
+
 interface CategoryGroup {
   category: string;
   commands: { command: Command; match: { score: number; ranges: [number, number][] } }[];
 }
 
 const CommandPalette: Component<CommandPaletteProps> = (props) => {
+  const t = useI18n();
+  /** Displayed header text for a category id (localized, else the id). */
+  const catLabel = (cat: string): string =>
+    CATEGORY_KEYS[cat] ? t(CATEGORY_KEYS[cat]) : cat;
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [expandedCategory, setExpandedCategory] = createSignal<string | null>(null);
@@ -273,7 +297,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
           <input
             class="cmd-palette__input"
             type="text"
-            placeholder="Type a command..."
+            placeholder={t("commandPalette.placeholder")}
             value={query()}
             onInput={(e) => {
               setQuery(e.currentTarget.value);
@@ -304,7 +328,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         <span class="cmd-palette__group-chevron">
                           {isExpanded() ? "▾" : "▸"}
                         </span>
-                        <span class="cmd-palette__group-name">{row.category}</span>
+                        <span class="cmd-palette__group-name">{catLabel(row.category)}</span>
                         <span class="cmd-palette__group-count">{row.count}</span>
                       </div>
                     );
@@ -353,7 +377,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                     onMouseEnter={() => setSelectedIndex(index())}
                   >
                     <span class="cmd-palette__result-category">
-                      {item.command.category}
+                      {catLabel(item.command.category)}
                     </span>
                     <span class="cmd-palette__result-title">
                       <HighlightedTitle
@@ -375,7 +399,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                 )}
               </For>
               <Show when={searchResults().length === 0 && query().trim().length > 0}>
-                <div class="cmd-palette__empty">No matching commands</div>
+                <div class="cmd-palette__empty">{t("commandPalette.noMatching")}</div>
               </Show>
             </Show>
           </div>

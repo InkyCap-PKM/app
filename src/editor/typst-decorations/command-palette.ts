@@ -4,9 +4,15 @@ import { expandFunc } from "./effects";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
 import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
 import { CURATED_SYMBOLS } from "./symbols";
+import { t } from "../../lib/i18n";
 
 interface PaletteItem {
+  /** Stable English identifier — also the group/expanded-state key, so it must
+   *  NOT be localized. Display text comes from `labelKey` when present (symbol
+   *  rows keep their glyph+name `label` directly). */
   label: string;
+  /** i18n key for the displayed label, resolved at render. */
+  labelKey?: string;
   category: string;
   /** Static template; `${sel}` is replaced with the selection. Optional when
    *  `dynamic` is set (annotation/suggestion items build their markup at accept
@@ -50,6 +56,25 @@ interface PaletteItem {
  *  (with author attribution) from the live selection at accept time. */
 const mark = (kind: InsertKind, sel: string) => buildAnnotationInsert(kind, sel);
 
+/** Category id (stable, used for grouping) → i18n key for the display header. */
+const CATEGORY_KEYS: Record<string, string> = {
+  Format: "slash.cat.format",
+  Structure: "slash.cat.structure",
+  Insert: "slash.cat.insert",
+  Symbol: "slash.cat.symbol",
+  InkyCap: "slash.cat.inkycap",
+  Style: "slash.cat.style",
+};
+
+/** Displayed label for a palette row: localized via `labelKey`, else the raw
+ *  `label` (symbol rows). */
+const itemLabel = (item: PaletteItem): string =>
+  item.labelKey ? t(item.labelKey) : item.label;
+
+/** Displayed category header for a row's category id. */
+const categoryLabel = (category: string): string =>
+  CATEGORY_KEYS[category] ? t(CATEGORY_KEYS[category]) : category;
+
 /** Curated `#sym.*` named symbols (single source of truth in symbols.ts).
  *  Surfaced behind the "More symbols…" group so they don't flood the menu,
  *  but flattened back into the results when the user types a query. */
@@ -63,84 +88,84 @@ const SYMBOL_ITEMS: PaletteItem[] = CURATED_SYMBOLS.map((s) => ({
 }));
 
 const PALETTE_ITEMS: PaletteItem[] = [
-  { label: "Bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
-  { label: "Italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
-  { label: "Strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8 },
-  { label: "Highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11 },
-  { label: "Underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11 },
-  { label: "Overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10 },
-  { label: "Subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5 },
-  { label: "Superscript", category: "Format", insert: '#super[${sel}]', cursorOffset: 7 },
-  { label: "Inline code", category: "Format", insert: '`${sel}`', cursorOffset: 1, shortcut: "`…`" },
-  { label: "Inline math", category: "Format", insert: '$${sel}$', cursorOffset: 1, shortcut: "$…$" },
+  { label: "Bold", labelKey: "slash.bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
+  { label: "Italic", labelKey: "slash.italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
+  { label: "Strikethrough", labelKey: "slash.strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8 },
+  { label: "Highlight", labelKey: "slash.highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11 },
+  { label: "Underline", labelKey: "slash.underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11 },
+  { label: "Overline", labelKey: "slash.overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10 },
+  { label: "Subscript", labelKey: "slash.subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5 },
+  { label: "Superscript", labelKey: "slash.superscript", category: "Format", insert: '#super[${sel}]', cursorOffset: 7 },
+  { label: "Inline code", labelKey: "slash.inlineCode", category: "Format", insert: '`${sel}`', cursorOffset: 1, shortcut: "`…`" },
+  { label: "Inline math", labelKey: "slash.inlineMath", category: "Format", insert: '$${sel}$', cursorOffset: 1, shortcut: "$…$" },
 
-  { label: "Heading 1", category: "Structure", insert: '= ', cursorOffset: 2, shortcut: "= " },
-  { label: "Heading 2", category: "Structure", insert: '== ', cursorOffset: 3, shortcut: "== " },
-  { label: "Heading 3", category: "Structure", insert: '=== ', cursorOffset: 4, shortcut: "=== " },
-  { label: "Heading 4", category: "Structure", insert: '==== ', cursorOffset: 5, shortcut: "==== " },
-  { label: "Heading 5", category: "Structure", insert: '===== ', cursorOffset: 6, shortcut: "===== " },
-  { label: "Heading 6", category: "Structure", insert: '====== ', cursorOffset: 7, shortcut: "====== " },
-  { label: "Bullet list", category: "Structure", insert: '- ', cursorOffset: 2, shortcut: "- " },
-  { label: "Ordered list", category: "Structure", insert: '+ ', cursorOffset: 2, shortcut: "+ " },
-  { label: "Term list", category: "Structure", insert: '/ ', cursorOffset: 2, shortcut: "/ Term: …" },
-  { label: "Quote (inline)", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7, expandOnInsert: true },
-  { label: "Blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true, shortcut: "> " },
+  { label: "Heading 1", labelKey: "slash.heading1", category: "Structure", insert: '= ', cursorOffset: 2, shortcut: "= " },
+  { label: "Heading 2", labelKey: "slash.heading2", category: "Structure", insert: '== ', cursorOffset: 3, shortcut: "== " },
+  { label: "Heading 3", labelKey: "slash.heading3", category: "Structure", insert: '=== ', cursorOffset: 4, shortcut: "=== " },
+  { label: "Heading 4", labelKey: "slash.heading4", category: "Structure", insert: '==== ', cursorOffset: 5, shortcut: "==== " },
+  { label: "Heading 5", labelKey: "slash.heading5", category: "Structure", insert: '===== ', cursorOffset: 6, shortcut: "===== " },
+  { label: "Heading 6", labelKey: "slash.heading6", category: "Structure", insert: '====== ', cursorOffset: 7, shortcut: "====== " },
+  { label: "Bullet list", labelKey: "slash.bulletList", category: "Structure", insert: '- ', cursorOffset: 2, shortcut: "- " },
+  { label: "Ordered list", labelKey: "slash.orderedList", category: "Structure", insert: '+ ', cursorOffset: 2, shortcut: "+ " },
+  { label: "Term list", labelKey: "slash.termList", category: "Structure", insert: '/ ', cursorOffset: 2, shortcut: "/ Term: …" },
+  { label: "Quote (inline)", labelKey: "slash.quoteInline", category: "Structure", insert: '#quote[${sel}]', cursorOffset: 7, expandOnInsert: true },
+  { label: "Blockquote", labelKey: "slash.blockquote", category: "Structure", insert: '#quote(block: true)[${sel}]', cursorOffset: 20, expandOnInsert: true, shortcut: "> " },
 
-  { label: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
-  { label: "Image", category: "Insert", insert: '#image("")', cursorOffset: 8, pickAttachment: "image" },
-  { label: "Video", category: "Insert", insert: '#video("")', cursorOffset: 8, pickAttachment: "video" },
-  { label: "Audio", category: "Insert", insert: '#audio("")', cursorOffset: 8, pickAttachment: "audio" },
-  { label: "Code block", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4, shortcut: "```" },
-  { label: "Math block", category: "Insert", insert: '$ ${sel} $', cursorOffset: 2 },
-  { label: "Horizontal rule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
-  { label: "Footnote", category: "Insert", insert: '#footnote[${sel}]', cursorOffset: 10, shortcut: "++…++" },
-  { label: "Citation", category: "Insert", insert: '@', cursorOffset: 1, shortcut: "@" },
-  { label: "Label", category: "Insert", insert: '<>', cursorOffset: 1, shortcut: "<…>" },
+  { label: "Link", labelKey: "slash.link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
+  { label: "Image", labelKey: "slash.image", category: "Insert", insert: '#image("")', cursorOffset: 8, pickAttachment: "image" },
+  { label: "Video", labelKey: "slash.video", category: "Insert", insert: '#video("")', cursorOffset: 8, pickAttachment: "video" },
+  { label: "Audio", labelKey: "slash.audio", category: "Insert", insert: '#audio("")', cursorOffset: 8, pickAttachment: "audio" },
+  { label: "Code block", labelKey: "slash.codeBlock", category: "Insert", insert: '```\n${sel}\n```', cursorOffset: 4, shortcut: "```" },
+  { label: "Math block", labelKey: "slash.mathBlock", category: "Insert", insert: '$ ${sel} $', cursorOffset: 2 },
+  { label: "Horizontal rule", labelKey: "slash.horizontalRule", category: "Insert", insert: '#line(length: 100%)', cursorOffset: 19, shortcut: "+++" },
+  { label: "Footnote", labelKey: "slash.footnote", category: "Insert", insert: '#footnote[${sel}]', cursorOffset: 10, shortcut: "++…++" },
+  { label: "Citation", labelKey: "slash.citation", category: "Insert", insert: '@', cursorOffset: 1, shortcut: "@" },
+  { label: "Label", labelKey: "slash.label", category: "Insert", insert: '<>', cursorOffset: 1, shortcut: "<…>" },
 
-  { label: "Table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
+  { label: "Table", labelKey: "slash.table", category: "Insert", insert: '#table(\n  columns: (auto, auto, auto),\n  [Header 1], [Header 2], [Header 3],\n  [], [], [],\n)', cursorOffset: 76 },
 
-  { label: "Bibliography", category: "Insert", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
-  { label: "Page break", category: "Insert", insert: '#pagebreak()', cursorOffset: 12 },
-  { label: "Line break", category: "Insert", insert: '#linebreak()', cursorOffset: 12 },
-  { label: "Lorem ipsum", category: "Insert", insert: '#lorem(50)', cursorOffset: 7 },
-  { label: "Figure", category: "Insert", insert: '#figure(\n  ${sel},\n  caption: [],\n)', cursorOffset: 11 },
-  { label: "Align", category: "Insert", insert: '#align(center)[${sel}]', cursorOffset: 15 },
-  { label: "Box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
-  { label: "Rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
-  { label: "Hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
-  { label: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
+  { label: "Bibliography", labelKey: "slash.bibliography", category: "Insert", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
+  { label: "Page break", labelKey: "slash.pageBreak", category: "Insert", insert: '#pagebreak()', cursorOffset: 12 },
+  { label: "Line break", labelKey: "slash.lineBreak", category: "Insert", insert: '#linebreak()', cursorOffset: 12 },
+  { label: "Lorem ipsum", labelKey: "slash.loremIpsum", category: "Insert", insert: '#lorem(50)', cursorOffset: 7 },
+  { label: "Figure", labelKey: "slash.figure", category: "Insert", insert: '#figure(\n  ${sel},\n  caption: [],\n)', cursorOffset: 11 },
+  { label: "Align", labelKey: "slash.align", category: "Insert", insert: '#align(center)[${sel}]', cursorOffset: 15 },
+  { label: "Box", labelKey: "slash.box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
+  { label: "Rect", labelKey: "slash.rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },
+  { label: "Hide", labelKey: "slash.hide", category: "Insert", insert: '#hide[${sel}]', cursorOffset: 6 },
+  { label: "Callout", labelKey: "slash.callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expandOnInsert: true },
 
   // Symbol shorthands — Typst's parser-level abbreviations that compile to
   // typographic characters. We insert the shorthand sequence (not the literal
   // glyph) so the source stays Typst-native and the ShorthandWidget renders it.
-  { label: "Em dash (—)", category: "Symbol", insert: '---', cursorOffset: 3, shortcut: "---" },
-  { label: "En dash (–)", category: "Symbol", insert: '--', cursorOffset: 2, shortcut: "--" },
-  { label: "Ellipsis (…)", category: "Symbol", insert: '...', cursorOffset: 3, shortcut: "..." },
-  { label: "Non-breaking space", category: "Symbol", insert: '~', cursorOffset: 1, shortcut: "~" },
-  { label: "Soft hyphen", category: "Symbol", insert: '-?', cursorOffset: 2, shortcut: "-?" },
-  { label: "More symbols…", category: "Symbol", submenu: SYMBOL_ITEMS },
+  { label: "Em dash (—)", labelKey: "slash.emDash", category: "Symbol", insert: '---', cursorOffset: 3, shortcut: "---" },
+  { label: "En dash (–)", labelKey: "slash.enDash", category: "Symbol", insert: '--', cursorOffset: 2, shortcut: "--" },
+  { label: "Ellipsis (…)", labelKey: "slash.ellipsis", category: "Symbol", insert: '...', cursorOffset: 3, shortcut: "..." },
+  { label: "Non-breaking space", labelKey: "slash.nbsp", category: "Symbol", insert: '~', cursorOffset: 1, shortcut: "~" },
+  { label: "Soft hyphen", labelKey: "slash.softHyphen", category: "Symbol", insert: '-?', cursorOffset: 2, shortcut: "-?" },
+  { label: "More symbols…", labelKey: "slash.moreSymbols", category: "Symbol", submenu: SYMBOL_ITEMS },
 
-  { label: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
-  { label: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
-  { label: "Annotation", category: "InkyCap", dynamic: (s) => mark("annotation", s) },
-  { label: "Suggest insertion", category: "InkyCap", dynamic: (s) => mark("insert", s) },
-  { label: "Suggest deletion", category: "InkyCap", dynamic: (s) => mark("delete", s) },
-  { label: "Suggest replacement", category: "InkyCap", dynamic: (s) => mark("replace", s) },
-  { label: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
-  { label: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
+  { label: "Wikilink", labelKey: "slash.wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
+  { label: "Verse", labelKey: "slash.verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
+  { label: "Annotation", labelKey: "slash.annotation", category: "InkyCap", dynamic: (s) => mark("annotation", s) },
+  { label: "Suggest insertion", labelKey: "slash.suggestInsertion", category: "InkyCap", dynamic: (s) => mark("insert", s) },
+  { label: "Suggest deletion", labelKey: "slash.suggestDeletion", category: "InkyCap", dynamic: (s) => mark("delete", s) },
+  { label: "Suggest replacement", labelKey: "slash.suggestReplacement", category: "InkyCap", dynamic: (s) => mark("replace", s) },
+  { label: "Task", labelKey: "slash.task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
+  { label: "Due date", labelKey: "slash.dueDate", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
 
-  { label: "Page size", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
-  { label: "Page margins", category: "Style", insert: '#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))', cursorOffset: 24 },
-  { label: "Page numbering", category: "Style", insert: '#set page(numbering: "1")', cursorOffset: 22 },
-  { label: "Page columns", category: "Style", insert: '#set page(columns: 2)', cursorOffset: 20 },
-  { label: "Text font", category: "Style", insert: '#set text(font: "")', cursorOffset: 17 },
-  { label: "Text size", category: "Style", insert: '#set text(size: 12pt)', cursorOffset: 16 },
-  { label: "Text language", category: "Style", insert: '#set text(lang: "en")', cursorOffset: 17 },
-  { label: "Justify", category: "Style", insert: '#set par(justify: true)', cursorOffset: 22 },
-  { label: "Line spacing", category: "Style", insert: '#set par(leading: 0.65em)', cursorOffset: 19 },
-  { label: "Paragraph spacing", category: "Style", insert: '#set par(spacing: 1.2em)', cursorOffset: 18 },
-  { label: "First line indent", category: "Style", insert: '#set par(first-line-indent: 1em)', cursorOffset: 27 },
-  { label: "Heading numbering", category: "Style", insert: '#set heading(numbering: "1.1")', cursorOffset: 24 },
+  { label: "Page size", labelKey: "slash.pageSize", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },
+  { label: "Page margins", labelKey: "slash.pageMargins", category: "Style", insert: '#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))', cursorOffset: 24 },
+  { label: "Page numbering", labelKey: "slash.pageNumbering", category: "Style", insert: '#set page(numbering: "1")', cursorOffset: 22 },
+  { label: "Page columns", labelKey: "slash.pageColumns", category: "Style", insert: '#set page(columns: 2)', cursorOffset: 20 },
+  { label: "Text font", labelKey: "slash.textFont", category: "Style", insert: '#set text(font: "")', cursorOffset: 17 },
+  { label: "Text size", labelKey: "slash.textSize", category: "Style", insert: '#set text(size: 12pt)', cursorOffset: 16 },
+  { label: "Text language", labelKey: "slash.textLanguage", category: "Style", insert: '#set text(lang: "en")', cursorOffset: 17 },
+  { label: "Justify", labelKey: "slash.justify", category: "Style", insert: '#set par(justify: true)', cursorOffset: 22 },
+  { label: "Line spacing", labelKey: "slash.lineSpacing", category: "Style", insert: '#set par(leading: 0.65em)', cursorOffset: 19 },
+  { label: "Paragraph spacing", labelKey: "slash.paragraphSpacing", category: "Style", insert: '#set par(spacing: 1.2em)', cursorOffset: 18 },
+  { label: "First line indent", labelKey: "slash.firstLineIndent", category: "Style", insert: '#set par(first-line-indent: 1em)', cursorOffset: 27 },
+  { label: "Heading numbering", labelKey: "slash.headingNumbering", category: "Style", insert: '#set heading(numbering: "1.1")', cursorOffset: 24 },
 ];
 
 interface PaletteState {
@@ -218,8 +243,8 @@ function buildDisplayList(query: string): PaletteItem[] {
     const flattened = PALETTE_ITEMS.flatMap((item) => item.submenu ?? [item]);
     return flattened.filter(
       (item) =>
-        item.label.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q),
+        itemLabel(item).toLowerCase().includes(q) ||
+        categoryLabel(item.category).toLowerCase().includes(q),
     );
   }
   // Empty query: browse view — group rows stay collapsed unless expanded, in
@@ -256,7 +281,7 @@ function showPopup(view: EditorView, state: PaletteState) {
       currentCategory = item.category;
       const header = document.createElement("div");
       header.className = "command-palette__category";
-      header.textContent = currentCategory;
+      header.textContent = categoryLabel(currentCategory);
       el.appendChild(header);
     }
 
@@ -267,7 +292,7 @@ function showPopup(view: EditorView, state: PaletteState) {
 
     const labelEl = document.createElement("span");
     labelEl.className = "command-palette__item-label";
-    labelEl.textContent = item.label;
+    labelEl.textContent = itemLabel(item);
     row.appendChild(labelEl);
 
     if (item.shortcut) {

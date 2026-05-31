@@ -28,6 +28,7 @@ import { ChevronDown, ChevronRight } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
+import { useI18n, tPlural } from "../lib/i18n";
 import CitationRow from "./CitationRow";
 import type { HeadingInfo } from "../lib/ipc";
 import type { AggregatedCitation, LinkInfo } from "../lib/types";
@@ -167,6 +168,7 @@ const SectionHeader: Component<{
 );
 
 const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
+  const t = useI18n();
   const visible = createMemo<VisibleNote[]>(() => {
     const paths = getVisibleEntries(props.tabId);
     if (paths.length === 0) {
@@ -415,14 +417,14 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
     <div class="scroll-context">
       <Show when={visible().length === 0}>
         <div class="scroll-context__empty">
-          Scroll into the view to populate context.
+          {t("scrollContext.empty")}
         </div>
       </Show>
 
       {/* Outline */}
       <div class="right-panel__section">
         <SectionHeader
-          label="Outline"
+          label={t("scrollContext.section.outline")}
           count={outline()?.reduce((n, r) => n + r.headings.length, 0) ?? 0}
           open={openSection().outline}
           onToggle={() => toggle("outline")}
@@ -437,7 +439,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                       type="button"
                       class="scroll-context__outline-title"
                       onClick={() => scrollToEntry(row.path)}
-                      title="Scroll to entry"
+                      title={t("scrollContext.scrollToEntry")}
                     >
                       {row.title}
                     </button>
@@ -472,7 +474,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
               }
             >
               <div class="scroll-context__empty-row">
-                No headings in visible entries.
+                {t("scrollContext.noHeadings")}
               </div>
             </Show>
           </div>
@@ -482,7 +484,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
       {/* Connections */}
       <div class="right-panel__section">
         <SectionHeader
-          label="Connections"
+          label={t("scrollContext.section.connections")}
           count={connections()?.length ?? 0}
           open={openSection().connections}
           onToggle={() => toggle("connections")}
@@ -495,9 +497,9 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                   type="button"
                   class="scroll-context__connection"
                   onClick={() => openInNewTab(row.path, row.name)}
-                  title={`${row.incoming ? "← incoming" : ""}${
+                  title={`${row.incoming ? t("scrollContext.connDir.incoming") : ""}${
                     row.incoming && row.outgoing ? " · " : ""
-                  }${row.outgoing ? "outgoing →" : ""}`}
+                  }${row.outgoing ? t("scrollContext.connDir.outgoing") : ""}`}
                 >
                   <span class="scroll-context__connection-name">
                     {row.name}
@@ -516,7 +518,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
               }
             >
               <div class="scroll-context__empty-row">
-                No outside connections.
+                {t("scrollContext.noConnections")}
               </div>
             </Show>
           </div>
@@ -526,7 +528,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
       {/* Tag concentration */}
       <div class="right-panel__section">
         <SectionHeader
-          label="Tags"
+          label={t("scrollContext.section.tags")}
           count={tagConcentration()?.length ?? 0}
           open={openSection().tags}
           onToggle={() => toggle("tags")}
@@ -538,9 +540,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                 {(row) => (
                   <span
                     class="scroll-context__tag-chip"
-                    title={`${row.tag} — appears on ${row.count} visible ${
-                      row.count === 1 ? "entry" : "entries"
-                    }`}
+                    title={tPlural("scrollContext.tagChipTitle", row.count, { tag: row.tag })}
                   >
                     {row.tag}
                     <span class="scroll-context__tag-count">{row.count}</span>
@@ -555,7 +555,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
               }
             >
               <div class="scroll-context__empty-row">
-                No tags on visible entries.
+                {t("scrollContext.noTags")}
               </div>
             </Show>
           </div>
@@ -565,7 +565,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
       {/* Citations */}
       <div class="right-panel__section">
         <SectionHeader
-          label="Citations"
+          label={t("scrollContext.section.citations")}
           count={citations()?.length ?? 0}
           open={openSection().citations}
           onToggle={() => toggle("citations")}
@@ -584,7 +584,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
                     count: c.count,
                   }}
                   onActivate={() => highlightCitation(c.key)}
-                  title={`${c.title ?? c.key} — click to highlight where it's cited`}
+                  title={t("scrollContext.citationTitle", { name: c.title ?? c.key })}
                 />
               )}
             </For>
@@ -595,7 +595,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
               }
             >
               <div class="scroll-context__empty-row">
-                No citations in visible entries.
+                {t("scrollContext.noCitations")}
               </div>
             </Show>
           </div>

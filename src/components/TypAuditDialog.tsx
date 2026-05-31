@@ -3,6 +3,7 @@ import * as ipc from "../lib/ipc";
 import type { TypAuditReport } from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { toastError } from "../stores/toasts";
+import { useI18n, tPlural } from "../lib/i18n";
 
 /// Surfaces the result of a notebox-wide audit of `.typ` files for InkyCap
 /// compatibility. Foreign `.typ` files (typically copied in from another
@@ -20,6 +21,7 @@ const TypAuditDialog: Component<{
   open: boolean;
   onClose: () => void;
 }> = (props) => {
+  const t = useI18n();
   const [report, setReport] = createSignal<TypAuditReport | null>(null);
   const [phase, setPhase] = createSignal<"idle" | "auditing" | "repairing" | "saving">("idle");
   const [error, setError] = createSignal<string | null>(null);
@@ -90,9 +92,9 @@ const TypAuditDialog: Component<{
     try {
       const summary = await ipc.repairTypFiles(files);
       const parts: string[] = [];
-      parts.push(`Repaired ${summary.repaired.length} file(s).`);
+      parts.push(t("typAudit.repaired", { count: summary.repaired.length }));
       if (summary.errors.length > 0) {
-        parts.push(`${summary.errors.length} error(s):`);
+        parts.push(t("typAudit.errorsN", { count: summary.errors.length }));
         parts.push(...summary.errors);
       }
       setResultMessage(parts.join("\n"));
@@ -111,9 +113,9 @@ const TypAuditDialog: Component<{
     setError(null);
     try {
       const summary = await ipc.repairMarkdownFiles(edits);
-      const parts: string[] = [`Fixed Markdown in ${summary.repaired.length} file(s).`];
+      const parts: string[] = [t("typAudit.fixedMarkdown", { count: summary.repaired.length })];
       if (summary.errors.length > 0) {
-        parts.push(`${summary.errors.length} error(s):`, ...summary.errors);
+        parts.push(t("typAudit.errorsN", { count: summary.errors.length }), ...summary.errors);
       }
       setResultMessage(parts.join("\n"));
       await runAudit();
@@ -143,10 +145,10 @@ const TypAuditDialog: Component<{
     setError(null);
     try {
       const path = await ipc.saveAuditReport();
-      openTab({ type: "file", title: "InkyCap Audit Report", path }, { forceNewTab: true });
+      openTab({ type: "file", title: t("typAudit.reportTitle"), path }, { forceNewTab: true });
       props.onClose();
     } catch (e: any) {
-      toastError("Couldn't save audit report", e);
+      toastError(t("typAudit.saveFailed"), e);
     } finally {
       setPhase("idle");
     }
@@ -177,12 +179,12 @@ const TypAuditDialog: Component<{
           if (e.target === e.currentTarget && phase() === "idle") props.onClose();
         }}
       >
-        <div class="typ-audit__panel" role="dialog" aria-label="Audit .typ files">
+        <div class="typ-audit__panel" role="dialog" aria-label={t("typAudit.dialogAria")}>
           <header class="typ-audit__header">
-            <h2 class="typ-audit__title">Audit .typ files for InkyCap compatibility</h2>
+            <h2 class="typ-audit__title">{t("command.tools.audit-typ-files")}</h2>
             <button
               class="typ-audit__close"
-              aria-label="Close"
+              aria-label={t("common.close")}
               onClick={props.onClose}
               disabled={phase() !== "idle"}
             >
@@ -192,7 +194,7 @@ const TypAuditDialog: Component<{
 
           <div class="typ-audit__body">
             <Show when={phase() === "auditing"}>
-              <p class="typ-audit__hint">Scanning notebox for .typ files…</p>
+              <p class="typ-audit__hint">{t("typAudit.scanning")}</p>
             </Show>
 
             <Show when={error()}>
@@ -209,19 +211,19 @@ const TypAuditDialog: Component<{
                 return (
                   <>
                     <p class="typ-audit__summary">
-                      Scanned <strong>{total}</strong> .typ file(s).{" "}
+                      {t("typAudit.scannedLead")} <strong>{total}</strong>{" "}
+                      {t("typAudit.scannedUnit")}{" "}
                       <Show
                         when={fixCount > 0}
                         fallback={
                           <span>
-                            All files have the inkycap-notebox import and a{" "}
-                            <code>#note(...)</code> call.
+                            {t("typAudit.allGoodBefore")}{" "}
+                            <code>{"#note(...)"}</code> {t("typAudit.allGoodAfter")}
                           </span>
                         }
                       >
                         <span>
-                          <strong>{fixCount}</strong> file(s) are missing one
-                          or both of the InkyCap preamble pieces.
+                          <strong>{fixCount}</strong> {t("typAudit.missingPieces")}
                         </span>
                       </Show>
                     </p>
@@ -230,14 +232,12 @@ const TypAuditDialog: Component<{
                       <p class="typ-audit__summary">
                         <Show when={r.markdownFixes.length > 0}>
                           <span>
-                            <strong>{r.markdownFixes.length}</strong> file(s) have
-                            leftover Markdown markup.{" "}
+                            <strong>{r.markdownFixes.length}</strong> {t("typAudit.mdHave")}{" "}
                           </span>
                         </Show>
                         <Show when={r.syntaxErrors.length > 0}>
                           <span>
-                            <strong>{r.syntaxErrors.length}</strong> file(s) have
-                            Typst syntax errors.
+                            <strong>{r.syntaxErrors.length}</strong> {t("typAudit.syntaxHave")}
                           </span>
                         </Show>
                       </p>
@@ -246,12 +246,10 @@ const TypAuditDialog: Component<{
                     <Show when={r.missingImport.length > 0}>
                       <details class="typ-audit__group" open>
                         <summary>
-                          Missing inkycap-notebox <code>#import</code> ({r.missingImport.length})
+                          {t("typAudit.missingImportLabel")} <code>{"#import"}</code> ({r.missingImport.length})
                         </summary>
                         <p class="typ-audit__group-hint">
-                          Without this line, notebox primitives like{" "}
-                          <code>#wikilink(...)</code> and <code>#tag(...)</code>{" "}
-                          won't resolve when added to the file.
+                          {t("typAudit.missingImportHint")}
                         </p>
                         <ul class="typ-audit__file-list">
                           <For each={r.missingImport}>
@@ -264,13 +262,10 @@ const TypAuditDialog: Component<{
                     <Show when={r.missingNote.length > 0}>
                       <details class="typ-audit__group" open>
                         <summary>
-                          Missing <code>#note(...)</code> metadata ({r.missingNote.length})
+                          {t("typAudit.missingLabel")} <code>{"#note(...)"}</code> {t("typAudit.metadataLabel")} ({r.missingNote.length})
                         </summary>
                         <p class="typ-audit__group-hint">
-                          Without a <code>#note(...)</code> call, the
-                          collection table can't show title/author/date for
-                          this file. A bare <code>#note()</code> is enough to
-                          register it; you can fill in fields later.
+                          {t("typAudit.missingNoteHint")}
                         </p>
                         <ul class="typ-audit__file-list">
                           <For each={r.missingNote}>
@@ -283,14 +278,10 @@ const TypAuditDialog: Component<{
                     <Show when={r.markdownFixes.length > 0}>
                       <details class="typ-audit__group" open>
                         <summary>
-                          Leftover Markdown markup ({r.markdownFixes.length} file
-                          {r.markdownFixes.length === 1 ? "" : "s"})
+                          {tPlural("typAudit.mdGroup", r.markdownFixes.length, { count: r.markdownFixes.length })}
                         </summary>
                         <p class="typ-audit__group-hint">
-                          These look like Markdown left over from another tool.
-                          InkyCap can rewrite them to Typst — every change is
-                          ticked to apply; untick any you'd rather keep as-is,
-                          then use <strong>Fix Markdown</strong>.
+                          {t("typAudit.markdownHint")}
                         </p>
                         <For each={r.markdownFixes}>
                           {(f) => (
@@ -310,8 +301,8 @@ const TypAuditDialog: Component<{
                                         class="typ-audit__md-check"
                                         checked={isAccepted(f.path, fx.line)}
                                         onChange={() => toggleFix(f.path, fx.line)}
-                                        title="Apply this fix"
-                                        aria-label={`Apply fix on line ${fx.line}`}
+                                        title={t("typAudit.applyFix")}
+                                        aria-label={t("typAudit.applyFixLine", { line: fx.line })}
                                       />
                                       <span class="typ-audit__lint-loc">L{fx.line}</span>
                                       <code class="typ-audit__md-before">{fx.before}</code>
@@ -330,14 +321,10 @@ const TypAuditDialog: Component<{
                     <Show when={r.syntaxErrors.length > 0}>
                       <details class="typ-audit__group">
                         <summary>
-                          Typst syntax errors ({r.syntaxErrors.length} file
-                          {r.syntaxErrors.length === 1 ? "" : "s"})
+                          {tPlural("typAudit.syntaxGroup", r.syntaxErrors.length, { count: r.syntaxErrors.length })}
                         </summary>
                         <p class="typ-audit__group-hint">
-                          These files have a syntax error (a missing bracket, a
-                          stray token, a typo). InkyCap can't safely guess the
-                          fix, so they're listed for you to repair — open each
-                          file at the line shown.
+                          {t("typAudit.syntaxHint")}
                         </p>
                         <For each={r.syntaxErrors}>
                           {(f) => (
@@ -378,16 +365,16 @@ const TypAuditDialog: Component<{
               onClick={runAudit}
               disabled={phase() !== "idle"}
             >
-              Re-scan
+              {t("typAudit.rescan")}
             </button>
             <Show when={hasFindings()}>
               <button
                 type="button"
                 onClick={runSaveReport}
                 disabled={phase() !== "idle"}
-                title="Save these results to a note at the notebox root so you can keep it open while fixing files"
+                title={t("typAudit.saveTitle")}
               >
-                {phase() === "saving" ? "Saving…" : "Save report"}
+                {phase() === "saving" ? t("typAudit.saving") : t("typAudit.saveReport")}
               </button>
             </Show>
             <div class="typ-audit__footer-spacer" />
@@ -396,16 +383,16 @@ const TypAuditDialog: Component<{
               onClick={props.onClose}
               disabled={phase() !== "idle"}
             >
-              Close
+              {t("common.close")}
             </button>
             <Show when={filesWithMarkdown().length > 0}>
               <button
                 type="button"
                 onClick={runMarkdownRepair}
                 disabled={phase() !== "idle" || acceptedEdits().length === 0}
-                title="Rewrite the ticked Markdown changes above to Typst"
+                title={t("typAudit.fixMarkdownTitle")}
               >
-                {`Fix Markdown (${acceptedEdits().length})`}
+                {t("typAudit.fixMarkdown", { count: acceptedEdits().length })}
               </button>
             </Show>
             <button
@@ -415,8 +402,8 @@ const TypAuditDialog: Component<{
               disabled={phase() !== "idle" || filesToRepair().length === 0}
             >
               {phase() === "repairing"
-                ? "Repairing…"
-                : `Repair ${filesToRepair().length} file(s)`}
+                ? t("typAudit.repairing")
+                : t("typAudit.repair", { count: filesToRepair().length })}
             </button>
           </footer>
         </div>

@@ -12,7 +12,7 @@ import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/
 import type { CreationRule } from "../lib/types";
 import { openTab } from "../stores/tabs";
 import { toolbarRules, triggerCreationRule } from "../stores/creation-rules";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 import RuleIcon from "./RuleIcon";
 import { toastError } from "../stores/toasts";
 
@@ -34,19 +34,20 @@ interface VerticalToolbarProps {
 }
 
 const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
+  const t = useI18n();
   async function executeRule(rule: CreationRule) {
     try {
       const result = await triggerCreationRule(rule.id);
       if (!result) return;
       if (rule.creation_mode === "create_and_open") {
-        const name = result.path.split("/").pop() ?? "New Note";
+        const name = result.path.split("/").pop() ?? t("verticalToolbar.newNoteFallback");
         openTab(
           { type: "file", title: name, path: result.path },
           { forceNewTab: true, cursorOffset: result.cursor_offset ?? undefined },
         );
       }
     } catch (e) {
-      toastError(`Failed to execute creation rule "${rule.name ?? rule.id}"`, e);
+      toastError(t("verticalToolbar.ruleFailed", { name: rule.name ?? rule.id }), e);
     }
   }
 
@@ -60,8 +61,8 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
         <button
           class="vertical-toolbar__btn"
           onClick={toggleLeftCollapsed}
-          title={leftCollapsed() ? "Show left sidebar" : "Hide left sidebar"}
-          aria-label={leftCollapsed() ? "Show left sidebar" : "Hide left sidebar"}
+          title={leftCollapsed() ? t("verticalToolbar.showSidebar") : t("verticalToolbar.hideSidebar")}
+          aria-label={leftCollapsed() ? t("verticalToolbar.showSidebar") : t("verticalToolbar.hideSidebar")}
         >
           <PanelLeftDashed size={18} />
         </button>
@@ -77,8 +78,8 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
               props.setMode("search");
               if (leftCollapsed()) setLeftCollapsed(false);
             }}
-            title="Search (Ctrl+Shift+F)"
-            aria-label="Search"
+            title={t("verticalToolbar.searchTitle")}
+            aria-label={t("verticalToolbar.search")}
           >
             <Search size={18} />
           </button>
@@ -106,8 +107,8 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
           <button
             class="vertical-toolbar__btn"
             onClick={toggleTheme}
-            title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label="Toggle theme"
+            title={theme() === "dark" ? t("verticalToolbar.lightMode") : t("verticalToolbar.darkMode")}
+            aria-label={t("verticalToolbar.toggleTheme")}
           >
             {theme() === "dark" ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -117,16 +118,16 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
               props.setMode("templates");
               if (leftCollapsed()) setLeftCollapsed(false);
             }}
-            title="Scaffolds, Templates, &amp; Packages"
-            aria-label="Open Scaffolds, Templates, &amp; Packages"
+            title={t("verticalToolbar.templatesTitle")}
+            aria-label={t("verticalToolbar.templatesAria")}
           >
             <LayoutTemplate size={18} />
           </button>
           <button
             class="vertical-toolbar__btn"
             onClick={() => props.onOpenSettings?.()}
-            title="Settings (Ctrl+,)"
-            aria-label="Settings"
+            title={t("verticalToolbar.settingsTitle")}
+            aria-label={t("verticalToolbar.settings")}
           >
             <Settings size={18} />
           </button>

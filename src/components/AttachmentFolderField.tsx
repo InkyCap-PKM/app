@@ -21,10 +21,12 @@ import * as ipc from "../lib/ipc";
 import type { AttachmentMigrationPreview } from "../lib/ipc";
 import { initSettings } from "../stores/settings";
 import { showToast } from "../stores/toasts";
+import { useI18n } from "../lib/i18n";
 
 const PREVIEW_DEBOUNCE_MS = 300;
 
 const AttachmentFolderField: Component<{ value: string }> = (props) => {
+  const t = useI18n();
   const [open, setOpen] = createSignal(false);
   const [draft, setDraft] = createSignal(props.value);
   const [preview, setPreview] = createSignal<AttachmentMigrationPreview | null>(null);
@@ -104,17 +106,20 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
       if (result.errors.length > 0) {
         showToast(
           "warning",
-          `Attachment folder renamed with ${result.errors.length} error(s)`,
+          t("attachmentFolder.renamedWithErrors", { count: result.errors.length }),
           result.errors.join("\n"),
         );
       } else {
         showToast(
           "success",
-          `Renamed attachment folder — moved ${result.files_moved} file(s), updated ${result.notes_updated} note(s)`,
+          t("attachmentFolder.renamedSuccess", {
+            files: result.files_moved,
+            notes: result.notes_updated,
+          }),
         );
       }
     } catch (err) {
-      showToast("error", "Rename failed", String(err));
+      showToast("error", t("attachmentFolder.renameFailed"), String(err));
     } finally {
       setApplying(false);
     }
@@ -135,13 +140,11 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
       <div class="settings__row">
         <div class="settings__row-info">
           <label class="settings__label">
-            Attachment folder
-            <span class="settings__scope-badge">this notebox</span>
+            {t("attachmentFolder.label")}
+            <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
           </label>
           <span class="settings__description">
-            Where images and files are stored (relative to notebox root).
-            Renaming moves existing files and rewrites references across
-            the notebox.
+            {t("attachmentFolder.description")}
           </span>
         </div>
         <div class="attachment-folder-field__control">
@@ -151,7 +154,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
             class="settings__detect-btn"
             onClick={openModal}
           >
-            Rename folder…
+            {t("attachmentFolder.renameButton")}
           </button>
         </div>
       </div>
@@ -170,11 +173,11 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
             aria-labelledby="attach-rename-title"
           >
             <div class="app-modal__header">
-              <h3 id="attach-rename-title">Rename attachment folder</h3>
+              <h3 id="attach-rename-title">{t("attachmentFolder.modalTitle")}</h3>
             </div>
             <div class="app-modal__body">
               <label class="app-modal__label" for="attach-rename-input">
-                New folder name
+                {t("attachmentFolder.newName")}
               </label>
               <input
                 id="attach-rename-input"
@@ -187,7 +190,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                 onKeyDown={onKeyDown}
               />
               <span class="app-modal__hint">
-                Current folder: <code>{props.value}</code>
+                {t("attachmentFolder.currentFolderBefore")} <code>{props.value}</code>
               </span>
 
               <Show when={previewError()}>
@@ -197,22 +200,21 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
               <Show when={isValidDraft() && preview() && !previewError()}>
                 <div class="attachment-folder-field__preview">
                   <div>
-                    <strong>{preview()!.files_to_move}</strong> file(s) will
-                    move
+                    <strong>{preview()!.files_to_move}</strong>{" "}
+                    {t("attachmentFolder.filesWillMoveBefore")}
                   </div>
                   <div>
-                    <strong>{preview()!.notes_to_update}</strong> note(s)
-                    will be updated
+                    <strong>{preview()!.notes_to_update}</strong>{" "}
+                    {t("attachmentFolder.notesWillUpdateBefore")}
                   </div>
                   <Show when={preview()!.target_is_nonempty}>
                     <div class="app-modal__hint">
-                      Target folder already contains{" "}
-                      <strong>{preview()!.target_file_count}</strong> file(s)
-                      — contents will be merged.
+                      {t("attachmentFolder.targetNonemptyBefore")}{" "}
+                      <strong>{preview()!.target_file_count}</strong>{" "}
+                      {t("attachmentFolder.targetNonemptyAfter")}
                       <Show when={preview()!.name_conflicts > 0}>
                         {" "}<strong>{preview()!.name_conflicts}</strong>{" "}
-                        conflicting filename(s) will be suffixed to avoid
-                        overwriting.
+                        {t("attachmentFolder.conflictsAfter")}
                       </Show>
                     </div>
                   </Show>
@@ -222,8 +224,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                     }
                   >
                     <div class="app-modal__hint">
-                      Target folder exists but is empty — it will be
-                      replaced by the moved folder.
+                      {t("attachmentFolder.targetEmptyReplace")}
                     </div>
                   </Show>
                 </div>
@@ -234,7 +235,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                   isValidDraft() && !preview() && !previewError() && open()
                 }
               >
-                <span class="app-modal__hint">Calculating preview…</span>
+                <span class="app-modal__hint">{t("attachmentFolder.calculatingPreview")}</span>
               </Show>
             </div>
             <div class="app-modal__footer">
@@ -243,7 +244,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                 onClick={closeModal}
                 disabled={applying()}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 class="app-modal__btn app-modal__btn--primary"
@@ -251,10 +252,10 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
                 disabled={!canApply() || applying()}
               >
                 {applying()
-                  ? "Renaming…"
+                  ? t("attachmentFolder.applying")
                   : preview()?.target_is_nonempty
-                    ? "Merge"
-                    : "Rename"}
+                    ? t("attachmentFolder.merge")
+                    : t("attachmentFolder.rename")}
               </button>
             </div>
           </div>

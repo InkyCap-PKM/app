@@ -20,7 +20,7 @@ import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText, promptConfirm } from "../stores/prompt";
-import { t } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
 import { clickOutside } from "../lib/clickOutside";
 import AgendaList from "./AgendaList";
@@ -76,6 +76,7 @@ const InlineCell: Component<{
   fileName: string;
   onSaved: () => void;
 }> = (props) => {
+  const t = useI18n();
   const [editing, setEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal("");
 
@@ -159,7 +160,7 @@ const InlineCell: Component<{
         <span
           class={`collection-table__cell-value${isFileColumn() ? " collection-table__cell-value--readonly" : ""}${props.value === null || props.value === undefined ? " collection-table__cell-value--null" : ""}`}
           onClick={startEdit}
-          title={isFileColumn() ? "File metadata (read-only)" : "Click to edit"}
+          title={isFileColumn() ? t("collection.table.fileColReadonly") : t("collection.table.clickToEdit")}
         >
           {renderCell(props.value) || "\u2014"}
         </span>
@@ -194,12 +195,13 @@ const ColumnPicker: Component<{
   onToggle: (col: string) => void;
   onClose: () => void;
 }> = (props) => {
+  const t = useI18n();
   return (
     <div class="column-picker">
       <div class="column-picker__header">
-        <span>Columns</span>
-        <button class="column-picker__close" onClick={props.onClose}>
-          &times;
+        <span>{t("collection.table.columns")}</span>
+        <button class="column-picker__close" onClick={props.onClose} aria-label={t("common.close")}>
+          ×
         </button>
       </div>
       <div class="column-picker__list">
@@ -223,6 +225,7 @@ const ColumnPicker: Component<{
 // ── Main CollectionTable component ─────────────────────────────────
 
 const CollectionTable: Component<{ path: string }> = (props) => {
+  const t = useI18n();
   // Seed from the per-collection session cache so the last-used view persists
   // across tab switches; `setActiveView` writes through to the cache.
   const [activeViewRaw, setActiveViewRaw] = createSignal(
@@ -563,9 +566,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function addNewView(viewType: "table" | "agenda") {
     setShowAddViewMenu(false);
     const name = await promptText({
-      title: viewType === "agenda" ? "New agenda view" : "New view",
-      label: "View name",
-      confirmLabel: "Create",
+      title: viewType === "agenda" ? t("collection.table.newAgendaViewTitle") : t("collection.table.newViewTitle"),
+      label: t("collection.table.viewNameLabel"),
+      confirmLabel: t("common.create"),
     });
     if (!name?.trim()) return;
     await ipc.addView(props.path, name.trim(), viewType);
@@ -640,22 +643,22 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       if (!outputPath) return;
       await rememberExportFile(outputPath);
       await ipc.exportCollectionCsvToFile(props.path, activeView(), outputPath, delimiter);
-      setExportStatus(`Exported ${label} to ${outputPath}`);
+      setExportStatus(t("collection.export.csvDone", { label, path: outputPath }));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
-      reportExportError(`${label} export failed: ${e}`);
+      reportExportError(t("collection.export.csvFailed", { label, error: String(e) }));
     }
   }
 
   async function exportAllPdf() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for PDFs", defaultPath: await exportDefault() });
+      const outputDir = await open({ directory: true, title: t("collection.export.selectPdfFolder"), defaultPath: await exportDefault() });
       if (!outputDir) return;
       rememberExportDir(outputDir as string);
-      setBusyMessage("Exporting collection as PDF files…");
-      setBusyDetail(`Output folder: ${outputDir}`);
-      setExportStatus("Exporting all notes as PDF...");
+      setBusyMessage(t("collection.export.pdfBusy"));
+      setBusyDetail(t("collection.export.outputFolder", { path: String(outputDir) }));
+      setExportStatus(t("collection.export.pdfStatus"));
       const std = exportPdfStandard() === "standard" ? undefined : exportPdfStandard();
       const exported = await ipc.exportCollectionBatchPdf(
         props.path,
@@ -666,11 +669,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         undefined,
         exportReviewMode(),
       );
-      setExportStatus(`Exported ${exported.length} PDF(s)`);
+      setExportStatus(tPlural("collection.export.pdfDone", exported.length));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
-      reportExportError(`Batch PDF export failed: ${msg}`);
+      reportExportError(t("collection.export.pdfFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -700,9 +703,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       // the loop terminates on success, a hard error (thrown), or Stop.
       const excluded: string[] = [];
       for (;;) {
-        setBusyMessage("Compiling merged book…");
-        setBusyDetail(`Output: ${outputPath}`);
-        setExportStatus("Exporting book…");
+        setBusyMessage(t("collection.export.bookBusy"));
+        setBusyDetail(t("collection.export.bookOutput", { path: outputPath }));
+        setExportStatus(t("collection.export.bookStatus"));
         const result = await ipc.exportCollectionBookPdf(
           props.path,
           activeView(),
@@ -712,9 +715,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         );
         if (result.outputPath) {
           const omitted = excluded.length
-            ? ` (${excluded.length} note${excluded.length === 1 ? "" : "s"} excluded)`
+            ? tPlural("collection.export.bookOmitted", excluded.length)
             : "";
-          setExportStatus(`Exported book to ${result.outputPath}${omitted}`);
+          setExportStatus(t("collection.export.bookDone", { path: result.outputPath, omitted }));
           setTimeout(() => setExportStatus(null), 4000);
           return;
         }
@@ -725,16 +728,14 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         const failing = result.failingNotes;
         const list = failing.map((n) => `  • ${n}`).join("\n");
         const proceed = await promptConfirm({
-          title: "Some notes have errors",
-          message:
-            `These note(s) couldn't be compiled and would be left out of the book:\n\n${list}\n\n` +
-            "Continue and export without them, or stop and fix the errors first?",
-          confirmLabel: "Continue (exclude)",
-          cancelLabel: "Stop & fix",
+          title: t("collection.export.someErrorsTitle"),
+          message: t("collection.export.someErrorsBody", { list }),
+          confirmLabel: t("collection.export.continueExclude"),
+          cancelLabel: t("collection.export.stopFix"),
         });
         if (!proceed) {
           reportExportError(
-            `Book export stopped — ${failing.length} note(s) still have errors.` +
+            tPlural("collection.export.bookStopped", failing.length) +
               (result.message ? `\n${result.message}` : ""),
           );
           return;
@@ -743,7 +744,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       }
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
-      reportExportError(`Book export failed: ${msg}`);
+      reportExportError(t("collection.export.bookFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -753,12 +754,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function exportStaticSite() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for static site", defaultPath: await exportDefault() });
+      const outputDir = await open({ directory: true, title: t("collection.export.selectSiteFolder"), defaultPath: await exportDefault() });
       if (!outputDir) return;
       rememberExportDir(outputDir as string);
-      setBusyMessage("Exporting collection as HTML site…");
-      setBusyDetail(`Output folder: ${outputDir}`);
-      setExportStatus("Exporting as static HTML site...");
+      setBusyMessage(t("collection.export.siteBusy"));
+      setBusyDetail(t("collection.export.outputFolder", { path: String(outputDir) }));
+      setExportStatus(t("collection.export.siteStatus"));
       const result = await ipc.exportCollectionStaticSite(
         props.path,
         activeView(),
@@ -770,19 +771,20 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         // fix the markup and re-export — the HTML counterpart of the book
         // export's "some notes have errors" report.
         const list = result.skippedNotes.map((n) => `  • ${n}`).join("\n");
-        const n = result.skippedNotes.length;
         reportExportError(
-          `Exported ${result.files.length} file(s). ${n} note${n === 1 ? "" : "s"} ` +
-            `couldn't be compiled and ${n === 1 ? "was" : "were"} left out — ` +
-            `fix the markup and re-export:\n${list}`,
+          t("collection.export.siteSkipped", {
+            files: result.files.length,
+            skipped: result.skippedNotes.length,
+            list,
+          }),
         );
       } else {
-        setExportStatus(`Exported ${result.files.length} file(s) to static site`);
+        setExportStatus(tPlural("collection.export.siteDone", result.files.length));
         setTimeout(() => setExportStatus(null), 4000);
       }
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
-      reportExportError(`Static site export failed: ${msg}`);
+      reportExportError(t("collection.export.siteFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -792,12 +794,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   async function exportAllMarkdown() {
     setShowExportMenu(false);
     try {
-      const outputDir = await open({ directory: true, title: "Select output folder for Markdown files", defaultPath: await exportDefault() });
+      const outputDir = await open({ directory: true, title: t("collection.export.selectMarkdownFolder"), defaultPath: await exportDefault() });
       if (!outputDir) return;
       rememberExportDir(outputDir as string);
-      setBusyMessage("Exporting collection as Markdown files…");
-      setBusyDetail(`Output folder: ${outputDir}`);
-      setExportStatus("Exporting all notes as Markdown...");
+      setBusyMessage(t("collection.export.markdownBusy"));
+      setBusyDetail(t("collection.export.outputFolder", { path: String(outputDir) }));
+      setExportStatus(t("collection.export.markdownStatus"));
       const exported = await ipc.exportCollectionBatchMarkdown(
         props.path,
         activeView(),
@@ -805,11 +807,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
         "preserve",
         exportReviewMode(),
       );
-      setExportStatus(`Exported ${exported.length} Markdown file(s)`);
+      setExportStatus(tPlural("collection.export.markdownDone", exported.length));
       setTimeout(() => setExportStatus(null), 4000);
     } catch (e: any) {
       const msg = typeof e === "string" ? e : (e?.message ?? String(e));
-      reportExportError(`Markdown export failed: ${msg}`);
+      reportExportError(t("collection.export.markdownFailed", { error: msg }));
     } finally {
       setBusyMessage(null);
       setBusyDetail(undefined);
@@ -848,7 +850,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   <button
                     class="collection-table__view-scroll collection-table__view-scroll--left"
                     onClick={() => scrollViews(-1)}
-                    aria-label="Scroll views left"
+                    aria-label={t("collection.table.scrollLeft")}
                   >
                     <ChevronLeft size={14} />
                   </button>
@@ -892,7 +894,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                             if (dragOverView() === view.name) setDragOverView(null);
                           }}
                         >
-                          {view.name || "Default"}
+                          {view.name || t("collection.table.defaultView")}
                           {/* The first view is the collection's default and is
                               never deletable, so at least one view always remains. */}
                           <Show when={index() > 0}>
@@ -902,9 +904,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                                 e.stopPropagation();
                                 deleteView(view.name);
                               }}
-                              title="Delete view"
+                              title={t("collection.table.deleteView")}
                             >
-                              &times;
+                              ×
                             </span>
                           </Show>
                         </button>
@@ -930,7 +932,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   <button
                     class="collection-table__view-scroll collection-table__view-scroll--right"
                     onClick={() => scrollViews(1)}
-                    aria-label="Scroll views right"
+                    aria-label={t("collection.table.scrollRight")}
                   >
                     <ChevronRight size={14} />
                   </button>
@@ -940,7 +942,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     ref={addViewBtnRef}
                     class="collection-table__view-tab collection-table__view-tab--add"
                     onClick={() => setShowAddViewMenu((v) => !v)}
-                    title="Add view"
+                    title={t("collection.table.addView")}
                   >
                     +
                   </button>
@@ -956,13 +958,13 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                         class="context-menu__item"
                         onClick={() => addNewView("table")}
                       >
-                        Table view
+                        {t("collection.table.tableView")}
                       </button>
                       <button
                         class="context-menu__item"
                         onClick={() => addNewView("agenda")}
                       >
-                        Agenda view
+                        {t("collection.table.agendaView")}
                       </button>
                     </div>
                   </Show>
@@ -975,9 +977,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     setShowFilterBuilder(!showFilterBuilder());
                     setShowColumnPicker(false);
                   }}
-                  title="Edit view filters"
+                  title={t("collection.table.filterTitle")}
                 >
-                  Filter
+                  {t("collection.table.filter")}
                 </button>
                 <button
                   class="collection-table__toolbar-btn"
@@ -985,9 +987,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     setShowColumnPicker(!showColumnPicker());
                     setShowFilterBuilder(false);
                   }}
-                  title="Configure columns"
+                  title={t("collection.table.columnsTitle")}
                 >
-                  Columns
+                  {t("collection.table.columns")}
                 </button>
                 <div
                   class="collection-table__export-wrapper"
@@ -996,9 +998,9 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   <button
                     class="collection-table__toolbar-btn"
                     onClick={() => setShowExportMenu(!showExportMenu())}
-                    title="Export collection"
+                    title={t("collection.table.exportTitle")}
                   >
-                    Export
+                    {t("collection.table.export")}
                   </button>
                   <Show when={showExportMenu()}>
                     <div class="collection-table__export-menu">
@@ -1006,66 +1008,66 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                         class="context-menu__item"
                         onClick={() => exportDelimited("comma")}
                       >
-                        Table as CSV
+                        {t("collection.table.exportCsv")}
                       </button>
                       <button
                         class="context-menu__item"
                         onClick={() => exportDelimited("tab")}
                       >
-                        Table as TSV
+                        {t("collection.table.exportTsv")}
                       </button>
                       <div class="context-menu__separator" />
                       <div class="collection-table__export-menu-field">
-                        <label class="collection-table__export-menu-label">PDF standard</label>
+                        <label class="collection-table__export-menu-label">{t("collection.table.pdfStandard")}</label>
                         <Dropdown<ipc.PdfStandardPreset>
                           class="dropdown--block"
                           value={exportPdfStandard()}
                           options={[
-                            { value: "standard", label: "Standard (PDF 1.7)" },
-                            { value: "pdf-a4", label: "PDF/A-4 (archival)" },
-                            { value: "pdf-ua1", label: "PDF/UA-1 (accessible)" },
+                            { value: "standard", label: t("collection.table.pdfStandard.standard") },
+                            { value: "pdf-a4", label: t("collection.table.pdfStandard.pdfa4") },
+                            { value: "pdf-ua1", label: t("collection.table.pdfStandard.pdfua1") },
                           ]}
                           onChange={setExportPdfStandard}
-                          ariaLabel="PDF standard"
+                          ariaLabel={t("collection.table.pdfStandard")}
                         />
                       </div>
                       <div class="collection-table__export-menu-field">
-                        <label class="collection-table__export-menu-label">Review markup</label>
+                        <label class="collection-table__export-menu-label">{t("collection.table.reviewMarkup")}</label>
                         <Dropdown<ipc.ReviewMarkupMode>
                           class="dropdown--block"
                           value={exportReviewMode()}
                           options={[
-                            { value: "keep", label: "Keep tracked changes" },
-                            { value: "accept", label: "Accept all changes" },
-                            { value: "reject", label: "Reject all changes" },
+                            { value: "keep", label: t("collection.table.reviewMarkup.keep") },
+                            { value: "accept", label: t("collection.table.reviewMarkup.accept") },
+                            { value: "reject", label: t("collection.table.reviewMarkup.reject") },
                           ]}
                           onChange={setExportReviewMode}
-                          ariaLabel="Review markup"
+                          ariaLabel={t("collection.table.reviewMarkup")}
                         />
                       </div>
                       <button
                         class="context-menu__item"
                         onClick={exportAllPdf}
                       >
-                        Collection as PDF files
+                        {t("collection.table.exportPdfFiles")}
                       </button>
                       <button
                         class="context-menu__item"
                         onClick={exportAsBook}
                       >
-                        Collection merged into one PDF (book)
+                        {t("collection.table.exportBook")}
                       </button>
                       <button
                         class="context-menu__item"
                         onClick={exportStaticSite}
                       >
-                        Collection as HTML files
+                        {t("collection.table.exportHtml")}
                       </button>
                       <button
                         class="context-menu__item"
                         onClick={exportAllMarkdown}
                       >
-                        Collection as Markdown files
+                        {t("collection.table.exportMarkdown")}
                       </button>
                     </div>
                   </Show>
@@ -1138,7 +1140,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                             if (dragOverCol() === col) setDragOverCol(null);
                           }}
                           onClick={() => handleSort(col)}
-                          title={`Sort by ${propertyLabel(col)} — drag to reorder`}
+                          title={t("collection.table.sortByTitle", { label: propertyLabel(col) })}
                         >
                           {propertyLabel(col)}
                           <span class="collection-table__sort-indicator">
@@ -1175,7 +1177,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
             </div>
 
             <div class="collection-table__footer">
-              {d().rows.length} {d().rows.length === 1 ? "file" : "files"}
+              {tPlural("common.file", d().rows.length)}
             </div>
             </Show>
           </>
@@ -1183,7 +1185,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       </Show>
 
       <Show when={data.loading}>
-        <p class="empty-state">Loading collection...</p>
+        <p class="empty-state">{t("collection.table.loading")}</p>
       </Show>
 
       {/* View context menu */}
@@ -1201,7 +1203,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               class="context-menu__item"
               onClick={() => startRenameView(menu().viewName)}
             >
-              Rename
+              {t("common.rename")}
             </button>
             <button
               class="context-menu__item context-menu__item--danger"
@@ -1210,7 +1212,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 setContextMenu(null);
               }}
             >
-              Delete
+              {t("common.delete")}
             </button>
           </div>
         )}
@@ -1234,7 +1236,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 setRowContextMenu(null);
               }}
             >
-              Open note
+              {t("collection.table.openNote")}
             </button>
             <button
               class="context-menu__item"
@@ -1246,7 +1248,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 setRowContextMenu(null);
               }}
             >
-              Open in new tab
+              {t("wikilink.menu.openNewTab")}
             </button>
             <div class="context-menu__separator" />
             <button
@@ -1256,7 +1258,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 setRowContextMenu(null);
               }}
             >
-              Export note...
+              {t("collection.table.exportNote")}
             </button>
           </div>
         )}
@@ -1274,8 +1276,8 @@ const CollectionTable: Component<{ path: string }> = (props) => {
           <button
             type="button"
             class="collection-table__export-error-close"
-            aria-label="Dismiss error"
-            title="Dismiss"
+            aria-label={t("collection.table.dismissError")}
+            title={t("common.dismiss")}
             onClick={() => setExportError(null)}
           >
             ✕

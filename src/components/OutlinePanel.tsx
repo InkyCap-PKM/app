@@ -12,6 +12,7 @@ import {
   type Heading,
 } from "../editor/typst-decorations/heading-tracker";
 import { activeEditorView } from "../stores/editor";
+import { useI18n } from "../lib/i18n";
 import { EditorView } from "@codemirror/view";
 import {
   ChevronRight,
@@ -66,15 +67,16 @@ function collectTopLevelKeys(nodes: HeadingNode[]): Set<number> {
 }
 
 const OutlinePanel: Component = () => {
+  const t = useI18n();
   const [expandedKeys, setExpandedKeys] = createSignal<Set<number>>(
     new Set<number>()
   );
 
   const tree = createMemo(() => {
-    const t = buildTree(headings());
+    const built = buildTree(headings());
     // Auto-expand all on first build / heading changes
-    setExpandedKeys(collectKeys(t, new Set()));
-    return t;
+    setExpandedKeys(collectKeys(built, new Set()));
+    return built;
   });
 
   const allParentKeys = createMemo(() => collectKeys(tree(), new Set()));
@@ -120,14 +122,14 @@ const OutlinePanel: Component = () => {
   return (
     <div class="outline-panel">
       <div class="right-panel__section-header">
-        <span>Outline</span>
+        <span>{t("outlinePanel.title")}</span>
         <Show when={headings().length > 0}>
           <div class="right-panel__header-actions">
             <button
               class="right-panel__icon-btn"
               onClick={() => (allExpanded() ? collapseAll() : expandAll())}
-              title={allExpanded() ? "Collapse all headings" : "Expand all headings"}
-              aria-label={allExpanded() ? "Collapse all headings" : "Expand all headings"}
+              title={allExpanded() ? t("outlinePanel.collapseAll") : t("outlinePanel.expandAll")}
+              aria-label={allExpanded() ? t("outlinePanel.collapseAll") : t("outlinePanel.expandAll")}
             >
               <Show
                 when={allExpanded()}
@@ -141,7 +143,7 @@ const OutlinePanel: Component = () => {
       </div>
       <Show
         when={headings().length > 0}
-        fallback={<p class="sidebar-hint">No headings</p>}
+        fallback={<p class="sidebar-hint">{t("outlinePanel.noHeadings")}</p>}
       >
         <OutlineTree
           nodes={tree()}

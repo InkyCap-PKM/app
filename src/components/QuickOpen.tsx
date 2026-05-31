@@ -12,6 +12,7 @@ import {
 import { fileList, type FileEntry } from "../stores/filelist";
 import { fuzzyMatch, type FuzzyMatch } from "../lib/fuzzy";
 import { openTab } from "../stores/tabs";
+import { useI18n } from "../lib/i18n";
 
 interface QuickOpenProps {
   visible: boolean;
@@ -38,6 +39,7 @@ function displayName(name: string): string {
 const PAGE_JUMP = 10;
 
 const QuickOpen: Component<QuickOpenProps> = (props) => {
+  const t = useI18n();
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   // How many of the (uncapped) results are currently rendered. Grows as the
@@ -244,7 +246,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
           <input
             class="quick-open__input"
             type="text"
-            placeholder="Search files..."
+            placeholder={t("quickOpen.placeholder")}
             value={query()}
             onInput={(e) => {
               setQuery(e.currentTarget.value);
@@ -281,7 +283,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
               )}
             </For>
             <Show when={results().length === 0 && query().trim().length > 0}>
-              <div class="quick-open__empty">No matching files</div>
+              <div class="quick-open__empty">{t("quickOpen.noMatching")}</div>
             </Show>
           </div>
         </div>

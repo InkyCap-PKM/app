@@ -27,7 +27,7 @@ import {
   toggleStatusCountMode,
 } from "../stores/layout";
 import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
-import { t } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 
 /** Consistent gap, in px, between an upward-opening status-bar menu's bottom
  *  edge and the top of its trigger. */
@@ -55,6 +55,7 @@ function placeUpwardStatusMenu(el: HTMLElement, anchorTop: number) {
 }
 
 const StatusBar: Component = () => {
+  const t = useI18n();
   const isFileTab = () => getActiveTab()?.type === "file";
   const stats = wordCountStats;
 
@@ -126,9 +127,9 @@ const StatusBar: Component = () => {
   /** Short 2-letter label for the chip: the active language code, "All", or
    *  "Off". */
   const spellLabel = createMemo(() => {
-    if (!settings.editor.spellcheck) return "Off";
+    if (!settings.editor.spellcheck) return t("statusBar.spell.off");
     const active = settings.editor.spellcheck_active || "all";
-    if (active === "all") return "All";
+    if (active === "all") return t("statusBar.spell.all");
     return active.slice(0, 2).toUpperCase();
   });
 
@@ -238,7 +239,7 @@ const StatusBar: Component = () => {
       // watcher's rename event leaving the tab heading on the old name.
       renameTabPath(oldPath, newPath);
     } catch (err) {
-      toastError("Rename failed", err);
+      toastError(t("statusBar.renameFailed"), err);
     }
   }
 
@@ -296,18 +297,18 @@ const StatusBar: Component = () => {
       {/* Everything except the distraction-free toggle collapses away in
           distraction-free mode, leaving just the exit button at the edge. */}
       <Show when={!distractionFree()}>
-      <Show when={noteboxInfo()} fallback={<span>No notebox open</span>}>
+      <Show when={noteboxInfo()} fallback={<span>{t("statusBar.noNotebox")}</span>}>
         {(info) => (
           <>
             <button
               class="status-bar__notebox-name"
               onClick={toggleSwitcher}
-              title="Change notebox"
+              title={t("statusBar.changeNotebox")}
             >
               {displayName()}
               <ArchiveRestore size={14} />
             </button>
-            <span>{info().file_count} files</span>
+            <span>{tPlural("common.file", info().file_count)}</span>
           </>
         )}
       </Show>
@@ -343,8 +344,8 @@ const StatusBar: Component = () => {
                   <button
                     class="status-bar__path-rename"
                     onClick={startRename}
-                    title="Rename file"
-                    aria-label="Rename file"
+                    title={t("statusBar.renameFile")}
+                    aria-label={t("statusBar.renameFile")}
                   >
                     <TextCursorInput size={14} />
                   </button>
@@ -367,7 +368,7 @@ const StatusBar: Component = () => {
                   }
                 }}
                 onBlur={commitRename}
-                aria-label="New file name"
+                aria-label={t("statusBar.newFileName")}
               />
               <button
                 class="status-bar__path-rename"
@@ -378,8 +379,8 @@ const StatusBar: Component = () => {
                   e.preventDefault();
                   commitRename();
                 }}
-                title="Confirm rename"
-                aria-label="Confirm rename"
+                title={t("statusBar.confirmRename")}
+                aria-label={t("statusBar.confirmRename")}
               >
                 <TextCursorInput size={14} />
               </button>
@@ -393,7 +394,7 @@ const StatusBar: Component = () => {
         {(pos) => (
           <span
             class="status-bar__stat status-bar__cursor"
-            title="Cursor line and column"
+            title={t("statusBar.cursorPos")}
           >
             L{pos().line}:{pos().col}
           </span>
@@ -406,7 +407,7 @@ const StatusBar: Component = () => {
           class="status-bar__spell"
           classList={{ "status-bar__spell--off": !settings.editor.spellcheck }}
           onClick={toggleSpellMenu}
-          title="Spellcheck language"
+          title={t("statusBar.spellLanguage")}
         >
           <SpellCheck size={13} class="status-bar__spell-icon" />
           <span class="status-bar__spell-label">{spellLabel()}</span>
@@ -420,15 +421,15 @@ const StatusBar: Component = () => {
           onClick={toggleStatusCountMode}
           title={
             statusCountMode() === "words"
-              ? "Word count. Click for characters"
-              : "Character count. Click for words"
+              ? t("statusBar.wordCountTitle")
+              : t("statusBar.charCountTitle")
           }
         >
           <TextCountIcon size={13} class="status-bar__count-icon" />
           <span class="status-bar__count-value">
             {statusCountMode() === "words"
-              ? `${stats().words} words`
-              : `${stats().chars} characters`}
+              ? tPlural("statusBar.words", stats().words)
+              : tPlural("statusBar.chars", stats().chars)}
           </span>
         </button>
       </Show>
@@ -442,13 +443,13 @@ const StatusBar: Component = () => {
         onClick={toggleDistractionFree}
         title={
           distractionFree()
-            ? "Exit distraction-free mode"
-            : "Distraction-free mode"
+            ? t("statusBar.exitDistractionFree")
+            : t("statusBar.distractionFree")
         }
         aria-label={
           distractionFree()
-            ? "Exit distraction-free mode"
-            : "Distraction-free mode"
+            ? t("statusBar.exitDistractionFree")
+            : t("statusBar.distractionFree")
         }
         aria-pressed={distractionFree()}
       >
@@ -485,7 +486,7 @@ const StatusBar: Component = () => {
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={openManageNoteboxes}>
               <Archive size={14} style={{ "margin-right": "6px", opacity: "0.6", "flex-shrink": "0" }} />
-              Manage noteboxes...
+              {t("statusBar.manageNoteboxes")}
             </button>
           </div>
         )}
@@ -502,7 +503,7 @@ const StatusBar: Component = () => {
               when={enabledDicts().length > 0}
               fallback={
                 <span class="context-menu__hint">
-                  No dictionaries enabled — see Settings → Language.
+                  {t("statusBar.noDicts")}
                 </span>
               }
             >
@@ -510,7 +511,7 @@ const StatusBar: Component = () => {
                 class="context-menu__item"
                 onClick={() => setSpellActive("all")}
               >
-                <span>All languages</span>
+                <span>{t("statusBar.allLanguages")}</span>
                 <Show when={settings.editor.spellcheck && (settings.editor.spellcheck_active || "all") === "all"}>
                   <Check size={14} class="context-menu__check" />
                 </Show>
@@ -531,7 +532,7 @@ const StatusBar: Component = () => {
             </Show>
             <div class="context-menu__separator" />
             <button class="context-menu__item" onClick={turnSpellOff}>
-              <span>Off</span>
+              <span>{t("statusBar.spell.off")}</span>
               <Show when={!settings.editor.spellcheck}>
                 <Check size={14} class="context-menu__check" />
               </Show>

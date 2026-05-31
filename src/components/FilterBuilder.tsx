@@ -2,15 +2,17 @@ import { Component, Index, Show, createSignal } from "solid-js";
 import type { FilterGroup, FilterNode } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 import { propertyLabel } from "../lib/property-labels";
+import { useI18n } from "../lib/i18n";
 
-/** Operators available in the filter builder. */
+/** Operators available in the filter builder. Labels resolve through i18n at
+ *  render time (see `labelKey`). */
 const OPERATORS = [
-  { value: "==", label: "equals" },
-  { value: "!=", label: "not equals" },
-  { value: ".contains", label: "contains" },
-  { value: ".containsAny", label: "contains any" },
-  { value: ".isEmpty", label: "is empty" },
-  { value: "!.isEmpty", label: "is not empty" },
+  { value: "==", labelKey: "filter.op.equals" },
+  { value: "!=", labelKey: "filter.op.notEquals" },
+  { value: ".contains", labelKey: "filter.op.contains" },
+  { value: ".containsAny", labelKey: "filter.op.containsAny" },
+  { value: ".isEmpty", labelKey: "filter.op.isEmpty" },
+  { value: "!.isEmpty", labelKey: "filter.op.isNotEmpty" },
 ] as const;
 
 /** Group combinators, mapped to the backend `and`/`or`/`not` keys. The UI
@@ -18,10 +20,10 @@ const OPERATORS = [
  *  filter UIs (and reading naturally as "All of the following are true"). */
 type Combinator = "and" | "or" | "not";
 
-const COMBINATORS: { value: Combinator; label: string }[] = [
-  { value: "and", label: "All" },
-  { value: "or", label: "Any" },
-  { value: "not", label: "None" },
+const COMBINATORS: { value: Combinator; labelKey: string }[] = [
+  { value: "and", labelKey: "filter.combinator.all" },
+  { value: "or", labelKey: "filter.combinator.any" },
+  { value: "not", labelKey: "filter.combinator.none" },
 ];
 
 /** How deep nested groups may go. Keeps the recursive UI bounded — three
@@ -177,7 +179,11 @@ function groupToFilter(node: GroupNode): FilterGroup | null {
  *  verbatim. The two are split into "Properties" and "File" groups, and the
  *  row's current property is injected if it isn't in `allKeys` — so editing a
  *  filter that references a since-removed property never silently drops it. */
-function propertyOptions(allKeys: string[], current: string) {
+function propertyOptions(
+  allKeys: string[],
+  current: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
   const keys = current && !allKeys.includes(current) ? [...allKeys, current] : allKeys;
   const toOption = (key: string, group: string) => ({
     value: key,
@@ -185,8 +191,8 @@ function propertyOptions(allKeys: string[], current: string) {
     group,
   });
   return [
-    ...keys.filter((k) => !k.startsWith("file.")).map((k) => toOption(k, "Properties")),
-    ...keys.filter((k) => k.startsWith("file.")).map((k) => toOption(k, "File")),
+    ...keys.filter((k) => !k.startsWith("file.")).map((k) => toOption(k, t("filter.group.properties"))),
+    ...keys.filter((k) => k.startsWith("file.")).map((k) => toOption(k, t("filter.group.file"))),
   ];
 }
 
@@ -196,6 +202,7 @@ const FilterRowEditor: Component<{
   onChange: (row: FilterRow) => void;
   onRemove: () => void;
 }> = (props) => {
+  const t = useI18n();
   const update = (field: keyof FilterRow, value: string) =>
     props.onChange({ ...props.row, [field]: value });
 
@@ -204,17 +211,17 @@ const FilterRowEditor: Component<{
       <Dropdown<string>
         class="filter-builder__property-dropdown"
         value={props.row.property}
-        options={propertyOptions(props.allKeys, props.row.property)}
+        options={propertyOptions(props.allKeys, props.row.property, t)}
         onChange={(v) => update("property", v)}
-        placeholder="property"
-        ariaLabel="Filter property"
+        placeholder={t("filter.property")}
+        ariaLabel={t("filter.propertyAria")}
       />
 
       <Dropdown
         value={props.row.operator}
-        options={OPERATORS.map((op) => ({ value: op.value as string, label: op.label }))}
+        options={OPERATORS.map((op) => ({ value: op.value as string, label: t(op.labelKey) }))}
         onChange={(v) => update("operator", v)}
-        ariaLabel="Filter operator"
+        ariaLabel={t("filter.operatorAria")}
       />
 
       <Show when={props.row.operator !== ".isEmpty" && props.row.operator !== "!.isEmpty"}>
@@ -223,17 +230,17 @@ const FilterRowEditor: Component<{
           type="text"
           value={props.row.value}
           onInput={(e) => update("value", e.currentTarget.value)}
-          placeholder="value"
+          placeholder={t("filter.value")}
         />
       </Show>
 
       <button
         class="filter-builder__remove"
         onClick={props.onRemove}
-        title="Remove filter"
-        aria-label="Remove filter"
+        title={t("filter.removeRow")}
+        aria-label={t("filter.removeRow")}
       >
-        &times;
+        ×
       </button>
     </div>
   );
@@ -249,6 +256,7 @@ const FilterGroupEditor: Component<{
   onRemove?: () => void;
   depth: number;
 }> = (props) => {
+  const t = useI18n();
   const setCombinator = (c: Combinator) =>
     props.onChange({ ...props.group, combinator: c });
 
@@ -300,19 +308,19 @@ const FilterGroupEditor: Component<{
         <Dropdown<Combinator>
           class="dropdown--sm"
           value={props.group.combinator}
-          options={COMBINATORS}
+          options={COMBINATORS.map((c) => ({ value: c.value, label: t(c.labelKey) }))}
           onChange={setCombinator}
-          ariaLabel="Match combinator"
+          ariaLabel={t("filter.combinatorAria")}
         />
-        <span class="filter-builder__group-caption">of the following are true</span>
+        <span class="filter-builder__group-caption">{t("filter.caption")}</span>
         <Show when={props.onRemove}>
           <button
             class="filter-builder__remove filter-builder__remove--group"
             onClick={() => props.onRemove?.()}
-            title="Remove group"
-            aria-label="Remove group"
+            title={t("filter.removeGroup")}
+            aria-label={t("filter.removeGroup")}
           >
-            &times;
+            ×
           </button>
         </Show>
       </div>
@@ -345,11 +353,11 @@ const FilterGroupEditor: Component<{
 
       <div class="filter-builder__add-row">
         <button class="filter-builder__add" onClick={addLeaf}>
-          + Add filter
+          {t("filter.addRow")}
         </button>
         <Show when={props.depth < MAX_DEPTH}>
           <button class="filter-builder__add" onClick={addGroup}>
-            + Add filter group
+            {t("filter.addGroup")}
           </button>
         </Show>
       </div>
@@ -365,6 +373,7 @@ const FilterBuilder: Component<{
   onSave: (filters: FilterGroup | null) => void;
   onClose: () => void;
 }> = (props) => {
+  const t = useI18n();
   const [root, setRoot] = createSignal<GroupNode>(groupToNode(props.filters));
 
   const handleSave = () => props.onSave(groupToFilter(root()));
@@ -372,13 +381,13 @@ const FilterBuilder: Component<{
   return (
     <div class="filter-builder">
       <div class="filter-builder__header">
-        <span>Filters</span>
+        <span>{t("filter.title")}</span>
         <div class="filter-builder__actions">
           <button class="filter-builder__btn" onClick={handleSave}>
-            Apply
+            {t("common.apply")}
           </button>
           <button class="filter-builder__btn filter-builder__btn--secondary" onClick={props.onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       </div>

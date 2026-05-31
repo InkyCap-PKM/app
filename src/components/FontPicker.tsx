@@ -1,6 +1,7 @@
 import { createSignal, createResource, For, Show, onCleanup } from "solid-js";
 import { X } from "lucide-solid";
 import * as ipc from "../lib/ipc";
+import { useI18n } from "../lib/i18n";
 
 let fontCache: string[] | null = null;
 
@@ -17,6 +18,7 @@ interface FontPickerProps {
 }
 
 export function FontPicker(props: FontPickerProps) {
+  const t = useI18n();
   const [fonts] = createResource(fetchFonts);
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
@@ -129,7 +131,7 @@ export function FontPicker(props: FontPickerProps) {
         type="text"
         class="settings__text-input settings__font-picker-input"
         value={props.value}
-        placeholder={props.placeholder ?? "Search fonts…"}
+        placeholder={props.placeholder ?? t("fontPicker.search")}
         onInput={(e) => handleInput(e.currentTarget.value)}
         onFocus={() => { setQuery(""); openMenu(); }}
         onKeyDown={handleKeyDown}
@@ -142,8 +144,8 @@ export function FontPicker(props: FontPickerProps) {
             e.preventDefault();
             clearValue();
           }}
-          title="Clear (use default)"
-          aria-label="Clear font"
+          title={t("fontPicker.clearTitle")}
+          aria-label={t("fontPicker.clearAria")}
           tabIndex={-1}
         >
           <X size={12} />

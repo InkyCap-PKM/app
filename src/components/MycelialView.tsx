@@ -20,6 +20,7 @@ import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
+import { useI18n } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import {
   contextNotes,
@@ -89,30 +90,31 @@ function highlightParts(
   ];
 }
 
-const LEGEND: { kind: BoxKind; label: string; color: string; dashed: boolean }[] =
+const LEGEND: { kind: BoxKind; labelKey: string; color: string; dashed: boolean }[] =
   [
-    { kind: "center", label: "Anchor note", color: "var(--accent)", dashed: false },
+    { kind: "center", labelKey: "mycelial.legend.center", color: "var(--accent)", dashed: false },
     {
       kind: "latent",
-      label: "Latent link",
+      labelKey: "mycelial.legend.latent",
       color: "var(--mycelial-latent, #c08a3e)",
       dashed: true,
     },
     {
       kind: "emergent",
-      label: "Emergent concept",
+      labelKey: "mycelial.legend.emergent",
       color: "var(--mycelial-emergent, #6f4423)",
       dashed: false,
     },
     {
       kind: "source",
-      label: "Source note",
+      labelKey: "mycelial.legend.source",
       color: "var(--mycelial-source, #6e6e6e)",
       dashed: false,
     },
   ];
 
 export default function MycelialView(props: MycelialViewProps) {
+  const t = useI18n();
   const [layout, setLayout] = createSignal<MycelialLayout | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [hoveredBox, setHoveredBox] = createSignal<string | null>(null);
@@ -844,7 +846,7 @@ export default function MycelialView(props: MycelialViewProps) {
       <div class="mycelial-view__toolbar">
         <div class="mycelial-view__toolbar-left">
           <Show when={history().length > 0}>
-            <button class="mycelial-view__btn" onClick={handleBack} title="Back">
+            <button class="mycelial-view__btn" onClick={handleBack} title={t("mycelial.back")}>
               ←
             </button>
           </Show>
@@ -852,15 +854,15 @@ export default function MycelialView(props: MycelialViewProps) {
             {centerPath()
               .replace(/\.typ$/, "")
               .split("/")
-              .pop() ?? "Mycelial View"}
+              .pop() ?? t("mycelial.titleFallback")}
           </span>
         </div>
         <div class="mycelial-view__toolbar-right">
           <label
             class="mycelial-view__depth-label"
-            title="How many wikilink hops out to scan for the corpus neighborhood"
+            title={t("mycelial.depthTooltip")}
           >
-            Depth
+            {t("mycelial.depth")}
             <Dropdown
               value={maxDepth()}
               options={[
@@ -869,13 +871,13 @@ export default function MycelialView(props: MycelialViewProps) {
                 { value: 3, label: "3" },
               ]}
               onChange={handleDepthChange}
-              ariaLabel="Corpus scan depth"
+              ariaLabel={t("mycelial.depthAria")}
             />
           </label>
           <button
             class="mycelial-view__btn"
             onClick={() => loadData()}
-            title="Recompute from the current notebox contents"
+            title={t("mycelial.recompute")}
           >
             ↻
           </button>
@@ -896,7 +898,7 @@ export default function MycelialView(props: MycelialViewProps) {
       >
         <Show
           when={!loading() && layout()}
-          fallback={<div class="mycelial-view__loading">Loading…</div>}
+          fallback={<div class="mycelial-view__loading">{t("common.loading")}</div>}
         >
           {(_layout) => (
             <>
@@ -951,21 +953,21 @@ export default function MycelialView(props: MycelialViewProps) {
           <div class="mycelial-controls__pad">
             <button
               class="mycelial-controls__btn mycelial-controls__btn--n"
-              title="Pan up"
+              title={t("mycelial.panUp")}
               onClick={() => panBy(0, PAN_STEP)}
             >
               ↑
             </button>
             <button
               class="mycelial-controls__btn mycelial-controls__btn--w"
-              title="Pan left"
+              title={t("mycelial.panLeft")}
               onClick={() => panBy(PAN_STEP, 0)}
             >
               ←
             </button>
             <button
               class="mycelial-controls__btn mycelial-controls__btn--fit"
-              title="Fit to view"
+              title={t("mycelial.fitToView")}
               onClick={() => {
                 const l = layout();
                 if (l) fitToView(l);
@@ -975,14 +977,14 @@ export default function MycelialView(props: MycelialViewProps) {
             </button>
             <button
               class="mycelial-controls__btn mycelial-controls__btn--e"
-              title="Pan right"
+              title={t("mycelial.panRight")}
               onClick={() => panBy(-PAN_STEP, 0)}
             >
               →
             </button>
             <button
               class="mycelial-controls__btn mycelial-controls__btn--s"
-              title="Pan down"
+              title={t("mycelial.panDown")}
               onClick={() => panBy(0, -PAN_STEP)}
             >
               ↓
@@ -991,7 +993,7 @@ export default function MycelialView(props: MycelialViewProps) {
           <div class="mycelial-controls__group">
             <button
               class="mycelial-controls__btn"
-              title="Zoom in"
+              title={t("mycelial.zoomIn")}
               onClick={() => zoomBy(1.2)}
             >
               +
@@ -1001,7 +1003,7 @@ export default function MycelialView(props: MycelialViewProps) {
             </span>
             <button
               class="mycelial-controls__btn"
-              title="Zoom out"
+              title={t("mycelial.zoomOut")}
               onClick={() => zoomBy(1 / 1.2)}
             >
               −
@@ -1019,10 +1021,10 @@ export default function MycelialView(props: MycelialViewProps) {
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div class="mycelial-picker__header">
-                Link "{p().latent.term}" → {p().latent.target_name}
+                {t("mycelial.picker.header", { term: p().latent.term, target: p().latent.target_name })}
               </div>
               <div class="mycelial-picker__hint">
-                Open a note to wrap the mention in <code>[[ ]]</code>:
+                {t("mycelial.picker.hintBefore")} <code>[[ ]]</code>:
               </div>
               <For each={p().latent.mentions}>
                 {(m) => (
@@ -1060,7 +1062,7 @@ export default function MycelialView(props: MycelialViewProps) {
                 class="mycelial-context-menu__item"
                 onClick={() => handleAddStopword(cm().term)}
               >
-                Add "{cm().term}" to stopwords
+                {t("mycelial.addStopword", { term: cm().term })}
               </button>
             </div>
           )}
@@ -1081,9 +1083,9 @@ export default function MycelialView(props: MycelialViewProps) {
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <div class="mycelial-picker__header">New page from phrase</div>
+                <div class="mycelial-picker__header">{t("mycelial.namer.title")}</div>
                 <div class="mycelial-picker__hint">
-                  This is a recurring phrase. Use as-is or alter it for a new page title?
+                  {t("mycelial.namer.hint")}
                 </div>
                 <input
                   class="mycelial-namer__input"
@@ -1111,14 +1113,14 @@ export default function MycelialView(props: MycelialViewProps) {
                     class="app-modal__btn app-modal__btn--secondary"
                     onClick={() => setNamer(null)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                   <button
                     class="app-modal__btn app-modal__btn--primary"
                     disabled={!namerDraft().trim()}
                     onClick={submit}
                   >
-                    Create
+                    {t("common.create")}
                   </button>
                 </div>
               </div>
@@ -1136,8 +1138,8 @@ export default function MycelialView(props: MycelialViewProps) {
           <button
             class="mycelial-view__legend-help-btn"
             classList={{ "is-active": helpOpen() }}
-            title="About the Mycelial View"
-            aria-label="About the Mycelial View"
+            title={t("mycelial.legendHelpTitle")}
+            aria-label={t("mycelial.legendHelpTitle")}
             aria-expanded={helpOpen()}
             onClick={() => setHelpOpen((v) => !v)}
           >
@@ -1150,61 +1152,52 @@ export default function MycelialView(props: MycelialViewProps) {
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div class="mycelial-view__help-title">
-                The Mycelial View
+                {t("mycelial.help.title")}
               </div>
-	      <div class="mycelial-view__help-heading">Where Does Your Knowledge Want to Grow?</div>
+	      <div class="mycelial-view__help-heading">{t("mycelial.help.heading.grow")}</div>
               <p class="mycelial-view__help-lead">
-                This view helps you identify what you have not yet written in your notebox. Mycelial View is computed around the note you opened it from (the anchor) but it is not a graphical map of existing links.
+                {t("mycelial.help.lead")}
               </p>
 
-              <div class="mycelial-view__help-heading">The Nodes</div>
+              <div class="mycelial-view__help-heading">{t("mycelial.help.heading.nodes")}</div>
               <ul class="mycelial-view__help-list">
                 <li>
-                  <b>Anchor note:</b> the note this view is built around.
-                  Everything else is found relative to it.
+                  <b>{t("mycelial.help.anchorLabel")}</b> {t("mycelial.help.anchorBody")}
                 </li>
                 <li>
-                  <b>Source notes:</b> other existing notes that contribute to the signal. Click one to rebuild the view around it.
+                  <b>{t("mycelial.help.sourceLabel")}</b> {t("mycelial.help.sourceBody")}
                 </li>
                 <li>
-                  <b>Latent link:</b> an existing page that other notes
-                  mention by name without linking to it. Click it to see
-                  those mentions, then open one to add the wikilink {" "}
-                  <code>[[ ]]</code> in place.
+                  <b>{t("mycelial.help.latentLabel")}</b> {t("mycelial.help.latentBodyBefore")} {" "}
+                  <code>[[ ]]</code> {t("mycelial.help.latentBodyAfter")}
                 </li>
                 <li>
-                  <b>Emergent concept:</b> a phrase that recurs across
-                  several notes but has no page yet. Click it to create
-                  that page (a long phrase will prompt you to trim its title first).
+                  <b>{t("mycelial.help.emergentLabel")}</b> {t("mycelial.help.emergentBody")}
                 </li>
               </ul>
 
-              <div class="mycelial-view__help-heading">The Paths</div>
+              <div class="mycelial-view__help-heading">{t("mycelial.help.heading.paths")}</div>
               <p>
-                A path (connective line) means two nodes share a signal. Thicker paths are
-                stronger signals; faint grey paths are ordinary wikilinks
-                between notes. Hovering a node highlights just its paths.
+                {t("mycelial.help.pathsBody")}
               </p>
 
               <div class="mycelial-view__help-heading">
-                Why these Appear
+                {t("mycelial.help.heading.why")}
               </div>
               <p>
-                InkyCap looks at the anchor note plus its neighbourhood (notes it links to and the notes that read as most similar to it) and finds words or short phrases that recur in that neighbourhood in a distinctive way. If a recurring phrase matches an existing page, it surfaces as a latent link; if it has no page, it surfaces as an emergent concept. That's why a concept can appear even though you never wrote it as a heading—it was repeated often enough to stand out.
+                {t("mycelial.help.whyBody")}
               </p>
 
-              <div class="mycelial-view__help-heading">Controls</div>
+              <div class="mycelial-view__help-heading">{t("mycelial.help.heading.controls")}</div>
               <ul class="mycelial-view__help-list">
                 <li>
-                  <b>Legend:</b> click a type to hide or show it.
+                  <b>{t("mycelial.help.legendLabel")}</b> {t("mycelial.help.legendBody")}
                 </li>
                 <li>
-                  <b>Depth:</b> how many wikilink hops out to scan.
+                  <b>{t("mycelial.help.depthLabel")}</b> {t("mycelial.help.depthBody")}
                 </li>
                 <li>
-                  <b>Concept Filtering</b> (right panel): see which words were
-                  held back from concept detection, rescue ones that matter, and
-                  add your own words to ignore.
+                  <b>{t("mycelial.help.conceptFilteringLabel")}</b> {t("mycelial.help.conceptFilteringBody")}
                 </li>
               </ul>
             </div>
@@ -1220,10 +1213,10 @@ export default function MycelialView(props: MycelialViewProps) {
               }}
               title={
                 item.kind === "center"
-                  ? "Find the anchor note"
+                  ? t("mycelial.findAnchor")
                   : hidden().has(item.kind)
-                    ? `Show ${item.label.toLowerCase()}`
-                    : `Hide ${item.label.toLowerCase()}`
+                    ? t("mycelial.showKind", { label: t(item.labelKey).toLowerCase() })
+                    : t("mycelial.hideKind", { label: t(item.labelKey).toLowerCase() })
               }
               onClick={() => {
                 // The anchor note is always present and can't be filtered
@@ -1247,7 +1240,7 @@ export default function MycelialView(props: MycelialViewProps) {
                 }}
                 style={{ "border-color": item.color }}
               />
-              {item.label}
+              {t(item.labelKey)}
             </button>
           )}
         </For>

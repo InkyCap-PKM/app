@@ -2,7 +2,7 @@ import { Component, createSignal, createResource, For, Show } from "solid-js";
 import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { activeEditorView } from "../stores/editor";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 import { ArrowLeft } from "lucide-solid";
 import CitationPicker from "./CitationPicker";
 
@@ -12,6 +12,7 @@ interface RefNotePickerProps {
 }
 
 const RefNotePicker: Component<RefNotePickerProps> = (props) => {
+  const t = useI18n();
   const [selectedEntry, setSelectedEntry] = createSignal<BibEntry | null>(null);
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [filter, setFilter] = createSignal("");
@@ -113,14 +114,14 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
               <span class="ref-note-picker__ref-label">
                 @{selectedEntry()?.key}
                 <Show when={selectedEntry()?.title}>
-                  {" "}&mdash; {selectedEntry()!.title}
+                  {" — "}{selectedEntry()!.title}
                 </Show>
               </span>
             </div>
             <input
               class="cmd-palette__input"
               type="text"
-              placeholder="Filter notes…"
+              placeholder={t("refNotes.filterPlaceholder")}
               value={filter()}
               onInput={(e) => {
                 setFilter(e.currentTarget.value);
@@ -135,7 +136,7 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
                 <div class="cmd-palette__empty">{t("refNotes.loadingNotes")}</div>
               </Show>
               <Show when={notes.error}>
-                <div class="cmd-palette__empty">Error: {String(notes.error)}</div>
+                <div class="cmd-palette__empty">{t("refNotes.error", { error: String(notes.error) })}</div>
               </Show>
               <Show when={!notes.loading && !notes.error}>
                 <Show

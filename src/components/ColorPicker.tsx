@@ -5,6 +5,7 @@
 
 import { Show } from "solid-js";
 import { passesNonTextContrast } from "../lib/contrast";
+import { useI18n } from "../lib/i18n";
 
 // Backgrounds the accent renders against. Kept in sync with themes.css
 // (`--bg-primary` for light and dark default palettes). If those values
@@ -16,15 +17,16 @@ export function ColorPicker(props: {
   value: string;
   onChange: (hex: string) => void;
 }) {
+  const t = useI18n();
   const failsLight = () => !passesNonTextContrast(props.value, LIGHT_BG);
   const failsDark = () => !passesNonTextContrast(props.value, DARK_BG);
   const showWarning = () => failsLight() || failsDark();
   const warningText = () => {
     if (failsLight() && failsDark()) {
-      return "Low contrast against both light and dark backgrounds.";
+      return t("colorPicker.warnBoth");
     }
-    if (failsLight()) return "Low contrast against the light background.";
-    return "Low contrast against the dark background.";
+    if (failsLight()) return t("colorPicker.warnLight");
+    return t("colorPicker.warnDark");
   };
 
   return (
@@ -35,7 +37,7 @@ export function ColorPicker(props: {
           class="color-picker__wheel"
           value={props.value}
           onInput={(e) => props.onChange(e.currentTarget.value)}
-          aria-label="Custom accent color"
+          aria-label={t("colorPicker.ariaWheel")}
         />
         <input
           type="text"

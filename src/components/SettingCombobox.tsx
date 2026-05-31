@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import { useI18n } from "../lib/i18n";
 
 interface SettingComboboxProps {
   label: string;
@@ -16,6 +17,7 @@ interface SettingComboboxProps {
 }
 
 export function SettingCombobox(props: SettingComboboxProps) {
+  const t = useI18n();
   const [open, setOpen] = createSignal(false);
   const [flipUp, setFlipUp] = createSignal(false);
   const step = () => props.step ?? 1;
@@ -53,7 +55,7 @@ export function SettingCombobox(props: SettingComboboxProps) {
         <label class="settings__label">
           {props.label}
           <Show when={props.scope === "notebox"}>
-            <span class="settings__scope-badge">this notebox</span>
+            <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
           </Show>
         </label>
         <span class="settings__description">{props.description}</span>
@@ -94,7 +96,7 @@ export function SettingCombobox(props: SettingComboboxProps) {
             }
             setOpen(!open());
           }}
-          aria-label="Show presets"
+          aria-label={t("settings.combobox.showPresets")}
         >
           <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
             <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>

@@ -1,4 +1,5 @@
 import { Component, createSignal, createMemo, For } from "solid-js";
+import { useI18n } from "../lib/i18n";
 import {
   // Science
   Atom,
@@ -344,6 +345,7 @@ interface LucideIconPickerProps {
 }
 
 const LucideIconPicker: Component<LucideIconPickerProps> = (props) => {
+  const t = useI18n();
   const [open, setOpen] = createSignal(false);
   const [filter, setFilter] = createSignal("");
   const [dropdownPos, setDropdownPos] = createSignal({ top: 0, left: 0 });
@@ -385,14 +387,14 @@ const LucideIconPicker: Component<LucideIconPickerProps> = (props) => {
         type="button"
         ref={triggerRef}
         onClick={toggleOpen}
-        title="Pick an icon"
+        title={t("iconPicker.trigger")}
       >
         {selectedName()
           ? (() => {
               const Comp = LUCIDE_ICON_MAP[selectedName()!];
-              return Comp ? <Comp size={16} /> : "Pick icon";
+              return Comp ? <Comp size={16} /> : t("iconPicker.pick");
             })()
-          : "Pick icon"}
+          : t("iconPicker.pick")}
       </button>
       {open() && (
         <div
@@ -406,7 +408,7 @@ const LucideIconPicker: Component<LucideIconPickerProps> = (props) => {
           <input
             class="icon-picker__search"
             type="text"
-            placeholder="Filter icons..."
+            placeholder={t("iconPicker.filter")}
             value={filter()}
             onInput={(e) => setFilter(e.currentTarget.value)}
             autofocus
@@ -438,7 +440,7 @@ const LucideIconPicker: Component<LucideIconPickerProps> = (props) => {
               setFilter("");
             }}
           >
-            Clear icon
+            {t("iconPicker.clear")}
           </button>
         </div>
       )}

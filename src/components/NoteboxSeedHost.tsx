@@ -7,6 +7,7 @@ import {
   activeNoteboxSeed,
   resolveNoteboxSeed,
 } from "../stores/notebox-seed";
+import { useI18n } from "../lib/i18n";
 
 /** Extract the trailing folder segment of an absolute path for display. */
 function basename(path: string): string {
@@ -16,6 +17,7 @@ function basename(path: string): string {
 }
 
 const NoteboxSeedHost: Component = () => {
+  const t = useI18n();
   // The selected source path. Defaults to the most-recently-opened source
   // — the first entry of `sources`, which the caller sorts by recency.
   const [selected, setSelected] = createSignal<string>("");
@@ -72,17 +74,15 @@ const NoteboxSeedHost: Component = () => {
             aria-labelledby="notebox-seed-title"
           >
             <div class="app-modal__header">
-              <h3 id="notebox-seed-title">Copy from an existing notebox?</h3>
+              <h3 id="notebox-seed-title">{t("noteboxSeed.title")}</h3>
             </div>
             <div class="app-modal__body">
               <p class="app-modal__text">
-                Adding <strong>{basename(r().targetPath)}</strong>. You can
-                copy its settings, creation rules, scaffolds, and property
-                types from one of your other noteboxes, or start with the
-                defaults.
+                {t("noteboxSeed.addingBefore")}{" "}
+                <strong>{basename(r().targetPath)}</strong>{t("noteboxSeed.addingAfter")}
               </p>
               <label class="app-modal__label" for="notebox-seed-source">
-                Copy from
+                {t("noteboxSeed.copyFrom")}
               </label>
               <select
                 id="notebox-seed-source"
@@ -99,9 +99,7 @@ const NoteboxSeedHost: Component = () => {
                 </For>
               </select>
               <span class="app-modal__hint">
-                Absolute paths inside the copied settings (bibliography
-                file, custom CSL) are only kept if they still resolve on
-                this machine.
+                {t("noteboxSeed.hint")}
               </span>
             </div>
             <div class="app-modal__footer">
@@ -110,13 +108,13 @@ const NoteboxSeedHost: Component = () => {
                 onClick={copy}
                 disabled={!selected()}
               >
-                Copy and open
+                {t("noteboxSeed.copyAndOpen")}
               </button>
               <button
                 class="app-modal__btn app-modal__btn--primary"
                 onClick={skip}
               >
-                Use defaults
+                {t("noteboxSeed.useDefaults")}
               </button>
             </div>
           </div>

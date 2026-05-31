@@ -16,7 +16,7 @@ import {
   ChevronDown,
 } from "lucide-solid";
 import type { AgendaItem } from "../lib/types";
-import { t } from "../lib/i18n";
+import { useI18n } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { formatUserDate } from "../lib/dates";
@@ -60,6 +60,7 @@ function todayISO(): string {
 }
 
 const AgendaList: Component<AgendaListProps> = (props) => {
+  const t = useI18n();
   const [sortMode, setSortMode] = createSignal<SortMode>("due-asc");
   const [taskFilter, setTaskFilter] = createSignal<TaskListFilter>("all");
   const [selectedTags, setSelectedTags] = createSignal<Set<string>>(new Set());
@@ -447,7 +448,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                 setRowContextMenu(null);
               }}
             >
-              Open
+              {t("common.open")}
             </button>
             <button
               class="context-menu__item"
@@ -456,7 +457,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                 setRowContextMenu(null);
               }}
             >
-              Open in new tab
+              {t("wikilink.menu.openNewTab")}
             </button>
           </div>
         )}
