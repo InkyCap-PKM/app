@@ -113,8 +113,7 @@ pub async fn run_external_tool(
         .read()
         .await
         .as_ref()
-        // path-stringification-ok: subprocess argv for an external tool, not an IPC payload
-        .map(|p| p.display().to_string())
+        .map(|p| p.display().to_string()) // path-stringification-ok: subprocess argv for an external tool, not an IPC payload
         .unwrap_or_default();
     let file = file_path.unwrap_or_default();
 

@@ -52,7 +52,6 @@ fn plain_options() -> BookExportOptions {
         date: None,
         abstract_text: None,
         toc_depth: 2,
-        number_chapters: false,
         inject_chapter_heading: InjectChapterHeading::Fallback,
         wikilink_mode: BookWikilinkMode::Internal,
         include_title_page: false,
@@ -97,7 +96,6 @@ fn merged_book_with_contributors_and_credit_compiles() {
         date: Some("2026-01-01".to_string()),
         abstract_text: None,
         toc_depth: 2,
-        number_chapters: true,
         inject_chapter_heading: InjectChapterHeading::Fallback,
         wikilink_mode: BookWikilinkMode::Internal,
         include_title_page: true,
@@ -108,7 +106,7 @@ fn merged_book_with_contributors_and_credit_compiles() {
     };
 
     let source = build_book_source(
-        &chapters, &options, None, None, None, None, false, None, None,
+        &chapters, &options, None, None, None, None, None, false, None, None,
     );
 
     // The byline + CRediT calls must be present in the emitted source…
@@ -141,7 +139,6 @@ fn credit_statement_suppressed_when_disabled() {
         date: None,
         abstract_text: None,
         toc_depth: 2,
-        number_chapters: false,
         inject_chapter_heading: InjectChapterHeading::Fallback,
         wikilink_mode: BookWikilinkMode::Plain,
         include_title_page: true,
@@ -150,7 +147,7 @@ fn credit_statement_suppressed_when_disabled() {
         include_bibliography: false,
         include_credit_statement: false,
     };
-    let source = build_book_source(&[], &options, None, None, None, None, false, None, None);
+    let source = build_book_source(&[], &options, None, None, None, None, None, false, None, None);
     assert!(source.contains("#contributors-byline("), "byline still rendered");
     assert!(!source.contains("#credit-statement("), "credit statement suppressed");
     // Document author derived from the contributor roster.
@@ -172,7 +169,7 @@ fn single_chapter_with_spaced_paren_stem_compiles() {
     let source = build_book_source(
         &[chapter],
         &plain_options(),
-        None, None, None, None, false, None, None,
+        None, None, None, None, None, false, None, None,
     );
     assert!(source.contains("chapters: (\"Knowledge Organization (KO)\",)"), "one-element array");
     assert!(source.contains("#chapter-anchor(\"Knowledge Organization (KO)\")"), "fn-form anchor");

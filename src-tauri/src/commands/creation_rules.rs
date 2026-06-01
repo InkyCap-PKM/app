@@ -427,8 +427,8 @@ pub async fn prepare_scaffold_insert(
     let scaffold_path = crate::notebox_package::scaffolds_dir(root).join(&filename);
     if !storage.exists(&scaffold_path).await {
         return Err(InkyCapError::FileNotFound(
-            scaffold_path.display().to_string(),
-        )); // path-stringification-ok: error message, not IPC
+            scaffold_path.display().to_string(), // path-stringification-ok: error message, not IPC
+        ));
     }
 
     // The cursor/selection are no longer used to position the insert — a
