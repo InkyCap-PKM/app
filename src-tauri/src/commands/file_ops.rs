@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tauri::{Emitter, Manager, State};
 
 use crate::errors::InkyCapError;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
@@ -21,14 +21,16 @@ pub async fn copy_to_attachments(
     data_base64: String,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
     use base64::Engine;
 
     let data = base64::engine::general_purpose::STANDARD
         .decode(&data_base64)
         .map_err(|e| InkyCapError::InvalidPath(format!("Invalid base64: {}", e)))?;
 
-    write_to_attachments(&filename, &data, &app, &state).await
+    write_to_attachments(&filename, &data, &app, &session).await
 }
 
 /// Read file paths from the system clipboard. Used by the paste
@@ -57,9 +59,7 @@ pub async fn copy_to_attachments(
 /// install. Returns an empty vector if the clipboard has no file
 /// entries, which the caller treats as "nothing special to do".
 #[tauri::command]
-pub async fn read_clipboard_file_paths(
-    app: tauri::AppHandle,
-) -> Result<Vec<String>, InkyCapError> {
+pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<String>, InkyCapError> {
     #[cfg(target_os = "linux")]
     {
         let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
@@ -67,9 +67,7 @@ pub async fn read_clipboard_file_paths(
             let result = linux::read_clipboard_uris_blocking();
             let _ = tx.send(result);
         })
-        .map_err(|e| {
-            InkyCapError::InvalidPath(format!("run_on_main_thread failed: {}", e))
-        })?;
+        .map_err(|e| InkyCapError::InvalidPath(format!("run_on_main_thread failed: {}", e)))?;
         let paths = rx
             .await
             .map_err(|_| InkyCapError::InvalidPath("clipboard channel closed".into()))?;
@@ -113,7 +111,9 @@ pub async fn read_clipboard_file_paths(
 pub async fn paste_clipboard_to_attachments(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
     // 1. File references — "copy a file in the file manager, then paste".
     let uris = read_clipboard_file_paths(app.clone()).await?;
     if !uris.is_empty() {
@@ -128,7 +128,7 @@ pub async fn paste_clipboard_to_attachments(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "pasted".to_string());
-            saved.push(write_to_attachments(&filename, &data, &app, &state).await?);
+            saved.push(write_to_attachments(&filename, &data, &app, &session).await?);
         }
         if !saved.is_empty() {
             return Ok(saved);
@@ -155,7 +155,9 @@ pub async fn paste_clipboard_to_attachments(
                 .map(|d| d.as_millis())
                 .unwrap_or(0);
             let name = format!("pasted-{ts}.png");
-            return Ok(vec![write_to_attachments(&name, &bytes, &app, &state).await?]);
+            return Ok(vec![
+                write_to_attachments(&name, &bytes, &app, &session).await?,
+            ]);
         }
     }
 
@@ -418,7 +420,9 @@ pub async fn copy_path_to_attachments(
     source_path: String,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
     let src = PathBuf::from(&source_path);
     // SEC-1 gate (audit 2026-05-10): the path must come from a recent OS
     // drop event registered by the run-loop listener in `lib.rs` (which
@@ -444,7 +448,7 @@ pub async fn copy_path_to_attachments(
             InkyCapError::InvalidPath(format!("Source has no filename: {}", source_path))
         })?;
     let data = std::fs::read(&src)?;
-    write_to_attachments(&filename, &data, &app, &state).await
+    write_to_attachments(&filename, &data, &app, &session).await
 }
 
 /// Open a native file-picker and copy each selected file into the notebox's
@@ -462,7 +466,9 @@ pub async fn copy_path_to_attachments(
 pub async fn pick_and_upload_to_attachments(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
     use tauri_plugin_dialog::DialogExt;
 
     let app_for_picker = app.clone();
@@ -503,7 +509,7 @@ pub async fn pick_and_upload_to_attachments(
                 InkyCapError::InvalidPath(format!("source has no filename: {}", pb.display()))
             })?;
         let data = tokio::fs::read(&pb).await?;
-        let rel = write_to_attachments(&filename, &data, &app, &state).await?;
+        let rel = write_to_attachments(&filename, &data, &app, &session).await?;
         saved.push(rel);
     }
     Ok(saved)
@@ -515,10 +521,13 @@ async fn write_to_attachments(
     filename: &str,
     data: &[u8],
     app: &tauri::AppHandle,
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Result<String, InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     // Defense in depth: reject filenames that try to escape the attachment
@@ -534,7 +543,7 @@ async fn write_to_attachments(
         )));
     }
 
-    let attachment_folder = state
+    let attachment_folder = session
         .notebox_settings
         .read()
         .await
@@ -601,9 +610,11 @@ pub async fn create_folder(
     name: String,
     parent: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let parent_dir = if parent.is_empty() {
@@ -630,13 +641,15 @@ pub async fn rename_file(
     old_path: String,
     new_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
-    let parent = old.parent().ok_or_else(|| {
-        InkyCapError::InvalidPath("No parent directory".to_string())
-    })?;
+    let parent = old
+        .parent()
+        .ok_or_else(|| InkyCapError::InvalidPath("No parent directory".to_string()))?;
 
     let new_name_with_ext = if !is_dir && old.extension().is_some() && !new_name.contains('.') {
         format!(
@@ -659,11 +672,11 @@ pub async fn rename_file(
     storage.rename_file(&old, &new_path).await?;
 
     if is_dir {
-        reindex_directory(&old, &new_path, &storage, &state).await;
+        reindex_directory(&old, &new_path, &storage, &session).await;
     } else {
         let content = storage.read_file(&new_path).await?;
-        remove_from_indices(&old, &state).await;
-        reindex_note(&new_path, &content, &state).await;
+        remove_from_indices(&old, &session).await;
+        reindex_note(&new_path, &content, &session).await;
     }
 
     Ok(to_frontend_string(&new_path))
@@ -675,14 +688,16 @@ pub async fn rename_and_update_links(
     old_path: String,
     new_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
 
-    let parent = old.parent().ok_or_else(|| {
-        InkyCapError::InvalidPath("No parent directory".to_string())
-    })?;
+    let parent = old
+        .parent()
+        .ok_or_else(|| InkyCapError::InvalidPath("No parent directory".to_string()))?;
 
     let new_name_with_ext = if !is_dir && old.extension().is_some() && !new_name.contains('.') {
         format!(
@@ -707,7 +722,7 @@ pub async fn rename_and_update_links(
     // arbitrary; the rewrite only touches files other than `old`/`new`,
     // so either ordering converges.)
     if !is_dir {
-        rewrite_backlinks_for_rename(&old, &new_path, &storage, &*state).await?;
+        rewrite_backlinks_for_rename(&old, &new_path, &storage, &session).await?;
         // Phase B: rebase relative path arguments in this note's own
         // source to notebox-root-absolute, anchored at the pre-rename
         // parent. For a same-folder rename the anchor is unchanged so
@@ -719,11 +734,11 @@ pub async fn rename_and_update_links(
     storage.rename_file(&old, &new_path).await?;
 
     if is_dir {
-        reindex_directory(&old, &new_path, &storage, &state).await;
+        reindex_directory(&old, &new_path, &storage, &session).await;
     } else {
         let content = storage.read_file(&new_path).await?;
-        remove_from_indices(&old, &state).await;
-        reindex_note(&new_path, &content, &state).await;
+        remove_from_indices(&old, &session).await;
+        reindex_note(&new_path, &content, &session).await;
     }
 
     Ok(to_frontend_string(&new_path))
@@ -735,9 +750,11 @@ pub async fn move_file(
     old_path: String,
     new_folder: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let old = sanitize_notebox_arg(&old_path)?;
@@ -774,8 +791,8 @@ pub async fn move_file(
 
     // Update indices
     let content = storage.read_file(&new_path).await?;
-    remove_from_indices(&old, &state).await;
-    reindex_note(&new_path, &content, &state).await;
+    remove_from_indices(&old, &session).await;
+    reindex_note(&new_path, &content, &session).await;
 
     Ok(to_frontend_string(&new_path))
 }
@@ -794,9 +811,11 @@ pub async fn move_folder(
     old_path: String,
     new_parent: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let old = sanitize_notebox_arg(&old_path)?;
@@ -849,7 +868,7 @@ pub async fn move_folder(
 
     storage.rename_file(&old, &new_path).await?;
 
-    reindex_directory(&old, &new_path, &storage, &state).await;
+    reindex_directory(&old, &new_path, &storage, &session).await;
 
     Ok(to_frontend_string(&new_path))
 }
@@ -859,12 +878,14 @@ pub async fn move_folder(
 pub async fn delete_file(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     storage.move_to_trash(&path_buf).await?;
-    remove_from_indices(&path_buf, &state).await;
+    remove_from_indices(&path_buf, &session).await;
 
     Ok(())
 }
@@ -874,13 +895,15 @@ pub async fn delete_file(
 pub async fn delete_folder(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     // Remove all indexed notes within this folder
     let notes_in_folder: Vec<PathBuf> = {
-        let pi = state.property_index.read().await;
+        let pi = session.property_index.read().await;
         pi.notes
             .keys()
             .filter(|p| p.starts_with(&path_buf))
@@ -888,7 +911,7 @@ pub async fn delete_folder(
             .collect()
     };
     for note_path in &notes_in_folder {
-        remove_from_indices(note_path, &state).await;
+        remove_from_indices(note_path, &session).await;
     }
 
     storage.move_to_trash(&path_buf).await?;
@@ -916,11 +939,7 @@ pub async fn delete_folder(
 /// for two well-known prefixes. The function-form regex below mirrors
 /// `WIKILINK_CALL_RE` in `src/editor/typst-decorations/wikilink-suggest.ts`
 /// so the two stay in lockstep.
-pub(crate) fn update_wikilinks_in_content(
-    content: &str,
-    old_stem: &str,
-    new_stem: &str,
-) -> String {
+pub(crate) fn update_wikilinks_in_content(content: &str, old_stem: &str, new_stem: &str) -> String {
     let after_brackets = rewrite_bracket_wikilinks(content, old_stem, new_stem);
     rewrite_func_wikilinks(&after_brackets, old_stem, new_stem)
 }
@@ -1132,7 +1151,7 @@ pub(crate) async fn rewrite_backlinks_for_rename(
     old_path: &std::path::Path,
     new_path: &std::path::Path,
     storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
-    state: &AppState,
+    session: &NoteboxSession,
 ) -> Result<(), InkyCapError> {
     let old_stem = match old_path.file_stem() {
         Some(s) => s.to_string_lossy().into_owned(),
@@ -1147,7 +1166,7 @@ pub(crate) async fn rewrite_backlinks_for_rename(
     }
 
     let backlinks = {
-        let link_index = state.link_index.read().await;
+        let link_index = session.link_index.read().await;
         link_index.get_backlinks(&old_path.to_path_buf())
     };
 
@@ -1158,7 +1177,7 @@ pub(crate) async fn rewrite_backlinks_for_rename(
         let updated = update_wikilinks_in_content(&content, &old_stem, &new_stem);
         if updated != content {
             storage.write_file(referencing_path, &updated).await?;
-            state.reindex_note(referencing_path, &updated).await;
+            session.reindex_note(referencing_path, &updated).await;
         }
     }
 
@@ -1166,43 +1185,46 @@ pub(crate) async fn rewrite_backlinks_for_rename(
 }
 
 /// Local alias for the unified indexing helper on [`AppState`]. All note
-/// mutations in this module route through `state.reindex_note` — see
+/// mutations in this module route through `session.reindex_note` — see
 /// `state::AppState::reindex_note` for the canonical implementation and the
 /// cache write-through invariant.
-async fn reindex_note(
-    path: &std::path::Path,
-    content: &str,
-    state: &State<'_, AppState>,
-) {
-    state.reindex_note(path, content).await;
+async fn reindex_note(path: &std::path::Path, content: &str, session: &NoteboxSession) {
+    session.reindex_note(path, content).await;
 }
 
 /// Local alias for `AppState::remove_from_indices`. Kept so existing call
 /// sites read naturally; any new code should prefer calling the method on
 /// `state` directly.
-async fn remove_from_indices(path: &std::path::Path, state: &State<'_, AppState>) {
-    state.remove_from_indices(path).await;
+async fn remove_from_indices(path: &std::path::Path, session: &NoteboxSession) {
+    session.remove_from_indices(path).await;
 }
 
 async fn reindex_directory(
     old_dir: &std::path::Path,
     new_dir: &std::path::Path,
     storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) {
     // List notes at the new location (renamed dir already exists on disk)
-    let new_notes = storage.list_files(new_dir, "*.typ").await.unwrap_or_default();
-    let old_abs = storage.resolve_path(old_dir).unwrap_or_else(|_| old_dir.to_path_buf());
-    let new_abs = storage.resolve_path(new_dir).unwrap_or_else(|_| new_dir.to_path_buf());
+    let new_notes = storage
+        .list_files(new_dir, "*.typ")
+        .await
+        .unwrap_or_default();
+    let old_abs = storage
+        .resolve_path(old_dir)
+        .unwrap_or_else(|_| old_dir.to_path_buf());
+    let new_abs = storage
+        .resolve_path(new_dir)
+        .unwrap_or_else(|_| new_dir.to_path_buf());
 
     // For each note under the new dir, compute what its old path was and remove that
     for new_note in &new_notes {
         if let Ok(suffix) = new_note.strip_prefix(&new_abs) {
             let old_note = old_abs.join(suffix);
-            state.remove_from_indices(&old_note).await;
+            session.remove_from_indices(&old_note).await;
         }
         if let Ok(content) = storage.read_file(new_note).await {
-            state.reindex_note(new_note, &content).await;
+            session.reindex_note(new_note, &content).await;
         }
     }
 }
@@ -1220,21 +1242,15 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     };
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
-            .arg(&dir)
-            .spawn()?;
+        std::process::Command::new("xdg-open").arg(&dir).spawn()?;
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(&dir)
-            .spawn()?;
+        std::process::Command::new("open").arg(&dir).spawn()?;
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
-            .arg(&dir)
-            .spawn()?;
+        std::process::Command::new("explorer").arg(&dir).spawn()?;
     }
     Ok(())
 }
@@ -1308,7 +1324,9 @@ pub async fn open_url_externally(url: String) -> Result<(), InkyCapError> {
 
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open").arg(trimmed).spawn()?;
+        std::process::Command::new("xdg-open")
+            .arg(trimmed)
+            .spawn()?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -1376,11 +1394,7 @@ mod tests {
         let notebox = TempDir::new().unwrap();
         std::fs::create_dir_all(notebox.path().join("journal")).unwrap();
         let note_abs_pb = notebox.path().join("journal/jan.typ");
-        std::fs::write(
-            &note_abs_pb,
-            "= Jan\n\n#image(\"daisy.png\")\n",
-        )
-        .unwrap();
+        std::fs::write(&note_abs_pb, "= Jan\n\n#image(\"daisy.png\")\n").unwrap();
 
         let storage = Arc::new(
             crate::storage::local::LocalNoteboxStorage::new(notebox.path().to_path_buf()).unwrap(),
@@ -1460,7 +1474,10 @@ mod tests {
     fn test_update_wikilinks_multiple() {
         let content = "Start [[Old Note]] middle [[Old Note#heading]] end.";
         let result = update_wikilinks_in_content(content, "Old Note", "New Note");
-        assert_eq!(result, "Start [[New Note]] middle [[New Note#heading]] end.");
+        assert_eq!(
+            result,
+            "Start [[New Note]] middle [[New Note#heading]] end."
+        );
     }
 
     #[test]

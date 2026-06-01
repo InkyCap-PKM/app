@@ -1,11 +1,11 @@
 pub mod app_paths;
 pub mod backup;
-pub mod collection_parser;
 pub mod bookmarks;
 pub mod cache;
-pub mod corpus_stats;
+pub mod collection_parser;
 pub mod commands;
 pub mod config;
+pub mod corpus_stats;
 pub mod creation_rules;
 pub mod errors;
 pub mod events;
@@ -15,18 +15,18 @@ pub mod git;
 pub mod link_index;
 pub mod markdown;
 pub mod models;
+pub mod notebox_health;
+pub mod notebox_package;
+pub mod notebox_settings;
 pub mod property_types;
+pub mod scaffolds;
 pub mod scanner;
 pub mod search;
 pub mod settings;
 pub mod state;
 pub mod storage;
-pub mod scaffolds;
 pub mod typst_packages;
 pub mod typst_pipeline;
-pub mod notebox_health;
-pub mod notebox_package;
-pub mod notebox_settings;
 pub mod watcher;
 pub mod window_state;
 
@@ -57,8 +57,7 @@ fn install_gtk_headerbar(window: &tauri::WebviewWindow) {
     // fires). This is the real cause of "the titlebar looks native but
     // the window is immovable" under tao.
     header.add_events(
-        gtk::gdk::EventMask::BUTTON_PRESS_MASK
-            | gtk::gdk::EventMask::BUTTON_RELEASE_MASK,
+        gtk::gdk::EventMask::BUTTON_PRESS_MASK | gtk::gdk::EventMask::BUTTON_RELEASE_MASK,
     );
     gtk_window.set_titlebar(Some(&header));
     header.show_all();
@@ -139,7 +138,6 @@ fn install_gtk_headerbar(window: &tauri::WebviewWindow) {
             }
         });
     }
-
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -230,6 +228,8 @@ pub fn run() {
             commands::git::git_pending_review,
             commands::notebox::open_notebox,
             commands::notebox::open_documentation_notebox,
+            commands::notebox::list_open_noteboxes,
+            commands::notebox::validate_notebox_location,
             commands::notebox::get_notebox_info,
             commands::notebox::get_saved_notebox_path,
             commands::notebox::get_notebox_registry,
@@ -412,6 +412,25 @@ pub fn run() {
             {
                 let state = handle.state::<state::AppState>();
                 state.register_drop_paths(paths.iter().cloned());
+            }
+
+            // When a window is destroyed, drop its per-window notebox session so
+            // its file watcher, health monitor, and in-memory indexes are freed.
+            // Keyed by window label — each window owns exactly one session.
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = &event
+            {
+                let handle = handle.clone();
+                let label = label.clone();
+                tauri::async_runtime::spawn(async move {
+                    handle
+                        .state::<state::AppState>()
+                        .remove_session(&label)
+                        .await;
+                });
             }
         });
 }

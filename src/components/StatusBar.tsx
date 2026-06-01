@@ -10,9 +10,11 @@ import {
   Maximize,
   Minimize,
   SpellCheck,
+  SquarePlus,
 } from "lucide-solid";
-import { TextCountIcon } from "./icons";
+import { TextCountIcon, SquareArrowOutUpRight } from "./icons";
 import { noteboxInfo, noteboxRegistry, openNotebox } from "../stores/notebox";
+import { openNoteboxWindow } from "../lib/new-window";
 import { wordCountStats } from "../editor/typst-decorations/word-count";
 import { cursorPosition } from "../editor/typst-decorations/cursor-position";
 import { getActiveTab, renameTabPath } from "../stores/tabs";
@@ -294,6 +296,29 @@ const StatusBar: Component = () => {
     );
   }
 
+  /** Open a specific notebox in its own new window (leaves this one untouched). */
+  function openNoteboxInNewWindow(path: string) {
+    setSwitcherMenu(null);
+    openNoteboxWindow(path);
+  }
+
+  /** Open a fresh window that prompts for a notebox to open. */
+  function openNewWindow() {
+    setSwitcherMenu(null);
+    openNoteboxWindow();
+  }
+
+  // Noteboxes currently open in another window. A notebox lives in only one
+  // window, so these are disabled in the switcher (the user can't switch to or
+  // re-open one that's already open elsewhere). Refetched when the menu opens.
+  const [openBoxes] = createResource(
+    () => switcherMenu(),
+    async (menu) => (menu ? await ipc.listOpenNoteboxes() : []),
+  );
+  const isOpenElsewhere = (path: string) =>
+    !pathEquals(path, noteboxInfo()?.path) &&
+    (openBoxes() ?? []).some((o) => pathEquals(o.path, path));
+
   // The status bar element itself is the shared baseline for upward-opening
   // menus: every menu's bottom edge aligns to its top, regardless of where the
   // individual trigger sits within the bar.
@@ -486,18 +511,47 @@ const StatusBar: Component = () => {
           >
             <For each={noteboxRegistry()}>
               {(entry) => (
-                <button
-                  class="context-menu__item"
-                  onClick={() => switchToNotebox(entry.path)}
-                >
-                  <span class="notebox-switcher__name">{entry.display_name}</span>
-                  <Show when={pathEquals(entry.path, noteboxInfo()?.path)}>
-                    <Check size={14} class="context-menu__check" />
+                <div class="notebox-switcher__row">
+                  <button
+                    class="context-menu__item notebox-switcher__switch"
+                    onClick={() => switchToNotebox(entry.path)}
+                    disabled={isOpenElsewhere(entry.path)}
+                    title={isOpenElsewhere(entry.path) ? t("statusBar.openElsewhere") : undefined}
+                  >
+                    <span class="notebox-switcher__name">{entry.display_name}</span>
+                    <Show when={pathEquals(entry.path, noteboxInfo()?.path)}>
+                      <Check size={14} class="context-menu__check" />
+                    </Show>
+                    <Show when={isOpenElsewhere(entry.path)}>
+                      <span class="notebox-switcher__badge">{t("statusBar.openElsewhere")}</span>
+                    </Show>
+                  </button>
+                  {/* "Open in a new window" only for a notebox that isn't already
+                      open anywhere — the one in THIS window, or one already open
+                      in another window, can't be opened a second time. */}
+                  <Show
+                    when={
+                      !pathEquals(entry.path, noteboxInfo()?.path) &&
+                      !isOpenElsewhere(entry.path)
+                    }
+                  >
+                    <button
+                      class="notebox-switcher__new-window"
+                      title={t("statusBar.openInNewWindow")}
+                      aria-label={t("statusBar.openInNewWindow")}
+                      onClick={() => openNoteboxInNewWindow(entry.path)}
+                    >
+                      <SquareArrowOutUpRight size={13} />
+                    </button>
                   </Show>
-                </button>
+                </div>
               )}
             </For>
             <div class="context-menu__separator" />
+            <button class="context-menu__item" onClick={openNewWindow}>
+              <SquarePlus size={14} style={{ "margin-right": "6px", opacity: "0.6", "flex-shrink": "0" }} />
+              {t("statusBar.newWindow")}
+            </button>
             <button class="context-menu__item" onClick={openManageNoteboxes}>
               <Archive size={14} style={{ "margin-right": "6px", opacity: "0.6", "flex-shrink": "0" }} />
               {t("statusBar.manageNoteboxes")}

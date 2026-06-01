@@ -19,13 +19,18 @@ pub async fn export_self_contained_typ(
     output_path: String,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = super::helpers::apply_review_mode(&content, review_mode.as_deref());
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     let output = PathBuf::from(&output_path);
@@ -114,13 +119,13 @@ pub async fn export_figures(
     path: String,
     output_dir: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root
-        .as_ref()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let content = storage.read_file(&path_buf).await?;
     let image_paths = extract_image_paths(&content);
@@ -135,10 +140,7 @@ pub async fn export_figures(
         let abs_img = if img_path.starts_with('/') {
             root.join(&img_path[1..])
         } else {
-            path_buf
-                .parent()
-                .unwrap_or(root)
-                .join(img_path)
+            path_buf.parent().unwrap_or(root).join(img_path)
         };
 
         if abs_img.exists() {
@@ -147,9 +149,9 @@ pub async fn export_figures(
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "unknown".to_string());
             let dest = output_dir.join(&file_name);
-            tokio::fs::copy(&abs_img, &dest)
-                .await
-                .map_err(|e| InkyCapError::ExportFailed(format!("Failed to copy {}: {}", file_name, e)))?;
+            tokio::fs::copy(&abs_img, &dest).await.map_err(|e| {
+                InkyCapError::ExportFailed(format!("Failed to copy {}: {}", file_name, e))
+            })?;
             exported.push(file_name);
         }
     }

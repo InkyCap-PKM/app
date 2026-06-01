@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 
 /// Export a collection table to a file. `delimiter` can be "comma" (CSV) or "tab" (TSV).
 #[tauri::command]
@@ -12,12 +12,14 @@ pub async fn export_collection_csv_to_file(
     output_path: String,
     delimiter: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     let delim = match delimiter.as_deref() {
         Some("tab") => '\t',
         _ => ',',
     };
-    let content = build_delimited_export(&collection_path, &view_name, delim, &state).await?;
+    let content = build_delimited_export(&collection_path, &view_name, delim, &session).await?;
     tokio::fs::write(&output_path, content.as_bytes())
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write file: {}", e)))?;
@@ -30,18 +32,22 @@ pub async fn export_collection_csv(
     collection_path: String,
     view_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    build_delimited_export(&collection_path, &view_name, ',', &state).await
+    let session = state.session(window.label()).await;
+    build_delimited_export(&collection_path, &view_name, ',', &session).await
 }
 
 async fn build_delimited_export(
     collection_path: &str,
     view_name: &str,
     delimiter: char,
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Result<String, InkyCapError> {
     let data = crate::commands::collections::get_collection_data_internal(
-        collection_path, view_name, state,
+        collection_path,
+        view_name,
+        session,
     )
     .await?;
 

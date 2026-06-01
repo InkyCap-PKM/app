@@ -34,7 +34,9 @@ pub struct InstalledPackage {
 pub async fn install_typst_package_by_spec(
     state: State<'_, AppState>,
     spec: String,
+    window: tauri::WebviewWindow,
 ) -> Result<InstalledPackage, InkyCapError> {
+    let session = state.session(window.label()).await;
     let parsed = PackageSpec::parse(&spec).ok_or_else(|| {
         InkyCapError::BadRequest(format!(
             "Invalid package spec '{}'. Use '@namespace/name:version'.",
@@ -42,12 +44,19 @@ pub async fn install_typst_package_by_spec(
         ))
     })?;
 
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
-    if install_dir.exists() && install_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false)
+    if install_dir.exists()
+        && install_dir
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
     {
         return Err(InkyCapError::BadRequest(format!(
             "{} is already installed.",
@@ -90,14 +99,19 @@ pub async fn install_typst_package_from_file(
     state: State<'_, AppState>,
     archive_path: String,
     override_spec: Option<String>,
+    window: tauri::WebviewWindow,
 ) -> Result<InstalledPackage, InkyCapError> {
+    let session = state.session(window.label()).await;
     let archive = PathBuf::from(&archive_path);
     if !archive.exists() {
         return Err(InkyCapError::FileNotFound(archive_path));
     }
 
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     // Extract into a temp dir first, then promote into the canonical
@@ -190,9 +204,14 @@ pub struct InstalledPackageEntry {
 #[tauri::command]
 pub async fn list_installed_packages(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<InstalledPackageEntry>, InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     let packages_dir = root.join(".inkycap").join("packages");
@@ -230,8 +249,7 @@ pub async fn list_installed_packages(
                     continue;
                 };
                 let version = ver_entry.file_name().to_string_lossy().to_string();
-                let kind = if crate::typst_packages::manifest_declares_template(&toml_contents)
-                {
+                let kind = if crate::typst_packages::manifest_declares_template(&toml_contents) {
                     "template"
                 } else {
                     "library"
@@ -268,18 +286,24 @@ pub async fn list_installed_packages(
 pub async fn uninstall_typst_package(
     state: State<'_, AppState>,
     spec: String,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let parsed = PackageSpec::parse(&spec).ok_or_else(|| {
-        InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec))
-    })?;
+    let session = state.session(window.label()).await;
+    let parsed = PackageSpec::parse(&spec)
+        .ok_or_else(|| InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec)))?;
 
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
     if !install_dir.exists() {
-        return Err(InkyCapError::FileNotFound(install_dir.display().to_string())); // path-stringification-ok: error message, not IPC
+        return Err(InkyCapError::FileNotFound(
+            install_dir.display().to_string(),
+        )); // path-stringification-ok: error message, not IPC
     }
     std::fs::remove_dir_all(&install_dir).map_err(InkyCapError::Io)?;
 
@@ -320,7 +344,9 @@ pub async fn create_local_package(
     state: State<'_, AppState>,
     spec: String,
     as_template: bool,
+    window: tauri::WebviewWindow,
 ) -> Result<CreatedPackage, InkyCapError> {
+    let session = state.session(window.label()).await;
     let parsed = PackageSpec::parse_local_default(&spec).ok_or_else(|| {
         InkyCapError::BadRequest(format!(
             "Invalid package spec '{}'. Use a bare name like 'letter-layout' or '@namespace/name:version'.",
@@ -328,8 +354,11 @@ pub async fn create_local_package(
         ))
     })?;
 
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone();
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
     drop(notebox_root);
 
     let install_dir = parsed.install_dir(&root);
@@ -404,4 +433,5 @@ const PACKAGE_LIB_TYP: &str = "// Local Typst package. Import in a note with:\n/
 
 const TEMPLATE_LIB_TYP: &str = "// Local Typst document template. Apply at the top of a note:\n//   #import \"@local/<name>:<version>\": apply\n//   #show: apply.with(title: \"My document\")\n\n#let apply(title: none, body) = {\n  set page(margin: 1in)\n  set text(font: \"Inter\", size: 11pt)\n  if title != none {\n    align(center)[#text(size: 18pt, weight: \"bold\", title)]\n    v(1em)\n  }\n  body\n}\n";
 
-const TEMPLATE_MAIN_TYP: &str = "#import \"../lib.typ\": *\n\n#show: apply.with(title: \"Untitled\")\n\nStart writing here.\n";
+const TEMPLATE_MAIN_TYP: &str =
+    "#import \"../lib.typ\": *\n\n#show: apply.with(title: \"Untitled\")\n\nStart writing here.\n";

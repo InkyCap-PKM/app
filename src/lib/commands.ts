@@ -2,6 +2,7 @@
 // Called once on app startup after other systems are initialized.
 
 import { registerCommand } from "./command-registry";
+import { openNoteboxWindow } from "./new-window";
 import { t } from "./i18n";
 import { errorText, errorCode } from "./errors";
 import {
@@ -268,6 +269,16 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     category: "View",
     keybinding: "F1",
     execute: callbacks.openHelp,
+  });
+
+  registerCommand({
+    id: "window:new",
+    title: t("command.window.new"),
+    category: "View",
+    keybinding: "Ctrl+Shift+N",
+    // Opens an empty new window that shows the notebox picker, so the user
+    // chooses which notebox it opens (each window is its own notebox view).
+    execute: () => openNoteboxWindow(),
   });
 
   registerCommand({

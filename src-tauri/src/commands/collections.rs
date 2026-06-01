@@ -2,25 +2,27 @@ use tauri::State;
 
 use crate::collection_parser::filter::evaluate_filter_group;
 use crate::collection_parser::model::{
-    default_collection_file_for, parse_collection_file, serialize_collection_file, CollectionFile, FilterGroup, SortRule,
-    ViewDef,
+    default_collection_file_for, parse_collection_file, serialize_collection_file, CollectionFile,
+    FilterGroup, SortRule, ViewDef,
 };
 use crate::errors::InkyCapError;
 use crate::models::collection::{CollectionData, CollectionInfo, CollectionRow, ViewInfo};
 use crate::models::note::PropertyValue;
-use crate::state::AppState;
+use crate::notebox_package;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
-use crate::notebox_package;
 
 /// List all `.collection` files in the notebox with their view counts and icons. Requires an open notebox.
 #[tauri::command]
 pub async fn list_collections(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<CollectionInfo>, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let collection_files = state.collection_files.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let collection_files = session.collection_files.read().await;
 
     let mut collections = Vec::new();
     for path in collection_files.iter() {
@@ -45,10 +47,7 @@ pub async fn list_collections(
                 }
             },
             Err(err) => {
-                log::warn!(
-                    "list_collections: failed to read {}: {err}",
-                    path.display()
-                );
+                log::warn!("list_collections: failed to read {}: {err}", path.display());
                 (0, None)
             }
         };
@@ -136,7 +135,7 @@ pub(crate) fn resolve_collection_members<'a>(
 /// documents on (both derive from the notebox scan), so the caller can
 /// intersect them directly with search hits.
 pub(crate) async fn collection_member_paths(
-    state: &AppState,
+    session: &NoteboxSession,
     name: &str,
 ) -> std::collections::HashSet<std::path::PathBuf> {
     let mut members = std::collections::HashSet::new();
@@ -144,12 +143,12 @@ pub(crate) async fn collection_member_paths(
     if target.is_empty() {
         return members;
     }
-    let storage = match state.get_storage().await {
+    let storage = match session.get_storage().await {
         Ok(s) => s,
         Err(_) => return members,
     };
-    let collection_files = state.collection_files.read().await;
-    let index = state.property_index.read().await;
+    let collection_files = session.collection_files.read().await;
+    let index = session.property_index.read().await;
     for path in collection_files.iter() {
         let stem = path
             .file_stem()
@@ -162,12 +161,18 @@ pub(crate) async fn collection_member_paths(
             Ok(content) => match parse_collection_file(&content) {
                 Ok(b) => b,
                 Err(err) => {
-                    log::warn!("collection_member_paths: failed to parse {}: {err}", path.display());
+                    log::warn!(
+                        "collection_member_paths: failed to parse {}: {err}",
+                        path.display()
+                    );
                     continue;
                 }
             },
             Err(err) => {
-                log::warn!("collection_member_paths: failed to read {}: {err}", path.display());
+                log::warn!(
+                    "collection_member_paths: failed to read {}: {err}",
+                    path.display()
+                );
                 continue;
             }
         };
@@ -199,13 +204,15 @@ pub async fn get_collection_data(
     collection_path: String,
     view_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<CollectionData, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let collection_path_buf = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
 
     // Find the requested view (or first view)
     let view = if view_name.is_empty() {
@@ -214,9 +221,8 @@ pub async fn get_collection_data(
         base.views.iter().find(|v| v.name == view_name)
     };
 
-    let view = view.ok_or_else(|| {
-        InkyCapError::InvalidPath(format!("View '{}' not found", view_name))
-    })?;
+    let view =
+        view.ok_or_else(|| InkyCapError::InvalidPath(format!("View '{}' not found", view_name)))?;
 
     // Determine columns from view order, or fall back to common properties
     let columns = view
@@ -296,8 +302,10 @@ pub async fn get_collection_data(
 pub async fn create_collection_file(
     name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<CollectionInfo, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let trimmed = name.trim();
     if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') {
         return Err(InkyCapError::InvalidPath(format!(
@@ -321,7 +329,7 @@ pub async fn create_collection_file(
     storage.write_file(&path, &content).await?;
 
     // Add to tracked collection files
-    state.collection_files.write().await.push(path.clone());
+    session.collection_files.write().await.push(path.clone());
 
     let (modified_time, created_time) = collection_file_times(&storage, &path);
 
@@ -342,8 +350,10 @@ pub async fn save_collection_file(
     collection_path: String,
     collection_file: CollectionFile,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = serialize_collection_file(&collection_file)?;
     storage.write_file(&path, &content).await?;
@@ -363,13 +373,15 @@ pub fn contributor_catalogs() -> crate::typst_pipeline::contributors::Contributo
 pub async fn delete_collection_file(
     collection_path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     storage.delete_file(&path).await?;
 
     // Remove from tracked collection files
-    let mut collection_files = state.collection_files.write().await;
+    let mut collection_files = session.collection_files.write().await;
     collection_files.retain(|p| *p != path);
 
     Ok(())
@@ -381,8 +393,10 @@ pub async fn rename_collection_file(
     collection_path: String,
     new_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<CollectionInfo, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let old_path = sanitize_notebox_arg(&collection_path)?;
     let new_path = old_path
         .parent()
@@ -399,7 +413,7 @@ pub async fn rename_collection_file(
     storage.rename_file(&old_path, &new_path).await?;
 
     // Update tracked collection files
-    let mut collection_files = state.collection_files.write().await;
+    let mut collection_files = session.collection_files.write().await;
     if let Some(entry) = collection_files.iter_mut().find(|p| **p == old_path) {
         *entry = new_path.clone();
     }
@@ -425,8 +439,10 @@ pub async fn rename_collection_file(
 pub async fn get_collection_file(
     collection_path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<CollectionFile, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let base = parse_collection_file(&content)?;
@@ -440,8 +456,10 @@ pub async fn update_view_sort(
     view_name: String,
     sort_rules: Vec<SortRule>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -465,8 +483,10 @@ pub async fn update_view_columns(
     view_name: String,
     columns: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -490,8 +510,10 @@ pub async fn update_collection_filters(
     view_name: Option<String>,
     filters: Option<FilterGroup>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -519,8 +541,10 @@ pub async fn add_view(
     view_name: String,
     view_type: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -556,8 +580,10 @@ pub async fn remove_view(
     collection_path: String,
     view_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -582,8 +608,10 @@ pub async fn rename_view(
     old_name: String,
     new_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -605,8 +633,10 @@ pub async fn reorder_views(
     collection_path: String,
     ordered_names: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&path).await?;
     let mut base = parse_collection_file(&content)?;
@@ -629,8 +659,10 @@ pub async fn reorder_views(
 #[tauri::command]
 pub async fn get_notebox_index(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<crate::models::collection::NoteboxIndex, InkyCapError> {
-    let index = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
 
     let mut tags: Vec<(String, usize)> = index
         .tags
@@ -661,8 +693,10 @@ pub async fn get_notebox_index(
 #[tauri::command]
 pub async fn get_all_property_keys(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
-    let index = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
     let mut keys: Vec<String> = index.property_keys.iter().cloned().collect();
     // Also include file.* properties
     for key in &[
@@ -684,14 +718,14 @@ pub async fn get_all_property_keys(
 pub async fn get_collection_data_internal(
     collection_path: &str,
     view_name: &str,
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Result<CollectionData, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let collection_path_buf = sanitize_notebox_arg(collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
 
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
 
     let view = if view_name.is_empty() {
         base.views.first()
@@ -699,9 +733,8 @@ pub async fn get_collection_data_internal(
         base.views.iter().find(|v| v.name == view_name)
     };
 
-    let view = view.ok_or_else(|| {
-        InkyCapError::InvalidPath(format!("View '{}' not found", view_name))
-    })?;
+    let view =
+        view.ok_or_else(|| InkyCapError::InvalidPath(format!("View '{}' not found", view_name)))?;
 
     let columns = view
         .order

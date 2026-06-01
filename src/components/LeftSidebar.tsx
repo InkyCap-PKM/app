@@ -32,7 +32,6 @@ import {
 import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
@@ -2097,24 +2096,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                   }}
                 >
                   {t("wikilink.menu.openNewTab")}
-                </button>
-                <button
-                  class="context-menu__item"
-                  onClick={() => {
-                    setFileContextMenu(null);
-                    const label = `note-${Date.now()}`;
-                    const win = new WebviewWindow(label, {
-                      url: `index.html?path=${encodeURIComponent(node.path)}`,
-                      title: node.name,
-                      width: 900,
-                      height: 700,
-                    });
-                    win.once("tauri://error", (e) => {
-                      console.error("Failed to open new window:", e);
-                    });
-                  }}
-                >
-                  {t("search.openNewWindow")}
                 </button>
                 <div class="context-menu__separator" />
               </Show>

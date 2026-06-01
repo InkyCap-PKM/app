@@ -15,10 +15,10 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::models::note::PropertyValue;
 use crate::property_types::{coerce_value, is_system_property, PropertyType};
-use crate::typst_pipeline::note_rewriter;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
+use crate::typst_pipeline::note_rewriter;
 
 // ── Property type registry ────────────────────────────────────────────
 
@@ -26,8 +26,10 @@ use crate::storage::traits::NoteboxStorage;
 #[tauri::command]
 pub async fn get_property_types(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<HashMap<String, PropertyType>, InkyCapError> {
-    let reg = state.property_types.read().await;
+    let session = state.session(window.label()).await;
+    let reg = session.property_types.read().await;
     Ok(reg.all())
 }
 
@@ -52,7 +54,9 @@ pub async fn set_property_type(
     key: String,
     ty: PropertyType,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     // System properties have fixed types — the UI shouldn't let users
     // change them, but enforce it at the boundary too.
     if is_system_property(&key) {
@@ -62,7 +66,7 @@ pub async fn set_property_type(
         )));
     }
     {
-        let mut reg = state.property_types.write().await;
+        let mut reg = session.property_types.write().await;
         reg.set(key.clone(), ty);
         reg.save();
     }
@@ -72,7 +76,7 @@ pub async fn set_property_type(
     }
 
     let targets: Vec<(PathBuf, PropertyValue)> = {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         index
             .notes
             .values()
@@ -80,14 +84,14 @@ pub async fn set_property_type(
             .collect()
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     for (path, value) in targets {
         let coerced = coerce_value(&value, ty);
         let content = storage.read_file(&path).await?;
         let updated = note_rewriter::update_note_property(&content, &key, &coerced);
         if updated != content {
             storage.write_file(&path, &updated).await?;
-            state.reindex_note(&path, &updated).await;
+            session.reindex_note(&path, &updated).await;
         }
     }
     Ok(())
@@ -104,7 +108,9 @@ pub async fn rename_property_key(
     old_key: String,
     new_key: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     let old_key = old_key.trim().to_string();
     let new_key = new_key.trim().to_string();
     if old_key.is_empty() || new_key.is_empty() || old_key == new_key {
@@ -112,14 +118,14 @@ pub async fn rename_property_key(
     }
 
     {
-        let mut reg = state.property_types.write().await;
+        let mut reg = session.property_types.write().await;
         reg.rename(&old_key, &new_key);
         reg.save();
     }
 
     // Notes — rewrite #note(...) properties.
     let targets: Vec<(PathBuf, PropertyValue)> = {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         index
             .notes
             .values()
@@ -131,25 +137,25 @@ pub async fn rename_property_key(
             .collect()
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     for (path, value) in targets {
         let content = storage.read_file(&path).await?;
         let without_old = note_rewriter::remove_note_property(&content, &old_key);
         let updated = note_rewriter::update_note_property(&without_old, &new_key, &value);
         if updated != content {
             storage.write_file(&path, &updated).await?;
-            state.reindex_note(&path, &updated).await;
+            session.reindex_note(&path, &updated).await;
         }
     }
 
     // Explicitly purge the old key from the global property_keys set
     {
-        let mut index = state.property_index.write().await;
+        let mut index = session.property_index.write().await;
         index.property_keys.remove(&old_key);
     }
 
     // .collection files — textual replacement of whole-word key references.
-    rewrite_collection_files(&state, |text| replace_word(text, &old_key, &new_key)).await?;
+    rewrite_collection_files(&session, |text| replace_word(text, &old_key, &new_key)).await?;
 
     Ok(())
 }
@@ -160,20 +166,22 @@ pub async fn rename_property_key(
 pub async fn delete_property_key(
     key: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     let key = key.trim().to_string();
     if key.is_empty() {
         return Ok(());
     }
 
     {
-        let mut reg = state.property_types.write().await;
+        let mut reg = session.property_types.write().await;
         reg.clear(&key);
         reg.save();
     }
 
     let targets: Vec<PathBuf> = {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         index
             .notes
             .values()
@@ -182,17 +190,17 @@ pub async fn delete_property_key(
             .collect()
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     for path in targets {
         let content = storage.read_file(&path).await?;
         let updated = note_rewriter::remove_note_property(&content, &key);
         if updated != content {
             storage.write_file(&path, &updated).await?;
-            state.reindex_note(&path, &updated).await;
+            session.reindex_note(&path, &updated).await;
         }
     }
 
-    rewrite_collection_files(&state, |text| strip_word_line(text, &key)).await?;
+    rewrite_collection_files(&session, |text| strip_word_line(text, &key)).await?;
 
     Ok(())
 }
@@ -204,14 +212,16 @@ pub async fn remove_property_from_file(
     path: String,
     key: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::remove_note_property(&content, &key);
     if updated != content {
         storage.write_file(&path_buf, &updated).await?;
-        state.reindex_note(&path_buf, &updated).await;
+        session.reindex_note(&path_buf, &updated).await;
     }
     Ok(())
 }
@@ -223,8 +233,10 @@ pub async fn remove_property_from_file(
 pub async fn get_property_order(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(note_rewriter::extract_note_properties(&content)
@@ -242,14 +254,16 @@ pub async fn reorder_properties(
     path: String,
     order: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     let updated = note_rewriter::reorder_note_properties(&content, &order);
     if updated != content {
         storage.write_file(&path_buf, &updated).await?;
-        state.reindex_note(&path_buf, &updated).await;
+        session.reindex_note(&path_buf, &updated).await;
     }
     Ok(())
 }
@@ -265,24 +279,25 @@ pub async fn reorder_properties(
 pub async fn get_property_values(
     key: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let key = key.trim().to_string();
     if key.is_empty() {
         return Ok(Vec::new());
     }
     let mut seen = std::collections::BTreeSet::new();
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
     for note in index.notes.values() {
-        let Some(value) = note.properties.get(&key) else { continue };
+        let Some(value) = note.properties.get(&key) else {
+            continue;
+        };
         push_property_strings(value, &mut seen);
     }
     Ok(seen.into_iter().collect())
 }
 
-fn push_property_strings(
-    value: &PropertyValue,
-    out: &mut std::collections::BTreeSet<String>,
-) {
+fn push_property_strings(value: &PropertyValue, out: &mut std::collections::BTreeSet<String>) {
     match value {
         PropertyValue::String(s) if !s.is_empty() => {
             out.insert(s.clone());
@@ -314,7 +329,9 @@ pub async fn rename_tag(
     old_tag: String,
     new_tag: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     let old_tag = sanitize_tag(&old_tag);
     let new_tag = sanitize_tag(&new_tag);
     if old_tag.is_empty() || new_tag.is_empty() || old_tag == new_tag {
@@ -322,21 +339,17 @@ pub async fn rename_tag(
     }
 
     let targets: Vec<PathBuf> = {
-        let index = state.property_index.read().await;
-        index
-            .tags
-            .get(&old_tag)
-            .cloned()
-            .unwrap_or_default()
+        let index = session.property_index.read().await;
+        index.tags.get(&old_tag).cloned().unwrap_or_default()
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     for path in targets {
         let content = storage.read_file(&path).await?;
         let updated = rewrite_tag_in_content(&content, &old_tag, Some(&new_tag));
         if updated != content {
             storage.write_file(&path, &updated).await?;
-            state.reindex_note(&path, &updated).await;
+            session.reindex_note(&path, &updated).await;
         }
     }
 
@@ -344,10 +357,7 @@ pub async fn rename_tag(
     // inside quoted strings. Filter expressions like
     // `file.tags.contains("rust")` will be updated; bare references
     // won't, because they'd be indistinguishable from property keys.
-    rewrite_collection_files(&state, |text| {
-        replace_quoted(text, &old_tag, &new_tag)
-    })
-    .await?;
+    rewrite_collection_files(&session, |text| replace_quoted(text, &old_tag, &new_tag)).await?;
 
     Ok(())
 }
@@ -357,29 +367,31 @@ pub async fn rename_tag(
 pub async fn delete_tag(
     tag: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
     let tag = sanitize_tag(&tag);
     if tag.is_empty() {
         return Ok(());
     }
 
     let targets: Vec<PathBuf> = {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         index.tags.get(&tag).cloned().unwrap_or_default()
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     for path in targets {
         let content = storage.read_file(&path).await?;
         let updated = rewrite_tag_in_content(&content, &tag, None);
         if updated != content {
             storage.write_file(&path, &updated).await?;
-            state.reindex_note(&path, &updated).await;
+            session.reindex_note(&path, &updated).await;
         }
     }
 
     // .collection: strip quoted literal references. Same caveats as rename.
-    rewrite_collection_files(&state, |text| replace_quoted(text, &tag, "")).await?;
+    rewrite_collection_files(&session, |text| replace_quoted(text, &tag, "")).await?;
 
     Ok(())
 }
@@ -440,10 +452,7 @@ fn strip_word_line(text: &str, needle: &str) -> String {
 /// expressions like `file.tags.contains("rust")`.
 fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
     let escaped = regex::escape(needle);
-    let patterns = [
-        format!("\"{}\"", escaped),
-        format!("'{}'", escaped),
-    ];
+    let patterns = [format!("\"{}\"", escaped), format!("'{}'", escaped)];
     let mut out = text.to_string();
     for pat in &patterns {
         let re = Regex::new(pat).unwrap();
@@ -455,7 +464,9 @@ fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
             } else {
                 format!("'{}'", replacement)
             };
-            out = re.replace_all(&out, replacement_quoted.as_str()).into_owned();
+            out = re
+                .replace_all(&out, replacement_quoted.as_str())
+                .into_owned();
         }
     }
     out
@@ -463,14 +474,14 @@ fn replace_quoted(text: &str, needle: &str, replacement: &str) -> String {
 
 /// Apply a text transform to every `.collection` file in the notebox.
 async fn rewrite_collection_files<F>(
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
     transform: F,
 ) -> Result<(), InkyCapError>
 where
     F: Fn(&str) -> String,
 {
-    let storage = state.get_storage().await?;
-    let collection_paths: Vec<PathBuf> = state.collection_files.read().await.clone();
+    let storage = session.get_storage().await?;
+    let collection_paths: Vec<PathBuf> = session.collection_files.read().await.clone();
     for path in collection_paths {
         let content = match storage.read_file(&path).await {
             Ok(c) => c,

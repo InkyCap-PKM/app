@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tauri::State;
 
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 
 /// Apply the export dialog's "Review markup" choice to a note's raw source
 /// before any other processing. `mode` is the frontend string tag
@@ -22,6 +22,7 @@ pub(super) async fn resolve_effective_bib(
     collection_bib: Option<&str>,
     notebox_root: Option<&Path>,
     state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Option<String> {
     if let Some(bib) = collection_bib {
         if !bib.is_empty() {
@@ -30,28 +31,27 @@ pub(super) async fn resolve_effective_bib(
     }
     let notebox_root = notebox_root?;
     let global = state.settings.read().await.citations.clone();
-    let notebox = state.notebox_settings.read().await.citations.clone();
+    let notebox = session.notebox_settings.read().await.citations.clone();
     crate::state::configure_bibliography(notebox_root, &global, &notebox)
 }
 
 /// Resolve the effective citation style. The per-notebox `custom_csl_path`
 /// override wins; otherwise the user-global named style (e.g.
 /// `"chicago-notes"`) applies. `None` when neither is configured.
-pub(super) async fn resolve_user_bib_style(state: &State<'_, AppState>) -> Option<String> {
-    let notebox = state.notebox_settings.read().await;
+pub(super) async fn resolve_user_bib_style(
+    state: &State<'_, AppState>,
+    session: &NoteboxSession,
+) -> Option<String> {
+    let notebox = session.notebox_settings.read().await;
     let global = state.settings.read().await;
-    notebox
-        .citations
-        .custom_csl_path
-        .clone()
-        .or_else(|| {
-            global
-                .citations
-                .citation_style
-                .as_deref()
-                .filter(|s| !s.is_empty() && *s != "custom")
-                .map(String::from)
-        })
+    notebox.citations.custom_csl_path.clone().or_else(|| {
+        global
+            .citations
+            .citation_style
+            .as_deref()
+            .filter(|s| !s.is_empty() && *s != "custom")
+            .map(String::from)
+    })
 }
 
 /// Resolve bibliography settings and inject/suppress as needed. Combines
@@ -63,12 +63,14 @@ pub(super) async fn prepare_bibliography(
     collection_bib_style: Option<&str>,
     include_bibliography: bool,
     state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> String {
-    let notebox_root = state.notebox_root.read().await;
-    let effective_bib = resolve_effective_bib(collection_bib, notebox_root.as_deref(), state).await;
+    let notebox_root = session.notebox_root.read().await;
+    let effective_bib =
+        resolve_effective_bib(collection_bib, notebox_root.as_deref(), state, session).await;
     let bib_style = match collection_bib_style {
         Some(s) if !s.is_empty() => Some(s.to_string()),
-        _ => resolve_user_bib_style(state).await,
+        _ => resolve_user_bib_style(state, session).await,
     };
     let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
     apply_bibliography_visibility(source, include_bibliography)
@@ -86,30 +88,51 @@ pub(super) async fn prepare_bibliography(
 /// call, so a user-written `#bibliography(...)` is suppressed by the
 /// same mechanism as our auto-injected one.
 pub(super) fn apply_bibliography_visibility(source: String, include: bool) -> String {
-    if include { return source; }
+    if include {
+        return source;
+    }
     format!("#show bibliography: _ => none\n\n{}", source)
 }
 
 /// Append a `#bibliography(...)` call to the source when the collection
 /// specifies a bibliography file and the source contains `@` citations.
-pub(super) fn maybe_inject_bibliography(source: String, bib_file: Option<&str>, bib_style: Option<&str>) -> String {
+pub(super) fn maybe_inject_bibliography(
+    source: String,
+    bib_file: Option<&str>,
+    bib_style: Option<&str>,
+) -> String {
     let Some(bib) = bib_file else { return source };
-    if bib.is_empty() { return source };
-    let bib = if bib.starts_with('/') { bib.to_string() } else { format!("/{bib}") };
+    if bib.is_empty() {
+        return source;
+    };
+    let bib = if bib.starts_with('/') {
+        bib.to_string()
+    } else {
+        format!("/{bib}")
+    };
 
     let has_explicit_bib = source.lines().any(|line| {
         let trimmed = line.trim();
         !trimmed.starts_with("//") && trimmed.contains("#bibliography(")
     });
-    if has_explicit_bib { return source };
+    if has_explicit_bib {
+        return source;
+    };
 
-    if !crate::commands::typst::source_has_citation(&source) { return source };
+    if !crate::commands::typst::source_has_citation(&source) {
+        return source;
+    };
 
     let style_arg = match bib_style {
         Some(s) if !s.is_empty() => format!(", style: \"{}\"", s),
         _ => String::new(),
     };
-    format!("{}\n\n#bibliography(\"{}\"{})\n", source.trim_end(), bib, style_arg)
+    format!(
+        "{}\n\n#bibliography(\"{}\"{})\n",
+        source.trim_end(),
+        bib,
+        style_arg
+    )
 }
 
 // ── Wikilinks ───────────────────────────────────────────────────
@@ -121,10 +144,7 @@ pub(super) fn rewrite_wikilinks_to_links(
     source: &str,
     name_to_file: &std::collections::HashMap<String, String>,
 ) -> String {
-    let re = regex::Regex::new(
-        r#"#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)"#,
-    )
-    .unwrap();
+    let re = regex::Regex::new(r#"#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)"#).unwrap();
     re.replace_all(source, |caps: &regex::Captures| {
         let target = &caps[1];
         let display = caps.get(2).map(|m| m.as_str()).unwrap_or(target);
@@ -139,10 +159,7 @@ pub(super) fn rewrite_wikilinks_to_links(
 
 /// Strip `#wikilink(...)` calls from source, replacing with their display text.
 pub(super) fn strip_wikilinks_from_source(source: &str) -> String {
-    let re = regex::Regex::new(
-        r#"#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)"#,
-    )
-    .unwrap();
+    let re = regex::Regex::new(r#"#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)"#).unwrap();
     re.replace_all(source, |caps: &regex::Captures| {
         caps.get(2)
             .map(|m| m.as_str().to_string())
@@ -226,10 +243,10 @@ pub(super) fn inject_document_metadata(source: &str) -> String {
 
 /// Extract all `#note(...)` metadata from Typst source as plain-text key-value
 /// pairs. Preserves original InkyCap key names (tag, to-do, etc.).
-pub(super) fn extract_metadata_raw(
-    source: &str,
-) -> Vec<(String, String)> {
-    use crate::typst_pipeline::note_rewriter::{extract_note_properties, typst_value_to_plain_text};
+pub(super) fn extract_metadata_raw(source: &str) -> Vec<(String, String)> {
+    use crate::typst_pipeline::note_rewriter::{
+        extract_note_properties, typst_value_to_plain_text,
+    };
 
     extract_note_properties(source)
         .into_iter()
@@ -338,7 +355,7 @@ pub(super) fn upsert_xml_element_with_attr(
             let content_start = start + gt + 1;
             if let Some(close_offset) = xml[content_start..].find(&close_tag) {
                 let close_end = content_start + close_offset + close_tag.len();
-                let replacement = format!("<{}{}>{}{}",tag, attr, escaped, close_tag);
+                let replacement = format!("<{}{}>{}{}", tag, attr, escaped, close_tag);
                 xml.replace_range(start..close_end, &replacement);
                 return;
             }
@@ -450,8 +467,14 @@ pub(super) fn args_has_named_arg(args: &str, name: &str) -> bool {
     let needle = format!("{}:", name);
     let mut search = args;
     loop {
-        let Some(idx) = search.find(&needle) else { return false };
-        let preceding = if idx == 0 { None } else { search[..idx].chars().last() };
+        let Some(idx) = search.find(&needle) else {
+            return false;
+        };
+        let preceding = if idx == 0 {
+            None
+        } else {
+            search[..idx].chars().last()
+        };
         let is_word = preceding.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
         if !is_word {
             return true;
@@ -608,9 +631,18 @@ mod tests {
 
         // Local `src` rewritten to relative; href and external src untouched.
         assert!(rewritten.contains(r#"src="Assets/pic.png""#), "{rewritten}");
-        assert!(rewritten.contains(r#"src="Assets/clip.mp4""#), "{rewritten}");
-        assert!(rewritten.contains(r#"href="/Assets/clip.mp4""#), "href untouched: {rewritten}");
-        assert!(rewritten.contains(r#"src="https://ext/e.png""#), "external untouched: {rewritten}");
+        assert!(
+            rewritten.contains(r#"src="Assets/clip.mp4""#),
+            "{rewritten}"
+        );
+        assert!(
+            rewritten.contains(r#"href="/Assets/clip.mp4""#),
+            "href untouched: {rewritten}"
+        );
+        assert!(
+            rewritten.contains(r#"src="https://ext/e.png""#),
+            "external untouched: {rewritten}"
+        );
     }
 
     #[tokio::test]
@@ -623,6 +655,9 @@ mod tests {
         let (rewritten, copied) = localize_html_assets(html, &root, out.path()).await.unwrap();
 
         assert!(copied.is_empty());
-        assert_eq!(rewritten, html, "missing asset src should be left as written");
+        assert_eq!(
+            rewritten, html,
+            "missing asset src should be left as written"
+        );
     }
 }

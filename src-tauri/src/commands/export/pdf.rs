@@ -10,10 +10,10 @@ use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
-    apply_bibliography_visibility, apply_review_mode, args_has_named_arg,
-    find_matching_paren, inject_document_metadata, parse_date_to_typst_datetime,
-    parse_first_string_arg, parse_named_string_arg, prepare_bibliography,
-    resolve_effective_bib, resolve_template_path_with_root,
+    apply_bibliography_visibility, apply_review_mode, args_has_named_arg, find_matching_paren,
+    inject_document_metadata, parse_date_to_typst_datetime, parse_first_string_arg,
+    parse_named_string_arg, prepare_bibliography, resolve_effective_bib,
+    resolve_template_path_with_root,
 };
 
 // ── Single-note PDF export ──────────────────────────────────────
@@ -24,20 +24,28 @@ pub async fn export_note_pdf(
     path: String,
     include_bibliography: Option<bool>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<u8>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = crate::notebox_package::ensure_import(&content);
 
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
-    let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
+    let source = prepare_bibliography(
+        source,
+        None,
+        None,
+        include_bibliography.unwrap_or(true),
+        &state,
+        &session,
+    )
+    .await;
 
-    let mut compiler = state.typst_compiler.lock().await;
-    let compiler = compiler
-        .as_mut()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler = session.typst_compiler.lock().await;
+    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let pdf_bytes = compile_with_auto_packages(compiler, |c| {
@@ -62,8 +70,10 @@ pub async fn export_note_pdf_to_file(
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = apply_review_mode(&content, review_mode.as_deref());
@@ -77,12 +87,18 @@ pub async fn export_note_pdf_to_file(
 
     let source = super::super::typst::inject_style_cascade(&source, &path_buf, &state).await;
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
-    let source = prepare_bibliography(source, None, None, include_bibliography.unwrap_or(true), &state).await;
+    let source = prepare_bibliography(
+        source,
+        None,
+        None,
+        include_bibliography.unwrap_or(true),
+        &state,
+        &session,
+    )
+    .await;
 
-    let mut compiler = state.typst_compiler.lock().await;
-    let compiler = compiler
-        .as_mut()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler = session.typst_compiler.lock().await;
+    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     let standard = pdf_standard.unwrap_or_default();
@@ -113,8 +129,10 @@ pub async fn export_collection_note_pdf(
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let note_path_buf = PathBuf::from(&note_path);
     let collection_path_buf = PathBuf::from(&collection_path);
 
@@ -136,13 +154,19 @@ pub async fn export_collection_note_pdf(
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
     let source = style_injection::inject_style_rules(
         &source,
-        if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
+        if defaults_rules.is_empty() {
+            None
+        } else {
+            Some(&defaults_rules)
+        },
         collection_rules.as_deref().filter(|r| !r.is_empty()),
-        base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
+        base.custom_typst
+            .as_deref()
+            .filter(|c| !c.trim().is_empty()),
     );
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
 
-    let notebox_root = state.notebox_root.read().await;
+    let notebox_root = session.notebox_root.read().await;
     let notebox_root_ref = notebox_root.as_deref();
 
     let source = prepare_bibliography(
@@ -151,15 +175,17 @@ pub async fn export_collection_note_pdf(
         base.bibliography_style.as_deref(),
         include_bibliography.unwrap_or(true),
         &state,
-    ).await;
+        &session,
+    )
+    .await;
 
-    let mut compiler = state.typst_compiler.lock().await;
-    let compiler = compiler
-        .as_mut()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler = session.typst_compiler.lock().await;
+    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-    let resolved_template = base.typst_template.as_deref()
+    let resolved_template = base
+        .typst_template
+        .as_deref()
         .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
 
     let standard = pdf_standard.unwrap_or_default();
@@ -204,13 +230,17 @@ pub async fn export_collection_batch_pdf(
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(
-        &collection_path, &view_name, &state,
+        &collection_path,
+        &view_name,
+        &session,
     )
     .await?;
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let collection_path_buf = PathBuf::from(&collection_path);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
@@ -225,9 +255,11 @@ pub async fn export_collection_batch_pdf(
     drop(app_settings);
     let collection_rules = base.style.as_ref().map(|s| s.to_typst_show_call());
 
-    let notebox_root = state.notebox_root.read().await;
+    let notebox_root = session.notebox_root.read().await;
     let notebox_root_ref = notebox_root.as_deref();
-    let resolved_template = base.typst_template.as_deref()
+    let resolved_template = base
+        .typst_template
+        .as_deref()
         .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
     let mut exported = Vec::new();
     let mut errors = Vec::new();
@@ -251,9 +283,15 @@ pub async fn export_collection_batch_pdf(
         };
         let source = style_injection::inject_style_rules(
             &source,
-            if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
+            if defaults_rules.is_empty() {
+                None
+            } else {
+                Some(&defaults_rules)
+            },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
-            base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
+            base.custom_typst
+                .as_deref()
+                .filter(|c| !c.trim().is_empty()),
         );
         let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
         let source = prepare_bibliography(
@@ -262,12 +300,12 @@ pub async fn export_collection_batch_pdf(
             base.bibliography_style.as_deref(),
             include_bibliography.unwrap_or(true),
             &state,
-        ).await;
+            &session,
+        )
+        .await;
 
-        let mut compiler = state.typst_compiler.lock().await;
-        let compiler = compiler
-            .as_mut()
-            .ok_or(InkyCapError::NoteboxNotOpen)?;
+        let mut compiler = session.typst_compiler.lock().await;
+        let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         let standard = pdf_standard.unwrap_or_default();
@@ -302,10 +340,7 @@ pub async fn export_collection_batch_pdf(
             }
         };
 
-        let pdf_name = row
-            .file_name
-            .strip_suffix(".typ")
-            .unwrap_or(&row.file_name);
+        let pdf_name = row.file_name.strip_suffix(".typ").unwrap_or(&row.file_name);
         let pdf_path = output_dir.join(format!("{}.pdf", pdf_name));
         if let Err(e) = tokio::fs::write(&pdf_path, &pdf_bytes).await {
             errors.push(format!("{}: {}", pdf_name, e));
@@ -315,13 +350,19 @@ pub async fn export_collection_batch_pdf(
     }
 
     if exported.is_empty() && !errors.is_empty() {
-        return Err(InkyCapError::ExportFailed(
-            format!("All files failed to export:\n{}", errors.join("\n")),
-        ));
+        return Err(InkyCapError::ExportFailed(format!(
+            "All files failed to export:\n{}",
+            errors.join("\n")
+        )));
     }
 
     if !errors.is_empty() {
-        log::error!("Batch export: {} of {} files failed:\n{}", errors.len(), data.rows.len(), errors.join("\n"));
+        log::error!(
+            "Batch export: {} of {} files failed:\n{}",
+            errors.len(),
+            data.rows.len(),
+            errors.join("\n")
+        );
     }
 
     Ok(exported)
@@ -380,19 +421,21 @@ pub async fn export_collection_book_pdf(
     // first attempt.
     exclude_notes: Option<Vec<String>>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<BookExportResult, InkyCapError> {
-    use crate::typst_pipeline::book_wrapper::{
-        self, BookExportOptions, BookNote,
-    };
+    let session = state.session(window.label()).await;
+    use crate::typst_pipeline::book_wrapper::{self, BookExportOptions, BookNote};
     let exclude: std::collections::HashSet<String> =
         exclude_notes.unwrap_or_default().into_iter().collect();
 
     let data = crate::commands::collections::get_collection_data_internal(
-        &collection_path, &view_name, &state,
+        &collection_path,
+        &view_name,
+        &session,
     )
     .await?;
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let collection_path_buf = PathBuf::from(&collection_path);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
@@ -403,28 +446,55 @@ pub async fn export_collection_book_pdf(
         ));
     }
 
-    let book_pdf_standard = overrides.as_ref().and_then(|o| o.pdf_standard).unwrap_or_default();
+    let book_pdf_standard = overrides
+        .as_ref()
+        .and_then(|o| o.pdf_standard)
+        .unwrap_or_default();
     let review_mode = overrides.as_ref().and_then(|o| o.review_mode.clone());
     let mut options = BookExportOptions::from_config(base.book.as_ref());
     if let Some(ov) = overrides {
-        if ov.title.is_some() { options.title = ov.title; }
-        if ov.subtitle.is_some() { options.subtitle = ov.subtitle; }
-        if ov.author.is_some() { options.author = ov.author; }
-        if ov.date.is_some() { options.date = ov.date; }
-        if ov.abstract_text.is_some() { options.abstract_text = ov.abstract_text; }
-        if let Some(v) = ov.toc_depth { options.toc_depth = v; }
-        if let Some(v) = ov.inject_chapter_heading { options.inject_chapter_heading = v; }
-        if let Some(v) = ov.wikilink_mode { options.wikilink_mode = v; }
-        if let Some(v) = ov.include_title_page { options.include_title_page = v; }
-        if let Some(v) = ov.include_outline { options.include_outline = v; }
-        if let Some(v) = ov.page_numbering { options.page_numbering = v; }
-        if let Some(v) = ov.include_bibliography { options.include_bibliography = v; }
+        if ov.title.is_some() {
+            options.title = ov.title;
+        }
+        if ov.subtitle.is_some() {
+            options.subtitle = ov.subtitle;
+        }
+        if ov.author.is_some() {
+            options.author = ov.author;
+        }
+        if ov.date.is_some() {
+            options.date = ov.date;
+        }
+        if ov.abstract_text.is_some() {
+            options.abstract_text = ov.abstract_text;
+        }
+        if let Some(v) = ov.toc_depth {
+            options.toc_depth = v;
+        }
+        if let Some(v) = ov.inject_chapter_heading {
+            options.inject_chapter_heading = v;
+        }
+        if let Some(v) = ov.wikilink_mode {
+            options.wikilink_mode = v;
+        }
+        if let Some(v) = ov.include_title_page {
+            options.include_title_page = v;
+        }
+        if let Some(v) = ov.include_outline {
+            options.include_outline = v;
+        }
+        if let Some(v) = ov.page_numbering {
+            options.page_numbering = v;
+        }
+        if let Some(v) = ov.include_bibliography {
+            options.include_bibliography = v;
+        }
     }
 
     // Acquire notebox root up front: per-note path rebasing needs it to
     // compute each note's notebox-relative directory. The same guard is
     // read again further down for template / bibliography resolution.
-    let notebox_root_for_rebase = state.notebox_root.read().await.clone();
+    let notebox_root_for_rebase = session.notebox_root.read().await.clone();
 
     let mut notes: Vec<BookNote> = Vec::with_capacity(data.rows.len());
     for row in &data.rows {
@@ -505,9 +575,11 @@ pub async fn export_collection_book_pdf(
         }
     }
 
-    let notebox_root_guard = state.notebox_root.read().await;
+    let notebox_root_guard = session.notebox_root.read().await;
     let notebox_root_ref = notebox_root_guard.as_deref();
-    let resolved_template = base.typst_template.as_deref()
+    let resolved_template = base
+        .typst_template
+        .as_deref()
         .map(|t| resolve_template_path_with_root(t, notebox_root_ref));
     let template_import_line = resolved_template
         .as_ref()
@@ -516,9 +588,15 @@ pub async fn export_collection_book_pdf(
         base.bibliography_file.as_deref(),
         notebox_root_ref,
         &state,
-    ).await;
+        &session,
+    )
+    .await;
     let bib_path_for_wrapper: Option<String> = effective_bib.as_deref().map(|b| {
-        if b.starts_with('/') { b.to_string() } else { format!("/{b}") }
+        if b.starts_with('/') {
+            b.to_string()
+        } else {
+            format!("/{b}")
+        }
     });
 
     let synthetic_main = {
@@ -556,8 +634,14 @@ pub async fn export_collection_book_pdf(
     let source = book_wrapper::build_book_source(
         &notes,
         &options,
-        if style_rules.is_empty() { None } else { Some(&style_rules) },
-        base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
+        if style_rules.is_empty() {
+            None
+        } else {
+            Some(&style_rules)
+        },
+        base.custom_typst
+            .as_deref()
+            .filter(|c| !c.trim().is_empty()),
         template_import_line.as_deref(),
         bib_path_for_wrapper.as_deref(),
         base.bibliography_style.as_deref(),
@@ -566,10 +650,8 @@ pub async fn export_collection_book_pdf(
         heading_numbering_pattern.as_deref(),
     );
 
-    let mut compiler = state.typst_compiler.lock().await;
-    let compiler = compiler
-        .as_mut()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler = session.typst_compiler.lock().await;
+    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
     if let Some(ref style) = base.bibliography_style {
@@ -582,7 +664,8 @@ pub async fn export_collection_book_pdf(
     // Keep a copy to map any compile error's offset back to the note it came
     // from (the merged source is consumed by the compiler).
     let source_for_diag = source.clone();
-    let compile_result = compiler.compile_pdf_diagnostics(&synthetic_main, source, book_pdf_standard);
+    let compile_result =
+        compiler.compile_pdf_diagnostics(&synthetic_main, source, book_pdf_standard);
     compiler.set_bibliography_style(None);
     let pdf_bytes = match compile_result {
         Ok(bytes) => bytes,
@@ -668,15 +751,12 @@ pub fn check_pdf_standard_requirements(
     if standard == PdfStandardPreset::PdfUa1 {
         let alt_offenders = images_missing_alt(source);
         if !alt_offenders.is_empty() {
-            let mut block = String::from(
-                "Images missing alt text (PDF/UA-1 requires alt: on every image):\n",
-            );
+            let mut block =
+                String::from("Images missing alt text (PDF/UA-1 requires alt: on every image):\n");
             for (line, path) in &alt_offenders {
                 block.push_str(&format!("  line {line}: #image(\"{path}\")\n"));
             }
-            block.push_str(
-                "  Fix: add `alt: \"description\"` to each call.",
-            );
+            block.push_str("  Fix: add `alt: \"description\"` to each call.");
             issues.push(block);
         }
 
@@ -762,8 +842,7 @@ fn images_missing_alt(source: &str) -> Vec<(usize, String)> {
             || args_has_named_arg(args_str, "alt");
         if !has_alt {
             let line = bytes[..start].iter().filter(|&&b| b == b'\n').count() + 1;
-            let path = parse_first_string_arg(args_str)
-                .unwrap_or_else(|| "<unknown>".to_string());
+            let path = parse_first_string_arg(args_str).unwrap_or_else(|| "<unknown>".to_string());
             offenders.push((line, path));
         }
         search_from = start + 1 + args_close + 1;
@@ -773,10 +852,7 @@ fn images_missing_alt(source: &str) -> Vec<(usize, String)> {
 
 /// Ensure the source has a `#set document(date: ...)` rule when exporting to a
 /// PDF standard that requires one (PDF/A-4, PDF/UA-1).
-pub fn ensure_document_date_for_standard(
-    source: String,
-    standard: PdfStandardPreset,
-) -> String {
+pub fn ensure_document_date_for_standard(source: String, standard: PdfStandardPreset) -> String {
     if standard == PdfStandardPreset::Standard {
         return source;
     }
@@ -786,8 +862,7 @@ pub fn ensure_document_date_for_standard(
     }
 
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let dt = parse_date_to_typst_datetime(&today)
-        .unwrap_or_else(|| "datetime.today()".to_string());
+    let dt = parse_date_to_typst_datetime(&today).unwrap_or_else(|| "datetime.today()".to_string());
     let set_rule = format!("#set document(date: {})\n", dt);
 
     let mut byte_pos: usize = 0;

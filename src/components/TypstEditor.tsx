@@ -38,6 +38,7 @@ import {
 import { navigateWikilink } from "../lib/wikilink-nav";
 import { searchHighlights } from "../stores/search";
 import { pathEquals } from "../lib/paths";
+import { onFileChanged } from "../lib/events";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
@@ -771,6 +772,24 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   };
   document.addEventListener("inkycap:notebox-synced", onNoteboxSynced);
   onCleanup(() => document.removeEventListener("inkycap:notebox-synced", onNoteboxSynced));
+
+  // ── External file change (another window / external editor) ─────
+  // The same note can be open in another window, or edited by an external
+  // tool. The notebox file watcher emits `notebox:file-changed` (targeted at
+  // this window). Reload the buffer so it doesn't go stale — but only when
+  // it's clean: a dirty buffer holds unsaved edits we must not clobber (this
+  // window keeps them; they win on its next save). The buffer-equality guard
+  // inside reloadFromDisk makes this editor's *own* save a cheap no-op.
+  let fileChangedUnlisten: (() => void) | undefined;
+  void onFileChanged((payload) => {
+    if (!currentPath || dirty) return;
+    if (!pathEquals(payload.path, currentPath)) return;
+    cancelPendingSave();
+    void reloadFromDisk();
+  }).then((un) => {
+    fileChangedUnlisten = un;
+  });
+  onCleanup(() => fileChangedUnlisten?.());
 
   // ── Wikilink click-to-navigate ────────────────────────
   const onWikilinkNav = (e: Event) => {

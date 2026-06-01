@@ -23,11 +23,11 @@ use crate::git::backend::{
 };
 use crate::git::json_merge::{self, KeyConflict};
 use crate::git::{history, package, staging, suggest};
-use crate::typst_pipeline::package_vendor;
 use crate::notebox_settings::NoteboxGitConfig;
-use crate::state::AppState;
-use crate::storage::{canonicalize_root, to_frontend_string, validate_notebox_path};
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::traits::NoteboxStorage;
+use crate::storage::{canonicalize_root, to_frontend_string, validate_notebox_path};
+use crate::typst_pipeline::package_vendor;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
 /// lives in [`NoteboxGitConfig::remote`]; the named remote is created/synced
@@ -83,14 +83,16 @@ pub struct ReviewSession {
 pub async fn git_fetch_review(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<ReviewSession> {
-    let root = state
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    let git = state
+    let git = session
         .notebox_settings
         .read()
         .await
@@ -244,7 +246,10 @@ fn compute_review_after_fetch(
                             }
                         }
                         suggest::StagedRender::Fallback { reason } => {
-                            log::info!("git review: {} fell back to raw diff: {reason}", rel.display());
+                            log::info!(
+                                "git review: {} fell back to raw diff: {reason}",
+                                rel.display()
+                            );
                             // Stage theirs so the raw-diff view has both sides.
                             let staged = staging::write_staged(root, rel, &theirs)?;
                             ReviewItem {
@@ -373,8 +378,10 @@ pub async fn git_setup_collaboration(
     identity_email: Option<String>,
     https_token: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<GitSetupResult> {
-    let root = state
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -415,10 +422,10 @@ pub async fn git_setup_collaboration(
     // Persist the config into notebox settings (it travels through git) and
     // mirror it into shared state so the fetch/consolidate commands see it
     // without a notebox reopen.
-    let mut settings = state.notebox_settings.read().await.clone();
+    let mut settings = session.notebox_settings.read().await.clone();
     settings.git = Some(NoteboxGitConfig { remote, branch });
     crate::notebox_settings::save_settings(&root, &settings)?;
-    *state.notebox_settings.write().await = settings;
+    *session.notebox_settings.write().await = settings;
 
     Ok(result)
 }
@@ -432,8 +439,10 @@ pub async fn git_setup_collaboration(
 #[tauri::command]
 pub async fn git_reconnect_collaboration(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<GitSetupResult> {
-    let root = state
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -444,7 +453,9 @@ pub async fn git_reconnect_collaboration(
     let (remote, branch, status) =
         tokio::task::spawn_blocking(move || -> Result<(String, String, GitStatusSummary)> {
             if !GitBackend::is_repo(&probe_root) {
-                return Err(InkyCapError::BadRequest("notebox is not a git repository".into()));
+                return Err(InkyCapError::BadRequest(
+                    "notebox is not a git repository".into(),
+                ));
             }
             let backend = GitBackend::open(&probe_root)?;
             let remote = backend
@@ -464,10 +475,10 @@ pub async fn git_reconnect_collaboration(
         .map_err(|e| InkyCapError::Git(format!("reconnect task failed: {e}")))??;
 
     // Persist the derived config (travels through git, like a fresh setup).
-    let mut settings = state.notebox_settings.read().await.clone();
+    let mut settings = session.notebox_settings.read().await.clone();
     settings.git = Some(NoteboxGitConfig { remote, branch });
     crate::notebox_settings::save_settings(&root, &settings)?;
-    *state.notebox_settings.write().await = settings;
+    *session.notebox_settings.write().await = settings;
 
     Ok(GitSetupResult {
         initialized: false,
@@ -480,12 +491,16 @@ pub async fn git_reconnect_collaboration(
 /// a consolidate, publish, or push without waiting for the next notebox-open
 /// event. Fills in `unpushed` (which needs the configured remote + branch).
 #[tauri::command]
-pub async fn git_status(state: State<'_, AppState>) -> Result<Option<GitStatusSummary>> {
-    let root = match state.notebox_root.read().await.clone() {
+pub async fn git_status(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<GitStatusSummary>> {
+    let session = state.session(window.label()).await;
+    let root = match session.notebox_root.read().await.clone() {
         Some(r) => r,
         None => return Ok(None),
     };
-    let git = match state.notebox_settings.read().await.git.clone() {
+    let git = match session.notebox_settings.read().await.git.clone() {
         Some(g) => g,
         None => return Ok(None),
     };
@@ -543,8 +558,13 @@ fn record_shared_head(backend: &GitBackend, root: &Path) -> Result<()> {
 /// (re-authentication without re-running full setup). The token lives only in
 /// the OS keychain — never in settings or the repo.
 #[tauri::command]
-pub async fn git_sign_in(token: String, state: State<'_, AppState>) -> Result<()> {
-    let git = require_collaborative(&state).await?;
+pub async fn git_sign_in(
+    token: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<()> {
+    let session = state.session(window.label()).await;
+    let git = require_collaborative(&session).await?;
     auth::set_https_token(&git.remote, &token)
 }
 
@@ -553,18 +573,22 @@ pub async fn git_sign_in(token: String, state: State<'_, AppState>) -> Result<()
 /// credentials are left intact — disabling is reversible (re-run setup), and
 /// credentials are keyed by host so other noteboxes may share them.
 #[tauri::command]
-pub async fn git_disable_collaboration(state: State<'_, AppState>) -> Result<()> {
-    let root = state
+pub async fn git_disable_collaboration(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<()> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let mut settings = state.notebox_settings.read().await.clone();
+    let mut settings = session.notebox_settings.read().await.clone();
     settings.git = None;
     crate::notebox_settings::save_settings(&root, &settings)?;
-    *state.notebox_settings.write().await = settings;
+    *session.notebox_settings.write().await = settings;
 
     let _ = staging::clear(&root);
     Ok(())
@@ -605,7 +629,9 @@ pub async fn git_clone_notebox(
     }
     let dest = PathBuf::from(dest.trim());
     if dest.as_os_str().is_empty() {
-        return Err(InkyCapError::BadRequest("destination folder is required".into()));
+        return Err(InkyCapError::BadRequest(
+            "destination folder is required".into(),
+        ));
     }
     if dest.exists()
         && std::fs::read_dir(&dest)
@@ -623,7 +649,9 @@ pub async fn git_clone_notebox(
         }
     }
 
-    let branch = branch.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+    let branch = branch
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty());
     let cloned = tokio::task::spawn_blocking(move || -> Result<PathBuf> {
         clone_into(&remote, branch.as_deref(), &dest)?;
         Ok(dest)
@@ -936,7 +964,15 @@ fn render_conflict_items(
         let base = base_oid
             .and_then(|b| backend.read_blob_at(b, rel).ok().flatten())
             .and_then(|bytes| String::from_utf8(bytes).ok());
-        items.push(stage_suggestion_item(root, rel, base.as_deref(), &mine, &theirs, by, on)?);
+        items.push(stage_suggestion_item(
+            root,
+            rel,
+            base.as_deref(),
+            &mine,
+            &theirs,
+            by,
+            on,
+        )?);
     }
     Ok(items)
 }
@@ -981,7 +1017,10 @@ fn stage_suggestion_item(
             })
         }
         suggest::StagedRender::Fallback { reason } => {
-            log::info!("git sync: {} fell back to raw diff: {reason}", rel.display());
+            log::info!(
+                "git sync: {} fell back to raw diff: {reason}",
+                rel.display()
+            );
             let staged = staging::write_staged(root, rel, theirs)?;
             Ok(ReviewItem {
                 path: to_frontend_string(rel),
@@ -1052,14 +1091,30 @@ fn run_review(
             let base_s = base
                 .and_then(|b| backend.read_blob_at(b, &rel).ok().flatten())
                 .and_then(|bytes| String::from_utf8(bytes).ok());
-            items.push(stage_suggestion_item(root, &rel, base_s.as_deref(), &mine, &theirs, by, on)?);
+            items.push(stage_suggestion_item(
+                root,
+                &rel,
+                base_s.as_deref(),
+                &mine,
+                &theirs,
+                by,
+                on,
+            )?);
         } else {
             // Clean incoming change: the merged content is now in the working
             // file. Render mine→merged so the suggestions are exactly what
             // others added and accepting never discards a local edit.
             let mine = read_note_blob(backend, m, &rel)?;
             let merged = std::fs::read_to_string(root.join(&rel)).unwrap_or_default();
-            items.push(stage_suggestion_item(root, &rel, Some(&mine), &mine, &merged, by, on)?);
+            items.push(stage_suggestion_item(
+                root,
+                &rel,
+                Some(&mine),
+                &mine,
+                &merged,
+                by,
+                on,
+            )?);
         }
     }
 
@@ -1112,7 +1167,9 @@ fn run_finalize(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncO
         .ok_or_else(|| InkyCapError::BadRequest("no local commit to finalize a merge".into()))?;
     let t = backend
         .remote_tracking_oid(REMOTE_NAME, &git.branch)?
-        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to finalize against".into()))?;
+        .ok_or_else(|| {
+            InkyCapError::BadRequest("no fetched remote tip to finalize against".into())
+        })?;
 
     // Write each resolved staged copy over its working note (the clean files
     // were applied at pause; conflicted notes are still at mine until now).
@@ -1157,8 +1214,10 @@ fn run_finalize(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncO
 pub async fn git_sync(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<SyncOutcome> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     let _ = app_handle.emit("notebox:git-fetch-started", ());
     let result = tokio::task::spawn_blocking(move || {
         let review = crate::notebox_settings::load_local_state(&root).review_incoming;
@@ -1179,8 +1238,10 @@ pub async fn git_sync(
 pub async fn git_check_updates(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<CheckResult> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     let _ = app_handle.emit("notebox:git-fetch-started", ());
     let result = tokio::task::spawn_blocking(move || run_check(&root, &git))
         .await
@@ -1247,8 +1308,10 @@ pub async fn git_sync_finalize(
     push: bool,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<SyncOutcome> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     let _ = app_handle.emit("notebox:git-push-started", ());
     let result = tokio::task::spawn_blocking(move || run_finalize(&root, &git, push))
         .await
@@ -1371,7 +1434,9 @@ fn resolve_binary(
     let m = backend.current_head()?.map(|(_, oid)| oid);
     let t = backend
         .remote_tracking_oid(REMOTE_NAME, &git.branch)?
-        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to resolve against".into()))?;
+        .ok_or_else(|| {
+            InkyCapError::BadRequest("no fetched remote tip to resolve against".into())
+        })?;
 
     let mut out = BinaryResolution {
         path: to_frontend_string(&rel),
@@ -1419,8 +1484,10 @@ pub async fn git_resolve_binary_conflict(
     path: String,
     decision: BinaryDecision,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<BinaryResolution> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     tokio::task::spawn_blocking(move || resolve_binary(&root, &git, &path, decision))
         .await
         .map_err(|e| InkyCapError::Git(format!("resolve task failed: {e}")))?
@@ -1496,13 +1563,14 @@ fn resolve_settings(
     decisions: &HashMap<String, String>,
 ) -> Result<()> {
     let backend = GitBackend::open(root)?;
-    let m = backend
-        .current_head()?
-        .map(|(_, oid)| oid)
-        .ok_or_else(|| InkyCapError::BadRequest("no local commit to resolve settings against".into()))?;
+    let m = backend.current_head()?.map(|(_, oid)| oid).ok_or_else(|| {
+        InkyCapError::BadRequest("no local commit to resolve settings against".into())
+    })?;
     let t = backend
         .remote_tracking_oid(REMOTE_NAME, &git.branch)?
-        .ok_or_else(|| InkyCapError::BadRequest("no fetched remote tip to resolve against".into()))?;
+        .ok_or_else(|| {
+            InkyCapError::BadRequest("no fetched remote tip to resolve against".into())
+        })?;
     let base = backend.merge_base(m, t)?;
     let rel = settings_rel();
     let mine = read_settings_json(&backend, Some(m), &rel);
@@ -1512,7 +1580,11 @@ fn resolve_settings(
     let merge = json_merge::three_way(&base_v, &mine, &theirs);
     let mut merged = merge.merged;
     for c in &merge.conflicts {
-        if decisions.get(&c.path).map(|d| d == "theirs").unwrap_or(false) {
+        if decisions
+            .get(&c.path)
+            .map(|d| d == "theirs")
+            .unwrap_or(false)
+        {
             json_merge::set_at_path(&mut merged, &c.path, c.theirs.clone());
         }
     }
@@ -1527,8 +1599,10 @@ fn resolve_settings(
 pub async fn git_resolve_settings(
     decisions: HashMap<String, String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<()> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     tokio::task::spawn_blocking(move || resolve_settings(&root, &git, &decisions))
         .await
         .map_err(|e| InkyCapError::Git(format!("resolve task failed: {e}")))?
@@ -1555,8 +1629,10 @@ fn parse_commit(commit: &str) -> Result<git2::Oid> {
 pub async fn git_note_history(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<FileVersion>> {
-    let (root, _git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, _git) = require_collaborative_with_root(&session).await?;
     let rel = notebox_relative(&root, &path);
     tokio::task::spawn_blocking(move || -> Result<Vec<FileVersion>> {
         if !GitBackend::is_repo(&root) {
@@ -1576,8 +1652,10 @@ pub async fn git_open_note_version(
     path: String,
     commit: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String> {
-    let (root, _git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, _git) = require_collaborative_with_root(&session).await?;
     let rel = notebox_relative(&root, &path);
     let scratch = tokio::task::spawn_blocking(move || -> Result<PathBuf> {
         let backend = GitBackend::open(&root)?;
@@ -1598,9 +1676,11 @@ pub async fn git_restore_note_version(
     path: String,
     commit: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<()> {
-    let (root, _git) = require_collaborative_with_root(&state).await?;
-    let storage = state
+    let session = state.session(window.label()).await;
+    let (root, _git) = require_collaborative_with_root(&session).await?;
+    let storage = session
         .storage
         .read()
         .await
@@ -1626,7 +1706,9 @@ fn read_version_text(backend: &GitBackend, commit: git2::Oid, rel: &Path) -> Res
     backend
         .read_blob_at(commit, rel)?
         .and_then(|bytes| String::from_utf8(bytes).ok())
-        .ok_or_else(|| InkyCapError::BadRequest("that version of the note could not be read".into()))
+        .ok_or_else(|| {
+            InkyCapError::BadRequest("that version of the note could not be read".into())
+        })
 }
 
 // ─────────────────────────── Identity & review session ─────────────────────
@@ -1638,16 +1720,22 @@ pub async fn git_set_identity(
     name: String,
     email: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<()> {
-    let git = require_collaborative(&state).await?;
+    let session = state.session(window.label()).await;
+    let git = require_collaborative(&session).await?;
     auth::set_identity_for_remote(&git.remote, GitIdentity { name, email })
 }
 
 /// The commit identity configured for this notebox's remote, if any (for the
 /// setup UI to display / seed).
 #[tauri::command]
-pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitIdentity>> {
-    let git = require_collaborative(&state).await?;
+pub async fn git_get_identity(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<GitIdentity>> {
+    let session = state.session(window.label()).await;
+    let git = require_collaborative(&session).await?;
     Ok(auth::identity_for_remote(&git.remote))
 }
 
@@ -1660,9 +1748,11 @@ pub async fn git_get_identity(state: State<'_, AppState>) -> Result<Option<GitId
 #[tauri::command]
 pub async fn git_default_commit_identity(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<GitIdentity>> {
-    let root = state.notebox_root.read().await.clone();
-    let remote = state
+    let session = state.session(window.label()).await;
+    let root = session.notebox_root.read().await.clone();
+    let remote = session
         .notebox_settings
         .read()
         .await
@@ -1690,8 +1780,14 @@ pub async fn git_default_commit_identity(
             return Ok(Some(GitIdentity { name, email }));
         }
         if let Ok(cfg) = git2::Config::open_default() {
-            let name = cfg.get_string("user.name").ok().filter(|s| !s.trim().is_empty());
-            let email = cfg.get_string("user.email").ok().filter(|s| !s.trim().is_empty());
+            let name = cfg
+                .get_string("user.name")
+                .ok()
+                .filter(|s| !s.trim().is_empty());
+            let email = cfg
+                .get_string("user.email")
+                .ok()
+                .filter(|s| !s.trim().is_empty());
             if let (Some(name), Some(email)) = (name, email) {
                 return Ok(Some(GitIdentity { name, email }));
             }
@@ -1711,8 +1807,12 @@ pub async fn git_default_commit_identity(
 /// merging — so committed work is preserved; the abandoned merge can simply be
 /// re-run later (its incoming changes are still on the remote).
 #[tauri::command]
-pub async fn git_discard_review(state: State<'_, AppState>) -> Result<()> {
-    let root = state
+pub async fn git_discard_review(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<()> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -1775,11 +1875,15 @@ pub async fn git_export_package(
     dest: String,
     password: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<PackageExportResult> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     let dest_path = PathBuf::from(dest.trim());
     if dest_path.as_os_str().is_empty() {
-        return Err(InkyCapError::BadRequest("destination file is required".into()));
+        return Err(InkyCapError::BadRequest(
+            "destination file is required".into(),
+        ));
     }
     let password = password.filter(|p| !p.is_empty());
 
@@ -1833,8 +1937,10 @@ pub async fn git_import_package(
     password: Option<String>,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<SyncOutcome> {
-    let (root, git) = require_collaborative_with_root(&state).await?;
+    let session = state.session(window.label()).await;
+    let (root, git) = require_collaborative_with_root(&session).await?;
     let archive_path = PathBuf::from(archive.trim());
     if archive_path.as_os_str().is_empty() {
         return Err(InkyCapError::BadRequest("package file is required".into()));
@@ -1885,7 +1991,9 @@ pub async fn git_import_package_as_notebox(
     }
     let dest = PathBuf::from(dest.trim());
     if dest.as_os_str().is_empty() {
-        return Err(InkyCapError::BadRequest("destination folder is required".into()));
+        return Err(InkyCapError::BadRequest(
+            "destination folder is required".into(),
+        ));
     }
     if dest.exists()
         && std::fs::read_dir(&dest)
@@ -1932,8 +2040,10 @@ pub async fn git_setup_package_handoff(
     identity_name: Option<String>,
     identity_email: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<GitSetupResult> {
-    let root = state
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -1957,13 +2067,13 @@ pub async fn git_setup_package_handoff(
     .await
     .map_err(|e| InkyCapError::Git(format!("setup task failed: {e}")))??;
 
-    let mut settings = state.notebox_settings.read().await.clone();
+    let mut settings = session.notebox_settings.read().await.clone();
     settings.git = Some(NoteboxGitConfig {
         remote: String::new(),
         branch,
     });
     crate::notebox_settings::save_settings(&root, &settings)?;
-    *state.notebox_settings.write().await = settings;
+    *session.notebox_settings.write().await = settings;
 
     Ok(result)
 }
@@ -1973,8 +2083,12 @@ pub async fn git_setup_package_handoff(
 /// Whether the open notebox is set to review incoming changes before merging
 /// (the per-machine `NoteboxLocalState::review_incoming`). Off by default.
 #[tauri::command]
-pub async fn git_get_review_incoming(state: State<'_, AppState>) -> Result<bool> {
-    let root = state
+pub async fn git_get_review_incoming(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<bool> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -1986,8 +2100,13 @@ pub async fn git_get_review_incoming(state: State<'_, AppState>) -> Result<bool>
 /// Set whether the open notebox reviews incoming changes before merging. Stored
 /// per-machine (gitignored `local.json`), so it never travels to collaborators.
 #[tauri::command]
-pub async fn git_set_review_incoming(enabled: bool, state: State<'_, AppState>) -> Result<()> {
-    let root = state
+pub async fn git_set_review_incoming(
+    enabled: bool,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<()> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -2017,8 +2136,12 @@ pub struct BundlePackagesResult {
 /// Whether the open notebox bundles its Typst packages on share
 /// (`NoteboxLocalState::bundle_packages`, per-machine). Off by default.
 #[tauri::command]
-pub async fn git_get_bundle_packages(state: State<'_, AppState>) -> Result<bool> {
-    let root = state
+pub async fn git_get_bundle_packages(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<bool> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -2035,8 +2158,10 @@ pub async fn git_get_bundle_packages(state: State<'_, AppState>) -> Result<bool>
 pub async fn git_set_bundle_packages(
     enabled: bool,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<BundlePackagesResult> {
-    let root = state
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -2068,8 +2193,12 @@ pub async fn git_set_bundle_packages(
 /// incoming author are not recovered (the staged copies still carry the
 /// suggestion markup to review), so the items read as plain incoming changes.
 #[tauri::command]
-pub async fn git_pending_review(state: State<'_, AppState>) -> Result<SyncOutcome> {
-    let root = state
+pub async fn git_pending_review(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<SyncOutcome> {
+    let session = state.session(window.label()).await;
+    let root = session
         .notebox_root
         .read()
         .await
@@ -2101,8 +2230,8 @@ pub async fn git_pending_review(state: State<'_, AppState>) -> Result<SyncOutcom
 }
 
 /// The open notebox's git config, erroring if it is not collaborative.
-async fn require_collaborative(state: &State<'_, AppState>) -> Result<NoteboxGitConfig> {
-    state
+async fn require_collaborative(session: &NoteboxSession) -> Result<NoteboxGitConfig> {
+    session
         .notebox_settings
         .read()
         .await
@@ -2113,15 +2242,15 @@ async fn require_collaborative(state: &State<'_, AppState>) -> Result<NoteboxGit
 
 /// The open notebox's root + git config, erroring if not open / not collaborative.
 async fn require_collaborative_with_root(
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Result<(PathBuf, NoteboxGitConfig)> {
-    let root = state
+    let root = session
         .notebox_root
         .read()
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    Ok((root, require_collaborative(state).await?))
+    Ok((root, require_collaborative(session).await?))
 }
 
 #[cfg(test)]
@@ -2173,7 +2302,10 @@ mod tests {
         assert!(matches!(item.kind, ChangeKind::Modified));
         assert_eq!(item.conflicts, 0, "mine == base ⇒ clean incoming change");
         assert!(item.staged_path.is_some());
-        assert!(session.incoming.is_some(), "incoming commit context present");
+        assert!(
+            session.incoming.is_some(),
+            "incoming commit context present"
+        );
 
         // The staged copy round-trips: accepting all suggestions yields theirs.
         let staged =
@@ -2182,7 +2314,10 @@ mod tests {
             resolve_all_suggestions(&staged, true),
             "line one\nCHANGED two\n"
         );
-        assert_eq!(resolve_all_suggestions(&staged, false), "line one\nline two\n");
+        assert_eq!(
+            resolve_all_suggestions(&staged, false),
+            "line one\nline two\n"
+        );
     }
 
     /// Give a repo a git identity so `author_signature`'s git-config fallback
@@ -2230,7 +2365,10 @@ mod tests {
         let (_bd, _bp, bgit) = mk("b", "from B\n");
         let (_cd, _cp, cgit) = mk("c", "from C\n");
 
-        assert!(!bgit.push("origin", &branch).unwrap().rejected, "first push wins");
+        assert!(
+            !bgit.push("origin", &branch).unwrap().rejected,
+            "first push wins"
+        );
         let res = cgit.push("origin", &branch).unwrap();
         assert!(res.rejected, "second, diverged push is rejected");
         assert!(res.message.is_some());
@@ -2258,7 +2396,10 @@ mod tests {
 
         // Re-running adopts the existing repo (no second init) and is idempotent.
         let again = apply_setup(root, url, "main", None, None).unwrap();
-        assert!(!again.initialized, "an existing repo is adopted, not re-init'd");
+        assert!(
+            !again.initialized,
+            "an existing repo is adopted, not re-init'd"
+        );
     }
 
     /// Mirrors the *app's* setup path (a plain folder `init`'d, not a clone): a
@@ -2417,7 +2558,10 @@ mod tests {
     }
 
     fn main_cfg(url: &str) -> NoteboxGitConfig {
-        NoteboxGitConfig { remote: url.to_string(), branch: "main".into() }
+        NoteboxGitConfig {
+            remote: url.to_string(),
+            branch: "main".into(),
+        }
     }
 
     /// Seed the remote with `files` from clone A and push them on `main`.
@@ -2434,7 +2578,8 @@ mod tests {
     fn commit_push(a: &GitBackend, apath: &Path, url: &str, file: &str, content: &str) {
         std::fs::write(apath.join(file), content).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(url).unwrap()).unwrap();
+        a.commit("a-edit", &a.author_signature(url).unwrap())
+            .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
@@ -2444,7 +2589,12 @@ mod tests {
         let (_bare, url) = bare_remote();
         let git = main_cfg(&url);
         let (_ad, ap, a) = clone_at(&url, "a");
-        seed(&a, &ap, &url, &[("x.typ", "x base\n"), ("y.typ", "y base\n")]);
+        seed(
+            &a,
+            &ap,
+            &url,
+            &[("x.typ", "x base\n"), ("y.typ", "y base\n")],
+        );
         let (_bd, bp, _b) = clone_at(&url, "b");
 
         commit_push(&a, &ap, &url, "x.typ", "x THEIRS\n");
@@ -2454,15 +2604,27 @@ mod tests {
         let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.committed && out.pulled && out.pushed && !out.paused);
         assert!(out.conflicts.is_empty());
-        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
-        assert_eq!(std::fs::read_to_string(bp.join("y.typ")).unwrap(), "y MINE\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("x.typ")).unwrap(),
+            "x THEIRS\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(bp.join("y.typ")).unwrap(),
+            "y MINE\n"
+        );
         assert_eq!(out.digest.len(), 1, "only x landed from A");
         assert_eq!(out.digest[0].status, "modified");
 
         // A third clone sees both edits.
         let (_cd, cp, _c) = clone_at(&url, "c");
-        assert_eq!(std::fs::read_to_string(cp.join("x.typ")).unwrap(), "x THEIRS\n");
-        assert_eq!(std::fs::read_to_string(cp.join("y.typ")).unwrap(), "y MINE\n");
+        assert_eq!(
+            std::fs::read_to_string(cp.join("x.typ")).unwrap(),
+            "x THEIRS\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(cp.join("y.typ")).unwrap(),
+            "y MINE\n"
+        );
     }
 
     /// Same-region edits conflict: sync pauses with the note staged as
@@ -2495,11 +2657,17 @@ mod tests {
 
         let fin = run_finalize(&bp, &git, true).unwrap();
         assert!(fin.pulled && fin.pushed && !fin.paused);
-        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("note.typ")).unwrap(),
+            "AAA one\nline two\n"
+        );
 
         // A third clone sees the resolved result.
         let (_cd, cp, _c) = clone_at(&url, "c");
-        assert_eq!(std::fs::read_to_string(cp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+        assert_eq!(
+            std::fs::read_to_string(cp.join("note.typ")).unwrap(),
+            "AAA one\nline two\n"
+        );
     }
 
     /// Both sides change the same binary → sync pauses with a binary conflict
@@ -2541,7 +2709,10 @@ mod tests {
         let res = resolve_binary(&bp, &git, "img.bin", BinaryDecision::KeepBoth).unwrap();
         assert_eq!(std::fs::read(bp.join("img.bin")).unwrap(), b"MINE");
         assert_eq!(res.added_path.as_deref(), Some("img (incoming).bin"));
-        assert_eq!(std::fs::read(bp.join("img (incoming).bin")).unwrap(), b"THEIRS");
+        assert_eq!(
+            std::fs::read(bp.join("img (incoming).bin")).unwrap(),
+            b"THEIRS"
+        );
 
         // Finalize commits the working tree (mine + the incoming sibling) and pushes.
         let fin = run_finalize(&bp, &git, true).unwrap();
@@ -2549,7 +2720,10 @@ mod tests {
 
         let (_cd, cp, _c) = clone_at(&url, "c");
         assert_eq!(std::fs::read(cp.join("img.bin")).unwrap(), b"MINE");
-        assert_eq!(std::fs::read(cp.join("img (incoming).bin")).unwrap(), b"THEIRS");
+        assert_eq!(
+            std::fs::read(cp.join("img (incoming).bin")).unwrap(),
+            b"THEIRS"
+        );
     }
 
     /// Seed a single-line `settings.json` (so a both-sides edit forces a git
@@ -2581,12 +2755,16 @@ mod tests {
         // A changes key b and pushes; B changes key a (uncommitted).
         std::fs::write(ap.join(".inkycap/settings.json"), r#"{"a":1,"b":9}"#).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(&url).unwrap()).unwrap();
+        a.commit("a-edit", &a.author_signature(&url).unwrap())
+            .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
         std::fs::write(bp.join(".inkycap/settings.json"), r#"{"a":5,"b":2}"#).unwrap();
 
         let out = run_sync(&bp, &git, true, false).unwrap();
-        assert!(!out.paused, "distinct-key settings edits merge automatically");
+        assert!(
+            !out.paused,
+            "distinct-key settings edits merge automatically"
+        );
         assert!(out.settings_conflict.is_none());
         assert!(out.pulled && out.pushed);
         assert_eq!(read_settings(&bp), serde_json::json!({ "a": 5, "b": 9 }));
@@ -2608,13 +2786,16 @@ mod tests {
 
         std::fs::write(ap.join(".inkycap/settings.json"), r#"{"view":"live"}"#).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(&url).unwrap()).unwrap();
+        a.commit("a-edit", &a.author_signature(&url).unwrap())
+            .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
         std::fs::write(bp.join(".inkycap/settings.json"), r#"{"view":"reading"}"#).unwrap();
 
         let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.paused, "a same-key clash needs a decision");
-        let sc = out.settings_conflict.expect("the settings clash is surfaced");
+        let sc = out
+            .settings_conflict
+            .expect("the settings clash is surfaced");
         assert_eq!(sc.conflicts.len(), 1);
         assert_eq!(sc.conflicts[0].path, "view");
         // The merged working file defaults the clash to mine.
@@ -2644,7 +2825,10 @@ mod tests {
         git2::Repository::init(root).unwrap();
         set_git_identity(root);
         let backend = GitBackend::open(root).unwrap();
-        let git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        let git = NoteboxGitConfig {
+            remote: String::new(),
+            branch: "main".into(),
+        };
         let sig = backend.author_signature("").unwrap();
 
         std::fs::write(root.join("n.typ"), "one\n").unwrap();
@@ -2689,7 +2873,10 @@ mod tests {
         // B is clean; pull via fast-forward (nothing to push back).
         let out = run_sync(&bp, &git, true, false).unwrap();
         assert!(out.pulled && !out.pushed && !out.committed && !out.paused);
-        assert_eq!(std::fs::read_to_string(bp.join("n.typ")).unwrap(), "after\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("n.typ")).unwrap(),
+            "after\n"
+        );
     }
 
     /// Nothing on either side ⇒ up to date.
@@ -2719,7 +2906,10 @@ mod tests {
         assert!(out.committed && out.pushed && !out.pulled && !out.up_to_date);
 
         let (_cd, cp, _c) = clone_at(&url, "c");
-        assert_eq!(std::fs::read_to_string(cp.join("n.typ")).unwrap(), "B edit\n");
+        assert_eq!(
+            std::fs::read_to_string(cp.join("n.typ")).unwrap(),
+            "B edit\n"
+        );
     }
 
     /// Check for updates reports how far behind the remote is **without** pulling
@@ -2735,7 +2925,10 @@ mod tests {
         commit_push(&a, &ap, &url, "n.typ", "v2\n");
 
         let res = run_check(&bp, &git).unwrap();
-        assert!(!res.up_to_date && res.behind == 1, "one incoming commit reported");
+        assert!(
+            !res.up_to_date && res.behind == 1,
+            "one incoming commit reported"
+        );
         assert!(res.incoming.is_some(), "incoming commit context present");
         assert_eq!(
             std::fs::read_to_string(bp.join("n.typ")).unwrap(),
@@ -2779,7 +2972,10 @@ mod tests {
     fn receive_as_notebox(archive: &Path, into: &Path) {
         let staging = package::extract_to_temp(archive, None).unwrap();
         clone_into(&staging.path().to_string_lossy(), None, into).unwrap();
-        GitBackend::open(into).unwrap().remove_remote(REMOTE_NAME).unwrap();
+        GitBackend::open(into)
+            .unwrap()
+            .remove_remote(REMOTE_NAME)
+            .unwrap();
         set_git_identity(into);
     }
 
@@ -2813,7 +3009,10 @@ mod tests {
         let bdir = tempfile::tempdir().unwrap();
         let bp = bdir.path().join("b");
         receive_as_notebox(&base_pkg, &bp);
-        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x base\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("x.typ")).unwrap(),
+            "x base\n"
+        );
 
         // A edits x, commits, exports an update package.
         std::fs::write(adir.path().join("x.typ"), "x THEIRS\n").unwrap();
@@ -2826,8 +3025,14 @@ mod tests {
         std::fs::write(bp.join("y.typ"), "y MINE\n").unwrap();
         let out = reconcile_package(&update_pkg, &bp);
         assert!(out.committed && out.pulled && !out.pushed && !out.paused);
-        assert_eq!(std::fs::read_to_string(bp.join("x.typ")).unwrap(), "x THEIRS\n");
-        assert_eq!(std::fs::read_to_string(bp.join("y.typ")).unwrap(), "y MINE\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("x.typ")).unwrap(),
+            "x THEIRS\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(bp.join("y.typ")).unwrap(),
+            "y MINE\n"
+        );
         assert_eq!(out.digest.len(), 1, "only x landed from the package");
     }
 
@@ -2864,10 +3069,16 @@ mod tests {
         let resolved = resolve_all_suggestions(&staged, true);
         std::fs::write(staging::staged_path(&bp, rel), &resolved).unwrap();
 
-        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        let package_git = NoteboxGitConfig {
+            remote: String::new(),
+            branch: "main".into(),
+        };
         let fin = run_finalize(&bp, &package_git, false).unwrap();
         assert!(fin.pulled && !fin.pushed && !fin.paused);
-        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "AAA one\nline two\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("note.typ")).unwrap(),
+            "AAA one\nline two\n"
+        );
     }
 
     // ── Review-incoming mode (pause + stage every incoming change) ────────────
@@ -2902,10 +3113,20 @@ mod tests {
         // Accept the suggestion and finalize → the incoming edit lands.
         let rel = Path::new("note.typ");
         let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
-        std::fs::write(staging::staged_path(&bp, rel), resolve_all_suggestions(&staged, true)).unwrap();
-        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        std::fs::write(
+            staging::staged_path(&bp, rel),
+            resolve_all_suggestions(&staged, true),
+        )
+        .unwrap();
+        let package_git = NoteboxGitConfig {
+            remote: String::new(),
+            branch: "main".into(),
+        };
         run_finalize(&bp, &package_git, false).unwrap();
-        assert_eq!(std::fs::read_to_string(bp.join("note.typ")).unwrap(), "ALPHA\nbeta\n");
+        assert_eq!(
+            std::fs::read_to_string(bp.join("note.typ")).unwrap(),
+            "ALPHA\nbeta\n"
+        );
     }
 
     /// The load-bearing guarantee: in review mode, accepting an incoming change
@@ -2939,8 +3160,15 @@ mod tests {
         // Accept-all → takes A's first-line change AND keeps B's last-line edit.
         let rel = Path::new("note.typ");
         let staged = staging::read_staged(&bp, rel).unwrap().unwrap();
-        std::fs::write(staging::staged_path(&bp, rel), resolve_all_suggestions(&staged, true)).unwrap();
-        let package_git = NoteboxGitConfig { remote: String::new(), branch: "main".into() };
+        std::fs::write(
+            staging::staged_path(&bp, rel),
+            resolve_all_suggestions(&staged, true),
+        )
+        .unwrap();
+        let package_git = NoteboxGitConfig {
+            remote: String::new(),
+            branch: "main".into(),
+        };
         run_finalize(&bp, &package_git, false).unwrap();
         assert_eq!(
             std::fs::read_to_string(bp.join("note.typ")).unwrap(),

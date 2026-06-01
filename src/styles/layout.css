@@ -2905,6 +2905,11 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* Inline validation message (e.g. an invalid Add-notebox folder). */
+.settings__description--error {
+  color: var(--accent-danger, #c42025);
+}
+
 .settings__field-hint {
   font-size: var(--text-sm);
   color: var(--fg-dim);
@@ -8349,6 +8354,53 @@ svg.lucide {
   text-align: left;
 }
 
+/* Each notebox row pairs the switch action (fills the row) with a trailing
+   "open in a new window" button, which only tints on hover so it stays quiet
+   until reached for. */
+.notebox-switcher__row {
+  display: flex;
+  align-items: center;
+}
+
+.notebox-switcher__switch {
+  flex: 1;
+  min-width: 0;
+}
+
+.notebox-switcher__new-window {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 4px;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.notebox-switcher__new-window:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* A notebox already open in another window: greyed and unclickable in the
+   switcher (one notebox per window), tagged so the reason is obvious. */
+.notebox-switcher__switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notebox-switcher__badge {
+  margin-left: 6px;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
 /* ─── Notebox management (Settings > Overview) ─── */
 
 .notebox-row {
@@ -10060,6 +10112,18 @@ svg.lucide {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Marks a notebox already open in another window (it can't be opened here —
+   one notebox per window). Pushed to the row's right edge. */
+.notebox-required__entry-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 
 /* ── Scaffold picker (Ctrl+\) ────────────────────────────────────────── */

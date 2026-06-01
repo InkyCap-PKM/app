@@ -23,8 +23,10 @@ pub async fn export_note_html(
     include_bibliography: Option<bool>,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
     let content = apply_review_mode(&content, review_mode.as_deref());
@@ -45,35 +47,51 @@ pub async fn export_note_html(
     let content = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
 
-    let source = prepare_bibliography(content, None, None, include_bibliography.unwrap_or(true), &state).await;
+    let source = prepare_bibliography(
+        content,
+        None,
+        None,
+        include_bibliography.unwrap_or(true),
+        &state,
+        &session,
+    )
+    .await;
 
-    let mut compiler = state.typst_compiler.lock().await;
-    let compiler = compiler
-        .as_mut()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let mut compiler = session.typst_compiler.lock().await;
+    let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
     compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
-    let result = compile_with_auto_packages(compiler, |c| {
-        c.compile_html(&path_buf, source.clone())
-    })
-    .await
-    .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+    let result =
+        compile_with_auto_packages(compiler, |c| c.compile_html(&path_buf, source.clone()))
+            .await
+            .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
 
     if !result.ok {
-        let msgs: Vec<_> = result.diagnostics.iter().map(|d| d.message.clone()).collect();
-        return Err(InkyCapError::ExportFailed(
-            format!("HTML compilation failed: {}", msgs.join("; ")),
-        ));
+        let msgs: Vec<_> = result
+            .diagnostics
+            .iter()
+            .map(|d| d.message.clone())
+            .collect();
+        return Err(InkyCapError::ExportFailed(format!(
+            "HTML compilation failed: {}",
+            msgs.join("; ")
+        )));
     }
 
     // Copy referenced assets (images, video, audio) next to the output file and
     // rewrite their `/…` srcs to relative paths, so the .html is self-contained.
     let output_path_buf = PathBuf::from(&output_path);
-    let output_dir = output_path_buf.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let output_dir = output_path_buf
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
     let html_out = {
-        let notebox_root = state.notebox_root.read().await;
+        let notebox_root = session.notebox_root.read().await;
         match notebox_root.as_ref() {
-            Some(root) => localize_html_assets(&result.html, root, output_dir).await?.0,
+            Some(root) => {
+                localize_html_assets(&result.html, root, output_dir)
+                    .await?
+                    .0
+            }
             None => result.html.clone(),
         }
     };
@@ -131,9 +149,9 @@ pub(super) async fn inject_html_metadata(
                         escape_html_content(t),
                         after,
                     );
-                    tokio::fs::write(path, replaced)
-                        .await
-                        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write HTML: {}", e)))?;
+                    tokio::fs::write(path, replaced).await.map_err(|e| {
+                        InkyCapError::ExportFailed(format!("Failed to write HTML: {}", e))
+                    })?;
                     return Ok(());
                 }
             }

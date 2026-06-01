@@ -33,8 +33,10 @@ use crate::state::AppState;
 pub async fn backup_now(
     app: AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<runner::BackupReport>> {
-    let notebox_root = state
+    let session = state.session(window.label()).await;
+    let notebox_root = session
         .notebox_root
         .read()
         .await
@@ -103,8 +105,12 @@ pub async fn backup_now(
 /// the active notebox's record — never another notebox's. Returns the
 /// default ("never ran") record when no notebox is open.
 #[tauri::command]
-pub async fn get_backup_state(state: State<'_, AppState>) -> Result<state::BackupState> {
-    let notebox_root = state.notebox_root.read().await.clone();
+pub async fn get_backup_state(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<state::BackupState> {
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await.clone();
     Ok(match notebox_root {
         Some(root) => state::load(&root),
         None => state::BackupState::default(),
@@ -130,7 +136,8 @@ pub async fn cancel_backup(state: State<'_, AppState>) -> Result<()> {
 pub async fn set_backup_password(password: String) -> Result<()> {
     if password.is_empty() {
         return Err(InkyCapError::BadRequest(
-            "Password cannot be empty. To disable encryption, clear the password instead.".to_string(),
+            "Password cannot be empty. To disable encryption, clear the password instead."
+                .to_string(),
         ));
     }
     tokio::task::spawn_blocking(move || password::set(&password))
@@ -161,9 +168,7 @@ pub async fn has_backup_password() -> Result<bool> {
 /// first. Returns an empty list when the destination isn't set or
 /// doesn't exist yet — the UI treats both as "nothing to restore from".
 #[tauri::command]
-pub async fn list_backup_archives(
-    state: State<'_, AppState>,
-) -> Result<Vec<restore::BackupEntry>> {
+pub async fn list_backup_archives(state: State<'_, AppState>) -> Result<Vec<restore::BackupEntry>> {
     let settings = state.settings.read().await.backup.clone();
     let Some(folder) = settings.path.as_ref() else {
         return Ok(Vec::new());
@@ -224,13 +229,7 @@ pub async fn restore_backup_files(
             .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??,
     };
     tokio::task::spawn_blocking(move || {
-        restore::extract_files(
-            &archive,
-            &target,
-            &entries,
-            password.as_deref(),
-            conflict,
-        )
+        restore::extract_files(&archive, &target, &entries, password.as_deref(), conflict)
     })
     .await
     .map_err(|e| InkyCapError::ExportFailed(format!("restore task panicked: {e}")))?

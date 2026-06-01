@@ -15,8 +15,10 @@ use crate::storage::traits::NoteboxStorage;
 #[tauri::command]
 pub async fn get_all_tags(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<(String, usize)>, InkyCapError> {
-    let pi = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let pi = session.property_index.read().await;
     Ok(pi.all_tags_sorted())
 }
 
@@ -33,7 +35,9 @@ pub async fn notebox_search(
     case_sensitive: Option<bool>,
     use_regex: Option<bool>,
     annotation_scope: Option<AnnotationScope>,
+    window: tauri::WebviewWindow,
 ) -> Result<SearchResponse, InkyCapError> {
+    let session = state.session(window.label()).await;
     let limit = max_results.unwrap_or(100);
     let offset = offset.unwrap_or(0);
     let annotation_scope = annotation_scope.unwrap_or_default();
@@ -47,9 +51,8 @@ pub async fn notebox_search(
     } else if use_regex.unwrap_or(false) {
         crate::search::query::QueryNode::Regex(query.clone())
     } else {
-        parse_query(&query).ok_or_else(|| {
-            InkyCapError::FilterParse("Empty or invalid search query".to_string())
-        })?
+        parse_query(&query)
+            .ok_or_else(|| InkyCapError::FilterParse("Empty or invalid search query".to_string()))?
     };
 
     // Case-sensitive search verifies each matched span against the original-case
@@ -63,9 +66,8 @@ pub async fn notebox_search(
     } else {
         Vec::new()
     };
-    let verify = (!terms.is_empty()).then(|| {
-        move |span: &str| terms.iter().any(|t| t.matches(span))
-    });
+    let verify =
+        (!terms.is_empty()).then(|| move |span: &str| terms.iter().any(|t| t.matches(span)));
 
     // Resolve membership for any `collection:` filter in the query before we
     // take the search-engine lock (resolution reads the collection files and
@@ -77,12 +79,11 @@ pub async fn notebox_search(
         if collections.contains_key(&key) {
             continue;
         }
-        let members =
-            crate::commands::collections::collection_member_paths(state.inner(), &name).await;
+        let members = crate::commands::collections::collection_member_paths(&session, &name).await;
         collections.insert(key, members);
     }
 
-    let engine = state.search_engine.read().await;
+    let engine = session.search_engine.read().await;
     let (mut results, total_count) = engine.search_paginated(
         &parsed,
         offset,
@@ -155,8 +156,15 @@ impl CaseTerm {
 /// phrases are skipped — none of them participate in the case-sensitivity
 /// check.
 fn original_case_terms(query: &str) -> Vec<CaseTerm> {
-    const FILTER_PREFIXES: &[&str] =
-        &["path:", "file:", "tag:", "section:", "property:", "annotation:", "collection:"];
+    const FILTER_PREFIXES: &[&str] = &[
+        "path:",
+        "file:",
+        "tag:",
+        "section:",
+        "property:",
+        "annotation:",
+        "collection:",
+    ];
     let mut out: Vec<CaseTerm> = Vec::new();
     for raw in query.split_whitespace() {
         if matches!(raw, "AND" | "OR" | "NOT") {
@@ -215,10 +223,12 @@ pub async fn search_and_replace(
     file_paths: Option<Vec<String>>,
     case_sensitive: Option<bool>,
     use_regex: Option<bool>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<ReplaceResult>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let case_sensitive = case_sensitive.unwrap_or(false);
     let use_regex = use_regex.unwrap_or(false);
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
 
     // Determine which files to operate on
     let paths: Vec<PathBuf> = if let Some(specified) = file_paths {
@@ -227,13 +237,13 @@ pub async fn search_and_replace(
         // No paths specified — pass all indexed files. The regex
         // replacement itself filters to only files with matches, so
         // there's no need to pre-filter via the search query parser.
-        let engine = state.search_engine.read().await;
+        let engine = session.search_engine.read().await;
         engine.all_indexed_paths()
     };
 
     // Perform replacements
     let replacements = {
-        let engine = state.search_engine.read().await;
+        let engine = session.search_engine.read().await;
         engine.search_and_replace(&query, &replacement, &paths, case_sensitive, use_regex)
     };
 
@@ -245,11 +255,11 @@ pub async fn search_and_replace(
 
         // Update the search index
         let tags = {
-            let pi = state.property_index.read().await;
+            let pi = session.property_index.read().await;
             pi.get_tags_for_file(path)
         };
         let (title, property_keys, property_values) = {
-            let pi = state.property_index.read().await;
+            let pi = session.property_index.read().await;
             let title = pi.get_title_for_file(path);
             let note = pi.notes.get(path);
             let keys = note
@@ -267,7 +277,7 @@ pub async fn search_and_replace(
             (title, keys, values)
         };
         {
-            let mut engine = state.search_engine.write().await;
+            let mut engine = session.search_engine.write().await;
             engine.update_doc(
                 path,
                 new_content,
@@ -336,7 +346,7 @@ mod tests {
         // offset 2 higher than its UTF-16 index — the exact drift that pushed
         // highlights onto the wrong characters.
         let line = "“a is"; // “(3) a(1) ' '(1) i(1) s(1)
-        // "is" starts at byte 5 (3+1+1) but UTF-16 index 3 (1+1+1).
+                            // "is" starts at byte 5 (3+1+1) but UTF-16 index 3 (1+1+1).
         assert_eq!(byte_to_utf16(line, 5), 3);
         // ASCII-only lines are unchanged.
         assert_eq!(byte_to_utf16("hello world", 6), 6);

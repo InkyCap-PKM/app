@@ -6,7 +6,7 @@
 // click, no Escape) until a notebox is opened or created.
 
 import { errorText } from "../lib/errors";
-import { Component, Show, For, createSignal } from "solid-js";
+import { Component, Show, For, createSignal, createResource } from "solid-js";
 import { FolderOpen, FolderPlus } from "lucide-solid";
 import {
   noteboxInfo,
@@ -16,6 +16,8 @@ import {
   openNotebox,
   pickAndOpenNotebox,
 } from "../stores/notebox";
+import * as ipc from "../lib/ipc";
+import { pathEquals } from "../lib/paths";
 import { showToast } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
 
@@ -23,6 +25,16 @@ const NoteboxRequiredOverlay: Component = () => {
   const t = useI18n();
   const [busy, setBusy] = createSignal(false);
   const blocked = () => busy() || isLoading();
+
+  // Noteboxes already open in another window. A notebox is exclusive to one
+  // window, so those can't be opened here — they're disabled below. Re-fetched
+  // whenever this overlay becomes visible (i.e. this window has no notebox).
+  const [openElsewhere] = createResource(
+    () => initAttempted() && !noteboxInfo(),
+    async (visible) => (visible ? await ipc.listOpenNoteboxes() : []),
+  );
+  const isOpenElsewhere = (path: string) =>
+    (openElsewhere() ?? []).some((o) => pathEquals(o.path, path));
 
   async function openExisting(path: string) {
     if (blocked()) return;
@@ -77,7 +89,12 @@ const NoteboxRequiredOverlay: Component = () => {
                     <button
                       class="notebox-required__entry"
                       onClick={() => openExisting(entry.path)}
-                      disabled={blocked()}
+                      disabled={blocked() || isOpenElsewhere(entry.path)}
+                      title={
+                        isOpenElsewhere(entry.path)
+                          ? t("noteboxRequired.openElsewhere")
+                          : undefined
+                      }
                     >
                       <FolderOpen
                         size={15}
@@ -91,6 +108,11 @@ const NoteboxRequiredOverlay: Component = () => {
                           {entry.path}
                         </span>
                       </span>
+                      <Show when={isOpenElsewhere(entry.path)}>
+                        <span class="notebox-required__entry-badge">
+                          {t("noteboxRequired.openElsewhere")}
+                        </span>
+                      </Show>
                     </button>
                   )}
                 </For>

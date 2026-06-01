@@ -71,8 +71,9 @@ async fn run_loop(app: AppHandle) {
         // *this* notebox's last-backup time.
         let (settings, notebox_root, wake) = {
             let state = app.state::<AppState>();
+            let session = state.session("main").await;
             let settings = state.settings.read().await.backup.clone();
-            let notebox_root = state.notebox_root.read().await.clone();
+            let notebox_root = session.notebox_root.read().await.clone();
             (settings, notebox_root, state.backup_scheduler_wake.clone())
         };
 
@@ -113,7 +114,9 @@ fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) ->
     if settings.interval_hours == 0 {
         return None;
     }
-    let Some(path) = settings.path.as_ref() else { return None; };
+    let Some(path) = settings.path.as_ref() else {
+        return None;
+    };
     if path.is_empty() {
         return None;
     }
@@ -141,8 +144,9 @@ fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) ->
 
 async fn run_one_tick(app: &AppHandle) {
     let state = app.state::<AppState>();
+    let session = state.session("main").await;
 
-    let notebox_root = match state.notebox_root.read().await.clone() {
+    let notebox_root = match session.notebox_root.read().await.clone() {
         Some(p) => p,
         None => {
             log::debug!("scheduled backup: no notebox open, skipping");

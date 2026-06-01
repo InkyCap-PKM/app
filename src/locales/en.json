@@ -197,6 +197,7 @@
   "noteboxRequired.opening": "Opening…",
   "noteboxRequired.openOrCreate": "Open or create a notebox…",
   "noteboxRequired.openFailed": "Failed to open notebox: {error}",
+  "noteboxRequired.openElsewhere": "Already open in another window",
 
   "noteboxSeed.title": "Copy from an existing notebox?",
   "noteboxSeed.addingBefore": "Adding",
@@ -424,7 +425,6 @@
   "search.collapse": "Collapse",
   "search.expand": "Expand",
   "search.replaceInFile": "Replace in this file",
-  "search.openNewWindow": "Open in new window",
   "search.resultsRange": "{from}–{to} of {total} results",
   "search.resultCount.one": "{count} result",
   "search.resultCount.other": "{count} results",
@@ -801,6 +801,7 @@
   "command.view.toggle-reading-mode": "Toggle Reading Mode",
   "command.view.toggle-distraction-free": "Toggle Distraction-Free Mode",
   "command.view.toggle-help": "Open Help",
+  "command.window.new": "New Window",
   "command.edit.zoom-in": "Zoom In",
   "command.edit.zoom-out": "Zoom Out",
   "command.edit.reset-zoom": "Reset Zoom",
@@ -1689,6 +1690,9 @@
   "statusBar.distractionFree": "Distraction-free mode",
   "statusBar.exitDistractionFree": "Exit distraction-free mode",
   "statusBar.manageNoteboxes": "Manage noteboxes...",
+  "statusBar.openInNewWindow": "Open in a new window",
+  "statusBar.openElsewhere": "Open in another window",
+  "statusBar.newWindow": "New window",
   "statusBar.noDicts": "No dictionaries enabled — see Settings → Language.",
   "statusBar.allLanguages": "All languages",
 
@@ -1995,5 +1999,6 @@
   "errors.export-failed": "Export failed: {detail}",
   "errors.git": "Git error: {detail}",
   "errors.bad-request": "{detail}",
+  "errors.notebox-already-open": "This notebox is already open in another window.",
   "errors.cancelled": "Cancelled"
 }

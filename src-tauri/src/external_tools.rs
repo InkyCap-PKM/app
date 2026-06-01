@@ -75,7 +75,9 @@ pub async fn run_external_tool(
     selection: String,
     file_path: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<ExternalToolResult> {
+    let session = state.session(window.label()).await;
     // Resolve the tool from persisted settings by id. The executable path comes
     // only from here, never from the caller.
     let tool: ExternalTool = {
@@ -106,7 +108,7 @@ pub async fn run_external_tool(
     // Native-shape paths for argv: the tool operates on the real filesystem, so
     // it needs OS-native separators, not the frontend-canonical forward-slash
     // shape. This is subprocess argv, not an IPC payload.
-    let notebox_root = state
+    let notebox_root = session
         .notebox_root
         .read()
         .await

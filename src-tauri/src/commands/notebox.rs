@@ -64,7 +64,13 @@ pub async fn open_notebox(
     path: String,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<NoteboxInfo, InkyCapError> {
+    // Each window owns its own notebox session (keyed by window label), so a
+    // second window opening a different notebox never disturbs the first.
+    let label = window.label().to_string();
+    let session = state.session(&label).await;
+
     let notebox_path = std::path::PathBuf::from(&path);
     if !notebox_path.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(
@@ -73,9 +79,30 @@ pub async fn open_notebox(
         )));
     }
 
+    // Canonicalize early so the exclusivity + nesting guards compare the same
+    // shape the rest of the backend stores.
+    let canonical = crate::storage::path::canonicalize_root(&notebox_path)?;
+
+    // One notebox per window: a notebox open in two windows would let two
+    // editors over the same file silently overwrite each other. If it's
+    // already open elsewhere, refuse — the frontend focuses that window
+    // instead of opening a duplicate.
+    if let Some(other) = state.window_for_notebox(&canonical, &label).await {
+        return Err(InkyCapError::NoteboxAlreadyOpen(other));
+    }
+
+    // No nested noteboxes (a notebox inside another, or one that contains
+    // another) — the inner notebox's files would also belong to the outer.
+    validate_no_notebox_nesting(&canonical)?;
+
     // Phase A — fast path: walk the directory, set notebox_root + storage, list
     // collection files. The UI can render the file tree as soon as this returns.
-    let note_count = state.open_notebox_fast(notebox_path.clone()).await?;
+    // Citation style falls back to the user-global named style, so pass the
+    // global citation settings in.
+    let global_citations = state.settings.read().await.citations.clone();
+    let note_count = session
+        .open_notebox_fast(notebox_path.clone(), &global_citations)
+        .await?;
 
     // Narrow the Tauri asset protocol scope to the newly-opened notebox so that
     // `convertFileSrc()` can only load images/attachments that live inside
@@ -85,13 +112,7 @@ pub async fn open_notebox(
     // between noteboxes in a single session, but it never grants anything
     // outside a legitimately-opened notebox, which is what matters for
     // untrusted-note defense.)
-    if let Some(canonical_root) = state
-        .notebox_root
-        .read()
-        .await
-        .as_ref()
-        .cloned()
-    {
+    if let Some(canonical_root) = session.notebox_root.read().await.as_ref().cloned() {
         let scope = app_handle.asset_protocol_scope();
         if let Err(err) = scope.allow_directory(&canonical_root, true) {
             log::warn!(
@@ -105,8 +126,8 @@ pub async fn open_notebox(
     // a notebox that's just been closed/reopened) and spawn a fresh monitor
     // for this notebox's canonical root. The monitor handles both
     // "notebox root vanished" detection and `.inkycap/` auto-healing.
-    if let Some(canonical_root) = state.notebox_root.read().await.clone() {
-        let mut slot = state.health_monitor.write().await;
+    if let Some(canonical_root) = session.notebox_root.read().await.clone() {
+        let mut slot = session.health_monitor.write().await;
         if let Some(prev) = slot.take() {
             prev.abort();
         }
@@ -116,10 +137,11 @@ pub async fn open_notebox(
         ));
     }
 
-    // Start file watcher and bridge events to the frontend
+    // Start file watcher and bridge events to the frontend. The watcher is
+    // per-session; its events are targeted at the owning window only.
     match file_watcher::start_watching(&notebox_path) {
         Ok((watcher, rx)) => {
-            *state.watcher.write().await = Some(watcher);
+            *session.watcher.write().await = Some(watcher);
 
             // Spawn a background task to forward watcher events to the Tauri
             // frontend, and to write file changes through to the persistent
@@ -130,31 +152,47 @@ pub async fn open_notebox(
             // dispatcher itself runs on a blocking task; per-event async work
             // (cache upserts) is offloaded to short-lived tokio tasks.
             let handle = app_handle.clone();
+            let owner = label.clone();
             tokio::task::spawn_blocking(move || {
                 while let Ok(event) = rx.recv() {
-                    // Emit the event to all frontend windows
+                    // Broadcast to every window. Each window's frontend self-
+                    // scopes: the file tree re-queries its own session (so a
+                    // change in another window's notebox never alters this
+                    // one), and an open editor reloads only if the changed
+                    // path is the file it's showing. `owner` is still threaded
+                    // to the cache-sync helpers so they reindex the right
+                    // window's session.
                     match &event {
                         crate::events::AppEvent::FileChanged { path, change } => {
-                            let _ = handle.emit("notebox:file-changed", serde_json::json!({
-                                "path": to_frontend_string(path),
-                                "change": match change {
-                                    crate::events::ChangeKind::Content => "Content",
-                                    crate::events::ChangeKind::Metadata => "Metadata",
-                                }
-                            }));
-                            sync_cache_for_changed_file(&handle, path.clone());
+                            let _ = handle.emit(
+                                "notebox:file-changed",
+                                serde_json::json!({
+                                    "path": to_frontend_string(path),
+                                    "change": match change {
+                                        crate::events::ChangeKind::Content => "Content",
+                                        crate::events::ChangeKind::Metadata => "Metadata",
+                                    }
+                                }),
+                            );
+                            sync_cache_for_changed_file(&handle, owner.clone(), path.clone());
                         }
                         crate::events::AppEvent::FileCreated { path } => {
-                            let _ = handle.emit("notebox:file-created", serde_json::json!({
-                                "path": to_frontend_string(path)
-                            }));
-                            sync_cache_for_changed_file(&handle, path.clone());
+                            let _ = handle.emit(
+                                "notebox:file-created",
+                                serde_json::json!({
+                                    "path": to_frontend_string(path)
+                                }),
+                            );
+                            sync_cache_for_changed_file(&handle, owner.clone(), path.clone());
                         }
                         crate::events::AppEvent::FileDeleted { path } => {
-                            let _ = handle.emit("notebox:file-deleted", serde_json::json!({
-                                "path": to_frontend_string(path)
-                            }));
-                            sync_cache_for_deleted_file(&handle, path.clone());
+                            let _ = handle.emit(
+                                "notebox:file-deleted",
+                                serde_json::json!({
+                                    "path": to_frontend_string(path)
+                                }),
+                            );
+                            sync_cache_for_deleted_file(&handle, owner.clone(), path.clone());
                         }
                         crate::events::AppEvent::FileRenamed { from, to } => {
                             // Fire the existing delete+create events first so
@@ -164,17 +202,31 @@ pub async fn open_notebox(
                             // The dedicated `notebox:file-renamed` event is for
                             // listeners that want to follow the move (e.g.
                             // an open editor tab transferring to the new path).
-                            let _ = handle.emit("notebox:file-deleted", serde_json::json!({
-                                "path": to_frontend_string(from)
-                            }));
-                            let _ = handle.emit("notebox:file-created", serde_json::json!({
-                                "path": to_frontend_string(to)
-                            }));
-                            let _ = handle.emit("notebox:file-renamed", serde_json::json!({
-                                "from": to_frontend_string(from),
-                                "to": to_frontend_string(to)
-                            }));
-                            sync_cache_for_renamed_file(&handle, from.clone(), to.clone());
+                            let _ = handle.emit(
+                                "notebox:file-deleted",
+                                serde_json::json!({
+                                    "path": to_frontend_string(from)
+                                }),
+                            );
+                            let _ = handle.emit(
+                                "notebox:file-created",
+                                serde_json::json!({
+                                    "path": to_frontend_string(to)
+                                }),
+                            );
+                            let _ = handle.emit(
+                                "notebox:file-renamed",
+                                serde_json::json!({
+                                    "from": to_frontend_string(from),
+                                    "to": to_frontend_string(to)
+                                }),
+                            );
+                            sync_cache_for_renamed_file(
+                                &handle,
+                                owner.clone(),
+                                from.clone(),
+                                to.clone(),
+                            );
                         }
                         _ => {}
                     }
@@ -190,8 +242,8 @@ pub async fn open_notebox(
     // and is already a git repo, refresh its `.gitignore` and surface a
     // status summary to the frontend. No auto-fetch — review always sits
     // between fetch and apply, so opening only reads local state.
-    if let Some(canonical_root) = state.notebox_root.read().await.clone() {
-        let git_cfg = state.notebox_settings.read().await.git.clone();
+    if let Some(canonical_root) = session.notebox_root.read().await.clone() {
+        let git_cfg = session.notebox_settings.read().await.git.clone();
         match git_cfg {
             Some(git_cfg) => surface_git_status(&app_handle, canonical_root, git_cfg),
             // No collaboration config, but the notebox may still be a git repo
@@ -202,30 +254,32 @@ pub async fn open_notebox(
         }
     }
 
-    // Persist the notebox path and register in the notebox registry
-    let mut cfg = config::load_config();
-    cfg.notebox_path = Some(path.clone());
-
-    let collection_files = state.collection_files.read().await;
-    let collection_count = collection_files.len();
-    drop(collection_files);
-
     let name = notebox_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Notebox".to_string());
 
-    cfg.upsert_notebox(&path, &name);
-    let _ = config::save_config(&cfg);
+    // Persist the "last opened" notebox + registry entry ONLY for the main
+    // window. A secondary window (the docs window, an "open in new window"
+    // note) opening a different notebox must not change what the app reopens
+    // next launch, nor add system noteboxes to the user's registry.
+    if label == "main" {
+        let mut cfg = config::load_config();
+        cfg.notebox_path = Some(path.clone());
+        cfg.upsert_notebox(&path, &name);
+        let _ = config::save_config(&cfg);
+    }
 
-    // Phase B — spawn the heavy index build in the background. The UI is
-    // already interactive at this point; features that depend on the indexes
-    // (search, tags, backlinks, properties) should show a loading state until
-    // the `notebox:index-ready` event fires.
+    let collection_count = session.collection_files.read().await.len();
+
+    // Phase B — spawn the heavy index build in the background for this
+    // session. The UI is already interactive; features that depend on the
+    // indexes (search, tags, backlinks, properties) should show a loading
+    // state until the `notebox:index-ready` event fires on this window.
     let bg_handle = app_handle.clone();
+    let bg_session = session.clone();
     tauri::async_runtime::spawn(async move {
-        let state = bg_handle.state::<AppState>();
-        match state.build_indexes().await {
+        match bg_session.build_indexes().await {
             Ok(stats) => {
                 let _ = bg_handle.emit("notebox:index-ready", &stats);
             }
@@ -366,7 +420,7 @@ fn surface_reconnectable_git(handle: &tauri::AppHandle, root: std::path::PathBuf
 /// persistent metadata cache, so the UI stays in sync with external edits
 /// without a notebox restart. Spawns a short-lived async task because the
 /// watcher dispatcher runs on a blocking thread.
-fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathBuf) {
+fn sync_cache_for_changed_file(handle: &tauri::AppHandle, owner: String, path: std::path::PathBuf) {
     // Only `.typ` note files participate in the in-memory indices and cache.
     if path.extension().and_then(|e| e.to_str()) != Some("typ") {
         return;
@@ -375,14 +429,15 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
+        let session = state.session(&owner).await;
 
         // Need both notebox_root and storage to parse the file. If either is
         // missing the notebox has been closed, so just bail out silently.
-        let notebox_root = match state.notebox_root.read().await.clone() {
+        let notebox_root = match session.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
-        let storage = match state.storage.read().await.clone() {
+        let storage = match session.storage.read().await.clone() {
             Some(s) => s,
             None => return,
         };
@@ -407,7 +462,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
             .unwrap_or_else(|_| path.clone());
         match storage.read_file(&rel).await {
             Ok(content) => {
-                state.reindex_note(&path, &content).await;
+                session.reindex_note(&path, &content).await;
                 // Notify any UI that mirrors the in-memory indices that the
                 // external change has been absorbed. Frontend components
                 // like the backlinks pane refetch on this.
@@ -420,10 +475,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
             Err(err) => {
                 // File may have been deleted between the change event and
                 // the re-parse — the next FileDeleted event will clean up.
-                log::warn!(
-                    "watcher reindex failed for {}: {err}",
-                    path.display()
-                );
+                log::warn!("watcher reindex failed for {}: {err}", path.display());
             }
         }
     });
@@ -437,6 +489,7 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, path: std::path::PathB
 /// correlate the two sides.
 fn sync_cache_for_renamed_file(
     handle: &tauri::AppHandle,
+    owner: String,
     from: std::path::PathBuf,
     to: std::path::PathBuf,
 ) {
@@ -451,12 +504,13 @@ fn sync_cache_for_renamed_file(
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
+        let session = state.session(&owner).await;
 
-        let notebox_root = match state.notebox_root.read().await.clone() {
+        let notebox_root = match session.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
         };
-        let storage = match state.storage.read().await.clone() {
+        let storage = match session.storage.read().await.clone() {
             Some(s) => s,
             None => return,
         };
@@ -465,19 +519,16 @@ fn sync_cache_for_renamed_file(
         // canonical notebox root. Watcher events for symlinked paths
         // resolve to their real targets, so an out-of-root path here
         // is an escape attempt.
-        if from.strip_prefix(&notebox_root).is_err()
-            || to.strip_prefix(&notebox_root).is_err()
-        {
+        if from.strip_prefix(&notebox_root).is_err() || to.strip_prefix(&notebox_root).is_err() {
             return;
         }
 
         // Rewrite wikilinks in every backlink of the old path. Errors
         // are logged but non-fatal — a partial rewrite is still better
         // than no rewrite, and the user can re-save manually if needed.
-        if let Err(err) = crate::commands::file_ops::rewrite_backlinks_for_rename(
-            &from, &to, &storage, &*state,
-        )
-        .await
+        if let Err(err) =
+            crate::commands::file_ops::rewrite_backlinks_for_rename(&from, &to, &storage, &session)
+                .await
         {
             log::warn!(
                 "wikilink rewrite failed during external rename {} → {}: {err}",
@@ -487,7 +538,7 @@ fn sync_cache_for_renamed_file(
         }
 
         // Drop the old path from every index, then index the new path.
-        state.remove_from_indices(&from).await;
+        session.remove_from_indices(&from).await;
 
         let rel = to
             .strip_prefix(&notebox_root)
@@ -495,7 +546,7 @@ fn sync_cache_for_renamed_file(
             .unwrap_or_else(|_| to.clone());
         match storage.read_file(&rel).await {
             Ok(content) => {
-                state.reindex_note(&to, &content).await;
+                session.reindex_note(&to, &content).await;
             }
             Err(err) => {
                 log::warn!(
@@ -517,14 +568,15 @@ fn sync_cache_for_renamed_file(
 
 /// Drop a deleted file from every in-memory index and the persistent
 /// metadata cache.
-fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, path: std::path::PathBuf) {
+fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, owner: String, path: std::path::PathBuf) {
     if path.extension().and_then(|e| e.to_str()) != Some("typ") {
         return;
     }
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
-        state.remove_from_indices(&path).await;
+        let session = state.session(&owner).await;
+        session.remove_from_indices(&path).await;
         use tauri::Emitter;
         let _ = handle.emit(
             "notebox:index-updated",
@@ -537,14 +589,16 @@ fn sync_cache_for_deleted_file(handle: &tauri::AppHandle, path: std::path::PathB
 #[tauri::command]
 pub async fn get_notebox_info(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<NoteboxInfo>, InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
     let Some(ref path) = *notebox_root else {
         return Ok(None);
     };
 
-    let index = state.property_index.read().await;
-    let collection_files = state.collection_files.read().await;
+    let index = session.property_index.read().await;
+    let collection_files = session.collection_files.read().await;
 
     let name = path
         .file_name()
@@ -558,6 +612,108 @@ pub async fn get_notebox_info(
         collection_count: collection_files.len(),
         property_keys: index.property_keys.iter().cloned().collect(),
     }))
+}
+
+/// Absolute path of the bundled system documentation notebox. Excluded from
+/// the registry menus — it's reachable only from the F1 Help panel.
+fn docs_notebox_root() -> std::path::PathBuf {
+    crate::app_paths::config_dir().join("InkyCap-Documentation")
+}
+
+/// True if `path` refers to the system documentation notebox (compared
+/// canonically when both resolve, else by raw path).
+fn is_docs_notebox(path: &str) -> bool {
+    let candidate = std::path::PathBuf::from(path);
+    let docs = docs_notebox_root();
+    match (std::fs::canonicalize(&candidate), std::fs::canonicalize(&docs)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => candidate == docs,
+    }
+}
+
+/// Reject a notebox folder that is nested inside another notebox, or that
+/// contains an existing (registered) notebox. Nesting breaks the model — the
+/// inner notebox's files would also be scanned as part of the outer.
+fn validate_no_notebox_nesting(canonical: &std::path::Path) -> Result<(), InkyCapError> {
+    // Child-of-notebox: any ancestor folder that is itself a notebox.
+    let marker = crate::notebox_package::format_marker_relpath();
+    let mut ancestor = canonical.parent();
+    while let Some(dir) = ancestor {
+        if dir.join(marker).is_file() {
+            return Err(InkyCapError::InvalidPath(format!(
+                "That folder is inside an existing notebox ({}). Choose a folder outside it.",
+                dir.display()
+            )));
+        }
+        ancestor = dir.parent();
+    }
+    // Parent-of-notebox: a registered notebox that lives below this folder.
+    let cfg = config::load_config();
+    for entry in &cfg.notebox_registry {
+        let entry_path = std::path::PathBuf::from(&entry.path);
+        let entry_canon = std::fs::canonicalize(&entry_path).unwrap_or(entry_path);
+        if entry_canon != *canonical && entry_canon.starts_with(canonical) {
+            return Err(InkyCapError::InvalidPath(format!(
+                "That folder contains an existing notebox ({}). Choose a different folder.",
+                entry_canon.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A notebox currently open in some window: its path plus the owning window's
+/// label. Lets the frontend disable / focus already-open noteboxes (a notebox
+/// is exclusive to one window).
+#[derive(Debug, serde::Serialize)]
+pub struct OpenNoteboxWindow {
+    pub path: String,
+    pub label: String,
+}
+
+/// Validate a folder the user wants to add to their notebox list, BEFORE the
+/// add is committed. Rejects a folder that is already in the registry, or that
+/// is nested inside / contains another notebox — so the Settings "Add" button
+/// can disable itself and explain why instead of silently no-op'ing.
+#[tauri::command]
+pub async fn validate_notebox_location(path: String) -> Result<(), InkyCapError> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.is_dir() {
+        return Err(InkyCapError::InvalidPath(format!("Not a folder: {path}")));
+    }
+    let canonical = crate::storage::path::canonicalize_root(&p)?;
+
+    // Already in the user's list (compare canonically so trailing slashes /
+    // symlinks don't sneak a duplicate through).
+    let cfg = config::load_config();
+    for entry in &cfg.notebox_registry {
+        let entry_canon = std::fs::canonicalize(&entry.path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&entry.path));
+        if entry_canon == canonical {
+            return Err(InkyCapError::BadRequest(
+                "That folder is already in your notebox list.".to_string(),
+            ));
+        }
+    }
+
+    // Not nested inside, and doesn't contain, another notebox.
+    validate_no_notebox_nesting(&canonical)
+}
+
+/// List every notebox currently open across all windows.
+#[tauri::command]
+pub async fn list_open_noteboxes(
+    state: State<'_, AppState>,
+) -> Result<Vec<OpenNoteboxWindow>, InkyCapError> {
+    Ok(state
+        .open_noteboxes()
+        .await
+        .into_iter()
+        .map(|(label, root)| OpenNoteboxWindow {
+            path: to_frontend_string(&root),
+            label,
+        })
+        .collect())
 }
 
 // ── Notebox registry commands ──────────────────────────────────────────
@@ -583,6 +739,9 @@ pub struct NoteboxRegistryItem {
 pub async fn get_notebox_registry() -> Result<Vec<NoteboxRegistryItem>, InkyCapError> {
     let cfg = config::load_config();
     let mut entries = cfg.notebox_registry;
+    // The system documentation notebox is reachable only from the F1 Help
+    // panel — never list it among the user's noteboxes.
+    entries.retain(|e| !is_docs_notebox(&e.path));
     entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
     Ok(entries
         .into_iter()
@@ -631,18 +790,13 @@ pub async fn register_notebox(
 
 /// Update the display name of an existing notebox registry entry.
 #[tauri::command]
-pub async fn update_notebox_entry(
-    path: String,
-    display_name: String,
-) -> Result<(), InkyCapError> {
+pub async fn update_notebox_entry(path: String, display_name: String) -> Result<(), InkyCapError> {
     let mut cfg = config::load_config();
     let entry = cfg
         .notebox_registry
         .iter_mut()
         .find(|e| e.path == path)
-        .ok_or_else(|| {
-            InkyCapError::InvalidPath(format!("Notebox not in registry: {}", path))
-        })?;
+        .ok_or_else(|| InkyCapError::InvalidPath(format!("Notebox not in registry: {}", path)))?;
     entry.display_name = display_name;
     config::save_config(&cfg)?;
     Ok(())
@@ -681,9 +835,8 @@ pub async fn dir_is_empty(path: String) -> Result<bool, InkyCapError> {
     if !dir.is_dir() {
         return Ok(false);
     }
-    let mut entries = std::fs::read_dir(&dir).map_err(|e| {
-        InkyCapError::InvalidPath(format!("Cannot read directory {}: {}", path, e))
-    })?;
+    let mut entries = std::fs::read_dir(&dir)
+        .map_err(|e| InkyCapError::InvalidPath(format!("Cannot read directory {}: {}", path, e)))?;
     Ok(entries.next().is_none())
 }
 
@@ -769,8 +922,7 @@ pub async fn notebox_has_user_settings(path: String) -> Result<bool, InkyCapErro
             path
         )));
     }
-    let settings_path =
-        crate::notebox_settings::settings_path(&dir);
+    let settings_path = crate::notebox_settings::settings_path(&dir);
     Ok(settings_path.exists())
 }
 

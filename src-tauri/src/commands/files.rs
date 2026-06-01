@@ -3,11 +3,11 @@ use tauri::State;
 
 use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
-use crate::typst_pipeline::note_rewriter;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
+use crate::typst_pipeline::note_rewriter;
 
 pub use crate::storage::traits::FileTreeNode;
 
@@ -47,8 +47,10 @@ fn file_times(path: &std::path::Path) -> (u64, u64) {
 pub async fn read_file_content(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     storage.read_file(&path_buf).await
 }
@@ -57,8 +59,10 @@ pub async fn read_file_content(
 #[tauri::command]
 pub async fn get_file_tree(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<FileTreeNode>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     storage.get_file_tree().await
 }
 
@@ -67,11 +71,13 @@ pub async fn get_file_tree(
 pub async fn get_file_metadata(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<NoteMetadata, InkyCapError> {
+    let session = state.session(window.label()).await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         if let Some(meta) = index.notes.get(&path_buf).cloned() {
             return Ok(meta);
         }
@@ -81,11 +87,11 @@ pub async fn get_file_metadata(
     // missed it, or it was created out-of-band). Read it and reindex on
     // demand so the panel doesn't stay permanently blank until the user
     // edits the file.
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let content = storage.read_file(&path_buf).await?;
-    state.reindex_note(&path_buf, &content).await;
+    session.reindex_note(&path_buf, &content).await;
 
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
     index
         .notes
         .get(&path_buf)
@@ -98,8 +104,10 @@ pub async fn get_file_metadata(
 pub async fn get_backlinks(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
-    let link_index = state.link_index.read().await;
+    let session = state.session(window.label()).await;
+    let link_index = session.link_index.read().await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     let backlinks = link_index.get_backlinks(&path_buf);
@@ -126,8 +134,10 @@ pub async fn get_backlinks(
 pub async fn get_forward_links(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
-    let link_index = state.link_index.read().await;
+    let session = state.session(window.label()).await;
+    let link_index = session.link_index.read().await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     let links = link_index.get_forward_links(&path_buf);
@@ -178,22 +188,24 @@ pub struct OutboundLink {
 pub async fn get_outbound_links(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<OutboundLink>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     // Read raw wikilink targets from the note's metadata, falling back to
     // an on-demand reindex if the property index hasn't seen this file
     // yet (matches `get_file_metadata`'s behaviour).
     let raw_targets: Vec<String> = {
-        let prop_index = state.property_index.read().await;
+        let prop_index = session.property_index.read().await;
         if let Some(meta) = prop_index.notes.get(&path_buf) {
             meta.links.clone()
         } else {
             drop(prop_index);
-            let storage = state.get_storage().await?;
+            let storage = session.get_storage().await?;
             let content = storage.read_file(&path_buf).await?;
-            state.reindex_note(&path_buf, &content).await;
-            let prop_index = state.property_index.read().await;
+            session.reindex_note(&path_buf, &content).await;
+            let prop_index = session.property_index.read().await;
             prop_index
                 .notes
                 .get(&path_buf)
@@ -205,7 +217,7 @@ pub async fn get_outbound_links(
     // Snapshot all known note paths once to feed the stem resolver in a
     // single allocation rather than re-snapping per-target.
     let all_paths: Vec<PathBuf> = {
-        let prop_index = state.property_index.read().await;
+        let prop_index = session.property_index.read().await;
         prop_index.notes.keys().cloned().collect()
     };
 
@@ -270,13 +282,15 @@ pub async fn write_file_content(
     path: String,
     content: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     storage.write_file(&path_buf, &content).await?;
 
     // Re-index the note after saving
-    reindex_note(&path_buf, &content, &state).await;
+    reindex_note(&path_buf, &content, &session).await;
 
     Ok(())
 }
@@ -289,8 +303,10 @@ pub async fn update_property(
     key: String,
     value: PropertyValue,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     let content = storage.read_file(&path_buf).await?;
@@ -304,7 +320,7 @@ pub async fn update_property(
     storage.write_file(&path_buf, &updated).await?;
 
     // Re-index after property change
-    reindex_note(&path_buf, &updated, &state).await;
+    reindex_note(&path_buf, &updated, &session).await;
 
     Ok(())
 }
@@ -319,8 +335,10 @@ pub async fn update_property(
 pub async fn read_media_bytes(
     target: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<tauri::ipc::Response, InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let clean = target.split('|').next().unwrap_or(&target).trim();
@@ -340,12 +358,12 @@ pub async fn read_media_bytes(
 pub async fn resolve_embed_path(
     target: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
-    let root = notebox_root
-        .as_ref()
-        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     // Strip any size suffix (e.g. "image.png|400" -> "image.png")
     let clean_target = target.split('|').next().unwrap_or(&target).trim();
@@ -356,7 +374,9 @@ pub async fn resolve_embed_path(
     // the filename search. Defends against `..` traversal via
     // validate_notebox_path.
     if clean_target.contains('/') || clean_target.contains('\\') {
-        let stripped = clean_target.trim_start_matches('/').trim_start_matches('\\');
+        let stripped = clean_target
+            .trim_start_matches('/')
+            .trim_start_matches('\\');
         let candidate = root.join(stripped);
         if let Ok(resolved) = crate::storage::path::validate_notebox_path(root, &candidate) {
             if resolved.is_file() {
@@ -408,9 +428,11 @@ pub async fn resolve_embed_path(
 pub async fn resolve_wikilink(
     target: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<String>, InkyCapError> {
-    let link_index = state.link_index.read().await;
-    let prop_index = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let link_index = session.link_index.read().await;
+    let prop_index = session.property_index.read().await;
     let all_paths: Vec<PathBuf> = prop_index.notes.keys().cloned().collect();
     drop(prop_index);
     drop(link_index);
@@ -449,9 +471,11 @@ pub async fn create_note(
     folder: String,
     scaffold_content: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     // Build the target path
@@ -481,9 +505,7 @@ pub async fn create_note(
     // storage.write_file creates any missing parent directories through the
     // same validated path pipeline, so no std::fs bypass is needed here.
     let import_line = crate::notebox_package::import_line();
-    let content = scaffold_content.unwrap_or_else(|| {
-        format!("{import_line}\n\n")
-    });
+    let content = scaffold_content.unwrap_or_else(|| format!("{import_line}\n\n"));
     // Ensure the import line is present even when scaffold_content is
     // provided (scaffolds authored by users may not include it).
     let content = if !content.contains(&import_line) {
@@ -494,7 +516,7 @@ pub async fn create_note(
     storage.write_file(&file_path, &content).await?;
 
     // Index the new note
-    reindex_note(&file_path, &content, &state).await;
+    reindex_note(&file_path, &content, &session).await;
 
     Ok(to_frontend_string(&file_path))
 }
@@ -505,8 +527,10 @@ pub async fn get_note_preview(
     path: String,
     max_chars: Option<usize>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
@@ -530,8 +554,10 @@ pub struct HeadingInfo {
 pub async fn get_note_headings(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<HeadingInfo>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
     Ok(extract_headings(&content))
@@ -559,15 +585,19 @@ pub async fn ensure_heading_label(
     path: String,
     heading_text: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
     let headings = extract_headings(&content);
     let heading_lower = heading_text.to_lowercase();
 
-    let matched = headings.iter().find(|h| h.text.to_lowercase() == heading_lower);
+    let matched = headings
+        .iter()
+        .find(|h| h.text.to_lowercase() == heading_lower);
     let Some(matched) = matched else {
         return Ok(None);
     };
@@ -602,7 +632,7 @@ pub async fn ensure_heading_label(
 
     if found {
         storage.write_file(&path_buf, &new_content).await?;
-        reindex_note(&path_buf, &new_content, &state).await;
+        reindex_note(&path_buf, &new_content, &session).await;
         Ok(Some(label))
     } else {
         Ok(None)
@@ -613,9 +643,13 @@ fn heading_to_label(text: &str, existing_headings: &[HeadingInfo]) -> String {
     let base: String = text
         .chars()
         .filter_map(|c| {
-            if c.is_alphanumeric() { Some(c.to_lowercase().next().unwrap_or(c)) }
-            else if c == ' ' || c == '-' || c == '_' { Some('-') }
-            else { None }
+            if c.is_alphanumeric() {
+                Some(c.to_lowercase().next().unwrap_or(c))
+            } else if c == ' ' || c == '-' || c == '_' {
+                Some('-')
+            } else {
+                None
+            }
         })
         .collect();
     let base = base.trim_matches('-').to_string();
@@ -653,8 +687,10 @@ pub struct AliasEntry {
 #[tauri::command]
 pub async fn get_all_aliases(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<AliasEntry>, InkyCapError> {
-    let index = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
     let mut entries = Vec::new();
     for (alias, ids) in index.aliases_iter() {
         for id in ids {
@@ -693,11 +729,13 @@ pub async fn get_backlink_context(
     source_path: String,
     target_path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<BacklinkContext>, InkyCapError> {
+    let session = state.session(window.label()).await;
     const CONTEXT_LINES: usize = 2;
     const MAX_SNIPPET_CHARS: usize = 200;
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let source = sanitize_notebox_arg(&source_path)?;
     let target = sanitize_notebox_arg(&target_path)?;
 
@@ -785,7 +823,9 @@ pub struct PotentialLink {
 pub async fn get_potential_links(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<PotentialLink>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
     let stem = path_buf
@@ -798,11 +838,8 @@ pub async fn get_potential_links(
 
     // Resolved backlinks: pre-existing inbound edges we should skip.
     let already_linking: std::collections::HashSet<PathBuf> = {
-        let link_index = state.link_index.read().await;
-        link_index
-            .get_backlinks(&path_buf)
-            .into_iter()
-            .collect()
+        let link_index = session.link_index.read().await;
+        link_index.get_backlinks(&path_buf).into_iter().collect()
     };
 
     // Use the existing search engine so we benefit from the inverted index
@@ -813,7 +850,7 @@ pub async fn get_potential_links(
         None => return Ok(Vec::new()),
     };
     let results = {
-        let engine = state.search_engine.read().await;
+        let engine = session.search_engine.read().await;
         engine.search(&parsed, 300)
     };
 
@@ -874,22 +911,14 @@ pub async fn get_potential_links(
 
 /// Thin wrapper kept for the benefit of other command modules that
 /// historically called this symbol. New call sites should prefer
-/// `state.reindex_note(...)` directly — this helper exists only to avoid a
+/// `session.reindex_note(...)` directly — this helper exists only to avoid a
 /// sprawling rename.
-pub async fn reindex_note_public(
-    path: &std::path::Path,
-    content: &str,
-    state: &State<'_, AppState>,
-) {
-    state.reindex_note(path, content).await;
+pub async fn reindex_note_public(path: &std::path::Path, content: &str, session: &NoteboxSession) {
+    session.reindex_note(path, content).await;
 }
 
 /// Local alias for the unified indexing helper on [`AppState`], retained so
 /// this module's existing call sites read naturally.
-async fn reindex_note(
-    path: &std::path::Path,
-    content: &str,
-    state: &State<'_, AppState>,
-) {
-    state.reindex_note(path, content).await;
+async fn reindex_note(path: &std::path::Path, content: &str, session: &NoteboxSession) {
+    session.reindex_note(path, content).await;
 }

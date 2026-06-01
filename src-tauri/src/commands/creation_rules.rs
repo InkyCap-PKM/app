@@ -23,8 +23,10 @@ pub struct CreationResult {
 #[tauri::command]
 pub async fn list_creation_rules(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<CreationRule>, InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
     Ok(creation_rules::load_rules(root))
 }
@@ -49,8 +51,10 @@ pub async fn get_default_creation_rule(
 pub async fn save_creation_rule(
     rule: CreationRule,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let mut rule = rule;
@@ -75,8 +79,10 @@ pub async fn save_creation_rule(
 pub async fn delete_creation_rule(
     rule_id: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let mut rules = creation_rules::load_rules(root);
@@ -115,9 +121,11 @@ pub async fn execute_creation_rule(
     title_override: Option<String>,
     target_folder_override: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<CreationResult, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let rules = creation_rules::load_rules(root);
@@ -138,7 +146,7 @@ pub async fn execute_creation_rule(
         )
     };
     let fallback_folder = {
-        let notebox = state.notebox_settings.read().await;
+        let notebox = session.notebox_settings.read().await;
         match notebox.files.new_note_location.as_str() {
             "specified" => notebox.files.new_note_folder.clone(),
             _ => String::new(),
@@ -178,8 +186,13 @@ pub async fn execute_creation_rule(
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let expanded =
-                scaffolds::expand_scaffold_with_zid(storage.as_ref(), &scaffold_file_path, &title, &zid_pattern).await?;
+            let expanded = scaffolds::expand_scaffold_with_zid(
+                storage.as_ref(),
+                &scaffold_file_path,
+                &title,
+                &zid_pattern,
+            )
+            .await?;
             content = expanded.content;
             cursor_offset = expanded.cursor_offset;
         }
@@ -240,11 +253,8 @@ pub async fn execute_creation_rule(
     if zid_enabled && !zid_pattern.is_empty() {
         let zid_value = scaffolds::generate_zid(&zid_pattern);
         if let Ok(num) = zid_value.parse::<f64>() {
-            content = note_rewriter::update_note_property(
-                &content,
-                "zid",
-                &PropertyValue::Number(num),
-            );
+            content =
+                note_rewriter::update_note_property(&content, "zid", &PropertyValue::Number(num));
         } else {
             content = note_rewriter::update_note_property(
                 &content,
@@ -271,7 +281,7 @@ pub async fn execute_creation_rule(
 
     storage.write_file(&file_path, &content).await?;
 
-    state.reindex_note(&file_path, &content).await;
+    session.reindex_note(&file_path, &content).await;
 
     Ok(CreationResult {
         path: to_frontend_string(&file_path),
@@ -283,9 +293,11 @@ pub async fn execute_creation_rule(
 #[tauri::command]
 pub async fn list_scaffolds(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let scaffold_dir = crate::notebox_package::scaffolds_dir(root);
@@ -327,9 +339,11 @@ pub struct TemplateEntry {
 #[tauri::command]
 pub async fn list_scaffold_entries(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<TemplateEntry>, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let scaffold_dir = crate::notebox_package::scaffolds_dir(root);
@@ -391,9 +405,11 @@ pub async fn prepare_scaffold_insert(
     cursor_offset: usize,
     selection_from: Option<usize>,
     selection_to: Option<usize>,
+    window: tauri::WebviewWindow,
 ) -> Result<ScaffoldInsertResult, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let zid_pattern = {
@@ -410,7 +426,9 @@ pub async fn prepare_scaffold_insert(
     };
     let scaffold_path = crate::notebox_package::scaffolds_dir(root).join(&filename);
     if !storage.exists(&scaffold_path).await {
-        return Err(InkyCapError::FileNotFound(scaffold_path.display().to_string())); // path-stringification-ok: error message, not IPC
+        return Err(InkyCapError::FileNotFound(
+            scaffold_path.display().to_string(),
+        )); // path-stringification-ok: error message, not IPC
     }
 
     // The cursor/selection are no longer used to position the insert — a
@@ -442,10 +460,7 @@ pub async fn prepare_scaffold_insert(
 ///   so the user can start typing immediately. The scaffold's `{{cursor}}`
 ///   marker (if any) is stripped by the expander but its offset is not used —
 ///   a trailing fresh line is simpler and is what authoring actually wants.
-fn assemble_scaffold_insert(
-    current_source: &str,
-    expanded_content: &str,
-) -> ScaffoldInsertResult {
+fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> ScaffoldInsertResult {
     let (scaffold_note_args, body_start) = split_scaffold_note_and_body(expanded_content);
 
     // Merge step: append scaffold keys not already present. Existing keys win.
@@ -533,7 +548,9 @@ fn skip_leading_imports(content: &str) -> usize {
 fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(InkyCapError::BadRequest("Template name cannot be empty".into()));
+        return Err(InkyCapError::BadRequest(
+            "Template name cannot be empty".into(),
+        ));
     }
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
         return Err(InkyCapError::BadRequest(
@@ -548,9 +565,11 @@ fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
 pub async fn create_scaffold(
     state: State<'_, AppState>,
     name: String,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let safe = sanitize_template_name(&name)?;
@@ -602,17 +621,33 @@ mod scaffold_insert_tests {
         );
         let r = assemble_scaffold_insert(&current, &scaffold);
         // Existing prose is never overwritten — the original wipe bug.
-        assert!(r.new_source.contains("Existing prose here."), "{}", r.new_source);
+        assert!(
+            r.new_source.contains("Existing prose here."),
+            "{}",
+            r.new_source
+        );
         // Existing property wins; the scaffold's new key is merged in.
-        assert!(r.new_source.contains("title: \"Existing\""), "{}", r.new_source);
-        assert!(r.new_source.contains("kind: \"meeting\""), "{}", r.new_source);
+        assert!(
+            r.new_source.contains("title: \"Existing\""),
+            "{}",
+            r.new_source
+        );
+        assert!(
+            r.new_source.contains("kind: \"meeting\""),
+            "{}",
+            r.new_source
+        );
         // Body appended at the very end, one blank line after the prose.
         assert!(
             r.new_source.contains("Existing prose here.\n\n= Meeting"),
             "{}",
             r.new_source
         );
-        assert!(r.new_source.trim_end().ends_with("= Meeting"), "{}", r.new_source);
+        assert!(
+            r.new_source.trim_end().ends_with("= Meeting"),
+            "{}",
+            r.new_source
+        );
     }
 
     #[test]
@@ -624,7 +659,12 @@ mod scaffold_insert_tests {
         assert!(r.new_source.contains("= Meeting"), "{}", r.new_source);
         assert!(r.new_source.contains("body text"), "{}", r.new_source);
         // The note call survives exactly once (scaffold's own #note is dropped).
-        assert_eq!(r.new_source.matches("#note(").count(), 1, "{}", r.new_source);
+        assert_eq!(
+            r.new_source.matches("#note(").count(),
+            1,
+            "{}",
+            r.new_source
+        );
         assert!(r.new_source.starts_with(IMPORT), "{}", r.new_source);
     }
 
@@ -634,9 +674,17 @@ mod scaffold_insert_tests {
         let scaffold = format!("{IMPORT}#note(\n  status: \"draft\",\n)\n");
         let r = assemble_scaffold_insert(&current, &scaffold);
         assert!(r.new_source.contains("prose"), "{}", r.new_source);
-        assert!(r.new_source.contains("status: \"draft\""), "{}", r.new_source);
+        assert!(
+            r.new_source.contains("status: \"draft\""),
+            "{}",
+            r.new_source
+        );
         // Nothing appended after the prose.
-        assert!(r.new_source.trim_end().ends_with("prose"), "{}", r.new_source);
+        assert!(
+            r.new_source.trim_end().ends_with("prose"),
+            "{}",
+            r.new_source
+        );
     }
 
     #[test]
@@ -650,4 +698,3 @@ mod scaffold_insert_tests {
         assert!(r.new_source.ends_with("= Meeting\n"), "{}", r.new_source);
     }
 }
-
