@@ -9,6 +9,7 @@ import { getPillOptions } from "./pill-options";
 import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 import { anchorPanelMenu } from "../../lib/uiMenu";
 import { buildSuggestionCall } from "./annotation-insert";
+import { parseInlineBody, type BodySegment } from "./block-body-parse";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -58,41 +59,122 @@ function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTML
 
 
 
-const WIKILINK_FUNC_RE = /#wikilink\("([^"]*)"(?:,\s*display:\s*"([^"]*)")?\)/g;
+function buildWikilinkSpan(target: string, display: string): HTMLElement {
+  const link = document.createElement("span");
+  link.className = "cm-typst-wikilink";
+  link.textContent = display;
+  link.title = target;
+  link.addEventListener("mousedown", (e) => {
+    if (e.button === 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    document.dispatchEvent(
+      new CustomEvent("inkycap:navigate-wikilink", { detail: { target } }),
+    );
+  });
+  link.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showWikilinkContextMenu(e.clientX, e.clientY, target);
+  });
+  return link;
+}
 
-function renderTypstBody(text: string, parent: HTMLElement) {
-  WIKILINK_FUNC_RE.lastIndex = 0;
-  let lastIdx = 0;
-  let match: RegExpExecArray | null;
-  while ((match = WIKILINK_FUNC_RE.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      parent.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
-    }
-    const target = match[1];
-    const display = match[2] || target;
-    const link = document.createElement("span");
-    link.className = "cm-typst-wikilink";
-    link.textContent = display;
-    link.title = target;
-    link.addEventListener("mousedown", (e) => {
-      if (e.button === 2) return;
+/** Optional context that makes a block body's inline elements interactive.
+ *  `bodyFrom` is the absolute document offset where the body string begins, so
+ *  a segment's in-body `start` resolves to a real source position. */
+type BlockBodyContext = { view: EditorView; bodyFrom: number };
+
+/** Build a task checkbox + body whose checkbox toggles the call's `done:`
+ *  argument in source. Mirrors TaskWidget; used inside rendered block bodies so
+ *  a task is checkable without first entering edit mode. The owning widget's
+ *  `ignoreEvent` must let the checkbox's mousedown through (return true) so CM
+ *  doesn't also place the cursor / enter edit mode. */
+function buildTaskSpan(
+  seg: Extract<BodySegment, { kind: "task" }>,
+  ctx: BlockBodyContext | undefined,
+): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.className = "cm-typst-task";
+  if (seg.done) wrap.classList.add("cm-typst-task--done");
+
+  const box = document.createElement("span");
+  box.className = "cm-typst-task__box";
+  box.textContent = seg.done ? "☑" : "☐";
+  if (ctx) {
+    const callFrom = ctx.bodyFrom + seg.start;
+    box.title = seg.done ? "Mark as not done" : "Mark as done";
+    box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      document.dispatchEvent(
-        new CustomEvent("inkycap:navigate-wikilink", { detail: { target } }),
+      applyCallTransform(ctx.view, callFrom, (s) =>
+        upsertNamedArg(s, "done", seg.done ? "false" : "true", { defaultValue: "false" }),
       );
     });
-    link.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showWikilinkContextMenu(e.clientX, e.clientY, target);
-    });
-    parent.appendChild(link);
-    lastIdx = match.index + match[0].length;
   }
-  if (lastIdx < text.length) {
-    parent.appendChild(document.createTextNode(text.slice(lastIdx)));
+  wrap.appendChild(box);
+
+  const label = document.createElement("span");
+  label.className = "cm-typst-task__body";
+  label.textContent = seg.body;
+  wrap.appendChild(label);
+
+  if (seg.due) {
+    const badge = document.createElement("span");
+    badge.className = "cm-typst-task__due";
+    badge.textContent = seg.due;
+    wrap.appendChild(badge);
   }
+  return wrap;
+}
+
+/** Render a block body string (callout / quote / annotation preview), turning
+ *  recognized inline notebox primitives into their semantic elements while
+ *  leaving everything else as plain text. Parsing lives in block-body-parse.ts;
+ *  here we only build DOM, reusing the same classes as the standalone inline
+ *  widgets (TaskWidget, TagWidget, …) so a task inside a callout looks identical
+ *  to one in flowing text. With `ctx`, a task's checkbox toggles `done` in place
+ *  and wikilinks navigate; without it everything is inert preview. */
+function renderTypstBody(text: string, parent: HTMLElement, ctx?: BlockBodyContext) {
+  for (const seg of parseInlineBody(text)) {
+    switch (seg.kind) {
+      case "text":
+        parent.appendChild(document.createTextNode(seg.text));
+        break;
+      case "wikilink":
+        parent.appendChild(buildWikilinkSpan(seg.target, seg.display));
+        break;
+      case "tag": {
+        const pill = document.createElement("span");
+        pill.className = "cm-typst-tag";
+        pill.textContent = `#${seg.name}`;
+        parent.appendChild(pill);
+        break;
+      }
+      case "link": {
+        const a = document.createElement("span");
+        a.className = "cm-typst-link";
+        a.textContent = seg.display;
+        a.title = seg.url;
+        parent.appendChild(a);
+        break;
+      }
+      case "task":
+        parent.appendChild(buildTaskSpan(seg, ctx));
+        break;
+    }
+  }
+}
+
+/** Shared `ignoreEvent` for rendered block bodies (callout / quote / annotation).
+ *  A mousedown on an interactive child — a wikilink or a task checkbox — is
+ *  handled by that child, so CM must ignore it (return true) and not also place
+ *  the cursor inside the block, which would drop it into source-edit mode. Any
+ *  other click falls through (return false) so clicking the body still enters
+ *  edit mode as expected. */
+function blockBodyIgnoreEvent(e: Event): boolean {
+  if (e.type !== "mousedown") return false;
+  return !!(e.target as HTMLElement).closest(".cm-typst-wikilink, .cm-typst-task__box");
 }
 
 function stripMetadata(source: string): string {
@@ -1713,6 +1795,7 @@ export class CalloutBlockWidget extends WidgetType {
     readonly bodyText: string,
     readonly pos: number,
     readonly withPill: boolean,
+    readonly bodyFrom: number,
   ) {
     super();
   }
@@ -1720,7 +1803,7 @@ export class CalloutBlockWidget extends WidgetType {
   eq(other: CalloutBlockWidget) {
     return this.kind === other.kind && this.title === other.title
       && this.bodyText === other.bodyText && this.pos === other.pos
-      && this.withPill === other.withPill;
+      && this.withPill === other.withPill && this.bodyFrom === other.bodyFrom;
   }
 
   toDOM(view: EditorView) {
@@ -1755,7 +1838,7 @@ export class CalloutBlockWidget extends WidgetType {
     if (this.bodyText) {
       const body = document.createElement("div");
       body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body);
+      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom });
       inner.appendChild(body);
     }
 
@@ -1763,10 +1846,7 @@ export class CalloutBlockWidget extends WidgetType {
   }
 
   ignoreEvent(e: Event) {
-    if (e.type === "mousedown") {
-      return !!(e.target as HTMLElement).closest(".cm-typst-wikilink");
-    }
-    return false;
+    return blockBodyIgnoreEvent(e);
   }
 }
 
@@ -1782,6 +1862,7 @@ export class AnnotationBlockWidget extends WidgetType {
     readonly on: string,
     readonly pos: number,
     readonly withPill: boolean,
+    readonly bodyFrom: number,
   ) {
     super();
   }
@@ -1789,7 +1870,7 @@ export class AnnotationBlockWidget extends WidgetType {
   eq(other: AnnotationBlockWidget) {
     return this.bodyText === other.bodyText && this.by === other.by
       && this.on === other.on && this.pos === other.pos
-      && this.withPill === other.withPill;
+      && this.withPill === other.withPill && this.bodyFrom === other.bodyFrom;
   }
 
   toDOM(view: EditorView) {
@@ -1824,7 +1905,7 @@ export class AnnotationBlockWidget extends WidgetType {
     if (this.bodyText) {
       const body = document.createElement("div");
       body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body);
+      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom });
       inner.appendChild(body);
     }
 
@@ -1832,10 +1913,7 @@ export class AnnotationBlockWidget extends WidgetType {
   }
 
   ignoreEvent(e: Event) {
-    if (e.type === "mousedown") {
-      return !!(e.target as HTMLElement).closest(".cm-typst-wikilink");
-    }
-    return false;
+    return blockBodyIgnoreEvent(e);
   }
 }
 
@@ -1845,13 +1923,15 @@ export class BlockquoteBlockWidget extends WidgetType {
     readonly attribution: string,
     readonly pos: number,
     readonly withPill: boolean,
+    readonly bodyFrom: number,
   ) {
     super();
   }
 
   eq(other: BlockquoteBlockWidget) {
     return this.content === other.content && this.attribution === other.attribution
-      && this.pos === other.pos && this.withPill === other.withPill;
+      && this.pos === other.pos && this.withPill === other.withPill
+      && this.bodyFrom === other.bodyFrom;
   }
 
   toDOM(view: EditorView) {
@@ -1876,7 +1956,7 @@ export class BlockquoteBlockWidget extends WidgetType {
 
     const text = document.createElement("div");
     text.className = "cm-typst-blockquote-text";
-    renderTypstBody(this.content, text);
+    renderTypstBody(this.content, text, { view, bodyFrom: this.bodyFrom });
     inner.appendChild(text);
 
     if (this.attribution) {
@@ -1890,10 +1970,7 @@ export class BlockquoteBlockWidget extends WidgetType {
   }
 
   ignoreEvent(e: Event) {
-    if (e.type === "mousedown") {
-      return !!(e.target as HTMLElement).closest(".cm-typst-wikilink");
-    }
-    return false;
+    return blockBodyIgnoreEvent(e);
   }
 }
 

@@ -20,7 +20,9 @@ import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/pane
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
 import { toggleTheme } from "../stores/theme";
-import { toggleDistractionFree } from "../stores/layout";
+import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
+import { toggleScroll } from "../stores/journal-scroll";
+import { cycleRegion, focusEditor } from "./focus-regions";
 import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
@@ -128,6 +130,18 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
+  registerCommand({
+    id: "file:rename",
+    title: t("command.file.rename"),
+    category: "File",
+    keybinding: "F2",
+    // The inline rename affordance lives in the status bar (StatusBar.tsx);
+    // it owns the draft/commit state, so the command just asks it to begin.
+    execute: () => {
+      document.dispatchEvent(new CustomEvent("inkycap:start-rename"));
+    },
+  });
+
   // ── Navigate commands ──
 
   registerCommand({
@@ -152,6 +166,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "pane:split-right",
     title: t("command.pane.splitRight"),
     category: "Navigate",
+    keybinding: "Ctrl+Shift+]",
     execute: () => {
       splitPane(focusedLeaf().id, "row");
     },
@@ -161,6 +176,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "pane:split-down",
     title: t("command.pane.splitDown"),
     category: "Navigate",
+    keybinding: "Ctrl+Shift+[",
     execute: () => {
       splitPane(focusedLeaf().id, "column");
     },
@@ -170,6 +186,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "pane:close",
     title: t("command.pane.close"),
     category: "Navigate",
+    keybinding: "Ctrl+Shift+W",
     execute: () => {
       if (hasMultiplePanes()) closePane(focusedLeaf().id);
     },
@@ -219,6 +236,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "view:search-replace",
     title: t("command.view.search-replace"),
     category: "View",
+    keybinding: "Ctrl+H",
     execute: () => {
       setShowReplace(true);
       document.dispatchEvent(
@@ -228,9 +246,50 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   });
 
   registerCommand({
+    id: "view:toggle-left-sidebar",
+    title: t("command.view.toggle-left-sidebar"),
+    category: "View",
+    keybinding: "Ctrl+/",
+    execute: toggleLeftCollapsed,
+  });
+
+  registerCommand({
+    id: "view:toggle-right-panel",
+    title: t("command.view.toggle-right-panel"),
+    category: "View",
+    keybinding: "Ctrl+\\",
+    execute: toggleRightCollapsed,
+  });
+
+  registerCommand({
+    id: "view:focus-editor",
+    title: t("command.view.focus-editor"),
+    category: "View",
+    keybinding: "Ctrl+Shift+0",
+    execute: focusEditor,
+  });
+
+  registerCommand({
+    id: "view:cycle-region-forward",
+    title: t("command.view.cycle-region-forward"),
+    category: "View",
+    keybinding: "F6",
+    execute: () => cycleRegion(1),
+  });
+
+  registerCommand({
+    id: "view:cycle-region-back",
+    title: t("command.view.cycle-region-back"),
+    category: "View",
+    keybinding: "Shift+F6",
+    execute: () => cycleRegion(-1),
+  });
+
+  registerCommand({
     id: "view:toggle-theme",
     title: t("command.view.toggle-theme"),
     category: "View",
+    keybinding: "Ctrl+Shift+L",
     execute: toggleTheme,
   });
 
@@ -238,6 +297,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "view:toggle-source-mode",
     title: t("command.view.toggle-source-mode"),
     category: "View",
+    keybinding: "Ctrl+Shift+M",
     execute: () => {
       const tab = getActiveTab();
       if (!tab || tab.type !== "file") return;
@@ -251,6 +311,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "view:toggle-reading-mode",
     title: t("command.view.toggle-reading-mode"),
     category: "View",
+    keybinding: "Ctrl+Shift+R",
     execute: () => {
       const tab = getActiveTab();
       if (!tab || tab.type !== "file") return;
@@ -265,6 +326,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "view:toggle-distraction-free",
     title: t("command.view.toggle-distraction-free"),
     category: "View",
+    keybinding: "Ctrl+Shift+1",
     execute: toggleDistractionFree,
   });
 
@@ -466,7 +528,9 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "tools:insert-scaffold",
     title: t("command.tools.insert-scaffold"),
     category: "Tools",
-    keybinding: "Ctrl+\\",
+    // Moved off Ctrl+\ (now "toggle right panel") to keep the panel-toggle
+    // pair Ctrl+/ + Ctrl+\ symmetric.
+    keybinding: "Ctrl+Shift+\\",
     execute: callbacks.openScaffoldPicker,
   });
 
@@ -474,6 +538,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "tools:mycelial-view",
     title: t("command.tools.mycelial-view"),
     category: "Tools",
+    keybinding: "Ctrl+Shift+S",
     execute: () => {
       const tab = getActiveTab();
       if (tab && tab.type === "file") {
@@ -487,6 +552,19 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
           { forceNewTab: true },
         );
       }
+    },
+  });
+
+  registerCommand({
+    id: "tools:journal-scroll",
+    title: t("command.tools.journal-scroll"),
+    category: "Tools",
+    keybinding: "Ctrl+Shift+J",
+    // Journal Scroll anchors on the active note and streams related notes in
+    // place; the pill in the editor toolbar drives the same toggle.
+    execute: () => {
+      const tab = getActiveTab();
+      if (tab && tab.type === "file") void toggleScroll(tab.id, tab.path);
     },
   });
 

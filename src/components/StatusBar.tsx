@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createMemo, createResource } from "solid-js";
+import { Component, Show, For, createSignal, createMemo, createResource, onMount, onCleanup } from "solid-js";
 import {
   ArchiveRestore,
   Archive,
@@ -203,9 +203,22 @@ const StatusBar: Component = () => {
   // rename against a path that no longer exists).
   let renameSettled = false;
 
+  // The `file:rename` command (F2) starts the inline rename from anywhere via
+  // this event — the status bar owns the draft/commit state, so the command
+  // just signals intent. Mirrors the click affordance below.
+  onMount(() => {
+    const onStart = () => startRename();
+    document.addEventListener("inkycap:start-rename", onStart);
+    onCleanup(() => document.removeEventListener("inkycap:start-rename", onStart));
+  });
+
   function startRename() {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file") return;
+    // Respect the same guard as the visible affordance: no inline rename for a
+    // collab-review tab or a file outside the notebox root (activeFilePath()
+    // is null in both cases). Keeps the F2 command / event in step with the UI.
+    if (!activeFilePath()) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     renameSettled = false;
     setRenameDraft(oldName);
@@ -293,6 +306,7 @@ const StatusBar: Component = () => {
       ref={statusBarEl}
       class="status-bar"
       classList={{ "status-bar--distraction-free": distractionFree() }}
+      data-focus-region="status-bar"
     >
       {/* Everything except the distraction-free toggle collapses away in
           distraction-free mode, leaving just the exit button at the edge. */}

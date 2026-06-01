@@ -45,6 +45,7 @@ import {
 } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
+import { initFocusRegions } from "./lib/focus-regions";
 import { initTauriDragDrop } from "./lib/tauri-drag-drop";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { collaborative, setManageOpen } from "./stores/git";
@@ -281,9 +282,14 @@ const App: Component = () => {
   document.addEventListener("inkycap:open-collaboration", onOpenCollaboration);
   onCleanup(() => document.removeEventListener("inkycap:open-collaboration", onOpenCollaboration));
 
+  // Escape-to-editor for keyboard region navigation (F6 cycling and
+  // Ctrl+Shift+0 are registry commands; only Escape needs a live listener).
+  const disposeFocusRegions = initFocusRegions();
+
   onCleanup(() => {
     flushSettingsSave();
     destroyKeyboard();
+    disposeFocusRegions();
     stopLsp();
   });
 

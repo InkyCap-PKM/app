@@ -43,6 +43,7 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
   return (
     <div
       class={`pane pane--leaf${isFocused() ? " pane--focused" : ""}`}
+      data-focus-region="editor"
       onPointerDown={() => focusPane(props.leaf.id)}
       onFocusIn={() => focusPane(props.leaf.id)}
     >

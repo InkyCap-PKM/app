@@ -1108,11 +1108,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   }
 
   return (
-    <div class="left-sidebar">
+    <div class="left-sidebar" data-focus-region="sidebar">
       <div
         class="left-sidebar__mode-bar"
         ref={modeOverflow.ref}
         data-overflow={modeOverflow.overflowing() ? "true" : undefined}
+        data-panel-tablist
       >
         <button
           class={`left-sidebar__mode-btn ${mode() === "filetree" ? "left-sidebar__mode-btn--active" : ""}`}
