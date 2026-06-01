@@ -20,13 +20,17 @@ pub async fn export_collection_static_site(
     view_name: String,
     output_dir: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<StaticSiteExportResult, InkyCapError> {
+    let session = state.session(window.label()).await;
     let data = crate::commands::collections::get_collection_data_internal(
-        &collection_path, &view_name, &state,
+        &collection_path,
+        &view_name,
+        &session,
     )
     .await?;
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let collection_path_buf = PathBuf::from(&collection_path);
     let collection_content = storage.read_file(&collection_path_buf).await?;
     let base = crate::collection_parser::model::parse_collection_file(&collection_content)?;
@@ -38,7 +42,7 @@ pub async fn export_collection_static_site(
 
     // Notebox root, for copying referenced assets into the site so its pages
     // are self-contained (images, video, audio next to the HTML).
-    let notebox_root = state.notebox_root.read().await.clone();
+    let notebox_root = session.notebox_root.read().await.clone();
 
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
@@ -74,17 +78,21 @@ pub async fn export_collection_static_site(
         let content = rewrite_wikilinks_to_links(&content, &name_to_file);
         let content = style_injection::inject_style_rules(
             &content,
-            if defaults_rules.is_empty() { None } else { Some(&defaults_rules) },
+            if defaults_rules.is_empty() {
+                None
+            } else {
+                Some(&defaults_rules)
+            },
             collection_rules.as_deref().filter(|r| !r.is_empty()),
-            base.custom_typst.as_deref().filter(|c| !c.trim().is_empty()),
+            base.custom_typst
+                .as_deref()
+                .filter(|c| !c.trim().is_empty()),
         );
         let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
-        let source = prepare_bibliography(content, None, None, true, &state).await;
+        let source = prepare_bibliography(content, None, None, true, &state, &session).await;
 
-        let mut compiler = state.typst_compiler.lock().await;
-        let compiler = compiler
-            .as_mut()
-            .ok_or(InkyCapError::NoteboxNotOpen)?;
+        let mut compiler = session.typst_compiler.lock().await;
+        let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
 
         // A note that won't compile is skipped and reported rather than

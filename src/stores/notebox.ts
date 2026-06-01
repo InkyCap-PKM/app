@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { homeDir } from "@tauri-apps/api/path";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { NoteboxInfo, NoteboxRegistryEntry } from "../lib/types";
+import { focusNoteboxWindow } from "../lib/new-window";
 import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
@@ -278,6 +279,11 @@ async function applyStartupBehavior(): Promise<void> {
 }
 
 export async function openNotebox(path: string) {
+  // One notebox per window: if it's already open in ANOTHER window, focus that
+  // window and leave this one untouched (don't tear down its tabs to open a
+  // duplicate). The backend's open_notebox guard is the race-safe backstop.
+  if (await focusNoteboxWindow(path, true)) return null;
+
   setIsLoading(true);
   setIndexReady(false);
 
@@ -388,6 +394,17 @@ export async function initNotebox(): Promise<void> {
   // over once `initAttempted` flips. It walks the user into a valid notebox
   // (open/create a folder, or pick one of their existing noteboxes), so the
   // app is never left running without one.
+  setInitAttempted(true);
+}
+
+/**
+ * Show the notebox picker (`NoteboxRequiredOverlay`) WITHOUT restoring the
+ * saved notebox. Used by a freshly-opened "new window" so the user chooses
+ * which notebox that window shows, rather than it auto-loading the same
+ * notebox as the main window.
+ */
+export async function showNoteboxPicker(): Promise<void> {
+  await loadNoteboxRegistry();
   setInitAttempted(true);
 }
 

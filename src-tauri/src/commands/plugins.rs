@@ -53,10 +53,14 @@ fn read_manifest_dir(dir: &Path, out: &mut Vec<PluginManifestFile>) {
 /// Discover declarative-plugin manifests. Returns raw files for the frontend to
 /// validate and register; the backend deliberately does not interpret them.
 #[tauri::command]
-pub async fn read_plugin_manifests(state: State<'_, AppState>) -> Result<Vec<PluginManifestFile>> {
+pub async fn read_plugin_manifests(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<PluginManifestFile>> {
+    let session = state.session(window.label()).await;
     let mut out = Vec::new();
     read_manifest_dir(&crate::app_paths::config_dir().join("plugins"), &mut out);
-    if let Some(root) = state.notebox_root.read().await.as_ref() {
+    if let Some(root) = session.notebox_root.read().await.as_ref() {
         read_manifest_dir(&root.join(".inkycap").join("plugins"), &mut out);
     }
     Ok(out)

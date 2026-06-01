@@ -32,7 +32,7 @@ import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
-import { initNotebox, openNotebox, noteboxInfo, initAttempted } from "./stores/notebox";
+import { initNotebox, openNotebox, showNoteboxPicker, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initLocale, syncLocaleFromSettings } from "./stores/locale";
 import {
@@ -208,14 +208,26 @@ const App: Component = () => {
     // this). Otherwise restore the last-opened notebox. openNotebox runs
     // applyStartupBehavior internally on every successful open (initial launch
     // and subsequent switches alike), so we don't call it separately here.
-    const noteboxParam = new URLSearchParams(window.location.search).get("notebox");
+    const params = new URLSearchParams(window.location.search);
+    const noteboxParam = params.get("notebox");
+    const fileParam = params.get("path");
     if (noteboxParam) {
       try {
         await openNotebox(noteboxParam);
+        // A secondary window may also name a file to open within that notebox
+        // (the "open in a new window" actions pass both notebox + path).
+        if (fileParam) {
+          const title = fileParam.split(/[/\\]/).pop() ?? fileParam;
+          openTab({ type: "file", title, path: fileParam }, { forceNewTab: true });
+        }
       } catch (e) {
         console.warn("Window failed to open its requested notebox:", e);
         await initNotebox();
       }
+    } else if (params.get("new") !== null) {
+      // A "new window" with no notebox chosen yet: show the picker rather than
+      // auto-restoring the saved notebox, so the user opens what they want here.
+      await showNoteboxPicker();
     } else {
       await initNotebox();
     }

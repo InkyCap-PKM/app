@@ -29,7 +29,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::errors::InkyCapError;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter::note_call_span;
 use serde::Deserialize;
@@ -75,27 +75,27 @@ pub struct TypAuditReport {
 #[tauri::command]
 pub async fn audit_typ_files(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<TypAuditReport, InkyCapError> {
-    Ok(collect_audit(state.inner()).await?.0)
+    let session = state.session(window.label()).await;
+    Ok(collect_audit(&session).await?.0)
 }
 
 /// The audit scan, shared by [`audit_typ_files`] and [`save_audit_report`].
 /// Returns the report plus the notebox root (the latter only needed when
 /// writing the report file).
 async fn collect_audit(
-    state: &AppState,
+    session: &NoteboxSession,
 ) -> Result<(TypAuditReport, PathBuf), InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root_guard = state.notebox_root.read().await;
+    let storage = session.get_storage().await?;
+    let notebox_root_guard = session.notebox_root.read().await;
     let notebox_root = notebox_root_guard
         .as_ref()
         .cloned()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     drop(notebox_root_guard);
 
-    let abs_paths = storage
-        .list_files(&PathBuf::from(""), "*.typ")
-        .await?;
+    let abs_paths = storage.list_files(&PathBuf::from(""), "*.typ").await?;
 
     let mut report = TypAuditReport {
         total_scanned: 0,
@@ -170,11 +170,13 @@ const REPORT_NAME: &str = "InkyCap Audit Report.typ";
 #[tauri::command]
 pub async fn save_audit_report(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let (report, notebox_root) = collect_audit(state.inner()).await?;
+    let session = state.session(window.label()).await;
+    let (report, notebox_root) = collect_audit(&session).await?;
     let content = format_audit_report(&report);
     let rel = PathBuf::from(REPORT_NAME);
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     storage.write_file(&rel, &content).await?;
     Ok(crate::storage::path::to_frontend_string(
         &notebox_root.join(&rel),
@@ -202,7 +204,11 @@ fn format_audit_report(report: &TypAuditReport) -> String {
     );
 
     if !report.syntax_errors.is_empty() {
-        let _ = writeln!(s, "== Typst syntax errors ({} files)\n", report.syntax_errors.len());
+        let _ = writeln!(
+            s,
+            "== Typst syntax errors ({} files)\n",
+            report.syntax_errors.len()
+        );
         s.push_str(
             "A syntax error (a missing bracket, a stray token, a typo). InkyCap \
              can't safely auto-fix these — open each file and fix it at the line \
@@ -219,7 +225,11 @@ fn format_audit_report(report: &TypAuditReport) -> String {
     }
 
     if !report.markdown_fixes.is_empty() {
-        let _ = writeln!(s, "== Leftover Markdown ({} files)\n", report.markdown_fixes.len());
+        let _ = writeln!(
+            s,
+            "== Leftover Markdown ({} files)\n",
+            report.markdown_fixes.len()
+        );
         s.push_str(
             "These look like leftover Markdown. The audit dialog's \"Fix \
              Markdown\" button can rewrite them to Typst (review each first), or \
@@ -283,7 +293,9 @@ fn note_stem(rel_path: &str) -> &str {
 /// open that note. Every scanned `.typ` is in the index (even ones that fail to
 /// compile), so these resolve rather than offering to create a new note.
 fn wikilink(rel_path: &str) -> String {
-    let stem = note_stem(rel_path).replace('\\', "\\\\").replace('"', "\\\"");
+    let stem = note_stem(rel_path)
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
     format!("#wikilink(\"{stem}\")")
 }
 
@@ -302,8 +314,10 @@ fn code_span(text: &str) -> String {
 pub async fn repair_typ_files(
     paths: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<TypRepairSummary, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
 
     let import_line = crate::notebox_package::import_line();
     let mut summary = TypRepairSummary {
@@ -316,7 +330,9 @@ pub async fn repair_typ_files(
         let original = match storage.read_file(&rel_path).await {
             Ok(c) => c,
             Err(e) => {
-                summary.errors.push(format!("{}: read failed: {}", rel_str, e));
+                summary
+                    .errors
+                    .push(format!("{}: read failed: {}", rel_str, e));
                 continue;
             }
         };
@@ -328,7 +344,9 @@ pub async fn repair_typ_files(
         }
 
         if let Err(e) = storage.write_file(&rel_path, &repaired).await {
-            summary.errors.push(format!("{}: write failed: {}", rel_str, e));
+            summary
+                .errors
+                .push(format!("{}: write failed: {}", rel_str, e));
             continue;
         }
         summary.repaired.push(rel_str);
@@ -356,8 +374,10 @@ pub struct FileMdEdits {
 pub async fn repair_markdown_files(
     edits: Vec<FileMdEdits>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<TypRepairSummary, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let mut summary = TypRepairSummary {
         repaired: Vec::new(),
         errors: Vec::new(),
@@ -371,7 +391,9 @@ pub async fn repair_markdown_files(
         let original = match storage.read_file(&rel_path).await {
             Ok(c) => c,
             Err(e) => {
-                summary.errors.push(format!("{}: read failed: {}", file.path, e));
+                summary
+                    .errors
+                    .push(format!("{}: read failed: {}", file.path, e));
                 continue;
             }
         };
@@ -382,7 +404,9 @@ pub async fn repair_markdown_files(
         }
 
         if let Err(e) = storage.write_file(&rel_path, &fixed).await {
-            summary.errors.push(format!("{}: write failed: {}", file.path, e));
+            summary
+                .errors
+                .push(format!("{}: write failed: {}", file.path, e));
             continue;
         }
         summary.repaired.push(file.path);
@@ -409,7 +433,9 @@ pub struct TypRepairSummary {
 /// versioned package path, including non-glob variants
 /// (`#import "...notebox.typ": tag, wikilink`).
 fn has_notebox_import(content: &str) -> bool {
-    content.lines().any(crate::notebox_package::is_notebox_import_line)
+    content
+        .lines()
+        .any(crate::notebox_package::is_notebox_import_line)
 }
 
 /// Build the corrected source for a single file. Two independent
@@ -510,8 +536,14 @@ mod tests {
         assert!(content.contains("InkyCap audit report"));
         assert!(content.contains("Typst syntax errors (1 files)"));
         // Each file gets a clickable wikilink (by note name, not path).
-        assert!(content.contains("#wikilink(\"David Secko\")"), "missing wikilink:\n{content}");
-        assert!(content.contains("#wikilink(\"notes #1\")"), "missing wikilink:\n{content}");
+        assert!(
+            content.contains("#wikilink(\"David Secko\")"),
+            "missing wikilink:\n{content}"
+        );
+        assert!(
+            content.contains("#wikilink(\"notes #1\")"),
+            "missing wikilink:\n{content}"
+        );
         let errs = source_lint::detect_syntax_errors(&content);
         assert!(
             errs.is_empty(),
@@ -548,9 +580,7 @@ mod tests {
         assert_eq!(out.matches("/.inkycap/notebox.typ").count(), 1);
         assert!(note_call_span(&out).is_some());
         // Stub note inserted directly after the import line.
-        assert!(out.starts_with(
-            "#import \"/.inkycap/notebox.typ\": *\n#note()\n"
-        ));
+        assert!(out.starts_with("#import \"/.inkycap/notebox.typ\": *\n#note()\n"));
     }
 
     #[test]

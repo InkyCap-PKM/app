@@ -738,24 +738,6 @@ const RightPanel: Component = () => {
     }, 0);
   }
 
-  function openLinkRowInNewWindow(path: string, name: string) {
-    setLinkRowMenu(null);
-    // Lazy import keeps the WebviewWindow API out of the initial bundle.
-    import("@tauri-apps/api/webviewWindow")
-      .then(({ WebviewWindow }) => {
-        const label = `note-${Date.now()}`;
-        const win = new WebviewWindow(label, {
-          url: `index.html?path=${encodeURIComponent(path)}`,
-          title: name,
-          width: 900,
-          height: 700,
-        });
-        win.once("tauri://error", (err) => {
-          console.error("Failed to open new window:", err);
-        });
-      })
-      .catch((err) => console.error("Failed to load WebviewWindow:", err));
-  }
 
   async function createUnresolvedNote(target: string) {
     try {
@@ -2160,12 +2142,6 @@ const RightPanel: Component = () => {
               }}
             >
               {t("wikilink.menu.openNewTab")}
-            </button>
-            <button
-              class="context-menu__item"
-              onClick={() => openLinkRowInNewWindow(menu().path, menu().name)}
-            >
-              {t("search.openNewWindow")}
             </button>
           </div>
         )}

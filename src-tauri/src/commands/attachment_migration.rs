@@ -25,9 +25,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
-use crate::typst_pipeline::path_rebase::{
-    count_absolute_prefix_matches, replace_absolute_prefix,
-};
+use crate::typst_pipeline::path_rebase::{count_absolute_prefix_matches, replace_absolute_prefix};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MigrationPreview {
@@ -65,9 +63,11 @@ pub struct MigrationResult {
 pub async fn preview_attachment_folder_migration(
     new_folder: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<MigrationPreview, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root
         .as_ref()
         .ok_or(InkyCapError::NoteboxNotOpen)?
@@ -75,7 +75,7 @@ pub async fn preview_attachment_folder_migration(
     drop(notebox_root);
 
     let current_folder = {
-        let s = state.notebox_settings.read().await;
+        let s = session.notebox_settings.read().await;
         s.files.attachment_folder.clone()
     };
 
@@ -127,9 +127,11 @@ pub async fn preview_attachment_folder_migration(
 pub async fn migrate_attachment_folder(
     new_folder: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<MigrationResult, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let notebox_root = state.notebox_root.read().await;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
     let root = notebox_root
         .as_ref()
         .ok_or(InkyCapError::NoteboxNotOpen)?
@@ -138,7 +140,7 @@ pub async fn migrate_attachment_folder(
 
     let new_folder = validate_folder_segment(&new_folder)?;
     let current_folder = {
-        let s = state.notebox_settings.read().await;
+        let s = session.notebox_settings.read().await;
         s.files.attachment_folder.clone()
     };
 
@@ -204,7 +206,7 @@ pub async fn migrate_attachment_folder(
         .unwrap_or_default();
 
     // `list_files` returns canonical absolute paths (it walks via the
-    // storage's canonical root). The `state.notebox_root` may NOT be
+    // storage's canonical root). The `session.notebox_root` may NOT be
     // canonical on platforms where the user's path contains symlinks
     // — stripping against it silently fails and the migration writes
     // nothing back. Use the storage's canonical root for the strip,
@@ -243,7 +245,7 @@ pub async fn migrate_attachment_folder(
             errors.push(format!("write {}: {e}", rel.display()));
             continue;
         }
-        state.reindex_note(&rel, &rewritten).await;
+        session.reindex_note(&rel, &rewritten).await;
         notes_updated += 1;
     }
 
@@ -254,7 +256,7 @@ pub async fn migrate_attachment_folder(
     // every subsequent compile would see broken absolute references
     // until the rewrite was retried.
     {
-        let mut s = state.notebox_settings.write().await;
+        let mut s = session.notebox_settings.write().await;
         s.files.attachment_folder = new_folder.clone();
         let snapshot = s.clone();
         drop(s);
@@ -307,24 +309,14 @@ fn count_name_conflicts(src: &Path, dst: &Path) -> usize {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter_map(|e| {
-            e.path()
-                .strip_prefix(dst)
-                .ok()
-                .map(|p| p.to_path_buf())
-        })
+        .filter_map(|e| e.path().strip_prefix(dst).ok().map(|p| p.to_path_buf()))
         .collect();
 
     walkdir::WalkDir::new(src)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter_map(|e| {
-            e.path()
-                .strip_prefix(src)
-                .ok()
-                .map(|p| p.to_path_buf())
-        })
+        .filter_map(|e| e.path().strip_prefix(src).ok().map(|p| p.to_path_buf()))
         .filter(|rel| dst_names.contains(rel))
         .count()
 }

@@ -40,25 +40,25 @@ pub use site::export_collection_static_site;
 pub async fn count_note_review_markup(
     path: String,
     state: tauri::State<'_, crate::state::AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<usize, crate::errors::InkyCapError> {
     use crate::storage::traits::NoteboxStorage;
-    let storage = state.get_storage().await?;
-    let content = storage
-        .read_file(&std::path::PathBuf::from(&path))
-        .await?;
-    Ok(crate::typst_pipeline::review_markup::count_review_markup(&content))
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let content = storage.read_file(&std::path::PathBuf::from(&path)).await?;
+    Ok(crate::typst_pipeline::review_markup::count_review_markup(
+        &content,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::helpers::*;
     use super::assets::inline_package;
+    use super::helpers::*;
     use super::pandoc::{
         inject_docx_core_properties, inject_odt_meta_properties, mirror_img_style_size_to_attrs,
     };
-    use super::pdf::{
-        check_pdf_standard_requirements, ensure_document_date_for_standard,
-    };
+    use super::pdf::{check_pdf_standard_requirements, ensure_document_date_for_standard};
     use crate::typst_pipeline::compiler::PdfStandardPreset;
 
     #[test]
@@ -101,12 +101,16 @@ Some text.
 
     #[test]
     fn check_pdf_ua1_reports_missing_image_alt() {
-        let source = "= Title\n#image(\"a.png\")\nSome text.\n#image(\"b.svg\", alt: \"a thing\")\n";
+        let source =
+            "= Title\n#image(\"a.png\")\nSome text.\n#image(\"b.svg\", alt: \"a thing\")\n";
         let err = check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
             .expect_err("expected ua-1 violation");
         let msg = err.to_string();
         assert!(msg.contains("a.png"), "should name offender: {msg}");
-        assert!(!msg.contains("b.svg"), "image with alt should not appear: {msg}");
+        assert!(
+            !msg.contains("b.svg"),
+            "image with alt should not appear: {msg}"
+        );
         assert!(msg.contains("line 2"), "should give a line number: {msg}");
     }
 
@@ -159,7 +163,11 @@ Some text.
     fn inject_document_metadata_date_as_datetime() {
         let source = "#note(title: \"Test\", date: \"2026-04-28\")\n\n= Body\n";
         let result = inject_document_metadata(source);
-        assert!(result.contains("date: datetime(year: 2026, month: 4, day: 28)"), "got: {}", result);
+        assert!(
+            result.contains("date: datetime(year: 2026, month: 4, day: 28)"),
+            "got: {}",
+            result
+        );
     }
 
     #[test]
@@ -196,9 +204,14 @@ Some text.
 
     #[test]
     fn inject_document_metadata_datetime_literal_passthrough() {
-        let source = "#note(title: \"Test\", date: datetime(year: 2026, month: 4, day: 29))\n\n= Body\n";
+        let source =
+            "#note(title: \"Test\", date: datetime(year: 2026, month: 4, day: 29))\n\n= Body\n";
         let result = inject_document_metadata(source);
-        assert!(result.contains("date: datetime(year: 2026, month: 4, day: 29)"), "got: {}", result);
+        assert!(
+            result.contains("date: datetime(year: 2026, month: 4, day: 29)"),
+            "got: {}",
+            result
+        );
     }
 
     #[test]
@@ -266,9 +279,8 @@ Some text.
             "<w:r><w:t>Section</w:t></w:r></w:p>",
             "</w:body>",
         );
-        let title_styles = regex::Regex::new(
-            r#"<w:pStyle w:val="(Title|Subtitle|Author|Date)"\s*/>"#,
-        ).unwrap();
+        let title_styles =
+            regex::Regex::new(r#"<w:pStyle w:val="(Title|Subtitle|Author|Date)"\s*/>"#).unwrap();
         let result = super::pandoc::strip_docx_title_paragraphs(xml, &title_styles);
         assert!(!result.contains("Daisy Dog"), "title should be stripped");
         assert!(!result.contains("2026-04-28"), "date should be stripped");
@@ -299,7 +311,9 @@ Some text.
         let result = inject_docx_core_properties(xml, &meta);
         assert!(result.contains("<dc:title>Daisy Dog</dc:title>"));
         assert!(result.contains("<cp:keywords>dogtag, animal</cp:keywords>"));
-        assert!(result.contains("<dcterms:created xsi:type=\"dcterms:W3CDTF\">2026-04-28T00:00:00Z</dcterms:created>"));
+        assert!(result.contains(
+            "<dcterms:created xsi:type=\"dcterms:W3CDTF\">2026-04-28T00:00:00Z</dcterms:created>"
+        ));
     }
 
     #[test]
@@ -371,7 +385,10 @@ Some text.
 
     #[test]
     fn resolve_template_absolute_path_passthrough() {
-        assert_eq!(resolve_template_path("/my/template.typ"), "/my/template.typ");
+        assert_eq!(
+            resolve_template_path("/my/template.typ"),
+            "/my/template.typ"
+        );
     }
 
     #[test]

@@ -55,14 +55,16 @@ pub async fn export_via_pandoc(
     metadata_mode: String,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let pandoc_path = detect_pandoc()
-        .await?
-        .ok_or_else(|| InkyCapError::ExportFailed(
+    let session = state.session(window.label()).await;
+    let pandoc_path = detect_pandoc().await?.ok_or_else(|| {
+        InkyCapError::ExportFailed(
             "Pandoc not found. Install Pandoc or set a custom path in Settings.".to_string(),
-        ))?;
+        )
+    })?;
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
     let path_buf = std::path::PathBuf::from(&path);
     let raw_content = storage.read_file(&path_buf).await?;
 
@@ -88,19 +90,22 @@ pub async fn export_via_pandoc(
     let content = crate::notebox_package::ensure_import(&content);
     let source = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
-    let source = prepare_bibliography(source, None, None, true, &state).await;
+    let source = prepare_bibliography(source, None, None, true, &state, &session).await;
 
     let html = {
-        let mut compiler = state.typst_compiler.lock().await;
+        let mut compiler = session.typst_compiler.lock().await;
         let compiler = compiler.as_mut().ok_or(InkyCapError::NoteboxNotOpen)?;
         compiler.ensure_system_fonts_for_settings(&*state.settings.read().await);
-        let result = compile_with_auto_packages(compiler, |c| {
-            c.compile_html(&path_buf, source.clone())
-        })
-        .await
-        .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
+        let result =
+            compile_with_auto_packages(compiler, |c| c.compile_html(&path_buf, source.clone()))
+                .await
+                .map_err(|e| InkyCapError::ExportFailed(e.to_string()))?;
         if !result.ok {
-            let msgs: Vec<_> = result.diagnostics.iter().map(|d| d.message.clone()).collect();
+            let msgs: Vec<_> = result
+                .diagnostics
+                .iter()
+                .map(|d| d.message.clone())
+                .collect();
             return Err(InkyCapError::ExportFailed(format!(
                 "Compilation failed: {}",
                 msgs.join("; ")
@@ -115,7 +120,7 @@ pub async fn export_via_pandoc(
     // Copy referenced assets next to the intermediate HTML and rewrite their
     // notebox-root-absolute `/…` srcs to relative paths so Pandoc embeds them.
     let html = {
-        let notebox_root = state.notebox_root.read().await;
+        let notebox_root = session.notebox_root.read().await;
         match notebox_root.as_ref() {
             Some(root) => localize_html_assets(&html, root, temp_dir.path()).await?.0,
             None => html,
@@ -246,19 +251,20 @@ fn postprocess_docx(path: &str, metadata: &[(String, String)]) -> Result<(), Ink
 
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)
+        let mut entry = archive
+            .by_index(i)
             .map_err(|e| InkyCapError::ExportFailed(format!("DOCX entry read error: {}", e)))?;
         let name = entry.name().to_string();
         let mut buf = Vec::new();
-        entry.read_to_end(&mut buf)
+        entry
+            .read_to_end(&mut buf)
             .map_err(|e| InkyCapError::ExportFailed(format!("DOCX entry data error: {}", e)))?;
         entries.push((name, buf));
     }
     drop(archive);
 
-    let title_styles = regex::Regex::new(
-        r#"<w:pStyle w:val="(Title|Subtitle|Author|Date)"\s*/>"#,
-    ).unwrap();
+    let title_styles =
+        regex::Regex::new(r#"<w:pStyle w:val="(Title|Subtitle|Author|Date)"\s*/>"#).unwrap();
 
     let out_file = std::fs::File::create(path)
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create DOCX: {}", e)))?;
@@ -267,7 +273,8 @@ fn postprocess_docx(path: &str, metadata: &[(String, String)]) -> Result<(), Ink
     for (name, mut content) in entries {
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
-        writer.start_file(&name, opts)
+        writer
+            .start_file(&name, opts)
             .map_err(|e| InkyCapError::ExportFailed(format!("DOCX write error: {}", e)))?;
 
         if name == "word/document.xml" {
@@ -280,11 +287,13 @@ fn postprocess_docx(path: &str, metadata: &[(String, String)]) -> Result<(), Ink
             content = updated.into_bytes();
         }
 
-        writer.write_all(&content)
+        writer
+            .write_all(&content)
             .map_err(|e| InkyCapError::ExportFailed(format!("DOCX write error: {}", e)))?;
     }
 
-    writer.finish()
+    writer
+        .finish()
         .map_err(|e| InkyCapError::ExportFailed(format!("DOCX ZIP finish error: {}", e)))?;
 
     Ok(())
@@ -293,14 +302,16 @@ fn postprocess_docx(path: &str, metadata: &[(String, String)]) -> Result<(), Ink
 pub(super) fn strip_docx_title_paragraphs(xml: &str, title_styles: &regex::Regex) -> String {
     let para_re = regex::Regex::new(r"(?s)<w:p\b[^>]*>.*?</w:p>").unwrap();
 
-    para_re.replace_all(xml, |caps: &regex::Captures| {
-        let para = caps.get(0).unwrap().as_str();
-        if title_styles.is_match(para) {
-            String::new()
-        } else {
-            para.to_string()
-        }
-    }).to_string()
+    para_re
+        .replace_all(xml, |caps: &regex::Captures| {
+            let para = caps.get(0).unwrap().as_str();
+            if title_styles.is_match(para) {
+                String::new()
+            } else {
+                para.to_string()
+            }
+        })
+        .to_string()
 }
 
 pub(super) fn inject_docx_core_properties(xml: &str, metadata: &[(String, String)]) -> String {
@@ -343,19 +354,20 @@ fn postprocess_odt(path: &str, metadata: &[(String, String)]) -> Result<(), Inky
 
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)
+        let mut entry = archive
+            .by_index(i)
             .map_err(|e| InkyCapError::ExportFailed(format!("ODT entry read error: {}", e)))?;
         let name = entry.name().to_string();
         let mut buf = Vec::new();
-        entry.read_to_end(&mut buf)
+        entry
+            .read_to_end(&mut buf)
             .map_err(|e| InkyCapError::ExportFailed(format!("ODT entry data error: {}", e)))?;
         entries.push((name, buf));
     }
     drop(archive);
 
-    let title_styles = regex::Regex::new(
-        r#"text:style-name="(Title|Subtitle|Author|Date)""#,
-    ).unwrap();
+    let title_styles =
+        regex::Regex::new(r#"text:style-name="(Title|Subtitle|Author|Date)""#).unwrap();
 
     let out_file = std::fs::File::create(path)
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to create ODT: {}", e)))?;
@@ -367,9 +379,9 @@ fn postprocess_odt(path: &str, metadata: &[(String, String)]) -> Result<(), Inky
         } else {
             zip::CompressionMethod::Deflated
         };
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(compression);
-        writer.start_file(&name, opts)
+        let opts = zip::write::SimpleFileOptions::default().compression_method(compression);
+        writer
+            .start_file(&name, opts)
             .map_err(|e| InkyCapError::ExportFailed(format!("ODT write error: {}", e)))?;
 
         if name == "content.xml" {
@@ -382,11 +394,13 @@ fn postprocess_odt(path: &str, metadata: &[(String, String)]) -> Result<(), Inky
             content = updated.into_bytes();
         }
 
-        writer.write_all(&content)
+        writer
+            .write_all(&content)
             .map_err(|e| InkyCapError::ExportFailed(format!("ODT write error: {}", e)))?;
     }
 
-    writer.finish()
+    writer
+        .finish()
         .map_err(|e| InkyCapError::ExportFailed(format!("ODT ZIP finish error: {}", e)))?;
 
     Ok(())
@@ -395,14 +409,16 @@ fn postprocess_odt(path: &str, metadata: &[(String, String)]) -> Result<(), Inky
 fn strip_odt_title_paragraphs(xml: &str, title_styles: &regex::Regex) -> String {
     let para_re = regex::Regex::new(r"(?s)<text:p\b[^>]*>.*?</text:p>").unwrap();
 
-    para_re.replace_all(xml, |caps: &regex::Captures| {
-        let para = caps.get(0).unwrap().as_str();
-        if title_styles.is_match(para) {
-            String::new()
-        } else {
-            para.to_string()
-        }
-    }).to_string()
+    para_re
+        .replace_all(xml, |caps: &regex::Captures| {
+            let para = caps.get(0).unwrap().as_str();
+            if title_styles.is_match(para) {
+                String::new()
+            } else {
+                para.to_string()
+            }
+        })
+        .to_string()
 }
 
 pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)]) -> String {
@@ -429,10 +445,8 @@ pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)
                 for kw in value.split(", ") {
                     let kw = kw.trim();
                     if !kw.is_empty() {
-                        kw_xml.push_str(&format!(
-                            "<meta:keyword>{}</meta:keyword>",
-                            escape_xml(kw)
-                        ));
+                        kw_xml
+                            .push_str(&format!("<meta:keyword>{}</meta:keyword>", escape_xml(kw)));
                     }
                 }
                 if !kw_xml.is_empty() {
@@ -451,10 +465,7 @@ pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)
 /// Post-process LaTeX output: strip `\title`, `\author`, `\date`, and
 /// `\maketitle` so metadata only appears via `\hypersetup` (PDF properties),
 /// not as visible content in the body.
-async fn postprocess_latex(
-    path: &str,
-    metadata: &[(String, String)],
-) -> Result<(), InkyCapError> {
+async fn postprocess_latex(path: &str, metadata: &[(String, String)]) -> Result<(), InkyCapError> {
     let latex = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| InkyCapError::ExportFailed(format!("Failed to read LaTeX: {}", e)))?;

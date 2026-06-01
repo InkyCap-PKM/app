@@ -69,6 +69,29 @@ export async function openDocumentationNotebox(): Promise<string> {
   return invoke<string>("open_documentation_notebox");
 }
 
+/** A notebox currently open in some window: its path + the owning window label. */
+export interface OpenNoteboxWindow {
+  path: string;
+  label: string;
+}
+
+/**
+ * List every notebox currently open across all windows. A notebox is exclusive
+ * to one window, so the UI uses this to disable / focus already-open noteboxes.
+ */
+export async function listOpenNoteboxes(): Promise<OpenNoteboxWindow[]> {
+  return invoke<OpenNoteboxWindow[]>("list_open_noteboxes");
+}
+
+/**
+ * Validate a folder the user wants to add to their notebox list. Rejects (with
+ * a descriptive error) a folder already in the list, or one nested inside /
+ * containing another notebox. Resolves when the folder is a valid choice.
+ */
+export async function validateNoteboxLocation(path: string): Promise<void> {
+  return invoke<void>("validate_notebox_location", { path });
+}
+
 export async function getNoteboxInfo(): Promise<NoteboxInfo | null> {
   return invoke<NoteboxInfo | null>("get_notebox_info");
 }

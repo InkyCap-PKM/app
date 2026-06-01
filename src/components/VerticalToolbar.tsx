@@ -6,7 +6,7 @@ import {
   Settings,
   LayoutTemplate,
   Search,
-  Info,
+  CircleQuestionMark,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
@@ -164,7 +164,7 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
             title={t("verticalToolbar.helpTitle")}
             aria-label={t("verticalToolbar.help")}
           >
-            <Info size={18} />
+            <CircleQuestionMark size={18} />
           </button>
           <button
             class="vertical-toolbar__btn"

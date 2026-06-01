@@ -176,11 +176,13 @@ pub async fn spellcheck_dictionary_folder() -> Result<String, InkyCapError> {
 pub async fn add_user_dictionary_word(
     word: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = storage.root().join(".inkycap").join("dictionary.txt");
     crate::commands::mycelial::append_unique_word(&path, &word).await?;
-    let mut corpus = state.corpus_stats.write().await;
+    let mut corpus = session.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
     Ok(())
 }
@@ -192,8 +194,10 @@ pub async fn add_user_dictionary_word(
 pub async fn remove_user_dictionary_word(
     word: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = storage.root().join(".inkycap").join("dictionary.txt");
     let Ok(contents) = tokio::fs::read_to_string(&path).await else {
         return Ok(());
@@ -213,7 +217,7 @@ pub async fn remove_user_dictionary_word(
     }
     tokio::fs::write(&path, out).await?;
 
-    let mut corpus = state.corpus_stats.write().await;
+    let mut corpus = session.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
     Ok(())
 }
@@ -222,8 +226,12 @@ pub async fn remove_user_dictionary_word(
 /// allow-list shared by the spellchecker and the Mycelial "rescue". One word per
 /// line; `#` comments and blank lines are skipped.
 #[tauri::command]
-pub async fn list_user_dictionary(state: State<'_, AppState>) -> Result<Vec<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
+pub async fn list_user_dictionary(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path = storage.root().join(".inkycap").join("dictionary.txt");
     let Ok(contents) = tokio::fs::read_to_string(&path).await else {
         return Ok(Vec::new());

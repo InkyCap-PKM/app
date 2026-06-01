@@ -312,6 +312,18 @@ function NoteboxManagementSection() {
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [addPath, setAddPath] = createSignal("");
   const [addName, setAddName] = createSignal("");
+  // Validation message for the chosen Add folder (already in the list, or
+  // nested inside / containing another notebox). When set, Add is disabled.
+  const [addError, setAddError] = createSignal<string | null>(null);
+
+  async function validateAddPath(path: string) {
+    try {
+      await ipc.validateNoteboxLocation(path);
+      setAddError(null);
+    } catch (err) {
+      setAddError(errorText(err));
+    }
+  }
   const [editingPath, setEditingPath] = createSignal<string | null>(null);
   const [editName, setEditName] = createSignal("");
 
@@ -486,6 +498,7 @@ function NoteboxManagementSection() {
     setAddPath(selected);
     const dirName = selected.split("/").pop() ?? "Notebox";
     if (!addName()) setAddName(dirName);
+    void validateAddPath(selected);
   }
 
   async function confirmAdd() {
@@ -495,6 +508,9 @@ function NoteboxManagementSection() {
       showToast("error", t("settings.notebox.selectFolderError"));
       return;
     }
+    // The chosen folder failed validation (already listed, or nested) — Add is
+    // disabled in this state, but guard here too against an Enter-key submit.
+    if (addError()) return;
     // Offer the seed-from-existing prompt before registering so the new
     // notebox starts with the user's chosen base settings/rules. Skips
     // silently when no source is available.
@@ -505,6 +521,7 @@ function NoteboxManagementSection() {
       setShowAddForm(false);
       setAddPath("");
       setAddName("");
+      setAddError(null);
     } catch (err) {
       showToast("error", t("settings.notebox.addFailed", { error: errorText(err) }));
     }
@@ -514,6 +531,7 @@ function NoteboxManagementSection() {
     setShowAddForm(false);
     setAddPath("");
     setAddName("");
+    setAddError(null);
   }
 
   async function browseForCloneDest() {
@@ -833,8 +851,11 @@ function NoteboxManagementSection() {
                 if (e.key === "Escape") cancelAdd();
               }}
             />
-            <span class="settings__description">
-              {addPath() || t("settings.notebox.noFolderSelected")}
+            <span
+              class="settings__description"
+              classList={{ "settings__description--error": !!addError() }}
+            >
+              {addError() || addPath() || t("settings.notebox.noFolderSelected")}
             </span>
           </div>
           <div class="notebox-row__actions">
@@ -844,13 +865,14 @@ function NoteboxManagementSection() {
             <button
               class="settings__detect-btn"
               classList={{
-                // Once a name is typed and a location is chosen, nothing else
-                // is required — but it isn't obvious the user must still click
-                // Add. Draw the eye to it once both conditions are met.
-                "settings__detect-btn--cta": !!addName().trim() && !!addPath(),
+                // Once a name is typed and a valid location is chosen, nothing
+                // else is required — but it isn't obvious the user must still
+                // click Add. Draw the eye to it once both conditions are met.
+                "settings__detect-btn--cta":
+                  !!addName().trim() && !!addPath() && !addError(),
               }}
               onClick={confirmAdd}
-              disabled={!addPath()}
+              disabled={!addPath() || !!addError()}
             >
               {t("common.add")}
             </button>

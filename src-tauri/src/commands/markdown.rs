@@ -20,7 +20,9 @@ use crate::storage::traits::NoteboxStorage;
 pub async fn paste_markdown_as_typst(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<String>, String> {
+    let session = state.session(window.label()).await;
     let text = read_clipboard_text(&app).await.map_err(|e| {
         log::warn!("[paste-as-markdown] clipboard read error: {e}");
         e.to_string()
@@ -36,7 +38,7 @@ pub async fn paste_markdown_as_typst(
         }
     };
 
-    let attachment_folder = state
+    let attachment_folder = session
         .notebox_settings
         .read()
         .await
@@ -172,7 +174,11 @@ fn read_clipboard_text_win32() -> Option<String> {
             let slice = std::slice::from_raw_parts(ptr, len);
             let s = String::from_utf16_lossy(slice);
             GlobalUnlock(hglobal);
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         })();
         CloseClipboard();
         result
@@ -185,8 +191,10 @@ pub async fn convert_markdown_to_typst(
     markdown: String,
     include_preamble: bool,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, String> {
-    let attachment_folder = state
+    let session = state.session(window.label()).await;
+    let attachment_folder = session
         .notebox_settings
         .read()
         .await
@@ -265,7 +273,9 @@ fn build_mapping_table(mappings: &[PropertyMapping]) -> FrontmatterMapping {
 pub async fn scan_markdown_frontmatter(
     source_path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<FrontmatterKeyInfo>, String> {
+    let session = state.session(window.label()).await;
     let source = PathBuf::from(&source_path);
     if !source.exists() {
         return Err(format!("Source path does not exist: {}", source_path));
@@ -280,11 +290,11 @@ pub async fn scan_markdown_frontmatter(
     };
 
     let existing_keys = {
-        let index = state.property_index.read().await;
+        let index = session.property_index.read().await;
         index.property_keys.iter().cloned().collect()
     };
     let types = {
-        let reg = state.property_types.read().await;
+        let reg = session.property_types.read().await;
         reg.all()
     };
 
@@ -309,7 +319,9 @@ pub async fn import_markdown_notebox(
     dialect: Option<String>,
     mappings: Option<Vec<PropertyMapping>>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<ImportResult, String> {
+    let session = state.session(window.label()).await;
     let source = PathBuf::from(&source_path);
     let target = PathBuf::from(&target_path);
 
@@ -336,7 +348,7 @@ pub async fn import_markdown_notebox(
 
     // Route embed-referenced attachments into the target notebox's configured
     // attachment folder (Settings ▸ Files & Links), not a hardcoded default.
-    let attachment_folder = state
+    let attachment_folder = session
         .notebox_settings
         .read()
         .await
@@ -375,10 +387,10 @@ pub async fn import_markdown_notebox(
     // mapping (no re-typing of the existing property).
     if let Some(mappings) = &mappings {
         let existing_keys: std::collections::HashSet<String> = {
-            let index = state.property_index.read().await;
+            let index = session.property_index.read().await;
             index.property_keys.iter().cloned().collect()
         };
-        let mut reg = state.property_types.write().await;
+        let mut reg = session.property_types.write().await;
         let known = reg.all();
         let mut changed = false;
         for m in mappings {
@@ -463,14 +475,14 @@ pub async fn export_note_markdown_to_file(
     unconvertible_mode: UnconvertibleMode,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let path_buf = PathBuf::from(&path);
     let content = storage.read_file(&path_buf).await?;
-    let content = crate::commands::export::helpers::apply_review_mode(
-        &content,
-        review_mode.as_deref(),
-    );
+    let content =
+        crate::commands::export::helpers::apply_review_mode(&content, review_mode.as_deref());
 
     let options = TypstToMarkdownOptions {
         unconvertible: unconvertible_mode,
@@ -479,7 +491,9 @@ pub async fn export_note_markdown_to_file(
 
     tokio::fs::write(&output_path, markdown)
         .await
-        .map_err(|e| InkyCapError::ExportFailed(format!("Failed to write {}: {}", output_path, e)))?;
+        .map_err(|e| {
+            InkyCapError::ExportFailed(format!("Failed to write {}: {}", output_path, e))
+        })?;
 
     Ok(())
 }
@@ -493,14 +507,19 @@ pub async fn export_collection_batch_markdown(
     unconvertible_mode: UnconvertibleMode,
     review_mode: Option<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let output_dir_buf = PathBuf::from(&output_dir);
 
     // Get collection data to find all note paths in the view.
-    let collection =
-        crate::commands::collections::get_collection_data_internal(&collection_path, &view_name, &state)
-            .await?;
+    let collection = crate::commands::collections::get_collection_data_internal(
+        &collection_path,
+        &view_name,
+        &session,
+    )
+    .await?;
 
     tokio::fs::create_dir_all(&output_dir_buf)
         .await
@@ -522,15 +541,10 @@ pub async fn export_collection_batch_markdown(
             }
         };
 
-        let content = crate::commands::export::helpers::apply_review_mode(
-            &content,
-            review_mode.as_deref(),
-        );
+        let content =
+            crate::commands::export::helpers::apply_review_mode(&content, review_mode.as_deref());
         let markdown = typst_to_markdown(&content, &options);
-        let md_name = row
-            .file_name
-            .strip_suffix(".typ")
-            .unwrap_or(&row.file_name);
+        let md_name = row.file_name.strip_suffix(".typ").unwrap_or(&row.file_name);
         let output_file = output_dir_buf.join(format!("{}.md", md_name));
 
         match tokio::fs::write(&output_file, &markdown).await {

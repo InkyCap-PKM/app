@@ -179,8 +179,10 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
 #[tauri::command]
 pub async fn get_agenda_items(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<AgendaItem>, InkyCapError> {
-    let index = state.property_index.read().await;
+    let session = state.session(window.label()).await;
+    let index = session.property_index.read().await;
     let notes: Vec<&NoteMetadata> = index.notes.values().collect();
     Ok(agenda_items_for_notes(&notes))
 }
@@ -195,8 +197,10 @@ pub async fn get_collection_agenda(
     collection_path: String,
     view_name: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<AgendaItem>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let collection_path_buf = sanitize_notebox_arg(&collection_path)?;
     let content = storage.read_file(&collection_path_buf).await?;
     let base = parse_collection_file(&content)?;
@@ -208,7 +212,7 @@ pub async fn get_collection_agenda(
     }
     .ok_or_else(|| InkyCapError::InvalidPath(format!("View '{}' not found", view_name)))?;
 
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
     let members = resolve_collection_members(&base, view, &index, &collection_path_buf);
     Ok(agenda_items_for_notes(&members))
 }

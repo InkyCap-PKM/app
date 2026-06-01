@@ -378,26 +378,6 @@ const SearchPanel: Component = () => {
     setResultContextMenu({ x, y, result });
   }
 
-  function openInNewWindow(result: SearchResult) {
-    setResultContextMenu(null);
-    // Lazy-import keeps the WebviewWindow API out of the SearchPanel
-    // bundle when the user never hits this code path.
-    import("@tauri-apps/api/webviewWindow")
-      .then(({ WebviewWindow }) => {
-        const label = `note-${Date.now()}`;
-        const title = result.path.split(/[/\\]/).pop() ?? result.file_name;
-        const win = new WebviewWindow(label, {
-          url: `index.html?path=${encodeURIComponent(result.path)}`,
-          title,
-          width: 900,
-          height: 700,
-        });
-        win.once("tauri://error", (err) => {
-          console.error("Failed to open new window:", err);
-        });
-      })
-      .catch((err) => console.error("Failed to load WebviewWindow:", err));
-  }
 
   /// Ask any open editor tabs to reload the affected files from disk.
   /// Reuses the existing `inkycap:note-property-changed` event that
@@ -1041,12 +1021,6 @@ const SearchPanel: Component = () => {
               }}
             >
               {t("wikilink.menu.openNewTab")}
-            </button>
-            <button
-              class="context-menu__item"
-              onClick={() => openInNewWindow(menu().result)}
-            >
-              {t("search.openNewWindow")}
             </button>
           </div>
         )}

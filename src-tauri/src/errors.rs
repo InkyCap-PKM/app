@@ -38,6 +38,14 @@ pub enum InkyCapError {
     #[error("{0}")]
     BadRequest(String),
 
+    /// The requested notebox is already open in another window. Carries that
+    /// window's label (in `detail`) so the frontend can focus it instead of
+    /// opening a duplicate — a notebox is exclusive to one window. Not a
+    /// user-facing failure: the frontend matches the code and focuses the
+    /// window without a toast.
+    #[error("Notebox is already open in another window")]
+    NoteboxAlreadyOpen(String),
+
     /// A long-running operation was cancelled cooperatively. Distinct
     /// from `BadRequest` so the UI can suppress an "error" toast on
     /// the success path (the user asked for the cancel, it isn't a
@@ -67,6 +75,7 @@ impl InkyCapError {
             InkyCapError::ExportFailed(_) => "export-failed",
             InkyCapError::Git(_) => "git",
             InkyCapError::BadRequest(_) => "bad-request",
+            InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
         }
     }
@@ -87,7 +96,8 @@ impl InkyCapError {
             | InkyCapError::Typst(s)
             | InkyCapError::ExportFailed(s)
             | InkyCapError::Git(s)
-            | InkyCapError::BadRequest(s) => Some(s.clone()),
+            | InkyCapError::BadRequest(s)
+            | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen | InkyCapError::Cancelled => None,
         }
     }

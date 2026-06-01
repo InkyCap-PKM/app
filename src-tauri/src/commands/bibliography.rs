@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::errors::InkyCapError;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::bibliography::{self, BibEntry};
@@ -14,8 +14,10 @@ use crate::typst_pipeline::bibliography::{self, BibEntry};
 #[tauri::command]
 pub async fn get_bibliography_entries(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<BibEntry>, InkyCapError> {
-    let notebox_root = state
+    let session = state.session(window.label()).await;
+    let notebox_root = session
         .notebox_root
         .read()
         .await
@@ -23,7 +25,7 @@ pub async fn get_bibliography_entries(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let notebox = state.notebox_settings.read().await;
+        let notebox = session.notebox_settings.read().await;
         let global = state.settings.read().await;
         (
             notebox.citations.source.clone(),
@@ -46,8 +48,7 @@ pub async fn get_bibliography_entries(
         _ => {
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
-                Some(p) => bibliography::parse_bibliography(&p)
-                    .map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => bibliography::parse_bibliography(&p).map_err(|e| InkyCapError::Typst(e)),
                 None => Ok(Vec::new()),
             }
         }
@@ -60,8 +61,10 @@ pub async fn get_bibliography_entries(
 pub async fn get_file_citations(
     path: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<FileCitation>, InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let source = storage.read_file(&sanitize_notebox_arg(&path)?).await?;
 
     let keys = bibliography::extract_citations(&source);
@@ -71,7 +74,9 @@ pub async fn get_file_citations(
 
     // Re-use get_bibliography_entries logic but we can't call a Tauri command
     // from another command, so inline the lookup.
-    let entries = load_entries_inner(&state).await.unwrap_or_default();
+    let entries = load_entries_inner(&state, &session)
+        .await
+        .unwrap_or_default();
 
     let citations = keys
         .into_iter()
@@ -92,8 +97,11 @@ pub async fn get_file_citations(
 }
 
 /// Shared entry loading logic.
-pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>, InkyCapError> {
-    let notebox_root = state
+pub(crate) async fn load_entries_inner(
+    state: &AppState,
+    session: &NoteboxSession,
+) -> Result<Vec<BibEntry>, InkyCapError> {
+    let notebox_root = session
         .notebox_root
         .read()
         .await
@@ -101,7 +109,7 @@ pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let notebox = state.notebox_settings.read().await;
+        let notebox = session.notebox_settings.read().await;
         let global = state.settings.read().await;
         (
             notebox.citations.source.clone(),
@@ -124,8 +132,7 @@ pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>
         _ => {
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
-                Some(p) => bibliography::parse_bibliography(&p)
-                    .map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => bibliography::parse_bibliography(&p).map_err(|e| InkyCapError::Typst(e)),
                 None => Ok(Vec::new()),
             }
         }
@@ -137,16 +144,22 @@ pub(crate) async fn load_entries_inner(state: &AppState) -> Result<Vec<BibEntry>
 #[tauri::command]
 pub async fn refresh_bibliography(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<String>, InkyCapError> {
-    let notebox_root = state
+    let session = state.session(window.label()).await;
+    let notebox_root = session
         .notebox_root
         .read()
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     let global = state.settings.read().await.citations.clone();
-    let notebox = state.notebox_settings.read().await.citations.clone();
-    Ok(crate::state::configure_bibliography(&notebox_root, &global, &notebox))
+    let notebox = session.notebox_settings.read().await.citations.clone();
+    Ok(crate::state::configure_bibliography(
+        &notebox_root,
+        &global,
+        &notebox,
+    ))
 }
 
 /// Return the count of entries skipped during the most recent BibTeX parse
@@ -160,8 +173,7 @@ pub async fn get_bibliography_skip_count() -> Result<u32, InkyCapError> {
 /// Auto-detect the Zotero database path.
 #[tauri::command]
 pub async fn detect_zotero_path() -> Result<Option<String>, InkyCapError> {
-    Ok(crate::typst_pipeline::zotero::auto_detect_path()
-        .map(|p| p.to_string_lossy().to_string()))
+    Ok(crate::typst_pipeline::zotero::auto_detect_path().map(|p| p.to_string_lossy().to_string()))
 }
 
 /// Return notes attached to a bibliography entry identified by its cite key.
@@ -171,8 +183,10 @@ pub async fn detect_zotero_path() -> Result<Option<String>, InkyCapError> {
 pub async fn get_reference_notes(
     key: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<bibliography::RefNote>, InkyCapError> {
-    let notebox_root = state
+    let session = state.session(window.label()).await;
+    let notebox_root = session
         .notebox_root
         .read()
         .await
@@ -180,7 +194,7 @@ pub async fn get_reference_notes(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let (source, bib_path, zotero_path) = {
-        let notebox = state.notebox_settings.read().await;
+        let notebox = session.notebox_settings.read().await;
         let global = state.settings.read().await;
         (
             notebox.citations.source.clone(),
@@ -200,14 +214,16 @@ pub async fn get_reference_notes(
                     // Look up the item_key from the entries list.
                     let entries = crate::typst_pipeline::zotero::read_entries(&p)
                         .map_err(|e| InkyCapError::Typst(e))?;
-                    let item_key = entries.iter()
+                    let item_key = entries
+                        .iter()
                         .find(|e| e.key == key)
                         .and_then(|e| e.zotero_item_key.as_deref());
                     match item_key {
                         Some(ik) => {
                             let raw_notes = crate::typst_pipeline::zotero::read_notes(&p, ik)
                                 .map_err(|e| InkyCapError::Typst(e))?;
-                            Ok(raw_notes.into_iter()
+                            Ok(raw_notes
+                                .into_iter()
                                 .map(|html| bibliography::RefNote {
                                     content: strip_html_tags(&html),
                                 })
@@ -226,7 +242,8 @@ pub async fn get_reference_notes(
                 Some(p) => {
                     let notes = bibliography::get_entry_notes(&p, &key)
                         .map_err(|e| InkyCapError::Typst(e))?;
-                    Ok(notes.into_iter()
+                    Ok(notes
+                        .into_iter()
                         .map(|n| bibliography::RefNote {
                             content: strip_latex_markup(&n.content),
                         })
@@ -240,9 +257,32 @@ pub async fn get_reference_notes(
 }
 
 const BLOCK_TAGS: &[&str] = &[
-    "p", "div", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6",
-    "ul", "ol", "li", "blockquote", "pre", "table", "tr", "td", "th",
-    "section", "article", "header", "footer", "nav", "aside", "figure",
+    "p",
+    "div",
+    "br",
+    "hr",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "pre",
+    "table",
+    "tr",
+    "td",
+    "th",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "figure",
 ];
 
 fn is_block_tag(tag_content: &str) -> bool {
@@ -324,17 +364,22 @@ fn decode_html_entities(input: &str) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});").unwrap());
+    let re =
+        RE.get_or_init(|| Regex::new(r"&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});").unwrap());
 
     re.replace_all(input, |caps: &regex::Captures| {
         let raw = &caps[1];
         if let Some(rest) = raw.strip_prefix('#') {
-            let code = if let Some(hex) = rest.strip_prefix('x').or_else(|| rest.strip_prefix('X')) {
+            let code = if let Some(hex) = rest.strip_prefix('x').or_else(|| rest.strip_prefix('X'))
+            {
                 u32::from_str_radix(hex, 16).ok()
             } else {
                 rest.parse::<u32>().ok()
             };
-            return code.and_then(char::from_u32).map(|c| c.to_string()).unwrap_or_else(|| caps[0].to_string());
+            return code
+                .and_then(char::from_u32)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| caps[0].to_string());
         }
         match raw {
             "amp" => "&".to_string(),
@@ -362,7 +407,8 @@ fn decode_html_entities(input: &str) -> String {
             "bull" => "•".to_string(),
             _ => caps[0].to_string(),
         }
-    }).into_owned()
+    })
+    .into_owned()
 }
 
 /// Strip LaTeX markup from bibliography note fields (e.g. Zotero BibTeX
@@ -381,61 +427,48 @@ fn strip_latex_markup(input: &str) -> String {
 
     // \section{...}, \subsection{...}, \subsubsection{...} → content + newline
     static SECTION_RE: OnceLock<Regex> = OnceLock::new();
-    let section_re = SECTION_RE.get_or_init(|| {
-        Regex::new(r"\\(?:sub)*section\{([^}]*)\}").unwrap()
-    });
+    let section_re =
+        SECTION_RE.get_or_init(|| Regex::new(r"\\(?:sub)*section\{([^}]*)\}").unwrap());
 
     // \textbf{...}, \textit{...}, \emph{...}, \underline{...} → content
     static FORMAT_RE: OnceLock<Regex> = OnceLock::new();
     let format_re = FORMAT_RE.get_or_init(|| {
-        Regex::new(r"\\(?:textbf|textit|emph|underline|textsuperscript|textsubscript)\{([^}]*)\}").unwrap()
+        Regex::new(r"\\(?:textbf|textit|emph|underline|textsuperscript|textsubscript)\{([^}]*)\}")
+            .unwrap()
     });
 
     // \href{url}{text} → text
     static HREF_RE: OnceLock<Regex> = OnceLock::new();
-    let href_re = HREF_RE.get_or_init(|| {
-        Regex::new(r"\\href\{[^}]*\}\{([^}]*)\}").unwrap()
-    });
+    let href_re = HREF_RE.get_or_init(|| Regex::new(r"\\href\{[^}]*\}\{([^}]*)\}").unwrap());
 
     // \url{...} → content
     static URL_RE: OnceLock<Regex> = OnceLock::new();
-    let url_re = URL_RE.get_or_init(|| {
-        Regex::new(r"\\url\{([^}]*)\}").unwrap()
-    });
+    let url_re = URL_RE.get_or_init(|| Regex::new(r"\\url\{([^}]*)\}").unwrap());
 
     // Named breaks: \par, \newline. A trailing \b keeps us from eating
     // commands like \paragraph or \newlinechar.
     static NAMED_BREAK_RE: OnceLock<Regex> = OnceLock::new();
-    let named_break_re = NAMED_BREAK_RE.get_or_init(|| {
-        Regex::new(r"\\(?:par|newline)\b\s*").unwrap()
-    });
+    let named_break_re =
+        NAMED_BREAK_RE.get_or_init(|| Regex::new(r"\\(?:par|newline)\b\s*").unwrap());
 
     // Line-break: a literal `\\` (TeX's line-break operator). Split into
     // its own pattern because `\b` after the backslashes mis-matches when
     // followed by non-word characters (whitespace, EOL, punctuation),
     // which is exactly the common case.
     static LINEBREAK_RE: OnceLock<Regex> = OnceLock::new();
-    let linebreak_re = LINEBREAK_RE.get_or_init(|| {
-        Regex::new(r"\\\\\s*").unwrap()
-    });
+    let linebreak_re = LINEBREAK_RE.get_or_init(|| Regex::new(r"\\\\\s*").unwrap());
 
     // Symbol replacements
     static SYMBOL_RE: OnceLock<Regex> = OnceLock::new();
-    let symbol_re = SYMBOL_RE.get_or_init(|| {
-        Regex::new(r"\\(?:circ|degree)").unwrap()
-    });
+    let symbol_re = SYMBOL_RE.get_or_init(|| Regex::new(r"\\(?:circ|degree)").unwrap());
 
     // Remaining \command (no braces) — strip the command, keep surrounding text
     static BARE_CMD_RE: OnceLock<Regex> = OnceLock::new();
-    let bare_cmd_re = BARE_CMD_RE.get_or_init(|| {
-        Regex::new(r"\\[a-zA-Z]+\b\s*").unwrap()
-    });
+    let bare_cmd_re = BARE_CMD_RE.get_or_init(|| Regex::new(r"\\[a-zA-Z]+\b\s*").unwrap());
 
     // Remaining \command{...} — keep the brace content
     static BRACE_CMD_RE: OnceLock<Regex> = OnceLock::new();
-    let brace_cmd_re = BRACE_CMD_RE.get_or_init(|| {
-        Regex::new(r"\\[a-zA-Z]+\{([^}]*)\}").unwrap()
-    });
+    let brace_cmd_re = BRACE_CMD_RE.get_or_init(|| Regex::new(r"\\[a-zA-Z]+\{([^}]*)\}").unwrap());
 
     let mut s = input.to_string();
 
@@ -521,13 +554,17 @@ pub struct AggregatedCitation {
 pub async fn aggregate_citations(
     paths: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<AggregatedCitation>, InkyCapError> {
+    let session = state.session(window.label()).await;
     if paths.is_empty() {
         return Ok(Vec::new());
     }
 
-    let storage = state.get_storage().await?;
-    let entries = load_entries_inner(&state).await.unwrap_or_default();
+    let storage = session.get_storage().await?;
+    let entries = load_entries_inner(&state, &session)
+        .await
+        .unwrap_or_default();
 
     use std::collections::HashMap;
     // key -> (count, ordered list of citing paths, set for dedup)

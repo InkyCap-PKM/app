@@ -17,7 +17,7 @@ use tauri::State;
 use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
 use crate::scanner::property_index::PropertyIndex;
-use crate::state::AppState;
+use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 
@@ -80,10 +80,17 @@ pub struct ScrollEntry {
 pub async fn run_scroll_query(
     query: ScrollQuery,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let anchor_path = sanitize_notebox_arg(&query.anchor)?;
-    let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
-    Ok(slice_around_anchor(&sorted, &anchor_path, query.offset, query.limit))
+    let sorted = build_sorted(&query.filter, &query.sort, &session).await?;
+    Ok(slice_around_anchor(
+        &sorted,
+        &anchor_path,
+        query.offset,
+        query.limit,
+    ))
 }
 
 /// Locate `target` within the same sorted result set `run_scroll_query`
@@ -108,10 +115,12 @@ pub struct FindInScrollQuery {
 pub async fn find_offset_in_scroll_query(
     query: FindInScrollQuery,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<i32>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let anchor_path = sanitize_notebox_arg(&query.anchor)?;
     let target_path = sanitize_notebox_arg(&query.target)?;
-    let sorted = build_sorted(&query.filter, &query.sort, &state).await?;
+    let sorted = build_sorted(&query.filter, &query.sort, &session).await?;
     let anchor_str = to_frontend_string(&anchor_path);
     let target_str = to_frontend_string(&target_path);
     let anchor_idx = sorted.iter().position(|e| e.path == anchor_str);
@@ -135,32 +144,28 @@ pub async fn find_offset_in_scroll_query(
 async fn build_sorted(
     filter: &ScrollFilter,
     sort: &ScrollSort,
-    state: &State<'_, AppState>,
+    session: &NoteboxSession,
 ) -> Result<Vec<ScrollEntry>, InkyCapError> {
     // Filters that need the link index read it first per the lock-ordering
     // invariant in `state::AppState` (link_index < property_index).
     let linked_paths: Option<Vec<PathBuf>> = match filter {
         ScrollFilter::LinkedFrom { source } => {
-            let link_index = state.link_index.read().await;
+            let link_index = session.link_index.read().await;
             Some(link_index.get_forward_links(source))
         }
         ScrollFilter::LinkedTo { target } => {
-            let link_index = state.link_index.read().await;
+            let link_index = session.link_index.read().await;
             Some(link_index.get_backlinks(target))
         }
         _ => None,
     };
 
-    let index = state.property_index.read().await;
+    let index = session.property_index.read().await;
 
     let candidates: Vec<&NoteMetadata> = match filter {
         ScrollFilter::All => index.notes.values().collect(),
-        ScrollFilter::Folder { path, recursive } => {
-            collect_folder_notes(&index, path, *recursive)
-        }
-        ScrollFilter::PropertyEq { name, value } => {
-            collect_property_eq(&index, name, value)
-        }
+        ScrollFilter::Folder { path, recursive } => collect_folder_notes(&index, path, *recursive),
+        ScrollFilter::PropertyEq { name, value } => collect_property_eq(&index, name, value),
         ScrollFilter::PropertyAny { name } => collect_property_any(&index, name),
         ScrollFilter::LinkedFrom { .. } | ScrollFilter::LinkedTo { .. } => linked_paths
             .as_ref()
@@ -247,24 +252,24 @@ pub async fn compute_connection_flags(
     anchor: String,
     paths: Vec<String>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<Vec<ConnectionFlags>, InkyCapError> {
+    let session = state.session(window.label()).await;
     let anchor_path = sanitize_notebox_arg(&anchor)?;
 
     // Lock order: link_index before property_index (see AppState comment).
     let (outgoing, incoming) = {
-        let link_index = state.link_index.read().await;
+        let link_index = session.link_index.read().await;
         let outgoing: HashSet<PathBuf> = link_index
             .get_forward_links(&anchor_path)
             .into_iter()
             .collect();
-        let incoming: HashSet<PathBuf> = link_index
-            .get_backlinks(&anchor_path)
-            .into_iter()
-            .collect();
+        let incoming: HashSet<PathBuf> =
+            link_index.get_backlinks(&anchor_path).into_iter().collect();
         (outgoing, incoming)
     };
 
-    let prop_index = state.property_index.read().await;
+    let prop_index = session.property_index.read().await;
     let anchor_tags: HashSet<&String> = prop_index
         .notes
         .get(&anchor_path)
@@ -380,10 +385,7 @@ fn property_value_matches(prop: &PropertyValue, target: &PropertyValue) -> bool 
     }
 }
 
-fn collect_property_any<'a>(
-    index: &'a PropertyIndex,
-    name: &str,
-) -> Vec<&'a NoteMetadata> {
+fn collect_property_any<'a>(index: &'a PropertyIndex, name: &str) -> Vec<&'a NoteMetadata> {
     if name == "tags" {
         return index
             .notes
@@ -553,11 +555,7 @@ mod tests {
             PropertyValue::String("side-quest".into()),
         ]);
         let index = build_index(vec![
-            note(
-                "/v/a.typ",
-                &[("project", project.clone())],
-                &[],
-            ),
+            note("/v/a.typ", &[("project", project.clone())], &[]),
             note(
                 "/v/b.typ",
                 &[("project", PropertyValue::String("thesis".into()))],
@@ -694,10 +692,7 @@ mod tests {
     fn zid_extraction_prefers_property_over_filename() {
         let n = note(
             "/v/20260101000000-other.typ",
-            &[(
-                "ZID",
-                PropertyValue::String("20260514000000".into()),
-            )],
+            &[("ZID", PropertyValue::String("20260514000000".into()))],
             &[],
         );
         assert_eq!(extract_zid(&n).as_deref(), Some("20260514000000"));
@@ -714,16 +709,30 @@ mod tests {
         // Two notes carry a zid; two don't. The keyless pair must still
         // appear (never dropped — that would strand the anchor) and must
         // sort after the keyed pair, ordered among themselves by ctime.
-        let with_zid_old = note("/v/a.typ", &[("zid", PropertyValue::String("20260101000000".into()))], &[]);
-        let with_zid_new = note("/v/b.typ", &[("zid", PropertyValue::String("20260301000000".into()))], &[]);
+        let with_zid_old = note(
+            "/v/a.typ",
+            &[("zid", PropertyValue::String("20260101000000".into()))],
+            &[],
+        );
+        let with_zid_new = note(
+            "/v/b.typ",
+            &[("zid", PropertyValue::String("20260301000000".into()))],
+            &[],
+        );
         let no_zid_old = note(
             "/v/c.typ",
-            &[("file.ctime", PropertyValue::String("2026-02-01T00:00:00Z".into()))],
+            &[(
+                "file.ctime",
+                PropertyValue::String("2026-02-01T00:00:00Z".into()),
+            )],
             &[],
         );
         let no_zid_new = note(
             "/v/d.typ",
-            &[("file.ctime", PropertyValue::String("2026-05-01T00:00:00Z".into()))],
+            &[(
+                "file.ctime",
+                PropertyValue::String("2026-05-01T00:00:00Z".into()),
+            )],
             &[],
         );
 
@@ -749,9 +758,21 @@ mod tests {
         // determine the order.
         let mk = || {
             vec![
-                note("/v/c.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
-                note("/v/a.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
-                note("/v/b.typ", &[("date", PropertyValue::String("2026-01-01".into()))], &[]),
+                note(
+                    "/v/c.typ",
+                    &[("date", PropertyValue::String("2026-01-01".into()))],
+                    &[],
+                ),
+                note(
+                    "/v/a.typ",
+                    &[("date", PropertyValue::String("2026-01-01".into()))],
+                    &[],
+                ),
+                note(
+                    "/v/b.typ",
+                    &[("date", PropertyValue::String("2026-01-01".into()))],
+                    &[],
+                ),
             ]
         };
         let sort = ScrollSort::Property {
@@ -760,9 +781,8 @@ mod tests {
         };
         let notes_a = mk();
         let notes_b = mk();
-        let paths = |entries: Vec<ScrollEntry>| {
-            entries.into_iter().map(|e| e.path).collect::<Vec<_>>()
-        };
+        let paths =
+            |entries: Vec<ScrollEntry>| entries.into_iter().map(|e| e.path).collect::<Vec<_>>();
         let order_a = paths(sort_candidates(notes_a.iter().collect(), &sort));
         // Reversed input must yield the same output.
         let order_b = paths(sort_candidates(notes_b.iter().rev().collect(), &sort));

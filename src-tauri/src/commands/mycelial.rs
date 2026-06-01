@@ -30,8 +30,8 @@ use crate::corpus_stats::MycelialConfig;
 use crate::errors::InkyCapError;
 use crate::state::AppState;
 use crate::storage::local::LocalNoteboxStorage;
-use crate::storage::{sanitize_notebox_arg, to_frontend_string};
 use crate::storage::traits::NoteboxStorage;
+use crate::storage::{sanitize_notebox_arg, to_frontend_string};
 
 /// Maximum characters in a context snippet shown inside a mycelial box.
 const SNIPPET_MAX_CHARS: usize = 160;
@@ -118,14 +118,16 @@ pub async fn get_mycelial_data(
     path: String,
     max_depth: Option<usize>,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<MycelialData, InkyCapError> {
+    let session = state.session(window.label()).await;
     let max_depth = max_depth.unwrap_or(2).min(3);
     let center_path = sanitize_notebox_arg(&path)?;
     let config = MycelialConfig::default();
 
     // 1. BFS the link graph — these are the notebox's explicit connections.
     let (link_nodes, link_edges) = {
-        let link_index = state.link_index.read().await;
+        let link_index = session.link_index.read().await;
         bfs_link_graph(&link_index, &center_path, &path, max_depth)
     };
 
@@ -138,7 +140,7 @@ pub async fn get_mycelial_data(
     //    name only in `title`, so a stem-only check would misclassify a
     //    recurring concept as "emergent" even though its page already exists.
     let existing_pages: HashMap<String, String> = {
-        let prop_index = state.property_index.read().await;
+        let prop_index = session.property_index.read().await;
         let mut map: HashMap<String, String> = HashMap::new();
         let mut add = |name: &str, path: &str| {
             let key = name.trim().to_lowercase();
@@ -171,7 +173,7 @@ pub async fn get_mycelial_data(
     //    most semantically similar notes. The link graph alone collapses to
     //    a single note for unlinked notes; similarity gives it real context.
     let (analysis, link_node_ids) = {
-        let corpus_stats = state.corpus_stats.read().await;
+        let corpus_stats = session.corpus_stats.read().await;
         let center_id = PathBuf::from(&path);
         let mut neighborhood: HashSet<PathBuf> =
             link_nodes.iter().map(|n| PathBuf::from(&n.id)).collect();
@@ -180,21 +182,20 @@ pub async fn get_mycelial_data(
             neighborhood.insert(p);
         }
         let neighborhood: Vec<PathBuf> = neighborhood.into_iter().collect();
-        let link_node_ids: HashSet<String> =
-            link_nodes.iter().map(|n| n.id.clone()).collect();
+        let link_node_ids: HashSet<String> = link_nodes.iter().map(|n| n.id.clone()).collect();
         (
             corpus_stats.analyze_neighborhood(&neighborhood, &existing_pages, &config),
             link_node_ids,
         )
     };
 
-    let storage = state.get_storage().await?;
+    let storage = session.get_storage().await?;
 
     // 4. Latent links: keep only notes that mention the target without a
     //    wikilink to it, and resolve the mention's location for deep-linking.
     let mut latent_links: Vec<LatentLink> = Vec::new();
     {
-        let link_index = state.link_index.read().await;
+        let link_index = session.link_index.read().await;
         for cand in analysis.latent {
             let target = PathBuf::from(&cand.target_path);
             let mut mentions: Vec<SourceMention> = Vec::new();
@@ -275,19 +276,12 @@ pub async fn get_mycelial_data(
     // per call. Sort the rendered node lists by id so the Mycelial View
     // layout (whose force simulation seeds off input order) is stable across
     // recomputes of the same notebox.
-    let mut source_notes: Vec<FlowNode> = source_ids
-        .iter()
-        .map(|p| flow_node(p, &path))
-        .collect();
+    let mut source_notes: Vec<FlowNode> = source_ids.iter().map(|p| flow_node(p, &path)).collect();
     source_notes.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut context_notes: Vec<FlowNode> = link_node_ids
         .iter()
-        .filter(|id| {
-            **id != path
-                && !source_ids.contains(*id)
-                && !latent_targets.contains(*id)
-        })
+        .filter(|id| **id != path && !source_ids.contains(*id) && !latent_targets.contains(*id))
         .map(|p| flow_node(p, &path))
         .collect();
     context_notes.sort_by(|a, b| a.id.cmp(&b.id));
@@ -303,7 +297,9 @@ pub async fn get_mycelial_data(
         .filter(|e| rendered.contains(&e.source) && rendered.contains(&e.target))
         .collect();
     context_edges.sort_by(|a, b| {
-        a.source.cmp(&b.source).then_with(|| a.target.cmp(&b.target))
+        a.source
+            .cmp(&b.source)
+            .then_with(|| a.target.cmp(&b.target))
     });
 
     let excluded_terms: Vec<ExcludedTerm> = analysis
@@ -474,13 +470,18 @@ pub(crate) async fn append_unique_word(path: &Path, term: &str) -> Result<(), In
 pub async fn add_mycelial_stopword(
     term: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
-    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let stopwords_path = storage
+        .root()
+        .join(".inkycap")
+        .join("mycelial-stopwords.txt");
     append_unique_word(&stopwords_path, &term).await?;
 
     // Reload stopwords in the corpus stats engine.
-    let mut corpus = state.corpus_stats.write().await;
+    let mut corpus = session.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
 
     Ok(())
@@ -494,12 +495,14 @@ pub async fn add_mycelial_stopword(
 pub async fn rescue_mycelial_term(
     term: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
     let dict_path = storage.root().join(".inkycap").join("dictionary.txt");
     append_unique_word(&dict_path, &term).await?;
 
-    let mut corpus = state.corpus_stats.write().await;
+    let mut corpus = session.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
 
     Ok(())
@@ -512,9 +515,14 @@ pub async fn rescue_mycelial_term(
 pub async fn remove_mycelial_stopword(
     term: String,
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
-    let storage = state.get_storage().await?;
-    let path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = storage
+        .root()
+        .join(".inkycap")
+        .join("mycelial-stopwords.txt");
     let Ok(contents) = tokio::fs::read_to_string(&path).await else {
         return Ok(());
     };
@@ -529,7 +537,7 @@ pub async fn remove_mycelial_stopword(
     }
     tokio::fs::write(&path, out).await?;
 
-    let mut corpus = state.corpus_stats.write().await;
+    let mut corpus = session.corpus_stats.write().await;
     corpus.reload_stopwords(Some(storage.root()));
 
     Ok(())
@@ -544,9 +552,14 @@ pub async fn remove_mycelial_stopword(
 #[tauri::command]
 pub async fn ensure_mycelial_stopwords_file(
     state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
-    let storage = state.get_storage().await?;
-    let stopwords_path = storage.root().join(".inkycap").join("mycelial-stopwords.txt");
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let stopwords_path = storage
+        .root()
+        .join(".inkycap")
+        .join("mycelial-stopwords.txt");
 
     if !stopwords_path.exists() {
         if let Some(parent) = stopwords_path.parent() {
