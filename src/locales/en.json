@@ -28,6 +28,7 @@
   "settings.notebox.collaboration": "Collaboration",
   "settings.notebox.configure": "Configure",
 
+  "references.title": "References",
   "references.filterPlaceholder": "Filter entries…",
   "references.clearFilter": "Clear filter",
   "references.entry.one": "entry",
@@ -808,6 +809,7 @@
   "command.edit.suggest-deletion": "Suggest Deletion",
   "command.edit.suggest-replacement": "Suggest Replacement",
   "command.edit.insert-zid": "Insert Zettelkasten ID",
+  "command.editor.find-replace": "Find and Replace (in note)",
   "command.tools.audit-typ-files": "Audit .typ files for InkyCap compatibility",
   "command.tools.insert-scaffold": "Insert Scaffold",
   "command.tools.mycelial-view": "Open Mycelial View",
@@ -1733,6 +1735,7 @@
   "rightPanel.toast.bookmarkFailed": "Bookmark failed",
   "rightPanel.toast.showExplorerFailed": "Show in explorer failed",
 
+  "templates.title": "Templates",
   "templates.title.scaffolds": "Scaffolds",
   "templates.title.templates": "Document Templates",
   "templates.title.packages": "Packages",

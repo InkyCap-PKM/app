@@ -7,6 +7,7 @@
 // so the two surfaces stay consistent.
 
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
+import { attachListNav } from "../lib/list-nav";
 import {
   ArrowDownNarrowWide,
   CalendarClock,
@@ -385,6 +386,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         when={!props.loading}
         fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
       >
+        <div class="agenda__list" ref={attachListNav} aria-label={t("agenda.title")}>
         <Show
           when={visible().length > 0}
           fallback={<p class="sidebar-hint">{props.emptyMessage}</p>}
@@ -392,6 +394,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           <For each={visible()}>
             {(it) => (
               <div
+                data-list-item
                 class="sidebar-item agenda__item"
                 classList={{ "agenda__item--done": it.done }}
                 onClick={(e) => props.onOpen(it, { newTab: e.ctrlKey || e.metaKey })}
@@ -432,6 +435,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
             )}
           </For>
         </Show>
+        </div>
       </Show>
 
       <Show when={rowContextMenu()}>

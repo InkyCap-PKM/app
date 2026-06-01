@@ -51,6 +51,7 @@ const CitationRow: Component<CitationRowProps> = (props) => {
   const zoteroOn = () => noteboxSettings.citations.source === "zotero";
   return (
     <div
+      data-list-item
       class="citation-row"
       classList={{ "citation-row--clickable": !!props.onActivate }}
       onClick={() => props.onActivate?.()}

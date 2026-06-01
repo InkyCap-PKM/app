@@ -12,6 +12,7 @@
 // the Typst Universe public registry; `@local/` is user-authored content.
 
 import { Component, For, Show, createResource, createSignal } from "solid-js";
+import { attachListNav } from "../lib/list-nav";
 import {
   Pyramid,
   Layers2,
@@ -344,7 +345,7 @@ const TemplatesPanel: Component = () => {
         </div>
       </Show>
 
-      <div class="templates-pane__body">
+      <div class="templates-pane__body" ref={attachListNav} aria-label={t("templates.title")}>
         <Show when={tab() === "scaffolds"}>
           <Show
             when={!scaffolds.loading && (scaffolds() ?? []).length > 0}
@@ -359,6 +360,7 @@ const TemplatesPanel: Component = () => {
             <For each={scaffolds()}>
               {(entry) => (
                 <div
+                  data-list-item
                   class="sidebar-item"
                   onClick={() => openScaffold(entry)}
                   title={t("templates.openScaffold")}
@@ -387,6 +389,7 @@ const TemplatesPanel: Component = () => {
             <For each={templatePackages()}>
               {(pkg) => (
                 <div
+                  data-list-item
                   class="sidebar-item templates-pane__item"
                   onClick={() => openPackageManifest(pkg)}
                   title={t("templates.openManifest")}
@@ -444,6 +447,7 @@ const TemplatesPanel: Component = () => {
             <For each={libraryPackages()}>
               {(pkg) => (
                 <div
+                  data-list-item
                   class="sidebar-item templates-pane__item"
                   onClick={() => openPackageManifest(pkg)}
                   title={t("templates.openManifest")}

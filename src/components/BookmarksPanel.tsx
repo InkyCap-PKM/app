@@ -4,6 +4,7 @@
 import { Component, createResource, createSignal, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
+import { attachListNav } from "../lib/list-nav";
 import { openTab } from "../stores/tabs";
 import type { Bookmark } from "../lib/types";
 import { FileText, Search } from "lucide-solid";
@@ -162,7 +163,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
   }
 
   return (
-    <div class="bookmarks-panel">
+    <div class="bookmarks-panel" ref={attachListNav} aria-label={t("leftSidebar.bookmarks")}>
       <Show
         when={bookmarks() && bookmarks()!.length > 0}
         fallback={
@@ -174,6 +175,7 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         <For each={bookmarks()}>
           {(bm) => (
             <div
+              data-list-item
               classList={{
                 "bookmark-item": true,
                 "bookmark-item--dragging": draggingId() === bm.id,
