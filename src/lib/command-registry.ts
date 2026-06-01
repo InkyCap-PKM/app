@@ -20,6 +20,27 @@ export type CommandCategory =
   | "Git"
   | "Creation Rules";
 
+/** Command category id (stable English, the grouping/sort key) → i18n key for
+ *  its displayed header. Mirrors the `CommandCategory` union and doubles as the
+ *  canonical category display order (object key order). Shared by the command
+ *  palette and the Help panel so both group and label categories identically. */
+export const CATEGORY_LABEL_KEYS: Record<CommandCategory, string> = {
+  File: "command.cat.file",
+  Edit: "command.cat.edit",
+  View: "command.cat.view",
+  Navigate: "command.cat.navigate",
+  Tools: "command.cat.tools",
+  References: "command.cat.references",
+  Format: "command.cat.format",
+  Structure: "command.cat.structure",
+  Insert: "command.cat.insert",
+  Style: "command.cat.style",
+  InkyCap: "command.cat.inkycap",
+  Git: "command.cat.git",
+  "Creation Rules": "command.cat.creationRules",
+  Symbol: "command.cat.symbol",
+};
+
 export interface Command {
   id: string;
   title: string;

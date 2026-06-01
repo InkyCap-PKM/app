@@ -61,6 +61,14 @@ export async function openNotebox(path: string): Promise<NoteboxInfo> {
   return invoke<NoteboxInfo>("open_notebox", { path });
 }
 
+/**
+ * Resolve (seeding on first use) the bundled "InkyCap Documentation" system
+ * notebox and return its path. The caller opens it in its own window.
+ */
+export async function openDocumentationNotebox(): Promise<string> {
+  return invoke<string>("open_documentation_notebox");
+}
+
 export async function getNoteboxInfo(): Promise<NoteboxInfo | null> {
   return invoke<NoteboxInfo | null>("get_notebox_info");
 }

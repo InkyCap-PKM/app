@@ -6,6 +6,7 @@ import {
   Settings,
   LayoutTemplate,
   Search,
+  Info,
 } from "lucide-solid";
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
@@ -28,6 +29,7 @@ export type SidebarMode =
   | "bookmarks"
   | "templates"
   | "collaboration"
+  | "help"
   // A runtime-contributed mode id (plugin / manifest query-view). `(string & {})`
   // keeps autocomplete on the built-in literals while allowing any id.
   | (string & {});
@@ -36,6 +38,10 @@ interface VerticalToolbarProps {
   mode: () => SidebarMode;
   setMode: (m: SidebarMode) => void;
   onOpenSettings?: () => void;
+  /** Toggle the Help panel: open it, or close it and restore the previous
+   *  panel when it's already showing. Owned by App so it can remember the
+   *  panel to return to. */
+  onToggleHelp?: () => void;
 }
 
 const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
@@ -149,6 +155,16 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
             aria-label={t("verticalToolbar.templatesAria")}
           >
             <LayoutTemplate size={18} />
+          </button>
+          {/* Help sits just above Settings. Click toggles the Help panel
+              open/closed (App owns the return-to-previous logic). */}
+          <button
+            class={`vertical-toolbar__btn${props.mode() === "help" ? " vertical-toolbar__btn--active" : ""}`}
+            onClick={() => props.onToggleHelp?.()}
+            title={t("verticalToolbar.helpTitle")}
+            aria-label={t("verticalToolbar.help")}
+          >
+            <Info size={18} />
           </button>
           <button
             class="vertical-toolbar__btn"

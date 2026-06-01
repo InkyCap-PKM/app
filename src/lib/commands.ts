@@ -55,6 +55,7 @@ export interface BuiltinCommandCallbacks {
   openTypAudit: () => void;
   openScaffoldPicker: () => void;
   openCollaborationPanel: () => void;
+  openHelp: () => void;
 }
 
 // Retained so `relocalizeCommands()` can re-register built-in commands with
@@ -259,6 +260,14 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
         new CustomEvent("inkycap:open-search", { detail: { showReplace: true } }),
       );
     },
+  });
+
+  registerCommand({
+    id: "view:toggle-help",
+    title: t("command.view.toggle-help"),
+    category: "View",
+    keybinding: "F1",
+    execute: callbacks.openHelp,
   });
 
   registerCommand({

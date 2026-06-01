@@ -3,7 +3,12 @@
 // Default (empty-query) view groups commands into collapsible categories.
 
 import { Component, createSignal, createMemo, For, Show } from "solid-js";
-import { searchCommands, primaryKeybinding, type Command } from "../lib/command-registry";
+import {
+  searchCommands,
+  primaryKeybinding,
+  CATEGORY_LABEL_KEYS,
+  type Command,
+} from "../lib/command-registry";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { useI18n } from "../lib/i18n";
 
@@ -36,25 +41,6 @@ function categoryRank(cat: string): number {
   return idx >= 0 ? idx : CATEGORY_ORDER.length;
 }
 
-/** Command category id (stable English, the grouping/sort key) → i18n key for
- *  the displayed header. Mirrors the registry's `CommandCategory` union. */
-const CATEGORY_KEYS: Record<string, string> = {
-  File: "command.cat.file",
-  Edit: "command.cat.edit",
-  View: "command.cat.view",
-  Navigate: "command.cat.navigate",
-  Tools: "command.cat.tools",
-  References: "command.cat.references",
-  Format: "command.cat.format",
-  Structure: "command.cat.structure",
-  Insert: "command.cat.insert",
-  Style: "command.cat.style",
-  InkyCap: "command.cat.inkycap",
-  "Creation Rules": "command.cat.creationRules",
-  Git: "command.cat.git",
-  Symbol: "command.cat.symbol",
-};
-
 interface CategoryGroup {
   category: string;
   commands: { command: Command; match: { score: number; ranges: [number, number][] } }[];
@@ -63,8 +49,10 @@ interface CategoryGroup {
 const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const t = useI18n();
   /** Displayed header text for a category id (localized, else the id). */
-  const catLabel = (cat: string): string =>
-    CATEGORY_KEYS[cat] ? t(CATEGORY_KEYS[cat]) : cat;
+  const catLabel = (cat: string): string => {
+    const key = CATEGORY_LABEL_KEYS[cat as keyof typeof CATEGORY_LABEL_KEYS];
+    return key ? t(key) : cat;
+  };
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [expandedCategory, setExpandedCategory] = createSignal<string | null>(null);

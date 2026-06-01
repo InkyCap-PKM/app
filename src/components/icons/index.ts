@@ -10,6 +10,7 @@
 export { lucideFrame } from "./frame";
 export { LibraryPlusIcon } from "./LibraryPlus";
 export { ZoteroIcon } from "./Zotero";
+export { TypstDocIcon } from "./TypstDoc";
 export { SquareArrowOutUpRight } from "./SquareArrowOutUpRight";
 export { SquareArrowInDownLeft } from "./SquareArrowInDownLeft";
 export { TextCountIcon } from "./TextCount";
