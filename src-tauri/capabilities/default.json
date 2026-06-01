@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickelpack/tauri/v2/crates/tauri-utils/schema/capability.json",
   "identifier": "default",
-  "description": "Default capability for the main window",
-  "windows": ["main"],
+  "description": "Default capability for the main window and secondary note/doc windows",
+  "windows": ["main", "note-*"],
   "permissions": [
     "core:default",
     "core:window:allow-create",

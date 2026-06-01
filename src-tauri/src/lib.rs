@@ -229,6 +229,7 @@ pub fn run() {
             commands::git::git_set_bundle_packages,
             commands::git::git_pending_review,
             commands::notebox::open_notebox,
+            commands::notebox::open_documentation_notebox,
             commands::notebox::get_notebox_info,
             commands::notebox::get_saved_notebox_path,
             commands::notebox::get_notebox_registry,

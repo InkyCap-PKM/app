@@ -32,7 +32,7 @@ import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
-import { initNotebox, noteboxInfo, initAttempted } from "./stores/notebox";
+import { initNotebox, openNotebox, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initLocale, syncLocaleFromSettings } from "./stores/locale";
 import {
@@ -98,9 +98,24 @@ const App: Component = () => {
   // recorded. The tab-driven effect below sets the signal directly and is
   // deliberately NOT recorded, so an auto-forced "collections" never becomes
   // the remembered browse mode.
+  // "help" is excluded alongside "collections": it's a reference overlay, not a
+  // content-browsing panel, so it must never become the remembered browse mode
+  // that the tab-driven effect restores. That also gives `openHelp` a clean
+  // return target (the real panel the user was last on) when toggled off.
   const selectSidebarMode = (m: SidebarMode) => {
-    if (m !== "collections") lastBrowseMode = m;
+    if (m !== "collections" && m !== "help") lastBrowseMode = m;
     setSidebarMode(m);
+  };
+
+  // F1 / Info button toggle: open the Help panel, or — if it's already showing —
+  // return to the panel the user was last browsing.
+  const toggleHelp = () => {
+    if (sidebarMode() === "help" && !leftCollapsed()) {
+      selectSidebarMode(lastBrowseMode);
+    } else {
+      selectSidebarMode("help");
+      if (leftCollapsed()) setLeftCollapsed(false);
+    }
   };
 
   // (Re)load declarative plugins on startup and whenever the open notebox
@@ -188,10 +203,22 @@ const App: Component = () => {
     // external changes (e.g. a settings import) live.
     initLocale();
     onSettingsChange(syncLocaleFromSettings);
-    // openNotebox now runs applyStartupBehavior internally on every
-    // successful open (initial launch and subsequent switches alike),
-    // so we don't need to call it separately here.
-    await initNotebox();
+    // A secondary window can be launched pointed at a specific notebox via a
+    // `?notebox=<path>` query param (the InkyCap Documentation window uses
+    // this). Otherwise restore the last-opened notebox. openNotebox runs
+    // applyStartupBehavior internally on every successful open (initial launch
+    // and subsequent switches alike), so we don't call it separately here.
+    const noteboxParam = new URLSearchParams(window.location.search).get("notebox");
+    if (noteboxParam) {
+      try {
+        await openNotebox(noteboxParam);
+      } catch (e) {
+        console.warn("Window failed to open its requested notebox:", e);
+        await initNotebox();
+      }
+    } else {
+      await initNotebox();
+    }
     // Register every built-in command with the registry. The global
     // keyboard dispatcher (initKeyboard, called below) reads keybindings
     // straight off the registry, so anything with a `keybinding` field
@@ -207,6 +234,7 @@ const App: Component = () => {
       openScaffoldPicker: () => setScaffoldPickerVisible(true),
       openCollaborationPanel: () =>
         document.dispatchEvent(new CustomEvent("inkycap:open-collaboration")),
+      openHelp: toggleHelp,
     });
 
     initKeyboard();
@@ -319,6 +347,7 @@ const App: Component = () => {
           mode={sidebarMode}
           setMode={selectSidebarMode}
           onOpenSettings={toggleSettings}
+          onToggleHelp={toggleHelp}
         />
         <LeftSidebar mode={sidebarMode} setMode={selectSidebarMode} />
         <MainContent />

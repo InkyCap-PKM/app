@@ -58,6 +58,7 @@ import BookmarksPanel from "./BookmarksPanel";
 import TemplatesPanel from "./TemplatesPanel";
 import GitCollaborationPanel from "./GitCollaborationPanel";
 import AgendaPanel from "./AgendaPanel";
+import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
 import { promptText } from "../stores/prompt";
@@ -1897,6 +1898,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
         <Show when={mode() === "collaboration"}>
           <GitCollaborationPanel />
+        </Show>
+
+        <Show when={mode() === "help"}>
+          <HelpPanel />
         </Show>
 
         {/* Contributed sidebar panes (plugins / manifest query-views). Each

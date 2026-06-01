@@ -15,6 +15,49 @@ pub async fn get_saved_notebox_path() -> Result<Option<String>, InkyCapError> {
     Ok(cfg.notebox_path)
 }
 
+/// Placeholder note seeded into a fresh documentation notebox. Replaced by the
+/// real, bundled user manual once it's authored; until then it's a valid note
+/// that opens cleanly. Write-once — see [`open_documentation_notebox`].
+const DOCS_PLACEHOLDER_NOTE: &str = r#"#import "/.inkycap/notebox.typ": *
+
+#note(
+  title: "InkyCap Documentation",
+  description: "The InkyCap user manual.",
+)
+= InkyCap Documentation
+
+The documentation is being written. This system notebox will hold the InkyCap
+user manual — authored in Typst markup so you can read it inside InkyCap and
+see the markup at work.
+"#;
+
+/// Resolve (and lazily seed) the bundled "InkyCap Documentation" system
+/// notebox, returning its path for the frontend to open in a window.
+///
+/// It lives under the per-platform config dir (alongside the notebox registry),
+/// so it survives notebox switches and is never confused with a user notebox.
+/// The `.inkycap/` scaffold is reapplied on every call (idempotent); the
+/// placeholder index note is written only when the notebox has no `.typ` file
+/// yet, so the eventual bundled manual won't be clobbered here.
+#[tauri::command]
+pub async fn open_documentation_notebox() -> Result<String, InkyCapError> {
+    let root = crate::app_paths::config_dir().join("InkyCap-Documentation");
+    std::fs::create_dir_all(&root)?;
+    crate::notebox_package::scaffold(&root);
+
+    let has_note = std::fs::read_dir(&root)
+        .map(|rd| {
+            rd.flatten()
+                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("typ"))
+        })
+        .unwrap_or(false);
+    if !has_note {
+        std::fs::write(root.join("index.typ"), DOCS_PLACEHOLDER_NOTE)?;
+    }
+
+    Ok(to_frontend_string(&root))
+}
+
 /// Open a notebox at the given directory path: initialize storage, start the file watcher, and spawn background index build.
 #[tauri::command]
 pub async fn open_notebox(
