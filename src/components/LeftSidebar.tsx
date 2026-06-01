@@ -36,6 +36,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
+import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
@@ -94,6 +95,13 @@ function isAppEditable(name: string): boolean {
 /// regardless of extension. Typst can reference an asset from anywhere in
 /// the notebox, so hiding non-`.typ` files risks hiding a compile
 /// dependency; they are de-emphasized in the UI instead.
+/// Stable DOM id for a file-tree row, used by the tree container's
+/// `aria-activedescendant` (keyboard navigation). Paths can contain spaces and
+/// slashes, so encode them into an id-safe token.
+function treeItemId(path: string): string {
+  return `tree-item-${encodeURIComponent(path)}`;
+}
+
 function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
   return nodes
     .filter((n) => !HIDDEN_NAMES.has(n.name))
@@ -352,6 +360,104 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       else next.add(path);
       return next;
     });
+  }
+
+  function setDirExpanded(path: string, expanded: boolean) {
+    setExpandedDirs((prev) => {
+      if (prev.has(path) === expanded) return prev;
+      const next = new Set(prev);
+      if (expanded) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }
+
+  // ── File-tree keyboard navigation (ARIA tree pattern) ──────────────
+  // The tree root is a single Tab stop (role="tree"); arrow keys move a
+  // keyboard cursor (`focusedTreePath`) through the visible rows via
+  // `aria-activedescendant`, instead of every row being its own Tab stop.
+  const [focusedTreePath, setFocusedTreePath] = createSignal<string | null>(null);
+
+  /// Visible rows in display order (depth-first, honouring expanded dirs),
+  /// each paired with its parent path so Left-arrow can climb to the parent.
+  function flattenVisibleTree(): { node: FileTreeNode; parentPath: string | null }[] {
+    const out: { node: FileTreeNode; parentPath: string | null }[] = [];
+    const walk = (nodes: FileTreeNode[], parentPath: string | null) => {
+      for (const node of nodes) {
+        out.push({ node, parentPath });
+        if (node.is_dir && expandedDirs().has(node.path) && node.children) {
+          walk(node.children, node.path);
+        }
+      }
+    };
+    walk(filteredFileTree(), null);
+    return out;
+  }
+
+  function focusTreeRow(path: string | null) {
+    setFocusedTreePath(path);
+    if (path) {
+      requestAnimationFrame(() =>
+        document.getElementById(treeItemId(path))?.scrollIntoView({ block: "nearest" }),
+      );
+    }
+  }
+
+  function onTreeKeyDown(e: KeyboardEvent) {
+    // A row's inline rename input lives inside the tree; let it own its keys.
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
+    const rows = flattenVisibleTree();
+    if (rows.length === 0) return;
+
+    // Resolve the current cursor; fall back to the open file (if visible),
+    // then the first row, so the very first keypress has somewhere to start.
+    let idx = rows.findIndex((r) => r.node.path === focusedTreePath());
+    if (idx < 0) {
+      const activePath = getActiveTab()?.path ?? null;
+      idx = activePath ? rows.findIndex((r) => r.node.path === activePath) : -1;
+      if (idx < 0) idx = 0;
+    }
+    const cur = rows[idx];
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        focusTreeRow(rows[Math.min(idx + 1, rows.length - 1)].node.path);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        focusTreeRow(rows[Math.max(idx - 1, 0)].node.path);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        if (cur.node.is_dir) {
+          if (!expandedDirs().has(cur.node.path)) setDirExpanded(cur.node.path, true);
+          else if (cur.node.children?.length) focusTreeRow(cur.node.children[0].path);
+        }
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        if (cur.node.is_dir && expandedDirs().has(cur.node.path)) {
+          setDirExpanded(cur.node.path, false);
+        } else if (cur.parentPath) {
+          focusTreeRow(cur.parentPath);
+        }
+        break;
+      case "Home":
+        e.preventDefault();
+        focusTreeRow(rows[0].node.path);
+        break;
+      case "End":
+        e.preventDefault();
+        focusTreeRow(rows[rows.length - 1].node.path);
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (cur.node.is_dir) toggleDir(cur.node.path);
+        else openFile(cur.node);
+        break;
+    }
   }
 
   function expandAllDirs() {
@@ -707,6 +813,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   ///                       toggle the folder); the row becomes the new
   ///                       anchor for a subsequent Shift-click.
   function handleNodeClick(node: FileTreeNode, e: MouseEvent) {
+    // Keep the keyboard cursor in step with clicks, so arrowing after a click
+    // continues from the row that was clicked.
+    setFocusedTreePath(node.path);
     if (e.shiftKey && selectionAnchor()) {
       const list = visibleNodeList();
       const a = list.findIndex((n) => n.path === selectionAnchor());
@@ -1442,6 +1551,26 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 "left-sidebar__tree-root--drop-target":
                   dragOverDir() === (noteboxInfo()?.path ?? ""),
               }}
+              // One Tab stop for the whole tree (ARIA tree pattern); arrow keys
+              // move `focusedTreePath`. `data-focus-entry` makes F6 land here.
+              tabindex={0}
+              role="tree"
+              data-focus-entry
+              aria-label={t("leftSidebar.fileTree")}
+              aria-activedescendant={
+                focusedTreePath() ? treeItemId(focusedTreePath()!) : undefined
+              }
+              onKeyDown={onTreeKeyDown}
+              onFocus={() => {
+                if (focusedTreePath()) return;
+                const rows = flattenVisibleTree();
+                if (rows.length === 0) return;
+                const activePath = getActiveTab()?.path ?? null;
+                const start = activePath && rows.some((r) => r.node.path === activePath)
+                  ? activePath
+                  : rows[0].node.path;
+                focusTreeRow(start);
+              }}
               onDragOver={(e) => {
                 if (!e.dataTransfer?.types.includes(TREE_MOVE_MIME)) return;
                 e.preventDefault();
@@ -1473,6 +1602,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 {(node) => (
                   <TreeNode
                     node={node}
+                    focusedPath={focusedTreePath}
                     onNodeClick={handleNodeClick}
                     onContext={handleFileContext}
                     renamingPath={fileRenamingPath()}
@@ -1584,6 +1714,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </Show>
             </div>
           </Show>
+          <div class="left-sidebar__tag-list" ref={attachListNav} aria-label={t("leftSidebar.tags")}>
           <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
             {(idx) => (
               <For
@@ -1595,6 +1726,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                     when={renamingTag() === tag}
                     fallback={
                       <div
+                        data-list-item
                         class="sidebar-item"
                         onClick={() => openSearchFor(`tag:${tag}`)}
                         onContextMenu={(e) => handleTagContext(e, tag)}
@@ -1626,6 +1758,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               </For>
             )}
           </Show>
+          </div>
         </Show>
 
         <Show when={mode() === "properties"}>
@@ -2045,6 +2178,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
 const TreeNode: Component<{
   node: FileTreeNode;
+  /// Path of the keyboard cursor (ARIA tree navigation). The row whose path
+  /// matches gets the `--kbd-focus` style and is the `aria-activedescendant`.
+  focusedPath: () => string | null;
   /// Click handler that dispatches on modifier keys: plain click opens
   /// the file / toggles the folder, Ctrl/Shift-click manage the
   /// multi-selection.
@@ -2133,6 +2269,10 @@ const TreeNode: Component<{
         fallback={
           <div
             ref={itemRef}
+            id={treeItemId(props.node.path)}
+            role="treeitem"
+            aria-selected={isActive() || undefined}
+            aria-expanded={props.node.is_dir ? expanded() : undefined}
             classList={{
               "sidebar-item": true,
               "sidebar-item--dir": props.node.is_dir,
@@ -2140,6 +2280,7 @@ const TreeNode: Component<{
                 !props.node.is_dir && !isAppEditable(props.node.name),
               "sidebar-item--active": isActive(),
               "sidebar-item--selected": isSelected(),
+              "sidebar-item--kbd-focus": props.focusedPath() === props.node.path,
               "sidebar-item--drop-target": isDropTarget(),
             }}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
@@ -2250,6 +2391,7 @@ const TreeNode: Component<{
           {(child) => (
             <TreeNode
               node={child}
+              focusedPath={props.focusedPath}
               onNodeClick={props.onNodeClick}
               onContext={props.onContext}
               renamingPath={props.renamingPath}

@@ -7,6 +7,20 @@
  *  key, or any event we don't intend to register as a shortcut. Single-
  *  character keys are uppercased so `Ctrl+n` and `Ctrl+N` collide as the
  *  same combo from the registry's perspective. */
+// With Shift held, a printable key reports its *shifted* glyph in `e.key`
+// (Shift+0 → ")", Shift+] → "}", Shift+\ → "|"). Map those back to the base key
+// so a binding can be written against the key you press ("Ctrl+Shift+0") and
+// still match. Covers the US/ANSI layout; on layouts that produce a different
+// glyph the combo simply won't normalize and the binding can be remapped (the
+// planned user-customizable bindings). Letters are unaffected — Shift+m already
+// reports "M", which we uppercase below.
+const SHIFTED_TO_BASE: Record<string, string> = {
+  ")": "0", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
+  "^": "6", "&": "7", "*": "8", "(": "9",
+  "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\",
+  ":": ";", '"': "'", "<": ",", ">": ".", "?": "/", "~": "`",
+};
+
 export function formatKeyCombo(e: KeyboardEvent): string | null {
   if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return null;
 
@@ -16,6 +30,7 @@ export function formatKeyCombo(e: KeyboardEvent): string | null {
   if (e.altKey) parts.push("Alt");
 
   let key = e.key;
+  if (e.shiftKey && SHIFTED_TO_BASE[key]) key = SHIFTED_TO_BASE[key];
   if (key.length === 1) key = key.toUpperCase();
   else if (key === "ArrowUp") key = "Up";
   else if (key === "ArrowDown") key = "Down";

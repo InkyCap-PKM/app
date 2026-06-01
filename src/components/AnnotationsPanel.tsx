@@ -8,6 +8,7 @@
 
 import { Component, For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import { EditorView } from "@codemirror/view";
+import { attachListNav } from "../lib/list-nav";
 import { X, Plus, Minus, Replace, MessageSquare, UserPen } from "lucide-solid";
 import {
   noteAnnotations,
@@ -209,7 +210,7 @@ const AnnotationsPanel: Component = () => {
         </Show>
       </div>
 
-      <div class="annotations-panel__list">
+      <div class="annotations-panel__list" ref={attachListNav} aria-label={t("annotations.title")}>
         <Show
           when={visible().length > 0}
           fallback={<p class="sidebar-hint">{t("annotations.empty")}</p>}
@@ -217,6 +218,7 @@ const AnnotationsPanel: Component = () => {
           <For each={visible()}>
             {(a) => (
               <div
+                data-list-item
                 class="sidebar-item annotations-panel__item"
                 onClick={() => activate(a)}
                 title={primary(a)}

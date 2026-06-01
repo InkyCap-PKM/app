@@ -23,6 +23,7 @@ import { toggleTheme } from "../stores/theme";
 import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
 import { toggleScroll } from "../stores/journal-scroll";
 import { cycleRegion, focusEditor } from "./focus-regions";
+import { openEditorReplace } from "../editor/search-panel";
 import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
@@ -232,11 +233,26 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     execute: callbacks.openSearch,
   });
 
+  // In-note find & replace — the CodeMirror panel scoped to the active editor.
+  // Ctrl+H is deliberately the *note*-scoped replace, not the notebox-wide one.
+  registerCommand({
+    id: "editor:find-replace",
+    title: t("command.editor.find-replace"),
+    category: "Edit",
+    keybinding: "Ctrl+H",
+    execute: () => {
+      const handle = activeEditorView();
+      if (handle) openEditorReplace(handle.view);
+    },
+  });
+
+  // Notebox-wide find & replace. Intentionally has NO keybinding: a global
+  // replace can touch many files at once, so it stays palette-only to keep it a
+  // deliberate action rather than something a stray chord can trigger.
   registerCommand({
     id: "view:search-replace",
     title: t("command.view.search-replace"),
     category: "View",
-    keybinding: "Ctrl+H",
     execute: () => {
       setShowReplace(true);
       document.dispatchEvent(
@@ -338,14 +354,15 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   // than only in the keyboard handler) means the same behaviour applies
   // when zoom is triggered from the command palette.
   // "Ctrl+Plus" is ambiguous across keyboards: pressing the `=` key with
-  // Ctrl (no Shift) produces `Ctrl+=`, holding Shift produces `Ctrl+Shift++`,
-  // and the numpad key produces `Ctrl++`. Register all three so the command
-  // fires regardless of which physical keystroke the user makes.
+  // Ctrl (no Shift) produces `Ctrl+=`, holding Shift normalizes to `Ctrl+Shift+=`
+  // (formatKeyCombo maps the shifted `+` glyph back to `=`), and the numpad
+  // key produces `Ctrl++`. Register all three so the command fires regardless
+  // of which physical keystroke the user makes.
   registerCommand({
     id: "edit:zoom-in",
     title: t("command.edit.zoom-in"),
     category: "Edit",
-    keybinding: ["Ctrl+=", "Ctrl++", "Ctrl+Shift++"],
+    keybinding: ["Ctrl+=", "Ctrl++", "Ctrl+Shift+="],
     execute: () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {

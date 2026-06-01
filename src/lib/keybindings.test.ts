@@ -36,6 +36,22 @@ describe("formatKeyCombo", () => {
     expect(combo({ key: "F12" })).toBe("F12");
   });
 
+  it("normalizes shifted glyphs back to their base key (US/ANSI)", () => {
+    // The browser reports the shifted glyph in e.key; a binding is written
+    // against the key you press. These all failed before the fix.
+    expect(combo({ key: ")", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+0");
+    expect(combo({ key: "!", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+1");
+    expect(combo({ key: "}", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+]");
+    expect(combo({ key: "{", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+[");
+    expect(combo({ key: "|", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+\\");
+    expect(combo({ key: "+", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+=");
+  });
+
+  it("does not normalize when Shift is absent (the base glyph is already correct)", () => {
+    expect(combo({ key: "\\", ctrlKey: true })).toBe("Ctrl+\\");
+    expect(combo({ key: "/", ctrlKey: true })).toBe("Ctrl+/");
+  });
+
   it("returns null for a bare modifier press", () => {
     expect(combo({ key: "Control", ctrlKey: true })).toBeNull();
     expect(combo({ key: "Shift", shiftKey: true })).toBeNull();

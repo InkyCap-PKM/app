@@ -1,5 +1,6 @@
 import { errorText } from "../lib/errors";
 import { Component, createResource, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
+import { attachListNav } from "../lib/list-nav";
 import CitationRow from "./CitationRow";
 import { getActiveTab } from "../stores/tabs";
 import { noteboxSettings } from "../stores/settings";
@@ -398,6 +399,7 @@ const ReferencesPanel: Component = () => {
                   </Show>
                 </div>
               </div>
+              <div class="references-panel__list" ref={attachListNav} aria-label={t("references.title")}>
               <For each={filteredEntries()}>
                 {(entry) => (
                   <CitationRow
@@ -428,6 +430,7 @@ const ReferencesPanel: Component = () => {
               <Show when={browseQuery().trim() && filteredEntries().length === 0}>
                 <p class="sidebar-hint">{t("references.noMatching")}</p>
               </Show>
+              </div>
             </Show>
           </Show>
         </Show>
