@@ -135,7 +135,6 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         date: Some("2026-01-01".to_string()),
         abstract_text: None,
         toc_depth: 2,
-        number_chapters: true,
         inject_chapter_heading: InjectChapterHeading::Fallback,
         wikilink_mode: BookWikilinkMode::Internal,
         include_title_page: true,
@@ -153,6 +152,7 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         None,
         None,
         None,
+        None, // bibliography_style
         true, // normalize_headings — the load-bearing PDF/UA-1 setting
         None,
         None,

@@ -27,6 +27,10 @@ export default defineConfig({
     // jsdom gives module code a `document` (i18n `setLocale` sets `<html
     // lang/dir>`). Solid's test condition resolves the dev build of solid-js.
     environment: "jsdom",
+    // Polyfills jsdom's missing layout geometry (Range/Element getClientRects)
+    // so CodeMirror popup positioning no-ops instead of throwing in a deferred
+    // rAF callback. See src/test-setup.ts.
+    setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     server: { deps: { inline: [/solid-js/, /@solid-primitives\//] } },
   },

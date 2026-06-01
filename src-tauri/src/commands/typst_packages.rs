@@ -302,8 +302,8 @@ pub async fn uninstall_typst_package(
     let install_dir = parsed.install_dir(&root);
     if !install_dir.exists() {
         return Err(InkyCapError::FileNotFound(
-            install_dir.display().to_string(),
-        )); // path-stringification-ok: error message, not IPC
+            install_dir.display().to_string(), // path-stringification-ok: error message, not IPC
+        ));
     }
     std::fs::remove_dir_all(&install_dir).map_err(InkyCapError::Io)?;
 
