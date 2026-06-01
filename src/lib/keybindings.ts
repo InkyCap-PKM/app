@@ -14,7 +14,6 @@ export function formatKeyCombo(e: KeyboardEvent): string | null {
   if (e.ctrlKey || e.metaKey) parts.push("Ctrl");
   if (e.shiftKey) parts.push("Shift");
   if (e.altKey) parts.push("Alt");
-  if (parts.length === 0) return null;
 
   let key = e.key;
   if (key.length === 1) key = key.toUpperCase();
@@ -22,6 +21,13 @@ export function formatKeyCombo(e: KeyboardEvent): string | null {
   else if (key === "ArrowDown") key = "Down";
   else if (key === "ArrowLeft") key = "Left";
   else if (key === "ArrowRight") key = "Right";
+
+  // A bare key (no modifier) isn't a shortcut, with one exception: the
+  // function keys F1–F12. They aren't produced by text entry, so binding one
+  // on its own (F2 = rename, F6 = cycle regions) can't shadow typing. Any
+  // un-bound function key still falls through — findCommandByKeybinding returns
+  // null and the dispatcher leaves the event alone (e.g. F5, F12).
+  if (parts.length === 0 && !/^F\d{1,2}$/.test(key)) return null;
 
   parts.push(key);
   return parts.join("+");

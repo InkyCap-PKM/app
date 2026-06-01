@@ -1082,12 +1082,13 @@ const RightPanel: Component = () => {
   }
 
   return (
-    <div class="right-panel">
+    <div class="right-panel" data-focus-region="right-panel">
       {/* Tab bar — always visible so the collapse toggle is accessible */}
       <div
         class="right-panel__tabs"
         ref={tabsOverflow.ref}
         data-overflow={tabsOverflow.overflowing() ? "true" : undefined}
+        data-panel-tablist
       >
         <Show when={activeFileTab()}>
           {/* In Journal Scroll the right panel is wholly owned by the scroll

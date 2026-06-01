@@ -124,6 +124,108 @@ function isOnCursorLine(state: EditorState, from: number, to: number, focused: S
 }
 
 /**
+ * Line-number span of the lines that actually carry body content between
+ * `from` and `to`, trimming any leading/trailing line that holds only
+ * whitespace (e.g. a multi-line block whose closing `]` sits alone on its own
+ * line, leaving `from..to` ending with a bare newline).
+ *
+ * The editing-mode border on blockquotes/callouts is a per-line decoration, so
+ * without this clamp a `#callout(...)[…\n]` paints an extra `border-left`
+ * segment on the structural `]`-only line below the text — the "nested"/doubled
+ * bar the writer sees when the cursor sits on that trailing line. Clamping to
+ * content lines keeps the bar flush with the visible body.
+ */
+export function contentLineSpan(state: EditorState, from: number, to: number): { start: number; end: number } {
+  const text = state.doc.sliceString(from, to);
+  let s = 0;
+  while (s < text.length && /\s/.test(text[s])) s++;
+  let e = text.length;
+  while (e > s && /\s/.test(text[e - 1])) e--;
+  if (e <= s) {
+    // Body is entirely whitespace — collapse to the single opening line.
+    const ln = state.doc.lineAt(Math.min(from, state.doc.length)).number;
+    return { start: ln, end: ln };
+  }
+  return {
+    start: state.doc.lineAt(from + s).number,
+    end: state.doc.lineAt(from + e - 1).number,
+  };
+}
+
+// Funcs whose `(...)` is never followed by a trailing `[...]` content block.
+// Used by the call-end correction so the scanner doesn't sweep an unrelated
+// `[` on a following line into the call.
+const NO_TRAILING_BRACKET_FUNCS = new Set([
+  "table", "note", "bibliography", "image", "video", "audio", "verse", "cite",
+]);
+
+/**
+ * The true end offset of a `FuncCall` whose lezer node may be wrong.
+ *
+ * The lezer-typst parser truncates multi-line function calls at the first
+ * inner `)`/`]`, so a block call's `node.to` can land in the middle of its
+ * own arguments; conversely it can trail past the closing bracket. We recompute
+ * the real end by balanced scanning from the first `(`, following an optional
+ * trailing `[…]` content block.
+ *
+ * Crucially this is the SINGLE source of truth shared by the decoration builder
+ * (which emits the widget / editing decorations over `funcFrom..funcTo`) and by
+ * `expandRangesToBlockElements` (which decides how far to grow a dirty range on
+ * a cursor move). If those two disagree on where a block call ends, a partial
+ * rebuild grows the wrong line span and keeps a stale editing border behind the
+ * freshly rendered widget — the doubled / "nested" bar. Sharing one answer
+ * keeps every incremental rebuild covering the whole element.
+ */
+export function correctedFuncCallEnd(state: EditorState, funcFrom: number, lezerTo: number): number {
+  let funcTo = lezerTo;
+  const rawCheck = state.doc.sliceString(funcFrom, lezerTo);
+  const hashOff = rawCheck.startsWith("#") ? 1 : 0;
+  const firstParen = rawCheck.indexOf("(", hashOff);
+  if (firstParen < 0) return funcTo;
+
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let inStr = false;
+  let balanced = false;
+  let realEnd = -1;
+  const scanStart = funcFrom + firstParen;
+  const scanEnd = Math.min(funcFrom + 50000, state.doc.length);
+  const scanText = state.doc.sliceString(scanStart, scanEnd);
+  for (let i = 0; i < scanText.length; i++) {
+    const ch = scanText[i];
+    if (ch === '"' && (i === 0 || scanText[i - 1] !== "\\")) { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "(") parenDepth++;
+    else if (ch === ")") {
+      parenDepth--;
+      if (parenDepth === 0 && bracketDepth === 0) {
+        realEnd = scanStart + i + 1;
+        const fnm = rawCheck.match(/^#?(\w[\w-]*)/);
+        const fnb = fnm ? fnm[1] : null;
+        if (!fnb || !NO_TRAILING_BRACKET_FUNCS.has(fnb)) {
+          const after = state.doc.sliceString(realEnd, Math.min(realEnd + 100, state.doc.length));
+          const trimmed = after.trimStart();
+          if (trimmed.startsWith("[")) {
+            const bStart = realEnd + (after.length - trimmed.length);
+            const bScan = state.doc.sliceString(bStart, Math.min(bStart + 50000, state.doc.length));
+            let bd = 0;
+            for (let j = 0; j < bScan.length; j++) {
+              if (bScan[j] === "[") bd++;
+              else if (bScan[j] === "]") { bd--; if (bd === 0) { realEnd = bStart + j + 1; break; } }
+            }
+          }
+        }
+        balanced = true;
+        break;
+      }
+    } else if (ch === "[") bracketDepth++;
+    else if (ch === "]") bracketDepth--;
+  }
+  if (balanced && realEnd > funcTo) funcTo = realEnd;
+  return funcTo;
+}
+
+/**
  * If `line` ends with a managed paragraph soft break — a single unescaped
  * trailing `\` outside any verbatim context — return the document position of
  * that `\`; otherwise null. This is the marker the visual editor inserts on
@@ -572,71 +674,16 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
           case "FuncCall": {
             const funcFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")
               ? node.from - 1 : node.from;
-            let funcTo = node.to;
-            const lastChar = state.doc.sliceString(funcTo - 1, funcTo);
+            const lastChar = state.doc.sliceString(node.to - 1, node.to);
             if (lastChar !== ")" && lastChar !== "]") return false;
-            // Parser truncation defense: the incremental parser may truncate
-            // multi-line function calls at an inner `)` or `]`. When the
-            // delimiters aren't balanced, scan forward for the real end.
-            const rawCheck = state.doc.sliceString(funcFrom, funcTo);
-            const hashOff = rawCheck.startsWith("#") ? 1 : 0;
-            const firstParen = rawCheck.indexOf("(", hashOff);
-            if (firstParen >= 0) {
-              let parenDepth = 0;
-              let bracketDepth = 0;
-              let inStr = false;
-              let balanced = false;
-              let realEnd = -1;
-              const scanStart = funcFrom + firstParen;
-              const scanEnd = Math.min(funcFrom + 50000, state.doc.length);
-              const scanText = state.doc.sliceString(scanStart, scanEnd);
-              for (let i = 0; i < scanText.length; i++) {
-                const ch = scanText[i];
-                if (ch === '"' && (i === 0 || scanText[i - 1] !== '\\')) { inStr = !inStr; continue; }
-                if (inStr) continue;
-                if (ch === '(') parenDepth++;
-                else if (ch === ')') {
-                  parenDepth--;
-                  if (parenDepth === 0 && bracketDepth === 0) {
-                    realEnd = scanStart + i + 1;
-                    // Check for trailing content bracket [...] — only for
-                    // functions that actually use content brackets after ().
-                    // Block funcs like table/note/bibliography/image
-                    // never have trailing brackets; without this guard the
-                    // scanner can consume unrelated lines after the func.
-                    const funcNameForBracket = rawCheck.match(/^#?(\w[\w-]*)/);
-                    const fnb = funcNameForBracket ? funcNameForBracket[1] : null;
-                    const NO_TRAILING_BRACKET = new Set([
-                      "table", "note", "bibliography", "image", "video", "audio", "verse", "cite",
-                    ]);
-                    if (!fnb || !NO_TRAILING_BRACKET.has(fnb)) {
-                      const afterParen = state.doc.sliceString(realEnd, Math.min(realEnd + 100, state.doc.length)).trimStart();
-                      if (afterParen.startsWith("[")) {
-                        const bStart = realEnd + (state.doc.sliceString(realEnd, Math.min(realEnd + 100, state.doc.length)).length - afterParen.length);
-                        const bScan = state.doc.sliceString(bStart, Math.min(bStart + 50000, state.doc.length));
-                        let bd = 0;
-                        for (let j = 0; j < bScan.length; j++) {
-                          if (bScan[j] === '[') bd++;
-                          else if (bScan[j] === ']') { bd--; if (bd === 0) { realEnd = bStart + j + 1; break; } }
-                        }
-                      }
-                    }
-                    balanced = true;
-                    break;
-                  }
-                } else if (ch === '[') bracketDepth++;
-                else if (ch === ']') bracketDepth--;
-              }
-              if (balanced && realEnd > funcTo) {
-                funcTo = realEnd;
-              }
-            }
             // The lezer-typst parser truncates multi-line FuncCalls at the
-            // first inner `)`/`]`, so the outer `node.from..node.to` used
-            // for `onCursor` above misses lines added by the user. Recompute
-            // against the corrected funcFrom..funcTo so the cursor staying
-            // inside a growing callout/quote body keeps the live-edit
-            // decoration stable across Enter presses.
+            // first inner `)`/`]`, so `node.to` (and the `onCursor` computed
+            // from it above) misses lines added by the user. Recompute the true
+            // end via the shared correction so the cursor staying inside a
+            // growing callout/quote body keeps the live-edit decoration stable,
+            // and so the dirty-range expander agrees on the same bounds (see
+            // correctedFuncCallEnd / expandRangesToBlockElements).
+            const funcTo = correctedFuncCallEnd(state, funcFrom, node.to);
             const callOnCursor = isOnCursorLine(state, funcFrom, funcTo, focused);
             const traverseChildren = handleFuncCall(state, funcFrom, funcTo, decos, callOnCursor, cursors, autoExpand, expandedPos, activeFormatting);
             if (!traverseChildren) {
@@ -973,7 +1020,7 @@ function handleFuncCall(
       if (!onCursor) {
         const bodyText = state.doc.sliceString(bodyRange.from, bodyRange.to);
         decos.push(
-          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, false) }).range(from, to),
+          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, false, bodyRange.from) }).range(from, to),
         );
         return false;
       }
@@ -982,9 +1029,8 @@ function handleFuncCall(
         Decoration.replace({ widget: new FuncPillWidget(from, "callout") }).range(from, bodyRange.from),
       );
       if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
-      const startLine = state.doc.lineAt(bodyRange.from);
-      const endLine = state.doc.lineAt(bodyRange.to);
-      for (let ln = startLine.number; ln <= endLine.number; ln++) {
+      const calloutSpan = contentLineSpan(state, bodyRange.from, bodyRange.to);
+      for (let ln = calloutSpan.start; ln <= calloutSpan.end; ln++) {
         decos.push(
           Decoration.line({
             class: "cm-typst-callout-line",
@@ -1007,6 +1053,10 @@ function handleFuncCall(
       if (bodyText === null) return false;
       const by = extractNamedStringArg(text, "by");
       const on = extractNamedStringArg(text, "on");
+      // Absolute offset where the `[…]` body begins, so an inline task's
+      // checkbox can resolve its own call position (see renderTypstBody ctx).
+      const bracketIdx = text.indexOf("[");
+      const annBodyFrom = bracketIdx >= 0 ? from + bracketIdx + 1 : from;
       // Unlike callout/quote, a comment has nothing to preview while you edit
       // it, so we don't use the side:1 "source + preview" pattern (which would
       // show the annotation twice while editing). Expanded ⇒ raw source only;
@@ -1015,7 +1065,7 @@ function handleFuncCall(
       if (!isExpanded) {
         decos.push(
           Decoration.replace({
-            widget: new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, onCursor),
+            widget: new AnnotationBlockWidget(bodyText, by ?? "", on ?? "", from, onCursor, annBodyFrom),
           }).range(from, to),
         );
       }
@@ -1232,7 +1282,7 @@ function handleFuncCall(
           const content = state.doc.sliceString(bodyRange.from, bodyRange.to);
           const attribution = extractAttributionDisplay(text);
           decos.push(
-            Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, false) }).range(from, to),
+            Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, false, bodyRange.from) }).range(from, to),
           );
           return false;
         }
@@ -1244,9 +1294,8 @@ function handleFuncCall(
           Decoration.replace({ widget: new FuncPillWidget(from, "quote") }).range(from, bodyRange.from),
         );
         if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
-        const startLine = state.doc.lineAt(bodyRange.from);
-        const endLine = state.doc.lineAt(bodyRange.to);
-        for (let ln = startLine.number; ln <= endLine.number; ln++) {
+        const quoteSpan = contentLineSpan(state, bodyRange.from, bodyRange.to);
+        for (let ln = quoteSpan.start; ln <= quoteSpan.end; ln++) {
           decos.push(
             Decoration.line({ class: "cm-typst-blockquote-line" }).range(state.doc.line(ln).from),
           );
@@ -1766,11 +1815,22 @@ function expandRangesToBlockElements(
       if (nodeFrom < from) from = nodeFrom;
       if (nodeTo > to) to = nodeTo;
     };
+    // Grow to a FuncCall's *corrected* bounds, not lezer's raw `n.from..n.to`.
+    // The decoration builder renders each call over correctedFuncCallEnd(...);
+    // growing to anything shorter would leave part of a multi-line block call
+    // outside the rebuild, stranding a stale editing border behind the widget
+    // (the doubled "nested" bar).
+    const growCall = (n: { name: string; from: number; to: number }) => {
+      if (n.name !== "FuncCall") return;
+      const callFrom = (n.from > 0 && state.doc.sliceString(n.from - 1, n.from) === "#")
+        ? n.from - 1 : n.from;
+      grow(callFrom, correctedFuncCallEnd(state, callFrom, n.to));
+    };
     // Enclosing calls at either edge of the range …
     for (const [pos, side] of [[r.from, 1], [r.to, -1]] as const) {
       let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, side);
       while (n) {
-        if (n.name === "FuncCall") grow(n.from, n.to);
+        growCall(n);
         if (!n.parent) break;
         n = n.parent;
       }
@@ -1779,7 +1839,7 @@ function expandRangesToBlockElements(
     tree.iterate({
       from: r.from,
       to: r.to,
-      enter(n) { if (n.name === "FuncCall") grow(n.from, n.to); },
+      enter(n) { growCall(n); },
     });
     // The style preamble collapses/expands as one multi-line block widget, so a
     // dirty line anywhere inside it must rebuild the whole range — otherwise a
