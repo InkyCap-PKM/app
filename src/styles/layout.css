@@ -5876,6 +5876,20 @@ svg.lucide {
   white-space: nowrap;
 }
 
+/* The user's pre-merge version that a sync replaced (took theirs). Its own line
+   between the message and the author/date row, warning-toned so it reads as
+   "this is what you lost; click to compare". */
+.note-history__took-theirs {
+  align-self: flex-start;
+  margin: 2px 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-control);
+  background: var(--warning-bg, rgba(229, 165, 10, 0.12));
+  color: var(--warning-fg, #e5a50a);
+}
+
 /* Shown above the version list when the working copy differs from the latest
    shared version (unsynced local edits or a reverted incoming change). */
 .note-history__local {
@@ -5888,7 +5902,7 @@ svg.lucide {
   border-radius: var(--radius-control);
 }
 
-.note-history__restore {
+.note-history__action {
   flex-shrink: 0;
   background: none;
   border: none;
@@ -5898,7 +5912,7 @@ svg.lucide {
   border-radius: var(--radius-control);
 }
 
-.note-history__restore:hover {
+.note-history__action:hover {
   color: var(--accent);
   background: var(--bg-hover);
 }
@@ -5941,7 +5955,7 @@ svg.lucide {
 }
 
 /* Per-hunk revert (restore to your version) — a bare icon button matching the
-   History tab's Restore buttons (.note-history__restore), since it's the same
+   History tab's row action buttons (.note-history__action), since it's the same
    "restore this" gesture. Distinct from the bordered menu/dismiss actions. */
 .annotations-panel__revert {
   flex-shrink: 0;
@@ -11715,6 +11729,16 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* A label-row whose toggle sits at the far right (label + help on the left).
+   Used for the "Offline" and "Connect with SSH" switches so they read
+   "<option>  … <switch>" like the other toggles in the panel. */
+.git-panel__toggle-row {
+  margin-top: 6px;
+}
+.git-panel__toggle-row .settings__toggle {
+  margin-left: auto;
 }
 
 /* Reconnect offer: a highlighted box above the manual setup form. */

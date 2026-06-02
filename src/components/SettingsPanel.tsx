@@ -335,7 +335,8 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
   const [cloneRemote, setCloneRemote] = createSignal("");
   const [cloneBranch, setCloneBranch] = createSignal("main");
   const [cloneDest, setCloneDest] = createSignal("");
-  const [cloneToken, setCloneToken] = createSignal("");
+  const [cloneUsername, setCloneUsername] = createSignal("");
+  const [clonePassword, setClonePassword] = createSignal("");
   const [cloning, setCloning] = createSignal(false);
 
   // "Import package" — the offline-handoff join path: a first-time recipient
@@ -619,7 +620,8 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
     setShowCloneForm(false);
     setCloneRemote("");
     setCloneDest("");
-    setCloneToken("");
+    setCloneUsername("");
+    setClonePassword("");
   }
 
   async function confirmClone() {
@@ -642,10 +644,11 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
         remote,
         branch: cloneBranch().trim() || undefined,
         dest,
-        httpsToken: cloneToken().trim() || undefined,
+        username: cloneUsername().trim() || undefined,
+        password: clonePassword().trim() || undefined,
       });
-      // Register and open the cloned notebox; it arrives already collaborative
-      // (its committed settings carry the remote + branch).
+      // Register and open the cloned notebox. Collaboration config is
+      // per-machine, so it opens non-collaborative and offers to reconnect.
       await ipc.registerNotebox(path, name);
       await loadNoteboxRegistry();
       resetCloneForm();
@@ -994,18 +997,34 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
             <div class="notebox-form__field">
               <input
                 class="settings__text-input"
-                type="password"
                 autocomplete="off"
-                placeholder={t("settings.notebox.tokenPlaceholder")}
-                value={cloneToken()}
-                onInput={(e) => setCloneToken(e.currentTarget.value)}
+                placeholder={t("settings.notebox.usernamePlaceholder")}
+                value={cloneUsername()}
+                onInput={(e) => setCloneUsername(e.currentTarget.value)}
               />
               <HelpButton
                 label={t("settings.notebox.fieldHelpLabel", {
-                  field: t("settings.notebox.tokenPlaceholder"),
+                  field: t("settings.notebox.usernamePlaceholder"),
                 })}
               >
-                {t("settings.notebox.tokenHelp")}
+                {t("settings.notebox.usernameHelp")}
+              </HelpButton>
+            </div>
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                type="password"
+                autocomplete="off"
+                placeholder={t("settings.notebox.passwordPlaceholder")}
+                value={clonePassword()}
+                onInput={(e) => setClonePassword(e.currentTarget.value)}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.passwordPlaceholder"),
+                })}
+              >
+                {t("settings.notebox.passwordHelp")}
               </HelpButton>
             </div>
             <span class="settings__description">

@@ -51,20 +51,21 @@ pub struct GitSetupResult {
 /// The git-side of setup, factored out of the Tauri command so it can be tested
 /// against a temp dir without app state: initialize-or-adopt the repo, write the
 /// collaboration `.gitignore`, point the `origin` remote at `remote`, and store
-/// the optional HTTPS token / commit identity. Does **not** touch notebox
-/// settings — the command persists those after this returns.
+/// the optional sign-in username + password and commit identity. Does **not**
+/// touch notebox settings — the command persists those after this returns.
 fn apply_setup(
     root: &Path,
     remote: &str,
     branch: &str,
-    https_token: Option<&str>,
+    username: Option<&str>,
+    password: Option<&str>,
     identity: Option<GitIdentity>,
 ) -> Result<GitSetupResult> {
     let initialized = !GitBackend::is_repo(root);
     let backend = GitBackend::open_or_init(root)?;
     ensure_collaboration_gitignore(root)?;
     // Package-handoff setup passes an empty remote (no server): skip the remote
-    // and the host-keyed HTTPS token. The notebox is still a git repo — version
+    // and the sign-in credentials. The notebox is still a git repo — version
     // history and package export/import all work without one.
     if !remote.trim().is_empty() {
         backend.set_remote(REMOTE_NAME, remote)?;
@@ -74,15 +75,23 @@ fn apply_setup(
     // something to send. No-op when an existing repo (with commits) is adopted.
     backend.ensure_initial_branch(branch)?;
 
-    if let Some(token) = https_token {
-        if !token.trim().is_empty() && !remote.trim().is_empty() {
-            auth::set_https_token(remote, token)?;
+    if !remote.trim().is_empty() {
+        // Username + password are per-repository sign-in details (HTTPS). Only
+        // write a non-empty value, so re-running setup to change the branch
+        // doesn't wipe a previously-entered password the user left blank.
+        if let Some(username) = username.filter(|u| !u.trim().is_empty()) {
+            auth::set_username_for_remote(remote, username.trim())?;
+        }
+        if let Some(password) = password.filter(|p| !p.trim().is_empty()) {
+            auth::set_remote_password(remote, password)?;
         }
     }
-    if let Some(identity) = identity {
-        if identity.is_complete() {
-            auth::set_identity_for_remote(remote, identity)?;
-        }
+    // Commit identity is per-notebox (this machine), stored in local.json — not
+    // keyed by remote — so two clones of one repo can commit as different people.
+    if let Some(identity) = identity.filter(|i| i.is_complete()) {
+        let mut local = crate::notebox_settings::load_local_state(root);
+        local.git_identity = Some(identity);
+        crate::notebox_settings::save_local_state(root, &local)?;
     }
 
     Ok(GitSetupResult {
@@ -93,16 +102,19 @@ fn apply_setup(
 
 /// Turn the open notebox into a collaborative git repo and persist its
 /// [`NoteboxGitConfig`]. Idempotent: re-running adopts the existing repo and
-/// updates the remote/branch. The remote and branch travel in notebox settings;
-/// the HTTPS token (keychain) and commit identity (per-installation store) do
-/// not. The notebox must be open.
+/// updates the remote/branch. Everything here is per-machine and stays out of
+/// the shared, committed settings: the remote + branch live in the gitignored
+/// `local.json`, the username in a per-installation store, the password in the
+/// OS keychain, and the commit identity in its own per-installation store. The
+/// notebox must be open.
 #[tauri::command]
 pub async fn git_setup_collaboration(
     remote: String,
     branch: Option<String>,
     identity_name: Option<String>,
     identity_email: Option<String>,
-    https_token: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<GitSetupResult> {
@@ -138,7 +150,8 @@ pub async fn git_setup_collaboration(
             &setup_root,
             &setup_remote,
             &setup_branch,
-            https_token.as_deref(),
+            username.as_deref(),
+            password.as_deref(),
             identity,
         )
     })
@@ -334,11 +347,12 @@ pub struct UnresolvedEntry {
 }
 
 /// List the notes that still have unresolved `#suggestion(...)` tracked changes
-/// awaiting an accept/reject decision — the notebox-wide "changes to resolve"
-/// signal. Reads the per-note counts straight from the metadata cache (the same
-/// counts the scanner persists from `typst query` against `<inkycap-suggestion>`),
-/// so it never recompiles notes on the hot path. Empty when the notebox isn't
-/// collaborative or nothing is outstanding.
+/// awaiting **this user's** decision — the notebox-wide "changes to resolve"
+/// signal. The metadata cache gives the candidate notes (those with any open
+/// suggestion); each candidate's working source is then re-counted excluding
+/// suggestions the local user authored themselves (their `by:` matches this
+/// notebox's commit identity) — those are the user's to *send*, not to resolve.
+/// Empty when the notebox isn't collaborative or nothing is outstanding.
 #[tauri::command]
 pub async fn git_unresolved_changes(
     state: State<'_, AppState>,
@@ -351,29 +365,88 @@ pub async fn git_unresolved_changes(
     };
     // Only meaningful for a collaborative notebox — a solo notebox never has
     // incoming tracked changes to resolve.
-    if session.notebox_settings.read().await.git.is_none() {
-        return Ok(vec![]);
-    }
+    let remote = match session.notebox_settings.read().await.git.clone() {
+        Some(g) => g.remote,
+        None => return Ok(vec![]),
+    };
     let cache = match state.metadata_cache.read().await.clone() {
         Some(c) => c,
         None => return Ok(vec![]),
     };
-    tokio::task::spawn_blocking(move || -> Result<Vec<UnresolvedEntry>> {
-        let files = cache.load_notebox(&root)?;
-        let mut out: Vec<UnresolvedEntry> = files
-            .into_values()
-            .filter(|f| f.unresolved_suggestions > 0)
-            .map(|f| UnresolvedEntry {
-                path: crate::storage::to_frontend_string(&root.join(&f.path)),
-                rel_path: crate::storage::to_frontend_string(&f.path),
-                count: f.unresolved_suggestions,
-            })
-            .collect();
-        out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
-        Ok(out)
-    })
+    let storage = match session.storage.read().await.clone() {
+        Some(s) => s,
+        None => return Ok(vec![]),
+    };
+
+    // The candidate notes (any open suggestion) + the local commit-author name,
+    // both resolved off the async runtime.
+    let cache_root = root.clone();
+    let author_root = root.clone();
+    let (candidates, me) = tokio::task::spawn_blocking(
+        move || -> Result<(Vec<PathBuf>, String)> {
+            let files = cache.load_notebox(&cache_root)?;
+            let mut candidates: Vec<PathBuf> = files
+                .into_values()
+                .filter(|f| f.unresolved_suggestions > 0)
+                .map(|f| f.path)
+                .collect();
+            candidates.sort();
+            Ok((candidates, local_commit_author_name(&author_root, &remote)))
+        },
+    )
     .await
-    .map_err(|e| InkyCapError::Git(format!("unresolved-changes task failed: {e}")))?
+    .map_err(|e| InkyCapError::Git(format!("unresolved-changes task failed: {e}")))??;
+
+    // Re-count each candidate's *own* suggestions from its working source,
+    // dropping the ones the local user authored. Reads go through storage.
+    let mut out = Vec::new();
+    for rel in candidates {
+        let source = storage.read_file(&rel).await.unwrap_or_default();
+        let count = crate::typst_pipeline::suggestion::count_suggestions_by_others(&source, &me);
+        if count > 0 {
+            out.push(UnresolvedEntry {
+                path: to_frontend_string(&root.join(&rel)),
+                rel_path: to_frontend_string(&rel),
+                count: count as u32,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The notebox's chosen commit identity on this machine: the per-notebox value
+/// in `local.json` if complete, else the legacy per-remote store (for noteboxes
+/// set up before the identity moved per-notebox). `None` ⇒ fall back to git
+/// config. Per-notebox so two clones of one repo can commit as different people.
+fn resolved_local_identity(root: &Path, remote: &str) -> Option<GitIdentity> {
+    if let Some(id) = crate::notebox_settings::load_local_state(root).git_identity {
+        if id.is_complete() {
+            return Some(id);
+        }
+    }
+    if !remote.trim().is_empty() {
+        if let Some(id) = auth::identity_for_remote(remote) {
+            if id.is_complete() {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+/// The commit-author name InkyCap stamps on this notebox's changes: the resolved
+/// per-notebox identity if set, else the git-config `user.name` (repo, then
+/// global). Mirrors [`git_default_commit_identity`] and the `by:` the frontend
+/// writes onto a suggestion, so the two compare equal. Empty when unset.
+fn local_commit_author_name(root: &Path, remote: &str) -> String {
+    if let Some(id) = resolved_local_identity(root, remote) {
+        return id.name;
+    }
+    GitBackend::open(root)
+        .ok()
+        .and_then(|b| b.config_identity())
+        .map(|(name, _)| name)
+        .unwrap_or_default()
 }
 
 /// Record the merge-first "Changes since last sync" baseline in the gitignored
@@ -402,24 +475,35 @@ fn record_shared_head(backend: &GitBackend, root: &Path) -> Result<()> {
     crate::notebox_settings::save_local_state(root, &local)
 }
 
-/// Store an HTTPS personal-access token for this notebox's remote host
-/// (re-authentication without re-running full setup). The token lives only in
-/// the OS keychain — never in settings or the repo.
+/// Save the username + password for this notebox's repository (re-authenticate
+/// without re-running full setup). The password lives only in the OS keychain
+/// and the username in a per-installation store — never in settings or the repo.
 #[tauri::command]
 pub async fn git_sign_in(
-    token: String,
+    username: String,
+    password: String,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<()> {
     let session = state.session(window.label()).await;
     let git = require_collaborative(&session).await?;
-    auth::set_https_token(&git.remote, &token)
+    if !username.trim().is_empty() {
+        auth::set_username_for_remote(&git.remote, username.trim())?;
+    }
+    auth::set_remote_password(&git.remote, &password)
+}
+
+/// The saved sign-in username for a remote, for pre-filling the connect form.
+/// Empty/absent when none was saved (a fresh setup, or an SSH-only notebox).
+#[tauri::command]
+pub async fn git_saved_username(remote: String) -> Result<Option<String>> {
+    Ok(auth::username_for_remote(remote.trim()))
 }
 
 /// Stop collaborating on the open notebox: drop its [`NoteboxGitConfig`] and
 /// clear any pending review staging. The `.git` directory and stored
 /// credentials are left intact — disabling is reversible (re-run setup), and
-/// credentials are keyed by host so other noteboxes may share them.
+/// the credentials are keyed by the remote, so reconnecting later finds them.
 #[tauri::command]
 pub async fn git_disable_collaboration(
     state: State<'_, AppState>,
@@ -457,18 +541,19 @@ fn clone_into(remote: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
 }
 
 /// Clone a collaborative notebox from a git remote into `dest`, so a
-/// collaborator can join entirely in-app (no command-line git). The cloned tree
-/// already carries the notebox's settings — remote + branch travel in the
-/// committed `.inkycap/settings.json` — so the result opens as a collaborative
-/// notebox. Returns the cloned notebox path (frontend form) for the caller to
-/// register and open. Stores the optional HTTPS token first so the clone can
-/// authenticate. Does not touch the currently-open notebox.
+/// collaborator can join entirely in-app (no command-line git). Returns the
+/// cloned notebox path (frontend form) for the caller to register and open.
+/// Saves the optional sign-in username + password first so the clone can
+/// authenticate; the cloned notebox opens non-collaborative until the user
+/// confirms the reconnect offer (collaboration config is per-machine and does
+/// not travel in the repo). Does not touch the currently-open notebox.
 #[tauri::command]
 pub async fn git_clone_notebox(
     remote: String,
     branch: Option<String>,
     dest: String,
-    https_token: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
 ) -> Result<String> {
     let remote = remote.trim().to_string();
     if remote.is_empty() {
@@ -490,10 +575,11 @@ pub async fn git_clone_notebox(
         ));
     }
 
-    if let Some(token) = https_token {
-        if !token.trim().is_empty() {
-            auth::set_https_token(&remote, &token)?;
-        }
+    if let Some(username) = username.as_deref().filter(|u| !u.trim().is_empty()) {
+        auth::set_username_for_remote(&remote, username.trim())?;
+    }
+    if let Some(password) = password.as_deref().filter(|p| !p.trim().is_empty()) {
+        auth::set_remote_password(&remote, password)?;
     }
 
     let branch = branch
@@ -613,6 +699,9 @@ const LOCAL_EDITS_MESSAGE: &str = "Update notes";
 /// lossless.
 fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutcome> {
     let backend = GitBackend::open(root)?;
+    // The per-notebox commit identity (local.json), resolved once for every
+    // commit this sync makes.
+    let identity = resolved_local_identity(root, &git.remote);
     if !git.remote.trim().is_empty() {
         backend.set_remote(REMOTE_NAME, &git.remote)?;
     }
@@ -635,7 +724,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
     // 1. Commit local working edits, if any → M (so the merge includes them).
     //    Picks up any files the vendoring step above just added.
     let m: Option<git2::Oid> = if backend.status_summary()?.dirty {
-        let sig = backend.author_signature(&git.remote)?;
+        let sig = backend.author_signature(identity.as_ref())?;
         backend.stage_all()?;
         let oid = backend.commit(LOCAL_EDITS_MESSAGE, &sig)?;
         out.committed = true;
@@ -697,7 +786,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
     let m = m.expect("divergence implies a local tip");
     match backend.merge_commits_to_tree(m, t)? {
         MergeOutcome::Clean(tree) => {
-            let sig = backend.author_signature(&git.remote)?;
+            let sig = backend.author_signature(identity.as_ref())?;
             backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
             backend.checkout_head_force()?;
             out.pulled = true;
@@ -734,7 +823,7 @@ fn run_sync(root: &Path, git: &NoteboxGitConfig, push: bool) -> Result<SyncOutco
 
             // The working tree is now the full merged result — commit it as a
             // two-parent merge commit so the push fast-forwards the remote.
-            let sig = backend.author_signature(&git.remote)?;
+            let sig = backend.author_signature(identity.as_ref())?;
             backend.stage_all()?;
             let tree = backend.write_index_tree()?;
             backend.commit_tree(&merge_message(&out.incoming), &sig, tree, &[m, t])?;
@@ -844,11 +933,11 @@ pub async fn git_sync(
 ) -> Result<SyncOutcome> {
     let session = state.session(window.label()).await;
     let (root, git) = require_collaborative_with_root(&session).await?;
-    let _ = app_handle.emit("notebox:git-fetch-started", ());
+    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
     let result = tokio::task::spawn_blocking(move || run_sync(&root, &git, true))
         .await
         .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
-    emit_sync_events(&app_handle, &result);
+    emit_sync_events(&app_handle, window.label(), &result);
     result
 }
 
@@ -865,16 +954,16 @@ pub async fn git_check_updates(
 ) -> Result<CheckResult> {
     let session = state.session(window.label()).await;
     let (root, git) = require_collaborative_with_root(&session).await?;
-    let _ = app_handle.emit("notebox:git-fetch-started", ());
+    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
     let result = tokio::task::spawn_blocking(move || run_check(&root, &git))
         .await
         .map_err(|e| InkyCapError::Git(format!("check task failed: {e}")))?;
     match &result {
         Ok(_) => {
-            let _ = app_handle.emit("notebox:git-fetch-completed", ());
+            emit_git(&app_handle, window.label(), "notebox:git-fetch-completed", ());
         }
         Err(err) => {
-            let _ = app_handle.emit("notebox:git-error", err.to_string());
+            emit_git(&app_handle, window.label(), "notebox:git-error", err.to_string());
         }
     }
     result
@@ -925,23 +1014,41 @@ fn run_check(root: &Path, git: &NoteboxGitConfig) -> Result<CheckResult> {
 }
 
 /// Translate a sync result into the `notebox:git-*` event vocabulary the store
-/// listens on (completion + a friendly error on rejection/failure).
-fn emit_sync_events(app_handle: &tauri::AppHandle, result: &Result<SyncOutcome>) {
+/// listens on (completion + a friendly error on rejection/failure). Scoped to
+/// the `window` that ran the gesture — these events carry no notebox path, so
+/// other windows can't self-scope them; broadcasting would make a sync in one
+/// window light up every other window's status. See [`emit_git`].
+fn emit_sync_events(app_handle: &tauri::AppHandle, window: &str, result: &Result<SyncOutcome>) {
     match result {
         Ok(r) if r.rejected => {
-            let _ = app_handle.emit(
+            emit_git(
+                app_handle,
+                window,
                 "notebox:git-error",
                 "the remote moved while syncing — sync again",
             );
         }
         Ok(_) => {
-            let _ = app_handle.emit("notebox:git-fetch-completed", ());
-            let _ = app_handle.emit("notebox:git-push-completed", ());
+            emit_git(app_handle, window, "notebox:git-fetch-completed", ());
+            emit_git(app_handle, window, "notebox:git-push-completed", ());
         }
         Err(err) => {
-            let _ = app_handle.emit("notebox:git-error", err.to_string());
+            emit_git(app_handle, window, "notebox:git-error", err.to_string());
         }
     }
+}
+
+/// Emit a `notebox:git-*` event to a single window's webview. Git status/spinner
+/// events are per-notebox and carry no path the frontend could filter on, so
+/// they must target the owning window rather than broadcast to all of them
+/// (otherwise syncing in one open notebox visibly drives every other one).
+fn emit_git<S: serde::Serialize + Clone>(
+    app_handle: &tauri::AppHandle,
+    window: &str,
+    event: &str,
+    payload: S,
+) {
+    let _ = app_handle.emit_to(window, event, payload);
 }
 
 // ──────────────── Structured settings.json merge (used by run_sync) ─────────
@@ -1001,11 +1108,30 @@ pub async fn git_note_history(
     let session = state.session(window.label()).await;
     let (root, _git) = require_collaborative_with_root(&session).await?;
     let rel = notebox_relative(&root, &path);
+    let rel_frontend = to_frontend_string(&rel);
     tokio::task::spawn_blocking(move || -> Result<Vec<FileVersion>> {
         if !GitBackend::is_repo(&root) {
             return Ok(Vec::new());
         }
-        GitBackend::open(&root)?.file_history(&rel, 200)
+        let mut versions = GitBackend::open(&root)?.file_history(&rel, 200)?;
+        // If the last sync resolved this note by taking *theirs* over the user's
+        // overlapping edit, flag the user's pre-sync version (the `last_sync_oid`
+        // commit) so the History view can mark "this is what the merge replaced —
+        // click to compare with the current note". `last_sync_oid` is the local
+        // tip recorded just before the merge, so its blob is the user's version.
+        let local = crate::notebox_settings::load_local_state(&root);
+        let took_theirs = local.last_sync_conflicted.iter().any(|p| *p == rel_frontend);
+        if took_theirs {
+            if let Some(baseline) = local.last_sync_oid {
+                for v in &mut versions {
+                    if v.commit == baseline {
+                        v.took_theirs_baseline = true;
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(versions)
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("history task failed: {e}")))?
@@ -1177,20 +1303,34 @@ pub async fn git_changes_since_sync(
     .map_err(|e| InkyCapError::Git(format!("changes-since-sync task failed: {e}")))?
 }
 
-/// One note's hunk-level diff between the pre-sync baseline and the current
-/// working text — the per-note review surface.
-#[derive(Debug, Clone, Serialize)]
+/// One note's hunk-level review, split by *where each change came from*. The
+/// last sync is the dividing line: the merge commit (HEAD) holds what the sync
+/// brought in, and any working-tree edits on top of it are the user's own work
+/// since. Keeping the two apart stops a user's own new note/edit from being
+/// labelled "incoming" (it isn't), which the single-baseline view conflated.
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncNoteDiff {
-    /// The changed regions, in document order. Empty when the note matches its
-    /// baseline (e.g. after every hunk has been reverted).
-    pub hunks: Vec<crate::git::sync_review::SyncHunk>,
+    /// Changes the last sync folded in: pre-sync baseline (`last_sync_oid`) →
+    /// HEAD. These are *theirs* — what to review and possibly revert.
+    pub incoming: Vec<crate::git::sync_review::SyncHunk>,
+    /// The user's own uncommitted edits since the sync: HEAD → working text.
+    /// Informational (no revert) — your own in-progress work, not something the
+    /// sync did.
+    pub local: Vec<crate::git::sync_review::SyncHunk>,
+    /// The sync *added* this note (it had no pre-sync version). The frontend
+    /// shows a single "added" status under Incoming instead of a whole-file hunk
+    /// whose first line is the (auto-managed) import preamble.
+    pub incoming_created: bool,
+    /// The note is brand-new local work, not yet in HEAD. The frontend shows a
+    /// single "created" status under Local activity for the same reason.
+    pub local_created: bool,
 }
 
-/// Diff one note against the pre-sync baseline into hunks the reviewer can
-/// revert individually. Compares the baseline blob (from `last_sync_oid`) with
-/// the live working text, so reverting a hunk drops it from the next diff.
-/// Returns no hunks when nothing has been synced or the note is unchanged.
+/// Review one note's changes since the last sync, split into incoming (theirs,
+/// `last_sync_oid` → HEAD) and local (yours, HEAD → working). Empty when nothing
+/// has been synced on this machine yet. The import preamble is filtered from
+/// both sides — it is auto-managed, never a reviewable change.
 #[tauri::command]
 pub async fn git_note_sync_diff(
     path: String,
@@ -1207,14 +1347,71 @@ pub async fn git_note_sync_diff(
         .ok_or(InkyCapError::NoteboxNotOpen)?;
     let rel = notebox_relative(&root, &path);
 
-    let current = storage.read_file(&rel).await.unwrap_or_default();
-    let baseline = read_sync_baseline_text(&root, &rel).await?;
-    let hunks = tokio::task::spawn_blocking(move || {
-        crate::git::sync_review::diff_hunks(&baseline, &current)
+    // "Since last sync" is only meaningful once a sync has happened on this
+    // machine. With no recorded baseline, the review surface is empty (mirrors
+    // the notebox-wide changes-since-sync list).
+    let has_baseline = {
+        let root = root.clone();
+        tokio::task::spawn_blocking(move || sync_baseline_oid(&root).is_some())
+            .await
+            .map_err(|e| InkyCapError::Git(format!("baseline-probe task failed: {e}")))?
+    };
+    if !has_baseline {
+        return Ok(SyncNoteDiff::default());
+    }
+
+    let working = storage.read_file(&rel).await.unwrap_or_default();
+    let last_sync = read_sync_baseline_text(&root, &rel).await?;
+    let head = read_head_text(&root, &rel).await?;
+    let diff = tokio::task::spawn_blocking(move || {
+        let filt = |hs| {
+            crate::git::sync_review::drop_structural_hunks(
+                hs,
+                crate::notebox_package::is_notebox_import_line,
+            )
+        };
+        let incoming_created = last_sync.trim().is_empty() && !head.trim().is_empty();
+        let local_created = head.trim().is_empty() && !working.trim().is_empty();
+        SyncNoteDiff {
+            // A wholly-new note is reported via its *_created flag, not as a
+            // whole-file "added" hunk (whose preview would be the import line).
+            incoming: if incoming_created {
+                Vec::new()
+            } else {
+                filt(crate::git::sync_review::diff_hunks(&last_sync, &head))
+            },
+            local: if local_created {
+                Vec::new()
+            } else {
+                filt(crate::git::sync_review::diff_hunks(&head, &working))
+            },
+            incoming_created,
+            local_created,
+        }
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("sync-diff task failed: {e}")))?;
-    Ok(SyncNoteDiff { hunks })
+    Ok(diff)
+}
+
+/// Read a note's text at the current HEAD commit. Empty when HEAD has no such
+/// note (a brand-new, not-yet-committed file) or the branch is unborn.
+async fn read_head_text(root: &Path, rel: &Path) -> Result<String> {
+    let root = root.to_path_buf();
+    let rel = rel.to_path_buf();
+    tokio::task::spawn_blocking(move || -> Result<String> {
+        let backend = GitBackend::open(&root)?;
+        let head = match backend.current_head()? {
+            Some((_, oid)) => oid,
+            None => return Ok(String::new()),
+        };
+        Ok(backend
+            .read_blob_at(head, &rel)?
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("head-read task failed: {e}")))?
 }
 
 /// Read a note's text at the pre-sync baseline. Empty string when nothing has
@@ -1327,8 +1524,9 @@ pub async fn git_revert_note_since_sync(
 
 // ─────────────────────────── Identity & review session ─────────────────────
 
-/// Set the commit identity for *this* notebox's remote. Stored per-installation
-/// keyed by the remote URL (see [`crate::git::auth`]); never enters the repo.
+/// Set the commit identity for *this* notebox. Stored per-notebox in the
+/// gitignored `local.json` (never enters the repo, never travels), so two clones
+/// of one repo on a machine can commit as different people.
 #[tauri::command]
 pub async fn git_set_identity(
     name: String,
@@ -1337,12 +1535,25 @@ pub async fn git_set_identity(
     window: tauri::WebviewWindow,
 ) -> Result<()> {
     let session = state.session(window.label()).await;
-    let git = require_collaborative(&session).await?;
-    auth::set_identity_for_remote(&git.remote, GitIdentity { name, email })
+    let root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    let id = GitIdentity { name, email };
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut local = crate::notebox_settings::load_local_state(&root);
+        local.git_identity = id.is_complete().then_some(id);
+        crate::notebox_settings::save_local_state(&root, &local)
+    })
+    .await
+    .map_err(|e| InkyCapError::Git(format!("set-identity task failed: {e}")))?
 }
 
-/// The commit identity configured for this notebox's remote, if any (for the
-/// setup UI to display / seed).
+/// The commit identity configured for this notebox, if any (for the setup UI to
+/// display / seed). Per-notebox (local.json), with the legacy per-remote store
+/// as a fallback for noteboxes set up before the move.
 #[tauri::command]
 pub async fn git_get_identity(
     state: State<'_, AppState>,
@@ -1350,7 +1561,15 @@ pub async fn git_get_identity(
 ) -> Result<Option<GitIdentity>> {
     let session = state.session(window.label()).await;
     let git = require_collaborative(&session).await?;
-    Ok(auth::identity_for_remote(&git.remote))
+    let root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+    Ok(tokio::task::spawn_blocking(move || resolved_local_identity(&root, &git.remote))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))?)
 }
 
 /// The commit identity InkyCap **would** stamp on this notebox's commits, for
@@ -1375,12 +1594,11 @@ pub async fn git_default_commit_identity(
         .map(|g| g.remote.clone());
 
     tokio::task::spawn_blocking(move || -> Result<Option<GitIdentity>> {
-        // 1. The identity already chosen for this remote, if complete.
-        if let Some(remote) = &remote {
-            if let Some(id) = auth::identity_for_remote(remote) {
-                if id.is_complete() {
-                    return Ok(Some(id));
-                }
+        // 1. The identity already chosen for this notebox (local.json, with the
+        //    legacy per-remote store as a fallback), if complete.
+        if let Some(root) = &root {
+            if let Some(id) = resolved_local_identity(root, remote.as_deref().unwrap_or("")) {
+                return Ok(Some(id));
             }
         }
         // 2. The git-config identity InkyCap falls back to — from the repo's
@@ -1464,6 +1682,7 @@ pub async fn git_export_package(
         ));
     }
     let password = password.filter(|p| !p.is_empty());
+    let remote = git.remote.clone();
 
     let (path, summary, vendor) = tokio::task::spawn_blocking(
         move || -> Result<(PathBuf, package::PackageSummary, package_vendor::VendorReport)> {
@@ -1480,7 +1699,8 @@ pub async fn git_export_package(
             // Commit my working edits, if any, so the package is current.
             let backend = GitBackend::open(&root)?;
             if backend.status_summary()?.dirty {
-                let sig = backend.author_signature(&git.remote)?;
+                let identity = resolved_local_identity(&root, &remote);
+                let sig = backend.author_signature(identity.as_ref())?;
                 backend.stage_all()?;
                 backend.commit(LOCAL_EDITS_MESSAGE, &sig)?;
             }
@@ -1524,7 +1744,7 @@ pub async fn git_import_package(
         return Err(InkyCapError::BadRequest("package file is required".into()));
     }
     let password = password.filter(|p| !p.is_empty());
-    let _ = app_handle.emit("notebox:git-fetch-started", ());
+    emit_git(&app_handle, window.label(), "notebox:git-fetch-started", ());
 
     let result = tokio::task::spawn_blocking(move || -> Result<SyncOutcome> {
         let staging = package::extract_to_temp(&archive_path, password.as_deref())?;
@@ -1558,7 +1778,7 @@ pub async fn git_import_package(
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("import task failed: {e}")))?;
-    emit_sync_events(&app_handle, &result);
+    emit_sync_events(&app_handle, window.label(), &result);
     result
 }
 
@@ -1652,7 +1872,7 @@ pub async fn git_setup_package_handoff(
     let setup_root = root.clone();
     let setup_branch = branch.clone();
     let result = tokio::task::spawn_blocking(move || {
-        apply_setup(&setup_root, "", &setup_branch, None, identity)
+        apply_setup(&setup_root, "", &setup_branch, None, None, identity)
     })
     .await
     .map_err(|e| InkyCapError::Git(format!("setup task failed: {e}")))??;
@@ -1789,7 +2009,7 @@ mod tests {
         let a = GitBackend::open(&apath).unwrap();
         std::fs::write(apath.join("n.typ"), "base\n").unwrap();
         a.stage_paths(&[PathBuf::from("n.typ")]).unwrap();
-        let asig = a.author_signature(url).unwrap();
+        let asig = a.author_signature(None).unwrap();
         a.commit("base", &asig).unwrap();
         let branch = a.current_head().unwrap().unwrap().0;
         a.push("origin", &branch).unwrap();
@@ -1803,7 +2023,7 @@ mod tests {
             let g = GitBackend::open(&p).unwrap();
             std::fs::write(p.join("n.typ"), content).unwrap();
             g.stage_paths(&[PathBuf::from("n.typ")]).unwrap();
-            let s = g.author_signature(url).unwrap();
+            let s = g.author_signature(None).unwrap();
             g.commit("edit", &s).unwrap();
             (d, p, g)
         };
@@ -1829,7 +2049,7 @@ mod tests {
         assert!(!GitBackend::is_repo(root));
 
         let url = "https://example.com/owner/repo.git";
-        let result = apply_setup(root, url, "main", None, None).unwrap();
+        let result = apply_setup(root, url, "main", None, None, None).unwrap();
         assert!(result.initialized, "a non-repo should be git-init'd");
 
         // It is now a repo, has the managed .gitignore, and origin points at url.
@@ -1840,7 +2060,7 @@ mod tests {
         assert_eq!(backend.remote_url(REMOTE_NAME).as_deref(), Some(url));
 
         // Re-running adopts the existing repo (no second init) and is idempotent.
-        let again = apply_setup(root, url, "main", None, None).unwrap();
+        let again = apply_setup(root, url, "main", None, None, None).unwrap();
         assert!(
             !again.initialized,
             "an existing repo is adopted, not re-init'd"
@@ -1864,13 +2084,13 @@ mod tests {
         // A plain notebox folder — set up adopts/inits it (no clone).
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        apply_setup(root, url, "main", None, None).unwrap();
+        apply_setup(root, url, "main", None, None, None).unwrap();
         set_git_identity(root);
         let backend = GitBackend::open(root).unwrap();
 
         std::fs::write(root.join("note.typ"), "hello\n").unwrap();
         backend.stage_all().unwrap();
-        let sig = backend.author_signature(url).unwrap();
+        let sig = backend.author_signature(None).unwrap();
         backend.commit("init", &sig).unwrap();
 
         // The first commit is on `main`, not `master`.
@@ -1908,7 +2128,7 @@ mod tests {
         // Publish step 1: working tree is dirty → stage all + commit.
         assert!(a.status_summary().unwrap().dirty);
         a.stage_all().unwrap();
-        let sig = a.author_signature(url).unwrap();
+        let sig = a.author_signature(None).unwrap();
         a.commit("Update notes", &sig).unwrap();
         assert!(!a.status_summary().unwrap().dirty, "clean after commit");
 
@@ -1989,14 +2209,14 @@ mod tests {
             std::fs::write(apath.join(name), content).unwrap();
         }
         a.stage_all().unwrap();
-        a.commit("base", &a.author_signature(url).unwrap()).unwrap();
+        a.commit("base", &a.author_signature(None).unwrap()).unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
     fn commit_push(a: &GitBackend, apath: &Path, url: &str, file: &str, content: &str) {
         std::fs::write(apath.join(file), content).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(url).unwrap())
+        a.commit("a-edit", &a.author_signature(None).unwrap())
             .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
@@ -2153,7 +2373,7 @@ mod tests {
         std::fs::write(apath.join("n.typ"), "n\n").unwrap();
         a.ensure_initial_branch("main").unwrap();
         a.stage_all().unwrap();
-        a.commit("base", &a.author_signature(url).unwrap()).unwrap();
+        a.commit("base", &a.author_signature(None).unwrap()).unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
@@ -2174,7 +2394,7 @@ mod tests {
         // A changes key b and pushes; B changes key a (uncommitted).
         std::fs::write(ap.join(".inkycap/settings.json"), r#"{"a":1,"b":9}"#).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(&url).unwrap())
+        a.commit("a-edit", &a.author_signature(None).unwrap())
             .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
         std::fs::write(bp.join(".inkycap/settings.json"), r#"{"a":5,"b":2}"#).unwrap();
@@ -2204,7 +2424,7 @@ mod tests {
 
         std::fs::write(ap.join(".inkycap/settings.json"), r#"{"view":"live"}"#).unwrap();
         a.stage_all().unwrap();
-        a.commit("a-edit", &a.author_signature(&url).unwrap())
+        a.commit("a-edit", &a.author_signature(None).unwrap())
             .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
         std::fs::write(bp.join(".inkycap/settings.json"), r#"{"view":"reading"}"#).unwrap();
@@ -2242,7 +2462,7 @@ mod tests {
             remote: String::new(),
             branch: "main".into(),
         };
-        let sig = backend.author_signature("").unwrap();
+        let sig = backend.author_signature(None).unwrap();
 
         std::fs::write(root.join("n.typ"), "one\n").unwrap();
         backend.stage_all().unwrap();

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::errors::Result;
+use crate::git::auth::GitIdentity;
 
 /// File and link settings whose meaning depends on a specific notebox's
 /// folder layout. The user-global workflow toggles (link auto-update,
@@ -145,6 +146,21 @@ pub struct NoteboxLocalState {
     /// in the Changes pane (the user can revert any of them). Replaced wholesale
     /// on each sync; per-machine, never travels.
     pub last_sync_conflicted: Vec<String>,
+    /// Git collaboration config for this notebox on *this machine*. `None` ⇒ the
+    /// notebox is not collaborative here. The remote address and branch are
+    /// per-clone connection details (git already records the remote in
+    /// `.git/config`), and deciding to collaborate is a per-machine choice — so,
+    /// like the other fields here, this is gitignored and never travels. Keeping
+    /// it out of the shared `settings.json` is what stops "set up collaboration"
+    /// from showing up as a change to send back to collaborators. See
+    /// [`NoteboxGitConfig`].
+    pub git: Option<NoteboxGitConfig>,
+    /// The commit-author name + email stamped on this notebox's changes, on
+    /// *this machine*. Per-notebox (not keyed by remote) so two clones of the
+    /// same repo — e.g. simulating two collaborators on one machine — can commit
+    /// under different identities. Falls back to git config when `None`. Never
+    /// travels (gitignored); a secret it is not, but it is a per-user choice.
+    pub git_identity: Option<GitIdentity>,
 }
 
 /// Journal Scroll settings. Entirely per-notebox: each notebox has its own
@@ -207,7 +223,11 @@ pub struct NoteboxSettings {
     pub journal_scroll: JournalScrollSettings,
     pub citations: NoteboxCitationSettings,
     /// Git collaboration config. `None` ⇒ the notebox is not collaborative.
-    /// Notebox-shared (travels): see [`NoteboxGitConfig`].
+    /// Presented here as part of the single merged settings object the app
+    /// works with, but **persisted to the per-machine `local.json`**, not the
+    /// shared `settings.json` — it is per-clone connection state that must not
+    /// travel through git. See [`NoteboxLocalState::git`] and the persistence
+    /// notes below.
     pub git: Option<NoteboxGitConfig>,
 }
 
@@ -262,7 +282,14 @@ pub fn load_settings(notebox_root: &Path) -> NoteboxSettings {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     // Overlay per-machine state from the gitignored local file.
-    settings.startup.last_active_file = load_local_state(notebox_root).last_active_file;
+    let local = load_local_state(notebox_root);
+    settings.startup.last_active_file = local.last_active_file;
+    // Git config now lives per-machine in local.json. Prefer it; fall back to a
+    // legacy value still embedded in settings.json (older noteboxes), which
+    // `migrate_git_config` / the next save moves to local.json.
+    if local.git.is_some() {
+        settings.git = local.git;
+    }
     settings
 }
 
@@ -272,16 +299,18 @@ pub fn load_settings(notebox_root: &Path) -> NoteboxSettings {
 /// `null` so device-specific cursor state never travels through git.
 pub fn save_settings(notebox_root: &Path, settings: &NoteboxSettings) -> Result<()> {
     // 1. Per-machine state → local.json. Load-merge so other per-machine fields
-    //    (e.g. `review_incoming`) that aren't part of `NoteboxSettings` survive
-    //    a settings save instead of being reset to default.
+    //    (e.g. `last_shared_oid`, `last_sync_oid`) that aren't part of
+    //    `NoteboxSettings` survive a settings save instead of being reset.
     let mut local = load_local_state(notebox_root);
     local.last_active_file = settings.startup.last_active_file.clone();
+    local.git = settings.git.clone();
     save_local_state(notebox_root, &local)?;
 
-    // 2. Shared state → settings.json, with the per-machine field blanked so
-    //    it is never committed.
+    // 2. Shared state → settings.json, with the per-machine fields blanked so
+    //    they never get committed and travel to collaborators.
     let mut shared = settings.clone();
     shared.startup.last_active_file = None;
+    shared.git = None;
 
     let path = settings_path(notebox_root);
     if let Some(parent) = path.parent() {
@@ -290,6 +319,33 @@ pub fn save_settings(notebox_root: &Path, settings: &NoteboxSettings) -> Result<
     let json = serde_json::to_string_pretty(&shared)?;
     std::fs::write(&path, json)?;
     Ok(())
+}
+
+/// One-time migration for noteboxes created before the git collaboration config
+/// moved out of the shared `settings.json` into the per-machine `local.json`.
+///
+/// If `settings.json` still carries a non-null `git` block, move it to
+/// `local.json` and rewrite `settings.json` without it — so it stops travelling
+/// to collaborators and stops showing up as a perpetual "change to share". A
+/// no-op once migrated (or when there was never a git block), so it is safe to
+/// call on every notebox open.
+pub fn migrate_git_config(notebox_root: &Path) -> Result<()> {
+    let raw = match std::fs::read_to_string(settings_path(notebox_root)) {
+        Ok(s) => s,
+        Err(_) => return Ok(()), // no settings file yet → nothing to migrate
+    };
+    let has_git_block = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| v.get("git").cloned())
+        .is_some_and(|g| !g.is_null());
+    if !has_git_block {
+        return Ok(());
+    }
+    // load_settings overlays the git block (preferring local.json, else the
+    // legacy settings.json value); save_settings then routes it to local.json
+    // and blanks it from settings.json.
+    let settings = load_settings(notebox_root);
+    save_settings(notebox_root, &settings)
 }
 
 #[cfg(test)]
@@ -358,5 +414,65 @@ mod tests {
         let root = dir.path();
         save_settings(root, &NoteboxSettings::default()).unwrap();
         assert!(load_settings(root).git.is_none());
+    }
+
+    /// The git connection config must never reach the committed `settings.json`
+    /// — it is per-clone state and lives only in the gitignored `local.json`.
+    /// This is what stops "set up collaboration" from showing as a change to
+    /// send back to collaborators.
+    #[test]
+    fn git_config_is_not_written_to_shared_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let mut settings = NoteboxSettings::default();
+        settings.git = Some(NoteboxGitConfig {
+            remote: "https://codeberg.org/athena-otlet/notes".to_string(),
+            branch: "main".to_string(),
+        });
+        save_settings(root, &settings).unwrap();
+
+        let shared = std::fs::read_to_string(settings_path(root)).unwrap();
+        assert!(
+            !shared.contains("athena-otlet"),
+            "git remote leaked into the shared, committed settings.json"
+        );
+        let local = std::fs::read_to_string(local_state_path(root)).unwrap();
+        assert!(
+            local.contains("athena-otlet"),
+            "git remote missing from the per-machine local.json"
+        );
+    }
+
+    /// A legacy notebox with `git` still embedded in `settings.json` migrates:
+    /// the block moves to `local.json` and is stripped from the shared file,
+    /// while the merged view the app sees is unchanged.
+    #[test]
+    fn migrate_moves_legacy_git_block_to_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".inkycap")).unwrap();
+        // Hand-write a legacy settings.json carrying the git block.
+        std::fs::write(
+            settings_path(root),
+            r#"{"git":{"remote":"https://codeberg.org/athena-otlet/notes","branch":"main"}}"#,
+        )
+        .unwrap();
+
+        migrate_git_config(root).unwrap();
+
+        let shared = std::fs::read_to_string(settings_path(root)).unwrap();
+        assert!(!shared.contains("athena-otlet"), "legacy git block not stripped");
+        let local = std::fs::read_to_string(local_state_path(root)).unwrap();
+        assert!(local.contains("athena-otlet"), "git block not migrated to local.json");
+        // The merged view still reports the config.
+        assert_eq!(
+            load_settings(root).git.expect("git config preserved").remote,
+            "https://codeberg.org/athena-otlet/notes"
+        );
+
+        // Idempotent: a second run is a no-op (settings.json already clean).
+        migrate_git_config(root).unwrap();
+        assert!(!std::fs::read_to_string(settings_path(root)).unwrap().contains("athena-otlet"));
     }
 }

@@ -34,7 +34,7 @@ import {
 import { promptConfirm } from "../stores/prompt";
 import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
-import type { GitSyncHunk } from "../lib/types";
+import type { GitSyncHunk, GitSyncNoteDiff } from "../lib/types";
 import NoteHistory from "./NoteHistory";
 import { useI18n } from "../lib/i18n";
 
@@ -86,26 +86,37 @@ function preview(text: string): string {
  *  manual `#annotation`/`#suggestion` author tools listed below it. */
 const IncomingChanges: Component<{ path: string | null }> = (props) => {
   const t = useI18n();
-  const [hunks, setHunks] = createSignal<GitSyncHunk[]>([]);
+  const [diff, setDiff] = createSignal<GitSyncNoteDiff | null>(null);
 
   // Refetch the per-note diff when the note changes, when this pane mounts, and
   // whenever the working tree moved (an edit or a revert bumps the store's
-  // sync-review version) so the list of incoming hunks stays current.
+  // sync-review version) so the two change lists stay current.
   createEffect(() => {
     syncReviewVersion(); // dependency: refetch after edits / reverts / syncs
     const path = props.path;
     if (!path || !collaborative()) {
-      setHunks([]);
+      setDiff(null);
       return;
     }
     void ipc
       .gitNoteSyncDiff(path)
-      .then((d) => setHunks(d.hunks))
+      .then((d) => setDiff(d))
       .catch((err) => {
         console.error("git note sync-diff failed:", err);
-        setHunks([]);
+        setDiff(null);
       });
   });
+
+  const incoming = () => diff()?.incoming ?? [];
+  const local = () => diff()?.local ?? [];
+  const incomingCreated = () => diff()?.incomingCreated ?? false;
+  const localCreated = () => diff()?.localCreated ?? false;
+  const hasIncoming = () => incoming().length > 0 || incomingCreated();
+  const hasLocal = () => local().length > 0 || localCreated();
+  const noteName = () => {
+    const p = props.path;
+    return p ? p.split("/").pop() ?? p : "";
+  };
 
   /** Revert the whole note to its pre-sync baseline, with a confirm — this
    *  discards every incoming change at once (unlike the per-hunk reverts, which
@@ -115,9 +126,9 @@ const IncomingChanges: Component<{ path: string | null }> = (props) => {
     const path = props.path;
     if (!path) return;
     const name = path.split("/").pop() ?? path;
-    const wasAdded = changesSinceSync().some(
-      (e) => pathEquals(e.path, path) && e.status === "added",
-    );
+    const wasAdded =
+      incomingCreated() ||
+      changesSinceSync().some((e) => pathEquals(e.path, path) && e.status === "added");
     const ok = await promptConfirm({
       title: t("git.sinceSync.revertConfirmTitle"),
       message: wasAdded
@@ -142,77 +153,145 @@ const IncomingChanges: Component<{ path: string | null }> = (props) => {
     view.focus();
   }
 
-  return (
-    <Show when={hunks().length > 0}>
-      <div class="annotations-panel__incoming">
-        <div class="annotations-panel__incoming-header">
-          <span class="annotations-panel__list-heading">
-            {t("annotations.incoming.heading")}
+  /** One change row. `revertable` adds the per-hunk revert button (incoming
+   *  changes only — local edits are your own work, managed by editing). */
+  function hunkRow(h: GitSyncHunk, revertable: boolean) {
+    const kind = hunkKind(h);
+    const tone = kind === "added" ? "insert" : kind === "removed" ? "delete" : "replace";
+    return (
+      <div
+        class="sidebar-item annotations-panel__item"
+        onClick={() => reveal(h)}
+        title={t("annotations.incoming.reveal")}
+      >
+        <span class={`sidebar-item__icon annotations-panel__icon--${tone}`}>
+          {kind === "added" ? <Plus size={14} /> : kind === "removed" ? <Minus size={14} /> : <Replace size={14} />}
+        </span>
+        <span class="annotations-panel__body">
+          <span class="annotations-panel__primary">
+            <span class="sidebar-item__label">
+              {kind === "added"
+                ? preview(h.currentText)
+                : kind === "removed"
+                  ? preview(h.baselineText)
+                  : `${preview(h.baselineText)} → ${preview(h.currentText)}`}
+            </span>
+            <span class={`annotations-panel__badge annotations-panel__badge--${tone}`}>
+              {t(`annotations.incoming.kind.${kind}`)}
+            </span>
           </span>
+        </span>
+        <Show when={revertable}>
           <button
-            class="annotations-panel__incoming-revert-all"
-            title={t("annotations.incoming.revertNote")}
-            aria-label={t("annotations.incoming.revertNote")}
-            onClick={() => void revertWholeNote()}
-          >
-            <RotateCcw size={12} /> {t("annotations.incoming.revertAll")}
-          </button>
-        </div>
-        <div class="annotations-panel__list">
-          <For each={hunks()}>
-            {(h) => {
-              const kind = hunkKind(h);
-              return (
-                <div
-                  class="sidebar-item annotations-panel__item"
-                  onClick={() => reveal(h)}
-                  title={t("annotations.incoming.reveal")}
-                >
-                  <span class={`sidebar-item__icon annotations-panel__icon--${kind === "added" ? "insert" : kind === "removed" ? "delete" : "replace"}`}>
-                    {kind === "added" ? <Plus size={14} /> : kind === "removed" ? <Minus size={14} /> : <Replace size={14} />}
-                  </span>
-                  <span class="annotations-panel__body">
-                    <span class="annotations-panel__primary">
-                      <span class="sidebar-item__label">
-                        {kind === "added"
-                          ? preview(h.currentText)
-                          : kind === "removed"
-                            ? preview(h.baselineText)
-                            : `${preview(h.baselineText)} → ${preview(h.currentText)}`}
-                      </span>
-                      <span class={`annotations-panel__badge annotations-panel__badge--${kind === "added" ? "insert" : kind === "removed" ? "delete" : "replace"}`}>
-                        {t(`annotations.incoming.kind.${kind}`)}
-                      </span>
-                    </span>
-                  </span>
-                  <button
-                    class="annotations-panel__revert"
-                    title={t("annotations.incoming.revert")}
-                    aria-label={t("annotations.incoming.revert")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      props.path && void revertSyncHunk(props.path, h.currentStart, h.currentEnd);
-                    }}
-                  >
-                    <RotateCcw size={13} />
-                  </button>
-                </div>
-              );
+            class="annotations-panel__revert"
+            title={t("annotations.incoming.revert")}
+            aria-label={t("annotations.incoming.revert")}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.path && void revertSyncHunk(props.path, h.currentStart, h.currentEnd);
             }}
-          </For>
-        </div>
+          >
+            <RotateCcw size={13} />
+          </button>
+        </Show>
+      </div>
+    );
+  }
+
+  /** A "whole note was created/added" status row, shown instead of a noisy
+   *  whole-file "added" hunk (whose first line is the import preamble). */
+  function createdRow(label: string) {
+    return (
+      <div class="sidebar-item annotations-panel__item" title={label}>
+        <span class="sidebar-item__icon annotations-panel__icon--insert">
+          <Plus size={14} />
+        </span>
+        <span class="annotations-panel__body">
+          <span class="annotations-panel__primary">
+            <span class="sidebar-item__label">{label}</span>
+            <span class="annotations-panel__badge annotations-panel__badge--insert">
+              {t("annotations.incoming.kind.added")}
+            </span>
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <Show when={hasIncoming() || hasLocal()}>
+      <div class="annotations-panel__incoming">
+        {/* Incoming: what the last sync folded in — reviewable + revertable. */}
+        <Show when={hasIncoming()}>
+          <div class="annotations-panel__incoming-header">
+            <span class="annotations-panel__list-heading">
+              {t("annotations.incoming.heading")}
+            </span>
+            <button
+              class="annotations-panel__incoming-revert-all"
+              title={t("annotations.incoming.revertNote")}
+              aria-label={t("annotations.incoming.revertNote")}
+              onClick={() => void revertWholeNote()}
+            >
+              <RotateCcw size={12} /> {t("annotations.incoming.revertAll")}
+            </button>
+          </div>
+          <div class="annotations-panel__list">
+            <Show when={incomingCreated()}>
+              {createdRow(t("annotations.incoming.created", { name: noteName() }))}
+            </Show>
+            <For each={incoming()}>{(h) => hunkRow(h, true)}</For>
+          </div>
+        </Show>
+
+        {/* Local activity: your own uncommitted edits since the sync —
+            informational, so these rows have no revert button. */}
+        <Show when={hasLocal()}>
+          <div class="annotations-panel__incoming-header">
+            <span class="annotations-panel__list-heading">
+              {t("annotations.local.heading")}
+            </span>
+          </div>
+          <div class="annotations-panel__list">
+            <Show when={localCreated()}>
+              {createdRow(t("annotations.local.created", { name: noteName() }))}
+            </Show>
+            <For each={local()}>{(h) => hunkRow(h, false)}</For>
+          </div>
+        </Show>
       </div>
     </Show>
   );
 };
 
+/** Which half of the Changes & History pane is showing. Persisted as a UI
+ *  preference (module-level + localStorage) so it survives note/tab switches and
+ *  app restarts rather than snapping back to "Changes" each time the pane
+ *  remounts. */
+const VIEW_STORAGE_KEY = "inkycap.annotationsPanel.view";
+function loadPanelView(): "changes" | "history" {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === "history" ? "history" : "changes";
+  } catch {
+    return "changes";
+  }
+}
+const [panelView, setPanelViewInternal] = createSignal<"changes" | "history">(loadPanelView());
+function setPanelView(v: "changes" | "history") {
+  setPanelViewInternal(v);
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, v);
+  } catch {
+    /* no-op: localStorage may be unavailable in some webview contexts */
+  }
+}
+
 const AnnotationsPanel: Component = () => {
   const t = useI18n();
   const kindLabel = (kind: AnnotationKind): string => t(`annotations.kind.${kind}`);
   const [filter, setFilter] = createSignal("");
-  // Which half of the pane is showing: live "Changes" (annotations + tracked
-  // changes, the default) or the note's "History" (past versions from git).
-  const [view, setView] = createSignal<"changes" | "history">("changes");
+  const view = panelView;
+  const setView = setPanelView;
   // The open note's path, for the History view. Null when the active tab isn't
   // a file note (the pane only renders for a file tab, so this is defensive).
   const notePath = createMemo(() => {

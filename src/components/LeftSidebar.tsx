@@ -40,7 +40,7 @@ import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
 import { settings } from "../stores/settings";
-import { noteboxInfo, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
+import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
   isEnabled as isScrollEnabled,
@@ -1896,7 +1896,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         </Show>
 
         <Show when={mode() === "collaboration"}>
-          <GitCollaborationPanel />
+          {/* Remount on notebox switch so the setup/manage forms (which seed
+              their fields from the notebox's git config + identity at mount)
+              re-seed from the current notebox. Keyed on `noteboxUiKey`, which
+              bumps *after* the new notebox's settings load — keying on the path
+              would remount against the previous notebox's still-loaded settings. */}
+          <Show when={`nb-${noteboxUiKey()}`} keyed>
+            {(_key: string) => <GitCollaborationPanel />}
+          </Show>
         </Show>
 
         <Show when={mode() === "help"}>

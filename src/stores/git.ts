@@ -67,11 +67,32 @@ const [incomingCount, setIncomingCount] = createSignal(0);
  *  with it already expanded. Reset (collapsed) on a notebox switch. */
 const [manageOpen, setManageOpen] = createSignal(false);
 /** Whether the "Import/export changes" / "Sync changes" action section is
- *  expanded. Collapsed by default and auto-collapsed by the store once a gesture
- *  completes (sync / export / import / finalize / discard), so the panel returns
- *  to the calm status + digest view. Lifted to the store so those gesture
- *  actions can fold it back. Reset (collapsed) on a notebox switch. */
-const [actionsOpen, setActionsOpen] = createSignal(false);
+ *  expanded. This is a UI *preference* — how the user likes the panel laid out,
+ *  not per-notebox state — so it is **expanded by default** and the user's choice
+ *  persists across notebox switches and app restarts (localStorage). Because the
+ *  preference is now remembered, a completed gesture no longer folds the section
+ *  shut against the user's wish (the old auto-collapse behaviour is gone). */
+const ACTIONS_OPEN_KEY = "inkycap.git.actionsOpen";
+function loadActionsOpen(): boolean {
+  try {
+    const raw = localStorage.getItem(ACTIONS_OPEN_KEY);
+    return raw === null ? true : raw === "true";
+  } catch {
+    return true;
+  }
+}
+const [actionsOpen, setActionsOpenInternal] = createSignal(loadActionsOpen());
+const setActionsOpen = (v: boolean | ((prev: boolean) => boolean)): void => {
+  setActionsOpenInternal((prev) => {
+    const next = typeof v === "function" ? v(prev) : v;
+    try {
+      localStorage.setItem(ACTIONS_OPEN_KEY, String(next));
+    } catch {
+      /* no-op: localStorage may be unavailable in some webview contexts */
+    }
+    return next;
+  });
+};
 /** Per-machine "bundle Typst packages on share" preference for the open
  *  notebox (off by default). When on, Sync push and package export first
  *  vendor the notebox's packages into it. Loaded on open. */
@@ -115,6 +136,15 @@ export async function refreshUnresolved(): Promise<void> {
  *  changes (a revert drops the note's hunks, so the list self-clears). */
 const [changesSinceSync, setChangesSinceSync] = createSignal<GitSinceSyncEntry[]>([]);
 export { changesSinceSync };
+
+/** The commit-author name InkyCap stamps on this notebox's changes (the
+ *  per-remote identity, else git config). Cached on notebox open so editor
+ *  extensions can attribute freshly-authored `#suggestion`/`#annotation` markup
+ *  (`by:`) synchronously — which also lets the backend exclude the user's own
+ *  suggestions from their "Changes to resolve" list. Empty when not collaborative
+ *  or no identity is set. */
+const [commitAuthorName, setCommitAuthorName] = createSignal("");
+export { commitAuthorName };
 
 /** Bumped whenever the changes-since-sync list is re-queried (notebox open, a
  *  pull, or a debounced working-tree change). The per-note incoming-diff view in
@@ -270,16 +300,21 @@ export async function resetGitOnOpen(): Promise<void> {
   setReconnectable(null);
   setIncomingCount(0);
   setManageOpen(false);
-  setActionsOpen(false);
+  // actionsOpen is a persisted UI preference, not per-notebox state — leave it.
   setBundlePackagesSignal(false);
   setUnresolvedFiles([]);
   setChangesSinceSync([]);
+  setCommitAuthorName("");
   if (collaborative()) {
     await refreshStatus();
     void refreshUnresolved();
     void refreshChangesSinceSync();
     // Load the per-machine bundle-packages preference for this notebox.
     setBundlePackagesSignal(await ipc.gitGetBundlePackages().catch(() => false));
+    // Cache the commit-author name so the editor can attribute new suggestions.
+    void getDefaultIdentity()
+      .then((id) => setCommitAuthorName(id?.name ?? ""))
+      .catch(() => setCommitAuthorName(""));
   }
 }
 
@@ -308,7 +343,8 @@ export async function setupCollaboration(args: {
   branch?: string;
   identityName?: string;
   identityEmail?: string;
-  httpsToken?: string;
+  username?: string;
+  password?: string;
 }): Promise<void> {
   const result = await ipc.gitSetupCollaboration(args);
   await loadNoteboxSettings();
@@ -395,7 +431,6 @@ export async function sync(): Promise<void> {
     await awaitAllPendingWrites();
     const outcome = await ipc.gitSync();
     applyOutcome(outcome);
-    setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.syncFailed"), err);
@@ -456,7 +491,6 @@ export async function exportPackage(dest: string, password?: string): Promise<vo
         }),
       );
     }
-    setActionsOpen(false);
     // A dirty notebox was committed during export — refresh the status chip.
     await refreshStatus();
   } catch (err) {
@@ -476,18 +510,12 @@ export async function importPackage(archive: string, password?: string): Promise
     await awaitAllPendingWrites();
     const outcome = await ipc.gitImportPackage(archive, password);
     applyOutcome(outcome);
-    setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
     toastError(t("git.toast.importFailed"), err);
   } finally {
     setGitSyncing(false);
   }
-}
-
-/** Dismiss the post-sync digest (the non-blocking "what landed" summary). */
-export function dismissDigest(): void {
-  setSyncOutcome(null);
 }
 
 /** Toggle the per-machine "bundle Typst packages on share" preference. Enabling
@@ -515,9 +543,9 @@ export async function setBundlePackages(enabled: boolean): Promise<void> {
   }
 }
 
-/** Store an HTTPS token for the remote host (re-auth). Throws on failure. */
-export async function signIn(token: string): Promise<void> {
-  await ipc.gitSignIn(token);
+/** Save the username + password for the repository (re-auth). Throws on failure. */
+export async function signIn(username: string, password: string): Promise<void> {
+  await ipc.gitSignIn(username, password);
 }
 
 /** Stop collaborating; refresh settings so the toolbar button disappears. */

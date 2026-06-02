@@ -24,6 +24,14 @@ import { awaitAllPendingWrites } from "./editor-writes";
 import { ensureGitListeners, resetGitOnOpen } from "./git";
 
 const [noteboxInfo, setNoteboxInfo] = createSignal<NoteboxInfo | null>(null);
+/** Bumped once per notebox switch, *after* the new notebox's per-notebox stores
+ *  (settings, etc.) have loaded — so it's the safe key for remounting UI that
+ *  seeds editable state from those stores at mount (e.g. the collaboration
+ *  panel's setup/manage forms). Distinct from `noteboxInfo().path`, which
+ *  changes *before* settings load and would remount such UI against stale data.
+ *  Reactive UI that reads stores directly doesn't need this — it updates on its
+ *  own. */
+const [noteboxUiKey, setNoteboxUiKey] = createSignal(0);
 const [noteboxRegistry, setNoteboxRegistry] = createSignal<NoteboxRegistryEntry[]>([]);
 const [isLoading, setIsLoading] = createSignal(false);
 /**
@@ -325,6 +333,10 @@ export async function openNotebox(path: string) {
     // journal-scroll prefs, etc.). Awaited so subsequent components
     // render against the new notebox's settings, not the previous one.
     await loadNoteboxSettings();
+    // The new notebox's settings are now in their stores: bump the UI key so
+    // mount-snapshot components (the collaboration panel's forms) remount and
+    // re-seed from *this* notebox rather than keeping the previous one's values.
+    setNoteboxUiKey((v) => v + 1);
     // Reset the git collaboration review state for the new notebox and, if it
     // is collaborative, re-query its status. (The backend also emits
     // `notebox:git-status` on open, which keeps the summary fresh.)
@@ -445,4 +457,4 @@ export function assertNoteboxWritable(): void {
   }
 }
 
-export { noteboxInfo, noteboxRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion, noteboxLost, initAttempted };
+export { noteboxInfo, noteboxUiKey, noteboxRegistry, isLoading, indexReady, fileTreeVersion, propertyVersion, bumpPropertyVersion, noteboxLost, initAttempted };

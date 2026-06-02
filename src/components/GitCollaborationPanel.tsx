@@ -31,6 +31,7 @@ import {
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { homeDirDefault } from "../lib/dialog-defaults";
 import HelpButton from "./HelpButton";
+import LoadingDots from "./LoadingDots";
 import { noteboxSettings } from "../stores/settings";
 import {
   collaborative,
@@ -43,7 +44,6 @@ import {
   gitSyncing,
   sync,
   checkUpdates,
-  dismissDigest,
   refreshStatus,
   setupCollaboration,
   setupPackageHandoff,
@@ -62,10 +62,47 @@ import {
   changesSinceSync,
   revertNoteSinceSync,
 } from "../stores/git";
-import { openTab } from "../stores/tabs";
+import { openTab, getActiveTab } from "../stores/tabs";
 import { setRightCollapsed, setRightPanelTab } from "../stores/layout";
 import type { GitDigestEntry } from "../lib/types";
-import { gitChangesToShare } from "../lib/ipc";
+import { gitChangesToShare, gitSavedUsername } from "../lib/ipc";
+
+/** A remote address that uses SSH rather than HTTPS — anything not starting with
+ *  `http://` / `https://` (e.g. `ssh://git@host/…` or `git@host:owner/repo`).
+ *  Used to pre-select the "connect with SSH" option from an existing config. */
+function looksLikeSshRemote(remote: string): boolean {
+  const r = remote.trim();
+  return r !== "" && !/^https?:\/\//i.test(r);
+}
+
+/** Reduce any remote spelling to `host/owner/repo` (no scheme, user, or trailing
+ *  slash). Mirrors the backend's `normalize_remote`. */
+function remoteParts(url: string): string {
+  let s = url.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, ""); // drop scheme
+  s = s.replace(/^[^@/]*@/, ""); // drop user@
+  // scp-style `host:owner/repo` → `host/owner/repo` (only when the colon comes
+  // before any slash, i.e. it's the host/path separator, not a port in a URL).
+  const colon = s.indexOf(":");
+  const slash = s.indexOf("/");
+  if (colon !== -1 && (slash === -1 || colon < slash)) {
+    s = `${s.slice(0, colon)}/${s.slice(colon + 1)}`;
+  }
+  return s.replace(/\/+$/, "");
+}
+
+/** Rewrite a remote address to the other transport's scheme, so toggling
+ *  "Connect with SSH instead" keeps the address consistent with the chosen auth
+ *  method (libgit2 picks SSH vs HTTPS from the URL scheme, so a mismatched URL
+ *  would silently ignore the username/password — and the toggle would snap back
+ *  on reload). Empty/unparseable input is left as-is. */
+function toHttpsRemote(url: string): string {
+  const p = remoteParts(url);
+  return p ? `https://${p}` : url.trim();
+}
+function toSshRemote(url: string): string {
+  const p = remoteParts(url);
+  return p ? `ssh://git@${p}` : url.trim();
+}
 
 /** Truncate a JSON value to a short, single-line preview for a settings chip. */
 function fmtSettingValue(v: unknown): string {
@@ -135,21 +172,31 @@ const SetupForm: Component = () => {
   const existing = noteboxSettings.git;
   const [remote, setRemote] = createSignal(existing?.remote ?? "");
   const [branch, setBranch] = createSignal(existing?.branch ?? "main");
-  const [token, setToken] = createSignal("");
+  const [username, setUsername] = createSignal("");
+  const [password, setPassword] = createSignal("");
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   // Offline package handoff: collaborate with no git server (empty remote).
   // Pre-checked when re-initializing a notebox that was already package-mode.
   const [offline, setOffline] = createSignal(existing != null && existing.remote.trim() === "");
+  // Advanced: connect over SSH (using the computer's existing SSH keys) instead
+  // of a username + password. Pre-checked when the existing remote is an SSH URL.
+  const [useSsh, setUseSsh] = createSignal(looksLikeSshRemote(existing?.remote ?? ""));
 
-  // Pre-fill the identity from the one InkyCap would use (your git config), so
-  // the author isn't a mystery blank — edit it to use a different name here.
+  // Pre-fill the identity from the one InkyCap would use (your git config), and
+  // the saved sign-in username for this remote (if any), so neither is a mystery
+  // blank — edit them to use different values here.
   onMount(async () => {
     const id = await getDefaultIdentity();
     if (id) {
       if (!name().trim()) setName(id.name);
       if (!email().trim()) setEmail(id.email);
+    }
+    const r = remote().trim();
+    if (r) {
+      const saved = await gitSavedUsername(r).catch(() => null);
+      if (saved && !username().trim()) setUsername(saved);
     }
   });
 
@@ -172,7 +219,9 @@ const SetupForm: Component = () => {
           branch: branch().trim() || "main",
           identityName: name().trim() || undefined,
           identityEmail: email().trim() || undefined,
-          httpsToken: token().trim() || undefined,
+          // SSH authenticates with keys, not a username/password.
+          username: useSsh() ? undefined : username().trim() || undefined,
+          password: useSsh() ? undefined : password().trim() || undefined,
         });
       }
       showToast("success", t("git.setup.done"));
@@ -221,8 +270,10 @@ const SetupForm: Component = () => {
       </Show>
 
       {/* Offline package handoff: collaborate with no git server. Hides the
-          remote + token fields; sharing happens by exporting/importing a file. */}
-      <div class="git-panel__label-row">
+          repository + sign-in fields; sharing happens by exporting/importing a file. */}
+      <div class="git-panel__label-row git-panel__toggle-row">
+        <label class="settings__label">{t("git.setup.offlineLabel")}</label>
+        <HelpButton label={t("git.setup.offlineLabel")}>{t("git.setup.offlineHint")}</HelpButton>
         <label class="settings__toggle" title={t("git.setup.offlineHint")}>
           <input
             type="checkbox"
@@ -231,20 +282,52 @@ const SetupForm: Component = () => {
           />
           <span class="settings__toggle-slider" />
         </label>
-        <label class="settings__label">{t("git.setup.offlineLabel")}</label>
-        <HelpButton label={t("git.setup.offlineLabel")}>{t("git.setup.offlineHint")}</HelpButton>
       </div>
 
       <Show when={!offline()}>
-        <label class="settings__label" for="git-remote">{t("git.setup.remoteLabel")}</label>
+        <div class="git-panel__label-row">
+          <label class="settings__label" for="git-remote">
+            {useSsh() ? t("git.setup.remoteLabelSsh") : t("git.setup.remoteLabel")}
+          </label>
+          <HelpButton label={t("git.setup.remoteLabel")}>{t("git.setup.remoteHint")}</HelpButton>
+        </div>
         <input
           id="git-remote"
           class="settings__text-input"
           type="text"
-          placeholder={t("git.setup.remotePlaceholder")}
+          placeholder={useSsh() ? t("git.setup.remotePlaceholderSsh") : t("git.setup.remotePlaceholder")}
           value={remote()}
           onInput={(e) => setRemote(e.currentTarget.value)}
         />
+
+        {/* Primary path: username + password. Hidden when signing in with SSH,
+            which authenticates with the computer's SSH keys instead. */}
+        <Show when={!useSsh()}>
+          <label class="settings__label" for="git-username">{t("git.setup.usernameLabel")}</label>
+          <input
+            id="git-username"
+            class="settings__text-input"
+            type="text"
+            autocomplete="off"
+            placeholder={t("git.setup.usernamePlaceholder")}
+            value={username()}
+            onInput={(e) => setUsername(e.currentTarget.value)}
+          />
+
+          <div class="git-panel__label-row">
+            <label class="settings__label" for="git-password">{t("git.setup.passwordLabel")}</label>
+            <HelpButton label={t("git.setup.passwordLabel")}>{t("git.setup.passwordHint")}</HelpButton>
+          </div>
+          <input
+            id="git-password"
+            class="settings__text-input"
+            type="password"
+            autocomplete="off"
+            placeholder={t("git.setup.passwordPlaceholder")}
+            value={password()}
+            onInput={(e) => setPassword(e.currentTarget.value)}
+          />
+        </Show>
       </Show>
 
       <label class="settings__label" for="git-branch">{t("git.setup.branchLabel")}</label>
@@ -256,19 +339,28 @@ const SetupForm: Component = () => {
         onInput={(e) => setBranch(e.currentTarget.value)}
       />
 
+      {/* Advanced: SSH instead of username + password (for people who already
+          use SSH keys). Tucked below so the simple path leads. */}
       <Show when={!offline()}>
-        <div class="git-panel__label-row">
-          <label class="settings__label" for="git-token">{t("git.setup.tokenLabel")}</label>
-          <HelpButton label={t("git.setup.tokenLabel")}>{t("git.setup.tokenHint")}</HelpButton>
+        <div class="git-panel__label-row git-panel__toggle-row">
+          <label class="settings__label">{t("git.setup.sshLabel")}</label>
+          <HelpButton label={t("git.setup.sshLabel")}>{t("git.setup.sshHint")}</HelpButton>
+          <label class="settings__toggle" title={t("git.setup.sshHint")}>
+            <input
+              type="checkbox"
+              checked={useSsh()}
+              onChange={(e) => {
+                const ssh = e.currentTarget.checked;
+                setUseSsh(ssh);
+                // Keep the address scheme consistent with the chosen method, so
+                // the choice authenticates correctly and survives a reload.
+                const r = remote().trim();
+                if (r) setRemote(ssh ? toSshRemote(r) : toHttpsRemote(r));
+              }}
+            />
+            <span class="settings__toggle-slider" />
+          </label>
         </div>
-        <input
-          id="git-token"
-          class="settings__text-input"
-          type="password"
-          autocomplete="off"
-          value={token()}
-          onInput={(e) => setToken(e.currentTarget.value)}
-        />
       </Show>
 
       <label class="settings__label">{t("git.setup.identityLabel")}</label>
@@ -309,11 +401,11 @@ const SetupForm: Component = () => {
 
 const SyncView: Component = () => {
   const cfg = () => noteboxSettings.git;
-  // The action + config block (the gestures + the review toggle) is collapsed
-  // by default: the panel leads with the sync state and the "what merged"
-  // digest, with the mechanics one expand away. State lives in the store so a
-  // completed gesture (sync / export / import / finalize / discard) folds it
-  // back automatically. Same pattern in package and server modes.
+  // The action + config block (the gestures + the review toggle) is expanded by
+  // default so the Sync / Import / Export controls are reachable at a glance.
+  // Its open/closed state is a persisted UI preference (see `actionsOpen` in the
+  // store) that survives notebox switches and restarts. Same in package and
+  // server modes.
 
   /** Human-readable sync state line. Outgoing state is qualitative ("Changes to
    *  share") rather than a commit count — counts confuse (commits ≠ files) and,
@@ -372,7 +464,11 @@ const SyncView: Component = () => {
               <>
                 <div class="git-panel__actions">
                   <button class="git-panel__primary-btn" onClick={() => void sync()} disabled={gitSyncing()}>
-                    <RefreshCw size={13} /> {gitSyncing() ? t("git.actions.syncing") : t("git.actions.sync")}
+                    <RefreshCw size={13} />{" "}
+                    <Show when={gitSyncing()} fallback={t("git.actions.sync")}>
+                      {t("git.actions.syncingLabel")}
+                      <LoadingDots />
+                    </Show>
                   </button>
                   <button class="settings__detect-btn" onClick={() => void checkUpdates()} disabled={gitSyncing()}>
                     <DownloadCloud size={13} /> {t("git.actions.checkUpdates")}
@@ -416,7 +512,6 @@ const SyncView: Component = () => {
       <ChangesSinceSyncView />
       <UnresolvedView />
       <ChangesToShareView />
-      <DigestView />
 
       <ManageSection />
     </div>
@@ -429,6 +524,10 @@ const PackageActions: Component = () => {
   // One optional password, shared by export + import. Empty = no encryption.
   // The recipient must receive it out-of-band; it is never stored in a keychain.
   const [password, setPassword] = createSignal("");
+  // Which gesture is running, so only its button shows the animated working
+  // state (both share `gitSyncing`, which can't tell them apart). Parity with
+  // the server-mode Sync button's "Syncing…" indicator.
+  const [busy, setBusy] = createSignal<"import" | "export" | null>(null);
 
   async function doExport() {
     const dest = await save({
@@ -440,7 +539,12 @@ const PackageActions: Component = () => {
       filters: PACKAGE_FILTERS,
     });
     if (!dest) return;
-    await exportPackage(dest, password().trim() || undefined);
+    setBusy("export");
+    try {
+      await exportPackage(dest, password().trim() || undefined);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function doImport() {
@@ -451,7 +555,12 @@ const PackageActions: Component = () => {
       filters: PACKAGE_FILTERS,
     });
     if (typeof picked !== "string") return;
-    await importPackage(picked, password().trim() || undefined);
+    setBusy("import");
+    try {
+      await importPackage(picked, password().trim() || undefined);
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -475,10 +584,18 @@ const PackageActions: Component = () => {
 
       <div class="git-panel__actions">
         <button class="git-panel__primary-btn" onClick={() => void doImport()} disabled={gitSyncing()}>
-          <FolderDown size={13} /> {t("git.package.importAction")}
+          <FolderDown size={13} />{" "}
+          <Show when={busy() === "import"} fallback={t("git.package.importAction")}>
+            {t("git.package.importingLabel")}
+            <LoadingDots />
+          </Show>
         </button>
         <button class="git-panel__primary-btn" onClick={() => void doExport()} disabled={gitSyncing()}>
-          <FolderUp size={13} /> {t("git.package.exportAction")}
+          <FolderUp size={13} />{" "}
+          <Show when={busy() === "export"} fallback={t("git.package.exportAction")}>
+            {t("git.package.exportingLabel")}
+            <LoadingDots />
+          </Show>
         </button>
       </div>
     </>
@@ -494,14 +611,21 @@ const PackageActions: Component = () => {
  *  Changes pane) or revert the whole note back to their version. Take-theirs
  *  (conflicted) notes are flagged and sort first. Rendered most prominent so
  *  the riskiest incoming changes surface immediately after a sync. */
+/** Open a note for review and reveal its Changes pane. Reuses the active tab
+ *  only when it's an empty "New tab" — otherwise a new tab, so a note the user is
+ *  reading isn't clobbered. An already-open tab for the note is focused either
+ *  way (openTab's path-match shortcut). */
+function openNoteForReview(path: string, title: string) {
+  const reuseEmpty = getActiveTab()?.type === "empty";
+  openTab({ type: "file", title, path }, { forceNewTab: !reuseEmpty });
+  setRightCollapsed(false);
+  setRightPanelTab("annotations");
+}
+
 const ChangesSinceSyncView: Component = () => {
   function openForReview(entry: { path: string; relPath: string }) {
     const basename = entry.relPath.split("/").pop() ?? entry.relPath;
-    // Open the REAL note (absolute path) so the per-hunk Revert UI in the
-    // Changes pane takes over, landing the user where they review the changes.
-    openTab({ type: "file", title: basename, path: entry.path }, { forceNewTab: true });
-    setRightCollapsed(false);
-    setRightPanelTab("annotations");
+    openNoteForReview(entry.path, basename);
   }
 
   async function revertNote(entry: { path: string; relPath: string; status: string }) {
@@ -518,10 +642,22 @@ const ChangesSinceSyncView: Component = () => {
     if (ok) void revertNoteSinceSync(entry.path);
   }
 
+  // Author of the changes the most recent sync brought in, when known — folded
+  // in here (it used to live in a second, redundant "Changes merged from …"
+  // digest block) so there is a single place that reports what a sync changed.
+  const incomingAuthor = () => syncOutcome()?.incoming?.author_name;
+
   return (
     <Show when={changesSinceSync().length > 0}>
       <div class="git-panel__digest git-panel__unresolved">
-        <p class="git-panel__share-heading">{t("git.sinceSync.heading")}</p>
+        <p class="git-panel__share-heading">
+          <Show
+            when={incomingAuthor()}
+            fallback={t("git.sinceSync.heading")}
+          >
+            {(author) => t("git.sinceSync.headingFrom", { author: author() })}
+          </Show>
+        </p>
         <p class="sidebar-hint">
           {tPlural("git.sinceSync.count", changesSinceSync().length, {
             n: changesSinceSync().length,
@@ -583,13 +719,7 @@ const ChangesSinceSyncView: Component = () => {
 const UnresolvedView: Component = () => {
   function openForReview(entry: { path: string; relPath: string }) {
     const basename = entry.relPath.split("/").pop() ?? entry.relPath;
-    // Open the REAL note (absolute path) — not a staged copy — so it's fully
-    // editable and the existing per-suggestion accept/reject UI takes over.
-    openTab({ type: "file", title: basename, path: entry.path }, { forceNewTab: true });
-    // Reveal the Changes & History pane alongside it (same gesture as opening a
-    // staged review note), landing the user where they resolve the changes.
-    setRightCollapsed(false);
-    setRightPanelTab("annotations");
+    openNoteForReview(entry.path, basename);
   }
 
   return (
@@ -686,61 +816,12 @@ const ChangesToShareView: Component = () => {
   );
 };
 
-// ─────────────────────────── Digest ("what landed") ────────────────────────
-
-const DigestView: Component = () => {
-  const outcome = () => syncOutcome();
-  const digest = () => outcome()?.digest ?? [];
-  // Only show the digest when something actually came in from others.
-  return (
-    <Show when={outcome() && !outcome()!.upToDate && digest().length > 0}>
-      <div class="git-panel__digest">
-        <div class="git-panel__digest-head">
-          <Show when={outcome()!.incoming}>
-            {(incoming) => (
-              <span class="git-panel__banner-author">
-                {t("git.digest.from", { author: incoming().author_name })}
-              </span>
-            )}
-          </Show>
-        </div>
-        <p class="sidebar-hint">
-          {digest().length === 1
-            ? t("git.digest.oneChange")
-            : t("git.digest.changes", { n: digest().length })}
-        </p>
-        {/* Informational only — these changes are already merged, so the rows
-            are not interactive (a click would imply an action is still needed). */}
-        <div class="git-panel__list">
-          <For each={digest()}>
-            {(entry) => {
-              const label = () => changeLabel(entry.path, entry.oldPath);
-              return (
-                <div
-                  class="sidebar-item git-panel__item git-panel__item--readonly"
-                  title={entry.path}
-                >
-                  <span class={`sidebar-item__icon git-panel__icon--${entry.status}`}>
-                    {kindIcon(entry.status)}
-                  </span>
-                  <span class="git-panel__item-body">
-                    <span class="sidebar-item__label">{label()}</span>
-                    <span class="git-panel__item-meta">
-                      <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
-                    </span>
-                  </span>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-        <button class="git-panel__digest-close" onClick={dismissDigest}>
-          {t("git.digest.close")}
-        </button>
-      </div>
-    </Show>
-  );
-};
+// The post-sync "what landed" digest used to live here as a separate block, but
+// it duplicated the persistent, actionable "Files changed from last sync" view
+// (`ChangesSinceSyncView`) — `run_sync` records the review baseline for every
+// incoming sync (fast-forward and merge alike), so that view always reports the
+// same changes. The only unique bit, the incoming author, now appears in that
+// view's heading. One status surface instead of two.
 
 // ─────────────────────────── Manage (collapsible) ──────────────────────────
 
@@ -749,25 +830,33 @@ const ManageSection: Component = () => {
   // editable after setup (remote URL + branch were previously unreachable).
   const [remote, setRemote] = createSignal(noteboxSettings.git?.remote ?? "");
   const [branch, setBranch] = createSignal(noteboxSettings.git?.branch ?? "main");
-  const [token, setToken] = createSignal("");
+  const [username, setUsername] = createSignal("");
+  const [password, setPassword] = createSignal("");
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [useSsh, setUseSsh] = createSignal(looksLikeSshRemote(noteboxSettings.git?.remote ?? ""));
 
   // Show the identity that will actually be used (per-notebox choice, else git
-  // config), so it's visible/editable rather than a mystery blank.
+  // config) and the saved sign-in username, so neither is a mystery blank.
   onMount(async () => {
     const id = await getDefaultIdentity();
     if (id) {
       setName(id.name);
       setEmail(id.email);
     }
+    const r = remote().trim();
+    if (r) {
+      const saved = await gitSavedUsername(r).catch(() => null);
+      if (saved) setUsername(saved);
+    }
   });
 
-  // One Save applies the whole config — remote/branch/identity, plus the token
-  // only when re-entered. Both setup paths are idempotent (adopt the existing
-  // repo). An empty remote keeps (or switches to) package-handoff mode; entering
-  // a remote promotes a package-mode notebox to a server-backed one.
+  // One Save applies the whole config — remote/branch/identity/username, plus
+  // the password only when re-entered (left blank, the saved one is kept). Both
+  // setup paths are idempotent (adopt the existing repo). An empty remote keeps
+  // (or switches to) package-handoff mode; entering a remote promotes a
+  // package-mode notebox to a server-backed one.
   async function save() {
     setBusy(true);
     try {
@@ -777,7 +866,8 @@ const ManageSection: Component = () => {
           branch: branch().trim() || "main",
           identityName: name().trim() || undefined,
           identityEmail: email().trim() || undefined,
-          httpsToken: token().trim() || undefined,
+          username: useSsh() ? undefined : username().trim() || undefined,
+          password: useSsh() ? undefined : password().trim() || undefined,
         });
       } else {
         await setupPackageHandoff({
@@ -786,7 +876,7 @@ const ManageSection: Component = () => {
           identityEmail: email().trim() || undefined,
         });
       }
-      setToken("");
+      setPassword("");
       showToast("success", t("git.manage.saved"));
     } catch (err) {
       toastError(t("git.manage.saveFailed"), err);
@@ -824,14 +914,45 @@ const ManageSection: Component = () => {
       </button>
       <Show when={manageOpen()}>
         <div class="git-panel__manage-body">
-          <label class="settings__label">{t("git.setup.remoteLabel")}</label>
+          <div class="git-panel__label-row">
+            <label class="settings__label">
+              {useSsh() ? t("git.setup.remoteLabelSsh") : t("git.setup.remoteLabel")}
+            </label>
+            <HelpButton label={t("git.setup.remoteLabel")}>{t("git.setup.remoteHint")}</HelpButton>
+          </div>
           <input
             class="settings__text-input"
             type="text"
-            placeholder={t("git.setup.remotePlaceholder")}
+            placeholder={useSsh() ? t("git.setup.remotePlaceholderSsh") : t("git.setup.remotePlaceholder")}
             value={remote()}
             onInput={(e) => setRemote(e.currentTarget.value)}
           />
+
+          <Show when={!useSsh()}>
+            <label class="settings__label">{t("git.setup.usernameLabel")}</label>
+            <input
+              class="settings__text-input"
+              type="text"
+              autocomplete="off"
+              placeholder={t("git.setup.usernamePlaceholder")}
+              value={username()}
+              onInput={(e) => setUsername(e.currentTarget.value)}
+            />
+
+            <div class="git-panel__label-row">
+              <label class="settings__label">{t("git.setup.passwordLabel")}</label>
+              <HelpButton label={t("git.setup.passwordLabel")}>
+                {t("git.setup.passwordHint")} {t("git.manage.passwordKeepHint")}
+              </HelpButton>
+            </div>
+            <input
+              class="settings__text-input"
+              type="password"
+              autocomplete="off"
+              value={password()}
+              onInput={(e) => setPassword(e.currentTarget.value)}
+            />
+          </Show>
 
           <label class="settings__label">{t("git.setup.branchLabel")}</label>
           <input
@@ -841,18 +962,25 @@ const ManageSection: Component = () => {
             onInput={(e) => setBranch(e.currentTarget.value)}
           />
 
-          <div class="git-panel__label-row">
-            <label class="settings__label">{t("git.setup.tokenLabel")}</label>
-            <HelpButton label={t("git.setup.tokenLabel")}>{t("git.setup.tokenHint")}</HelpButton>
+          <div class="git-panel__label-row git-panel__toggle-row">
+            <label class="settings__label">{t("git.setup.sshLabel")}</label>
+            <HelpButton label={t("git.setup.sshLabel")}>{t("git.setup.sshHint")}</HelpButton>
+            <label class="settings__toggle" title={t("git.setup.sshHint")}>
+              <input
+                type="checkbox"
+                checked={useSsh()}
+                onChange={(e) => {
+                const ssh = e.currentTarget.checked;
+                setUseSsh(ssh);
+                // Keep the address scheme consistent with the chosen method, so
+                // the choice authenticates correctly and survives a reload.
+                const r = remote().trim();
+                if (r) setRemote(ssh ? toSshRemote(r) : toHttpsRemote(r));
+              }}
+              />
+              <span class="settings__toggle-slider" />
+            </label>
           </div>
-          <input
-            class="settings__text-input"
-            type="password"
-            autocomplete="off"
-            placeholder={t("git.manage.tokenPlaceholder")}
-            value={token()}
-            onInput={(e) => setToken(e.currentTarget.value)}
-          />
 
           <label class="settings__label">{t("git.setup.identityLabel")}</label>
           <div class="git-panel__identity-row">

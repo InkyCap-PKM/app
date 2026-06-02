@@ -1,12 +1,11 @@
 // Build + insert `#annotation` / `#suggestion` markup, stamped with today's
-// date (`on:`). Used by the Annotations pane's bottom toolbar and the `/`
-// command palette — the single `buildAnnotationInsert` builder keeps the two
-// surfaces in sync (they used to carry two copies of the same template strings).
-//
-// `by:` (authorship) is omitted for now; it will be sourced from the notebox's
-// git author identity once notebox-level git collaboration lands.
+// date (`on:`) and the notebox's commit-author name (`by:`). Used by the
+// Annotations pane's bottom toolbar and the `/` command palette — the single
+// `buildAnnotationInsert` builder keeps the two surfaces in sync (they used to
+// carry two copies of the same template strings).
 
 import { EditorView } from "@codemirror/view";
+import { commitAuthorName } from "../../stores/git";
 import { expandFunc } from "./effects";
 
 export type InsertKind = "insert" | "delete" | "replace" | "annotation";
@@ -33,11 +32,14 @@ function today(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** The author identity to stamp on a fresh mark: today's date. `by:` is
- *  omitted for now — authorship will come from the notebox's git author
- *  identity once notebox-level git collaboration lands. */
+/** The author identity to stamp on a fresh mark: today's date, plus `by:` from
+ *  the notebox's commit-author name (cached in the git store on open) so
+ *  collaborators see who proposed each change — and so a user's own suggestions
+ *  can be excluded from their "Changes to resolve" list. `by:` is omitted when
+ *  there's no identity (e.g. a non-collaborative notebox). */
 function identity(): { by?: string; on: string } {
-  return { on: today() };
+  const by = commitAuthorName().trim();
+  return by ? { by, on: today() } : { on: today() };
 }
 
 /** Build a full `#suggestion(...)` call, preserving the body/old content

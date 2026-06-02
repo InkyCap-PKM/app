@@ -243,14 +243,20 @@ pub async fn open_notebox(
     // status summary to the frontend. No auto-fetch — review always sits
     // between fetch and apply, so opening only reads local state.
     if let Some(canonical_root) = session.notebox_root.read().await.clone() {
+        // One-time migration for noteboxes from before the git config moved out
+        // of the shared settings.json into the per-machine local.json. Idempotent
+        // and a no-op for already-migrated (and never-collaborative) noteboxes.
+        if let Err(err) = crate::notebox_settings::migrate_git_config(&canonical_root) {
+            log::warn!("notebox git: could not migrate git config to local.json: {err}");
+        }
         let git_cfg = session.notebox_settings.read().await.git.clone();
         match git_cfg {
-            Some(git_cfg) => surface_git_status(&app_handle, canonical_root, git_cfg),
+            Some(git_cfg) => surface_git_status(&app_handle, label.clone(), canonical_root, git_cfg),
             // No collaboration config, but the notebox may still be a git repo
             // with a remote (an external clone, or a config dropped/not yet
             // written) — surface a reconnect offer rather than treating it as
             // plainly non-collaborative.
-            None => surface_reconnectable_git(&app_handle, canonical_root),
+            None => surface_reconnectable_git(&app_handle, label.clone(), canonical_root),
         }
     }
 
@@ -315,6 +321,7 @@ pub async fn open_notebox(
 /// [`NoteboxGitConfig`]: crate::notebox_settings::NoteboxGitConfig
 fn surface_git_status(
     handle: &tauri::AppHandle,
+    owner_label: String,
     root: std::path::PathBuf,
     git_cfg: crate::notebox_settings::NoteboxGitConfig,
 ) {
@@ -363,7 +370,10 @@ fn surface_git_status(
                     status.ahead,
                     status.behind
                 );
-                let _ = handle.emit(
+                // Scoped to the opening window: another window showing a
+                // different notebox must not adopt this one's git status.
+                let _ = handle.emit_to(
+                    owner_label.as_str(),
                     "notebox:git-status",
                     serde_json::json!({
                         "remote": git_cfg.remote,
@@ -383,7 +393,7 @@ fn surface_git_status(
 /// `notebox:git-reconnectable` so the frontend can offer a one-click reconnect
 /// (deriving the remote/branch from git) instead of presenting a blank setup
 /// form. A plain notebox (no repo, or a repo without a remote) emits nothing.
-fn surface_reconnectable_git(handle: &tauri::AppHandle, root: std::path::PathBuf) {
+fn surface_reconnectable_git(handle: &tauri::AppHandle, owner_label: String, root: std::path::PathBuf) {
     let handle = handle.clone();
     tokio::task::spawn_blocking(move || {
         use crate::git::backend::GitBackend;
@@ -407,7 +417,8 @@ fn surface_reconnectable_git(handle: &tauri::AppHandle, root: std::path::PathBuf
             .map(|(b, _)| b)
             .unwrap_or_else(|| "main".to_string());
         log::info!("notebox git: reconnectable repo (origin set, no collaboration config)");
-        let _ = handle.emit(
+        let _ = handle.emit_to(
+            owner_label.as_str(),
             "notebox:git-reconnectable",
             serde_json::json!({ "remote": remote, "branch": branch }),
         );
