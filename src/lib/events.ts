@@ -73,11 +73,6 @@ export interface GitStatusEventPayload {
   status: GitStatusSummary;
 }
 
-/** Emitted after a fetch-and-review with the number of changed items staged. */
-export interface GitReviewPendingPayload {
-  count: number;
-}
-
 /** Emitted on opening a notebox that is a git repo with an `origin` remote but
  *  carries no collaboration config — the frontend offers a one-click reconnect. */
 export interface GitReconnectablePayload {
@@ -111,14 +106,6 @@ export function onGitFetchCompleted(callback: () => void): Promise<() => void> {
   return listen("notebox:git-fetch-completed", () => callback()).then(
     (unlisten) => unlisten,
   );
-}
-
-export function onGitReviewPending(
-  callback: (payload: GitReviewPendingPayload) => void,
-): Promise<() => void> {
-  return listen<GitReviewPendingPayload>("notebox:git-review-pending", (event) => {
-    callback(event.payload);
-  }).then((unlisten) => unlisten);
 }
 
 export function onGitPushStarted(callback: () => void): Promise<() => void> {

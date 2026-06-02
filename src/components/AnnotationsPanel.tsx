@@ -9,7 +9,7 @@
 import { Component, For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import { EditorView } from "@codemirror/view";
 import { attachListNav } from "../lib/list-nav";
-import { X, Plus, Minus, Replace, MessageSquare, UserPen } from "lucide-solid";
+import { X, Plus, Minus, Replace, MessageSquare, UserPen, RotateCcw } from "lucide-solid";
 import {
   noteAnnotations,
   rescanAnnotations,
@@ -24,6 +24,17 @@ import { openSuggestionMenu } from "../editor/typst-decorations/widgets";
 import { applyCallTransform } from "../editor/typst-decorations/pill";
 import { activeEditorView } from "../stores/editor";
 import { getActiveTab } from "../stores/tabs";
+import {
+  collaborative,
+  syncReviewVersion,
+  changesSinceSync,
+  revertSyncHunk,
+  revertNoteSinceSync,
+} from "../stores/git";
+import { promptConfirm } from "../stores/prompt";
+import { pathEquals } from "../lib/paths";
+import * as ipc from "../lib/ipc";
+import type { GitSyncHunk } from "../lib/types";
 import NoteHistory from "./NoteHistory";
 import { useI18n } from "../lib/i18n";
 
@@ -54,6 +65,147 @@ const KindIcon: Component<{ kind: AnnotationKind }> = (props) => {
   }
 };
 
+/** What kind of change a hunk represents, from which of its two sides is empty. */
+function hunkKind(h: GitSyncHunk): "added" | "removed" | "changed" {
+  if (!h.baselineText) return "added";
+  if (!h.currentText) return "removed";
+  return "changed";
+}
+
+/** A compact one-line preview of a side of a hunk (first non-empty line). */
+function preview(text: string): string {
+  const line = text.split("\n").find((l) => l.trim().length > 0);
+  return (line ?? "").trim();
+}
+
+/** The merge-first "Incoming since last sync" review section, shown at the top of
+ *  the Changes view for a collaborative note. Lists the changes the last Sync /
+ *  import folded into THIS note (relative to the recorded pre-sync baseline) and
+ *  lets the reviewer revert any hunk — or the whole note — back to their version.
+ *  Empty (renders nothing) when the note matches its baseline. Separate from the
+ *  manual `#annotation`/`#suggestion` author tools listed below it. */
+const IncomingChanges: Component<{ path: string | null }> = (props) => {
+  const t = useI18n();
+  const [hunks, setHunks] = createSignal<GitSyncHunk[]>([]);
+
+  // Refetch the per-note diff when the note changes, when this pane mounts, and
+  // whenever the working tree moved (an edit or a revert bumps the store's
+  // sync-review version) so the list of incoming hunks stays current.
+  createEffect(() => {
+    syncReviewVersion(); // dependency: refetch after edits / reverts / syncs
+    const path = props.path;
+    if (!path || !collaborative()) {
+      setHunks([]);
+      return;
+    }
+    void ipc
+      .gitNoteSyncDiff(path)
+      .then((d) => setHunks(d.hunks))
+      .catch((err) => {
+        console.error("git note sync-diff failed:", err);
+        setHunks([]);
+      });
+  });
+
+  /** Revert the whole note to its pre-sync baseline, with a confirm — this
+   *  discards every incoming change at once (unlike the per-hunk reverts, which
+   *  are individually visible). When the sync *added* the note, reverting deletes
+   *  it, so the confirm says so. Recoverable from git history either way. */
+  async function revertWholeNote() {
+    const path = props.path;
+    if (!path) return;
+    const name = path.split("/").pop() ?? path;
+    const wasAdded = changesSinceSync().some(
+      (e) => pathEquals(e.path, path) && e.status === "added",
+    );
+    const ok = await promptConfirm({
+      title: t("git.sinceSync.revertConfirmTitle"),
+      message: wasAdded
+        ? t("git.sinceSync.revertConfirmBodyAdded", { name })
+        : t("git.sinceSync.revertConfirmBody", { name }),
+      confirmLabel: t("git.sinceSync.revert"),
+    });
+    if (ok) void revertNoteSinceSync(path);
+  }
+
+  /** Scroll the editor to where a hunk sits (its current-side start line). */
+  function reveal(h: GitSyncHunk) {
+    const handle = activeEditorView();
+    if (!handle) return;
+    const view = handle.view;
+    const lineNo = Math.min(Math.max(h.currentStart + 1, 1), view.state.doc.lines);
+    const pos = view.state.doc.line(lineNo).from;
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+    });
+    view.focus();
+  }
+
+  return (
+    <Show when={hunks().length > 0}>
+      <div class="annotations-panel__incoming">
+        <div class="annotations-panel__incoming-header">
+          <span class="annotations-panel__list-heading">
+            {t("annotations.incoming.heading")}
+          </span>
+          <button
+            class="annotations-panel__incoming-revert-all"
+            title={t("annotations.incoming.revertNote")}
+            aria-label={t("annotations.incoming.revertNote")}
+            onClick={() => void revertWholeNote()}
+          >
+            <RotateCcw size={12} /> {t("annotations.incoming.revertAll")}
+          </button>
+        </div>
+        <div class="annotations-panel__list">
+          <For each={hunks()}>
+            {(h) => {
+              const kind = hunkKind(h);
+              return (
+                <div
+                  class="sidebar-item annotations-panel__item"
+                  onClick={() => reveal(h)}
+                  title={t("annotations.incoming.reveal")}
+                >
+                  <span class={`sidebar-item__icon annotations-panel__icon--${kind === "added" ? "insert" : kind === "removed" ? "delete" : "replace"}`}>
+                    {kind === "added" ? <Plus size={14} /> : kind === "removed" ? <Minus size={14} /> : <Replace size={14} />}
+                  </span>
+                  <span class="annotations-panel__body">
+                    <span class="annotations-panel__primary">
+                      <span class="sidebar-item__label">
+                        {kind === "added"
+                          ? preview(h.currentText)
+                          : kind === "removed"
+                            ? preview(h.baselineText)
+                            : `${preview(h.baselineText)} → ${preview(h.currentText)}`}
+                      </span>
+                      <span class={`annotations-panel__badge annotations-panel__badge--${kind === "added" ? "insert" : kind === "removed" ? "delete" : "replace"}`}>
+                        {t(`annotations.incoming.kind.${kind}`)}
+                      </span>
+                    </span>
+                  </span>
+                  <button
+                    class="annotations-panel__revert"
+                    title={t("annotations.incoming.revert")}
+                    aria-label={t("annotations.incoming.revert")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      props.path && void revertSyncHunk(props.path, h.currentStart, h.currentEnd);
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+};
+
 const AnnotationsPanel: Component = () => {
   const t = useI18n();
   const kindLabel = (kind: AnnotationKind): string => t(`annotations.kind.${kind}`);
@@ -67,10 +219,6 @@ const AnnotationsPanel: Component = () => {
     const tab = getActiveTab();
     return tab && tab.type === "file" ? tab.path : null;
   });
-  // True while the open note is a staged collaboration-review tab. Drives the
-  // scope hint that connects this pane's per-change decisions to the larger
-  // merge the reviewer finishes from the Collaboration panel.
-  const isCollabReview = createMemo(() => getActiveTab()?.collab === true);
 
   // Scan the active editor when this pane opens (the component mounts) and
   // whenever the active editor changes (tab switch). Live edits while the pane
@@ -184,8 +332,8 @@ const AnnotationsPanel: Component = () => {
           <Show when={notePath()}>{(p) => <NoteHistory path={p()} />}</Show>
         }
       >
-      <Show when={isCollabReview()}>
-        <p class="annotations-panel__collab-hint">{t("annotations.collabHint")}</p>
+      <Show when={collaborative()}>
+        <IncomingChanges path={notePath()} />
       </Show>
       <div class="right-panel__links-filter-wrap">
         <input
@@ -209,6 +357,10 @@ const AnnotationsPanel: Component = () => {
           </button>
         </Show>
       </div>
+
+      <Show when={visible().length > 0}>
+        <p class="annotations-panel__list-heading">{t("annotations.changesRequireDecision")}</p>
+      </Show>
 
       <div class="annotations-panel__list" ref={attachListNav} aria-label={t("annotations.title")}>
         <Show

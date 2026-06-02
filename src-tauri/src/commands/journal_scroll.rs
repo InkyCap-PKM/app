@@ -525,6 +525,7 @@ mod tests {
             links: Vec::new(),
             tags: tags.iter().map(|t| (*t).to_string()).collect(),
             agenda_markers: Vec::new(),
+            unresolved_suggestions: 0,
         }
     }
 

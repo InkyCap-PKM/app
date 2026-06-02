@@ -96,6 +96,11 @@ pub struct NoteMetadata {
     /// Inline `#task` / `#due` markers found in the note body.
     #[serde(default)]
     pub agenda_markers: Vec<AgendaMarker>,
+    /// Count of unresolved `#suggestion(...)` tracked changes in the body — the
+    /// notebox-wide "still awaiting accept/reject" signal. See
+    /// [`crate::typst_pipeline::query::QueryResult::suggestions`].
+    #[serde(default)]
+    pub unresolved_suggestions: usize,
 }
 
 impl NoteMetadata {

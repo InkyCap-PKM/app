@@ -28,7 +28,7 @@ import {
   statusCountMode,
   toggleStatusCountMode,
 } from "../stores/layout";
-import { collaborative, gitStatus, gitSyncing, pendingCount, incomingCount } from "../stores/git";
+import { collaborative, gitStatus, gitSyncing, incomingCount, unresolvedCount, changesSinceSyncCount } from "../stores/git";
 import { useI18n, tPlural } from "../lib/i18n";
 
 /** Consistent gap, in px, between an upward-opening status-bar menu's bottom
@@ -171,11 +171,6 @@ const StatusBar: Component = () => {
   const activeFilePath = createMemo(() => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "file" || !tab.path) return null;
-    // A collaboration-review (staged "Resolve:") tab points at an internal
-    // staging path and must not be renamed mid-merge. Hide the path, name, and
-    // rename affordance entirely while reviewing — the file identity isn't the
-    // user's to change here.
-    if (tab.collab) return null;
     const root = noteboxInfo()?.path;
     if (!root) return null;
     // Normalize through the canonical-shape helper so a regression on
@@ -262,11 +257,17 @@ const StatusBar: Component = () => {
   // panel's status line but terse (status bar real estate is tight).
   const gitSummary = createMemo(() => {
     const s = gitStatus();
-    const pending = pendingCount();
-    if (pending > 0) return t("git.status.incomingN", { n: pending });
     // A read-only "Check for updates" found incoming commits (status_summary's
     // own `behind` is upstream-tracking-based and often 0 without a fetch).
     if (incomingCount() > 0) return t("git.status.behind", { n: incomingCount() });
+    // Merge-first: the last sync folded incoming changes in; these notes are
+    // waiting to be reviewed (and reverted if unwanted). The primary incoming
+    // backlog, surfaced ahead of the manual-suggestion count and "to share".
+    if (changesSinceSyncCount() > 0)
+      return t("git.status.sinceSync", { n: changesSinceSyncCount() });
+    // Persistent, notebox-wide: notes still carry unresolved manual
+    // `#suggestion(...)` tracked changes awaiting an accept/reject decision.
+    if (unresolvedCount() > 0) return t("git.status.unresolved", { n: unresolvedCount() });
     if (!s) return "";
     if (!s.head && !s.dirty) return t("git.status.unborn");
     if (s.behind > 0) return t("git.status.behind", { n: s.behind });
@@ -355,7 +356,7 @@ const StatusBar: Component = () => {
       <Show when={collaborative()}>
         <button
           class="status-bar__git"
-          classList={{ "status-bar__git--attention": pendingCount() > 0 || incomingCount() > 0 }}
+          classList={{ "status-bar__git--attention": incomingCount() > 0 || unresolvedCount() > 0 }}
           onClick={openCollaboration}
           title={t("git.toolbar.title")}
         >

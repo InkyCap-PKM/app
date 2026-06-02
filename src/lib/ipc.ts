@@ -39,11 +39,11 @@ import type {
   FileCitation,
   AggregatedCitation,
   GitStatusSummary,
-  GitReviewSession,
+  GitDigestEntry,
+  GitUnresolvedEntry,
+  GitSinceSyncEntry,
+  GitSyncNoteDiff,
   GitSyncOutcome,
-  GitBinaryDecision,
-  GitBinaryResolution,
-  GitSettingsDecisions,
   GitCheckResult,
   GitNoteVersion,
   GitIdentity,
@@ -593,6 +593,52 @@ export async function gitStatus(): Promise<GitStatusSummary | null> {
   return invoke<GitStatusSummary | null>("git_status");
 }
 
+/** The files an export/sync would carry to collaborators — the working tree
+ *  changed since the last share. Empty when nothing is pending or the notebox
+ *  is not a repo. */
+export async function gitChangesToShare(): Promise<GitDigestEntry[]> {
+  return invoke<GitDigestEntry[]>("git_changes_to_share");
+}
+
+/** The notebox's notes that still have unresolved `#suggestion(...)` tracked
+ *  changes awaiting an accept/reject decision. Empty when nothing is
+ *  outstanding or the notebox is not collaborative. */
+export async function gitUnresolvedChanges(): Promise<GitUnresolvedEntry[]> {
+  return invoke<GitUnresolvedEntry[]>("git_unresolved_changes");
+}
+
+/** The notes the most recent sync changed, relative to the recorded pre-sync
+ *  baseline, each flagged whether the merge took theirs. Drives the merge-first
+ *  "Changes since last sync" review list + indicator. Empty when nothing has
+ *  been synced yet or the last sync changed nothing locally. */
+export async function gitChangesSinceSync(): Promise<GitSinceSyncEntry[]> {
+  return invoke<GitSinceSyncEntry[]>("git_changes_since_sync");
+}
+
+/** One note's hunk-level diff against its pre-sync baseline — the per-note
+ *  review surface. Compares the baseline blob with the live working text, so a
+ *  reverted hunk drops from the next diff. */
+export async function gitNoteSyncDiff(path: string): Promise<GitSyncNoteDiff> {
+  return invoke<GitSyncNoteDiff>("git_note_sync_diff", { path });
+}
+
+/** Revert a single hunk of a note to its pre-sync baseline, identified by its
+ *  current-side line range (from `gitNoteSyncDiff`). Throws (BadRequest) when
+ *  the range no longer matches a hunk — the caller should refetch the diff. */
+export async function gitRevertSyncHunk(
+  path: string,
+  currentStart: number,
+  currentEnd: number,
+): Promise<void> {
+  return invoke<void>("git_revert_sync_hunk", { path, currentStart, currentEnd });
+}
+
+/** Revert a whole note to its pre-sync baseline (or delete it when the sync
+ *  added it). An ordinary edit the user then re-syncs. */
+export async function gitRevertNoteSinceSync(path: string): Promise<void> {
+  return invoke<void>("git_revert_note_since_sync", { path });
+}
+
 /** Store an HTTPS personal-access token for this notebox's remote host (lives
  *  only in the OS keychain). */
 export async function gitSignIn(token: string): Promise<void> {
@@ -635,55 +681,16 @@ export async function gitCheckUpdates(): Promise<GitCheckResult> {
   return invoke<GitCheckResult>("git_check_updates");
 }
 
-/** Finish a paused sync after its conflicts have been resolved in the staged
- *  copies. `push` matches the gesture that paused (`true` for Sync). */
-export async function gitSyncFinalize(push: boolean): Promise<GitSyncOutcome> {
-  assertNoteboxWritable();
-  return invoke<GitSyncOutcome>("git_sync_finalize", { push });
-}
-
-/** Resolve one conflicted binary (non-`.typ`) file by a whole-file decision
- *  before finalizing. Re-callable until finalize — the user can change choice. */
-export async function gitResolveBinaryConflict(
-  path: string,
-  decision: GitBinaryDecision,
-): Promise<GitBinaryResolution> {
-  assertNoteboxWritable();
-  return invoke<GitBinaryResolution>("git_resolve_binary_conflict", { path, decision });
-}
-
-/** Resolve the structurally-merged settings.json by picking a side for each
- *  clashing key (dotted path → "mine" | "theirs"). Re-callable until finalize. */
-export async function gitResolveSettings(
-  decisions: GitSettingsDecisions,
-): Promise<void> {
-  assertNoteboxWritable();
-  return invoke<void>("git_resolve_settings", { decisions });
-}
-
-/** Fetch the remote and stage every incoming note as inline suggestions. Kept
- *  internal — backs a future "review every incoming change" mode. */
-export async function gitFetchReview(): Promise<GitReviewSession> {
-  return invoke<GitReviewSession>("git_fetch_review");
-}
-
-/** Abandon a paused review session (clear staging). The clean changes the sync
- *  already applied to the working tree stay; the merge is simply not finalized. */
-export async function gitDiscardReview(): Promise<void> {
-  return invoke<void>("git_discard_review");
-}
-
 /** A note's past versions, newest first (commit metadata only). Empty when the
  *  note has no committed history yet. */
 export async function gitNoteHistory(path: string): Promise<GitNoteVersion[]> {
   return invoke<GitNoteVersion[]>("git_note_history", { path });
 }
 
-/** Write a past version of a note to a disposable scratch file and return its
- *  path, to open as a read-only view tab. `commit` is a full hash from
- *  `gitNoteHistory`. */
-export async function gitOpenNoteVersion(path: string, commit: string): Promise<string> {
-  return invoke<string>("git_open_note_version", { path, commit });
+/** A note's UTF-8 content at a past commit, for the read-only version-compare
+ *  (diff) view. `commit` is a full hash from `gitNoteHistory`. */
+export async function gitNoteVersionText(path: string, commit: string): Promise<string> {
+  return invoke<string>("git_note_version_text", { path, commit });
 }
 
 /** Restore a past version: write its content back to the working note as a new
@@ -769,17 +776,6 @@ export async function gitImportPackageAsNotebox(args: {
   });
 }
 
-/** Whether the open notebox reviews incoming changes before merging (a
- *  per-machine preference; off by default). */
-export async function gitGetReviewIncoming(): Promise<boolean> {
-  return invoke<boolean>("git_get_review_incoming");
-}
-
-/** Set whether the open notebox reviews incoming changes before merging. */
-export async function gitSetReviewIncoming(enabled: boolean): Promise<void> {
-  return invoke<void>("git_set_review_incoming", { enabled });
-}
-
 /** Whether the open notebox bundles its Typst packages on share (a per-machine
  *  preference; off by default). */
 export async function gitGetBundlePackages(): Promise<boolean> {
@@ -793,13 +789,6 @@ export async function gitSetBundlePackages(
   enabled: boolean,
 ): Promise<GitBundlePackagesResult> {
   return invoke<GitBundlePackagesResult>("git_set_bundle_packages", { enabled });
-}
-
-/** Reconstruct an in-progress review from the on-disk staging folder (so a
- *  paused Sync/import survives a restart). Returns a paused outcome listing the
- *  staged notes, or a non-paused default when nothing is staged. */
-export async function gitPendingReview(): Promise<GitSyncOutcome> {
-  return invoke<GitSyncOutcome>("git_pending_review");
 }
 
 /**

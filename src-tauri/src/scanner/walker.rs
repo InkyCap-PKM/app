@@ -35,6 +35,7 @@ pub fn parse_note(
         links: Vec::new(),
         tags: Vec::new(),
         agenda_markers: Vec::new(),
+        unresolved_suggestions: 0,
     };
 
     if let Some(compiler) = compiler {
@@ -78,6 +79,7 @@ async fn parse_note_from_disk(
         links: Vec::new(),
         tags: Vec::new(),
         agenda_markers: Vec::new(),
+        unresolved_suggestions: 0,
     };
 
     Ok((note, content))
@@ -133,6 +135,7 @@ fn enrich_with_query(note: &mut NoteMetadata, qr: QueryResult) {
     note.links = qr.links;
     note.tags = qr.tags;
     note.agenda_markers = qr.agenda;
+    note.unresolved_suggestions = qr.suggestions;
     for (key, value) in qr.properties {
         note.properties.insert(key, value);
     }
@@ -175,6 +178,7 @@ pub(crate) fn note_to_cached_file(
         tags: note.tags.clone(),
         links: note.links.clone(),
         agenda_markers: note.agenda_markers.clone(),
+        unresolved_suggestions: note.unresolved_suggestions as u32,
         content: Some(content.to_string()),
     }
 }
@@ -241,6 +245,7 @@ fn cached_to_note(
         links: cached.links.clone(),
         tags: cached.tags.clone(),
         agenda_markers: cached.agenda_markers.clone(),
+        unresolved_suggestions: cached.unresolved_suggestions as usize,
     }
 }
 

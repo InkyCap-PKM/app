@@ -9,8 +9,8 @@ import { Component, For, Show, createResource, createMemo } from "solid-js";
 import { History, RotateCcw } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import type { GitNoteVersion } from "../lib/types";
-import { collaborative, refreshStatus } from "../stores/git";
-import { openTab } from "../stores/tabs";
+import { collaborative, refreshStatus, syncReviewVersion } from "../stores/git";
+import { openVersionDiff } from "../stores/tabs";
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
@@ -33,21 +33,48 @@ const NoteHistory: Component<{ path: string }> = (props) => {
 
   const basename = () => props.path.split("/").pop() ?? props.path;
 
-  /** Open a past version as a read-only scratch tab. */
-  async function viewVersion(v: GitNoteVersion) {
-    try {
-      const scratch = await ipc.gitOpenNoteVersion(props.path, v.commit);
-      openTab(
-        {
-          type: "file",
-          title: t("history.versionTab", { name: basename(), hash: v.shortHash }),
-          path: scratch,
-        },
-        { forceNewTab: true },
-      );
-    } catch (err) {
-      toastError(t("history.viewFailed"), err);
-    }
+  // Whether the note's working copy matches the latest committed version (HEAD,
+  // the top row). In the merge-first model a note can sit *ahead of* its shared
+  // history — local edits, or a reverted incoming change, aren't committed until
+  // the next Sync — so the top commit isn't necessarily "what you have". This
+  // tells the badge whether to read "current" (working copy == HEAD) or "latest
+  // shared" (your local note differs). Re-checked when the working tree changes
+  // (`syncReviewVersion` bumps on saves / reverts) since a revert doesn't add a
+  // commit but does change the working copy. */
+  const [headSync] = createResource(
+    () => {
+      const v = versions();
+      // Depend on the working-tree version so a revert/save re-evaluates.
+      syncReviewVersion();
+      return collaborative() && v && v.length > 0
+        ? { path: props.path, head: v[0].commit }
+        : null;
+    },
+    async (k) => {
+      try {
+        const [current, head] = await Promise.all([
+          ipc.readFileContent(k.path),
+          ipc.gitNoteVersionText(k.path, k.head),
+        ]);
+        return current === head;
+      } catch {
+        return true; // on error, fall back to the simple "current" label
+      }
+    },
+  );
+  // Default to matching (show "current") while the check is in flight, to avoid
+  // a flash of the "latest shared" wording on every open.
+  const workingMatchesHead = () => headSync() !== false;
+
+  /** Open a read-only inline diff comparing this past version with the note's
+   *  current content. Reuses an already-open compare tab for this note (clicking
+   *  another version updates it in place) rather than stacking tabs. */
+  function viewVersion(v: GitNoteVersion) {
+    openVersionDiff(
+      props.path,
+      t("history.versionTab", { name: basename(), hash: v.shortHash }),
+      { commit: v.commit, shortHash: v.shortHash, timestamp: v.timestamp },
+    );
   }
 
   /** Restore a past version as a new edit (the user then Syncs it). */
@@ -87,6 +114,13 @@ const NoteHistory: Component<{ path: string }> = (props) => {
             when={(versions()?.length ?? 0) > 0}
             fallback={<p class="sidebar-hint">{t("history.empty")}</p>}
           >
+            {/* The list shows committed (shared) versions. When the working copy
+                differs from the latest one (unsynced local edits or a reverted
+                incoming change), say so — otherwise the top "latest shared" row
+                reads as if it were the note you currently have. */}
+            <Show when={!workingMatchesHead()}>
+              <p class="note-history__local">{t("history.localUnsynced")}</p>
+            </Show>
             <div class="note-history__list">
               <For each={versions()}>
                 {(v, i) => (
@@ -104,7 +138,9 @@ const NoteHistory: Component<{ path: string }> = (props) => {
                           {v.message.trim() || t("history.noMessage")}
                         </span>
                         <Show when={i() === 0}>
-                          <span class="note-history__badge">{t("history.current")}</span>
+                          <span class="note-history__badge">
+                            {workingMatchesHead() ? t("history.current") : t("history.latestShared")}
+                          </span>
                         </Show>
                       </span>
                       <span class="note-history__secondary">

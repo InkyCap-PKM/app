@@ -9,8 +9,11 @@
 //! The collaboration loop is a deliberate **subset** of git — no branch
 //! manager, rebase, stash, cherry-pick, or log explorer:
 //!
+//! The model is **merge-first**: a sync never pauses for review.
+//!
 //! ```text
-//!   fetch ─▶ stage-as-suggestions ─▶ resolve inline ─▶ consolidate ─▶ push
+//!   commit local ─▶ fetch ─▶ merge (take theirs on overlap) ─▶ push
+//!                                   └▶ review & revert later (Changes pane)
 //! ```
 //!
 //! ## Module map
@@ -20,10 +23,8 @@
 //! - [`auth`] — credential resolution for fetch/push: keyring-backed SSH keys
 //!   and HTTPS PATs, surfaced to the user via [`crate::events::AppEvent`]
 //!   rather than blocking commands.
-//! - [`staging`] — the `.inkycap/incoming/` staging-folder lifecycle for
-//!   incoming-change review.
-//! - [`suggest`] — maps a 3-way diff onto inline `#suggestion` Typst markup
-//!   (the conflict-rendering core).
+//! - [`sync_review`] — line-level hunk diff + per-hunk revert for the
+//!   merge-first "Changes since last sync" review (the revert-later core).
 //! - [`history`] — the `.inkycap/history/` scratch lifecycle for read-only
 //!   version-view tabs (Phase 6).
 //! - [`json_merge`] — structured 3-way merge for the shared `settings.json`
@@ -40,7 +41,6 @@ pub mod backend;
 pub mod history;
 pub mod json_merge;
 pub mod package;
-pub mod staging;
-pub mod suggest;
+pub mod sync_review;
 
 pub use backend::GitBackend;

@@ -8,8 +8,8 @@ import {
 } from "../../stores/tabs";
 import { hasMultiplePanes, type LeafPane } from "../../stores/panes";
 import { t } from "../../lib/i18n";
+import { MenuTabsIcon } from "../icons";
 import {
-  RectangleEllipsis,
   SplitSquareHorizontal,
   SplitSquareVertical,
   X,
@@ -17,7 +17,7 @@ import {
 } from "lucide-solid";
 
 /**
- * The pane menu at the right edge of a tab strip (`PanelTopOpen` icon).
+ * The pane menu at the right edge of a tab strip (`MenuTabsIcon` glyph).
  * Offers split/close-pane actions for this pane, plus a list of every open
  * tab (grouped by pane when more than one exists) as a second way to switch.
  */
@@ -53,7 +53,7 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
         aria-expanded={open()}
         onClick={toggle}
       >
-        <RectangleEllipsis size={18} />
+        <MenuTabsIcon size={18} />
       </button>
       <Show when={open()}>
         <div class="tab-bar__menu-popup" role="menu">

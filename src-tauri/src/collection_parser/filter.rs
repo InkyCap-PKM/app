@@ -360,6 +360,17 @@ fn property_eq(a: &PropertyValue, b: &PropertyValue) -> bool {
         (PropertyValue::Number(a), PropertyValue::Number(b)) => (a - b).abs() < f64::EPSILON,
         (PropertyValue::Bool(a), PropertyValue::Bool(b)) => a == b,
         (PropertyValue::Null, PropertyValue::Null) => true,
+        // A multi-valued property (a list, e.g. `collection`) compared against
+        // a scalar tests membership: `collection == "X"` is true when "X" is
+        // one of the note's collections. Without this, `==` was always false
+        // and `!=` always true for list properties, so a "not equals" filter
+        // on `collection` silently matched every note — the reported bug.
+        (PropertyValue::List(items), scalar) if !matches!(scalar, PropertyValue::List(_)) => {
+            items.iter().any(|item| property_eq(item, scalar))
+        }
+        (scalar, PropertyValue::List(items)) if !matches!(scalar, PropertyValue::List(_)) => {
+            items.iter().any(|item| property_eq(scalar, item))
+        }
         _ => false,
     }
 }
@@ -386,13 +397,6 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
             let target_val = resolve_property(target, note, self_path);
             match method.as_str() {
                 "contains" => {
-                    if let Some(Value::String(needle)) = args.first() {
-                        target_val.contains(needle)
-                    } else {
-                        false
-                    }
-                }
-                "containsAny" => {
                     if let Some(Value::String(needle)) = args.first() {
                         target_val.contains(needle)
                     } else {
@@ -492,6 +496,7 @@ mod tests {
             links: vec![],
             tags: vec![],
             agenda_markers: vec![],
+            unresolved_suggestions: 0,
         }
     }
 
@@ -888,5 +893,33 @@ and:
 
         let no_collection = make_note(vec![]);
         assert!(!evaluate(&expr, &no_collection, Path::new("/notebox/x.collection")));
+    }
+
+    #[test]
+    fn test_list_property_equality_is_membership() {
+        // `collection == "X"` on a list property tests membership, and
+        // `collection != "X"` excludes notes that have "X" in the list. This
+        // is the fix for the reported "not equals is not respected" bug, where
+        // a list-vs-scalar comparison always fell through to `false`.
+        let eq = parse_filter_expr(r#"collection == "CollectionConflict""#).unwrap();
+        let ne = parse_filter_expr(r#"collection != "CollectionConflict""#).unwrap();
+        let p = Path::new("/notebox/x.collection");
+
+        let member = make_note(vec![(
+            "collection",
+            PropertyValue::List(vec![
+                PropertyValue::String("CollectionConflict".into()),
+                PropertyValue::String("Drafts".into()),
+            ]),
+        )]);
+        assert!(evaluate(&eq, &member, p));
+        assert!(!evaluate(&ne, &member, p)); // excluded by "not equals"
+
+        let non_member = make_note(vec![(
+            "collection",
+            PropertyValue::List(vec![PropertyValue::String("Drafts".into())]),
+        )]);
+        assert!(!evaluate(&eq, &non_member, p));
+        assert!(evaluate(&ne, &non_member, p)); // kept by "not equals"
     }
 }

@@ -115,12 +115,6 @@ impl NoteboxGitConfig {
 pub struct NoteboxLocalState {
     /// Notebox-relative path of the last active file on *this* machine.
     pub last_active_file: Option<String>,
-    /// When set, a Sync / package import that pulls incoming changes **pauses**
-    /// and stages every incoming note as inline suggestions to review before
-    /// merging, instead of auto-merging clean changes silently. A per-machine
-    /// workflow preference (it doesn't travel to collaborators), off by default.
-    /// Read by `commands::git::run_sync`.
-    pub review_incoming: bool,
     /// The HEAD commit (full oid) the last time this machine *shared* the
     /// notebox by **exporting a package** (package-handoff mode only). Lets the
     /// status read "Changes to share" vs "shared" without a server: there are
@@ -137,6 +131,20 @@ pub struct NoteboxLocalState {
     /// sharer decides whether to bundle), off by default. Read by
     /// `commands::git::run_sync` and `git_export_package`.
     pub bundle_packages: bool,
+    /// The local HEAD commit (full oid) as it stood **just before** the most
+    /// recent Sync / package import folded in incoming changes — the baseline
+    /// the merge-first "Changes since last sync" review diffs against. `None`
+    /// means no incoming merge has happened on this machine yet (or the first
+    /// pull was into an unborn branch, where there is no prior version to
+    /// revert to), in which case the Changes-since-sync surface stays empty.
+    /// Recorded by `commands::git::run_sync`; per-machine, never travels.
+    pub last_sync_oid: Option<String>,
+    /// Notebox-relative paths (frontend string form) the most recent sync
+    /// resolved by taking *theirs* over an overlapping local edit. The
+    /// merge-first model never pauses, so these are flagged for priority review
+    /// in the Changes pane (the user can revert any of them). Replaced wholesale
+    /// on each sync; per-machine, never travels.
+    pub last_sync_conflicted: Vec<String>,
 }
 
 /// Journal Scroll settings. Entirely per-notebox: each notebox has its own

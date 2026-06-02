@@ -13,11 +13,7 @@ import { toastError } from "../stores/toasts";
  *  declines the confirmation. Errors surface as a toast. */
 export async function deleteActiveFileInteractive(): Promise<void> {
   const tab = getActiveTab();
-  // A staged collaboration-review tab is a transient merge artifact, not a
-  // note the user owns — deleting it would break finalize. Guard here so the
-  // Ctrl+Shift+D command, the File Actions menu, and any future caller are
-  // all covered.
-  if (!tab || tab.type !== "file" || tab.collab) return;
+  if (!tab || tab.type !== "file") return;
   const confirmed = await ask("Delete this file permanently?", {
     title: "Delete file",
     kind: "warning",

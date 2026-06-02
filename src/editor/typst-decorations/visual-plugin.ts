@@ -685,7 +685,23 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             // correctedFuncCallEnd / expandRangesToBlockElements).
             const funcTo = correctedFuncCallEnd(state, funcFrom, node.to);
             const callOnCursor = isOnCursorLine(state, funcFrom, funcTo, focused);
-            const traverseChildren = handleFuncCall(state, funcFrom, funcTo, decos, callOnCursor, cursors, autoExpand, expandedPos, activeFormatting);
+            // Decorate this call defensively: a single malformed or unusual call
+            // — e.g. a collaborator's `#suggestion(…)` tracked-change markup with
+            // content the extractors don't expect — must not throw out of the
+            // build and drop the *entire* visual layer, which renders the whole
+            // note as raw source. On failure, discard any partial decorations
+            // from this call and skip it (it falls back to raw source locally)
+            // while the rest of the note still renders.
+            const decoMark = decos.length;
+            let traverseChildren: boolean;
+            try {
+              traverseChildren = handleFuncCall(state, funcFrom, funcTo, decos, callOnCursor, cursors, autoExpand, expandedPos, activeFormatting);
+            } catch (err) {
+              decos.length = decoMark;
+              console.error("visual-plugin: skipped a function call that failed to decorate", err);
+              if (funcTo > node.to) consumedUntil = funcTo;
+              return false;
+            }
             if (!traverseChildren) {
               if (funcTo > node.to) consumedUntil = funcTo;
               return false;

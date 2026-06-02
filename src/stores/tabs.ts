@@ -24,10 +24,14 @@ export const TAB_DRAG_MIME = "application/x-inkycap-tab";
 
 export interface Tab {
   id: string;
-  type: "collection" | "file" | "mycelial" | "empty";
+  type: "collection" | "file" | "mycelial" | "empty" | "version-diff";
   title: string;
   path: string;
   viewName?: string;
+  /** Present only on a `version-diff` tab: the past version being compared
+   *  against the note's current content (a read-only inline diff). `path` is the
+   *  real note path (for fetching current text + Restore). */
+  version?: { commit: string; shortHash: string; timestamp: number };
   /** Per-tab live-preview / source toggle. Undefined = follow user default. */
   editingMode?: EditingMode;
   /** Per-tab reading-view render format override (svg vs html). Undefined =
@@ -42,16 +46,10 @@ export interface Tab {
    *  `line` is 1-indexed; `charStart`/`charEnd` are offsets into that line.
    *  Used by the search panel to deep-link a result row to its exact spot. */
   pendingMatch?: { line: number; charStart: number; charEnd: number };
-  /** True when this tab is part of a collaboration review (e.g. a staged
-   *  "Resolve:" note opened from the Git collaboration panel). Drives the
-   *  handshake marker in the tab strip and the scope hint in the Changes
-   *  panel so the reviewer knows the note's accept/reject decisions feed a
-   *  larger merge they finish from the Collaboration panel. */
-  collab?: boolean;
 }
 
 interface TabHistoryEntry {
-  type: "collection" | "file" | "mycelial" | "empty";
+  type: Tab["type"];
   title: string;
   path: string;
 }
@@ -122,6 +120,20 @@ export function setCachedEditorState(tabId: string, path: string, json: unknown)
 
 export function clearCachedEditorState(tabId: string): void {
   editorStateCache.delete(tabId);
+}
+
+/** Drop every cached editor state for `path`, and clear those tabs' dirty flags.
+ *  Call this after writing a note out-of-band (a version restore, a hunk revert)
+ *  so an inactive tab of that note reloads fresh from disk on reactivation
+ *  instead of restoring its now-stale cached buffer — which would otherwise show
+ *  old content and read as dirty (cached buffer ≠ the just-written disk file). */
+export function invalidateEditorCacheForPath(path: string): void {
+  for (const [tabId, entry] of editorStateCache.entries()) {
+    if (pathEquals(entry.path, path)) {
+      editorStateCache.delete(tabId);
+      setTabDirty(tabId, false);
+    }
+  }
 }
 
 // Reactive signal that bumps whenever any tab's history changes,
@@ -232,8 +244,10 @@ export function openTab(
 
   // Navigate within the active tab when possible.
   if (active && !opts?.forceNewTab) {
-    // Only push history for tabs that have actual content.
-    if (active.type !== "empty") {
+    // Only push history for tabs that have actual content. A version-diff is a
+    // transient read-only compare view (no version metadata survives a
+    // {type,title,path} history entry), so it never enters nav history.
+    if (active.type !== "empty" && active.type !== "version-diff") {
       const h = getOrCreateHistory(active.id);
       h.back.push({
         type: active.type,
@@ -281,6 +295,32 @@ export function openTab(
   return id;
 }
 
+/** Open (or update) a read-only version-compare tab for `notePath`. If one is
+ *  already open for this note, retarget it to the new version in place — so
+ *  clicking through a note's history reuses one compare view rather than
+ *  stacking tabs. Otherwise opens a fresh `version-diff` tab. */
+export function openVersionDiff(
+  notePath: string,
+  title: string,
+  version: { commit: string; shortHash: string; timestamp: number },
+): void {
+  const existing = tabs.find(
+    (t) => t.type === "version-diff" && pathEquals(t.path, notePath),
+  );
+  if (existing) {
+    setTabs(
+      (t) => t.id === existing.id,
+      produce((t) => {
+        t.title = title;
+        t.version = version;
+      }),
+    );
+    setActiveTabId(existing.id);
+    return;
+  }
+  openTab({ type: "version-diff", title, path: notePath, version }, { forceNewTab: true });
+}
+
 /** Create a new empty tab (no backing file). Navigating to a file
  *  from this tab will populate it in-place via the normal openTab flow. */
 export function createEmptyTab(): string {
@@ -297,7 +337,9 @@ export function closeTab(id: string) {
   // Record the closing tab so it can be reopened (Ctrl+Shift+T). Empty
   // tabs have no file to restore, so they're skipped.
   const closing = tabs[idx];
-  if (closing.type !== "empty" && closing.path) {
+  // A version-diff compare view can't be reopened from {type,title,path} (its
+  // version metadata is lost), so it's excluded from the reopen stack.
+  if (closing.type !== "empty" && closing.type !== "version-diff" && closing.path) {
     closedTabs.push({
       type: closing.type,
       title: closing.title,
@@ -341,27 +383,6 @@ export function closeAllTabs() {
   resetToSingleEmptyLeaf();
 }
 
-/** Close every collaboration-review ("Resolve:") tab. Finalize and Discard
- *  both clear the `.inkycap/incoming/` staging dir, so these tabs would point
- *  at dangling paths — close them rather than leave stale buffers. Deliberately
- *  does NOT record them on the reopen stack (Ctrl+Shift+T): the staged copy is
- *  gone, so reopening would resolve nothing. Spawns one empty tab if closing
- *  these emptied the workspace. */
-export function closeCollabTabs() {
-  const ids = tabs.filter((t) => t.collab).map((t) => t.id);
-  if (ids.length === 0) return;
-  for (const id of ids) {
-    removeTab(id);
-    setTabs(produce((t) => {
-      const i = t.findIndex((x) => x.id === id);
-      if (i !== -1) t.splice(i, 1);
-    }));
-    historyMap.delete(id);
-    editorStateCache.delete(id);
-    setTabDirty(id, false);
-  }
-  if (tabs.length === 0) createEmptyTab();
-}
 
 /** Reopen the most recently closed tab (Ctrl+Shift+T). No-op when the
  *  closed-tab stack is empty. Opens in a fresh tab; if a tab with the
@@ -412,6 +433,9 @@ export function splitPane(leafId: string, direction: SplitDirection): string | n
       path: src.path,
       viewName: src.viewName,
       editingMode: src.editingMode,
+      // Carry the compare metadata so a split of a version-diff tab renders the
+      // diff in the new pane (without it, PaneLeaf falls back to the empty state).
+      version: src.version,
     })));
   } else {
     setTabs(produce((t) => t.push({ id: newId, type: "empty", title: "New tab", path: "" })));

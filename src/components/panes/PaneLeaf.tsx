@@ -6,6 +6,7 @@ import { modifierKey } from "../../lib/platform";
 import CollectionTable from "../CollectionTable";
 import TypstEditor from "../TypstEditor";
 import MycelialView from "../MycelialView";
+import VersionDiffView from "../VersionDiffView";
 import TabStrip from "./TabStrip";
 
 /// Tabula-rasa view shown when a pane's active tab is the `empty`
@@ -64,6 +65,21 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
                 }
                 if (currentTab.type === "mycelial") {
                   return <MycelialView path={currentTab.path} />;
+                }
+                if (currentTab.type === "version-diff") {
+                  // A version-diff tab without metadata can't render (e.g. a
+                  // restored nav-history entry) — fall back rather than crash.
+                  return (
+                    <Show when={currentTab.version} fallback={<EmptyState />}>
+                      {(v) => (
+                        <VersionDiffView
+                          path={currentTab.path}
+                          tabId={currentTab.id}
+                          version={v()}
+                        />
+                      )}
+                    </Show>
+                  );
                 }
                 return (
                   <TypstEditor

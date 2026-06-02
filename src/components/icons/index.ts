@@ -14,4 +14,5 @@ export { TypstDocIcon } from "./TypstDoc";
 export { SquareArrowOutUpRight } from "./SquareArrowOutUpRight";
 export { SquareArrowInDownLeft } from "./SquareArrowInDownLeft";
 export { TextCountIcon } from "./TextCount";
+export { MenuTabsIcon } from "./MenuTabs";
 export { VERSE_ICON_SVG } from "./verse";

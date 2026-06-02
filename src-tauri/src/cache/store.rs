@@ -29,6 +29,10 @@ pub struct CachedFile {
     pub links: Vec<String>,
     /// Inline `#task` / `#due` markers from the note body.
     pub agenda_markers: Vec<crate::models::note::AgendaMarker>,
+    /// Count of unresolved `#suggestion(...)` tracked changes — the notebox-wide
+    /// "still awaiting accept/reject" signal, cached so the indicator survives
+    /// app restarts without recompiling every note.
+    pub unresolved_suggestions: u32,
     /// Full file content, cached so subsequent notebox opens can skip disk reads
     /// for unchanged files. `None` for legacy cache entries created before
     /// content caching was added.
@@ -123,7 +127,7 @@ impl MetadataCache {
         // Pull all `files` rows for this notebox.
         {
             let mut stmt = conn.prepare(
-                "SELECT path, mtime, size, properties_json, title, content, agenda_json \
+                "SELECT path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions \
                  FROM files WHERE notebox_id = ?1",
             )?;
             let rows = stmt.query_map(params![notebox_id], |row| {
@@ -134,11 +138,12 @@ impl MetadataCache {
                 let title: Option<String> = row.get(4)?;
                 let content: Option<String> = row.get(5)?;
                 let agenda_json: String = row.get(6)?;
-                Ok((path, mtime, size, properties_json, title, content, agenda_json))
+                let unresolved_suggestions: i64 = row.get(7)?;
+                Ok((path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions))
             })?;
 
             for row in rows {
-                let (path, mtime, size, properties_json, title, content, agenda_json) = row?;
+                let (path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions) = row?;
                 let properties: HashMap<String, PropertyValue> =
                     serde_json::from_str(&properties_json).map_err(|e| {
                         InkyCapError::Cache(format!(
@@ -160,6 +165,7 @@ impl MetadataCache {
                         tags: Vec::new(),
                         links: Vec::new(),
                         agenda_markers,
+                        unresolved_suggestions: unresolved_suggestions.max(0) as u32,
                         content,
                     },
                 );
@@ -222,15 +228,16 @@ impl MetadataCache {
         let tx = conn.transaction()?;
         {
             let mut upsert_file = tx.prepare(
-                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
                  ON CONFLICT(notebox_id, path) DO UPDATE SET \
                     mtime = excluded.mtime, \
                     size = excluded.size, \
                     properties_json = excluded.properties_json, \
                     title = excluded.title, \
                     content = excluded.content, \
-                    agenda_json = excluded.agenda_json",
+                    agenda_json = excluded.agenda_json, \
+                    unresolved_suggestions = excluded.unresolved_suggestions",
             )?;
             let mut delete_tags = tx.prepare(
                 "DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2",
@@ -260,6 +267,7 @@ impl MetadataCache {
                     file.title,
                     file.content,
                     agenda_json,
+                    file.unresolved_suggestions as i64,
                 ])?;
 
                 delete_tags.execute(params![notebox_id, &path_str])?;

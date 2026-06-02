@@ -16,9 +16,9 @@ import {
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
-  Handshake,
   Scroll,
   LibraryBig,
+  GitCompareArrows,
 } from "lucide-solid";
 import TabBarMenu from "./TabBarMenu";
 
@@ -211,9 +211,9 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                     <LibraryBig size={13} />
                   </span>
                 </Show>
-                <Show when={tab.collab}>
-                  <span class="tab__icon" title={t("git.review.tabIconTitle")}>
-                    <Handshake size={13} />
+                <Show when={tab.type === "version-diff"}>
+                  <span class="tab__icon" title={t("versionDiff.tab.title")}>
+                    <GitCompareArrows size={13} />
                   </span>
                 </Show>
                 <span class="tab__title">

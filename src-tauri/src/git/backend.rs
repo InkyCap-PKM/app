@@ -57,12 +57,15 @@ pub struct GitStatusSummary {
 }
 
 /// How a path changed between two commits (git rename detection is off, so a
-/// rename appears as a `Deleted` + `Added` pair).
+/// rename appears as a `Renamed` entry carrying both paths when rename detection
+/// is enabled on the diff, else as a `Deleted` + `Added` pair).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ChangeStatus {
     Added,
     Modified,
     Deleted,
+    /// The file moved/renamed; [`ChangedPath::old_path`] holds the previous path.
+    Renamed,
 }
 
 /// Result of a 3-way merge ([`GitBackend::merge_commits_to_tree`]).
@@ -89,9 +92,42 @@ pub struct MergeApplication {
 /// One path that differs between two commit trees.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedPath {
-    /// Notebox-relative path.
+    /// Notebox-relative path (the *new* path for a rename).
     pub path: PathBuf,
     pub status: ChangeStatus,
+    /// For [`ChangeStatus::Renamed`], the path the file moved *from*. `None` for
+    /// every other status.
+    pub old_path: Option<PathBuf>,
+}
+
+/// Map one diff delta to a [`ChangedPath`], or `None` when it carries no usable
+/// path. Shared by the tree-to-tree and tree-to-workdir diffs so both classify
+/// renames identically. Untracked entries (workdir additions) count as adds.
+fn delta_to_changed(delta: &git2::DiffDelta) -> Option<ChangedPath> {
+    match delta.status() {
+        git2::Delta::Added | git2::Delta::Untracked => delta.new_file().path().map(|p| ChangedPath {
+            path: p.to_path_buf(),
+            status: ChangeStatus::Added,
+            old_path: None,
+        }),
+        git2::Delta::Deleted => delta.old_file().path().map(|p| ChangedPath {
+            path: p.to_path_buf(),
+            status: ChangeStatus::Deleted,
+            old_path: None,
+        }),
+        git2::Delta::Renamed | git2::Delta::Copied => delta.new_file().path().map(|p| ChangedPath {
+            path: p.to_path_buf(),
+            status: ChangeStatus::Renamed,
+            old_path: delta.old_file().path().map(std::path::Path::to_path_buf),
+        }),
+        // Modified and anything else with a content change → conservatively a
+        // modification of the new path.
+        _ => delta.new_file().path().map(|p| ChangedPath {
+            path: p.to_path_buf(),
+            status: ChangeStatus::Modified,
+            old_path: None,
+        }),
+    }
 }
 
 /// Author + message of a commit — the review-context the loop harvests from
@@ -308,36 +344,51 @@ impl GitBackend {
     }
 
     /// Paths that differ between two commit trees (`from` → `to`). `from` is
-    /// `None` for an unborn local branch (everything in `to` is an add).
-    /// Rename detection is off, so a rename surfaces as a delete + add.
+    /// `None` for an unborn local branch (everything in `to` is an add). Rename
+    /// detection is on, so a move/rename collapses into one [`ChangeStatus::Renamed`]
+    /// entry carrying both paths instead of a delete + add pair.
     pub fn changed_paths(&self, from: Option<Oid>, to: Oid) -> Result<Vec<ChangedPath>> {
         let from_tree = match from {
             Some(oid) => Some(self.repo.find_commit(oid)?.tree()?),
             None => None,
         };
         let to_tree = self.repo.find_commit(to)?.tree()?;
-        let diff = self
+        let mut diff = self
             .repo
             .diff_tree_to_tree(from_tree.as_ref(), Some(&to_tree), None)?;
+        diff.find_similar(None)?;
 
-        let mut out = Vec::new();
-        for delta in diff.deltas() {
-            let (status, file) = match delta.status() {
-                git2::Delta::Added => (ChangeStatus::Added, delta.new_file()),
-                git2::Delta::Deleted => (ChangeStatus::Deleted, delta.old_file()),
-                git2::Delta::Modified => (ChangeStatus::Modified, delta.new_file()),
-                // Treat anything else with a content change conservatively as a
-                // modification of the new path; skip if it carries no path.
-                _ => (ChangeStatus::Modified, delta.new_file()),
-            };
-            if let Some(path) = file.path() {
-                out.push(ChangedPath {
-                    path: path.to_path_buf(),
-                    status,
-                });
-            }
-        }
-        Ok(out)
+        Ok(diff.deltas().filter_map(|d| delta_to_changed(&d)).collect())
+    }
+
+    /// Paths in the **working tree** (committed-but-unshared work *and*
+    /// uncommitted edits, including new untracked notes) that differ from a
+    /// baseline commit — what an export/sync would carry to collaborators.
+    /// `base` is the last-shared commit (package mode) or the upstream tip
+    /// (server mode); `None` means nothing has been shared yet, so every
+    /// tracked and untracked file counts as an add. Ignored files (staging,
+    /// `local.json`, caches) are excluded, matching [`Self::status_summary`].
+    /// Rename detection is on (including for untracked files), so moving a note
+    /// surfaces as one [`ChangeStatus::Renamed`] entry, not a delete + add pair.
+    pub fn changed_since(&self, base: Option<Oid>) -> Result<Vec<ChangedPath>> {
+        let base_tree = match base {
+            Some(oid) => Some(self.repo.find_commit(oid)?.tree()?),
+            None => None,
+        };
+        let mut opts = git2::DiffOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .include_ignored(false);
+        let mut diff =
+            self.repo
+                .diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts))?;
+        // A moved note's new copy arrives untracked, so rename detection must opt
+        // into untracked sources to pair it with the deleted original.
+        let mut find = git2::DiffFindOptions::new();
+        find.renames(true).for_untracked(true);
+        diff.find_similar(Some(&mut find))?;
+
+        Ok(diff.deltas().filter_map(|d| delta_to_changed(&d)).collect())
     }
 
     /// Read a file's bytes as of a specific commit, by notebox-relative path.
@@ -984,14 +1035,44 @@ mod tests {
         let mut changed = b.changed_paths(Some(c1), c2).unwrap();
         changed.sort_by(|x, y| x.path.cmp(&y.path));
         assert_eq!(changed.len(), 3);
-        assert_eq!(changed[0], ChangedPath { path: PathBuf::from("a.typ"), status: ChangeStatus::Modified });
-        assert_eq!(changed[1], ChangedPath { path: PathBuf::from("b.typ"), status: ChangeStatus::Deleted });
-        assert_eq!(changed[2], ChangedPath { path: PathBuf::from("c.typ"), status: ChangeStatus::Added });
+        assert_eq!(changed[0], ChangedPath { path: PathBuf::from("a.typ"), status: ChangeStatus::Modified, old_path: None });
+        assert_eq!(changed[1], ChangedPath { path: PathBuf::from("b.typ"), status: ChangeStatus::Deleted, old_path: None });
+        assert_eq!(changed[2], ChangedPath { path: PathBuf::from("c.typ"), status: ChangeStatus::Added, old_path: None });
 
         // Unborn `from` (None) ⇒ every path in `to` is an add.
         let from_empty = b.changed_paths(None, c1).unwrap();
         assert_eq!(from_empty.len(), 2);
         assert!(from_empty.iter().all(|c| c.status == ChangeStatus::Added));
+    }
+
+    #[test]
+    fn changed_paths_detects_a_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let b = GitBackend::open_or_init(dir.path()).unwrap();
+        // c1: old.typ with enough content that the moved copy reads as identical.
+        let body = "line one\nline two\nline three\nline four\n";
+        std::fs::write(dir.path().join("old.typ"), body).unwrap();
+        b.stage_paths(&[PathBuf::from("old.typ")]).unwrap();
+        let c1 = b.commit("c1", &sig()).unwrap();
+        // c2: move old.typ → new.typ (delete + add of identical content).
+        std::fs::remove_file(dir.path().join("old.typ")).unwrap();
+        std::fs::write(dir.path().join("new.typ"), body).unwrap();
+        let mut idx = b.repo.index().unwrap();
+        idx.remove_path(Path::new("old.typ")).unwrap();
+        idx.add_path(Path::new("new.typ")).unwrap();
+        idx.write().unwrap();
+        let c2 = b.commit("c2", &sig()).unwrap();
+
+        let changed = b.changed_paths(Some(c1), c2).unwrap();
+        assert_eq!(
+            changed,
+            vec![ChangedPath {
+                path: PathBuf::from("new.typ"),
+                status: ChangeStatus::Renamed,
+                old_path: Some(PathBuf::from("old.typ")),
+            }],
+            "a move collapses to one Renamed entry carrying both paths"
+        );
     }
 
     #[test]
