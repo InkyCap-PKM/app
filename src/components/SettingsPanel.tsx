@@ -69,7 +69,9 @@ import AttachmentFolderField from "./AttachmentFolderField";
 import { dailyNotesFolder } from "../stores/journal-scroll";
 import { showToast, dismissToast } from "../stores/toasts";
 import { disableCollaboration, reconnectCollaboration, setupPackageHandoff } from "../stores/git";
-import { promptConfirm } from "../stores/prompt";
+import { toHttpsRemote } from "../lib/git-remote";
+import ExperimentalNotice from "./ExperimentalNotice";
+import { promptConfirmWithCheckbox } from "../stores/prompt";
 import HelpButton from "./HelpButton";
 import inkycapLogo from "../assets/inkycap-logo.svg";
 import BackupBrowser from "./BackupBrowser";
@@ -465,18 +467,19 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
       document.dispatchEvent(new CustomEvent("inkycap:open-collaboration"));
       return;
     }
-    const ok = await promptConfirm({
+    const { confirmed, checked } = await promptConfirmWithCheckbox({
       title: t("git.manage.disable"),
       message: t("git.manage.disableConfirm"),
       confirmLabel: t("git.manage.disable"),
+      checkbox: { label: t("git.manage.deleteHistoryOption") },
     });
-    if (!ok) {
+    if (!confirmed) {
       input.checked = true;
       return;
     }
     try {
-      await disableCollaboration();
-      showToast("info", t("git.manage.disabled"));
+      await disableCollaboration(checked);
+      showToast("info", checked ? t("git.manage.disabledWithHistory") : t("git.manage.disabled"));
       await loadNoteboxRegistry();
     } catch (err) {
       showToast("error", `${t("git.manage.disableFailed")}: ${err}`);
@@ -637,9 +640,9 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
   }
 
   async function confirmClone() {
-    const remote = cloneRemote().trim();
+    const entered = cloneRemote().trim();
     const dest = cloneDest().trim();
-    if (!remote) {
+    if (!entered) {
       showToast("error", t("settings.notebox.cloneRemoteRequired"));
       return;
     }
@@ -647,6 +650,15 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
       showToast("error", t("settings.notebox.cloneFolderRequired"));
       return;
     }
+    // libgit2 picks the transport from the URL scheme, so a username/password
+    // is only honoured over HTTPS. When the user supplies credentials, normalize
+    // the address to HTTPS even if they typed an SSH-style URL (e.g.
+    // `git@host:owner/repo`) — otherwise the clone would silently fall back to
+    // SSH keys and the resulting notebox would read as SSH-mode, ignoring the
+    // sign-in they entered. With no credentials, keep the address as typed (an
+    // SSH URL stays SSH, using the machine's keys).
+    const hasCredentials = !!(cloneUsername().trim() || clonePassword().trim());
+    const remote = hasCredentials ? toHttpsRemote(entered) : entered;
     // Display name defaults to the destination folder's basename (the backend
     // applies the same default when none is passed), matching New notebox.
     const name = dest.split("/").pop() || "Notebox";
@@ -918,6 +930,9 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
                     >
                       {t("settings.notebox.configure")}
                     </button>
+                    {/* Collaboration is the newest, least-exercised surface —
+                        flag it as experimental, only where it's switched on. */}
+                    <ExperimentalNotice class="experimental-notice--inline" />
                   </Show>
                 </div>
               </div>
@@ -2828,6 +2843,7 @@ function ExtensionsSettingsSection() {
       <p class="settings__section-note">
         {t("settings.extensions.intro")}
       </p>
+      <ExperimentalNotice />
 
       <For each={tools()}>
         {(tool, i) => (

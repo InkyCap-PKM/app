@@ -1,12 +1,13 @@
 //! Compile-validates the inline `#suggestion(...)` tracked-change primitive in
 //! the `inkycap-notebox` Typst package (`lib.typ`).
 //!
-//! `#suggestion` renders an inline mark (insert = green underline, delete = red
-//! strike, replace = both) and emits `<inkycap-suggestion>`. A syntax error in
-//! the `#let` — or the `kind` assert, or a bad `underline`/`strike` call — only
-//! surfaces when a note that uses it is compiled, so this runs a real note
-//! carrying all three kinds (replace with `old:`, attribution on one) through
-//! the actual Typst compiler. Needs no external tooling, so it always runs.
+//! In compiled output `#suggestion` renders the *resulting* (accepted) text —
+//! insert/replace show the new body, delete shows nothing — with no
+//! tracked-change styling, and emits the invisible `<inkycap-suggestion>` mark.
+//! A syntax error in the `#let` — or the `kind` assert — only surfaces when a
+//! note that uses it is compiled, so this runs a real note carrying all three
+//! kinds (replace with `old:`, attribution on one) through the actual Typst
+//! compiler. Needs no external tooling, so it always runs.
 
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};

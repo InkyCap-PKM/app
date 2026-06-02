@@ -28,8 +28,6 @@ import {
   RotateCcw,
   ArrowRightLeft,
 } from "lucide-solid";
-import { save, open } from "@tauri-apps/plugin-dialog";
-import { homeDirDefault } from "../lib/dialog-defaults";
 import HelpButton from "./HelpButton";
 import LoadingDots from "./LoadingDots";
 import { noteboxSettings } from "../stores/settings";
@@ -48,8 +46,6 @@ import {
   setupCollaboration,
   setupPackageHandoff,
   reconnectCollaboration,
-  exportPackage,
-  importPackage,
   getDefaultIdentity,
   disableCollaboration,
   manageOpen,
@@ -66,43 +62,8 @@ import { openTab, getActiveTab } from "../stores/tabs";
 import { setRightCollapsed, setRightPanelTab } from "../stores/layout";
 import type { GitDigestEntry } from "../lib/types";
 import { gitChangesToShare, gitSavedUsername } from "../lib/ipc";
-
-/** A remote address that uses SSH rather than HTTPS — anything not starting with
- *  `http://` / `https://` (e.g. `ssh://git@host/…` or `git@host:owner/repo`).
- *  Used to pre-select the "connect with SSH" option from an existing config. */
-function looksLikeSshRemote(remote: string): boolean {
-  const r = remote.trim();
-  return r !== "" && !/^https?:\/\//i.test(r);
-}
-
-/** Reduce any remote spelling to `host/owner/repo` (no scheme, user, or trailing
- *  slash). Mirrors the backend's `normalize_remote`. */
-function remoteParts(url: string): string {
-  let s = url.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, ""); // drop scheme
-  s = s.replace(/^[^@/]*@/, ""); // drop user@
-  // scp-style `host:owner/repo` → `host/owner/repo` (only when the colon comes
-  // before any slash, i.e. it's the host/path separator, not a port in a URL).
-  const colon = s.indexOf(":");
-  const slash = s.indexOf("/");
-  if (colon !== -1 && (slash === -1 || colon < slash)) {
-    s = `${s.slice(0, colon)}/${s.slice(colon + 1)}`;
-  }
-  return s.replace(/\/+$/, "");
-}
-
-/** Rewrite a remote address to the other transport's scheme, so toggling
- *  "Connect with SSH instead" keeps the address consistent with the chosen auth
- *  method (libgit2 picks SSH vs HTTPS from the URL scheme, so a mismatched URL
- *  would silently ignore the username/password — and the toggle would snap back
- *  on reload). Empty/unparseable input is left as-is. */
-function toHttpsRemote(url: string): string {
-  const p = remoteParts(url);
-  return p ? `https://${p}` : url.trim();
-}
-function toSshRemote(url: string): string {
-  const p = remoteParts(url);
-  return p ? `ssh://git@${p}` : url.trim();
-}
+import { exportPackageInteractive, importPackageInteractive } from "../lib/package-handoff";
+import { looksLikeSshRemote, toHttpsRemote, toSshRemote } from "../lib/git-remote";
 
 /** Truncate a JSON value to a short, single-line preview for a settings chip. */
 function fmtSettingValue(v: unknown): string {
@@ -110,13 +71,8 @@ function fmtSettingValue(v: unknown): string {
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
 import { showToast, toastError } from "../stores/toasts";
-import { promptConfirm } from "../stores/prompt";
+import { promptConfirm, promptConfirmWithCheckbox } from "../stores/prompt";
 import { t, tPlural } from "../lib/i18n";
-
-/** Filename filter for package archives, shared by the export/import dialogs. A
- *  package is a plain `.zip` (of the notebox's `.git`); `.inkypkg` is still
- *  accepted on import for packages exported by earlier builds. */
-const PACKAGE_FILTERS = [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }];
 
 /** Icon for a change kind (mirrors the inline suggestion tones). */
 function kindIcon(kind: GitDigestEntry["status"]) {
@@ -530,34 +486,18 @@ const PackageActions: Component = () => {
   const [busy, setBusy] = createSignal<"import" | "export" | null>(null);
 
   async function doExport() {
-    const dest = await save({
-      title: t("git.package.exportTitle"),
-      // Default OUTSIDE the notebox (home), never the notebox root: writing the
-      // handoff package into the very folder being packaged would fold prior
-      // packages into each new one. Imports likewise come from outside.
-      defaultPath: await homeDirDefault("notebox.zip"),
-      filters: PACKAGE_FILTERS,
-    });
-    if (!dest) return;
     setBusy("export");
     try {
-      await exportPackage(dest, password().trim() || undefined);
+      await exportPackageInteractive(password());
     } finally {
       setBusy(null);
     }
   }
 
   async function doImport() {
-    const picked = await open({
-      multiple: false,
-      title: t("git.package.importTitle"),
-      defaultPath: await homeDirDefault(),
-      filters: PACKAGE_FILTERS,
-    });
-    if (typeof picked !== "string") return;
     setBusy("import");
     try {
-      await importPackage(picked, password().trim() || undefined);
+      await importPackageInteractive(password());
     } finally {
       setBusy(null);
     }
@@ -896,15 +836,16 @@ const ManageSection: Component = () => {
   }
 
   async function disable() {
-    const ok = await promptConfirm({
+    const { confirmed, checked } = await promptConfirmWithCheckbox({
       title: t("git.manage.disable"),
       message: t("git.manage.disableConfirm"),
       confirmLabel: t("git.manage.disable"),
+      checkbox: { label: t("git.manage.deleteHistoryOption") },
     });
-    if (!ok) return;
+    if (!confirmed) return;
     try {
-      await disableCollaboration();
-      showToast("info", t("git.manage.disabled"));
+      await disableCollaboration(checked);
+      showToast("info", checked ? t("git.manage.disabledWithHistory") : t("git.manage.disabled"));
     } catch (err) {
       toastError(t("git.manage.disableFailed"), err);
     }

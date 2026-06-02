@@ -839,16 +839,6 @@ function suggestionResolution(p: SuggestionMenuParams, accept: boolean): string 
   }
 }
 
-/** The full replacement on resolve: the resolution plus an inline `#annotation`
- *  carrying the reviewer's comment, when one was left. */
-function suggestionReplacement(p: SuggestionMenuParams, accept: boolean, comment: string): string {
-  const resolved = suggestionResolution(p, accept);
-  const c = comment.trim();
-  if (!c) return resolved;
-  const annotation = `#annotation[${c}]`;
-  return resolved ? `${resolved} ${annotation}` : annotation;
-}
-
 /** Open the Accept / Reject / Comment review menu for a suggestion, anchored to
  *  `anchor`. Shared by the inline [`SuggestionWidget`] (anchored to its own DOM)
  *  and the Changes & History pane (anchored to the clicked row). */
@@ -872,9 +862,12 @@ export function openSuggestionMenu(
 
   // Comment — pre-filled with the suggestion's saved `note` so reopening the
   // menu shows the existing remark. "Save comment" persists it onto the open
-  // suggestion (visible in the doc + Annotations pane); Accept/Reject resolve
-  // the change and fold any comment in as an inline #annotation so the
-  // rationale survives once the suggestion mark is gone.
+  // suggestion (visible in the doc + Annotations pane). Accept/Reject resolve
+  // the change and DISCARD the comment along with the suggestion mark: once the
+  // change is decided, the review-conversation note is moot, so resolving leaves
+  // only the clean result — nothing further for the user to clean up. (Earlier
+  // this folded the note into an inline #annotation, which left a stray comment
+  // the accepting user then had to delete without knowing where it came from.)
   const comment = document.createElement("textarea");
   comment.className = "cm-suggestion-menu__comment";
   comment.rows = 2;
@@ -923,7 +916,7 @@ export function openSuggestionMenu(
     b.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const text = suggestionReplacement(p, accept, comment.value);
+      const text = suggestionResolution(p, accept);
       applyCallTransform(view, p.from, () => text);
       closeSuggestionMenu();
       view.focus();

@@ -475,24 +475,6 @@ fn record_shared_head(backend: &GitBackend, root: &Path) -> Result<()> {
     crate::notebox_settings::save_local_state(root, &local)
 }
 
-/// Save the username + password for this notebox's repository (re-authenticate
-/// without re-running full setup). The password lives only in the OS keychain
-/// and the username in a per-installation store — never in settings or the repo.
-#[tauri::command]
-pub async fn git_sign_in(
-    username: String,
-    password: String,
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<()> {
-    let session = state.session(window.label()).await;
-    let git = require_collaborative(&session).await?;
-    if !username.trim().is_empty() {
-        auth::set_username_for_remote(&git.remote, username.trim())?;
-    }
-    auth::set_remote_password(&git.remote, &password)
-}
-
 /// The saved sign-in username for a remote, for pre-filling the connect form.
 /// Empty/absent when none was saved (a fresh setup, or an SSH-only notebox).
 #[tauri::command]
@@ -500,12 +482,20 @@ pub async fn git_saved_username(remote: String) -> Result<Option<String>> {
     Ok(auth::username_for_remote(remote.trim()))
 }
 
-/// Stop collaborating on the open notebox: drop its [`NoteboxGitConfig`] and
-/// clear any pending review staging. The `.git` directory and stored
-/// credentials are left intact — disabling is reversible (re-run setup), and
-/// the credentials are keyed by the remote, so reconnecting later finds them.
+/// Stop collaborating on the open notebox: drop its [`NoteboxGitConfig`].
+///
+/// By default the `.git` directory and stored credentials are left intact, so
+/// disabling is reversible (re-run setup / reconnect finds the credentials,
+/// which are keyed by the remote). When `delete_history` is true, the whole
+/// `.git` directory is removed as well — reclaiming the version-history disk
+/// space and turning the notebox back into a plain folder. That is
+/// irreversible (the local history is gone; only a collaborator's copy or the
+/// remote could restore it), so the frontend gates it behind an explicit
+/// opt-in. Credentials are left even then: they are keyed by the remote and may
+/// be shared with another notebox cloned from the same repository.
 #[tauri::command]
 pub async fn git_disable_collaboration(
+    delete_history: bool,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<()> {
@@ -521,6 +511,25 @@ pub async fn git_disable_collaboration(
     settings.git = None;
     crate::notebox_settings::save_settings(&root, &settings)?;
     *session.notebox_settings.write().await = settings;
+
+    if delete_history {
+        // Remove the repository itself. `.git` is watcher-ignored, and we hold
+        // no open `git2::Repository` handle here, so the directory is free to
+        // delete. A missing `.git` is success (idempotent).
+        let git_dir = root.join(".git");
+        match std::fs::remove_dir_all(&git_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        // The git-baseline pointers in local.json reference commits that no
+        // longer exist — clear them so a future re-init starts clean.
+        let mut local = crate::notebox_settings::load_local_state(&root);
+        local.last_shared_oid = None;
+        local.last_sync_oid = None;
+        local.last_sync_conflicted.clear();
+        crate::notebox_settings::save_local_state(&root, &local)?;
+    }
 
     Ok(())
 }

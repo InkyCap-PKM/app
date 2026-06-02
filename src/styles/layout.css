@@ -8615,6 +8615,21 @@ svg.lucide {
   align-items: flex-start;
 }
 
+/* Registry rows (not the add/clone/import forms, which lack data-notebox-path)
+   float their action buttons top-right and out of flow, so the info column —
+   and the per-notebox collaboration line with its experimental notice — can use
+   the full row width before wrapping, instead of being boxed into the narrow
+   space left of the buttons. `top` matches the row's 10px padding. */
+.notebox-row[data-notebox-path] {
+  position: relative;
+}
+
+.notebox-row[data-notebox-path] > .notebox-row__actions {
+  position: absolute;
+  top: 10px;
+  right: 0;
+}
+
 .notebox-row__name-line {
   display: flex;
   align-items: center;
@@ -10092,6 +10107,44 @@ svg.lucide {
 .app-modal__error {
   font-size: var(--text-sm);
   color: var(--error-fg, #e55);
+}
+
+/* Inline "this feature is experimental" notice — flag glyph + cautionary text,
+   non-interactive. The flag takes the warning amber; the text stays muted so it
+   draws the eye without alarming. */
+.experimental-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.experimental-notice__icon {
+  flex-shrink: 0;
+  color: var(--callout-warning);
+}
+
+/* Inline variant: sits in a flex row beside a control (e.g. the per-notebox
+   "Configure" button) rather than as its own block — no vertical margin. */
+.experimental-notice--inline {
+  margin: 0;
+}
+
+/* Optional opt-in checkbox in a confirm dialog (e.g. a destructive extra). */
+.app-modal__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.app-modal__checkbox input {
+  cursor: pointer;
 }
 
 .app-modal__footer {

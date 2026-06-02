@@ -25,7 +25,7 @@ import type {
 } from "../lib/types";
 import { noteboxSettings, loadNoteboxSettings } from "./settings";
 import { invalidateEditorCacheForPath } from "./tabs";
-import { awaitAllPendingWrites } from "./editor-writes";
+import { awaitAllPendingWrites, onEditorWrite } from "./editor-writes";
 import { showToast, toastError } from "./toasts";
 import { t } from "../lib/i18n";
 import {
@@ -129,11 +129,18 @@ export async function refreshUnresolved(): Promise<void> {
 
 /** Notes the most recent sync changed, relative to the recorded pre-sync
  *  baseline — the merge-first "review what landed" surface. Take-theirs
- *  (conflicted) entries sort first. This is the primary notebox-wide
- *  collaboration indicator: a Sync / import folds incoming changes straight in
- *  (the model never pauses), and the user reviews and reverts here afterwards.
- *  Refreshed on notebox open, after a pull, and (debounced) on working-tree
- *  changes (a revert drops the note's hunks, so the list self-clears). */
+ *  (conflicted) entries sort first. A Sync / import folds incoming changes
+ *  straight in (the model never pauses), and the user reviews and reverts here
+ *  afterwards.
+ *
+ *  This is a TRANSIENT, in-session notice, not a persistent baseline diff:
+ *  populated by a pulling Sync / import, and dropped again once the user moves
+ *  on — when they start editing (any editor save, via `onEditorWrite`) or when
+ *  the notebox is closed and reopened (`resetGitOnOpen` clears it and does not
+ *  reload it). A revert refreshes it so reverted notes drop out. It is
+ *  deliberately NOT recomputed from the baseline on every working-tree change,
+ *  which previously made it linger (and grow with unrelated edits) and read as a
+ *  standing task rather than a one-time "here's what the sync brought in". */
 const [changesSinceSync, setChangesSinceSync] = createSignal<GitSinceSyncEntry[]>([]);
 export { changesSinceSync };
 
@@ -247,9 +254,11 @@ function scheduleStatusRefresh(): void {
     // notebox-wide count in step. The incremental indexer only re-scans the
     // changed file, so the cache-backed query stays cheap.
     void refreshUnresolved();
-    // A working-tree change also moves a note toward (an edit) or away from (a
-    // revert back to baseline) its pre-sync state — keep the review list current.
-    void refreshChangesSinceSync();
+    // NB: the "changes since last sync" review list is intentionally NOT
+    // refreshed here. It is a transient post-sync notice (see its declaration);
+    // recomputing it on every working-tree change made it linger and grow with
+    // unrelated edits. It is cleared instead when the user starts editing (the
+    // `onEditorWrite` subscription below).
   }, 600);
 }
 
@@ -284,6 +293,13 @@ export async function ensureGitListeners(): Promise<void> {
     await onFileDeleted(() => scheduleStatusRefresh()),
     // A repo-with-remote that has no collaboration config → offer to reconnect.
     await onGitReconnectable((p) => setReconnectable(p)),
+    // The "changes since last sync" notice is transient: once the user starts
+    // editing, they have moved on from reviewing what the sync brought in, so
+    // drop it. Editor saves fire `onEditorWrite`; the sync's own checkout writes
+    // do NOT, so this never clears the list the sync just populated.
+    onEditorWrite(() => {
+      if (changesSinceSync().length > 0) setChangesSinceSync([]);
+    }),
   );
 }
 
@@ -308,7 +324,10 @@ export async function resetGitOnOpen(): Promise<void> {
   if (collaborative()) {
     await refreshStatus();
     void refreshUnresolved();
-    void refreshChangesSinceSync();
+    // `changesSinceSync` is intentionally NOT reloaded here: it is a transient
+    // post-sync notice (cleared above), so closing and reopening the notebox
+    // leaves it behind, as a one-time "what the last sync brought in" prompt
+    // should.
     // Load the per-machine bundle-packages preference for this notebox.
     setBundlePackagesSignal(await ipc.gitGetBundlePackages().catch(() => false));
     // Cache the commit-author name so the editor can attribute new suggestions.
@@ -543,17 +562,14 @@ export async function setBundlePackages(enabled: boolean): Promise<void> {
   }
 }
 
-/** Save the username + password for the repository (re-auth). Throws on failure. */
-export async function signIn(username: string, password: string): Promise<void> {
-  await ipc.gitSignIn(username, password);
-}
-
-/** Stop collaborating; refresh settings so the toolbar button disappears. */
-export async function disableCollaboration(): Promise<void> {
-  await ipc.gitDisableCollaboration();
+/** Stop collaborating; refresh settings so the toolbar button disappears. With
+ *  `deleteHistory`, also removes the `.git` version history (irreversible). */
+export async function disableCollaboration(deleteHistory = false): Promise<void> {
+  await ipc.gitDisableCollaboration(deleteHistory);
   await loadNoteboxSettings();
   setSyncOutcome(null);
   setGitStatus(null);
+  setChangesSinceSync([]);
 }
 
 /** The commit identity configured for this notebox's remote, if any. */

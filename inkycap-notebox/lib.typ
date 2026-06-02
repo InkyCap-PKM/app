@@ -661,48 +661,45 @@
 // suggestion: an inline tracked-change mark — the InkyCap "suggesting mode"
 // primitive. A collaborator proposes a change *inline* (rather than as a
 // whole-file diff): `kind` is "insert" (proposed new text), "delete" (existing
-// text proposed for removal), or "replace" (old → new). The change is rendered
-// in the CriticMarkup / Track-Changes idiom — insertions green-underlined,
-// deletions red-struck — so it reads as intent, not final text.
+// text proposed for removal), or "replace" (old → new).
+//
+// IN COMPILED OUTPUT (reading view, PDF, HTML) this renders the *resulting*
+// text — the change as if accepted — with no tracked-change styling: insert and
+// replace show the new `body`; delete shows nothing. The CriticMarkup /
+// Track-Changes face (green-underlined insertions, red-struck deletions, the
+// inline reviewer `note`) is an editorial convenience that belongs only in the
+// visual editor, where it is drawn by a CodeMirror decoration, not by this
+// function. A rendered document therefore reads as the proposed result, never
+// as marked-up intent. (Accept semantics mirror `typst_pipeline::suggestion`:
+// insert/replace → new `body`, delete → nothing.)
 //
 // Storage is Typst-native: the source-of-truth stays a `.typ` that compiles
 // anywhere. Accepting/rejecting a suggestion is a source transform (host-side
 // `suggestion_rewriter`) that *unwraps* the call to clean Typst, so a published
-// document never carries suggestion marks. Emits `<inkycap-suggestion>` (dict
-// kind/by/on/note) for a future Suggestions panel; `by`/`on` attribute the
-// author and `note` is an optional reviewer comment about the change.
+// document never carries suggestion marks even in source. The invisible
+// `#metadata` mark (`<inkycap-suggestion>`, dict kind/by/on/note) is still
+// emitted so `typst query` and the Suggestions/Annotations panel can find every
+// open suggestion; `by`/`on` attribute the author and `note` is a reviewer
+// comment, surfaced in the editor but kept out of rendered output.
 //
-// `body` (positional) is the inserted/deleted text; `old` (named content) is
-// the replaced text for kind == "replace". `note` (named string) is a comment
-// that travels with the open suggestion — it renders as a small inline remark
-// so it is visible in the reading view, and is surfaced in the editor's
-// Annotations pane and the suggestion's review menu.
+// `body` (positional) is the inserted/new text; `old` (named content) is the
+// replaced text for kind == "replace" — it carries in the source for the
+// host-side reject transform but is not rendered (an accepted replace keeps the
+// new text, not the old).
 // ---------------------------------------------------------------------------
-
-#let _suggestion-insert-color = rgb("#16a34a") // green
-#let _suggestion-delete-color = rgb("#dc2626") // red
 
 #let suggestion(body, kind: "insert", old: none, note: none, by: none, on: none) = {
   assert(
     kind in ("insert", "delete", "replace"),
     message: "suggestion: kind must be \"insert\", \"delete\", or \"replace\"",
   )
+  // Queryable, invisible mark — keeps the suggestion discoverable without
+  // putting any tracked-change styling in the rendered document.
   [#metadata((kind: kind, by: by, on: _fmt-date(on), note: note)) <inkycap-suggestion>]
-  if kind == "insert" {
-    underline(text(fill: _suggestion-insert-color, body))
-  } else if kind == "delete" {
-    strike(text(fill: _suggestion-delete-color, body))
-  } else {
-    // replace: struck old text immediately followed by the underlined new text
-    let old-content = if old == none { [] } else { old }
-    strike(text(fill: _suggestion-delete-color, old-content))
-    underline(text(fill: _suggestion-insert-color, body))
-  }
-  // A reviewer comment on the open suggestion — rendered as a small inline
-  // remark in the annotation violet so it stays visible (the suggestion's
-  // intent is the change; the note is the conversation about it).
-  if note != none and str(note).trim() != "" {
-    [#text(size: 0.75em, fill: _annotation-color)[ \u{2014} #note]]
+  // Render the accepted result. A "delete" resolves to nothing, so it emits
+  // only the (invisible) mark above; "insert"/"replace" emit the new text.
+  if kind != "delete" {
+    body
   }
 }
 

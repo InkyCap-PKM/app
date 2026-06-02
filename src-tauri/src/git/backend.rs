@@ -819,10 +819,6 @@ const GITIGNORE_ENTRIES: &[(&str, &str)] = &[
         ".inkycap/incoming/",
         "Incoming-change staging area; rebuilt on each fetch.",
     ),
-    (
-        ".inkycap/history/",
-        "Version-history scratch copies opened for viewing; disposable.",
-    ),
     (".DS_Store", "OS file-manager noise."),
     ("Thumbs.db", ""),
 ];
@@ -1106,7 +1102,6 @@ mod tests {
         assert!(after_first.contains("secrets.txt"), "user entry preserved");
         assert!(after_first.contains(".inkycap/local.json"));
         assert!(after_first.contains(".inkycap/incoming/"));
-        assert!(after_first.contains(".inkycap/history/"));
 
         // Idempotent: a second call does not duplicate the managed block.
         ensure_collaboration_gitignore(root).unwrap();
@@ -1121,16 +1116,16 @@ mod tests {
     fn gitignore_additively_backfills_missing_entries() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // Simulate an older managed block without `.inkycap/history/`.
+        // Simulate an older managed block without `.inkycap/incoming/`.
         std::fs::write(
             root.join(".gitignore"),
-            format!("{GITIGNORE_MARKER}\n.inkycap/local.json\n.inkycap/incoming/\n.DS_Store\nThumbs.db\n"),
+            format!("{GITIGNORE_MARKER}\n.inkycap/local.json\n.DS_Store\nThumbs.db\n"),
         )
         .unwrap();
 
         ensure_collaboration_gitignore(root).unwrap();
         let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
-        assert!(after.contains(".inkycap/history/"), "missing entry backfilled");
+        assert!(after.contains(".inkycap/incoming/"), "missing entry backfilled");
         assert_eq!(after.matches(".inkycap/local.json").count(), 1, "no duplication");
         assert_eq!(after.matches(GITIGNORE_MARKER).count(), 1, "header stays single");
     }

@@ -144,8 +144,8 @@ const App: Component = () => {
 
   // The collaboration pane is meaningful for a collaborative notebox (sync /
   // history) AND for a non-collaborative one the user is actively setting up —
-  // the SetupForm lives there, reached by toggling collaboration on or the
-  // `git:setup` command. So only LEAVE the pane when the active notebox
+  // the SetupForm lives there, reached by toggling collaboration on from
+  // Settings. So only LEAVE the pane when the active notebox
   // *becomes* non-collaborative while we're parked on it (i.e. a switch to a
   // non-collaborative notebox, or Stop collaborating), never when the user
   // deliberately opens the pane on a non-collaborative notebox to set it up.

@@ -57,10 +57,21 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   /** Cancel button label. Defaults to "Cancel". */
   cancelLabel?: string;
+  /** Optional secondary opt-in checkbox shown above the buttons (e.g. a
+   *  destructive extra like "also delete the version history"). Its state is
+   *  returned by [`promptConfirmWithCheckbox`]; plain [`promptConfirm`] ignores
+   *  it. Defaults to unchecked unless `initial` is set. */
+  checkbox?: { label: string; initial?: boolean };
+}
+
+/** The outcome of a confirm that carried a [`ConfirmOptions.checkbox`]. */
+export interface ConfirmResult {
+  confirmed: boolean;
+  checked: boolean;
 }
 
 interface ConfirmState extends ConfirmOptions {
-  resolve: (ok: boolean) => void;
+  resolve: (result: ConfirmResult) => void;
 }
 
 const [activeConfirm, setActiveConfirm] = createSignal<ConfirmState | null>(null);
@@ -96,17 +107,26 @@ export function resolvePrompt(value: string | null) {
  * one is cancelled (`false`) before the new one opens.
  */
 export function promptConfirm(opts: ConfirmOptions): Promise<boolean> {
+  return promptConfirmWithCheckbox(opts).then((r) => r.confirmed);
+}
+
+/**
+ * Like [`promptConfirm`], but also reports the state of the optional
+ * [`ConfirmOptions.checkbox`]. `checked` is meaningless (always its initial
+ * value) when the user cancels, and when no checkbox was configured.
+ */
+export function promptConfirmWithCheckbox(opts: ConfirmOptions): Promise<ConfirmResult> {
   const existing = activeConfirm();
-  if (existing) existing.resolve(false);
-  return new Promise<boolean>((resolve) => {
+  if (existing) existing.resolve({ confirmed: false, checked: false });
+  return new Promise<ConfirmResult>((resolve) => {
     setActiveConfirm({ ...opts, resolve });
   });
 }
 
 /** Internal: used by PromptHost to settle the active confirm. */
-export function resolveConfirm(ok: boolean) {
+export function resolveConfirm(ok: boolean, checked = false) {
   const cur = activeConfirm();
   if (!cur) return;
   setActiveConfirm(null);
-  cur.resolve(ok);
+  cur.resolve({ confirmed: ok, checked });
 }
