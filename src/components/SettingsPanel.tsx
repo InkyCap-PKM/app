@@ -209,7 +209,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
             <div class="settings__main">
               <div class="settings__body">
                 <Show when={activeTab() === "overview"}>
-                  <OverviewSection />
+                  <OverviewSection onClose={props.onClose} />
                 </Show>
                 <Show when={activeTab() === "editor"}>
                   <EditorSettingsSection />
@@ -267,7 +267,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 
 // --- Section Components ---
 
-function OverviewSection() {
+function OverviewSection(props: { onClose: () => void }) {
   const t = useI18n();
   return (
     <div class="settings__section">
@@ -302,12 +302,12 @@ function OverviewSection() {
         </div>
       </div>
 
-      <NoteboxManagementSection />
+      <NoteboxManagementSection onClose={props.onClose} />
     </div>
   );
 }
 
-function NoteboxManagementSection() {
+function NoteboxManagementSection(props: { onClose: () => void }) {
   const t = useI18n();
   const [showAddForm, setShowAddForm] = createSignal(false);
   const [addPath, setAddPath] = createSignal("");
@@ -391,6 +391,19 @@ function NoteboxManagementSection() {
       await ipc.showInExplorer(path);
     } catch (err) {
       showToast("error", t("settings.notebox.openFileManagerFailed", { error: errorText(err) }));
+    }
+  }
+
+  // Switch the app to a registered notebox and dismiss Settings so the user
+  // lands in the notebox they chose. New noteboxes are deliberately *not*
+  // opened on creation — this button is the explicit way in.
+  async function handleOpen(entry: NoteboxRegistryEntry) {
+    if (pathEquals(entry.path, noteboxInfo()?.path)) return;
+    try {
+      await openNotebox(entry.path);
+      props.onClose();
+    } catch (err) {
+      showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
     }
   }
 
@@ -522,9 +535,48 @@ function NoteboxManagementSection() {
       setAddPath("");
       setAddName("");
       setAddError(null);
+      // A new notebox appends to the bottom of the list, which can land below
+      // the fold in a long registry. Bring its row into view once Solid has
+      // rendered it (`register_notebox` stores the path verbatim, so the row's
+      // data attribute matches what we registered).
+      scrollNoteboxIntoView(path);
     } catch (err) {
       showToast("error", t("settings.notebox.addFailed", { error: errorText(err) }));
     }
+  }
+
+  // A just-opened add/clone/import form renders at the bottom of the list,
+  // which can sit below the fold in a long registry. Bring it into view and
+  // focus its first field so the user can start typing (or reach its buttons)
+  // immediately. Used as a `ref` on each form's outer element, so it fires on
+  // mount.
+  function revealForm(el: HTMLElement) {
+    requestAnimationFrame(() => {
+      // Scroll the whole settings body to the bottom rather than just nudging
+      // the form's top edge in — the form is always the last element and the
+      // body's generous bottom padding then leaves the form (and its action
+      // buttons) fully clear of the bottom edge. `preventScroll` on focus keeps
+      // the input from fighting this scroll with its own partial adjustment.
+      const body = el.closest<HTMLElement>(".settings__body");
+      if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+      el.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+    });
+  }
+
+  // Scroll a notebox row into view by its registered path. Deferred to the next
+  // frame so the row exists in the DOM after the registry signal re-renders.
+  function scrollNoteboxIntoView(path: string) {
+    requestAnimationFrame(() => {
+      const rows = document.querySelectorAll<HTMLElement>(
+        ".settings__body [data-notebox-path]",
+      );
+      for (const row of rows) {
+        if (row.dataset.noteboxPath === path) {
+          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          break;
+        }
+      }
+    });
   }
 
   function cancelAdd() {
@@ -733,7 +785,7 @@ function NoteboxManagementSection() {
             isActive() ? noteboxSettings.git != null : entry.collaborative;
 
           return (
-            <div class="settings__row notebox-row">
+            <div class="settings__row notebox-row" data-notebox-path={entry.path}>
               <div class="settings__row-info">
                 <div class="notebox-row__name-line">
                   <Show
@@ -782,7 +834,13 @@ function NoteboxManagementSection() {
                 </div>
                 <span class="settings__description">{entry.path}</span>
                 <div class="notebox-row__collab">
-                  <Handshake size={13} class="notebox-row__collab-icon" />
+                  <Handshake
+                    size={13}
+                    class="notebox-row__collab-icon"
+                    classList={{
+                      "notebox-row__collab-icon--active": collaborative(),
+                    }}
+                  />
                   <span class="notebox-row__collab-label">
                     {t("settings.notebox.collaboration")}
                   </span>
@@ -816,6 +874,14 @@ function NoteboxManagementSection() {
               <div class="notebox-row__actions">
                 <button
                   class="settings__detect-btn"
+                  onClick={() => handleOpen(entry)}
+                  disabled={isActive()}
+                  title={t("settings.notebox.openTooltip")}
+                >
+                  {t("common.open")}
+                </button>
+                <button
+                  class="settings__detect-btn"
                   onClick={() => handleShowInFilesystem(entry.path)}
                 >
                   {t("common.show")}
@@ -839,18 +905,27 @@ function NoteboxManagementSection() {
       </For>
 
       <Show when={showAddForm()}>
-        <div class="settings__row notebox-row notebox-row--add-form">
+        <div class="settings__row notebox-row notebox-row--add-form" ref={revealForm}>
           <div class="settings__row-info">
-            <input
-              class="settings__text-input"
-              placeholder={t("settings.notebox.displayNamePlaceholder")}
-              value={addName()}
-              onInput={(e) => setAddName(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmAdd();
-                if (e.key === "Escape") cancelAdd();
-              }}
-            />
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                placeholder={t("settings.notebox.displayNamePlaceholder")}
+                value={addName()}
+                onInput={(e) => setAddName(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmAdd();
+                  if (e.key === "Escape") cancelAdd();
+                }}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.displayNamePlaceholder"),
+                })}
+              >
+                {t("settings.notebox.displayNameHelp")}
+              </HelpButton>
+            </div>
             <span
               class="settings__description"
               classList={{ "settings__description--error": !!addError() }}
@@ -884,28 +959,55 @@ function NoteboxManagementSection() {
       </Show>
 
       <Show when={showCloneForm()}>
-        <div class="settings__row notebox-row notebox-row--add-form">
+        <div class="settings__row notebox-row notebox-row--add-form" ref={revealForm}>
           <div class="settings__row-info">
-            <input
-              class="settings__text-input"
-              placeholder={t("settings.notebox.remotePlaceholder")}
-              value={cloneRemote()}
-              onInput={(e) => setCloneRemote(e.currentTarget.value)}
-            />
-            <input
-              class="settings__text-input"
-              placeholder={t("settings.notebox.branchPlaceholder")}
-              value={cloneBranch()}
-              onInput={(e) => setCloneBranch(e.currentTarget.value)}
-            />
-            <input
-              class="settings__text-input"
-              type="password"
-              autocomplete="off"
-              placeholder={t("settings.notebox.tokenPlaceholder")}
-              value={cloneToken()}
-              onInput={(e) => setCloneToken(e.currentTarget.value)}
-            />
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                placeholder={t("settings.notebox.remotePlaceholder")}
+                value={cloneRemote()}
+                onInput={(e) => setCloneRemote(e.currentTarget.value)}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.remotePlaceholder"),
+                })}
+              >
+                {t("settings.notebox.remoteHelp")}
+              </HelpButton>
+            </div>
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                placeholder={t("settings.notebox.branchPlaceholder")}
+                value={cloneBranch()}
+                onInput={(e) => setCloneBranch(e.currentTarget.value)}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.branchPlaceholder"),
+                })}
+              >
+                {t("settings.notebox.branchHelp")}
+              </HelpButton>
+            </div>
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                type="password"
+                autocomplete="off"
+                placeholder={t("settings.notebox.tokenPlaceholder")}
+                value={cloneToken()}
+                onInput={(e) => setCloneToken(e.currentTarget.value)}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.tokenPlaceholder"),
+                })}
+              >
+                {t("settings.notebox.tokenHelp")}
+              </HelpButton>
+            </div>
             <span class="settings__description">
               {cloneDest()
                 ? t("settings.notebox.cloneInto", { path: cloneDest() })
@@ -935,21 +1037,30 @@ function NoteboxManagementSection() {
       </Show>
 
       <Show when={showImportForm()}>
-        <div class="settings__row notebox-row notebox-row--add-form">
+        <div class="settings__row notebox-row notebox-row--add-form" ref={revealForm}>
           <div class="settings__row-info">
             <span class="settings__description">
               {importArchive()
                 ? t("settings.notebox.packageLabel", { path: importArchive() })
                 : t("settings.notebox.noPackageSelected")}
             </span>
-            <input
-              class="settings__text-input"
-              type="password"
-              autocomplete="off"
-              placeholder={t("settings.notebox.archivePasswordPlaceholder")}
-              value={importPassword()}
-              onInput={(e) => setImportPassword(e.currentTarget.value)}
-            />
+            <div class="notebox-form__field">
+              <input
+                class="settings__text-input"
+                type="password"
+                autocomplete="off"
+                placeholder={t("settings.notebox.archivePasswordPlaceholder")}
+                value={importPassword()}
+                onInput={(e) => setImportPassword(e.currentTarget.value)}
+              />
+              <HelpButton
+                label={t("settings.notebox.fieldHelpLabel", {
+                  field: t("settings.notebox.archivePasswordPlaceholder"),
+                })}
+              >
+                {t("settings.notebox.archivePasswordHelp")}
+              </HelpButton>
+            </div>
             <span class="settings__description">
               {importDest()
                 ? t("settings.notebox.importInto", { path: importDest() })

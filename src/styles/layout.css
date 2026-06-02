@@ -43,11 +43,17 @@
 /* The status bar itself disappears: lifting it to `position: fixed` removes it
    from the grid's `auto` row (which then collapses to 0, so the editor fills
    the full height) and shrink-wraps it to the bottom-right corner. Only the
-   exit button remains, floating there. */
+   exit button remains, floating there.
+
+   In this mode the editor reclaims the full width, so its 12px vertical
+   scrollbar (and the bottom stepper button at the corner) now run right under
+   where the button would sit. Inset past the scrollbar (12px + gap) and lift
+   it a little off the corner so it never overlaps — this also lands it near
+   the right-edge position it occupies in the normal status bar. */
 .app-shell--distraction-free .status-bar {
   position: fixed;
-  right: 8px;
-  bottom: 6px;
+  right: 18px;
+  bottom: 10px;
   width: auto;
   height: auto;
   padding: 0;
@@ -3115,6 +3121,13 @@ svg.lucide {
 
 .settings__text-input:focus {
   border-color: var(--accent);
+}
+
+/* Placeholder hint text must read as a prompt, not as a real entered value —
+   dim it well below the primary input colour so it isn't mistaken for content. */
+.settings__text-input::placeholder {
+  color: var(--fg-dim);
+  opacity: 1;
 }
 
 /* Extensions tab — external-tool cards. A list of user-registered tools, each
@@ -8615,6 +8628,15 @@ svg.lucide {
   gap: 4px;
 }
 
+/* A field row inside an add/clone/import form: the text input paired with its
+   inline "?" help trigger, so the explanatory hint lives in the popover rather
+   than cramped into the input's placeholder. */
+.notebox-form__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .notebox-row__inline-edit .settings__text-input {
   flex: 1;
 }
@@ -8661,6 +8683,13 @@ svg.lucide {
 .notebox-row__collab-icon {
   color: var(--fg-dim);
   flex-shrink: 0;
+  transition: color 0.12s ease;
+}
+
+/* When collaboration is on for this notebox, the handshake reads as a live,
+   accented status rather than a dim decorative glyph. */
+.notebox-row__collab-icon--active {
+  color: var(--accent);
 }
 
 .notebox-row__collab-label {
