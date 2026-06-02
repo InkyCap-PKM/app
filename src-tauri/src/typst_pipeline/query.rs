@@ -30,6 +30,14 @@ pub struct QueryResult {
     pub heading_labels: Vec<String>,
     /// Inline `#task` / `#due` markers from `<inkycap-agenda>`.
     pub agenda: Vec<AgendaMarker>,
+    /// Count of unresolved `#suggestion(...)` tracked changes (`<inkycap-
+    /// suggestion>`). Accepting/rejecting a suggestion unwraps the call so its
+    /// label vanishes from the compiled document — so this is a true "still
+    /// awaiting a decision" count, not a textual occurrence count. Drives the
+    /// notebox-wide "changes to resolve" indicator. Plain `#annotation`
+    /// comments are deliberately excluded: a comment carries no accept/reject
+    /// decision (mirrors the per-file Changes & History badge).
+    pub suggestions: usize,
 }
 
 /// A comparable key approximating a located element's reading-order position
@@ -60,6 +68,7 @@ pub fn query_document(document: &PagedDocument) -> QueryResult {
     extract_tags(introspector, &mut result, boundary);
     extract_links(introspector, &mut result, boundary);
     extract_agenda_markers(introspector, &mut result, boundary);
+    extract_review_markup(introspector, &mut result, boundary);
 
     result
 }
@@ -436,6 +445,31 @@ fn extract_agenda_markers(
             tags,
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// <inkycap-suggestion> — unresolved tracked changes (count only)
+// ---------------------------------------------------------------------------
+
+/// Count the note's open `#suggestion(...)` tracked changes. We only need the
+/// total per file for the notebox-wide indicator — the rich per-suggestion
+/// data is read CM-side by the annotation tracker for the open note — so this
+/// counts labels rather than decoding each metadata dict. The same
+/// transclusion guard as the other extractors keeps an `#include`d note's open
+/// suggestions from inflating the host's count.
+fn extract_review_markup(
+    introspector: &Introspector,
+    result: &mut QueryResult,
+    boundary: Option<PosKey>,
+) {
+    let Some(selector) = label_selector("inkycap-suggestion") else {
+        return;
+    };
+    result.suggestions = introspector
+        .query(&selector)
+        .iter()
+        .filter(|elem| !is_transcluded(pos_key(introspector, elem), boundary))
+        .count();
 }
 
 // ---------------------------------------------------------------------------

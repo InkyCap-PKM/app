@@ -10,7 +10,7 @@ const OPERATORS = [
   { value: "==", labelKey: "filter.op.equals" },
   { value: "!=", labelKey: "filter.op.notEquals" },
   { value: ".contains", labelKey: "filter.op.contains" },
-  { value: ".containsAny", labelKey: "filter.op.containsAny" },
+  { value: "!.contains", labelKey: "filter.op.notContains" },
   { value: ".isEmpty", labelKey: "filter.op.isEmpty" },
   { value: "!.isEmpty", labelKey: "filter.op.isNotEmpty" },
 ] as const;
@@ -61,13 +61,21 @@ function parseFilterRow(expr: string): FilterRow {
     return { property: isEmpty[1], operator: ".isEmpty", value: "" };
   }
 
-  // contains/containsAny: prop.method("value")
-  const methodCall = trimmed.match(/^(.+)\.(contains|containsAny)\("(.*)"\)$/);
+  // Negated contains: !prop.contains("value"). Checked before the plain
+  // contains/isEmpty cases so the leading "!" isn't swallowed into the
+  // property name.
+  const negContains = trimmed.match(/^!(.+)\.contains\("(.*)"\)$/);
+  if (negContains) {
+    return { property: negContains[1], operator: "!.contains", value: negContains[2] };
+  }
+
+  // contains: prop.contains("value")
+  const methodCall = trimmed.match(/^(.+)\.contains\("(.*)"\)$/);
   if (methodCall) {
     return {
       property: methodCall[1],
-      operator: `.${methodCall[2]}`,
-      value: methodCall[3],
+      operator: ".contains",
+      value: methodCall[2],
     };
   }
 
@@ -99,8 +107,8 @@ function serializeFilterRow(row: FilterRow): string {
       return `!${prop}.isEmpty()`;
     case ".contains":
       return `${prop}.contains("${row.value}")`;
-    case ".containsAny":
-      return `${prop}.containsAny("${row.value}")`;
+    case "!.contains":
+      return `!${prop}.contains("${row.value}")`;
     case "==":
     case "!=": {
       const val = row.value.trim();

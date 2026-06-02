@@ -572,58 +572,29 @@ export interface GitCommitInfo {
   short_hash: string;
 }
 
-/** What kind of change an incoming item carries. `.typ` notes render as
- *  suggestions (`modified`) or stage whole (`added`); non-note files are
- *  `binary` (whole-file decision, not suggestion-ized). */
-export type GitChangeKind = "added" | "modified" | "deleted" | "binary";
-
-/** One incoming change in a review session. */
-export interface GitReviewItem {
-  /** Notebox-relative (or absolute) path of the working note. */
-  path: string;
-  kind: GitChangeKind;
-  /** Staged copy to open for review (under `.inkycap/incoming/`), when one was
-   *  written (`modified`/`added`). `null` for deletes and binary files. */
-  stagedPath: string | null;
-  /** Suggestions rendered (`modified` only). */
-  total: number;
-  /** Of those, how many are conflicts needing a hand decision. */
-  conflicts: number;
-  /** The diff could not be rendered as suggestions; show the raw-diff view. */
-  fallback: boolean;
-}
-
-/** The result of a fetch-and-review. */
-export interface GitReviewSession {
-  items: GitReviewItem[];
-  /** Incoming tip commit's author/message, for the review banner. */
-  incoming: GitCommitInfo | null;
-  /** Local already matches the remote tip — nothing to review. */
-  upToDate: boolean;
-}
-
-/** How the user chose to resolve a conflicted binary (non-`.typ`) file.
- *  Mirrors `commands/git.rs::BinaryDecision`. */
-export type GitBinaryDecision = "keepMine" | "takeTheirs" | "keepBoth";
-
-/** Outcome of resolving one binary conflict. Mirrors
- *  `commands/git.rs::BinaryResolution`. */
-export interface GitBinaryResolution {
-  /** The notebox-relative path that now holds the resolved file. */
-  path: string;
-  /** For `keepBoth`: the sibling path the incoming copy was written to. */
-  addedPath: string | null;
-}
-
 /** One incoming change in the post-sync digest ("what landed from others"). */
 export interface GitDigestEntry {
-  /** Notebox-relative path (frontend string form). */
+  /** Notebox-relative path (frontend string form); the *new* path for a rename. */
   path: string;
-  status: "added" | "modified" | "deleted";
+  status: "added" | "modified" | "deleted" | "renamed";
+  /** For `"renamed"`, the previous path (frontend string form). */
+  oldPath?: string | null;
 }
 
-/** Outcome of a Sync / Check for updates / finalize. Mirrors
- *  `src-tauri/src/commands/git.rs::SyncOutcome`. */
+/** One note still carrying unresolved `#suggestion(...)` tracked changes —
+ *  the notebox-wide "changes to resolve" list. Mirrors
+ *  `src-tauri/src/commands/git.rs::UnresolvedEntry`. */
+export interface GitUnresolvedEntry {
+  /** Absolute path (frontend string form) — used to open / dedupe the note. */
+  path: string;
+  /** Notebox-relative path (frontend string form) — drives the basename. */
+  relPath: string;
+  /** Count of open suggestions in the note. */
+  count: number;
+}
+
+/** Outcome of a Sync / Check for updates. Mirrors
+ *  `src-tauri/src/commands/git.rs::SyncOutcome`. Merge-first — never pauses. */
 export interface GitSyncOutcome {
   /** Nothing incoming and nothing outgoing — already in sync. */
   upToDate: boolean;
@@ -635,40 +606,50 @@ export interface GitSyncOutcome {
   pushed: boolean;
   /** The push was rejected (the remote moved) — sync again. */
   rejected: boolean;
-  /** The merge hit conflicts and is paused: resolve `conflicts` then finalize.
-   *  The clean incoming changes have already been applied. */
-  paused: boolean;
-  /** Conflicted notes/files needing a hand decision. Populated when `paused`. */
-  conflicts: GitReviewItem[];
-  /** The shared settings.json was edited on both sides and structurally merged;
-   *  this lists any same-key clashes still needing a pick. `null` when settings
-   *  didn't conflict or merged with no clashes. Populated when `paused`. */
-  settingsConflict: GitSettingsConflict | null;
   /** What collaborators changed since the merge base — the "what landed" digest. */
   digest: GitDigestEntry[];
+  /** Notebox-relative paths (frontend form) where the merge took *theirs* over an
+   *  overlapping local edit. The merge-first model never pauses, so these are
+   *  surfaced for after-the-fact review (revert from the Changes pane). Empty for
+   *  a clean merge / fast-forward. */
+  conflicted: string[];
   /** The incoming tip commit's author/message, for the digest banner. */
   incoming: GitCommitInfo | null;
 }
 
-/** One key both sides changed differently in settings.json. Mirrors
- *  `git/json_merge.rs::KeyConflict`. `mine`/`theirs` are arbitrary JSON values. */
-export interface GitKeyConflict {
-  /** Dotted key path, e.g. "citations.zoteroPath". */
+/** One note the last sync changed — the notebox-wide "review what landed" list.
+ *  Mirrors `src-tauri/src/commands/git.rs::SinceSyncEntry`. */
+export interface GitSinceSyncEntry {
+  /** Absolute path (frontend string form) — used to open / dedupe the note. */
   path: string;
-  mine: unknown;
-  theirs: unknown;
+  /** Notebox-relative path (frontend string form) — drives the basename. The
+   *  *new* path for a rename. */
+  relPath: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  /** For `"renamed"`, the previous notebox-relative path (frontend form). */
+  oldRelPath?: string | null;
+  /** The sync resolved this path by taking *theirs* over a local edit. */
+  conflicted: boolean;
 }
 
-/** A structurally-merged settings.json with same-key clashes left to decide.
- *  Mirrors `commands/git.rs::SettingsConflict`. */
-export interface GitSettingsConflict {
-  /** Notebox-relative path of the settings file. */
-  path: string;
-  conflicts: GitKeyConflict[];
+/** One changed region of a note relative to the pre-sync baseline. Identity and
+ *  scroll target are the current-side line range `[currentStart, currentEnd)`
+ *  (0-based, end-exclusive). Mirrors `git/sync_review.rs::SyncHunk`. */
+export interface GitSyncHunk {
+  currentStart: number;
+  currentEnd: number;
+  /** The baseline (pre-sync) text — what reverting this hunk restores. Empty
+   *  when the sync *added* the region. */
+  baselineText: string;
+  /** The current text. Empty when the sync *deleted* a baseline region. */
+  currentText: string;
 }
 
-/** Per-key resolution for a settings clash: dotted path → which side to keep. */
-export type GitSettingsDecisions = Record<string, "mine" | "theirs">;
+/** A note's hunk-level diff against its pre-sync baseline. Mirrors
+ *  `commands/git.rs::SyncNoteDiff`. */
+export interface GitSyncNoteDiff {
+  hunks: GitSyncHunk[];
+}
 
 /** Result of a read-only "Check for updates": how far the local branch is
  *  behind the remote, fetched without pulling. Mirrors `commands/git.rs::CheckResult`. */

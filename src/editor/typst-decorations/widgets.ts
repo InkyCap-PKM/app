@@ -692,6 +692,20 @@ function closeSuggestionMenu() {
   activeSuggestionMenu = null;
 }
 
+/** Render a suggestion body's text into `el`, interpreting Typst hard line
+ *  breaks (a `\` followed by whitespace or end-of-text) as actual line breaks
+ *  rather than showing a stray backslash, and collapsing literal newlines to
+ *  spaces (Typst treats a single newline as a space within a paragraph). This is
+ *  display-only — the source is never touched — so the widget reads as the text
+ *  the suggestion proposes, not its raw markup. (A literal escaped `\\` is the
+ *  rare case this simple split doesn't special-case; acceptable for a WYSIWYM
+ *  affordance that is not a faithful renderer.) Exported for unit testing. */
+export function typstInlineSegments(txt: string): string[] {
+  return txt
+    .split(/\\(?=\s|$)/)
+    .map((seg) => seg.replace(/\s*\n\s*/g, " "));
+}
+
 /** Inline `#suggestion(...)` tracked-change mark — the visual face of the
  *  suggesting-mode primitive. Renders the CriticMarkup idiom (insert = green
  *  underline, delete = red strike, replace = struck old + underlined new) and,
@@ -739,7 +753,12 @@ export class SuggestionWidget extends WidgetType {
     const addMark = (cls: string, txt: string) => {
       const s = document.createElement("span");
       s.className = cls;
-      s.textContent = txt;
+      // Render Typst hard line breaks as actual breaks instead of a literal "\".
+      const segments = typstInlineSegments(txt);
+      segments.forEach((seg, i) => {
+        if (i > 0) s.appendChild(document.createElement("br"));
+        s.appendChild(document.createTextNode(seg));
+      });
       wrap.appendChild(s);
     };
     if (this.kind === "insert") addMark("cm-suggestion-ins", this.body);

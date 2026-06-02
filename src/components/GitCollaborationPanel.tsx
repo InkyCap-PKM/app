@@ -10,7 +10,7 @@
 // (the existing suggestion pills + the right-panel Annotations pane resolve
 // them); "Finalize" then commits the merged result and — for a Sync — pushes.
 
-import { Component, Show, For, createSignal, onMount, onCleanup } from "solid-js";
+import { Component, Show, For, createSignal, createResource, onMount, onCleanup } from "solid-js";
 import {
   Check,
   ArrowUp,
@@ -18,8 +18,6 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Paperclip,
-  AlertTriangle,
   RefreshCw,
   DownloadCloud,
   FolderUp,
@@ -27,6 +25,8 @@ import {
   ChevronDown,
   ChevronRight,
   Settings2,
+  RotateCcw,
+  ArrowRightLeft,
 } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { homeDirDefault } from "../lib/dialog-defaults";
@@ -39,17 +39,11 @@ import {
   reconnectable,
   gitStatus,
   syncOutcome,
-  syncPaused,
   incomingCount,
   gitSyncing,
   sync,
   checkUpdates,
-  finalizeSync,
-  discardReview,
   dismissDigest,
-  openStagedNote,
-  resolveBinaryConflict,
-  resolveSettings,
   refreshStatus,
   setupCollaboration,
   setupPackageHandoff,
@@ -62,12 +56,16 @@ import {
   setManageOpen,
   actionsOpen,
   setActionsOpen,
-  reviewIncoming,
-  setReviewIncoming,
   bundlePackages,
   setBundlePackages,
+  unresolvedFiles,
+  changesSinceSync,
+  revertNoteSinceSync,
 } from "../stores/git";
-import type { GitReviewItem, GitDigestEntry, GitBinaryDecision } from "../lib/types";
+import { openTab } from "../stores/tabs";
+import { setRightCollapsed, setRightPanelTab } from "../stores/layout";
+import type { GitDigestEntry } from "../lib/types";
+import { gitChangesToShare } from "../lib/ipc";
 
 /** Truncate a JSON value to a short, single-line preview for a settings chip. */
 function fmtSettingValue(v: unknown): string {
@@ -84,17 +82,26 @@ import { t, tPlural } from "../lib/i18n";
 const PACKAGE_FILTERS = [{ name: "Notebox package (zip)", extensions: ["zip", "inkypkg"] }];
 
 /** Icon for a change kind (mirrors the inline suggestion tones). */
-function kindIcon(kind: GitReviewItem["kind"] | GitDigestEntry["status"]) {
+function kindIcon(kind: GitDigestEntry["status"]) {
   switch (kind) {
     case "added":
       return <Plus size={14} />;
     case "deleted":
       return <Trash2 size={14} />;
-    case "binary":
-      return <Paperclip size={14} />;
+    case "renamed":
+      return <ArrowRightLeft size={14} />;
     default:
       return <Pencil size={14} />;
   }
+}
+
+/** Row label for a changed file: a rename shows "old → new", everything else
+ *  just the basename. */
+function fileBasename(p: string): string {
+  return p.split("/").pop() ?? p;
+}
+function changeLabel(newPath: string, oldPath?: string | null): string {
+  return oldPath ? `${fileBasename(oldPath)} → ${fileBasename(newPath)}` : fileBasename(newPath);
 }
 
 const GitCollaborationPanel: Component = () => {
@@ -333,105 +340,83 @@ const SyncView: Component = () => {
 
   return (
     <div class="git-panel__body">
-      {/* While a conflict resolution is paused the gestures are hidden — the
-          user must finalize or discard first — so the ConflictView replaces the
-          whole action section. Otherwise the actions live in a collapsed-by-
-          default section whose header doubles as the status row. */}
-      <Show
-        when={syncPaused()}
-        fallback={
-          <>
-            <div class="git-panel__section">
-              <button
-                class="git-panel__section-toggle"
-                onClick={() => setActionsOpen((v) => !v)}
-                aria-expanded={actionsOpen()}
-              >
-                <span class="git-panel__remote" title={packageMode() ? t("git.package.modeLabel") : cfg()?.remote}>
-                  <Show when={actionsOpen()} fallback={<ChevronRight size={14} />}>
-                    <ChevronDown size={14} />
-                  </Show>
-                  {sectionTitle()}
-                </span>
-                <span class="git-panel__status-state">
-                  <Show when={statusSynced()}><Check size={13} /></Show>
-                  <Show when={(gitStatus()?.behind ?? 0) > 0}><ArrowDown size={13} /></Show>
-                  <Show when={gitStatus()?.unshared}><ArrowUp size={13} /></Show>
-                  {statusLine()}
-                </span>
-              </button>
+      {/* The actions live in a collapsed-by-default section whose header doubles
+          as the status row. Merge-first never pauses, so there is no conflict
+          resolution view — incoming changes land and are reviewed/reverted from
+          the Changes-since-sync list below and the per-note Changes pane. */}
+      <div class="git-panel__section">
+        <button
+          class="git-panel__section-toggle"
+          onClick={() => setActionsOpen((v) => !v)}
+          aria-expanded={actionsOpen()}
+        >
+          <span class="git-panel__remote" title={packageMode() ? t("git.package.modeLabel") : cfg()?.remote}>
+            <Show when={actionsOpen()} fallback={<ChevronRight size={14} />}>
+              <ChevronDown size={14} />
+            </Show>
+            {sectionTitle()}
+          </span>
+          <span class="git-panel__status-state">
+            <Show when={statusSynced()}><Check size={13} /></Show>
+            <Show when={(gitStatus()?.behind ?? 0) > 0}><ArrowDown size={13} /></Show>
+            <Show when={gitStatus()?.unshared}><ArrowUp size={13} /></Show>
+            {statusLine()}
+          </span>
+        </button>
 
-              <Show when={actionsOpen()}>
-                <div class="git-panel__section-body">
-                  {/* Package-mode noteboxes have no server, so they Export /
-                      Import a file instead of Sync / Check. */}
-                  <Show when={packageMode()} fallback={
-                    <>
-                      <div class="git-panel__actions">
-                        <button class="git-panel__primary-btn" onClick={() => void sync()} disabled={gitSyncing()}>
-                          <RefreshCw size={13} /> {gitSyncing() ? t("git.actions.syncing") : t("git.actions.sync")}
-                        </button>
-                        <button class="settings__detect-btn" onClick={() => void checkUpdates()} disabled={gitSyncing()}>
-                          <DownloadCloud size={13} /> {t("git.actions.checkUpdates")}
-                        </button>
-                      </div>
-
-                      {/* A read-only check found incoming changes it did not pull — nudge a Sync. */}
-                      <Show when={incomingCount() > 0}>
-                        <div class="git-panel__banner">
-                          <span class="git-panel__banner-author">
-                            {tPlural("git.check", incomingCount())}
-                          </span>
-                          <span class="git-panel__banner-msg">{t("git.check.hint")}</span>
-                        </div>
-                      </Show>
-                    </>
-                  }>
-                    <PackageActions />
-                  </Show>
-
-                  {/* Per-device workflow preference (applies to Sync and package
-                      import): pause and review every incoming change instead of
-                      auto-merging. */}
-                  <div class="git-panel__label-row git-panel__review-toggle">
-                    <label class="settings__label">{t("git.review.toggleLabel")}</label>
-                    <HelpButton label={t("git.review.toggleLabel")}>{t("git.review.toggleHint")}</HelpButton>
-                    <label class="settings__toggle" title={t("git.review.toggleHint")}>
-                      <input
-                        type="checkbox"
-                        checked={reviewIncoming()}
-                        onChange={(e) => void setReviewIncoming(e.currentTarget.checked)}
-                      />
-                      <span class="settings__toggle-slider" />
-                    </label>
-                  </div>
-
-                  {/* Per-device sharing preference (applies to Sync push and
-                      package export): vendor the notebox's Typst packages into
-                      it so they travel and a recipient can compile offline /
-                      with @local packages. */}
-                  <div class="git-panel__label-row git-panel__review-toggle">
-                    <label class="settings__label">{t("git.bundle.toggleLabel")}</label>
-                    <HelpButton label={t("git.bundle.toggleLabel")}>{t("git.bundle.toggleHint")}</HelpButton>
-                    <label class="settings__toggle" title={t("git.bundle.toggleHint")}>
-                      <input
-                        type="checkbox"
-                        checked={bundlePackages()}
-                        onChange={(e) => void setBundlePackages(e.currentTarget.checked)}
-                      />
-                      <span class="settings__toggle-slider" />
-                    </label>
-                  </div>
+        <Show when={actionsOpen()}>
+          <div class="git-panel__section-body">
+            {/* Package-mode noteboxes have no server, so they Export /
+                Import a file instead of Sync / Check. */}
+            <Show when={packageMode()} fallback={
+              <>
+                <div class="git-panel__actions">
+                  <button class="git-panel__primary-btn" onClick={() => void sync()} disabled={gitSyncing()}>
+                    <RefreshCw size={13} /> {gitSyncing() ? t("git.actions.syncing") : t("git.actions.sync")}
+                  </button>
+                  <button class="settings__detect-btn" onClick={() => void checkUpdates()} disabled={gitSyncing()}>
+                    <DownloadCloud size={13} /> {t("git.actions.checkUpdates")}
+                  </button>
                 </div>
-              </Show>
-            </div>
 
-            <DigestView />
-          </>
-        }
-      >
-        <ConflictView />
-      </Show>
+                {/* A read-only check found incoming changes it did not pull — nudge a Sync. */}
+                <Show when={incomingCount() > 0}>
+                  <div class="git-panel__banner">
+                    <span class="git-panel__banner-author">
+                      {tPlural("git.check", incomingCount())}
+                    </span>
+                    <span class="git-panel__banner-msg">{t("git.check.hint")}</span>
+                  </div>
+                </Show>
+              </>
+            }>
+              <PackageActions />
+            </Show>
+
+            {/* Per-device sharing preference (applies to Sync push and
+                package export): vendor the notebox's Typst packages into
+                it so they travel and a recipient can compile offline /
+                with @local packages. */}
+            <div class="git-panel__label-row git-panel__review-toggle">
+              <label class="settings__label">{t("git.bundle.toggleLabel")}</label>
+              <HelpButton label={t("git.bundle.toggleLabel")}>{t("git.bundle.toggleHint")}</HelpButton>
+              <label class="settings__toggle" title={t("git.bundle.toggleHint")}>
+                <input
+                  type="checkbox"
+                  checked={bundlePackages()}
+                  onChange={(e) => void setBundlePackages(e.currentTarget.checked)}
+                />
+                <span class="settings__toggle-slider" />
+              </label>
+            </div>
+          </div>
+        </Show>
+      </div>
+
+      <ChangesSinceSyncView />
+      <UnresolvedView />
+      <ChangesToShareView />
+      <DigestView />
 
       <ManageSection />
     </div>
@@ -500,195 +485,204 @@ const PackageActions: Component = () => {
   );
 };
 
-// ─────────────────────────── Conflicts (paused merge) ──────────────────────
+// ─────────── "Changes since last sync" (merge-first incoming review) ────────
 
-/** The whole-file choices offered for a conflicted binary, in display order. */
-const BINARY_DECISIONS: GitBinaryDecision[] = ["keepMine", "takeTheirs", "keepBoth"];
-
-const ConflictView: Component = () => {
-  const items = () => syncOutcome()?.conflicts ?? [];
-  const settingsConflict = () => syncOutcome()?.settingsConflict ?? null;
-  // A genuine conflict needs a hand decision: a note with clashing regions, a
-  // conflicted binary (a whole-file pick — `conflicts` is 0 for binaries since
-  // there's no line diff), or a settings.json key clash. A review-mode pause
-  // (every incoming change staged, nothing clashing) gets the calmer "review"
-  // wording instead.
-  const hasConflicts = () =>
-    items().some((i) => i.conflicts > 0 || i.kind === "binary") ||
-    !!settingsConflict();
-
-  // Per-key settings decisions (dotted path → side), defaulting to mine. Each
-  // change re-sends the full map so the backend rewrites the merged file.
-  const [settingsDecisions, setSettingsDecisions] = createSignal<Record<string, "mine" | "theirs">>({});
-  const settingsChoice = (path: string): "mine" | "theirs" => settingsDecisions()[path] ?? "mine";
-  async function chooseSetting(path: string, side: "mine" | "theirs") {
-    const next = { ...settingsDecisions(), [path]: side };
-    if (await resolveSettings(next)) setSettingsDecisions(next);
+/** Lists the notes the last Sync / import folded incoming changes into,
+ *  relative to the recorded pre-sync baseline — the merge-first review surface.
+ *  The model never pauses, so incoming changes are already in the working tree;
+ *  these rows let the user open a note to review the per-hunk diff (in the
+ *  Changes pane) or revert the whole note back to their version. Take-theirs
+ *  (conflicted) notes are flagged and sort first. Rendered most prominent so
+ *  the riskiest incoming changes surface immediately after a sync. */
+const ChangesSinceSyncView: Component = () => {
+  function openForReview(entry: { path: string; relPath: string }) {
+    const basename = entry.relPath.split("/").pop() ?? entry.relPath;
+    // Open the REAL note (absolute path) so the per-hunk Revert UI in the
+    // Changes pane takes over, landing the user where they review the changes.
+    openTab({ type: "file", title: basename, path: entry.path }, { forceNewTab: true });
+    setRightCollapsed(false);
+    setRightPanelTab("annotations");
   }
 
-  // Per-binary decision + the sibling path a "Keep both" wrote, keyed by item
-  // path. Defaults to "keepMine" — at pause the working tree already holds mine.
-  const [decisions, setDecisions] = createSignal<Record<string, GitBinaryDecision>>({});
-  const [addedPaths, setAddedPaths] = createSignal<Record<string, string>>({});
-  const chosen = (path: string): GitBinaryDecision => decisions()[path] ?? "keepMine";
-  async function choose(item: GitReviewItem, decision: GitBinaryDecision) {
-    const res = await resolveBinaryConflict(item.path, decision);
-    if (!res) return;
-    setDecisions((d) => ({ ...d, [item.path]: decision }));
-    setAddedPaths((a) => {
-      const next = { ...a };
-      if (res.addedPath) next[item.path] = res.addedPath;
-      else delete next[item.path];
-      return next;
-    });
-  }
-
-  // Discard rolls the working tree back to the last commit (dropping the clean
-  // files the merge auto-applied), so confirm before throwing it away.
-  async function confirmDiscard() {
+  async function revertNote(entry: { path: string; relPath: string; status: string }) {
+    const basename = entry.relPath.split("/").pop() ?? entry.relPath;
+    // A note the sync *added* has no pre-sync version — reverting deletes it.
     const ok = await promptConfirm({
-      title: t("git.discard.title"),
-      message: t("git.discard.confirm"),
-      confirmLabel: t("git.actions.discard"),
+      title: t("git.sinceSync.revertConfirmTitle"),
+      message:
+        entry.status === "added"
+          ? t("git.sinceSync.revertConfirmBodyAdded", { name: basename })
+          : t("git.sinceSync.revertConfirmBody", { name: basename }),
+      confirmLabel: t("git.sinceSync.revert"),
     });
-    if (ok) void discardReview();
+    if (ok) void revertNoteSinceSync(entry.path);
   }
+
   return (
-    <>
-      <div class={`git-panel__banner${hasConflicts() ? " git-panel__banner--conflict" : ""}`}>
-        <span class="git-panel__banner-author">
-          <Show when={hasConflicts()}>
-            <AlertTriangle size={13} />
-          </Show>
-          {hasConflicts() ? t("git.conflict.heading") : t("git.review.heading")}
-        </span>
-        <span class="git-panel__banner-msg">
-          {hasConflicts() ? t("git.conflict.intro") : t("git.review.intro")}
-        </span>
-      </div>
-
-      <div class="git-panel__list">
-        <For each={items()}>
-          {(item) => {
-            const reviewable = () => item.kind === "modified";
-            const isBinary = () => item.kind === "binary";
-            const basename = () => item.path.split("/").pop() ?? item.path;
-            return (
-              <div
-                class={`sidebar-item git-panel__item${reviewable() ? "" : " git-panel__item--readonly"}`}
-                onClick={() => reviewable() && openStagedNote(item)}
-                title={item.path}
-              >
-                <span class={`sidebar-item__icon git-panel__icon--${item.kind}`}>
-                  {kindIcon(item.kind)}
-                </span>
-                <span class="git-panel__item-body">
-                  <span class="sidebar-item__label">{basename()}</span>
-                  <span class="git-panel__item-meta">
-                    <Show
-                      when={reviewable()}
-                      fallback={
-                        <Show
-                          when={isBinary()}
-                          fallback={<span class="git-panel__badge">{t("git.conflict.binary")}</span>}
-                        >
-                          {/* A conflicted binary has no line diff to fold in —
-                              the user picks a whole-file outcome. Defaults to
-                              "keep mine" (the working tree at pause). */}
-                          <div
-                            class="git-panel__binary-choices"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <For each={BINARY_DECISIONS}>
-                              {(d) => (
-                                <button
-                                  class={`git-panel__choice${chosen(item.path) === d ? " git-panel__choice--active" : ""}`}
-                                  onClick={() => void choose(item, d)}
-                                  disabled={gitSyncing()}
-                                >
-                                  {t(`git.binary.${d}`)}
-                                </button>
-                              )}
-                            </For>
-                          </div>
+    <Show when={changesSinceSync().length > 0}>
+      <div class="git-panel__digest git-panel__unresolved">
+        <p class="git-panel__share-heading">{t("git.sinceSync.heading")}</p>
+        <p class="sidebar-hint">
+          {tPlural("git.sinceSync.count", changesSinceSync().length, {
+            n: changesSinceSync().length,
+          })}
+        </p>
+        <div class="git-panel__list">
+          <For each={changesSinceSync()}>
+            {(entry) => {
+              const label = () => changeLabel(entry.relPath, entry.oldRelPath);
+              return (
+                <div class="sidebar-item git-panel__item" title={entry.relPath}>
+                  <button
+                    class="git-panel__item-open"
+                    title={t("git.sinceSync.reviewHint")}
+                    onClick={() => openForReview(entry)}
+                  >
+                    <span class={`sidebar-item__icon git-panel__icon--${entry.status}`}>
+                      {kindIcon(entry.status)}
+                    </span>
+                    <span class="git-panel__item-body">
+                      <span class="sidebar-item__label">{label()}</span>
+                      <span class="git-panel__item-meta">
+                        <Show when={entry.conflicted}>
+                          <span class="git-panel__badge git-panel__badge--conflict">
+                            {t("git.sinceSync.tookTheirs")}
+                          </span>
                         </Show>
-                      }
-                    >
-                      {/* A note with clashing regions shows its conflict count;
-                          a cleanly-incoming note (review mode) is just incoming. */}
-                      <Show
-                        when={item.conflicts > 0}
-                        fallback={<span class="git-panel__badge">{t("git.review.incomingBadge")}</span>}
-                      >
-                        <span class="git-panel__badge git-panel__badge--conflict">
-                          {item.conflicts === 1
-                            ? t("git.review.oneConflict")
-                            : t("git.review.conflicts", { n: item.conflicts })}
-                        </span>
-                      </Show>
-                    </Show>
-                  </span>
-                  <Show when={addedPaths()[item.path]}>
-                    {(p) => (
-                      <span class="git-panel__item-note">
-                        {t("git.binary.bothAdded", { name: p().split("/").pop() ?? p() })}
+                        <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
                       </span>
-                    )}
-                  </Show>
-                </span>
-              </div>
-            );
-          }}
-        </For>
-      </div>
-
-      {/* settings.json was merged key-by-key; only same-key clashes remain.
-          Distinct edits on both sides were already folded in automatically. */}
-      <Show when={settingsConflict()}>
-        {(sc) => (
-          <div class="git-panel__settings-conflict">
-            <div class="git-panel__settings-head">
-              <Settings2 size={13} /> {t("git.settings.heading")}
-            </div>
-            <p class="git-panel__settings-intro">{t("git.settings.intro")}</p>
-            <For each={sc().conflicts}>
-              {(c) => (
-                <div class="git-panel__settings-key">
-                  <span class="git-panel__settings-path">{c.path}</span>
-                  <div class="git-panel__binary-choices">
-                    <button
-                      class={`git-panel__choice${settingsChoice(c.path) === "mine" ? " git-panel__choice--active" : ""}`}
-                      onClick={() => void chooseSetting(c.path, "mine")}
-                      disabled={gitSyncing()}
-                      title={fmtSettingValue(c.mine)}
-                    >
-                      {t("git.settings.mine", { v: fmtSettingValue(c.mine) })}
-                    </button>
-                    <button
-                      class={`git-panel__choice${settingsChoice(c.path) === "theirs" ? " git-panel__choice--active" : ""}`}
-                      onClick={() => void chooseSetting(c.path, "theirs")}
-                      disabled={gitSyncing()}
-                      title={fmtSettingValue(c.theirs)}
-                    >
-                      {t("git.settings.theirs", { v: fmtSettingValue(c.theirs) })}
-                    </button>
-                  </div>
+                    </span>
+                  </button>
+                  <button
+                    class="annotations-panel__action"
+                    title={t("git.sinceSync.revertNote")}
+                    aria-label={t("git.sinceSync.revertNote")}
+                    onClick={() => void revertNote(entry)}
+                  >
+                    <RotateCcw size={13} />
+                  </button>
                 </div>
-              )}
-            </For>
-          </div>
-        )}
-      </Show>
-
-      <div class="git-panel__actions">
-        <button class="git-panel__primary-btn" onClick={() => void finalizeSync()} disabled={gitSyncing()}>
-          <Check size={13} /> {hasConflicts() ? t("git.actions.finalize") : t("git.review.finish")}
-        </button>
-        <button class="settings__detect-btn" onClick={() => void confirmDiscard()} disabled={gitSyncing()}>
-          {t("git.actions.discard")}
-        </button>
+              );
+            }}
+          </For>
+        </div>
       </div>
-    </>
+    </Show>
+  );
+};
+
+// ──────────────── "Changes to resolve" (unresolved tracked changes) ─────────
+
+/** Lists the notebox's notes that still carry unresolved `#suggestion(...)`
+ *  tracked changes awaiting an accept/reject decision. Unlike the digest (which
+ *  is informational and dismissable) these rows are CLICKABLE and actionable —
+ *  clicking opens the real note with the Changes & History pane so the user can
+ *  resolve each change. Persistent: reads `unresolvedFiles()` (refreshed on open
+ *  / pull / save), independent of the dismissable post-sync digest. Rendered
+ *  first in the panel so outstanding work is the most prominent block. */
+const UnresolvedView: Component = () => {
+  function openForReview(entry: { path: string; relPath: string }) {
+    const basename = entry.relPath.split("/").pop() ?? entry.relPath;
+    // Open the REAL note (absolute path) — not a staged copy — so it's fully
+    // editable and the existing per-suggestion accept/reject UI takes over.
+    openTab({ type: "file", title: basename, path: entry.path }, { forceNewTab: true });
+    // Reveal the Changes & History pane alongside it (same gesture as opening a
+    // staged review note), landing the user where they resolve the changes.
+    setRightCollapsed(false);
+    setRightPanelTab("annotations");
+  }
+
+  return (
+    <Show when={unresolvedFiles().length > 0}>
+      <div class="git-panel__digest git-panel__unresolved">
+        <p class="git-panel__share-heading">{t("git.unresolved.heading")}</p>
+        <p class="sidebar-hint">
+          {tPlural("git.unresolved.count", unresolvedFiles().length, {
+            n: unresolvedFiles().length,
+          })}
+        </p>
+        <div class="git-panel__list">
+          <For each={unresolvedFiles()}>
+            {(entry) => {
+              const basename = () => entry.relPath.split("/").pop() ?? entry.relPath;
+              return (
+                <button
+                  class="sidebar-item git-panel__item"
+                  title={entry.relPath}
+                  onClick={() => openForReview(entry)}
+                >
+                  <span class="sidebar-item__icon git-panel__icon--modified">
+                    {kindIcon("modified")}
+                  </span>
+                  <span class="git-panel__item-body">
+                    <span class="sidebar-item__label">{basename()}</span>
+                    <span class="git-panel__item-meta">
+                      <span class="git-panel__badge">
+                        {tPlural("git.unresolved.badge", entry.count, { n: entry.count })}
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              );
+            }}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+};
+
+// ──────────────────── "Changes to share" (what's outgoing) ──────────────────
+
+/** Lists the files an export/sync would carry to collaborators, so the user
+ *  sees *what* they're about to share before doing it — the outgoing
+ *  counterpart of the post-sync digest. Refetches whenever the git status
+ *  changes (saves refresh it), so it tracks the working tree without its own
+ *  watcher. Read-only, like the digest. */
+const ChangesToShareView: Component = () => {
+  // A status fingerprint as the resource source: changes whenever HEAD moves or
+  // the dirty/unshared flags flip. Empty (falsy) when there's no status yet, so
+  // the resource doesn't fetch.
+  const statusKey = () => {
+    const s = gitStatus();
+    return s ? `${s.head ?? ""}:${s.dirty}:${s.unshared}` : "";
+  };
+  const [files] = createResource(statusKey, () => gitChangesToShare());
+
+  return (
+    <Show when={gitStatus()?.unshared && (files()?.length ?? 0) > 0}>
+      <div class="git-panel__digest git-panel__share">
+        <p class="git-panel__share-heading">{t("git.share.heading")}</p>
+        <p class="sidebar-hint">
+          {files()!.length === 1
+            ? t("git.digest.oneChange")
+            : t("git.digest.changes", { n: files()!.length })}
+        </p>
+        <div class="git-panel__list">
+          <For each={files()}>
+            {(entry) => {
+              const label = () => changeLabel(entry.path, entry.oldPath);
+              return (
+                <div
+                  class="sidebar-item git-panel__item git-panel__item--readonly"
+                  title={entry.path}
+                >
+                  <span class={`sidebar-item__icon git-panel__icon--${entry.status}`}>
+                    {kindIcon(entry.status)}
+                  </span>
+                  <span class="git-panel__item-body">
+                    <span class="sidebar-item__label">{label()}</span>
+                    <span class="git-panel__item-meta">
+                      <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
+                    </span>
+                  </span>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </div>
+    </Show>
   );
 };
 
@@ -720,7 +714,7 @@ const DigestView: Component = () => {
         <div class="git-panel__list">
           <For each={digest()}>
             {(entry) => {
-              const basename = () => entry.path.split("/").pop() ?? entry.path;
+              const label = () => changeLabel(entry.path, entry.oldPath);
               return (
                 <div
                   class="sidebar-item git-panel__item git-panel__item--readonly"
@@ -730,7 +724,7 @@ const DigestView: Component = () => {
                     {kindIcon(entry.status)}
                   </span>
                   <span class="git-panel__item-body">
-                    <span class="sidebar-item__label">{basename()}</span>
+                    <span class="sidebar-item__label">{label()}</span>
                     <span class="git-panel__item-meta">
                       <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
                     </span>

@@ -240,6 +240,7 @@ mod tests {
             links: Vec::new(),
             tags: tags.iter().map(|t| (*t).to_string()).collect(),
             agenda_markers: markers,
+            unresolved_suggestions: 0,
         }
     }
 

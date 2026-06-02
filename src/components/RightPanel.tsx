@@ -28,6 +28,11 @@ import {
 import PropertyEditor from "./PropertyEditor";
 import OutlinePanel from "./OutlinePanel";
 import AnnotationsPanel from "./AnnotationsPanel";
+import {
+  noteAnnotations,
+  rescanAnnotations,
+} from "../editor/typst-decorations/annotation-tracker";
+import { changesSinceSync } from "../stores/git";
 import ScrollContextPanel from "./ScrollContextPanel";
 import {
   isEnabled as isScrollEnabled,
@@ -173,6 +178,33 @@ const RightPanel: Component = () => {
       if (activePanel() === "scroll-context") setActivePanel(tabBeforeScroll);
     }
     prevScrollOn = scrollOn;
+  });
+
+  // Keep the active note's change list populated even when the Changes pane is
+  // collapsed, so the toolbar tab's attention badge can flag pending decisions.
+  // The pane runs the same scan when open; this covers tab switches / file opens
+  // while it's closed. Idempotent, and only re-runs when the active editor
+  // changes (not per keystroke), so it's cheap.
+  createEffect(() => {
+    rescanAnnotations(activeEditorView()?.view);
+  });
+
+  // Tracked changes (suggestions) in the active note still awaiting an
+  // accept/reject decision — plain comments don't count. Drives the badge on
+  // the Changes & History tab.
+  const pendingDecisions = createMemo(
+    () => noteAnnotations().filter((a) => a.kind !== "annotation").length,
+  );
+
+  // The open note carries incoming changes the last sync folded in (merge-first
+  // review) — also lights the Changes & History tab badge so the user notices
+  // there's something to review/revert without opening the pane.
+  const noteHasIncoming = createMemo(() => {
+    const tab = getActiveTab();
+    const path = tab?.type === "file" ? tab.path : undefined;
+    if (!path) return false;
+    const target = normalizePath(path);
+    return changesSinceSync().some((e) => normalizePath(e.path) === target);
   });
 
   // Mycelial-view sub-tab: the graph-context list vs the Concept Filtering
@@ -980,9 +1012,7 @@ const RightPanel: Component = () => {
   async function menuRename() {
     setFileMenu(null);
     const tab = activeFileTab();
-    // Staged collaboration-review tabs aren't the user's to rename mid-merge;
-    // the menu entry is hidden for them, but guard the action defensively too.
-    if (!tab || tab.collab) return;
+    if (!tab) return;
     const oldName = tab.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     const newName = await promptText({
       title: t("rightPanel.renameTitle"),
@@ -1173,14 +1203,29 @@ const RightPanel: Component = () => {
             >
               <Quote size={18} />
             </button>
-            {/* Changes & History — always available for a file note. */}
+            {/* Changes & History — always available for a file note. A dot
+                badge flags when the note has tracked changes still awaiting an
+                accept/reject decision, so the user knows to open the pane. */}
             <button
               class={`right-panel__tab${activePanel() === "annotations" ? " right-panel__tab--active" : ""}`}
               onClick={() => setActivePanel("annotations")}
-              title={t("annotations.paneTitle")}
-              aria-label={t("annotations.paneTitle")}
+              title={
+                pendingDecisions() > 0
+                  ? t("annotations.pendingTitle", { n: pendingDecisions() })
+                  : t("annotations.paneTitle")
+              }
+              aria-label={
+                pendingDecisions() > 0
+                  ? t("annotations.pendingTitle", { n: pendingDecisions() })
+                  : t("annotations.paneTitle")
+              }
             >
-              <MessagesSquare size={18} />
+              <span class="right-panel__tab-badge-wrap">
+                <MessagesSquare size={18} />
+                <Show when={pendingDecisions() > 0 || noteHasIncoming()}>
+                  <span class="right-panel__tab-badge" aria-hidden="true" />
+                </Show>
+              </span>
             </button>
             {/* Contributed tabs (plugins / manifest query-views). Renders
                 nothing when the registry is empty, so the built-in tab row is
@@ -2081,17 +2126,12 @@ const RightPanel: Component = () => {
             style={{ left: `${menu().x}px`, top: `${menu().y}px`, position: "fixed" }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Identity / lifecycle ops on a staged collaboration-review note
-                would desync the merge — hidden while reviewing. Content edits
-                (properties, citations, the editor itself) stay enabled. */}
-            <Show when={!activeFileTab()?.collab}>
-              <button class="context-menu__item" onClick={menuRename}>
-                {t("rightPanel.menu.rename")}
-              </button>
-              <button class="context-menu__item" onClick={menuMoveFile}>
-                {t("rightPanel.menu.move")}
-              </button>
-            </Show>
+            <button class="context-menu__item" onClick={menuRename}>
+              {t("rightPanel.menu.rename")}
+            </button>
+            <button class="context-menu__item" onClick={menuMoveFile}>
+              {t("rightPanel.menu.move")}
+            </button>
             <button class="context-menu__item" onClick={menuBookmark}>
               {t("rightPanel.menu.bookmark")}
             </button>
@@ -2113,12 +2153,10 @@ const RightPanel: Component = () => {
             <button class="context-menu__item" onClick={menuShowInExplorer}>
               {t("rightPanel.menu.showInExplorer")}
             </button>
-            <Show when={!activeFileTab()?.collab}>
-              <div class="context-menu__separator" />
-              <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
-                {t("rightPanel.menu.delete")}
-              </button>
-            </Show>
+            <div class="context-menu__separator" />
+            <button class="context-menu__item context-menu__item--danger" onClick={menuDelete}>
+              {t("rightPanel.menu.delete")}
+            </button>
           </div>
         )}
       </Show>

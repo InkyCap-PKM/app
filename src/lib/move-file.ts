@@ -13,10 +13,7 @@ import { toastError } from "../stores/toasts";
  *  not a file. Errors surface as a toast. */
 export async function moveActiveFileInteractive(): Promise<void> {
   const tab = getActiveTab();
-  // A staged collaboration-review tab's path is owned by the merge machinery,
-  // not the user — moving it would desync staging. Guard here so the Ctrl+M
-  // command, the File Actions menu, and any future caller are all covered.
-  if (!tab || tab.type !== "file" || tab.collab) return;
+  if (!tab || tab.type !== "file") return;
   try {
     // The picker returns a notebox-relative path ("" for the root),
     // exactly the shape `move_file` expects.

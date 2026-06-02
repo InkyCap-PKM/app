@@ -7,7 +7,7 @@
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 
 pub const CREATE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
@@ -28,6 +28,7 @@ pub const CREATE_STATEMENTS: &[&str] = &[
         title TEXT,
         content TEXT,
         agenda_json TEXT NOT NULL DEFAULT '[]',
+        unresolved_suggestions INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (notebox_id, path)
     )",
     "CREATE TABLE IF NOT EXISTS file_tags (
@@ -126,6 +127,15 @@ fn verify_schema(conn: &Connection) -> rusqlite::Result<()> {
     if !has_agenda {
         return Err(rusqlite::Error::InvalidColumnName(
             "schema verification failed: files table missing agenda_json column".to_string(),
+        ));
+    }
+    let has_unresolved: bool = conn
+        .prepare("SELECT unresolved_suggestions FROM files LIMIT 0")
+        .is_ok();
+    if !has_unresolved {
+        return Err(rusqlite::Error::InvalidColumnName(
+            "schema verification failed: files table missing unresolved_suggestions column"
+                .to_string(),
         ));
     }
     Ok(())

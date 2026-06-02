@@ -19,15 +19,12 @@ import * as ipc from "../lib/ipc";
 import type {
   GitStatusSummary,
   GitSyncOutcome,
-  GitReviewItem,
-  GitBinaryDecision,
-  GitBinaryResolution,
-  GitSettingsDecisions,
+  GitUnresolvedEntry,
+  GitSinceSyncEntry,
   GitIdentity,
 } from "../lib/types";
 import { noteboxSettings, loadNoteboxSettings } from "./settings";
-import { openTab, closeCollabTabs } from "./tabs";
-import { setRightCollapsed, setRightPanelTab } from "./layout";
+import { invalidateEditorCacheForPath } from "./tabs";
 import { awaitAllPendingWrites } from "./editor-writes";
 import { showToast, toastError } from "./toasts";
 import { t } from "../lib/i18n";
@@ -35,7 +32,6 @@ import {
   onGitStatus,
   onGitFetchStarted,
   onGitFetchCompleted,
-  onGitReviewPending,
   onGitPushStarted,
   onGitPushCompleted,
   onGitError,
@@ -47,12 +43,8 @@ import {
 import type { GitReconnectablePayload } from "../lib/events";
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusSummary | null>(null);
-/** The last completed sync outcome — drives the digest ("what landed") and, when
- *  `paused`, the conflict list awaiting resolution. */
+/** The last completed sync outcome — drives the digest ("what landed"). */
 const [syncOutcome, setSyncOutcome] = createSignal<GitSyncOutcome | null>(null);
-/** When a sync paused on conflicts, whether the originating gesture was a Sync
- *  (push on finalize) vs Check for updates (no push). */
-const [pausedPush, setPausedPush] = createSignal(true);
 const [gitSyncing, setGitSyncing] = createSignal(false);
 /** The notebox is configured for collaboration (has a git config) but there is
  *  no local git repository behind it — e.g. the `.git` dir was deleted, or the
@@ -80,15 +72,118 @@ const [manageOpen, setManageOpen] = createSignal(false);
  *  to the calm status + digest view. Lifted to the store so those gesture
  *  actions can fold it back. Reset (collapsed) on a notebox switch. */
 const [actionsOpen, setActionsOpen] = createSignal(false);
-/** Per-machine "review incoming changes before merging" preference for the open
- *  notebox (off by default). When on, Sync / package import pauses and stages
- *  every incoming change for review instead of auto-merging. Loaded on open. */
-const [reviewIncoming, setReviewIncomingSignal] = createSignal(false);
-
 /** Per-machine "bundle Typst packages on share" preference for the open
  *  notebox (off by default). When on, Sync push and package export first
  *  vendor the notebox's packages into it. Loaded on open. */
 const [bundlePackages, setBundlePackagesSignal] = createSignal(false);
+
+/** Notes across the notebox that still carry unresolved `#suggestion(...)`
+ *  tracked changes awaiting an accept/reject decision. This is the persistent,
+ *  notebox-wide counterpart of the per-open-file Changes & History badge: after
+ *  a user merges incoming changes but never resolves the individual
+ *  suggestions, they linger here regardless of which file is open or whether
+ *  the post-sync digest was dismissed. Refreshed on notebox open, after a
+ *  pull/finalize, and (debounced) whenever the working tree changes. */
+const [unresolvedFiles, setUnresolvedFiles] = createSignal<GitUnresolvedEntry[]>([]);
+export { unresolvedFiles };
+
+/** Total open suggestions across the notebox — the status-bar attention cue. */
+export function unresolvedCount(): number {
+  return unresolvedFiles().reduce((n, f) => n + f.count, 0);
+}
+
+/** Re-query the notebox-wide unresolved-suggestion list. Cheap — the backend
+ *  reads cached per-note counts, not a recompile. Clears when not collaborative. */
+export async function refreshUnresolved(): Promise<void> {
+  if (!collaborative()) {
+    setUnresolvedFiles([]);
+    return;
+  }
+  try {
+    setUnresolvedFiles(await ipc.gitUnresolvedChanges());
+  } catch (err) {
+    console.error("git unresolved-changes refresh failed:", err);
+  }
+}
+
+/** Notes the most recent sync changed, relative to the recorded pre-sync
+ *  baseline — the merge-first "review what landed" surface. Take-theirs
+ *  (conflicted) entries sort first. This is the primary notebox-wide
+ *  collaboration indicator: a Sync / import folds incoming changes straight in
+ *  (the model never pauses), and the user reviews and reverts here afterwards.
+ *  Refreshed on notebox open, after a pull, and (debounced) on working-tree
+ *  changes (a revert drops the note's hunks, so the list self-clears). */
+const [changesSinceSync, setChangesSinceSync] = createSignal<GitSinceSyncEntry[]>([]);
+export { changesSinceSync };
+
+/** Bumped whenever the changes-since-sync list is re-queried (notebox open, a
+ *  pull, or a debounced working-tree change). The per-note incoming-diff view in
+ *  the Annotations pane depends on it to refetch its hunks after the open note is
+ *  edited or reverted — its baseline-vs-working diff changes even when the
+ *  HEAD-based `changesSinceSync` list does not. */
+const [syncReviewVersion, setSyncReviewVersion] = createSignal(0);
+export { syncReviewVersion };
+
+/** Number of notes changed since the last sync — the status-bar attention cue. */
+export function changesSinceSyncCount(): number {
+  return changesSinceSync().length;
+}
+
+/** Re-query the changes-since-last-sync list. Cheap — a tree-to-tree git diff
+ *  against the recorded baseline, no recompile. Clears when not collaborative. */
+export async function refreshChangesSinceSync(): Promise<void> {
+  if (!collaborative()) {
+    setChangesSinceSync([]);
+    return;
+  }
+  try {
+    setChangesSinceSync(await ipc.gitChangesSinceSync());
+  } catch (err) {
+    console.error("git changes-since-sync refresh failed:", err);
+  } finally {
+    // Signal per-note diff views to refetch even when the HEAD-based list is
+    // unchanged (a local edit moves the working text relative to the baseline).
+    setSyncReviewVersion((v) => v + 1);
+  }
+}
+
+/** Revert one hunk of a note to its pre-sync baseline, then refresh open editors
+ *  and the review surfaces. Identified by its current-side line range (from
+ *  `gitNoteSyncDiff`). On a stale range the backend rejects and we refetch. */
+export async function revertSyncHunk(
+  path: string,
+  currentStart: number,
+  currentEnd: number,
+): Promise<void> {
+  try {
+    await awaitAllPendingWrites();
+    await ipc.gitRevertSyncHunk(path, currentStart, currentEnd);
+    // The working file changed on disk — reload mounted editors, drop stale
+    // caches of inactive tabs, then refresh the review lists (the reverted hunk
+    // drops out of the diff).
+    invalidateEditorCacheForPath(path);
+    document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
+    await refreshStatus();
+    void refreshChangesSinceSync();
+  } catch (err) {
+    toastError(t("git.toast.revertFailed"), err);
+  }
+}
+
+/** Revert a whole note to its pre-sync baseline (or delete it when the sync
+ *  added it), then refresh open editors and the review surfaces. */
+export async function revertNoteSinceSync(path: string): Promise<void> {
+  try {
+    await awaitAllPendingWrites();
+    await ipc.gitRevertNoteSinceSync(path);
+    invalidateEditorCacheForPath(path);
+    document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
+    await refreshStatus();
+    void refreshChangesSinceSync();
+  } catch (err) {
+    toastError(t("git.toast.revertFailed"), err);
+  }
+}
 
 /** True when the open notebox carries a git config (and so should show the
  *  collaboration toolbar button + status indicator). */
@@ -104,16 +199,6 @@ export function packageMode(): boolean {
   return collaborative() && (noteboxSettings.git?.remote ?? "").trim() === "";
 }
 
-/** Whether a sync is paused awaiting conflict resolution. */
-export function syncPaused(): boolean {
-  return syncOutcome()?.paused ?? false;
-}
-
-/** Number of conflicted items in a paused sync (the pending badge). */
-export function pendingCount(): number {
-  return syncPaused() ? syncOutcome()!.conflicts.length : 0;
-}
-
 // ─────────────────────────── Event wiring ──────────────────────────────────
 
 let gitListenersReady = false;
@@ -126,7 +211,16 @@ let statusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleStatusRefresh(): void {
   if (!collaborative()) return;
   clearTimeout(statusRefreshTimer);
-  statusRefreshTimer = setTimeout(() => void refreshStatus(), 600);
+  statusRefreshTimer = setTimeout(() => {
+    void refreshStatus();
+    // A save may have resolved (or introduced) a suggestion — keep the
+    // notebox-wide count in step. The incremental indexer only re-scans the
+    // changed file, so the cache-backed query stays cheap.
+    void refreshUnresolved();
+    // A working-tree change also moves a note toward (an edit) or away from (a
+    // revert back to baseline) its pre-sync state — keep the review list current.
+    void refreshChangesSinceSync();
+  }, 600);
 }
 
 /** Subscribe to the backend git events once per process. Called from
@@ -141,7 +235,6 @@ export async function ensureGitListeners(): Promise<void> {
       setGitSyncing(true);
     }),
     await onGitFetchCompleted(() => setGitSyncing(false)),
-    await onGitReviewPending(() => setGitSyncing(false)),
     await onGitPushStarted(() => setGitSyncing(true)),
     await onGitPushCompleted(() => {
       setGitSyncing(false);
@@ -178,28 +271,15 @@ export async function resetGitOnOpen(): Promise<void> {
   setIncomingCount(0);
   setManageOpen(false);
   setActionsOpen(false);
-  setReviewIncomingSignal(false);
   setBundlePackagesSignal(false);
+  setUnresolvedFiles([]);
+  setChangesSinceSync([]);
   if (collaborative()) {
     await refreshStatus();
-    // Load the per-machine review-incoming preference for this notebox.
-    setReviewIncomingSignal(await ipc.gitGetReviewIncoming().catch(() => false));
+    void refreshUnresolved();
+    void refreshChangesSinceSync();
     // Load the per-machine bundle-packages preference for this notebox.
     setBundlePackagesSignal(await ipc.gitGetBundlePackages().catch(() => false));
-    // Recover an in-progress review left on disk (a paused Sync/import that
-    // outlived an app restart), so the list of notes to review reappears — e.g.
-    // when the user opens the panel from the status bar.
-    try {
-      const pending = await ipc.gitPendingReview();
-      if (pending.paused) {
-        setSyncOutcome(pending);
-        // A recovered review finalizes without pushing only in package mode
-        // (no server); a server notebox's paused review came from a Sync.
-        setPausedPush(!packageMode());
-      }
-    } catch (err) {
-      console.error("git pending-review recovery failed:", err);
-    }
   }
 }
 
@@ -264,8 +344,8 @@ export async function reconnectCollaboration(): Promise<void> {
 }
 
 /** Apply a completed sync outcome to the store + surface a non-blocking message
- *  summarizing what happened. Shared by Sync, Check, and finalize. */
-function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
+ *  summarizing what happened. Shared by Sync and package import. */
+function applyOutcome(outcome: GitSyncOutcome): void {
   setSyncOutcome(outcome);
   // A Sync reconciles with the remote we just fetched, so any "updates
   // available" notice from an earlier Check is now resolved.
@@ -276,10 +356,14 @@ function applyOutcome(outcome: GitSyncOutcome, pushGesture: boolean): void {
   // index refresh is driven separately by refreshStatus + the file watcher.)
   if (outcome.pulled) {
     document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
-  }
-  if (outcome.paused) {
-    setPausedPush(pushGesture);
-    return; // the panel surfaces the conflict list; no toast.
+    // A pull/finalize wrote incoming suggestions into notes on disk — recompute
+    // the notebox-wide unresolved count so the status-bar cue lights up even if
+    // the user dismisses the digest without resolving anything.
+    void refreshUnresolved();
+    // The sync recorded a fresh baseline and folded incoming changes in —
+    // populate the "changes since last sync" review list for the merge-first
+    // revert-later flow.
+    void refreshChangesSinceSync();
   }
   if (outcome.rejected) {
     showToast("info", t("git.toast.syncRejected"));
@@ -310,7 +394,7 @@ export async function sync(): Promise<void> {
     // step sees the latest content rather than a half-written file.
     await awaitAllPendingWrites();
     const outcome = await ipc.gitSync();
-    applyOutcome(outcome, true);
+    applyOutcome(outcome);
     setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
@@ -391,7 +475,7 @@ export async function importPackage(archive: string, password?: string): Promise
   try {
     await awaitAllPendingWrites();
     const outcome = await ipc.gitImportPackage(archive, password);
-    applyOutcome(outcome, false);
+    applyOutcome(outcome);
     setActionsOpen(false);
     await refreshStatus();
   } catch (err) {
@@ -401,112 +485,9 @@ export async function importPackage(archive: string, password?: string): Promise
   }
 }
 
-/** Finalize a paused sync after its conflicts have been resolved in the staged
- *  copies. Pushes iff the gesture that paused was a Sync. */
-export async function finalizeSync(): Promise<void> {
-  setGitSyncing(true);
-  try {
-    // The resolved staged copies are edited in their tabs; let those writes
-    // land before the backend reads them to build the merged tree.
-    await awaitAllPendingWrites();
-    const outcome = await ipc.gitSyncFinalize(pausedPush());
-    // Finalize cleared `.inkycap/incoming/`, so the staged "Resolve:" tabs now
-    // point at deleted files. Close them before applyOutcome dispatches the
-    // post-sync editor reload, or those editors try to reload a gone path.
-    closeCollabTabs();
-    applyOutcome(outcome, pausedPush());
-    // The paused view is done — fold the action section back to status + digest.
-    setActionsOpen(false);
-    await refreshStatus();
-  } catch (err) {
-    toastError(t("git.toast.finalizeFailed"), err);
-  } finally {
-    setGitSyncing(false);
-  }
-}
-
-/** Open a staged conflict note as a reviewable tab (suggestion pills + the
- *  Annotations pane do the resolving). No-op for items without a staged copy
- *  (binary conflicts). */
-export function openStagedNote(item: GitReviewItem): void {
-  if (!item.stagedPath) return;
-  const base = item.path.split("/").pop() ?? item.path;
-  openTab(
-    { type: "file", title: t("git.review.tabTitle", { name: base }), path: item.stagedPath, collab: true },
-    { forceNewTab: true },
-  );
-  // The note's incoming changes are staged as suggestions — surface the
-  // Changes panel alongside the note so the reviewer sees them immediately,
-  // rather than having to discover the right-sidebar tab themselves.
-  setRightCollapsed(false);
-  setRightPanelTab("annotations");
-}
-
-/** Abort a paused sync: clears staging and restores the working tree to its
- *  last committed state (so the clean files the merge auto-applied don't linger).
- *  The incoming changes stay on the remote and re-apply on the next Sync. */
-export async function discardReview(): Promise<void> {
-  try {
-    await ipc.gitDiscardReview();
-    // Discard also cleared staging — close the staged "Resolve:" tabs before
-    // the reload dispatch so they don't point at deleted files.
-    closeCollabTabs();
-    setSyncOutcome(null);
-    // The paused view is done — fold the action section back to status + digest.
-    setActionsOpen(false);
-    // The working tree was rolled back to HEAD — reload open editors so their
-    // buffers reflect the restored content (clean buffers only).
-    document.dispatchEvent(new CustomEvent("inkycap:notebox-synced"));
-    await refreshStatus();
-  } catch (err) {
-    toastError(t("git.toast.discardFailed"), err);
-  }
-}
-
 /** Dismiss the post-sync digest (the non-blocking "what landed" summary). */
 export function dismissDigest(): void {
   setSyncOutcome(null);
-}
-
-/** Resolve one conflicted binary file (Mine / Theirs / Both) before finalizing.
- *  Mutates the working tree immediately; re-callable until finalize. Returns the
- *  resolution (incl. the added sibling path for "Both"), or null on failure. */
-export async function resolveBinaryConflict(
-  path: string,
-  decision: GitBinaryDecision,
-): Promise<GitBinaryResolution | null> {
-  try {
-    return await ipc.gitResolveBinaryConflict(path, decision);
-  } catch (err) {
-    toastError(t("git.binary.resolveFailed"), err);
-    return null;
-  }
-}
-
-/** Resolve the structurally-merged settings.json by picking a side per clashing
- *  key. Re-callable until finalize. Returns true on success. */
-export async function resolveSettings(
-  decisions: GitSettingsDecisions,
-): Promise<boolean> {
-  try {
-    await ipc.gitResolveSettings(decisions);
-    return true;
-  } catch (err) {
-    toastError(t("git.settings.resolveFailed"), err);
-    return false;
-  }
-}
-
-/** Toggle the per-machine "review incoming changes before merging" preference
- *  for the open notebox. Optimistic; reverts + toasts on failure. */
-export async function setReviewIncoming(enabled: boolean): Promise<void> {
-  setReviewIncomingSignal(enabled);
-  try {
-    await ipc.gitSetReviewIncoming(enabled);
-  } catch (err) {
-    setReviewIncomingSignal(!enabled);
-    toastError(t("git.review.toggleFailed"), err);
-  }
 }
 
 /** Toggle the per-machine "bundle Typst packages on share" preference. Enabling
@@ -584,6 +565,5 @@ export {
   setManageOpen,
   actionsOpen,
   setActionsOpen,
-  reviewIncoming,
   bundlePackages,
 };

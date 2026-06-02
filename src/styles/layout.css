@@ -5559,6 +5559,27 @@ svg.lucide {
   background: var(--bg-highlight);
 }
 
+/* Attention dot on a tab icon (Changes & History when a note has tracked
+   changes awaiting a decision). Positioned at the icon's top-right corner. */
+.right-panel__tab-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.right-panel__tab-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* Ring in the bar's background so the dot reads cleanly over the icon. */
+  box-shadow: 0 0 0 1.5px var(--bg-primary);
+}
+
 /* A non-interactive marker (not a real tab button) — used to show the
    Journal Scroll state in the tab bar without offering a pressable target. */
 .right-panel__tab--indicator {
@@ -5653,6 +5674,129 @@ svg.lucide {
   color: var(--fg-muted);
 }
 
+/* Label introducing the list of pending changes, sitting between the filter
+   input and the list itself. */
+.annotations-panel__list-heading {
+  margin: 2px 0 6px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+/* Merge-first "Incoming since last sync" review block, shown above the manual
+   annotation list. Separated from it with a subtle divider so the two surfaces
+   read as distinct. */
+.annotations-panel__incoming {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.annotations-panel__incoming-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.annotations-panel__incoming-header .annotations-panel__list-heading {
+  margin: 2px 0;
+}
+
+.annotations-panel__incoming-revert-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: var(--text-base);
+  padding: 4px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.annotations-panel__incoming-revert-all:hover {
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+}
+
+/* Read-only version-compare (inline diff) view. Fills the tab body; its own
+   header carries the version label + Restore/Close, since a version-diff tab
+   has no editor toolbar. */
+.version-diff {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.version-diff__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.version-diff__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-diff__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Matches the editor mode-toggle segments (.editor-header__mode-seg) so the
+   collaboration/version action buttons read as one consistent button family. */
+.version-diff__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: var(--text-base);
+  padding: 4px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.version-diff__btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+}
+
+.version-diff__editor {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+/* The per-chunk Restore button is styled inside the diff editor's own theme
+   (VersionDiffView), where it can out-specify @codemirror/merge's base theme. */
+
+.version-diff__error {
+  padding: 16px;
+}
+
 /* Version history (the History half of the pane). */
 .note-history {
   flex: 1;
@@ -5716,6 +5860,19 @@ svg.lucide {
   border-radius: var(--radius-control);
   background: var(--bg-secondary);
   color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* Shown above the version list when the working copy differs from the latest
+   shared version (unsynced local edits or a reverted incoming change). */
+.note-history__local {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-control);
 }
 
 .note-history__restore {
@@ -5743,25 +5900,49 @@ svg.lucide {
   align-items: flex-start;
 }
 
-/* Dismiss button on a comment row — muted by default, accents on hover. */
+/* Per-row action (resolve a tracked change, dismiss a comment, revert an
+   incoming hunk). Carries a visible border + background so it reads as a
+   button — these rows are dense, and a bare icon looks like decoration. */
 .annotations-panel__action {
   flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--fg-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--fg-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 5px;
   border-radius: var(--radius-control);
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .annotations-panel__action:hover {
-  color: var(--accent-text, var(--fg-primary));
+  color: var(--fg-secondary);
   background: var(--bg-hover);
 }
 
 /* The dismiss action removes a comment — warn on hover. */
 .annotations-panel__action--danger:hover {
   color: var(--accent-danger);
+}
+
+/* Per-hunk revert (restore to your version) — a bare icon button matching the
+   History tab's Restore buttons (.note-history__restore), since it's the same
+   "restore this" gesture. Distinct from the bordered menu/dismiss actions. */
+.annotations-panel__revert {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-control);
+}
+
+.annotations-panel__revert:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .annotations-panel__body {
@@ -11537,6 +11718,56 @@ svg.lucide {
   gap: 8px;
 }
 
+/* Outgoing "Changes to share" preview — same card as the digest, tinted by a
+   warm accent border to read as "pending action" rather than "already done". */
+.git-panel__share {
+  border-left-color: var(--warning, var(--accent));
+}
+
+.git-panel__share-heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+/* Unresolved tracked-changes block — same card, but its rows are actionable
+   (clicking opens the note to resolve), so it carries the attention accent and
+   its rows keep the interactive hover (no --readonly). */
+.git-panel__unresolved {
+  border-left-color: var(--warning, var(--accent));
+}
+
+/* The unresolved rows are <button>s — strip native button chrome so they read
+   as sidebar items, then .sidebar-item supplies the layout + hover cue. */
+button.git-panel__item {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+/* The clickable "open this note" region of a changes-since-sync row, sitting to
+   the left of the row's Revert action so the two don't conflict. Borderless and
+   transparent — the parent .sidebar-item carries the hover background. */
+.git-panel__item-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
 /* "Close" dismisses the (purely informational) digest. Sits at the bottom of
    the list, right-aligned, as a quiet secondary action. */
 .git-panel__digest-close {
@@ -11567,6 +11798,7 @@ svg.lucide {
 .git-panel__icon--added { color: var(--callout-success, var(--accent)); }
 .git-panel__icon--modified { color: var(--accent); }
 .git-panel__icon--deleted { color: var(--accent-danger); }
+.git-panel__icon--renamed { color: var(--accent); }
 .git-panel__icon--binary { color: var(--fg-dim); }
 
 /* Manage (collapsible) */
