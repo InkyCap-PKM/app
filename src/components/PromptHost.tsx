@@ -13,6 +13,9 @@ import {
 const PromptHost: Component = () => {
   const [value, setValue] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
+  // State of the confirm dialog's optional opt-in checkbox. Reset whenever a
+  // new confirm opens, to its configured initial value (default off).
+  const [confirmChecked, setConfirmChecked] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
 
   // Reset state and focus the input every time a new prompt opens. The
@@ -59,10 +62,16 @@ const PromptHost: Component = () => {
     }
   }
 
+  // Reset the checkbox to its initial state each time a confirm opens.
+  createEffect(() => {
+    const c = activeConfirm();
+    if (c) setConfirmChecked(c.checkbox?.initial ?? false);
+  });
+
   function onConfirmKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter") {
       e.preventDefault();
-      resolveConfirm(true);
+      resolveConfirm(true, confirmChecked());
     } else if (e.key === "Escape") {
       e.preventDefault();
       resolveConfirm(false);
@@ -94,6 +103,18 @@ const PromptHost: Component = () => {
             </div>
             <div class="app-modal__body">
               <p class="app-modal__message">{c().message}</p>
+              <Show when={c().checkbox}>
+                {(cb) => (
+                  <label class="app-modal__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={confirmChecked()}
+                      onChange={(e) => setConfirmChecked(e.currentTarget.checked)}
+                    />
+                    <span>{cb().label}</span>
+                  </label>
+                )}
+              </Show>
             </div>
             <div class="app-modal__footer">
               <button
@@ -104,7 +125,7 @@ const PromptHost: Component = () => {
               </button>
               <button
                 class="app-modal__btn app-modal__btn--primary"
-                onClick={() => resolveConfirm(true)}
+                onClick={() => resolveConfirm(true, confirmChecked())}
               >
                 {c().confirmLabel ?? "OK"}
               </button>

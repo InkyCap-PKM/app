@@ -35,9 +35,11 @@ import { triggerCreationRule } from "../stores/creation-rules";
 import { showToast } from "../stores/toasts";
 import {
   collaborative,
+  packageMode,
   sync as gitSyncAction,
   checkUpdates as gitCheckUpdatesAction,
 } from "../stores/git";
+import { exportPackageInteractive, importPackageInteractive } from "./package-handoff";
 
 // Editor-targeting commands (toggle source mode, zoom in/out/reset)
 // mutate Solid.js signals; the editor picks up changes automatically
@@ -575,7 +577,7 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     id: "tools:mycelial-view",
     title: t("command.tools.mycelial-view"),
     category: "Tools",
-    keybinding: "Ctrl+Shift+S",
+    keybinding: "Ctrl+Shift+Y",
     execute: () => {
       const tab = getActiveTab();
       if (tab && tab.type === "file") {
@@ -651,59 +653,68 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     },
   });
 
-  // ── Git collaboration commands ──
-  // Sync / Check for updates act on the open collaborative notebox. When the
-  // notebox isn't collaborative they fall back to opening the panel (which
-  // shows the setup form) rather than erroring on a missing remote.
-
-  registerCommand({
-    id: "git:setup",
-    title: t("command.git.setup"),
-    category: "Git",
-    execute: callbacks.openCollaborationPanel,
-  });
+  // ── Collaboration commands ──
+  // Each gesture acts on the open collaborative notebox and opens the
+  // collaboration panel for feedback (the post-sync digest, the import merge
+  // result). When the notebox isn't collaborative they just open the panel
+  // (its setup form). Sync / Check for updates apply only to an ONLINE git
+  // remote; Export / Import package apply only to OFFLINE package handoff — a
+  // command invoked in the wrong mode explains itself instead of acting.
 
   registerCommand({
     id: "git:sync",
     title: t("command.git.sync"),
-    category: "Git",
+    category: "Collaboration",
+    keybinding: "Ctrl+Shift+S",
     execute: () => {
+      if (!collaborative()) return void callbacks.openCollaborationPanel();
+      if (packageMode()) return void showToast("info", t("command.git.onlineOnly"));
       callbacks.openCollaborationPanel();
-      if (collaborative()) void gitSyncAction();
+      void gitSyncAction();
     },
   });
 
   registerCommand({
     id: "git:check-updates",
     title: t("command.git.checkUpdates"),
-    category: "Git",
+    category: "Collaboration",
+    keybinding: "Ctrl+Shift+U",
     execute: () => {
+      if (!collaborative()) return void callbacks.openCollaborationPanel();
+      if (packageMode()) return void showToast("info", t("command.git.onlineOnly"));
       callbacks.openCollaborationPanel();
-      if (collaborative()) void gitCheckUpdatesAction();
+      void gitCheckUpdatesAction();
     },
   });
 
-  registerCommand({
-    id: "git:sign-in",
-    title: t("command.git.signIn"),
-    category: "Git",
-    execute: callbacks.openCollaborationPanel,
-  });
-
-  // Package handoff (server-less) — open the panel, where Export/Import package
-  // and the optional archive password live (a file dialog drives each gesture).
+  // Package handoff (server-less). The command drives the same file-dialog
+  // gesture as the panel buttons — opening the panel too so the export toast /
+  // import merge result surface there.
   registerCommand({
     id: "git:export-package",
     title: t("command.git.exportPackage"),
-    category: "Git",
-    execute: callbacks.openCollaborationPanel,
+    category: "Collaboration",
+    keybinding: "Ctrl+Shift+E",
+    execute: () => {
+      if (!collaborative()) return void callbacks.openCollaborationPanel();
+      if (!packageMode()) return void showToast("info", t("command.git.offlineOnly"));
+      callbacks.openCollaborationPanel();
+      void exportPackageInteractive();
+    },
   });
 
   registerCommand({
     id: "git:import-package",
     title: t("command.git.importPackage"),
-    category: "Git",
-    execute: callbacks.openCollaborationPanel,
+    category: "Collaboration",
+    // Not Ctrl+Shift+I: the webview grabs that for "Inspect Element".
+    keybinding: "Ctrl+Shift+G",
+    execute: () => {
+      if (!collaborative()) return void callbacks.openCollaborationPanel();
+      if (!packageMode()) return void showToast("info", t("command.git.offlineOnly"));
+      callbacks.openCollaborationPanel();
+      void importPackageInteractive();
+    },
   });
 
   // ── Zettelkasten commands ──

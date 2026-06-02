@@ -642,22 +642,17 @@ export async function gitRevertNoteSinceSync(path: string): Promise<void> {
   return invoke<void>("git_revert_note_since_sync", { path });
 }
 
-/** Save the username + password for this notebox's repository (password lives
- *  only in the OS keychain; username in a per-installation store). */
-export async function gitSignIn(username: string, password: string): Promise<void> {
-  return invoke<void>("git_sign_in", { username, password });
-}
-
 /** The saved sign-in username for a remote, for pre-filling the connect form.
  *  Null when none was saved. */
 export async function gitSavedUsername(remote: string): Promise<string | null> {
   return invoke<string | null>("git_saved_username", { remote });
 }
 
-/** Stop collaborating: drop the notebox's git config and clear review staging.
- *  The `.git` dir and stored credentials are left intact. */
-export async function gitDisableCollaboration(): Promise<void> {
-  return invoke<void>("git_disable_collaboration");
+/** Stop collaborating: drop the notebox's git config. With `deleteHistory`,
+ *  also remove the `.git` directory (the version history) to reclaim disk space
+ *  — irreversible. Stored credentials are left intact either way. */
+export async function gitDisableCollaboration(deleteHistory: boolean): Promise<void> {
+  return invoke<void>("git_disable_collaboration", { deleteHistory });
 }
 
 /** Clone a collaborative notebox from a git remote into `dest` (a collaborator

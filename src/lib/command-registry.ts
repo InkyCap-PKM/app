@@ -17,7 +17,7 @@ export type CommandCategory =
   | "Symbol"
   | "Style"
   | "InkyCap"
-  | "Git"
+  | "Collaboration"
   | "Creation Rules";
 
 /** Command category id (stable English, the grouping/sort key) → i18n key for
@@ -36,7 +36,7 @@ export const CATEGORY_LABEL_KEYS: Record<CommandCategory, string> = {
   Insert: "command.cat.insert",
   Style: "command.cat.style",
   InkyCap: "command.cat.inkycap",
-  Git: "command.cat.git",
+  Collaboration: "command.cat.collaboration",
   "Creation Rules": "command.cat.creationRules",
   Symbol: "command.cat.symbol",
 };

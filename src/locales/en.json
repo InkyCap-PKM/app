@@ -4,10 +4,8 @@
   "settings.appearance.theme.option.light": "Light",
   "settings.appearance.theme.option.dark": "Dark",
   "settings.appearance.theme.option.system": "Follow system",
-
   "settings.language.ui.label": "Interface language",
   "settings.language.ui.description": "Language used for InkyCap's menus, buttons, and panels. Your note content is unaffected.",
-
   "sort.label": "Sort",
   "sort.name.asc": "Name (A – Z)",
   "sort.name.desc": "Name (Z – A)",
@@ -19,15 +17,13 @@
   "sort.alpha.desc": "Alphabetical (Z – A)",
   "sort.quantity.desc": "Quantity (high – low)",
   "sort.quantity.asc": "Quantity (low – high)",
-
+  "common.experimentalNotice": "This feature is experimental and might not function perfectly.",
   "common.note.one": "{count} note",
   "common.note.other": "{count} notes",
-
   "settings.notebox.helpLabel": "About notebox management",
   "settings.notebox.help": "'New notebox' creates an empty notebox on your local filesystem. Start fresh or copy your files from a notebox elsewhere. 'Clone from remote' downloads an existing notebox from a Git repository for collaboration. 'Import package' creates a local notebox from an InkyCap package sent by a collaborator.",
   "settings.notebox.collaboration": "Collaboration",
   "settings.notebox.configure": "Configure",
-
   "references.title": "References",
   "references.filterPlaceholder": "Filter entries…",
   "references.clearFilter": "Clear filter",
@@ -58,7 +54,6 @@
   "references.citations": "Citations",
   "references.citationsLoadFailed": "Failed to load citations: {error}",
   "references.noCitations": "No citations in this file",
-
   "refNotes.searchPlaceholder": "Search references to import a note…",
   "refNotes.loading": "Loading bibliography…",
   "refNotes.noMatching": "No matching entries",
@@ -154,7 +149,6 @@
   "slash.paragraphSpacing": "Paragraph spacing",
   "slash.firstLineIndent": "First line indent",
   "slash.headingNumbering": "Heading numbering",
-
   "selToolbar.bold": "Bold (Ctrl+B)",
   "selToolbar.italic": "Italic (Ctrl+I)",
   "selToolbar.underline": "Underline (Ctrl+U)",
@@ -182,15 +176,12 @@
   "selToolbar.superscript": "Superscript",
   "selToolbar.subscript": "Subscript",
   "selToolbar.footnote": "Footnote",
-
   "app.error.title": "Something went wrong",
   "app.error.reload": "Reload",
   "app.rightSidebar.show": "Show right sidebar",
   "app.rightSidebar.hide": "Hide right sidebar",
-
   "noteboxLost.title": "Notebox is missing from disk",
   "noteboxLost.detail": "no longer exists. Your open notes cannot be saved — copy any content you want to keep into another location or notebox.",
-
   "noteboxRequired.title": "Open a notebox to continue",
   "noteboxRequired.text": "InkyCap always works inside a notebox. Choose a folder to open or create one, or pick one of your existing noteboxes below.",
   "noteboxRequired.yourNoteboxes": "Your noteboxes",
@@ -198,7 +189,6 @@
   "noteboxRequired.openOrCreate": "Open or create a notebox…",
   "noteboxRequired.openFailed": "Failed to open notebox: {error}",
   "noteboxRequired.openElsewhere": "Already open in another window",
-
   "noteboxSeed.title": "Copy from an existing notebox?",
   "noteboxSeed.addingBefore": "Adding",
   "noteboxSeed.addingAfter": ". You can copy its settings, creation rules, scaffolds, and property types from one of your other noteboxes, or start with the defaults.",
@@ -206,20 +196,16 @@
   "noteboxSeed.hint": "Absolute paths inside the copied settings (bibliography file, custom CSL) are only kept if they still resolve on this machine.",
   "noteboxSeed.copyAndOpen": "Copy and open",
   "noteboxSeed.useDefaults": "Use defaults",
-
   "folderPicker.placeholder": "Type to filter and find a folder",
   "folderPicker.noMatch": "No matching folders",
   "folderPicker.selectHint": "↑↓ select",
   "folderPicker.moveNowHint": "↵ move now",
   "folderPicker.cancelHint": "esc to cancel",
   "folderPicker.noteboxRoot": "Notebox root",
-
   "tabStrip.scrollLeft": "Scroll tabs left",
   "tabStrip.scrollRight": "Scroll tabs right",
   "tabStrip.newTab": "New tab",
-
   "diagnostic.hint": "hint: {text}",
-
   "journalScroll.empty": "No notes match the current scroll filter.",
   "journalScroll.compiling": "Compiling…",
   "journalScroll.recoveredNote": "Showing a partial render — the errored content below was skipped so the rest of the entry stays visible.",
@@ -233,7 +219,6 @@
   "journalScroll.diag.warning.other": "{count} compile warnings — click to {action}",
   "journalScroll.diag.hide": "hide",
   "journalScroll.diag.view": "view",
-
   "typAudit.dialogAria": "Audit .typ files",
   "typAudit.scanning": "Scanning notebox for .typ files…",
   "typAudit.scannedLead": "Scanned",
@@ -269,7 +254,6 @@
   "typAudit.repaired": "Repaired {count} file(s).",
   "typAudit.errorsN": "{count} error(s):",
   "typAudit.fixedMarkdown": "Fixed Markdown in {count} file(s).",
-
   "export.title": "Export",
   "export.collectionHint": "Exporting with collection template and bibliography style applied.",
   "export.formatLabel": "Format",
@@ -321,12 +305,10 @@
   "export.filter.pdf": "PDF",
   "export.filter.markdown": "Markdown",
   "export.filter.html": "HTML",
-
   "commandPalette.placeholder": "Type a command...",
   "commandPalette.noMatching": "No matching commands",
   "quickOpen.placeholder": "Search files...",
   "quickOpen.noMatching": "No matching files",
-
   "editor.nav.label": "Navigation",
   "editor.nav.back": "Go back",
   "editor.nav.forward": "Go forward",
@@ -342,7 +324,6 @@
   "editor.toast.autoSaveFailed": "Auto-save failed",
   "editor.toast.spellcheckFailed": "Spellcheck failed to load",
   "editor.toast.openFailed": "Could not open file",
-
   "editor.stylePreamble.label": "Document style",
   "editor.stylePreamble.count.other": "{count} rules",
   "editor.stylePreamble.count.one": "{count} rule",
@@ -355,12 +336,9 @@
   "wikilink.menu.openNewTab": "Edit in new tab",
   "wikilink.menu.openScroll": "Open in Journal Scroll tab",
   "wikilink.menu.openMycelial": "Open in Mycelial View tab",
-
   "mycelial.button.title": "Mycelial View anchored from this note",
   "mycelial.tab.title": "Mycelial View",
-
   "collection.tab.title": "Collection",
-
   "property.file.name": "File Name",
   "property.file.folder": "Folder Name",
   "property.file.path": "File-system Path",
@@ -368,7 +346,6 @@
   "property.file.size": "Size",
   "property.file.ctime": "Created Date",
   "property.file.mtime": "Modified Date",
-
   "journalScroll.tab.title": "Journal Scroll",
   "journalScroll.group": "Journal Scroll",
   "journalScroll.toggle.start": "Journal Scroll anchored from this note",
@@ -378,7 +355,6 @@
   "journalScroll.direction.oldestFirst": "Show backward in time from anchor",
   "journalScroll.status.recentFirst": "Viewing new to old from {anchor}",
   "journalScroll.status.oldestFirst": "Viewing old to new from {anchor}",
-
   "search.find": "Find",
   "search.replace": "Replace",
   "search.next": "Next",
@@ -451,21 +427,17 @@
   "search.scope.onlyDesc": "Only annotations and suggestions",
   "search.scope.exclude": "Exclude annotations",
   "search.scope.excludeDesc": "Hide annotation and suggestion text",
-
   "readingFormat.toggle": "Reading format",
   "readingFormat.svg": "SVG",
   "readingFormat.html": "HTML",
   "readingFormat.svg.title": "Render as SVG (paginated)",
   "readingFormat.html.title": "Render as HTML (copyable)",
-
   "common.loading": "Loading…",
-
   "mainContent.emptyState": "Open a file or collection to get started",
   "mainContent.emptyState.shortcuts": "",
   "mainContent.emptyState.openFileHint": "Open a file by name: {modifier} + O",
   "mainContent.emptyState.createFileHint": "Create a note: {modifier} + N",
   "mainContent.emptyState.commandsHint": "Access commands quickly: {modifier} + P",
-
   "pane.menu.title": "Tab options",
   "pane.splitRight": "Split right",
   "pane.splitDown": "Split down",
@@ -475,8 +447,6 @@
   "command.pane.close": "Close editor pane",
   "command.pane.focusNext": "Focus next pane",
   "command.pane.focusPrev": "Focus previous pane",
-
-
   "agenda.title": "Agenda",
   "agenda.tab.title": "Agenda",
   "agenda.modeLabel": "Agenda",
@@ -500,7 +470,6 @@
   "agenda.tags.label": "Tags",
   "agenda.tags.all": "All",
   "agenda.tags.nSelected": "{n} selected",
-
   "annotations.title": "Changes and Annotations",
   "annotations.filterPlaceholder": "Filter…",
   "annotations.empty": "No changes or annotations in this note",
@@ -531,7 +500,6 @@
   "annotations.incoming.kind.changed": "Changed",
   "annotations.local.heading": "Local activity since last sync:",
   "annotations.local.created": "{name} created",
-
   "history.loading": "Loading history…",
   "history.empty": "No earlier versions of this note yet.",
   "history.notCollaborative": "Version history appears once this notebox is set up for collaboration (Settings › Notebox Management).",
@@ -550,13 +518,11 @@
   "history.restore.title": "Restore version",
   "history.restore.action": "Restore",
   "history.restore.confirm": "Restore this note to version {hash}? This replaces the current content as a new change you can Sync — earlier versions stay in history.",
-
   "versionDiff.heading": "{name} — comparing with version {date} ({hash})",
   "versionDiff.close": "Close compare view",
   "versionDiff.tab.title": "Version compare",
   "versionDiff.restoreChunk": "Restore",
   "versionDiff.restoreChunkHint": "Restore just this change to the older version",
-
   "backup.section.title": "Notebox backup",
   "backup.section.intro": "Periodically creates a zip archive (with optional encryption) of the currently in-use notebox to a destination of your choice. Backups run while the app is open. You can create ad-hoc backups, manually from the command palette ({modifier} + P → “Back up notebox now”).",
   "backup.enabled.label": "Notebox backup & restore",
@@ -612,7 +578,6 @@
   "backup.toast.successPrunedSuffix": " — pruned {n} older",
   "backup.toast.failed": "Backup failed: {error}",
   "backup.toast.cancelled": "Backup cancelled.",
-
   "backup.browse.openBtn": "Browse and restore…",
   "backup.browse.title": "Browse backups",
   "backup.browse.intro": "Choose a backup archive to restore your entire notebox or selected files.",
@@ -648,11 +613,9 @@
   "backup.browse.restoreSummary": "Restored {written}, renamed {renamed}, skipped {skipped}.",
   "backup.browse.restoreFailed": "Restore failed: {error}",
   "backup.browse.pickTargetTitle": "Choose where to restore files",
-
   "git.toolbar.title": "Collaboration (Git)",
   "git.panel.title": "Collaboration via Git",
-
-  "git.setup.intro": "Synchronize this notebox using Git to collaborate or for your convenience on different computers. Sync merges collaborators' changes automatically; conflicts will appear as inline suggestions for you to resolve and all changes will be displayed along with a history to revert to, if desired.",
+  "git.setup.intro": "Synchronize this notebox using Git to collaborate. You can also use this as a synchronization convenience between different computers. Sync merges collaborators' changes automatically; conflicts will be identified in case you wish to revert a change. Authors can suggest insertions, deletions, changes, or notes and request a resolution. All changes will be displayed along with a history to revert to, if desired.",
   "git.setup.remoteLabel": "Repository address",
   "git.setup.remoteHint": "The web address of the shared repository. With a username and password, use the https:// address (for example https://codeberg.org/[repository]/notes). With SSH, use the git@… address.",
   "git.setup.remotePlaceholder": "https://codeberg.org/[repository]/notes",
@@ -672,51 +635,43 @@
   "git.setup.identityHint": "Shown as the author on your changes so collaborators can see who made each edit. This is just a label, not a sign-in. Pre-filled from your Git identity (if you have one set); change it to use a different name for this notebox.",
   "git.setup.submit": "Set up collaboration",
   "git.setup.reinit": "Re-initialize repository",
-  "git.setup.repairHint": "This notebox is set up for collaboration, but there is no local git repository behind it (the .git folder is missing, or the notebox hasn't been cloned from a remote repository on to this computer). Re-initialize it below to reconnect — your remote and branch are pre-filled.",
+  "git.setup.repairHint": "This notebox is set up for collaboration but there is no local git repository behind it (the .git folder is missing, or the notebox hasn't been cloned from a remote repository on to this computer). Re-initialize it below to reconnect — your remote and branch are pre-filled.",
   "git.setup.submitting": "Setting up…",
   "git.setup.done": "Collaboration set up.",
   "git.setup.failed": "Setup failed",
   "git.setup.remoteRequired": "A repository address is required.",
-  "git.setup.offlineLabel": "Offline (package handoff)",
-  "git.setup.offlineHint": "Collaborate with no git server: share this notebox by exporting it — with its full history — to a single file, and reconcile changes by importing files others send back. Choose this when you have no hosted git remote. You can add a remote later.",
-
+  "git.setup.offlineLabel": "Offline (manual notebox exchange)",
+  "git.setup.offlineHint": "Enable this to collaborate without using a git server. Share this notebox by exporting it to a zipped archive package. Exchange the package with your collaborators and reconcile changes by importing what they send to you. You can switch to a remote git server in the future.",
   "git.reconnect.intro": "This notebox is already linked to a remote ({remote}, branch {branch}) but isn't set up for collaboration here. Reconnect to pick up where you left off.",
   "git.reconnect.action": "Reconnect collaboration",
   "git.reconnect.working": "Reconnecting…",
   "git.reconnect.done": "Collaboration reconnected.",
   "git.reconnect.failed": "Could not reconnect",
-
   "git.status.synced": "No local changes",
   "git.status.behind": "{n} incoming",
   "git.status.unborn": "No commits yet",
   "git.status.toShare": "Changes to share",
   "git.status.unresolved": "{n} unresolved",
   "git.status.sinceSync": "{n} since last sync",
-
   "git.actions.sync": "Sync",
   "git.actions.syncing": "Syncing…",
   "git.actions.syncingLabel": "Syncing",
   "git.actions.checkUpdates": "Check for updates",
-
   "git.bundle.toggleLabel": "Bundle Typst packages on share",
   "git.bundle.toggleHint": "When on, sharing this notebox (sync push or package export) copies any additionally installed Typst packages it uses and their dependencies into the notebox. Collaborators can then render or export the files without downloading anything. Off by default: published @preview packages download automatically on each person's side. Turn this on for @local packages (which can't be downloaded from the Typst Universe) or for offline sharing. A per-device setting; turning it on bundles the current packages right away.",
   "git.bundle.toggleFailed": "Could not change the package-bundling setting",
-
   "git.digest.oneChange": "1 note changed.",
   "git.digest.changes": "{n} notes changed.",
   "git.digest.status.added": "added",
   "git.digest.status.modified": "edited",
   "git.digest.status.deleted": "deleted",
   "git.digest.status.renamed": "moved",
-
   "git.share.heading": "Files you'll share:",
-
   "git.unresolved.heading": "Changes to resolve:",
   "git.unresolved.count.one": "{n} note still has changes awaiting your decision.",
   "git.unresolved.count.other": "{n} notes still have changes awaiting your decision.",
   "git.unresolved.badge.one": "{n} change",
   "git.unresolved.badge.other": "{n} changes",
-
   "git.sinceSync.heading": "Files changed from last sync:",
   "git.sinceSync.headingFrom": "Changes merged from {author}:",
   "git.sinceSync.count.one": "{n} note changed as a result of the last sync. Review and revert anything you don't want.",
@@ -728,7 +683,6 @@
   "git.sinceSync.revertConfirmTitle": "Revert note to pre-sync version?",
   "git.sinceSync.revertConfirmBody": "Discard every change the last sync brought into \"{name}\" and restore your version? This is recoverable from history.",
   "git.sinceSync.revertConfirmBodyAdded": "The last sync added \"{name}\". Reverting removes it from your notebox. Its content stays in git history, recoverable from the command line.",
-
   "git.manage.heading": "Manage collaboration",
   "git.manage.passwordKeepHint": "Leave the password blank to keep the one you already saved.",
   "git.manage.save": "Save changes",
@@ -738,12 +692,12 @@
   "git.manage.disable": "Stop collaborating",
   "git.manage.disableConfirm": "Stop collaborating on this notebox? The git repository and your files stay on disk; only InkyCap's collaboration link is removed.",
   "git.manage.disabled": "Collaboration disabled for this notebox.",
+  "git.manage.disabledWithHistory": "Collaboration stopped and version history deleted.",
+  "git.manage.deleteHistoryOption": "Also delete the version history to reclaim disk space (cannot be undone)",
   "git.manage.disableFailed": "Could not disable collaboration",
-
   "git.settings.tooltip": "Git collaboration for this notebox",
   "git.settings.setup": "Collaboration",
   "git.settings.manage": "Collaboration ✓",
-
   "git.toast.upToDate": "Already up to date.",
   "git.toast.synced": "Synced — {n} notes changed.",
   "git.toast.syncedOne": "Synced — 1 note changed.",
@@ -755,11 +709,9 @@
   "git.toast.oneUpdateAvailable": "1 update available — Sync to get it.",
   "git.toast.updatesAvailable": "{n} updates available — Sync to get them.",
   "git.toast.checkFailed": "Could not check for updates",
-
   "git.check.one": "{count} update available",
   "git.check.other": "{count} updates available",
   "git.check.hint": "Sync to bring them into your notebox.",
-
   "git.package.modeLabel": "Import/export changes",
   "git.sync.heading": "Sync changes",
   "git.package.intro": "No git server: share this notebox by exporting it to a file, and merge changes others send back by importing their file.",
@@ -770,20 +722,18 @@
   "git.package.exportTitle": "Export notebox package",
   "git.package.importTitle": "Import notebox package",
   "git.package.passwordLabel": "Archive password (optional)",
-  "git.package.passwordHint": "Leave blank for no encryption. If set, the package is AES-256 encrypted — share the password with collaborators separately (it is never stored). The same password is used to import an encrypted package.",
+  "git.package.passwordHint": "Leave blank for no encryption. If set, the package will be AES-256 encrypted. Make sure to share the password with collaborators separately. The password is never stored in InkyCap so it cannot be recovered if you lose it. It will be impossible to open the package without the password. The same password is used to import the encrypted package.",
   "git.toast.exported": "Package exported to {path}",
   "git.toast.exportFailed": "Could not export the package",
   "git.toast.importFailed": "Could not import the package",
   "git.toast.packagesVendored": "Bundled {count} Typst package(s) into the notebox",
   "git.toast.packagesUnresolved": "Could not bundle: {specs} — not installed locally, so collaborators may be unable to compile notes that use them",
-
-  "command.git.setup": "Git: Set up collaboration for this notebox",
-  "command.git.sync": "Git: Sync",
-  "command.git.checkUpdates": "Git: Check for updates",
-  "command.git.signIn": "Git: Sign in",
-  "command.git.exportPackage": "Git: Export package (offline handoff)",
-  "command.git.importPackage": "Git: Import package (offline handoff)",
-
+  "command.git.sync": "Sync (git)",
+  "command.git.checkUpdates": "Check for updates (git)",
+  "command.git.onlineOnly": "Sync and Check for updates are for online git collaboration. This notebox shares offline by package handoff — use Export/Import package instead.",
+  "command.git.offlineOnly": "Export/Import package is for offline package-handoff collaboration. This notebox uses an online git remote — use Sync instead.",
+  "command.git.exportPackage": "Export package (offline handoff)",
+  "command.git.importPackage": "Import package (offline handoff)",
   "command.cat.file": "File",
   "command.cat.edit": "Edit",
   "command.cat.view": "View",
@@ -796,9 +746,8 @@
   "command.cat.style": "Style",
   "command.cat.inkycap": "InkyCap",
   "command.cat.creationRules": "Creation Rules",
-  "command.cat.git": "Git",
+  "command.cat.collaboration": "Collaboration",
   "command.cat.symbol": "Symbol",
-
   "command.file.quick-open": "Quick Open",
   "command.file.close-tab": "Close Tab",
   "command.file.new-empty-tab": "New Empty Tab",
@@ -841,7 +790,6 @@
   "command.tools.export-self-contained": "Export Self-Contained .typ",
   "command.references.cite": "Search references & cite",
   "command.references.import-note": "Import note text from reference (Zotero / BibTeX)",
-
   "command.markup.bold": "Bold",
   "command.markup.italic": "Italic",
   "command.markup.strikethrough": "Strikethrough",
@@ -905,7 +853,6 @@
   "command.markup.verse": "Verse",
   "command.markup.task": "Task",
   "command.markup.due": "Due date",
-
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.remove": "Remove",
@@ -929,7 +876,6 @@
   "common.open": "Open",
   "common.file.one": "{count} file",
   "common.file.other": "{count} files",
-
   "property.type.auto": "Auto",
   "property.type.text": "Text",
   "property.type.number": "Number",
@@ -938,7 +884,6 @@
   "property.type.date": "Date",
   "property.type.datetime": "Date & time",
   "property.type.checkbox": "Checkbox",
-
   "property.editor.empty": "Empty",
   "property.editor.enterValue": "Enter value...",
   "property.editor.notANumber": "Not a valid number",
@@ -953,7 +898,6 @@
   "property.editor.expectedDatetime": "Expected date and time",
   "property.editor.expectedList": "Expected a list",
   "property.editor.expectedText": "Expected text",
-
   "filter.title": "Filters",
   "filter.op.equals": "equals",
   "filter.op.notEquals": "not equals",
@@ -976,7 +920,6 @@
   "filter.caption": "of the following are true",
   "filter.addRow": "+ Add filter",
   "filter.addGroup": "+ Add filter group",
-
   "contributors.namePlaceholder": "Name",
   "contributors.roleAria": "Bibliographic role",
   "contributors.customRolePlaceholder": "Custom role",
@@ -985,7 +928,6 @@
   "contributors.remove": "Remove contributor",
   "contributors.add": "+ Add contributor",
   "contributors.includeCreditStatement": "Include CRediT contributions statement in book export",
-
   "collection.style.overrides": "Style Overrides",
   "collection.style.overridesHint": "Override app defaults for notes in this collection",
   "collection.style.group.page": "Page",
@@ -1019,7 +961,6 @@
   "collection.style.editEllipsis": "Edit…",
   "collection.style.addEllipsis": "Add…",
   "collection.style.inUse": "in use",
-
   "collection.book.metadata": "Book metadata",
   "collection.book.title": "Title",
   "collection.book.subtitle": "Subtitle",
@@ -1055,7 +996,6 @@
   "collection.book.pageStyle.arabic": "Arabic numerals from page 1",
   "collection.book.pageStyle.arabicFromPage": "Arabic numerals starting at a specific page",
   "collection.book.startOnPage": "Start on page",
-
   "collection.char.icon": "Icon",
   "collection.char.template": "Typst Template",
   "collection.char.templateHelpLabel": "About the Typst template",
@@ -1069,12 +1009,10 @@
   "collection.char.bibFileHelp": "Path to a .bib file, relative to the notebox root. Setting it here overrides the global bibliography file or Zotero for notes in this collection.",
   "collection.char.bibFilePlaceholder": "e.g. references.bib",
   "collection.char.bibPickerTitle": "Select bibliography file",
-
   "collection.toast.saveStyleFailed": "Failed to save style overrides",
   "collection.toast.saveCustomTypstFailed": "Failed to save custom Typst",
   "collection.toast.saveBookFailed": "Failed to save book metadata",
   "collection.defaultName": "Collection",
-
   "collection.table.columns": "Columns",
   "collection.table.columnsTitle": "Configure columns",
   "collection.table.filter": "Filter",
@@ -1147,7 +1085,6 @@
   "collection.export.markdownDone.one": "Exported {count} Markdown file",
   "collection.export.markdownDone.other": "Exported {count} Markdown files",
   "collection.export.markdownFailed": "Markdown export failed: {error}",
-
   "import.mapping.title": "Map imported properties",
   "import.mapping.hint": "InkyCap found these properties in your files' YAML frontmatter. Confirm how each maps to an InkyCap property, change the type of any new properties, or exclude ones you don't want to import.",
   "import.mapping.yamlProperty": "YAML property",
@@ -1173,7 +1110,6 @@
   "import.mapping.typeAria": "Type for {key}",
   "import.mapping.importBtn.one": "Import {count} property",
   "import.mapping.importBtn.other": "Import {count} properties",
-
   "settings.title": "Settings",
   "settings.resetToDefaults": "Reset to Defaults",
   "settings.scopeBadge": "this notebox",
@@ -1207,12 +1143,10 @@
   "settings.extensions.output.notify": "Show it (don't change the note)",
   "settings.extensions.output.panel": "Show it in a side panel",
   "settings.extensions.add": "Add a tool",
-
   "settings.overview.version": "Version",
   "settings.overview.versionPlaceholder": "Version information will appear here.",
   "settings.overview.help": "Help",
   "settings.overview.helpPlaceholder": "Help links and documentation will appear here.",
-
   "settings.notebox.management": "Notebox Management",
   "settings.notebox.new": "New notebox",
   "settings.notebox.clone": "Clone from remote",
@@ -1272,7 +1206,6 @@
   "settings.notebox.importFolderRequired": "Choose an empty folder for the imported notebox.",
   "settings.notebox.importOpened": "Imported and opened {name}.",
   "settings.notebox.importFailed": "Import failed: {error}",
-
   "settings.spellcheck.label": "Spellcheck",
   "settings.spellcheck.description": "Check spelling as you type, using bundled Hunspell dictionaries. Misspellings are underlined; right-click for suggestions.",
   "settings.spellcheck.dictionaries": "Dictionaries",
@@ -1287,7 +1220,6 @@
   "settings.spellcheck.noCustomWords": "No custom words yet.",
   "settings.spellcheck.removeWord": "Remove from personal dictionary",
   "settings.spellcheck.removeWordAria": "Remove {word}",
-
   "settings.editor.readableLineLength.label": "Comfortable line length",
   "settings.editor.readableLineLength.description": "Limit line width for a more readable display.",
   "settings.editor.maxLineLength.label": "Max line length",
@@ -1321,7 +1253,6 @@
   "settings.editor.commandPalette.label": "Slash / command shortcut",
   "settings.editor.commandPalette.description": "Type / to open a quick formatting palette in visual mode.",
   "settings.editor.conveniencesWarn": "Some visual editor conveniences are only accessible through these tools.",
-
   "settings.appearance.heading": "InkyCap Appearance",
   "settings.appearance.intro": "Controls how the editor interface looks. These settings do not affect compiled output or exports.",
   "settings.appearance.bgLight.label": "Background (light theme)",
@@ -1372,7 +1303,6 @@
   "settings.appearance.dateFormat.description": "Your preferred format for how the interface displays dates.",
   "settings.appearance.dateFormat.help": "Functions on agenda dates, the modification-time line shown next to each archive in the Browse backups dialog, and the \"Last backup\" indicator. Does not affect backup filenames nor how dates are stored inside notes. Available tokens: YYYY (4-digit year), YY (2-digit year), MMMM (full month name), MMM (short month name), MM (2-digit month), DD (2-digit day), D (day, no padding), HH (24-hour), mm (minute), ss (second), dddd (full weekday), ddd (short weekday).",
   "settings.appearance.dateFormat.previewLabel": "Preview:",
-
   "settings.rendering.heading": "Rendering Defaults",
   "settings.rendering.intro": "Preferences for compiled output and reading view. Override per collection or per note.",
   "settings.rendering.readingFormat.label": "Reading view format preference",
@@ -1393,7 +1323,6 @@
   "settings.appearance.pageSize.usExecutive": "US Executive",
   "settings.appearance.pageSize.a3": "A3",
   "settings.appearance.pageSize.b5": "B5",
-
   "settings.files.newNoteLocation.label": "New note location",
   "settings.files.newNoteLocation.description": "Where new notes are created.",
   "settings.files.newNoteLocation.option.root": "Notebox root",
@@ -1416,7 +1345,6 @@
   "settings.files.zidPattern.placeholder": "YYYYMMDDHHmmss",
   "settings.files.autoTitleZid.label": "Auto-title new notes as ZID",
   "settings.files.autoTitleZid.description": "Use the generated ZID as the filename for new notes, skipping the filename prompt.",
-
   "settings.citations.source.label": "Citation source",
   "settings.citations.source.description": "Source to use for loading bibliographic information.",
   "settings.citations.source.option.file": "Bibliography file (.bib, .yml, .json)",
@@ -1435,7 +1363,6 @@
   "settings.citations.cslPickerTitle": "Select CSL citation style file",
   "settings.citations.cslFilterName": "CSL Files",
   "settings.citations.bibFilterName": "Bibliography",
-
   "settings.export.heading": "Import and export settings",
   "settings.export.importMarkdown": "Import markdown files",
   "settings.export.importMarkdownDescription": "Create an archive (.tar.gz or .zip) of the markdown files that you would like to import then click the button to select it. InkyCap will convert the files into Typst files in your notebox and map YAML frontmatter to InkyCap properties as best as possible.",
@@ -1464,7 +1391,6 @@
   "settings.export.pandocNotFound": "Not found",
   "settings.export.pandocDetectionFailed": "Detection failed",
   "settings.export.pandocPlaceholder": "Auto-detect from PATH",
-
   "settings.behaviour.startup.label": "Startup behaviour",
   "settings.behaviour.startup.description": "What do you prefer InkyCap to do or display upon starting?",
   "settings.behaviour.startup.option.default": "Tabula rasa (file tree)",
@@ -1500,9 +1426,7 @@
   "settings.behaviour.journalScroll.dailyScopeWarn": "Your Daily Note creation rule has no fixed target folder set, so there is no folder to scope to. Set a target folder on the Daily Note rule (under Creation rules) for this option to take effect — until then the feed falls back to all notes.",
   "settings.behaviour.journalScroll.customScope.label": "Custom scope folder",
   "settings.behaviour.journalScroll.customScope.description": "Folder path relative to notebox root. The feed is confined to this folder and its subfolders.",
-
   "settings.combobox.showPresets": "Show presets",
-
   "attachmentFolder.label": "Attachment folder",
   "attachmentFolder.description": "Where images and files are stored (relative to notebox root). Renaming moves existing files and rewrites references across the notebox.",
   "attachmentFolder.renameButton": "Rename folder…",
@@ -1522,7 +1446,6 @@
   "attachmentFolder.renameFailed": "Rename failed",
   "attachmentFolder.renamedWithErrors": "Attachment folder renamed with {count} error(s)",
   "attachmentFolder.renamedSuccess": "Renamed attachment folder — moved {files} file(s), updated {notes} note(s)",
-
   "creationRules.heading": "Creation Rules",
   "creationRules.add": "+ New Rule",
   "creationRules.addDisabledTooltip": "Save or cancel the current rule before creating another",
@@ -1574,21 +1497,17 @@
   "creationRules.builtin.new-note.description": "Create a new note. This rule is used by the file tree's New Note button and Ctrl+N.",
   "creationRules.builtin.daily-note.name": "Daily Note",
   "creationRules.builtin.daily-note.description": "Create or open today's daily note",
-
   "iconPicker.pick": "Pick icon",
   "iconPicker.trigger": "Pick an icon",
   "iconPicker.filter": "Filter icons...",
   "iconPicker.clear": "Clear icon",
-
   "fontPicker.search": "Search fonts…",
   "fontPicker.clearTitle": "Clear (use default)",
   "fontPicker.clearAria": "Clear font",
-
   "colorPicker.warnBoth": "Low contrast against both light and dark backgrounds.",
   "colorPicker.warnLight": "Low contrast against the light background.",
   "colorPicker.warnDark": "Low contrast against the dark background.",
   "colorPicker.ariaWheel": "Custom accent color",
-
   "bookmarks.empty": "No bookmarks yet. Right-click a file or collection to bookmark it.",
   "bookmarks.dragToReorder": "Drag to reorder",
   "bookmarks.remove": "Remove bookmark",
@@ -1596,7 +1515,6 @@
   "bookmarks.searchFallback": "Search",
   "bookmarks.bookmarkFallback": "Bookmark",
   "bookmarks.noteFallback": "Note",
-
   "verticalToolbar.ruleFailed": "Failed to execute creation rule \"{name}\"",
   "verticalToolbar.newNoteFallback": "New Note",
   "verticalToolbar.showSidebar": "Show left sidebar",
@@ -1612,7 +1530,6 @@
   "verticalToolbar.settingsTitle": "Settings (Ctrl+,)",
   "verticalToolbar.help": "Help",
   "verticalToolbar.helpTitle": "Help (F1)",
-
   "help.title": "Help",
   "help.viewSelectorAria": "Select help view",
   "help.filterPlaceholder": "Filter…",
@@ -1626,7 +1543,6 @@
   "help.docs.typst": "Typst Documentation",
   "help.docs.inkycapFailed": "Couldn’t open the InkyCap documentation",
   "help.docs.typstFailed": "Couldn’t open the Typst documentation",
-
   "help.visual.section.keys": "Formatting keys",
   "help.visual.section.typing": "Typing shortcuts",
   "help.visual.bold": "Bold",
@@ -1642,7 +1558,6 @@
   "help.visual.moveItemUp": "Move line / item up",
   "help.visual.moveItemDown": "Move line / item down",
   "help.visual.enter": "New line (smart list continuation)",
-
   "help.markup.section.text": "Text formatting",
   "help.markup.section.structure": "Structure",
   "help.markup.section.math": "Math",
@@ -1700,7 +1615,6 @@
   "help.markup.suggestInsert": "Suggest insertion",
   "help.markup.suggestDelete": "Suggest deletion",
   "help.markup.suggestReplace": "Suggest replacement",
-
   "statusBar.noNotebox": "No notebox open",
   "statusBar.changeNotebox": "Change notebox",
   "statusBar.spell.off": "Off",
@@ -1725,7 +1639,6 @@
   "statusBar.newWindow": "New window",
   "statusBar.noDicts": "No dictionaries enabled — see Settings → Language.",
   "statusBar.allLanguages": "All languages",
-
   "leftSidebar.fileTree": "File Tree",
   "leftSidebar.collections": "Collections",
   "leftSidebar.agenda": "Agenda",
@@ -1797,7 +1710,6 @@
   "leftSidebar.uploadedMany": "Uploaded {count} files",
   "leftSidebar.uploadFailed": "Failed to upload",
   "leftSidebar.newNoteFallback": "New Note",
-
   "rightPanel.scrollContextIndicator": "Scroll context — linked notes for the entry in view",
   "rightPanel.scrollContext": "Scroll context",
   "rightPanel.noFileSelected": "No file selected",
@@ -1859,7 +1771,6 @@
   "rightPanel.toast.setTypeFailed": "Failed to set property type",
   "rightPanel.toast.bookmarkFailed": "Bookmark failed",
   "rightPanel.toast.showExplorerFailed": "Show in explorer failed",
-
   "templates.title": "Templates",
   "templates.title.scaffolds": "Scaffolds",
   "templates.title.templates": "Document Templates",
@@ -1921,7 +1832,6 @@
   "templates.empty.packages1": "No libraries installed. Try",
   "templates.empty.packages2": "for diagrams or",
   "templates.empty.packages3": "for code blocks.",
-
   "mycelial.legend.center": "Anchor note",
   "mycelial.legend.latent": "Latent link",
   "mycelial.legend.emergent": "Emergent concept",
@@ -1972,7 +1882,6 @@
   "mycelial.help.depthBody": "how many wikilink hops out to scan.",
   "mycelial.help.conceptFilteringLabel": "Concept Filtering",
   "mycelial.help.conceptFilteringBody": "(right panel): see which words were held back from concept detection, rescue ones that matter, and add your own words to ignore.",
-
   "mycelialFilter.excludedTerms": "Excluded terms",
   "mycelialFilter.empty": "Nothing was filtered out of this note's neighbourhood. Words shown here recur enough to be concepts but were held back as stopwords.",
   "mycelialFilter.badgeUserTitle": "On your stopword list",
@@ -1989,12 +1898,10 @@
   "mycelialFilter.rescueFailed": "Failed to rescue term",
   "mycelialFilter.addFailed": "Failed to add stopword",
   "mycelialFilter.openListFailed": "Failed to open stopword list",
-
   "outlinePanel.title": "Outline",
   "outlinePanel.collapseAll": "Collapse all headings",
   "outlinePanel.expandAll": "Expand all headings",
   "outlinePanel.noHeadings": "No headings",
-
   "scrollContext.empty": "Scroll into the view to populate context.",
   "scrollContext.section.outline": "Outline",
   "scrollContext.section.connections": "Connections",
@@ -2010,13 +1917,11 @@
   "scrollContext.tagChipTitle.one": "{tag} — appears on {count} visible entry",
   "scrollContext.tagChipTitle.other": "{tag} — appears on {count} visible entries",
   "scrollContext.citationTitle": "{name} — click to highlight where it's cited",
-
   "datePicker.empty": "Empty",
   "datePicker.prevMonth": "Previous month",
   "datePicker.nextMonth": "Next month",
   "datePicker.today": "Today",
   "datePicker.clear": "Clear",
-
   "errors.io": "I/O error: {detail}",
   "errors.yaml": "YAML parse error: {detail}",
   "errors.json": "JSON error: {detail}",

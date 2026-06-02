@@ -10,7 +10,7 @@
 //!
 //! **Only `.git` travels.** It is a complete repository: the working tree is
 //! reconstructed on import (clone or checkout), and the per-machine scratch a
-//! collaborative `.gitignore` excludes (`.inkycap/incoming`, `.inkycap/history`,
+//! collaborative `.gitignore` excludes (`.inkycap/incoming`,
 //! `.inkycap/local.json`) is never committed, so it is correctly absent. Notes,
 //! attachments, the bundled `inkycap-notebox` library and the shared
 //! `.inkycap/settings.json` are all committed and so ride along.

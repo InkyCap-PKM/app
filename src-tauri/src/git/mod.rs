@@ -25,8 +25,6 @@
 //!   rather than blocking commands.
 //! - [`sync_review`] — line-level hunk diff + per-hunk revert for the
 //!   merge-first "Changes since last sync" review (the revert-later core).
-//! - [`history`] — the `.inkycap/history/` scratch lifecycle for read-only
-//!   version-view tabs (Phase 6).
 //! - [`json_merge`] — structured 3-way merge for the shared `settings.json`
 //!   (key-level, so distinct config edits on both sides both survive).
 //! - [`package`] — offline package handoff (Phase 7): zip a notebox's whole
@@ -38,7 +36,6 @@
 
 pub mod auth;
 pub mod backend;
-pub mod history;
 pub mod json_merge;
 pub mod package;
 pub mod sync_review;

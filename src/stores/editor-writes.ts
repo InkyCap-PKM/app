@@ -20,8 +20,23 @@
 
 const pendingWrites = new Map<string, Promise<void>>();
 
+// Listeners notified when a user-initiated editor save begins. This is a clean
+// "the user is changing files" signal: it fires only for editor flushes, never
+// for backend-driven writes like a git checkout during sync (those bypass
+// `trackWrite`). The git store uses it to drop the transient post-sync review
+// notice once the user moves on to editing.
+type WriteListener = (path: string) => void;
+const writeListeners = new Set<WriteListener>();
+
+/** Subscribe to user-initiated editor writes. Returns an unsubscribe fn. */
+export function onEditorWrite(listener: WriteListener): () => void {
+  writeListeners.add(listener);
+  return () => writeListeners.delete(listener);
+}
+
 export function trackWrite(path: string, writePromise: Promise<void>) {
   pendingWrites.set(path, writePromise);
+  for (const listener of writeListeners) listener(path);
   writePromise.finally(() => {
     if (pendingWrites.get(path) === writePromise) {
       pendingWrites.delete(path);

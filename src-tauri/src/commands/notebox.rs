@@ -343,10 +343,6 @@ fn surface_git_status(
             log::warn!("notebox git: could not write .gitignore: {err}");
         }
 
-        // Clear stale version-history view scratch from previous sessions — a
-        // view is transient, never a durable store.
-        let _ = crate::git::history::clear(&root);
-
         let backend = match GitBackend::open(&root) {
             Ok(b) => b,
             Err(err) => {
