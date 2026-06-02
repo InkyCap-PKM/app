@@ -68,7 +68,7 @@ import type { FontChoice, SystemFontDefaults } from "../lib/types";
 import AttachmentFolderField from "./AttachmentFolderField";
 import { dailyNotesFolder } from "../stores/journal-scroll";
 import { showToast, dismissToast } from "../stores/toasts";
-import { disableCollaboration } from "../stores/git";
+import { disableCollaboration, reconnectCollaboration, setupPackageHandoff } from "../stores/git";
 import { promptConfirm } from "../stores/prompt";
 import HelpButton from "./HelpButton";
 import inkycapLogo from "../assets/inkycap-logo.svg";
@@ -415,7 +415,12 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
   async function handleCollaboration(entry: NoteboxRegistryEntry) {
     if (!pathEquals(entry.path, noteboxInfo()?.path)) {
       try {
-        await openNotebox(entry.path);
+        // `openNotebox` returns null when the notebox is already open in
+        // another window: it focuses that window rather than switching this
+        // one. The collaboration panel belongs in the window showing the
+        // notebox, so don't open it here against this window's (different)
+        // notebox — the user has been moved to the right window already.
+        if ((await openNotebox(entry.path)) === null) return;
       } catch (err) {
         showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
         return;
@@ -441,7 +446,14 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
   ) {
     if (!pathEquals(entry.path, noteboxInfo()?.path)) {
       try {
-        await openNotebox(entry.path);
+        // null = the notebox is open in another window and we focused that
+        // window instead of switching this one. Don't open the collaboration
+        // panel here — it would act on this window's old notebox. Reset the
+        // toggle since nothing changed in this window.
+        if ((await openNotebox(entry.path)) === null) {
+          input.checked = wasOn;
+          return;
+        }
       } catch (err) {
         showToast("error", t("settings.notebox.openFailed", { error: errorText(err) }));
         input.checked = wasOn;
@@ -647,12 +659,30 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
         username: cloneUsername().trim() || undefined,
         password: clonePassword().trim() || undefined,
       });
-      // Register and open the cloned notebox. Collaboration config is
-      // per-machine, so it opens non-collaborative and offers to reconnect.
+      // Register and open the cloned notebox.
       await ipc.registerNotebox(path, name);
       await loadNoteboxRegistry();
       resetCloneForm();
-      await openNotebox(path);
+      const opened = await openNotebox(path);
+      // A clone is inherently collaborative: the repo already carries the
+      // remote, and we just saved the sign-in to the keychain. Adopt that
+      // config automatically (deriving remote + branch from the freshly cloned
+      // repo) so the user lands collaborating rather than facing a blank setup
+      // form, then open the panel with Manage expanded so they can review the
+      // online settings. `opened === null` means the notebox got focused in
+      // another window — leave the collaboration UI to that window. If the
+      // auto-adopt fails, still open the panel so the manual setup form is there.
+      if (opened !== null) {
+        try {
+          await reconnectCollaboration();
+          await loadNoteboxRegistry();
+        } catch (err) {
+          showToast("error", `${t("git.reconnect.failed")}: ${errorText(err)}`);
+        }
+        document.dispatchEvent(
+          new CustomEvent("inkycap:open-collaboration", { detail: { manage: true } }),
+        );
+      }
       showToast("success", t("settings.notebox.cloneOpened", { name }));
     } catch (err) {
       showToast("error", t("settings.notebox.cloneFailed", { error: errorText(err) }));
@@ -725,12 +755,29 @@ function NoteboxManagementSection(props: { onClose: () => void }) {
         password: importPassword().trim() || undefined,
         dest,
       });
-      // Register and open the imported notebox; its committed settings carry its
-      // collaboration mode (package-handoff or a server remote), like a clone.
+      // Register and open the imported notebox.
       await ipc.registerNotebox(path, name);
       await loadNoteboxRegistry();
       resetImportForm();
-      await openNotebox(path);
+      const opened = await openNotebox(path);
+      // An imported package is inherently collaborative by offline package
+      // handoff — it has full history but no remote. Enable package mode
+      // automatically so the user lands collaborating, then open the panel with
+      // Manage expanded so the Offline toggle shows the (package-handoff) mode
+      // and the identity/branch fields are ready to adjust. `opened === null`
+      // means another window was focused — leave its UI alone. A failed
+      // auto-enable still opens the panel so the manual setup form is there.
+      if (opened !== null) {
+        try {
+          await setupPackageHandoff({});
+          await loadNoteboxRegistry();
+        } catch (err) {
+          showToast("error", `${t("git.setup.failed")}: ${errorText(err)}`);
+        }
+        document.dispatchEvent(
+          new CustomEvent("inkycap:open-collaboration", { detail: { manage: true } }),
+        );
+      }
       showToast("success", t("settings.notebox.importOpened", { name }));
     } catch (err) {
       showToast("error", t("settings.notebox.importFailed", { error: errorText(err) }));
