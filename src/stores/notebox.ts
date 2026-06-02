@@ -286,6 +286,16 @@ async function applyStartupBehavior(): Promise<void> {
   }
 }
 
+/**
+ * Switch the current window to `path`, tearing down the previous notebox's
+ * tabs and reloading its settings/index.
+ *
+ * Returns the opened `NoteboxInfo` on success, or `null` when the notebox is
+ * already open in *another* window — in that case this window is left
+ * untouched and the other window is focused instead. Callers that follow up
+ * with a window-local action (e.g. opening the collaboration panel) must
+ * treat `null` as "this window did not switch" and not act on it.
+ */
 export async function openNotebox(path: string) {
   // One notebox per window: if it's already open in ANOTHER window, focus that
   // window and leave this one untouched (don't tear down its tabs to open a

@@ -836,6 +836,12 @@ const ManageSection: Component = () => {
   const [email, setEmail] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [useSsh, setUseSsh] = createSignal(looksLikeSshRemote(noteboxSettings.git?.remote ?? ""));
+  // Offline package handoff vs a hosted git server, initialised from the
+  // notebox's current mode (an empty remote = package mode). Exposing this in
+  // Manage — not only in the initial setup form — lets the user switch
+  // collaboration methods after setup, and hides the server connection fields
+  // while offline (they don't apply to package handoff).
+  const [offline, setOffline] = createSignal(packageMode());
 
   // Show the identity that will actually be used (per-notebox choice, else git
   // config) and the saved sign-in username, so neither is a mystery blank.
@@ -854,13 +860,17 @@ const ManageSection: Component = () => {
 
   // One Save applies the whole config — remote/branch/identity/username, plus
   // the password only when re-entered (left blank, the saved one is kept). Both
-  // setup paths are idempotent (adopt the existing repo). An empty remote keeps
-  // (or switches to) package-handoff mode; entering a remote promotes a
-  // package-mode notebox to a server-backed one.
+  // setup paths are idempotent (adopt the existing repo). The Offline toggle
+  // chooses the mode: offline switches to (or stays in) package handoff;
+  // online keeps (or promotes the notebox to) a server-backed remote.
   async function save() {
+    if (!offline() && !remote().trim()) {
+      toastError(t("git.manage.saveFailed"), t("git.setup.remoteRequired"));
+      return;
+    }
     setBusy(true);
     try {
-      if (remote().trim()) {
+      if (!offline()) {
         await setupCollaboration({
           remote: remote().trim(),
           branch: branch().trim() || "main",
@@ -914,44 +924,61 @@ const ManageSection: Component = () => {
       </button>
       <Show when={manageOpen()}>
         <div class="git-panel__manage-body">
-          <div class="git-panel__label-row">
-            <label class="settings__label">
-              {useSsh() ? t("git.setup.remoteLabelSsh") : t("git.setup.remoteLabel")}
+          {/* Switch collaboration method. Offline (package handoff) hides the
+              server connection fields below — they don't apply with no remote. */}
+          <div class="git-panel__label-row git-panel__toggle-row">
+            <label class="settings__label">{t("git.setup.offlineLabel")}</label>
+            <HelpButton label={t("git.setup.offlineLabel")}>{t("git.setup.offlineHint")}</HelpButton>
+            <label class="settings__toggle" title={t("git.setup.offlineHint")}>
+              <input
+                type="checkbox"
+                checked={offline()}
+                onChange={(e) => setOffline(e.currentTarget.checked)}
+              />
+              <span class="settings__toggle-slider" />
             </label>
-            <HelpButton label={t("git.setup.remoteLabel")}>{t("git.setup.remoteHint")}</HelpButton>
           </div>
-          <input
-            class="settings__text-input"
-            type="text"
-            placeholder={useSsh() ? t("git.setup.remotePlaceholderSsh") : t("git.setup.remotePlaceholder")}
-            value={remote()}
-            onInput={(e) => setRemote(e.currentTarget.value)}
-          />
 
-          <Show when={!useSsh()}>
-            <label class="settings__label">{t("git.setup.usernameLabel")}</label>
-            <input
-              class="settings__text-input"
-              type="text"
-              autocomplete="off"
-              placeholder={t("git.setup.usernamePlaceholder")}
-              value={username()}
-              onInput={(e) => setUsername(e.currentTarget.value)}
-            />
-
+          <Show when={!offline()}>
             <div class="git-panel__label-row">
-              <label class="settings__label">{t("git.setup.passwordLabel")}</label>
-              <HelpButton label={t("git.setup.passwordLabel")}>
-                {t("git.setup.passwordHint")} {t("git.manage.passwordKeepHint")}
-              </HelpButton>
+              <label class="settings__label">
+                {useSsh() ? t("git.setup.remoteLabelSsh") : t("git.setup.remoteLabel")}
+              </label>
+              <HelpButton label={t("git.setup.remoteLabel")}>{t("git.setup.remoteHint")}</HelpButton>
             </div>
             <input
               class="settings__text-input"
-              type="password"
-              autocomplete="off"
-              value={password()}
-              onInput={(e) => setPassword(e.currentTarget.value)}
+              type="text"
+              placeholder={useSsh() ? t("git.setup.remotePlaceholderSsh") : t("git.setup.remotePlaceholder")}
+              value={remote()}
+              onInput={(e) => setRemote(e.currentTarget.value)}
             />
+
+            <Show when={!useSsh()}>
+              <label class="settings__label">{t("git.setup.usernameLabel")}</label>
+              <input
+                class="settings__text-input"
+                type="text"
+                autocomplete="off"
+                placeholder={t("git.setup.usernamePlaceholder")}
+                value={username()}
+                onInput={(e) => setUsername(e.currentTarget.value)}
+              />
+
+              <div class="git-panel__label-row">
+                <label class="settings__label">{t("git.setup.passwordLabel")}</label>
+                <HelpButton label={t("git.setup.passwordLabel")}>
+                  {t("git.setup.passwordHint")} {t("git.manage.passwordKeepHint")}
+                </HelpButton>
+              </div>
+              <input
+                class="settings__text-input"
+                type="password"
+                autocomplete="off"
+                value={password()}
+                onInput={(e) => setPassword(e.currentTarget.value)}
+              />
+            </Show>
           </Show>
 
           <label class="settings__label">{t("git.setup.branchLabel")}</label>
@@ -962,25 +989,27 @@ const ManageSection: Component = () => {
             onInput={(e) => setBranch(e.currentTarget.value)}
           />
 
-          <div class="git-panel__label-row git-panel__toggle-row">
-            <label class="settings__label">{t("git.setup.sshLabel")}</label>
-            <HelpButton label={t("git.setup.sshLabel")}>{t("git.setup.sshHint")}</HelpButton>
-            <label class="settings__toggle" title={t("git.setup.sshHint")}>
-              <input
-                type="checkbox"
-                checked={useSsh()}
-                onChange={(e) => {
-                const ssh = e.currentTarget.checked;
-                setUseSsh(ssh);
-                // Keep the address scheme consistent with the chosen method, so
-                // the choice authenticates correctly and survives a reload.
-                const r = remote().trim();
-                if (r) setRemote(ssh ? toSshRemote(r) : toHttpsRemote(r));
-              }}
-              />
-              <span class="settings__toggle-slider" />
-            </label>
-          </div>
+          <Show when={!offline()}>
+            <div class="git-panel__label-row git-panel__toggle-row">
+              <label class="settings__label">{t("git.setup.sshLabel")}</label>
+              <HelpButton label={t("git.setup.sshLabel")}>{t("git.setup.sshHint")}</HelpButton>
+              <label class="settings__toggle" title={t("git.setup.sshHint")}>
+                <input
+                  type="checkbox"
+                  checked={useSsh()}
+                  onChange={(e) => {
+                  const ssh = e.currentTarget.checked;
+                  setUseSsh(ssh);
+                  // Keep the address scheme consistent with the chosen method, so
+                  // the choice authenticates correctly and survives a reload.
+                  const r = remote().trim();
+                  if (r) setRemote(ssh ? toSshRemote(r) : toHttpsRemote(r));
+                }}
+                />
+                <span class="settings__toggle-slider" />
+              </label>
+            </div>
+          </Show>
 
           <label class="settings__label">{t("git.setup.identityLabel")}</label>
           <div class="git-panel__identity-row">
