@@ -562,21 +562,24 @@ export async function generateZid(): Promise<string> {
 // on a blocking task in the backend.
 
 /** Turn the open notebox into a collaborative git repo (init-or-adopt, write
- *  `.gitignore`, set `origin`, store optional HTTPS token + commit identity)
- *  and persist its remote/branch. Re-running adopts the existing repo. */
+ *  `.gitignore`, set `origin`, save the optional sign-in username + password and
+ *  commit identity) and persist its remote/branch (per-machine, in local.json).
+ *  Re-running adopts the existing repo. */
 export async function gitSetupCollaboration(args: {
   remote: string;
   branch?: string;
   identityName?: string;
   identityEmail?: string;
-  httpsToken?: string;
+  username?: string;
+  password?: string;
 }): Promise<GitSetupResult> {
   return invoke<GitSetupResult>("git_setup_collaboration", {
     remote: args.remote,
     branch: args.branch ?? null,
     identityName: args.identityName ?? null,
     identityEmail: args.identityEmail ?? null,
-    httpsToken: args.httpsToken ?? null,
+    username: args.username ?? null,
+    password: args.password ?? null,
   });
 }
 
@@ -639,10 +642,16 @@ export async function gitRevertNoteSinceSync(path: string): Promise<void> {
   return invoke<void>("git_revert_note_since_sync", { path });
 }
 
-/** Store an HTTPS personal-access token for this notebox's remote host (lives
- *  only in the OS keychain). */
-export async function gitSignIn(token: string): Promise<void> {
-  return invoke<void>("git_sign_in", { token });
+/** Save the username + password for this notebox's repository (password lives
+ *  only in the OS keychain; username in a per-installation store). */
+export async function gitSignIn(username: string, password: string): Promise<void> {
+  return invoke<void>("git_sign_in", { username, password });
+}
+
+/** The saved sign-in username for a remote, for pre-filling the connect form.
+ *  Null when none was saved. */
+export async function gitSavedUsername(remote: string): Promise<string | null> {
+  return invoke<string | null>("git_saved_username", { remote });
 }
 
 /** Stop collaborating: drop the notebox's git config and clear review staging.
@@ -652,19 +661,21 @@ export async function gitDisableCollaboration(): Promise<void> {
 }
 
 /** Clone a collaborative notebox from a git remote into `dest` (a collaborator
- *  joining in-app). Stores the optional HTTPS token first. Returns the cloned
- *  notebox path; the caller registers + opens it. */
+ *  joining in-app). Saves the optional sign-in username + password first.
+ *  Returns the cloned notebox path; the caller registers + opens it. */
 export async function gitCloneNotebox(args: {
   remote: string;
   branch?: string;
   dest: string;
-  httpsToken?: string;
+  username?: string;
+  password?: string;
 }): Promise<string> {
   return invoke<string>("git_clone_notebox", {
     remote: args.remote,
     branch: args.branch ?? null,
     dest: args.dest,
-    httpsToken: args.httpsToken ?? null,
+    username: args.username ?? null,
+    password: args.password ?? null,
   });
 }
 

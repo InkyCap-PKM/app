@@ -93,6 +93,8 @@ struct ParsedSuggestion {
     body_inner: Range<usize>,
     /// Inner content of the `old: [..]` argument, for `Replace`.
     old_inner: Option<Range<usize>>,
+    /// The `by:` attribution (who proposed the change), if present.
+    by: Option<String>,
 }
 
 /// Compute the replacement text for accepting/rejecting a suggestion.
@@ -170,6 +172,27 @@ pub fn count_suggestions(source: &str) -> usize {
     calls.len()
 }
 
+/// Count the `#suggestion(...)` calls **not** attributed to `me` — the changes
+/// awaiting *this* user's decision. A suggestion the local user authored is
+/// theirs to send, not to resolve, so it is excluded once its `by:` matches.
+/// Suggestions with no `by:` (unknown author, e.g. legacy) count as
+/// awaiting-decision. With an empty `me`, no attribution is possible, so all
+/// suggestions count (matches [`count_suggestions`]).
+pub fn count_suggestions_by_others(source: &str, me: &str) -> usize {
+    let me = me.trim();
+    let root = parse(source);
+    let link = LinkedNode::new(&root);
+    let mut calls = Vec::new();
+    collect_suggestions(&link, source, &mut calls);
+    if me.is_empty() {
+        return calls.len();
+    }
+    calls
+        .iter()
+        .filter(|p| p.by.as_deref().map(str::trim) != Some(me))
+        .count()
+}
+
 // ---------------------------------------------------------------------------
 // AST navigation
 // ---------------------------------------------------------------------------
@@ -211,6 +234,7 @@ fn parse_suggestion(call: &LinkedNode, source: &str) -> Option<ParsedSuggestion>
     let mut kind = SuggestionKind::Insert; // default mirrors lib.typ
     let mut old_inner: Option<Range<usize>> = None;
     let mut body_inner: Option<Range<usize>> = None;
+    let mut by: Option<String> = None;
 
     for child in args.children() {
         match child.kind() {
@@ -226,6 +250,11 @@ fn parse_suggestion(call: &LinkedNode, source: &str) -> Option<ParsedSuggestion>
                             if let Some(k) = SuggestionKind::from_typ(&s.get()) {
                                 kind = k;
                             }
+                        }
+                    }
+                    "by" => {
+                        if let ast::Expr::Str(s) = named.expr() {
+                            by = Some(s.get().to_string());
                         }
                     }
                     "old" => {
@@ -249,6 +278,7 @@ fn parse_suggestion(call: &LinkedNode, source: &str) -> Option<ParsedSuggestion>
         full_span: span_with_hash_prefix(source, call.range()),
         body_inner: body_inner?,
         old_inner,
+        by,
     })
 }
 
@@ -279,6 +309,20 @@ mod tests {
     fn build_replace_call_carries_old() {
         let c = suggestion_call(SuggestionKind::Replace, "new", Some("old"), Some("bob"), None);
         assert_eq!(c, "#suggestion(kind: \"replace\", old: [old], by: \"bob\")[new]");
+    }
+
+    #[test]
+    fn count_by_others_excludes_my_own_suggestions() {
+        let src = "A #suggestion(kind: \"insert\", by: \"Athena Otlet\")[mine] \
+                   B #suggestion(kind: \"insert\", by: \"Phydeau Koft\")[theirs] \
+                   C #suggestion(kind: \"delete\")[unknown]";
+        assert_eq!(count_suggestions(src), 3);
+        // Mine is excluded; theirs + the unattributed one remain.
+        assert_eq!(count_suggestions_by_others(src, "Athena Otlet"), 2);
+        // Trailing/leading space in the identity is tolerated.
+        assert_eq!(count_suggestions_by_others(src, "  Athena Otlet  "), 2);
+        // No local identity → can't attribute, so all count.
+        assert_eq!(count_suggestions_by_others(src, ""), 3);
     }
 
     #[test]

@@ -1,9 +1,13 @@
 //! Who the user is with respect to a git remote — two distinct concerns
 //! that both key off the remote:
 //!
-//! 1. **Transport credentials** — the secret used to *authenticate* a fetch or
-//!    push (an HTTPS personal-access token, or an SSH key). Secrets live in
-//!    the OS keychain via [`keyring`], never in settings or the repo.
+//! 1. **Transport credentials** — what *authenticates* a fetch or push. The
+//!    primary, beginner-friendly path is a **username + password** for the
+//!    repository (over HTTPS); SSH keys are the advanced alternative. The
+//!    password is a secret and lives in the OS keychain via [`keyring`]; the
+//!    username is not a secret and lives in a per-installation store. Both are
+//!    keyed by the (normalized) remote URL, so different noteboxes can sign in
+//!    as different accounts on the same service.
 //! 2. **Author identity** — the name + email stamped on commits. *Not* a
 //!    secret; stored per-installation, keyed by remote URL, so a user can use
 //!    a different account per notebox and so the choice re-applies to any
@@ -135,35 +139,86 @@ pub fn clear_identity_for_remote(remote: &str) -> Result<()> {
     save_identities(&store)
 }
 
-// ─────────────────────────── Transport credentials ─────────────────────────
+// ───────────────────────── HTTPS username (not secret) ─────────────────────
 
-/// OS-keychain service for HTTPS personal-access tokens, keyed by host. Stable
-/// across versions; reverse-DNS form per the keyring backends' conventions.
+/// Per-installation map of remote URL → the username to sign in as over HTTPS.
+/// The username is not a secret (the password is), so it lives in a plain
+/// preference file alongside the identity store — never inside a notebox.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GitUsernameStore {
+    usernames: BTreeMap<String, String>,
+}
+
+fn username_store_path() -> PathBuf {
+    crate::app_paths::config_dir().join("git-usernames.json")
+}
+
+fn load_usernames() -> GitUsernameStore {
+    std::fs::read_to_string(username_store_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_usernames(store: &GitUsernameStore) -> Result<()> {
+    let path = username_store_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(store)?)?;
+    Ok(())
+}
+
+/// The HTTPS username saved for `remote`, if any. Keyed by [`normalize_remote`].
+pub fn username_for_remote(remote: &str) -> Option<String> {
+    load_usernames()
+        .usernames
+        .get(&normalize_remote(remote))
+        .filter(|u| !u.trim().is_empty())
+        .cloned()
+}
+
+/// Set (or replace) the HTTPS username for `remote`.
+pub fn set_username_for_remote(remote: &str, username: &str) -> Result<()> {
+    let mut store = load_usernames();
+    store
+        .usernames
+        .insert(normalize_remote(remote), username.to_string());
+    save_usernames(&store)
+}
+
+/// Forget the HTTPS username for `remote`. Idempotent.
+pub fn clear_username_for_remote(remote: &str) -> Result<()> {
+    let mut store = load_usernames();
+    store.usernames.remove(&normalize_remote(remote));
+    save_usernames(&store)
+}
+
+// ──────────────────────── Transport secret (password) ──────────────────────
+
+/// OS-keychain service for repository passwords. The keychain *account* is the
+/// normalized remote URL (host **and** path), so two repositories — even on the
+/// same host — can hold passwords for two different accounts. Stable across
+/// versions; reverse-DNS form per the keyring backends' conventions.
 const HTTPS_TOKEN_SERVICE: &str = "ca.unom.inkycap.git.https";
 
 fn map_keyring_err(err: keyring::Error) -> InkyCapError {
     InkyCapError::Git(format!("OS keychain error: {err}"))
 }
 
-/// Extract the host from a remote URL for keying the stored token. Falls back
-/// to the whole (normalized) remote when no host is parseable.
-fn host_of(remote: &str) -> String {
-    let n = normalize_remote(remote);
-    n.split('/').next().unwrap_or(&n).to_string()
-}
-
-/// Store an HTTPS personal-access token for the remote's host. Overwrites any
-/// existing token for that host.
-pub fn set_https_token(remote: &str, token: &str) -> Result<()> {
-    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &host_of(remote))
+/// Store the HTTPS password for `remote`. Overwrites any existing one. Keyed by
+/// the full normalized remote so it is per-repository, not per-host.
+pub fn set_remote_password(remote: &str, password: &str) -> Result<()> {
+    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &normalize_remote(remote))
         .map_err(map_keyring_err)?;
-    entry.set_password(token).map_err(map_keyring_err)
+    entry.set_password(password).map_err(map_keyring_err)
 }
 
-/// Fetch the stored HTTPS token for the remote's host, if any. A missing
-/// token is `Ok(None)`; only real keychain failures are `Err`.
-pub fn https_token(remote: &str) -> Result<Option<String>> {
-    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &host_of(remote))
+/// Fetch the stored HTTPS password for `remote`, if any. A missing password is
+/// `Ok(None)`; only real keychain failures are `Err`.
+pub fn remote_password(remote: &str) -> Result<Option<String>> {
+    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &normalize_remote(remote))
         .map_err(map_keyring_err)?;
     match entry.get_password() {
         Ok(t) => Ok(Some(t)),
@@ -172,9 +227,9 @@ pub fn https_token(remote: &str) -> Result<Option<String>> {
     }
 }
 
-/// Delete the stored HTTPS token for the remote's host. Idempotent.
-pub fn clear_https_token(remote: &str) -> Result<()> {
-    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &host_of(remote))
+/// Delete the stored HTTPS password for `remote`. Idempotent.
+pub fn clear_remote_password(remote: &str) -> Result<()> {
+    let entry = keyring::Entry::new(HTTPS_TOKEN_SERVICE, &normalize_remote(remote))
         .map_err(map_keyring_err)?;
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -199,38 +254,40 @@ fn default_ssh_key() -> Option<PathBuf> {
 /// Build the [`git2::RemoteCallbacks`] used for fetch/push against `remote`.
 ///
 /// The credentials callback resolves, in order:
-/// - **SSH** (`USERNAME`/`SSH_KEY`): ssh-agent first, then the first default
-///   `~/.ssh` key.
-/// - **HTTPS** (`USER_PASS_PLAINTEXT`): the keychain token for the host, used
-///   as the password with the URL's username (or `git`).
+/// - **HTTPS** (`USER_PASS_PLAINTEXT`): the saved username + the keychain
+///   password for this repository. The username falls back to one embedded in
+///   the URL, then `git`. This is the primary path.
+/// - **SSH** (`SSH_KEY`): ssh-agent first, then the first default `~/.ssh` key.
+///   The advanced path, for users who already use SSH.
 ///
-/// When nothing resolves, libgit2 surfaces an auth error; the Phase 2/3
-/// fetch/push command maps that to [`crate::events::AppEvent::GitCredentialNeeded`]
-/// rather than blocking. Returning callbacks (not performing auth here) keeps
-/// this layer free of any UI or event concern.
+/// When nothing resolves, libgit2 surfaces an auth error; the fetch/push
+/// command surfaces it to the user rather than blocking. Returning callbacks
+/// (not performing auth here) keeps this layer free of any UI concern.
 pub fn remote_callbacks(remote: &str) -> git2::RemoteCallbacks<'static> {
     let remote = remote.to_string();
     let mut cb = git2::RemoteCallbacks::new();
     cb.credentials(move |_url, username_from_url, allowed| {
+        if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+            if let Ok(Some(password)) = remote_password(&remote) {
+                let user = username_for_remote(&remote)
+                    .or_else(|| username_from_url.map(str::to_string))
+                    .unwrap_or_else(|| "git".to_string());
+                return git2::Cred::userpass_plaintext(&user, &password);
+            }
+        }
         if allowed.contains(git2::CredentialType::SSH_KEY) {
             let user = username_from_url.unwrap_or("git");
             if let Ok(cred) = git2::Cred::ssh_key_from_agent(user) {
                 return Ok(cred);
             }
             if let Some(key) = default_ssh_key() {
-                // No passphrase support yet (Phase 4); unencrypted keys and
-                // agent-loaded keys cover the common case.
+                // No passphrase support yet; unencrypted keys and agent-loaded
+                // keys cover the common case.
                 return git2::Cred::ssh_key(user, None, &key, None);
             }
         }
-        if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            if let Ok(Some(token)) = https_token(&remote) {
-                let user = username_from_url.unwrap_or("git");
-                return git2::Cred::userpass_plaintext(user, &token);
-            }
-        }
         Err(git2::Error::from_str(
-            "no usable git credentials (set up SSH key or HTTPS token)",
+            "no usable git credentials (enter a username and password, or set up an SSH key)",
         ))
     });
     cb
@@ -251,9 +308,13 @@ mod tests {
     }
 
     #[test]
-    fn host_of_extracts_host() {
-        assert_eq!(host_of("git@codeberg.org:joch/notes.git"), "codeberg.org");
-        assert_eq!(host_of("https://github.com/o/r"), "github.com");
+    fn password_key_distinguishes_repos_on_same_host() {
+        // Two repos on one host must not share a password key — that was the
+        // old host-only behaviour. The keychain account is the full remote.
+        assert_ne!(
+            normalize_remote("https://codeberg.org/athena-otlet/notes"),
+            normalize_remote("https://codeberg.org/athena-otlet/other"),
+        );
     }
 
     #[test]

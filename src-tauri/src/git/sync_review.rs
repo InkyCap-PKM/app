@@ -181,6 +181,35 @@ pub fn revert_hunk(
     matched.then_some(out)
 }
 
+/// Drop hunks whose change is *entirely* structural — every non-blank line on
+/// both sides satisfies `is_structural_line`. Used to hide the auto-injected
+/// notebox import preamble (`#import "/.inkycap/notebox.typ": *`) from the
+/// "changes since sync" review: InkyCap manages that line, so a collaborator
+/// should never see it presented as a reviewable change. A hunk that mixes a
+/// structural line with real content stays visible (the real edit matters), and
+/// a pure-whitespace hunk is never dropped on this basis.
+pub fn drop_structural_hunks<F>(hunks: Vec<SyncHunk>, is_structural_line: F) -> Vec<SyncHunk>
+where
+    F: Fn(&str) -> bool,
+{
+    hunks
+        .into_iter()
+        .filter(|h| {
+            let mut saw_line = false;
+            let all_structural = [&h.baseline_text, &h.current_text]
+                .into_iter()
+                .flat_map(|t| t.lines())
+                .filter(|l| !l.trim().is_empty())
+                .all(|l| {
+                    saw_line = true;
+                    is_structural_line(l)
+                });
+            // Keep unless the hunk had at least one line and they were all structural.
+            !(saw_line && all_structural)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +305,42 @@ mod tests {
         let h = &diff_hunks(baseline, current)[0];
         let reverted = revert_hunk(baseline, current, h.current_start, h.current_end).unwrap();
         assert_eq!(reverted, baseline);
+    }
+
+    // The notebox import preamble; in the real path the predicate is
+    // `crate::notebox_package::is_notebox_import_line`.
+    fn is_import(line: &str) -> bool {
+        line.trim_start().starts_with("#import")
+    }
+
+    #[test]
+    fn drops_import_only_added_hunk() {
+        // Baseline lacked the preamble; current added it — pure structural noise.
+        let hunks = diff_hunks("= Title\n", "#import \"/.inkycap/notebox.typ\": *\n= Title\n");
+        assert_eq!(hunks.len(), 1);
+        assert!(drop_structural_hunks(hunks, is_import).is_empty());
+    }
+
+    #[test]
+    fn keeps_real_content_hunks() {
+        let hunks = diff_hunks("= Title\n", "= Title changed\n");
+        let kept = drop_structural_hunks(hunks, is_import);
+        assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn keeps_hunk_mixing_import_and_content() {
+        // A single hunk that both adds the import line and edits content stays
+        // visible — the real edit must not be hidden.
+        let kept = drop_structural_hunks(
+            vec![SyncHunk {
+                current_start: 0,
+                current_end: 2,
+                baseline_text: String::new(),
+                current_text: "#import \"/.inkycap/notebox.typ\": *\n= Heading\n".to_string(),
+            }],
+            is_import,
+        );
+        assert_eq!(kept.len(), 1);
     }
 }

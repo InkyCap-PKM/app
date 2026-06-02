@@ -204,6 +204,7 @@ pub fn run() {
             commands::git::git_changes_to_share,
             commands::git::git_unresolved_changes,
             commands::git::git_sign_in,
+            commands::git::git_saved_username,
             commands::git::git_disable_collaboration,
             commands::git::git_clone_notebox,
             commands::git::git_sync,

@@ -1,5 +1,6 @@
 import { Component, For, Show } from "solid-js";
 import { toasts, dismissToast, type ToastLevel } from "../stores/toasts";
+import LoadingDots from "./LoadingDots";
 
 const LEVEL_ICONS: Record<ToastLevel, string> = {
   error: "✖",
@@ -57,11 +58,7 @@ const ToastHost: Component = () => {
                 <span class="toast__message">
                   {prefix}
                   <Show when={animated}>
-                    <span class="loading-dots" aria-hidden="true">
-                      <span class="loading-dots__dot loading-dots__dot--1">.</span>
-                      <span class="loading-dots__dot loading-dots__dot--2">.</span>
-                      <span class="loading-dots__dot loading-dots__dot--3">.</span>
-                    </span>
+                    <LoadingDots />
                   </Show>
                 </span>
                 <Show when={toast.detail}>

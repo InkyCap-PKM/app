@@ -6,11 +6,11 @@
 // commit graph, so a non-collaborative notebox has none.
 
 import { Component, For, Show, createResource, createMemo } from "solid-js";
-import { History, RotateCcw } from "lucide-solid";
+import { History, RotateCcw, Columns2 } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import type { GitNoteVersion } from "../lib/types";
 import { collaborative, refreshStatus, syncReviewVersion } from "../stores/git";
-import { openVersionDiff } from "../stores/tabs";
+import { openVersionDiff, openVersionDiffSplit } from "../stores/tabs";
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
 import { t } from "../lib/i18n";
@@ -24,11 +24,16 @@ function when(unixSeconds: number): string {
 }
 
 const NoteHistory: Component<{ path: string }> = (props) => {
-  // Re-fetch whenever the note or its collaboration state changes. The source
-  // is keyed on both so switching notes (or enabling collaboration) refetches.
-  const key = createMemo(() => (collaborative() ? props.path : null));
-  const [versions, { refetch }] = createResource(key, async (path) => {
-    return path ? ipc.gitNoteHistory(path) : ([] as GitNoteVersion[]);
+  // Re-fetch whenever the note changes, collaboration toggles, or the working
+  // tree moves (a sync/pull/revert bumps `syncReviewVersion`). Including the
+  // review version in the source means the list — and the HEAD reference the
+  // "current"/"latest shared" badge derives from — refreshes after a sync, so a
+  // just-synced note correctly reads "current" instead of "latest shared".
+  const key = createMemo(() =>
+    collaborative() ? { path: props.path, rev: syncReviewVersion() } : null,
+  );
+  const [versions, { refetch }] = createResource(key, async (k) => {
+    return k ? ipc.gitNoteHistory(k.path) : ([] as GitNoteVersion[]);
   });
 
   const basename = () => props.path.split("/").pop() ?? props.path;
@@ -71,6 +76,17 @@ const NoteHistory: Component<{ path: string }> = (props) => {
    *  another version updates it in place) rather than stacking tabs. */
   function viewVersion(v: GitNoteVersion) {
     openVersionDiff(
+      props.path,
+      t("history.versionTab", { name: basename(), hash: v.shortHash }),
+      { commit: v.commit, shortHash: v.shortHash, timestamp: v.timestamp },
+    );
+  }
+
+  /** Open this version *beside* the current note — a right-split with the live
+   *  note on the left and the version (diff) on the right. */
+  function viewSideBySide(e: MouseEvent, v: GitNoteVersion) {
+    e.stopPropagation();
+    openVersionDiffSplit(
       props.path,
       t("history.versionTab", { name: basename(), hash: v.shortHash }),
       { commit: v.commit, shortHash: v.shortHash, timestamp: v.timestamp },
@@ -127,7 +143,7 @@ const NoteHistory: Component<{ path: string }> = (props) => {
                   <div
                     class="sidebar-item note-history__item"
                     onClick={() => void viewVersion(v)}
-                    title={t("history.view")}
+                    title={v.tookTheirsBaseline ? t("history.tookTheirs.view") : t("history.view")}
                   >
                     <span class="sidebar-item__icon note-history__icon">
                       <History size={14} />
@@ -143,6 +159,15 @@ const NoteHistory: Component<{ path: string }> = (props) => {
                           </span>
                         </Show>
                       </span>
+                      {/* The user's pre-merge version when the last sync took
+                          theirs — on its own line so it reads as a status, not a
+                          chip on the message. Click the row to compare with the
+                          current note and see what their edit was replaced with. */}
+                      <Show when={v.tookTheirsBaseline}>
+                        <span class="note-history__took-theirs">
+                          {t("history.tookTheirs.badge")}
+                        </span>
+                      </Show>
                       <span class="note-history__secondary">
                         {[v.authorName, when(v.timestamp)].filter(Boolean).join(" · ")}
                         {" · "}
@@ -150,7 +175,15 @@ const NoteHistory: Component<{ path: string }> = (props) => {
                       </span>
                     </span>
                     <button
-                      class="note-history__restore"
+                      class="note-history__action"
+                      title={t("history.sideBySide")}
+                      aria-label={t("history.sideBySide")}
+                      onClick={(e) => viewSideBySide(e, v)}
+                    >
+                      <Columns2 size={13} />
+                    </button>
+                    <button
+                      class="note-history__action"
                       title={t("history.restore.action")}
                       aria-label={t("history.restore.action")}
                       onClick={(e) => void restore(e, v)}

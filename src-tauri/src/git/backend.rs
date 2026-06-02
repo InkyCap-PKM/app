@@ -158,6 +158,14 @@ pub struct FileVersion {
     /// Commit time, seconds since the Unix epoch (UTC).
     pub timestamp: i64,
     pub message: String,
+    /// This is the user's own version from just before the last sync took
+    /// *theirs* over their overlapping edit to this note. Set by
+    /// [`crate::commands::git::git_note_history`] (not the pure walk), so the
+    /// History view can flag the one entry that shows what the merge replaced.
+    /// Defaults false; only ever true for the `last_sync_oid` commit of a note
+    /// the last sync resolved by taking theirs.
+    #[serde(default)]
+    pub took_theirs_baseline: bool,
 }
 
 /// Open git repository rooted at a notebox.
@@ -437,6 +445,7 @@ impl GitBackend {
                 author_name: author.name().unwrap_or("").to_string(),
                 timestamp: author.when().seconds(),
                 message: commit.message().unwrap_or("").to_string(),
+                took_theirs_baseline: false,
             });
         }
         Ok(out)
@@ -454,12 +463,16 @@ impl GitBackend {
         Some((name, email))
     }
 
-    /// Resolve the commit author for `remote`: the per-installation identity
-    /// keyed by remote first, then git's own `user.name`/`user.email`
-    /// (`.git/config` → `~/.gitconfig`). Errors when neither yields a complete
-    /// name + email, so the caller can prompt rather than commit anonymously.
-    pub fn author_signature(&self, remote: &str) -> Result<git2::Signature<'static>> {
-        if let Some(id) = auth::identity_for_remote(remote) {
+    /// Build the commit-author signature from the notebox's resolved `identity`
+    /// (the per-notebox choice, passed in by the caller), falling back to git's
+    /// own `user.name`/`user.email` (`.git/config` → `~/.gitconfig`). Errors when
+    /// neither yields a complete name + email, so the caller can prompt rather
+    /// than commit anonymously.
+    pub fn author_signature(
+        &self,
+        identity: Option<&auth::GitIdentity>,
+    ) -> Result<git2::Signature<'static>> {
+        if let Some(id) = identity {
             if id.is_complete() {
                 return Ok(git2::Signature::now(&id.name, &id.email)?);
             }

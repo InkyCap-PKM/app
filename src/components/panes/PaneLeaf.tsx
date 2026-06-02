@@ -54,7 +54,7 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
       >
         <Show when={activeTab()} fallback={<EmptyState />}>
           {(tab) => (
-            <Show when={`${tab().id}::${tab().type}::${tab().path}`} keyed>
+            <Show when={`${tab().id}::${tab().type}::${tab().path}::${tab().version?.commit ?? ""}`} keyed>
               {(_key: string) => {
                 const currentTab = tab();
                 if (currentTab.type === "empty" || !currentTab.path) {

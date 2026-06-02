@@ -645,10 +645,17 @@ export interface GitSyncHunk {
   currentText: string;
 }
 
-/** A note's hunk-level diff against its pre-sync baseline. Mirrors
+/** A note's changes since the last sync, split by origin. Mirrors
  *  `commands/git.rs::SyncNoteDiff`. */
 export interface GitSyncNoteDiff {
-  hunks: GitSyncHunk[];
+  /** Changes the last sync folded in (theirs) — reviewable/revertable. */
+  incoming: GitSyncHunk[];
+  /** The user's own uncommitted edits since the sync (yours) — informational. */
+  local: GitSyncHunk[];
+  /** The sync added this note — show a single "added" status, not a whole-file hunk. */
+  incomingCreated: boolean;
+  /** The note is brand-new local work — show a single "created" status. */
+  localCreated: boolean;
 }
 
 /** Result of a read-only "Check for updates": how far the local branch is
@@ -673,6 +680,10 @@ export interface GitNoteVersion {
   /** Commit time, seconds since the Unix epoch (UTC). */
   timestamp: number;
   message: string;
+  /** This is the user's own version from just before the last sync took *theirs*
+   *  over their edit to this note — i.e. what the merge replaced. The History
+   *  view flags it so the user can compare it with the current note. */
+  tookTheirsBaseline: boolean;
 }
 
 /** A commit author identity (name + email). Stored per-installation, keyed by

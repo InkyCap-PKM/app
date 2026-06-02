@@ -13,6 +13,7 @@ import {
   resetToSingleEmptyLeaf,
   splitLeaf,
   leafById,
+  leafForTab,
   type SplitDirection,
 } from "./panes";
 
@@ -304,21 +305,107 @@ export function openVersionDiff(
   title: string,
   version: { commit: string; shortHash: string; timestamp: number },
 ): void {
-  const existing = tabs.find(
-    (t) => t.type === "version-diff" && pathEquals(t.path, notePath),
-  );
+  // One compare view at a time: reuse any open version-diff tab (wherever it
+  // lives — same pane or a split) rather than stacking per-note tabs.
+  const existing = tabs.find((t) => t.type === "version-diff");
   if (existing) {
+    retargetVersionDiff(existing.id, notePath, title, version);
+  } else {
+    // Open the compare tab in the note's pane *without* switching to it: this
+    // deliberately ignores the "switch to new tab" preference so the note stays
+    // active and its Changes & History sidebar stays put for browsing versions.
+    const newId = `tab-${nextId++}`;
     setTabs(
-      (t) => t.id === existing.id,
-      produce((t) => {
-        t.title = title;
-        t.version = version;
-      }),
+      produce((t) =>
+        t.push({ id: newId, type: "version-diff", title, path: notePath, version }),
+      ),
     );
-    setActiveTabId(existing.id);
+    addTabToFocusedLeaf(newId, false);
+  }
+  keepNoteActive(notePath);
+}
+
+/** Keep the note whose history is being browsed active (and its pane focused),
+ *  so opening or retargeting a version-diff never steals focus — the Changes &
+ *  History sidebar then stays on the note. Always applied, regardless of the
+ *  "switch to new tab" setting. No-op if the note isn't open as a file tab. */
+function keepNoteActive(notePath: string): void {
+  const noteTab = tabs.find((t) => t.type === "file" && pathEquals(t.path, notePath));
+  if (noteTab) activateTab(noteTab.id);
+}
+
+/** Point the single compare (version-diff) tab at a note + version. The pane
+ *  showing it re-renders because `PaneLeaf` keys the view on the version commit
+ *  too (so a retarget reloads even within the same note). */
+function retargetVersionDiff(
+  tabId: string,
+  notePath: string,
+  title: string,
+  version: { commit: string; shortHash: string; timestamp: number },
+): void {
+  setTabs(
+    (t) => t.id === tabId,
+    produce((t) => {
+      t.title = title;
+      t.path = notePath;
+      t.version = version;
+    }),
+  );
+}
+
+/** Open a note version *beside* the current note: split the focused pane to the
+ *  right and put the version-diff in the new right pane, leaving the live note in
+ *  the left. The side-by-side counterpart of [`openVersionDiff`] (which replaces
+ *  the active tab). Falls back to an in-pane diff if the split can't be created.
+ *
+ *  Reuses a single compare view: if a version-diff tab is already open, it's
+ *  retargeted to this note/version (and its pane focused) rather than spawning
+ *  another split — so repeated side-by-side clicks don't stack panes. To compare
+ *  several versions at once, split the view manually. */
+export function openVersionDiffSplit(
+  notePath: string,
+  title: string,
+  version: { commit: string; shortHash: string; timestamp: number },
+): void {
+  const existing = tabs.find((t) => t.type === "version-diff");
+  if (existing) {
+    retargetVersionDiff(existing.id, notePath, title, version);
+    const leaf = leafForTab(existing.id);
+    // If the compare tab already has its own pane, just reuse it there. If it's
+    // sharing a pane (e.g. opened as a second tab beside the note), move it into
+    // a new side-by-side pane so the note and the history sit beside each other.
+    if (leaf && leaf.tabIds.length > 1) {
+      removeTab(existing.id); // detach from the shared leaf (note stays put)
+      if (!splitLeaf(leaf.id, "row", existing.id)) {
+        addTabToFocusedLeaf(existing.id, true); // split failed — don't strand it
+      }
+    }
+    // Keep focus on the note (not the compare pane) so its sidebar stays.
+    keepNoteActive(notePath);
     return;
   }
-  openTab({ type: "version-diff", title, path: notePath, version }, { forceNewTab: true });
+  const focused = focusedLeaf().id;
+  const newId = `tab-${nextId++}`;
+  setTabs(
+    produce((t) =>
+      t.push({ id: newId, type: "version-diff", title, path: notePath, version }),
+    ),
+  );
+  const newLeaf = splitLeaf(focused, "row", newId);
+  if (!newLeaf) {
+    // Split failed — don't strand the orphan tab; fall back to an in-pane diff.
+    setTabs(
+      produce((t) => {
+        const i = t.findIndex((x) => x.id === newId);
+        if (i !== -1) t.splice(i, 1);
+      }),
+    );
+    openVersionDiff(notePath, title, version);
+    return;
+  }
+  // The split opens the version beside the note; keep the note active/focused
+  // (splitLeaf focuses the new pane) so its Changes & History sidebar stays.
+  keepNoteActive(notePath);
 }
 
 /** Create a new empty tab (no backing file). Navigating to a file
