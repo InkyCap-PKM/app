@@ -474,6 +474,11 @@ pub struct ExternalTool {
     /// tools that need the raw Typst source. See
     /// [`crate::typst_pipeline::plaintext`].
     pub strip_markup: bool,
+    /// Optional icon for the tool's output pane tab, as a `"lucide:<name>"`
+    /// string (the icon-picker format shared with collections). Empty means
+    /// "use the default" (a terminal glyph). The backend does not act on this —
+    /// the frontend resolves it when rendering the right-panel tab.
+    pub icon: String,
 }
 
 impl Default for ExternalTool {
@@ -487,6 +492,7 @@ impl Default for ExternalTool {
             output: "replace".to_string(),
             show_in: "palette".to_string(),
             strip_markup: true,
+            icon: String::new(),
         }
     }
 }
