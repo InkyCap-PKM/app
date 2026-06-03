@@ -96,11 +96,27 @@ function detectFuncWikilinkContext(text: string, lineFrom: number, cursorInLine:
     if (firstOpen < 0 || firstClose < 0) return EMPTY;
 
     if (cursorInLine > firstOpen && cursorInLine <= firstClose) {
+      const argContent = text.substring(firstOpen + 1, cursorInLine);
+      // A `::` typed inside the name arg switches to heading mode, mirroring the
+      // bracket-form `[[Note::heading]]` shorthand. This makes `::` work while
+      // editing a wikilink shown as `[[Name]]` in the visual editor — accepting
+      // a heading rewrites the call to `#wikilink("Name", label: "…")`.
+      const sep = argContent.indexOf("::");
+      if (sep >= 0) {
+        return {
+          active: true,
+          from: lineFrom + callStart,
+          to: lineFrom + callEnd,
+          query: argContent.substring(sep + 2),
+          mode: "heading",
+          noteName: argContent.substring(0, sep),
+        };
+      }
       return {
         active: true,
         from: lineFrom + callStart,
         to: lineFrom + callEnd,
-        query: text.substring(firstOpen + 1, cursorInLine),
+        query: argContent,
         mode: "note",
         noteName: "",
       };
