@@ -50,7 +50,7 @@ import { initTauriDragDrop } from "./lib/tauri-drag-drop";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
-import { registerExternalToolPalette } from "./lib/external-tools";
+import { registerExternalToolPalette, registerExternalToolCommands } from "./lib/external-tools";
 import { loadPlugins } from "./lib/plugins";
 import { activeEditorView } from "./stores/editor";
 import { applyUiScale } from "./lib/ui-scale";
@@ -258,10 +258,12 @@ const App: Component = () => {
     // registry on every keydown).
     registerCreationRuleCommands();
 
-    // Surface any user-registered external tools as `/`-palette commands
-    // (the external-tool bridge). Reads the live settings list on each palette
-    // open, so this one-time registration covers tools added later too.
+    // Surface any user-registered external tools (the external-tool bridge):
+    // the `/` menu for tools opted into it, the global command palette for the
+    // rest (the default). The slash source reads live settings on each open;
+    // the command registry is reconciled reactively on settings change.
     registerExternalToolPalette();
+    registerExternalToolCommands();
 
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();

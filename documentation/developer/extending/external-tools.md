@@ -15,9 +15,11 @@ linters, custom exporters, and so on, each as a small program InkyCap calls.
 
 1. The user registers a tool in **Settings → Extensions** (or by editing
    `external_tools.tools` in the user settings JSON).
-2. The tool appears in the editor's `/` command palette under **Tools**.
+2. The tool appears in the **command palette** under **Tools** (the default),
+   in the editor's `/` menu, or both — set per tool via `show_in`.
 3. When invoked, InkyCap spawns your program, writes the chosen text to its
-   **stdin**, and applies its **stdout** per the configured disposition.
+   **stdin** (optionally stripped to plain prose — see `strip_markup`), and
+   applies its **stdout** per the configured disposition.
 
 ## Configuration
 
@@ -30,7 +32,9 @@ Each tool is:
   "command": "/usr/bin/mytool", // absolute path to the executable
   "args": ["--lang", "en"],   // passed as a vector (no shell)
   "input": "selection",       // "selection" | "note" | "none"  → stdin
-  "output": "replace"         // "replace" | "insert" | "notify" | "panel" → result
+  "output": "replace",        // "replace" | "insert" | "notify" | "panel" → result
+  "show_in": "palette",       // "palette" | "slash" | "both"  → where it's offered
+  "strip_markup": true        // true → send plain prose, not raw Typst
 }
 ```
 
@@ -45,6 +49,22 @@ Each tool is:
     tool, beside Properties / Outline / Links). The document is untouched.
     Best for multi-line output you want to keep visible while editing (a
     grammar or lint report). Re-running the tool refreshes the same pane.
+- **`show_in`** — where the tool is offered:
+  - `palette` (default) — the **global command palette**. Opening it does not
+    disturb the editor selection, so this is the right home for
+    `input: "selection"` tools.
+  - `slash` — the editor's `/` menu. Typing `/` *replaces* the selection, so
+    this suits insert-at-cursor tools, not selection tools.
+  - `both`.
+- **`strip_markup`** — when `true` (default), InkyCap reduces the note/selection
+  to plain prose before writing it to stdin: the `#import` preamble, the
+  `#note(...)` properties, inline markup (`*bold*`, `_italic_`, headings,
+  lists), math, and code are removed, and `#wikilink` / `#tag` / content-bracket
+  calls contribute their visible text. Best for grammar/style checkers. Set to
+  `false` for tools that need the raw Typst source. The stripping is AST-based
+  (`typst_pipeline::plaintext`), not a regex, so it tracks the parser. Note the
+  argument placeholder `$INKYCAP_SELECTION` always carries the **raw** selection
+  — `strip_markup` affects only the stdin stream.
 
 ### Argument placeholders
 
@@ -79,10 +99,14 @@ text-transform just reads stdin.
   "input": "selection", "output": "replace" }
 ```
 
-**Grammar check via a local LanguageTool server** — a tiny wrapper script that
-reads stdin, POSTs to `http://localhost:8081/v2/check`, and prints a report;
-register it with `input: "note"`, `output: "panel"` so the report stays open in
-a side pane while you fix the note.
+**Grammar check via LanguageTool** — a tiny wrapper script that reads stdin,
+POSTs to a LanguageTool server, and prints a readable report; register it with
+`input: "note"`, `output: "panel"`, `strip_markup: true` so the tool sees prose
+(not the `#import`/`#note` preamble) and the report stays open in a side pane
+while you fix the note. A ready-to-use version is in
+[`examples/lt-check`](../../examples/lt-check) — it defaults to the hosted API
+and falls back to a local server via the `LT_API_URL` env var (keeping note
+text on-device).
 
 **AI rewrite** — a script that reads the selection from stdin, calls your LLM
 provider of choice (key from *your* environment, not InkyCap), and prints the
@@ -90,6 +114,20 @@ rewrite; register with `input: "selection"`, `output: "replace"`.
 
 **Dictation post-processing** — a script that cleans up transcribed text on
 stdin and prints the tidied version; `input: "selection"`, `output: "replace"`.
+
+**An argument-driven tool (`man`)** — not every tool reads stdin. `man` takes
+its topic as a command-line *argument*, so set `input: "none"` and pass the
+selection through `args`:
+
+```jsonc
+{ "name": "man", "command": "/usr/bin/man", "args": ["$INKYCAP_SELECTION"],
+  "input": "none", "output": "panel" }
+```
+
+Highlight a page name (`printf`, `grep`), run it, and the manual page opens in
+the side pane. This is the second tool shape the bridge supports: **stdin
+tools** (filters that read a stream) vs. **argument tools** (that expect their
+input in `argv`).
 
 ## Security model
 
@@ -110,6 +148,8 @@ stdin and prints the tidied version; `input: "selection"`, `output: "replace"`.
 
 - Backend: [`src-tauri/src/external_tools.rs`](../../../src-tauri/src/external_tools.rs)
   (`run_external_tool`).
+- Markup stripping: [`src-tauri/src/typst_pipeline/plaintext.rs`](../../../src-tauri/src/typst_pipeline/plaintext.rs)
+  (`extract_plain_text`).
 - Settings type: `ExternalTool` in
   [`src-tauri/src/settings.rs`](../../../src-tauri/src/settings.rs) and
   [`src/lib/types.ts`](../../../src/lib/types.ts).

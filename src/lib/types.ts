@@ -453,6 +453,15 @@ export interface ExternalTool {
    *  the selection, show it transiently (`notify`), or show it in a persistent
    *  right-panel pane (`panel`). */
   output: "insert" | "replace" | "notify" | "panel";
+  /** Where the tool is offered: the global command palette (`palette`, the
+   *  default — never disturbs the editor selection, so `selection`-input tools
+   *  work), the editor `/` menu (`slash`, best for insert-at-cursor tools), or
+   *  `both`. */
+  show_in: "palette" | "slash" | "both";
+  /** When true (the default), the note/selection is reduced to plain prose
+   *  (markup, `#import`, `#note(...)`, math, and code stripped) before being
+   *  sent to the tool's stdin. Turn off for tools that need raw Typst source. */
+  strip_markup: boolean;
 }
 
 /** User-global registry of external tools. */
