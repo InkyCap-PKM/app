@@ -702,22 +702,10 @@ body.is-resizing-pane .pane-resizer {
   background: var(--bg-hover);
 }
 
-/* File tree multi-selection: rows picked via Ctrl/Shift-click. Tinted
-   with the accent so a selection reads distinctly from the open-file
-   `--active` highlight, which a selection can overlap. */
-.sidebar-item--selected {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--fg-primary);
-}
-
-.sidebar-item--selected:hover {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
 /* Non-`.typ` files (attachments, data files, bibliographies) are shown in
    the tree so users can see and link to them, but de-emphasized: InkyCap
    doesn't edit them and they open in the OS default app. Only the label
-   and icon are muted, so the selection/active background still reads. */
+   and icon are muted, so the active-row background still reads. */
 .sidebar-item--non-note .sidebar-item__label,
 .sidebar-item--non-note .sidebar-item__icon {
   color: var(--fg-dim);
