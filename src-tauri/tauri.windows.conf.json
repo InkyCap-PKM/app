@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nickelpack/tauri/v2/crates/tauri-config-schema/schema.json",
+  "app": {
+    "windows": [
+      {
+        "title": "InkyCap",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "dragDropEnabled": false
+      }
+    ]
+  }
+}

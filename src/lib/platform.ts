@@ -17,6 +17,12 @@ export function isMac(): boolean {
   return /Mac|iPhone|iPad/.test(navigator.platform);
 }
 
+/** True if the user is on Windows. */
+export function isWindows(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Win/.test(navigator.platform);
+}
+
 /**
  * Platform-correct primary modifier label for keyboard shortcut hints.
  *

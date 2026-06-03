@@ -4,12 +4,22 @@
 // On Linux/webkit2gtk, DOM drag events for external drags have their
 // dataTransfer blocked by cross-origin security, so we use Tauri's
 // own drag/drop event which bypasses the webview's security model.
+//
+// On Windows, `dragDropEnabled` is forced to `false` via
+// `tauri.windows.conf.json`, because Tauri's native IDropTarget
+// otherwise swallows *all* drag events before they reach WebView2 —
+// breaking internal HTML5 DnD (file tree row moves, tab reordering).
+// As a side effect, this listener does not fire on Windows; external
+// file drops from Explorer into the editor will need a separate
+// HTML5 dataTransfer-based path before they work there.
 
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { activeEditorView } from "../stores/editor";
 import { protectedRangesField } from "../editor/typst-decorations/visual-plugin";
 import { getLastDragPos } from "../editor/typst-decorations/drag-drop";
 import type { EditorState } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
+import { fileToBase64 } from "./file-bytes";
 import * as ipc from "./ipc";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
@@ -119,29 +129,21 @@ function attachmentMarkup(relativePath: string): string {
   return `#link("/${relativePath}")[${filename}]`;
 }
 
-interface PhysicalPosition {
+interface DropCoords {
   x: number;
   y: number;
 }
 
-async function handleDrop(
-  paths: string[],
-  position: PhysicalPosition,
-): Promise<void> {
+/// Resolve the drop position inside the active editor, in CodeMirror
+/// document offsets, given an optional client-coord hint. Returns
+/// `null` when there is no active editor; callers should bail in that
+/// case. When the lookup fails (no coord hint, or coords don't map to
+/// a position), the cursor's current selection is used as the fallback.
+function resolveDropTarget(coordsHint: DropCoords | null) {
   const handle = activeEditorView();
-  if (!handle) {
-    console.warn("[tauri-drop] no active editor, ignoring drop");
-    return;
-  }
-
+  if (!handle) return null;
   const view = handle.view;
 
-  // On Linux/webkit2gtk, external drags fire DOM dragover events with
-  // correct clientX/clientY even though dataTransfer is blocked. The
-  // CM6 drag-drop plugin tracks these coordinates. Prefer them over
-  // Tauri's physical-pixel position, which is in a different coordinate
-  // space (window-relative including the GTK header bar) and doesn't
-  // map reliably to posAtCoords.
   let dropPos: number | null = null;
 
   // The DOM dragover (tracked by the CM6 plugin) gives client CSS coords
@@ -154,60 +156,117 @@ async function handleDrop(
   if (domPos) {
     try {
       dropPos = view.posAtCoords({ x: domPos.x, y: domPos.y }, false);
-    } catch { /* fall through to Tauri coords */ }
+    } catch { /* fall through */ }
   }
 
-  // Fallback: Tauri's own drop position. On Linux/GTK this arrives in
-  // logical (CSS) pixels — identical to the DOM client coords — so it is
-  // used as-is. Do NOT divide by devicePixelRatio: on a HiDPI display that
-  // halves the point and pushes the drop into the top-left corner.
-  if (dropPos === null) {
+  // Fallback: caller-provided coords. For Tauri-native drops on Linux/GTK
+  // these arrive in logical (CSS) pixels — identical to DOM client coords
+  // — so they are used as-is. Do NOT divide by devicePixelRatio: on a
+  // HiDPI display that halves the point and pushes the drop into the
+  // top-left corner. For the HTML5 path on Windows, the DropEvent's
+  // clientX/clientY are also CSS coords.
+  if (dropPos === null && coordsHint) {
     try {
-      dropPos = view.posAtCoords({ x: position.x, y: position.y }, false);
+      dropPos = view.posAtCoords({ x: coordsHint.x, y: coordsHint.y }, false);
     } catch (err) {
-      console.warn("[tauri-drop] coord lookup failed, using cursor", err);
+      console.warn("[external-drop] coord lookup failed, using cursor", err);
     }
   }
+
+  return { view, dropPos };
+}
+
+/// Insert markup for an already-saved attachment at `dropPos`. Pins past
+/// the document's `#import` / `#note` / `#bibliography` prelude and
+/// normalizes to its own line — block-level markup like `#image(...)`
+/// can't share a line with prose. Returns the dispatched insert length
+/// so the caller can advance `dropPos` for the next attachment.
+function insertSavedAttachment(
+  view: EditorView,
+  dropPos: number | null,
+  savedRelativePath: string,
+): { newDropPos: number | null } {
+  const body = attachmentMarkup(savedRelativePath);
+  const rawPos = dropPos ?? view.state.selection.main.from;
+  const clamped = clampPastProtected(view.state, rawPos);
+  const line = view.state.doc.lineAt(clamped);
+  const onLineStart = clamped === line.from;
+  const insertPos = onLineStart ? clamped : line.to;
+  const insert = onLineStart ? `${body}\n` : `\n${body}`;
+  view.dispatch({ changes: { from: insertPos, to: insertPos, insert } });
+  return {
+    newDropPos: dropPos !== null ? insertPos + insert.length : null,
+  };
+}
+
+async function handleTauriDrop(
+  paths: string[],
+  position: DropCoords,
+): Promise<void> {
+  const target = resolveDropTarget(position);
+  if (!target) {
+    console.warn("[tauri-drop] no active editor, ignoring drop");
+    return;
+  }
+  let { view, dropPos } = target;
 
   for (const absPath of paths) {
     try {
       const savedName = await ipc.copyPathToAttachments(absPath);
-      const body = attachmentMarkup(savedName);
-
-      // Pin insertion past any prelude (#import / #note / #bibliography) so
-      // a drop near the top of the document never tears the protected
-      // header. Then normalize to its own line — block-level markup like
-      // `#image(...)` can't share a line with prose.
-      const rawPos = dropPos ?? view.state.selection.main.from;
-      const clamped = clampPastProtected(view.state, rawPos);
-      const line = view.state.doc.lineAt(clamped);
-      const onLineStart = clamped === line.from;
-      const insertPos = onLineStart ? clamped : line.to;
-      const insert = onLineStart ? `${body}\n` : `\n${body}`;
-
-      view.dispatch({
-        changes: { from: insertPos, to: insertPos, insert },
-      });
-      if (dropPos !== null) dropPos = insertPos + insert.length;
+      ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
     } catch (err) {
       console.error("[tauri-drop] failed to copy", absPath, err);
     }
   }
 }
 
-let initialized = false;
-let unlisten: (() => void) | null = null;
+async function handleHtml5Drop(event: DragEvent): Promise<void> {
+  // CodeMirror's per-editor `dragDropHandler` (typst-decorations/drag-drop.ts)
+  // already processes file drops that land inside the editor and calls
+  // preventDefault on the event. Skip those here so we don't double-insert
+  // when the drop happens on the editor surface — this window-level handler
+  // exists only to catch drops that landed on sidebar / non-editor surfaces.
+  if (event.defaultPrevented) return;
+  const files = event.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+  event.preventDefault();
 
+  const target = resolveDropTarget({ x: event.clientX, y: event.clientY });
+  if (!target) {
+    console.warn("[html5-drop] no active editor, ignoring drop");
+    return;
+  }
+  let { view, dropPos } = target;
+
+  for (const file of Array.from(files)) {
+    try {
+      const base64 = await fileToBase64(file);
+      const savedName = await ipc.copyToAttachments(file.name, base64);
+      ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
+    } catch (err) {
+      console.error("[html5-drop] failed to save", file.name, err);
+    }
+  }
+}
+
+let initialized = false;
+let tauriUnlisten: (() => void) | null = null;
+let html5DropHandler: ((e: DragEvent) => void) | null = null;
+let html5DragOverHandler: ((e: DragEvent) => void) | null = null;
+
+/// Attach the Tauri-native drag-drop listener. Used on Linux and macOS
+/// where the webview can't see external drag dataTransfer (Linux) or
+/// where we want the native path's filesystem access (macOS).
 export async function initTauriDragDrop(): Promise<void> {
   if (initialized) return;
   initialized = true;
   try {
     const webview = getCurrentWebviewWindow();
-    unlisten = await webview.onDragDropEvent((event) => {
+    tauriUnlisten = await webview.onDragDropEvent((event) => {
       const payload = event.payload;
       if (payload.type === "drop" && payload.paths.length > 0) {
         console.debug("[tauri-drop] drop:", payload.paths, payload.position);
-        void handleDrop(payload.paths, payload.position);
+        void handleTauriDrop(payload.paths, payload.position);
       }
     });
   } catch (err) {
@@ -216,10 +275,38 @@ export async function initTauriDragDrop(): Promise<void> {
   }
 }
 
+/// Attach an HTML5 drop listener at the window level. Used on Windows,
+/// where `dragDropEnabled` is forced off in `tauri.windows.conf.json`
+/// (so HTML5 DnD works inside the webview — file tree row moves, tab
+/// reordering, etc.) and the Tauri-native drop event therefore does
+/// not fire. WebView2 exposes external file drops via `dataTransfer.
+/// files` as `File` objects (no path — Chromium security), so the
+/// bytes are read via FileReader and shipped to Rust as base64.
+export function initHtml5DragDrop(): void {
+  if (initialized) return;
+  initialized = true;
+  // Prevent the default behaviour (open file in webview) on dragover so
+  // the drop event actually fires for files from Explorer.
+  html5DragOverHandler = (e) => {
+    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+  };
+  html5DropHandler = (e) => { void handleHtml5Drop(e); };
+  window.addEventListener("dragover", html5DragOverHandler);
+  window.addEventListener("drop", html5DropHandler);
+}
+
 export function destroyTauriDragDrop(): void {
-  if (unlisten) {
-    unlisten();
-    unlisten = null;
+  if (tauriUnlisten) {
+    tauriUnlisten();
+    tauriUnlisten = null;
+  }
+  if (html5DropHandler) {
+    window.removeEventListener("drop", html5DropHandler);
+    html5DropHandler = null;
+  }
+  if (html5DragOverHandler) {
+    window.removeEventListener("dragover", html5DragOverHandler);
+    html5DragOverHandler = null;
   }
   initialized = false;
 }

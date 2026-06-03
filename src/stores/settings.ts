@@ -53,6 +53,7 @@ const DEFAULTS: UserSettings = {
     accent_color: "#1D7874",
     zoom_target: "content",
     folder_grouping: "before",
+    file_tree_sort: "name-asc",
     date_format: "D MMM YYYY",
     ui_locale: "en",
   },

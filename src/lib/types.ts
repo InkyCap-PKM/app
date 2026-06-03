@@ -267,6 +267,14 @@ export type BgPalette = "default" | "warm";
 export type ZoomTarget = "content" | "interface" | "both";
 export type FolderGrouping = "before" | "after" | "inline";
 
+export type FileSortMode =
+  | "name-asc"
+  | "name-desc"
+  | "modified-desc"
+  | "modified-asc"
+  | "created-desc"
+  | "created-asc";
+
 export interface AppearanceSettings {
   theme: "dark" | "light" | "system";
   /**
@@ -298,6 +306,11 @@ export interface AppearanceSettings {
    * - "inline" — folders and files are interleaved together under the chosen sort.
    */
   folder_grouping: FolderGrouping;
+  /**
+   * The user's chosen sort for the file tree. Persisted so a re-open of
+   * the app (or a different notebox) preserves the ordering they picked.
+   */
+  file_tree_sort: FileSortMode;
   /**
    * Moment-style format pattern for displaying dates in the UI (Agenda due
    * dates, backup timestamps, last-backup indicator, etc.). Does not affect

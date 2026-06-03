@@ -46,7 +46,9 @@ import {
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
 import { initFocusRegions } from "./lib/focus-regions";
-import { initTauriDragDrop } from "./lib/tauri-drag-drop";
+import { initInputModality } from "./lib/input-modality";
+import { initTauriDragDrop, initHtml5DragDrop } from "./lib/tauri-drag-drop";
+import { isWindows } from "./lib/platform";
 import { openTab, getActiveTab, activeTabId, tabs } from "./stores/tabs";
 import { collaborative, setManageOpen } from "./stores/git";
 import { registerBuiltinCommands, registerCreationRuleCommands } from "./lib/commands";
@@ -253,6 +255,7 @@ const App: Component = () => {
     });
 
     initKeyboard();
+    initInputModality();
 
     // Register the user's creation rules with the registry as well —
     // this is what gives e.g. "New Note" its Ctrl+N binding.
@@ -271,11 +274,23 @@ const App: Component = () => {
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();
 
-    // Native drag-drop from the OS file manager. WebKitGTK blocks
-    // cross-origin reads of dataTransfer for security, so the JS
-    // drag-drop events in typst-decorations/drag-drop.ts can't see
-    // the file paths on Linux. Tauri's own listener bypasses that.
-    void initTauriDragDrop();
+    // External drag-drop from the OS file manager.
+    //
+    // On Linux/webkit2gtk: DOM dragover blocks dataTransfer reads for
+    // cross-origin security, so JS drop events in
+    // typst-decorations/drag-drop.ts can't see file paths. Tauri's own
+    // listener bypasses that via the native window event.
+    //
+    // On Windows: `dragDropEnabled` is forced to false (see
+    // tauri.windows.conf.json) so internal HTML5 DnD works for file
+    // tree row moves. The Tauri-native event therefore does not fire,
+    // and external file drops come through as HTML5 DragEvents with
+    // `dataTransfer.files` populated as in any Chromium-based browser.
+    if (isWindows()) {
+      initHtml5DragDrop();
+    } else {
+      void initTauriDragDrop();
+    }
   });
 
   // Switch to search panel when Ctrl+Shift+F fires
