@@ -462,17 +462,28 @@ mod tests {
         migrate_git_config(root).unwrap();
 
         let shared = std::fs::read_to_string(settings_path(root)).unwrap();
-        assert!(!shared.contains("athena-otlet"), "legacy git block not stripped");
+        assert!(
+            !shared.contains("athena-otlet"),
+            "legacy git block not stripped"
+        );
         let local = std::fs::read_to_string(local_state_path(root)).unwrap();
-        assert!(local.contains("athena-otlet"), "git block not migrated to local.json");
+        assert!(
+            local.contains("athena-otlet"),
+            "git block not migrated to local.json"
+        );
         // The merged view still reports the config.
         assert_eq!(
-            load_settings(root).git.expect("git config preserved").remote,
+            load_settings(root)
+                .git
+                .expect("git config preserved")
+                .remote,
             "https://codeberg.org/athena-otlet/notes"
         );
 
         // Idempotent: a second run is a no-op (settings.json already clean).
         migrate_git_config(root).unwrap();
-        assert!(!std::fs::read_to_string(settings_path(root)).unwrap().contains("athena-otlet"));
+        assert!(!std::fs::read_to_string(settings_path(root))
+            .unwrap()
+            .contains("athena-otlet"));
     }
 }

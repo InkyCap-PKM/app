@@ -176,10 +176,7 @@ pub fn strip_bibliography_call(content: &str) -> String {
         // codepoints, which is what was previously corrupting Unicode
         // content (Greek/CJK/em-dash/smart quotes) and producing spurious
         // unbalanced delimiters when the corrupted output was parsed.
-        let nl = content[i..]
-            .find('\n')
-            .map(|p| i + p + 1)
-            .unwrap_or(len);
+        let nl = content[i..].find('\n').map(|p| i + p + 1).unwrap_or(len);
         out.push_str(&content[i..nl]);
         i = nl;
     }
@@ -336,10 +333,7 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
             if decl.name.starts_with("inkycap-") {
                 continue;
             }
-            by_label
-                .entry(decl.name)
-                .or_default()
-                .push(decl.note_stem);
+            by_label.entry(decl.name).or_default().push(decl.note_stem);
         }
     }
     by_label
@@ -460,7 +454,6 @@ fn heading_level(trimmed_line: &str) -> Option<u8> {
 
 // ── Wrapper generation ──────────────────────────────────────────────────────
 
-
 /// Build the merged book Typst source. The returned string is meant to be
 /// passed directly to [`crate::typst_pipeline::compiler::TypstCompiler::compile_pdf`].
 ///
@@ -510,16 +503,14 @@ pub fn build_book_source(
     // "fall back to today's date" logic in one place.
     let mut doc_args: Vec<String> = Vec::new();
     if let Some(title) = &options.title {
-        doc_args.push(format!(
-            "title: \"{}\"",
-            typst_escape(title)
-        ));
+        doc_args.push(format!("title: \"{}\"", typst_escape(title)));
     }
     // The document author flows from the contributor roster (its bibliographic
     // authors), falling back to the legacy single `author` string. Emitted as
     // a string for one author and an array for several, both of which
     // `document(author:)` accepts.
-    let authors = contributors::document_author_names(&options.contributors, options.author.as_deref());
+    let authors =
+        contributors::document_author_names(&options.contributors, options.author.as_deref());
     match authors.len() {
         0 => {}
         1 => doc_args.push(format!("author: \"{}\"", typst_escape(&authors[0]))),
@@ -974,9 +965,7 @@ fn humanize_stem(stem: &str) -> String {
             let mut chars = w.chars();
             match chars.next() {
                 None => String::new(),
-                Some(first) => {
-                    first.to_uppercase().collect::<String>() + chars.as_str()
-                }
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
             }
         })
         .collect();
@@ -1039,7 +1028,10 @@ mod tests {
         // was fed back to the Typst compiler.
         let src = "Some text — with “smart quotes”, an é, and PMBOK®.\n#bibliography(\"refs.bib\")\nMore — text.\n";
         let out = strip_bibliography_call(src);
-        assert_eq!(out, "Some text — with “smart quotes”, an é, and PMBOK®.\nMore — text.\n");
+        assert_eq!(
+            out,
+            "Some text — with “smart quotes”, an é, and PMBOK®.\nMore — text.\n"
+        );
     }
 
     /// Sample of representative non-ASCII content — em/en dashes, smart
@@ -1102,7 +1094,11 @@ mod tests {
                 fixture
             );
             let out = prepare_note_for_include(&src);
-            assert!(out.contains(fixture), "fixture missing from output: {:?}", fixture);
+            assert!(
+                out.contains(fixture),
+                "fixture missing from output: {:?}",
+                fixture
+            );
             assert!(!out.contains("#import"));
             assert!(!out.contains("#note("));
             assert!(!out.contains("#bibliography"));
@@ -1297,7 +1293,14 @@ After
         let off_a = src.find("body A").unwrap();
         let off_b = src.find("body B").unwrap();
         let span = |start: usize| {
-            Some(TypstSpan { path: None, start, end: start, line: None, column: None, is_main: true })
+            Some(TypstSpan {
+                path: None,
+                start,
+                end: start,
+                line: None,
+                column: None,
+                is_main: true,
+            })
         };
         let diag = |msg: &str, start: usize| TypstDiagnostic {
             severity: "error",
@@ -1321,7 +1324,11 @@ After
         let msg = describe_book_diagnostics(&src, &diags);
         assert!(msg.contains("In \"Alpha\": expected expression."), "{msg}");
         assert!(msg.contains("In \"Beta\": unclosed delimiter."), "{msg}");
-        assert_eq!(msg.matches("expected expression").count(), 1, "deduped: {msg}");
+        assert_eq!(
+            msg.matches("expected expression").count(),
+            1,
+            "deduped: {msg}"
+        );
         assert!(!msg.contains("ignored"), "warnings excluded: {msg}");
     }
 
@@ -1338,7 +1345,14 @@ After
         let diag = |start: usize, is_main: bool| TypstDiagnostic {
             severity: "error",
             message: "boom".to_string(),
-            primary: Some(TypstSpan { path: None, start, end: start, line: None, column: None, is_main }),
+            primary: Some(TypstSpan {
+                path: None,
+                start,
+                end: start,
+                line: None,
+                column: None,
+                is_main,
+            }),
             trace: vec![],
             hints: vec![],
         };
@@ -1346,9 +1360,22 @@ After
             diag(off_a, true),
             diag(off_a, true), // same note → de-duped
             diag(off_b, true),
-            diag(0, true),     // front matter (before any chapter) → not a note
+            diag(0, true),      // front matter (before any chapter) → not a note
             diag(off_a, false), // an imported file → not attributable
-            TypstDiagnostic { severity: "warning", message: "w".into(), primary: Some(TypstSpan { path: None, start: off_b, end: off_b, line: None, column: None, is_main: true }), trace: vec![], hints: vec![] },
+            TypstDiagnostic {
+                severity: "warning",
+                message: "w".into(),
+                primary: Some(TypstSpan {
+                    path: None,
+                    start: off_b,
+                    end: off_b,
+                    line: None,
+                    column: None,
+                    is_main: true,
+                }),
+                trace: vec![],
+                hints: vec![],
+            },
         ];
         let stems = book_diagnostic_note_stems(&src, &diags);
         assert_eq!(stems, vec!["Alpha".to_string(), "Beta".to_string()]);
@@ -1357,7 +1384,18 @@ After
     #[test]
     fn build_book_emits_merged_context_set() {
         let n = note("a", "#note()\n= A\n");
-        let src = build_book_source(&[n], &options(), None, None, None, None, None, false, None, None);
+        let src = build_book_source(
+            &[n],
+            &options(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
         assert!(src.contains("#set-merged-context(active: true,"));
         assert!(src.contains("\"a\""));
     }
@@ -1541,9 +1579,7 @@ After
         // No heading numbering style set (Inherit) → books default to "1.1".
         let opts = options();
         let n = note("a", "= A\n");
-        let src = build_book_source(
-            &[n], &opts, None, None, None, None, None, false, None, None,
-        );
+        let src = build_book_source(&[n], &opts, None, None, None, None, None, false, None, None);
         assert!(
             src.contains("#set heading(numbering: \"1.1\")"),
             "expected default chapter numbering:\n{}",

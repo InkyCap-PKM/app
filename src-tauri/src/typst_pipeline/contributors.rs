@@ -42,20 +42,62 @@ pub struct ContributorCatalogs {
 /// the label is what renders in the statement and the editor.
 /// Reference: <https://credit.niso.org/>.
 const CREDIT_ROLES: &[(&str, &str)] = &[
-    ("https://credit.niso.org/contributor-roles/conceptualization/", "Conceptualization"),
-    ("https://credit.niso.org/contributor-roles/data-curation/", "Data curation"),
-    ("https://credit.niso.org/contributor-roles/formal-analysis/", "Formal analysis"),
-    ("https://credit.niso.org/contributor-roles/funding-acquisition/", "Funding acquisition"),
-    ("https://credit.niso.org/contributor-roles/investigation/", "Investigation"),
-    ("https://credit.niso.org/contributor-roles/methodology/", "Methodology"),
-    ("https://credit.niso.org/contributor-roles/project-administration/", "Project administration"),
-    ("https://credit.niso.org/contributor-roles/resources/", "Resources"),
-    ("https://credit.niso.org/contributor-roles/software/", "Software"),
-    ("https://credit.niso.org/contributor-roles/supervision/", "Supervision"),
-    ("https://credit.niso.org/contributor-roles/validation/", "Validation"),
-    ("https://credit.niso.org/contributor-roles/visualization/", "Visualization"),
-    ("https://credit.niso.org/contributor-roles/writing-original-draft/", "Writing \u{2013} original draft"),
-    ("https://credit.niso.org/contributor-roles/writing-review-editing/", "Writing \u{2013} review & editing"),
+    (
+        "https://credit.niso.org/contributor-roles/conceptualization/",
+        "Conceptualization",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/data-curation/",
+        "Data curation",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/formal-analysis/",
+        "Formal analysis",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/funding-acquisition/",
+        "Funding acquisition",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/investigation/",
+        "Investigation",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/methodology/",
+        "Methodology",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/project-administration/",
+        "Project administration",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/resources/",
+        "Resources",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/software/",
+        "Software",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/supervision/",
+        "Supervision",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/validation/",
+        "Validation",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/visualization/",
+        "Visualization",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/writing-original-draft/",
+        "Writing \u{2013} original draft",
+    ),
+    (
+        "https://credit.niso.org/contributor-roles/writing-review-editing/",
+        "Writing \u{2013} review & editing",
+    ),
 ];
 
 /// CSL/Hayagriva bibliographic roles: `(token, label)`. The token is stored
@@ -82,7 +124,10 @@ pub fn catalogs() -> ContributorCatalogs {
     let to_entries = |pairs: &[(&str, &str)]| {
         pairs
             .iter()
-            .map(|(v, l)| CatalogEntry { value: v.to_string(), label: l.to_string() })
+            .map(|(v, l)| CatalogEntry {
+                value: v.to_string(),
+                label: l.to_string(),
+            })
             .collect()
     };
     ContributorCatalogs {
@@ -107,10 +152,12 @@ fn credit_label(id: &str) -> &str {
 /// flows from the same source the byline does. Falls back to the bare
 /// authors of *all* roles if no row is explicitly an author, then to the
 /// legacy single `author` string when there are no contributors at all.
-pub fn document_author_names(contributors: &[Contributor], legacy_author: Option<&str>) -> Vec<String> {
-    let is_author = |c: &Contributor| {
-        matches!(c.biblio_role.as_deref(), None | Some("") | Some("author"))
-    };
+pub fn document_author_names(
+    contributors: &[Contributor],
+    legacy_author: Option<&str>,
+) -> Vec<String> {
+    let is_author =
+        |c: &Contributor| matches!(c.biblio_role.as_deref(), None | Some("") | Some("author"));
     let named = |c: &&Contributor| !c.name.trim().is_empty();
 
     if !contributors.is_empty() {
@@ -153,7 +200,11 @@ fn typst_array(items: &[String]) -> String {
 /// Serialize one contributor to a Typst dict literal:
 /// `(name: "...", role: "...", credit: ("Label", ...))`.
 fn contributor_dict(c: &Contributor) -> String {
-    let role = c.biblio_role.as_deref().filter(|r| !r.is_empty()).unwrap_or("author");
+    let role = c
+        .biblio_role
+        .as_deref()
+        .filter(|r| !r.is_empty())
+        .unwrap_or("author");
     let credit: Vec<String> = c
         .credit_roles
         .iter()
@@ -184,7 +235,10 @@ pub fn byline_call(contributors: &[Contributor]) -> Option<String> {
     if contributors.iter().all(|c| c.name.trim().is_empty()) {
         return None;
     }
-    Some(format!("#contributors-byline({})\n", contributors_array(contributors)))
+    Some(format!(
+        "#contributors-byline({})\n",
+        contributors_array(contributors)
+    ))
 }
 
 /// `#credit-statement((...))` when at least one contributor carries a CRediT
@@ -196,7 +250,10 @@ pub fn credit_statement_call(contributors: &[Contributor]) -> Option<String> {
     if !has_credit {
         return None;
     }
-    Some(format!("#credit-statement({})\n", contributors_array(contributors)))
+    Some(format!(
+        "#credit-statement({})\n",
+        contributors_array(contributors)
+    ))
 }
 
 #[cfg(test)]
@@ -242,7 +299,10 @@ mod tests {
         let editors = vec![contrib("Sam", Some("editor"), &[])];
         assert_eq!(document_author_names(&editors, None), vec!["Sam"]);
         // No contributors → legacy author string.
-        assert_eq!(document_author_names(&[], Some("Old Author")), vec!["Old Author"]);
+        assert_eq!(
+            document_author_names(&[], Some("Old Author")),
+            vec!["Old Author"]
+        );
         assert!(document_author_names(&[], None).is_empty());
         assert!(document_author_names(&[], Some("  ")).is_empty());
     }
@@ -264,7 +324,10 @@ mod tests {
         assert!(call.contains("#credit-statement("));
         // Single-element arrays carry a trailing comma (else Typst reads
         // `("x")` as a string).
-        assert!(call.contains("credit: (\"Conceptualization\",)"), "got: {call}");
+        assert!(
+            call.contains("credit: (\"Conceptualization\",)"),
+            "got: {call}"
+        );
     }
 
     #[test]

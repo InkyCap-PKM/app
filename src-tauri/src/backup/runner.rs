@@ -7,8 +7,8 @@
 //! not here — keeps the runner pure and testable.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
@@ -170,7 +170,10 @@ pub fn run(inputs: RunInputs<'_>) -> Result<Option<BackupReport>> {
     let mut pruned = 0;
     for victim in archives.iter().skip(keep) {
         if let Err(e) = std::fs::remove_file(victim) {
-            log::warn!("backup retention failed to delete {}: {e}", victim.display());
+            log::warn!(
+                "backup retention failed to delete {}: {e}",
+                victim.display()
+            );
             continue;
         }
         pruned += 1;
@@ -223,11 +226,7 @@ fn newest_mtime_under(root: &Path) -> Option<i64> {
         // Skip dot-folders that we don't archive anyway, so a stale
         // `.git` index doesn't keep triggering scheduled backups
         // forever after a single commit.
-        if entry
-            .path()
-            .components()
-            .any(|c| c.as_os_str() == ".git")
-        {
+        if entry.path().components().any(|c| c.as_os_str() == ".git") {
             continue;
         }
         // walkdir::DirEntry::metadata returns walkdir::Result, but

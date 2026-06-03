@@ -189,7 +189,9 @@ fn descend_into_content_blocks(node: &LinkedNode<'_>, out: &mut String) {
 /// The decoded value of the first positional string argument, or `None` if the
 /// first argument isn't a string literal.
 fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
-    let args = call_node.children().find(|c| c.kind() == SyntaxKind::Args)?;
+    let args = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
     for child in args.children() {
         match child.kind() {
             SyntaxKind::LeftParen
@@ -206,7 +208,9 @@ fn first_positional_string(call_node: &LinkedNode<'_>) -> Option<String> {
 
 /// The decoded value of a named string argument `name: "…"`, if present.
 fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
-    let args = call_node.children().find(|c| c.kind() == SyntaxKind::Args)?;
+    let args = call_node
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Args)?;
     for child in args.children() {
         if child.kind() != SyntaxKind::Named {
             continue;
@@ -260,7 +264,10 @@ fn normalize(raw: &str) -> String {
         lines.push(collapsed);
     }
     // Trim leading/trailing blank lines.
-    let start = lines.iter().position(|l| !l.is_empty()).unwrap_or(lines.len());
+    let start = lines
+        .iter()
+        .position(|l| !l.is_empty())
+        .unwrap_or(lines.len());
     let end = lines
         .iter()
         .rposition(|l| !l.is_empty())
@@ -292,10 +299,7 @@ mod tests {
     #[test]
     fn keeps_wikilink_and_tag_text() {
         let src = "See #wikilink(\"Other Note\") and a #tag(\"topic\") here.";
-        assert_eq!(
-            extract_plain_text(src),
-            "See Other Note and a topic here."
-        );
+        assert_eq!(extract_plain_text(src), "See Other Note and a topic here.");
     }
 
     #[test]

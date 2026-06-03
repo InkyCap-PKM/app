@@ -33,9 +33,8 @@ struct ForbiddenPattern {
     line_allowlist: &'static [&'static str],
 }
 
-const FORBIDDEN: &[ForbiddenPattern] = &[
-    ForbiddenPattern {
-        description: "path stringified with `.display().to_string()`. \
+const FORBIDDEN: &[ForbiddenPattern] = &[ForbiddenPattern {
+    description: "path stringified with `.display().to_string()`. \
                       Outbound IPC paths must flow through \
                       `crate::storage::to_frontend_string`, which strips \
                       the Windows `\\\\?\\` UNC prefix and normalizes \
@@ -43,10 +42,9 @@ const FORBIDDEN: &[ForbiddenPattern] = &[
                       line, or subprocess argv that never reaches the \
                       frontend or a path-equality check, append \
                       `// path-stringification-ok: <reason>`.",
-        needle: ".display().to_string()",
-        line_allowlist: &["path-stringification-ok:"],
-    },
-];
+    needle: ".display().to_string()",
+    line_allowlist: &["path-stringification-ok:"],
+}];
 
 /// Files (relative to `src/`) exempt from the scan. Kept empty so every
 /// exception has to justify itself per-line with the inline marker.

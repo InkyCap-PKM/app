@@ -1,7 +1,7 @@
 pub mod frontmatter;
 pub mod md_to_typst;
-mod typst_to_md;
 pub mod notebox_import;
+mod typst_to_md;
 
 pub use md_to_typst::markdown_to_typst;
 pub use md_to_typst::MarkdownDialect;

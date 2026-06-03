@@ -64,15 +64,13 @@ impl LocalNoteboxStorage {
 impl NoteboxStorage for LocalNoteboxStorage {
     async fn read_file(&self, path: &Path) -> Result<String> {
         let full = self.resolve(path)?;
-        tokio::fs::read_to_string(&full)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    InkyCapError::FileNotFound(full.display().to_string()) // path-stringification-ok: error message, not IPC
-                } else {
-                    InkyCapError::Io(e)
-                }
-            })
+        tokio::fs::read_to_string(&full).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                InkyCapError::FileNotFound(full.display().to_string()) // path-stringification-ok: error message, not IPC
+            } else {
+                InkyCapError::Io(e)
+            }
+        })
     }
 
     async fn list_files(&self, dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
@@ -80,21 +78,17 @@ impl NoteboxStorage for LocalNoteboxStorage {
         let ext = pattern.trim_start_matches("*.");
         let mut files = Vec::new();
 
-        for entry in WalkDir::new(&full_dir)
-            .into_iter()
-            .filter_entry(|e| {
-                let name = e.file_name().to_string_lossy();
-                // Skip hidden dirs
-                if e.file_type().is_dir() {
-                    !name.starts_with('.') && name != "node_modules"
-                } else {
-                    true
-                }
-            })
-        {
-            let entry = entry.map_err(|e| {
-                InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+        for entry in WalkDir::new(&full_dir).into_iter().filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            // Skip hidden dirs
+            if e.file_type().is_dir() {
+                !name.starts_with('.') && name != "node_modules"
+            } else {
+                true
+            }
+        }) {
+            let entry = entry
+                .map_err(|e| InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
             if entry.file_type().is_file() {
                 if let Some(file_ext) = entry.path().extension() {
                     if file_ext == ext {
@@ -131,20 +125,14 @@ impl NoteboxStorage for LocalNoteboxStorage {
             .map(|p| to_frontend_string(p))
             .unwrap_or_else(|_| to_frontend_string(&full));
 
-        let ctime = meta
-            .created()
-            .ok()
-            .and_then(|t| {
-                let dt: chrono::DateTime<chrono::Utc> = t.into();
-                Some(dt.to_rfc3339())
-            });
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| {
-                let dt: chrono::DateTime<chrono::Utc> = t.into();
-                Some(dt.to_rfc3339())
-            });
+        let ctime = meta.created().ok().and_then(|t| {
+            let dt: chrono::DateTime<chrono::Utc> = t.into();
+            Some(dt.to_rfc3339())
+        });
+        let mtime = meta.modified().ok().and_then(|t| {
+            let dt: chrono::DateTime<chrono::Utc> = t.into();
+            Some(dt.to_rfc3339())
+        });
 
         Ok(FileMetadata {
             name,
@@ -250,7 +238,9 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         .sort_by(|a, b| {
             let a_dir = a.file_type().is_dir();
             let b_dir = b.file_type().is_dir();
-            b_dir.cmp(&a_dir).then_with(|| a.file_name().cmp(b.file_name()))
+            b_dir
+                .cmp(&a_dir)
+                .then_with(|| a.file_name().cmp(b.file_name()))
         })
         .into_iter()
         .filter_entry(|e| {
@@ -259,9 +249,8 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         });
 
     for entry in walker {
-        let entry = entry.map_err(|e| {
-            InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
+        let entry = entry
+            .map_err(|e| InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         let parent = entry.path().parent().unwrap_or(root).to_path_buf();
         let is_dir = entry.file_type().is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -402,7 +391,11 @@ mod tests {
                     .unwrap_or(false)
             })
             .collect();
-        assert!(leftovers.is_empty(), "atomic_write left {} stray tmp file(s)", leftovers.len());
+        assert!(
+            leftovers.is_empty(),
+            "atomic_write left {} stray tmp file(s)",
+            leftovers.len()
+        );
     }
 
     #[tokio::test]

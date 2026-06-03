@@ -316,10 +316,7 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
     };
     if needs_write {
         if let Err(err) = std::fs::write(path, expected) {
-            log::warn!(
-                "notebox library: failed to write {}: {err}",
-                path.display()
-            );
+            log::warn!("notebox library: failed to write {}: {err}", path.display());
         }
     }
 }
@@ -382,10 +379,7 @@ mod tests {
         std::fs::write(&user_path, user_content).unwrap();
         // Re-running scaffold() must NOT overwrite the user's version.
         scaffold(dir.path());
-        assert_eq!(
-            std::fs::read_to_string(&user_path).unwrap(),
-            user_content
-        );
+        assert_eq!(std::fs::read_to_string(&user_path).unwrap(), user_content);
     }
 
     #[test]
@@ -418,5 +412,4 @@ mod tests {
         assert!(!is_notebox_import_line("#import \"other.typ\": *"));
         assert!(!is_notebox_import_line("= heading"));
     }
-
 }

@@ -21,7 +21,7 @@
 // without a plan for the four extensions above.
 // ---------------------------------------------------------------------------
 
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, CodeBlockKind, HeadingLevel};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -194,10 +194,7 @@ static CRITIC_HIGHLIGHT_RE: LazyLock<Regex> =
 /// Obsidian inline-comment syntax: `%%comment%%`. Renders to nothing in
 /// Obsidian; we strip it pre-parse for the Obsidian dialect only.
 /// `(?s)` makes `.` match newlines so multi-line comments are caught.
-static OBSIDIAN_COMMENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)%%.*?%%").unwrap());
-
-
+static OBSIDIAN_COMMENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)%%.*?%%").unwrap());
 
 /// Extract the set of filenames referenced by Obsidian-style image
 /// embeds (`![[name.png]]`) in a markdown source. The importer uses
@@ -300,11 +297,7 @@ pub fn markdown_to_typst_with_stats(
     // dialect only) tags + `%%comments%%` before parsing.
     // pulldown-cmark splits text around `[` characters, so wikilink
     // patterns never arrive as a single text event.
-    let preprocessed = preprocess_markdown(
-        body,
-        &options.attachment_folder,
-        options.dialect,
-    );
+    let preprocessed = preprocess_markdown(body, &options.attachment_folder, options.dialect);
 
     // `$…$` math is an Obsidian/Pandoc extension, not CommonMark.
     // Enabling it in the Standard dialect would consume things like
@@ -403,17 +396,14 @@ fn escape_unrecognized_hashes(text: &str) -> String {
             let mut j = after_hash;
             while j < bytes.len() {
                 let b = bytes[j];
-                let is_word =
-                    b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+                let is_word = b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
                 if !is_word {
                     break;
                 }
                 j += 1;
             }
             let ident = &text[after_hash..j];
-            if !ident.is_empty()
-                && EMITTED_TYPST_CALLS.iter().any(|n| *n == ident)
-            {
+            if !ident.is_empty() && EMITTED_TYPST_CALLS.iter().any(|n| *n == ident) {
                 // Recognized call — keep `#name` intact, copy through.
                 out.push_str(&text[i..j]);
                 i = j;
@@ -447,11 +437,7 @@ fn escape_unrecognized_hashes(text: &str) -> String {
 /// the importer routes `![[name.png]]` embeds into; the emitted
 /// `#image("/<attachment_folder>/name")` path matches where the file
 /// will actually land post-import.
-fn preprocess_markdown(
-    input: &str,
-    attachment_folder: &str,
-    dialect: MarkdownDialect,
-) -> String {
+fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDialect) -> String {
     // Order matters: replace Obsidian tags FIRST (so `#wikilink` produced by
     // the wikilink pass isn't falsely matched as a tag), and image embeds
     // before plain wikilinks (since `![[…]]` overlaps `[[…]]` and the
@@ -520,15 +506,21 @@ fn preprocess_markdown(
         .into_owned();
 
     // Replace wikilinks after tag processing.
-    result = WIKILINK_RE.replace_all(&result, |caps: &regex::Captures| {
-        let target = &caps[1];
-        match caps.get(2) {
-            Some(display) => {
-                format!("#wikilink(\"{}\", display: \"{}\")", target, display.as_str())
+    result = WIKILINK_RE
+        .replace_all(&result, |caps: &regex::Captures| {
+            let target = &caps[1];
+            match caps.get(2) {
+                Some(display) => {
+                    format!(
+                        "#wikilink(\"{}\", display: \"{}\")",
+                        target,
+                        display.as_str()
+                    )
+                }
+                None => format!("#wikilink(\"{}\")", target),
             }
-            None => format!("#wikilink(\"{}\")", target),
-        }
-    }).into_owned();
+        })
+        .into_owned();
 
     // CriticMarkup → InkyCap primitives. Run before the bare `==highlight==`
     // pass: `{==x==}` embeds `==x==`, so converting the braced form first stops
@@ -536,7 +528,10 @@ fn preprocess_markdown(
     // for clarity (distinct delimiters, so order isn't load-bearing).
     result = CRITIC_SUBSTITUTE_RE
         .replace_all(&result, |caps: &regex::Captures| {
-            format!("#suggestion(kind: \"replace\", old: [{}])[{}]", &caps[1], &caps[2])
+            format!(
+                "#suggestion(kind: \"replace\", old: [{}])[{}]",
+                &caps[1], &caps[2]
+            )
         })
         .into_owned();
     result = CRITIC_INSERT_RE
@@ -550,10 +545,14 @@ fn preprocess_markdown(
         })
         .into_owned();
     result = CRITIC_COMMENT_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("#annotation[{}]", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("#annotation[{}]", &caps[1])
+        })
         .into_owned();
     result = CRITIC_HIGHLIGHT_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("#highlight[{}]", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("#highlight[{}]", &caps[1])
+        })
         .into_owned();
 
     // Replace Obsidian ==highlight== syntax.
@@ -691,7 +690,11 @@ fn format_value_for_type(value: &ParsedYamlValue, ty: PropertyType) -> Option<St
                 }
                 ParsedYamlValue::List(items) => !items.is_empty(),
             };
-            Some(if truthy { "true".into() } else { "false".into() })
+            Some(if truthy {
+                "true".into()
+            } else {
+                "false".into()
+            })
         }
         // Text, Date, DateTime, Auto — quoted string (date/datetime are
         // stored as strings; the editor picks the right widget by type).
@@ -734,7 +737,10 @@ fn split_scalar_list(value: &str) -> Vec<String> {
 fn format_string_value(s: &str) -> String {
     let s = s.trim_matches('"').trim_matches('\'');
     if let Some(target) = s.strip_prefix("[[").and_then(|s| s.strip_suffix("]]")) {
-        return format!("link-ref(\"{}\")", target.replace('\\', "\\\\").replace('"', "\\\""));
+        return format!(
+            "link-ref(\"{}\")",
+            target.replace('\\', "\\\\").replace('"', "\\\"")
+        );
     }
     format!("\"{}\"", escape_str(s))
 }
@@ -1057,7 +1063,9 @@ impl<'a> Converter<'a> {
             Tag::Strikethrough => {
                 self.emit("#strike[");
             }
-            Tag::Link { dest_url, title, .. } => {
+            Tag::Link {
+                dest_url, title, ..
+            } => {
                 self.in_link = true;
                 self.link_url = dest_url.to_string();
                 self.link_text.clear();
@@ -1146,8 +1154,12 @@ impl<'a> Converter<'a> {
                     let done_arg = if self.task_done { ", done: true" } else { "" };
                     // Each task on its own line; the next item's `ensure_newline`
                     // keeps them on separate lines without an explicit break.
-                    self.out
-                        .push_str(&format!("{}#task(\"{}\"{})", indent, escape_str(body), done_arg));
+                    self.out.push_str(&format!(
+                        "{}#task(\"{}\"{})",
+                        indent,
+                        escape_str(body),
+                        done_arg
+                    ));
                     self.in_task = false;
                 }
                 self.task_line_reset = None;
@@ -1299,7 +1311,6 @@ fn needs_basic_escape(ch: char) -> bool {
     matches!(ch, '`' | '$' | '\\')
 }
 
-
 /// Format a link. External URLs become Typst `#link(...)`, internal .md links
 /// become `#wikilink(...)`.
 fn format_link(url: &str, text: &str) -> String {
@@ -1307,9 +1318,7 @@ fn format_link(url: &str, text: &str) -> String {
     let is_internal = !url.contains("://") && !url.starts_with("mailto:");
 
     if is_internal {
-        let target = url
-            .trim_end_matches(".md")
-            .trim_start_matches("./");
+        let target = url.trim_end_matches(".md").trim_start_matches("./");
         // Strip anchor fragments for wikilink target.
         let target = target.split('#').next().unwrap_or(target);
         if text.is_empty() || text == target {
@@ -1402,7 +1411,8 @@ mod tests {
     #[test]
     fn default_frontmatter_emits_via_serde_yaml() {
         // Block-style list (unsupported by the old line parser) now works.
-        let md = "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ncreated: 2024-03-01\n---\n\nBody";
+        let md =
+            "---\ntitle: My Note\ntags:\n  - alpha\n  - beta\ncreated: 2024-03-01\n---\n\nBody";
         let out = convert(md);
         assert!(out.contains("title: \"My Note\""), "got:\n{out}");
         assert!(out.contains("tags: (\"alpha\", \"beta\")"), "got:\n{out}");
@@ -1442,10 +1452,19 @@ mod tests {
         let md = "Inline $E = mc^2$ and $$x^2 + y^2 = z^2$$";
         let (out, stats) = markdown_to_typst_with_stats(
             md,
-            &MarkdownToTypstOptions { dialect: MarkdownDialect::Obsidian, ..Default::default() },
+            &MarkdownToTypstOptions {
+                dialect: MarkdownDialect::Obsidian,
+                ..Default::default()
+            },
         );
-        assert!(out.contains("$E = mc^2$"), "inline simple math changed:\n{out}");
-        assert!(out.contains("$ x^2 + y^2 = z^2 $"), "display simple math changed:\n{out}");
+        assert!(
+            out.contains("$E = mc^2$"),
+            "inline simple math changed:\n{out}"
+        );
+        assert!(
+            out.contains("$ x^2 + y^2 = z^2 $"),
+            "display simple math changed:\n{out}"
+        );
         assert_eq!(stats.latex_math_as_code, 0);
         assert!(!stats.used_mitex);
     }
@@ -1457,14 +1476,23 @@ mod tests {
         let md = "Inline $\\alpha_i$ here.\n\n$$\\sum_{i=1}^n x_i$$";
         let (out, stats) = markdown_to_typst_with_stats(
             md,
-            &MarkdownToTypstOptions { dialect: MarkdownDialect::Obsidian, ..Default::default() },
+            &MarkdownToTypstOptions {
+                dialect: MarkdownDialect::Obsidian,
+                ..Default::default()
+            },
         );
         assert!(out.contains("`\\alpha_i`"), "inline LaTeX not raw:\n{out}");
-        assert!(out.contains("```latex\n\\sum_{i=1}^n x_i\n```"), "display LaTeX not code:\n{out}");
+        assert!(
+            out.contains("```latex\n\\sum_{i=1}^n x_i\n```"),
+            "display LaTeX not code:\n{out}"
+        );
         assert_eq!(stats.latex_math_as_code, 2);
         assert!(!stats.used_mitex);
         // No bare Typst math delimiters wrapping raw LaTeX (which wouldn't render).
-        assert!(!out.contains("$ \\sum"), "raw LaTeX left in Typst math:\n{out}");
+        assert!(
+            !out.contains("$ \\sum"),
+            "raw LaTeX left in Typst math:\n{out}"
+        );
     }
 
     #[test]
@@ -1474,12 +1502,20 @@ mod tests {
             md,
             &MarkdownToTypstOptions {
                 dialect: MarkdownDialect::Obsidian,
-                math: MathImportMode::Mitex { version: "0.2.7".into() },
+                math: MathImportMode::Mitex {
+                    version: "0.2.7".into(),
+                },
                 ..Default::default()
             },
         );
-        assert!(out.contains("#mi(`\\alpha_i`)"), "inline mitex missing:\n{out}");
-        assert!(out.contains("#mitex(`\\sum_{i=1}^n x_i`)"), "display mitex missing:\n{out}");
+        assert!(
+            out.contains("#mi(`\\alpha_i`)"),
+            "inline mitex missing:\n{out}"
+        );
+        assert!(
+            out.contains("#mitex(`\\sum_{i=1}^n x_i`)"),
+            "display mitex missing:\n{out}"
+        );
         assert!(
             out.contains("#import \"@preview/mitex:0.2.7\": mi, mitex"),
             "mitex import not added:\n{out}"
@@ -1494,11 +1530,16 @@ mod tests {
             "# Just text\n\nNo math here.",
             &MarkdownToTypstOptions {
                 dialect: MarkdownDialect::Obsidian,
-                math: MathImportMode::Mitex { version: "0.2.7".into() },
+                math: MathImportMode::Mitex {
+                    version: "0.2.7".into(),
+                },
                 ..Default::default()
             },
         );
-        assert!(!out.contains("mitex"), "mitex import added to a math-free note:\n{out}");
+        assert!(
+            !out.contains("mitex"),
+            "mitex import added to a math-free note:\n{out}"
+        );
     }
 
     #[test]
@@ -1506,14 +1547,26 @@ mod tests {
         let md = "- [ ] wake up\n- [x] have breakfast\n- [ ] go to work";
         let out = convert(md);
         assert!(out.contains("#task(\"wake up\")"), "got:\n{out}");
-        assert!(out.contains("#task(\"have breakfast\", done: true)"), "got:\n{out}");
+        assert!(
+            out.contains("#task(\"have breakfast\", done: true)"),
+            "got:\n{out}"
+        );
         assert!(out.contains("#task(\"go to work\")"), "got:\n{out}");
         // No literal checkbox markers or bullets should survive.
-        assert!(!out.contains("[ ]") && !out.contains("[x]"), "literal marker left:\n{out}");
+        assert!(
+            !out.contains("[ ]") && !out.contains("[x]"),
+            "literal marker left:\n{out}"
+        );
         assert!(!out.contains("- #task"), "task kept a list bullet:\n{out}");
         // Each task on its own line, with no stray Typst line-break (`\`).
-        assert!(out.contains("#task(\"wake up\")\n"), "tasks not on separate lines:\n{out}");
-        assert!(!out.contains(" \\"), "unnecessary line-break inserted:\n{out}");
+        assert!(
+            out.contains("#task(\"wake up\")\n"),
+            "tasks not on separate lines:\n{out}"
+        );
+        assert!(
+            !out.contains(" \\"),
+            "unnecessary line-break inserted:\n{out}"
+        );
     }
 
     #[test]
@@ -1528,8 +1581,9 @@ mod tests {
     #[test]
     fn mapped_scalar_coerced_to_list_target() {
         let md = "---\ncategory: research\n---\n\nBody";
-        let mapping: FrontmatterMapping =
-            [map("category", Some("tags"), PropertyType::List)].into_iter().collect();
+        let mapping: FrontmatterMapping = [map("category", Some("tags"), PropertyType::List)]
+            .into_iter()
+            .collect();
         let opts = MarkdownToTypstOptions {
             frontmatter_mapping: Some(mapping),
             ..MarkdownToTypstOptions::default()
@@ -1571,10 +1625,7 @@ mod tests {
             attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
         };
-        let result = markdown_to_typst(
-            "Here: ![[Pasted image 20240412113956.png]]",
-            &opts,
-        );
+        let result = markdown_to_typst("Here: ![[Pasted image 20240412113956.png]]", &opts);
         assert!(
             result.contains("#image(\"/Assets/Pasted image 20240412113956.png\")"),
             "expected #image() call, got:\n{result}"
@@ -1658,10 +1709,7 @@ mod tests {
             "all three dollar signs should be escaped, got:\n{result}"
         );
         // Sanity: no bare $ left to open math mode.
-        assert!(
-            !result.contains(" $6000"),
-            "unescaped $ remained: {result}"
-        );
+        assert!(!result.contains(" $6000"), "unescaped $ remained: {result}");
     }
 
     #[test]
@@ -1907,19 +1955,28 @@ mod tests {
     fn images() {
         // Standard images funnel into the attachment folder (default "Assets").
         let result = convert("![alt](image.png)");
-        assert!(result.contains("#image(\"/Assets/image.png\")"), "got:\n{result}");
+        assert!(
+            result.contains("#image(\"/Assets/image.png\")"),
+            "got:\n{result}"
+        );
     }
 
     #[test]
     fn images_route_subfolder_paths_to_attachment_by_basename() {
         let result = convert("![alt](sub/dir/pic.png)");
-        assert!(result.contains("#image(\"/Assets/pic.png\")"), "got:\n{result}");
+        assert!(
+            result.contains("#image(\"/Assets/pic.png\")"),
+            "got:\n{result}"
+        );
     }
 
     #[test]
     fn external_image_urls_unchanged() {
         let result = convert("![alt](https://example.com/x.png)");
-        assert!(result.contains("#image(\"https://example.com/x.png\")"), "got:\n{result}");
+        assert!(
+            result.contains("#image(\"https://example.com/x.png\")"),
+            "got:\n{result}"
+        );
     }
 
     #[test]
@@ -1948,9 +2005,7 @@ mod tests {
     fn criticmarkup_to_suggestions() {
         assert!(convert("a {++new++} b").contains(r#"#suggestion(kind: "insert")[new]"#));
         assert!(convert("a {--old--} b").contains(r#"#suggestion(kind: "delete")[old]"#));
-        assert!(
-            convert("a {~~o~>n~~} b").contains(r#"#suggestion(kind: "replace", old: [o])[n]"#)
-        );
+        assert!(convert("a {~~o~>n~~} b").contains(r#"#suggestion(kind: "replace", old: [o])[n]"#));
     }
 
     #[test]
@@ -1997,8 +2052,14 @@ mod tests {
     fn table_header_uses_bracket_cells() {
         let result = convert("| Name | Age |\n|------|-----|\n| Alice | 30 |");
         assert!(result.contains("table.header("), "missing header: {result}");
-        assert!(result.contains("[*Name*]"), "header should use [*...*] not table.cell: {result}");
-        assert!(!result.contains("table.cell"), "should not use table.cell: {result}");
+        assert!(
+            result.contains("[*Name*]"),
+            "header should use [*...*] not table.cell: {result}"
+        );
+        assert!(
+            !result.contains("table.cell"),
+            "should not use table.cell: {result}"
+        );
     }
 
     #[test]
@@ -2022,13 +2083,18 @@ mod tests {
     #[test]
     fn obsidian_highlight_arrow_not_matched() {
         let result = convert("==> This should not be highlighted ==");
-        assert!(!result.contains("#highlight["), "Arrow ==> should not open a highlight");
+        assert!(
+            !result.contains("#highlight["),
+            "Arrow ==> should not open a highlight"
+        );
     }
 
     #[test]
     fn obsidian_highlight_no_cross_line() {
         let result = convert("==start\nend==");
-        assert!(!result.contains("#highlight["), "Highlight should not span lines");
+        assert!(
+            !result.contains("#highlight["),
+            "Highlight should not span lines"
+        );
     }
 }
-

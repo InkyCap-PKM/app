@@ -26,15 +26,13 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use inkycap_lib::storage::path::canonicalize_root;
-use inkycap_lib::typst_pipeline::book_wrapper::{
-    build_book_source, BookExportOptions, BookNote,
-};
-use inkycap_lib::commands::export::ensure_document_date_for_standard;
-use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};
 use inkycap_lib::collection_parser::model::{
     BookPageNumbering, BookWikilinkMode, InjectChapterHeading,
 };
+use inkycap_lib::commands::export::ensure_document_date_for_standard;
+use inkycap_lib::storage::path::canonicalize_root;
+use inkycap_lib::typst_pipeline::book_wrapper::{build_book_source, BookExportOptions, BookNote};
+use inkycap_lib::typst_pipeline::compiler::{PdfStandardPreset, TypstCompiler};
 
 /// veraPDF flatpak entry point. The CLI lives at this command name even
 /// though the friendly app id is `org.verapdf.veraPDF`.
@@ -82,8 +80,7 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     // top-level heading depths) because that's the load-bearing piece for
     // PDF/UA-1 — the spec rejects gappy heading hierarchies.
     let dir = tempfile::tempdir().expect("tempdir");
-    let notebox_root =
-        canonicalize_root(dir.path()).expect("canonicalize tempdir");
+    let notebox_root = canonicalize_root(dir.path()).expect("canonicalize tempdir");
     inkycap_lib::notebox_package::scaffold(&notebox_root);
 
     let chapter_a_path = notebox_root.join("alpha.typ");
@@ -146,16 +143,9 @@ fn merged_book_pdf_ua1_export_is_compliant() {
     };
 
     let source = build_book_source(
-        &chapters,
-        &options,
-        None,
-        None,
-        None,
-        None,
-        None, // bibliography_style
+        &chapters, &options, None, None, None, None, None, // bibliography_style
         true, // normalize_headings — the load-bearing PDF/UA-1 setting
-        None,
-        None,
+        None, None,
     );
 
     // Mirror the real export pipeline: book wrapper → document-date

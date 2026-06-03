@@ -85,25 +85,61 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
         (include_bytes!("../../assets/fonts/Inter-Regular.ttf"), None),
         (include_bytes!("../../assets/fonts/Inter-Italic.ttf"), None),
         (include_bytes!("../../assets/fonts/Inter-Bold.ttf"), None),
-        (include_bytes!("../../assets/fonts/Inter-BoldItalic.ttf"), None),
-        (include_bytes!("../../assets/fonts/Junicode-Regular.ttf"), None),
-        (include_bytes!("../../assets/fonts/Junicode-Italic.ttf"), None),
+        (
+            include_bytes!("../../assets/fonts/Inter-BoldItalic.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/Junicode-Regular.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/Junicode-Italic.ttf"),
+            None,
+        ),
         (include_bytes!("../../assets/fonts/Junicode-Bold.ttf"), None),
-        (include_bytes!("../../assets/fonts/Junicode-BoldItalic.ttf"), None),
-        (include_bytes!("../../assets/fonts/JuliaMono-Regular.ttf"), None),
-        (include_bytes!("../../assets/fonts/JuliaMono-RegularItalic.ttf"), None),
-        (include_bytes!("../../assets/fonts/JuliaMono-Bold.ttf"), None),
-        (include_bytes!("../../assets/fonts/JuliaMono-BoldItalic.ttf"), None),
+        (
+            include_bytes!("../../assets/fonts/Junicode-BoldItalic.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/JuliaMono-Regular.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/JuliaMono-RegularItalic.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/JuliaMono-Bold.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/JuliaMono-BoldItalic.ttf"),
+            None,
+        ),
         // iA Writer Duo S — static cuts. Variable equivalents exist (V
         // suffix) but Typst 0.14 doesn't interpolate variable axes in
         // compiled output, so the weight chips would silently no-op.
         // Statics give the Bold chip a real bold face; Light/Medium/
         // Semibold map to whichever of Regular/Bold is closest, which
         // is graceful and predictable.
-        (include_bytes!("../../assets/fonts/iAWriterDuoS-Regular.ttf"), None),
-        (include_bytes!("../../assets/fonts/iAWriterDuoS-Italic.ttf"), None),
-        (include_bytes!("../../assets/fonts/iAWriterDuoS-Bold.ttf"), None),
-        (include_bytes!("../../assets/fonts/iAWriterDuoS-BoldItalic.ttf"), None),
+        (
+            include_bytes!("../../assets/fonts/iAWriterDuoS-Regular.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/iAWriterDuoS-Italic.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/iAWriterDuoS-Bold.ttf"),
+            None,
+        ),
+        (
+            include_bytes!("../../assets/fonts/iAWriterDuoS-BoldItalic.ttf"),
+            None,
+        ),
     ];
     FONTS
 }
@@ -138,10 +174,14 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
         };
 
         let index = face.index;
-        let Ok(data) = std::fs::read(&path) else { continue };
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
         let buffer = Bytes::new(data);
 
-        let Some(font) = Font::iter(buffer).nth(index as usize) else { continue };
+        let Some(font) = Font::iter(buffer).nth(index as usize) else {
+            continue;
+        };
         let info = font.info().clone();
 
         // Collect aliases: typst's own family + every fontdb alias.
@@ -186,15 +226,14 @@ fn load_notebox_fonts(notebox_root: &Path, book: &mut FontBook, slots: &mut Vec<
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if !extensions.contains(&ext) {
             continue;
         }
 
-        let Ok(data) = std::fs::read(&path) else { continue };
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
         let buffer = Bytes::new(data);
         for font in Font::iter(buffer) {
             book.push(font.info().clone());

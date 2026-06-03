@@ -91,10 +91,7 @@ impl LinkIndex {
     /// Add a single raw wikilink from source. Call resolve_and_build_backlinks
     /// after all links are added to resolve them.
     pub fn add_link(&mut self, source: NoteId, target: String) {
-        self.forward_raw
-            .entry(source)
-            .or_default()
-            .push(target);
+        self.forward_raw.entry(source).or_default().push(target);
     }
 
     /// Re-resolve links for a single note and rebuild its backlinks.

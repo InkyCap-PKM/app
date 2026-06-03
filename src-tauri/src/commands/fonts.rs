@@ -14,11 +14,7 @@ fn discover_system_fonts() -> Vec<String> {
 
     let families: BTreeSet<String> = db
         .faces()
-        .filter_map(|face| {
-            face.families
-                .first()
-                .map(|(name, _)| name.clone())
-        })
+        .filter_map(|face| face.families.first().map(|(name, _)| name.clone()))
         .collect();
 
     families.into_iter().collect()

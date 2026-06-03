@@ -45,10 +45,12 @@ impl PdfStandardPreset {
     pub fn to_pdf_standards(self) -> PdfStandards {
         match self {
             Self::Standard => PdfStandards::default(),
-            Self::PdfA4 => PdfStandards::new(&[PdfStandard::A_4])
-                .expect("PDF/A-4 is a valid standard"),
-            Self::PdfUa1 => PdfStandards::new(&[PdfStandard::Ua_1])
-                .expect("PDF/UA-1 is a valid standard"),
+            Self::PdfA4 => {
+                PdfStandards::new(&[PdfStandard::A_4]).expect("PDF/A-4 is a valid standard")
+            }
+            Self::PdfUa1 => {
+                PdfStandards::new(&[PdfStandard::Ua_1]).expect("PDF/UA-1 is a valid standard")
+            }
         }
     }
 }
@@ -149,11 +151,7 @@ impl TypstCompiler {
     /// Compile to a `PagedDocument` without rendering to SVG. Used by the
     /// query module for metadata extraction where we only need the
     /// introspector, not rendered frames.
-    pub fn compile_document(
-        &mut self,
-        abs_path: &Path,
-        source: String,
-    ) -> Option<PagedDocument> {
+    pub fn compile_document(&mut self, abs_path: &Path, source: String) -> Option<PagedDocument> {
         if self.world.set_main(abs_path, source).is_err() {
             return None;
         }
@@ -270,16 +268,15 @@ impl TypstCompiler {
                     standards: pdf_standard.to_pdf_standards(),
                     ..PdfOptions::default()
                 };
-                typst_pdf::pdf(&document, &options)
-                    .map_err(|errs| {
-                        let msg = errs
-                            .iter()
-                            .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
-                            .map(|d| d.message)
-                            .collect::<Vec<_>>()
-                            .join("; ");
-                        CompileError::PdfExport(msg)
-                    })
+                typst_pdf::pdf(&document, &options).map_err(|errs| {
+                    let msg = errs
+                        .iter()
+                        .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+                        .map(|d| d.message)
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    CompileError::PdfExport(msg)
+                })
             }
             Err(errors) => {
                 let msg = errors
@@ -309,7 +306,10 @@ impl TypstCompiler {
         if let Err(err) = self.world.set_main(abs_path, source) {
             return Err(vec![TypstDiagnostic {
                 severity: "error",
-                message: format!("failed to register main file {}: {err:?}", abs_path.display()),
+                message: format!(
+                    "failed to register main file {}: {err:?}",
+                    abs_path.display()
+                ),
                 primary: None,
                 trace: Vec::new(),
                 hints: Vec::new(),
@@ -392,7 +392,9 @@ impl TypstCompiler {
                         // pass doesn't apply — report it as before.
                         diagnostics.extend(
                             errs.iter()
-                                .map(|d| crate::typst_pipeline::diagnostic::from_source(d, &self.world))
+                                .map(|d| {
+                                    crate::typst_pipeline::diagnostic::from_source(d, &self.world)
+                                })
                                 .filter(|d| !is_html_development_noise(&d.message)),
                         );
                         Ok(TypstHtmlResult {
@@ -514,7 +516,11 @@ mod tests {
         assert!(result.ok, "compile failed: {:?}", result.diagnostics);
         assert_eq!(result.frames.len(), 1, "expected single page");
         let frame = &result.frames[0];
-        assert!(frame.svg.starts_with("<svg"), "svg should begin with <svg, got: {}", &frame.svg[..40.min(frame.svg.len())]);
+        assert!(
+            frame.svg.starts_with("<svg"),
+            "svg should begin with <svg, got: {}",
+            &frame.svg[..40.min(frame.svg.len())]
+        );
         assert!(frame.width_pt > 0.0);
         assert!(frame.height_pt > 0.0);
     }
@@ -550,7 +556,10 @@ mod tests {
 
         assert!(!result.ok, "compile should report the included-file error");
         assert!(result.recovered, "recovery should salvage the host page");
-        assert!(!result.frames.is_empty(), "host content should still render");
+        assert!(
+            !result.frames.is_empty(),
+            "host content should still render"
+        );
         assert!(
             result.diagnostics.iter().any(|d| d.severity == "error"),
             "the included-file parse error should still be surfaced: {:?}",
@@ -575,14 +584,30 @@ mod tests {
         let mut compiler = TypstCompiler::new(root);
 
         // Paged: compiles to a placeholder, no error.
-        let paged = compiler.compile_svg(&note_path, src.clone()).expect("compile_svg");
+        let paged = compiler
+            .compile_svg(&note_path, src.clone())
+            .expect("compile_svg");
         assert!(paged.ok, "paged compile failed: {:?}", paged.diagnostics);
 
         // HTML: emits real media elements with controls + the source path.
-        let html = compiler.compile_html(&note_path, src).expect("compile_html");
-        assert!(html.html.contains("<video"), "expected <video>, got: {}", html.html);
-        assert!(html.html.contains("<audio"), "expected <audio>, got: {}", html.html);
-        assert!(html.html.contains("controls"), "expected controls attr: {}", html.html);
+        let html = compiler
+            .compile_html(&note_path, src)
+            .expect("compile_html");
+        assert!(
+            html.html.contains("<video"),
+            "expected <video>, got: {}",
+            html.html
+        );
+        assert!(
+            html.html.contains("<audio"),
+            "expected <audio>, got: {}",
+            html.html
+        );
+        assert!(
+            html.html.contains("controls"),
+            "expected controls attr: {}",
+            html.html
+        );
         // Double-quoted `src` is what the HTML-export asset localizer keys on.
         assert!(
             html.html.contains(r#"src="/Assets/clip.mp4""#),
@@ -606,7 +631,9 @@ mod tests {
             Ok(d) => std::path::PathBuf::from(d).join("..").canonicalize().ok(),
             Err(_) => None,
         };
-        let Some(workspace) = workspace else { return; };
+        let Some(workspace) = workspace else {
+            return;
+        };
         let fixture = workspace.join("spike-fixtures/note.typ");
         if !fixture.exists() {
             eprintln!("skipping: {} not found", fixture.display());
@@ -617,11 +644,7 @@ mod tests {
         let mut compiler = TypstCompiler::new(workspace);
         let result = compiler.compile_svg(&fixture, source).expect("compile");
 
-        assert!(
-            result.ok,
-            "spike fixture failed: {:#?}",
-            result.diagnostics
-        );
+        assert!(result.ok, "spike fixture failed: {:#?}", result.diagnostics);
         assert!(!result.frames.is_empty());
     }
 
@@ -638,7 +661,9 @@ mod tests {
         fs::write(&note_path, &source).expect("write note");
 
         let mut compiler = TypstCompiler::new(root);
-        let result = compiler.compile_svg(&note_path, source).expect("compile call ok");
+        let result = compiler
+            .compile_svg(&note_path, source)
+            .expect("compile call ok");
 
         assert!(!result.ok, "compile should report failure");
         assert!(result.recovered, "recovery should salvage a render");
@@ -658,7 +683,9 @@ mod tests {
         fs::write(&note_path, &source).expect("write note");
 
         let mut compiler = TypstCompiler::new(root);
-        let result = compiler.compile_svg(&note_path, source).expect("compile call ok");
+        let result = compiler
+            .compile_svg(&note_path, source)
+            .expect("compile call ok");
 
         assert!(!result.ok);
         assert!(result.frames.is_empty());

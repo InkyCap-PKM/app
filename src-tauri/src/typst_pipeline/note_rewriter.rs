@@ -110,15 +110,9 @@ struct CollectedNamed {
 /// for the value expressions — neither piece alone is sufficient (typed
 /// AST loses absolute offsets, raw LinkedNode loses the parsed identifier
 /// shape).
-fn collect_named_args<'a>(
-    call_link: &LinkedNode<'a>,
-    _content: &str,
-) -> Vec<CollectedNamed> {
+fn collect_named_args<'a>(call_link: &LinkedNode<'a>, _content: &str) -> Vec<CollectedNamed> {
     let mut out = Vec::new();
-    let Some(args_link) = call_link
-        .children()
-        .find(|c| c.kind() == SyntaxKind::Args)
-    else {
+    let Some(args_link) = call_link.children().find(|c| c.kind() == SyntaxKind::Args) else {
         return out;
     };
 
@@ -126,7 +120,9 @@ fn collect_named_args<'a>(
         if child.kind() != SyntaxKind::Named {
             continue;
         }
-        let Some(named_ast) = child.cast::<ast::Named>() else { continue };
+        let Some(named_ast) = child.cast::<ast::Named>() else {
+            continue;
+        };
         let key = named_ast.name().as_str().to_string();
         // The value is the last non-trivia child of the Named node. The
         // Named structure is `Ident Colon Expr` (with whitespace nodes
@@ -138,7 +134,9 @@ fn collect_named_args<'a>(
             .filter(|c| c.kind() != SyntaxKind::Ident && c.kind() != SyntaxKind::Colon)
             .last()
             .map(|c| c.range());
-        let Some(value_range) = value_range else { continue };
+        let Some(value_range) = value_range else {
+            continue;
+        };
         out.push(CollectedNamed { key, value_range });
     }
     out
@@ -199,7 +197,11 @@ pub fn set_note_property_raw(content: &str, key: &str, raw_value: &str) -> Strin
             pieces.push(format!("{}: {}", key, &serialized));
             updated = true;
         } else {
-            pieces.push(format!("{}: {}", named.key, &content[named.value_range.clone()]));
+            pieces.push(format!(
+                "{}: {}",
+                named.key,
+                &content[named.value_range.clone()]
+            ));
         }
     }
     if !updated {
@@ -483,11 +485,8 @@ Some body text here.
 
     #[test]
     fn update_existing_property() {
-        let updated = update_note_property(
-            SAMPLE,
-            "status",
-            &PropertyValue::String("published".into()),
-        );
+        let updated =
+            update_note_property(SAMPLE, "status", &PropertyValue::String("published".into()));
         assert!(updated.contains("status: \"published\""));
         assert!(updated.contains("title: \"Reading notes on Heidegger\""));
         assert!(updated.contains("= Introduction"));
@@ -495,8 +494,7 @@ Some body text here.
 
     #[test]
     fn add_new_property() {
-        let updated =
-            update_note_property(SAMPLE, "chapter", &PropertyValue::Number(3.0));
+        let updated = update_note_property(SAMPLE, "chapter", &PropertyValue::Number(3.0));
         assert!(updated.contains("chapter: 3"));
         assert!(updated.contains("title: \"Reading notes on Heidegger\""));
     }
@@ -519,13 +517,8 @@ Some body text here.
 
     #[test]
     fn materialize_note_call() {
-        let content =
-            "#import \"/.inkycap/notebox.typ\": *\n\n= Body\n";
-        let updated = update_note_property(
-            content,
-            "title",
-            &PropertyValue::String("New".into()),
-        );
+        let content = "#import \"/.inkycap/notebox.typ\": *\n\n= Body\n";
+        let updated = update_note_property(content, "title", &PropertyValue::String("New".into()));
         assert!(updated.contains("#note(title: \"New\")"));
         assert!(updated.contains("= Body"));
         let note_pos = updated.find("#note").unwrap();
@@ -556,11 +549,8 @@ Some body text here.
 
     #[test]
     fn roundtrip_preserves_complex_values() {
-        let updated = update_note_property(
-            SAMPLE,
-            "title",
-            &PropertyValue::String("New Title".into()),
-        );
+        let updated =
+            update_note_property(SAMPLE, "title", &PropertyValue::String("New Title".into()));
         assert!(updated.contains("datetime(year: 2026, month: 4, day: 29)"));
         assert!(updated.contains("(\"philosophy\", \"phenomenology\")"));
     }
@@ -588,8 +578,7 @@ Some body text here.
 
 = Тело
 "#;
-        let updated =
-            update_note_property(src, "status", &PropertyValue::String("draft".into()));
+        let updated = update_note_property(src, "status", &PropertyValue::String("draft".into()));
         assert!(updated.contains("L'« Être » et le temps — α/β/γ"));
         assert!(updated.contains("中文 العربية русский"));
         assert!(updated.contains("= Тело"));
@@ -648,8 +637,7 @@ Some body text here.
     fn tolerates_inline_comments() {
         let src = "#import \"/.inkycap/notebox.typ\": *\n\
             #note(\n  title: \"X\", // inline comment\n  status: \"draft\",\n)\n\n= H\n";
-        let updated =
-            update_note_property(src, "status", &PropertyValue::String("done".into()));
+        let updated = update_note_property(src, "status", &PropertyValue::String("done".into()));
         assert!(updated.contains("status: \"done\""));
         assert!(updated.contains("title: \"X\""));
     }

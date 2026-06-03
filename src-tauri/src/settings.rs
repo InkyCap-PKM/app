@@ -286,16 +286,28 @@ impl FontChoice {
     pub const CUSTOM: &'static str = "custom";
 
     pub fn system() -> Self {
-        Self { mode: Self::SYSTEM.into(), custom: String::new() }
+        Self {
+            mode: Self::SYSTEM.into(),
+            custom: String::new(),
+        }
     }
     pub fn bundled() -> Self {
-        Self { mode: Self::BUNDLED.into(), custom: String::new() }
+        Self {
+            mode: Self::BUNDLED.into(),
+            custom: String::new(),
+        }
     }
     pub fn follow() -> Self {
-        Self { mode: Self::FOLLOW.into(), custom: String::new() }
+        Self {
+            mode: Self::FOLLOW.into(),
+            custom: String::new(),
+        }
     }
     pub fn custom(name: impl Into<String>) -> Self {
-        Self { mode: Self::CUSTOM.into(), custom: name.into() }
+        Self {
+            mode: Self::CUSTOM.into(),
+            custom: name.into(),
+        }
     }
 }
 
@@ -343,9 +355,7 @@ pub struct ExportSettings {
 
 impl Default for ExportSettings {
     fn default() -> Self {
-        Self {
-            pandoc_path: None,
-        }
+        Self { pandoc_path: None }
     }
 }
 
@@ -537,9 +547,12 @@ pub fn load_settings() -> UserSettings {
 
     // Legacy single `bg_palette` field — present on configs written before
     // the light/dark split. Copy it into both new fields below.
-    let legacy_bg_palette: Option<String> = parsed_raw
-        .as_ref()
-        .and_then(|v| v.get("appearance")?.get("bg_palette")?.as_str().map(str::to_string));
+    let legacy_bg_palette: Option<String> = parsed_raw.as_ref().and_then(|v| {
+        v.get("appearance")?
+            .get("bg_palette")?
+            .as_str()
+            .map(str::to_string)
+    });
 
     let mut settings: UserSettings = raw
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -553,7 +566,10 @@ pub fn load_settings() -> UserSettings {
     // explicitly chosen "default" and we must respect that.
     if !has_accent_source
         && settings.appearance.accent_source == "default"
-        && !settings.appearance.accent_color.eq_ignore_ascii_case("#1D7874")
+        && !settings
+            .appearance
+            .accent_color
+            .eq_ignore_ascii_case("#1D7874")
     {
         settings.appearance.accent_source = "custom".to_string();
     }

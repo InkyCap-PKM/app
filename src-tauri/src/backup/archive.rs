@@ -25,8 +25,8 @@
 //!     (templates, scaffolds, settings) that belongs in the archive.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use walkdir::WalkDir;
 

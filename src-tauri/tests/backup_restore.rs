@@ -78,7 +78,11 @@ fn restore_extracts_to_target_root() {
     // The `notebox/` prefix is stripped — the file lands at
     // <target>/subdir/nested.typ, not <target>/notebox/subdir/nested.typ.
     let dest = tmp_restore.path().join("subdir").join("nested.typ");
-    assert!(dest.exists(), "expected restored file at {}", dest.display());
+    assert!(
+        dest.exists(),
+        "expected restored file at {}",
+        dest.display()
+    );
     let body = fs::read_to_string(&dest).unwrap();
     assert_eq!(body, "= Nested\n");
 }
@@ -115,7 +119,10 @@ fn restore_skip_policy_preserves_existing() {
 
     assert_eq!(results[0].outcome, "skipped");
     let body = fs::read_to_string(tmp_restore.path().join("hello.typ")).unwrap();
-    assert_eq!(body, "= Pre-existing\n", "Skip policy must leave existing untouched");
+    assert_eq!(
+        body, "= Pre-existing\n",
+        "Skip policy must leave existing untouched"
+    );
 }
 
 #[test]
@@ -157,7 +164,11 @@ fn restore_rename_policy_creates_sibling() {
         .map(|e| e.file_name().to_string_lossy().to_string())
         .filter(|n| n.starts_with("hello.restored-") && n.ends_with(".typ"))
         .collect();
-    assert_eq!(renamed_paths.len(), 1, "expected one renamed sibling, got {renamed_paths:?}");
+    assert_eq!(
+        renamed_paths.len(),
+        1,
+        "expected one renamed sibling, got {renamed_paths:?}"
+    );
     let renamed_body = fs::read_to_string(tmp_restore.path().join(&renamed_paths[0])).unwrap();
     assert_eq!(renamed_body, "= Hello\n");
 }

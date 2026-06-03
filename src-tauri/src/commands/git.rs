@@ -26,8 +26,8 @@ use crate::git::json_merge;
 use crate::git::package;
 use crate::notebox_settings::NoteboxGitConfig;
 use crate::state::{AppState, NoteboxSession};
-use crate::storage::traits::NoteboxStorage;
 use crate::storage::to_frontend_string;
+use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::package_vendor;
 
 /// The remote name InkyCap uses for a notebox's collaboration remote. The URL
@@ -382,8 +382,8 @@ pub async fn git_unresolved_changes(
     // both resolved off the async runtime.
     let cache_root = root.clone();
     let author_root = root.clone();
-    let (candidates, me) = tokio::task::spawn_blocking(
-        move || -> Result<(Vec<PathBuf>, String)> {
+    let (candidates, me) =
+        tokio::task::spawn_blocking(move || -> Result<(Vec<PathBuf>, String)> {
             let files = cache.load_notebox(&cache_root)?;
             let mut candidates: Vec<PathBuf> = files
                 .into_values()
@@ -392,10 +392,9 @@ pub async fn git_unresolved_changes(
                 .collect();
             candidates.sort();
             Ok((candidates, local_commit_author_name(&author_root, &remote)))
-        },
-    )
-    .await
-    .map_err(|e| InkyCapError::Git(format!("unresolved-changes task failed: {e}")))??;
+        })
+        .await
+        .map_err(|e| InkyCapError::Git(format!("unresolved-changes task failed: {e}")))??;
 
     // Re-count each candidate's *own* suggestions from its working source,
     // dropping the ones the local user authored. Reads go through storage.
@@ -969,10 +968,20 @@ pub async fn git_check_updates(
         .map_err(|e| InkyCapError::Git(format!("check task failed: {e}")))?;
     match &result {
         Ok(_) => {
-            emit_git(&app_handle, window.label(), "notebox:git-fetch-completed", ());
+            emit_git(
+                &app_handle,
+                window.label(),
+                "notebox:git-fetch-completed",
+                (),
+            );
         }
         Err(err) => {
-            emit_git(&app_handle, window.label(), "notebox:git-error", err.to_string());
+            emit_git(
+                &app_handle,
+                window.label(),
+                "notebox:git-error",
+                err.to_string(),
+            );
         }
     }
     result
@@ -1129,7 +1138,10 @@ pub async fn git_note_history(
         // click to compare with the current note". `last_sync_oid` is the local
         // tip recorded just before the merge, so its blob is the user's version.
         let local = crate::notebox_settings::load_local_state(&root);
-        let took_theirs = local.last_sync_conflicted.iter().any(|p| *p == rel_frontend);
+        let took_theirs = local
+            .last_sync_conflicted
+            .iter()
+            .any(|p| *p == rel_frontend);
         if took_theirs {
             if let Some(baseline) = local.last_sync_oid {
                 for v in &mut versions {
@@ -1475,7 +1487,9 @@ pub async fn git_revert_sync_hunk(
     .await
     .map_err(|e| InkyCapError::Git(format!("revert-hunk task failed: {e}")))?
     .ok_or_else(|| {
-        InkyCapError::BadRequest("that change no longer matches the note — refresh and try again".into())
+        InkyCapError::BadRequest(
+            "that change no longer matches the note — refresh and try again".into(),
+        )
     })?;
 
     storage.write_file(&rel, &reverted).await?;
@@ -1518,7 +1532,9 @@ pub async fn git_revert_note_since_sync(
     match baseline_bytes {
         Some(bytes) => {
             let content = String::from_utf8(bytes).map_err(|_| {
-                InkyCapError::BadRequest("the baseline version of the note could not be read".into())
+                InkyCapError::BadRequest(
+                    "the baseline version of the note could not be read".into(),
+                )
             })?;
             storage.write_file(&rel, &content).await?;
         }
@@ -1576,9 +1592,11 @@ pub async fn git_get_identity(
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    Ok(tokio::task::spawn_blocking(move || resolved_local_identity(&root, &git.remote))
-        .await
-        .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))?)
+    Ok(
+        tokio::task::spawn_blocking(move || resolved_local_identity(&root, &git.remote))
+            .await
+            .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))?,
+    )
 }
 
 /// The commit identity InkyCap **would** stamp on this notebox's commits, for
@@ -2218,7 +2236,8 @@ mod tests {
             std::fs::write(apath.join(name), content).unwrap();
         }
         a.stage_all().unwrap();
-        a.commit("base", &a.author_signature(None).unwrap()).unwrap();
+        a.commit("base", &a.author_signature(None).unwrap())
+            .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
@@ -2382,7 +2401,8 @@ mod tests {
         std::fs::write(apath.join("n.typ"), "n\n").unwrap();
         a.ensure_initial_branch("main").unwrap();
         a.stage_all().unwrap();
-        a.commit("base", &a.author_signature(None).unwrap()).unwrap();
+        a.commit("base", &a.author_signature(None).unwrap())
+            .unwrap();
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
@@ -2734,7 +2754,10 @@ mod tests {
         // incoming edit lands immediately.
         let out = reconcile_package(&update_pkg, &bp);
         assert!(out.pulled, "merge-first never pauses");
-        assert!(out.conflicted.is_empty(), "a clean change is not a conflict");
+        assert!(
+            out.conflicted.is_empty(),
+            "a clean change is not a conflict"
+        );
         assert_eq!(
             std::fs::read_to_string(bp.join("note.typ")).unwrap(),
             "ALPHA\nbeta\n"
@@ -2766,7 +2789,10 @@ mod tests {
         std::fs::write(bp.join("note.typ"), "line1\nline2\nBBB\n").unwrap();
         let out = reconcile_package(&update_pkg, &bp);
         assert!(out.pulled);
-        assert!(out.conflicted.is_empty(), "non-overlapping edits don't conflict");
+        assert!(
+            out.conflicted.is_empty(),
+            "non-overlapping edits don't conflict"
+        );
         assert_eq!(
             std::fs::read_to_string(bp.join("note.typ")).unwrap(),
             "AAA\nline2\nBBB\n",

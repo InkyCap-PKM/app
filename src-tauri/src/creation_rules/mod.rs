@@ -225,9 +225,7 @@ pub fn execute_rule(
         match title_override.and_then(sanitize_filename) {
             Some(name) => name,
             None => {
-                return Err(InkyCapError::BadRequest(
-                    "filename-required".to_string(),
-                ));
+                return Err(InkyCapError::BadRequest("filename-required".to_string()));
             }
         }
     } else {
@@ -240,9 +238,7 @@ pub fn execute_rule(
             match title_override.and_then(sanitize_filename) {
                 Some(name) => name,
                 None => {
-                    return Err(InkyCapError::BadRequest(
-                        "filename-required".to_string(),
-                    ));
+                    return Err(InkyCapError::BadRequest("filename-required".to_string()));
                 }
             }
         } else {
@@ -384,7 +380,10 @@ mod tests {
     #[test]
     fn test_sanitize_filename_strips_traversal() {
         // Path separators are removed; the remainder is kept.
-        assert_eq!(sanitize_filename("../etc/passwd").as_deref(), Some("etcpasswd"));
+        assert_eq!(
+            sanitize_filename("../etc/passwd").as_deref(),
+            Some("etcpasswd")
+        );
         // Trailing `.typ` is dropped so we don't end up with `name.typ.typ`.
         assert_eq!(sanitize_filename("My Note.typ").as_deref(), Some("My Note"));
         // Leading/trailing dots are trimmed — defends against `.hidden`
@@ -413,5 +412,4 @@ mod tests {
         assert!(default_rule_for_id("daily-note").is_some());
         assert!(default_rule_for_id("nonsense").is_none());
     }
-
 }

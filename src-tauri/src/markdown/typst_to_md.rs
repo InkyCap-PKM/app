@@ -45,23 +45,20 @@ impl Default for TypstToMarkdownOptions {
 }
 
 // Regex patterns for InkyCap Typst constructs.
-static IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^#import\s+"[^"]*"\s*:\s*\*\s*$"#).unwrap()
-});
+static IMPORT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^#import\s+"[^"]*"\s*:\s*\*\s*$"#).unwrap());
 
-static HEADING_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(=+)\s+(.*)$").unwrap());
+static HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(=+)\s+(.*)$").unwrap());
 
 static WIKILINK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#wikilink\("([^"]*)"(?:,\s*(?:display:\s*"([^"]*)"|label:\s*"[^"]*"))*\)"#).unwrap()
+    Regex::new(r#"#wikilink\("([^"]*)"(?:,\s*(?:display:\s*"([^"]*)"|label:\s*"[^"]*"))*\)"#)
+        .unwrap()
 });
 
-static TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"#tag\("([^"]*)"\)"#).unwrap());
+static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"#tag\("([^"]*)"\)"#).unwrap());
 
-static LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#link\("([^"]*)"\)\[([^\]]*)\]"#).unwrap()
-});
+static LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#link\("([^"]*)"\)\[([^\]]*)\]"#).unwrap());
 
 static LINK_BARE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#link\("([^"]*)"\)"#).unwrap());
@@ -76,12 +73,10 @@ static CALLOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"#callout\("([^"]*)"(?:,\s*title:\s*"([^"]*)")?\)\[(.*?)\]"#).unwrap()
 });
 
-static QUOTE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#quote\(block:\s*true\)\[(.*?)\]"#).unwrap()
-});
+static QUOTE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#quote\(block:\s*true\)\[(.*?)\]"#).unwrap());
 
-static STRIKE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"#strike\[([^\]]*)\]"#).unwrap());
+static STRIKE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"#strike\[([^\]]*)\]"#).unwrap());
 
 static HIGHLIGHT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#highlight\[([^\]]*)\]"#).unwrap());
@@ -95,14 +90,13 @@ static FOOTNOTE_RE: LazyLock<Regex> =
 // `[^)]*` after the kind absorbs any `by:`/`on:` attribution; bodies use the
 // same single-bracket limitation as the other inline regexes (no nested `]`).
 static SUGGESTION_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#suggestion\(kind:\s*"replace",\s*old:\s*\[([^\]]*)\][^)]*\)\[([^\]]*)\]"#).unwrap()
+    Regex::new(r#"#suggestion\(kind:\s*"replace",\s*old:\s*\[([^\]]*)\][^)]*\)\[([^\]]*)\]"#)
+        .unwrap()
 });
-static SUGGESTION_INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#suggestion\(kind:\s*"insert"[^)]*\)\[([^\]]*)\]"#).unwrap()
-});
-static SUGGESTION_DELETE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"#suggestion\(kind:\s*"delete"[^)]*\)\[([^\]]*)\]"#).unwrap()
-});
+static SUGGESTION_INSERT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#suggestion\(kind:\s*"insert"[^)]*\)\[([^\]]*)\]"#).unwrap());
+static SUGGESTION_DELETE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"#suggestion\(kind:\s*"delete"[^)]*\)\[([^\]]*)\]"#).unwrap());
 static ANNOTATION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#annotation\[([^\]]*)\]"#).unwrap());
 
@@ -260,11 +254,7 @@ fn convert_line(line: &str, options: &TypstToMarkdownOptions) -> String {
     let trimmed = line.trim_start();
     if trimmed.starts_with("- ") || trimmed.starts_with("+ ") {
         let indent = &line[..line.len() - trimmed.len()];
-        let marker = if trimmed.starts_with("+ ") {
-            "1."
-        } else {
-            "-"
-        };
+        let marker = if trimmed.starts_with("+ ") { "1." } else { "-" };
         let content = &trimmed[2..];
         let converted = convert_inline(content, options);
         return format!("{}{} {}", indent, marker, converted);
@@ -315,9 +305,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
 
     // Tags → #tagname (Obsidian format).
     result = TAG_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            format!("#{}", &caps[1])
-        })
+        .replace_all(&result, |caps: &regex::Captures| format!("#{}", &caps[1]))
         .into_owned();
 
     // Links with display text.
@@ -329,9 +317,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
 
     // Bare links.
     result = LINK_BARE_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            format!("<{}>", &caps[1])
-        })
+        .replace_all(&result, |caps: &regex::Captures| format!("<{}>", &caps[1]))
         .into_owned();
 
     // Images.
@@ -357,9 +343,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
 
     // Footnotes.
     result = FOOTNOTE_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            format!("[^{}]", &caps[1])
-        })
+        .replace_all(&result, |caps: &regex::Captures| format!("[^{}]", &caps[1]))
         .into_owned();
 
     // CriticMarkup: tracked-change suggestions + reviewer comments. Replace
@@ -371,13 +355,19 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         })
         .into_owned();
     result = SUGGESTION_INSERT_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("{{++{}++}}", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{{++{}++}}", &caps[1])
+        })
         .into_owned();
     result = SUGGESTION_DELETE_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("{{--{}--}}", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{{--{}--}}", &caps[1])
+        })
         .into_owned();
     result = ANNOTATION_RE
-        .replace_all(&result, |caps: &regex::Captures| format!("{{>>{}<<}}", &caps[1]))
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{{>>{}<<}}", &caps[1])
+        })
         .into_owned();
 
     // Typst emphasis: _text_ → *text* (markdown italic)
@@ -399,9 +389,7 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
             }
             UnconvertibleMode::Omit => {
                 // Remove unknown function calls inline.
-                result = UNKNOWN_FUNC_RE
-                    .replace_all(&result, "")
-                    .into_owned();
+                result = UNKNOWN_FUNC_RE.replace_all(&result, "").into_owned();
             }
         }
     }
@@ -467,7 +455,11 @@ fn convert_table_to_md(table_src: &str, options: &TypstToMarkdownOptions) -> Str
     md.push('\n');
 
     // Body rows.
-    let body_start = if header_cells.is_empty() { col_count } else { 0 };
+    let body_start = if header_cells.is_empty() {
+        col_count
+    } else {
+        0
+    };
     for row in body_cells[body_start..].chunks(col_count) {
         md.push('|');
         for cell in row {
@@ -500,7 +492,8 @@ fn parse_table_columns(inner: &str) -> Option<usize> {
     if after.starts_with('(') {
         // Count items in the parenthesized list.
         let close = find_matching_paren_str(after, 0)?;
-        let items = after[1..close].split(',')
+        let items = after[1..close]
+            .split(',')
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .count();
@@ -521,12 +514,16 @@ fn find_matching_paren_str(text: &str, open_idx: usize) -> Option<usize> {
             b'(' => depth += 1,
             b')' => {
                 depth -= 1;
-                if depth == 0 { return Some(i); }
+                if depth == 0 {
+                    return Some(i);
+                }
             }
             b'"' => {
                 i += 1;
                 while i < bytes.len() && bytes[i] != b'"' {
-                    if bytes[i] == b'\\' { i += 1; }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
                     i += 1;
                 }
             }
@@ -588,13 +585,17 @@ fn extract_bracket_cells(text: &str) -> Vec<String> {
                     b'"' => {
                         i += 1;
                         while i < bytes.len() && bytes[i] != b'"' {
-                            if bytes[i] == b'\\' { i += 1; }
+                            if bytes[i] == b'\\' {
+                                i += 1;
+                            }
                             i += 1;
                         }
                     }
                     _ => {}
                 }
-                if depth > 0 { i += 1; }
+                if depth > 0 {
+                    i += 1;
+                }
             }
             let content = &text[start..i];
             // Skip brackets that are part of named args like `columns: (...)`.
@@ -810,11 +811,17 @@ mod tests {
 
         let input2 = r#"See #wikilink("Page", display: "click here", label: "sec")."#;
         let result2 = convert(input2);
-        assert!(result2.contains("[click here](Page.md)"), "display+label: {result2}");
+        assert!(
+            result2.contains("[click here](Page.md)"),
+            "display+label: {result2}"
+        );
 
         let input3 = r#"See #wikilink("Page", label: "sec", display: "click here")."#;
         let result3 = convert(input3);
-        assert!(result3.contains("[click here](Page.md)"), "label+display: {result3}");
+        assert!(
+            result3.contains("[click here](Page.md)"),
+            "label+display: {result3}"
+        );
     }
 
     #[test]
@@ -845,7 +852,10 @@ mod tests {
         let input = "#image(\"/Assets/daisy.png\", width: 25%)";
         let result = convert(input);
         assert!(result.contains("![](/Assets/daisy.png)"), "got: {result}");
-        assert!(!result.contains("```typst"), "must not be a code block: {result}");
+        assert!(
+            !result.contains("```typst"),
+            "must not be a code block: {result}"
+        );
     }
 
     #[test]
@@ -900,7 +910,9 @@ mod tests {
     fn suggestions_to_criticmarkup() {
         assert!(convert(r#"a #suggestion(kind: "insert")[new] b"#).contains("a {++new++} b"));
         assert!(convert(r#"a #suggestion(kind: "delete")[old] b"#).contains("a {--old--} b"));
-        assert!(convert(r#"a #suggestion(kind: "replace", old: [o])[n] b"#).contains("a {~~o~>n~~} b"));
+        assert!(
+            convert(r#"a #suggestion(kind: "replace", old: [o])[n] b"#).contains("a {~~o~>n~~} b")
+        );
     }
 
     #[test]
@@ -913,7 +925,9 @@ mod tests {
 
     #[test]
     fn review_to_criticmarkup_comment() {
-        assert!(convert("see #annotation[needs a citation] here").contains("{>>needs a citation<<}"));
+        assert!(
+            convert("see #annotation[needs a citation] here").contains("{>>needs a citation<<}")
+        );
     }
 
     #[test]
@@ -951,10 +965,22 @@ mod tests {
   [25],
 )"#;
         let result = convert(input);
-        assert!(result.contains("| **Name** | **Age** |"), "header missing: {result}");
-        assert!(result.contains("| --- | --- |"), "separator missing: {result}");
-        assert!(result.contains("| Alice | 30 |"), "body row missing: {result}");
-        assert!(result.contains("| Bob | 25 |"), "second body row missing: {result}");
+        assert!(
+            result.contains("| **Name** | **Age** |"),
+            "header missing: {result}"
+        );
+        assert!(
+            result.contains("| --- | --- |"),
+            "separator missing: {result}"
+        );
+        assert!(
+            result.contains("| Alice | 30 |"),
+            "body row missing: {result}"
+        );
+        assert!(
+            result.contains("| Bob | 25 |"),
+            "second body row missing: {result}"
+        );
     }
 
     #[test]
@@ -969,8 +995,14 @@ mod tests {
   [mouse],
 )"#;
         let result = convert(input);
-        assert!(result.contains("| **dog** | **cat** |"), "header missing: {result}");
-        assert!(result.contains("| bird | mouse |"), "body row missing: {result}");
+        assert!(
+            result.contains("| **dog** | **cat** |"),
+            "header missing: {result}"
+        );
+        assert!(
+            result.contains("| bird | mouse |"),
+            "body row missing: {result}"
+        );
     }
 
     #[test]
@@ -984,8 +1016,14 @@ mod tests {
 )"#;
         let result = convert(input);
         assert!(result.contains("---"), "horizontal rule missing: {result}");
-        assert!(result.contains("| Plants | Animals | Fungi |"), "header missing: {result}");
-        assert!(result.contains("| --- | --- | --- |"), "separator missing: {result}");
+        assert!(
+            result.contains("| Plants | Animals | Fungi |"),
+            "header missing: {result}"
+        );
+        assert!(
+            result.contains("| --- | --- | --- |"),
+            "separator missing: {result}"
+        );
         assert!(
             result.contains("| jasmine | penguin | bolete |"),
             "body row missing: {result}"
@@ -1001,7 +1039,13 @@ mod tests {
   [Alice], [100],
 )"#;
         let result = convert(input);
-        assert!(result.contains("| **Name** | **Score** |"), "header missing: {result}");
-        assert!(result.contains("| Alice | 100 |"), "body row missing: {result}");
+        assert!(
+            result.contains("| **Name** | **Score** |"),
+            "header missing: {result}"
+        );
+        assert!(
+            result.contains("| Alice | 100 |"),
+            "body row missing: {result}"
+        );
     }
 }

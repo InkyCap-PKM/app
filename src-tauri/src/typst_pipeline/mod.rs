@@ -28,5 +28,7 @@ pub mod suggestion;
 pub mod world;
 pub mod zotero;
 
-pub use compiler::{CompileError, PdfStandardPreset, TypstCompileResult, TypstCompiler, TypstFrame, TypstHtmlResult};
+pub use compiler::{
+    CompileError, PdfStandardPreset, TypstCompileResult, TypstCompiler, TypstFrame, TypstHtmlResult,
+};
 pub use diagnostic::TypstDiagnostic;

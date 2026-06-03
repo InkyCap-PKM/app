@@ -236,7 +236,9 @@ mod tests {
         // `.typ`-only whitelist silently dropped them.
         assert!(is_watchable(&PathBuf::from("/notebox/assets/photo.png")));
         assert!(is_watchable(&PathBuf::from("/notebox/assets/scan.jpg")));
-        assert!(is_watchable(&PathBuf::from("/notebox/attachments/file.pdf")));
+        assert!(is_watchable(&PathBuf::from(
+            "/notebox/attachments/file.pdf"
+        )));
     }
 
     #[test]
@@ -248,8 +250,12 @@ mod tests {
     #[test]
     fn ignored_dirs_still_skipped() {
         assert!(!is_watchable(&PathBuf::from("/notebox/.git/HEAD")));
-        assert!(!is_watchable(&PathBuf::from("/notebox/.inkycap/notebox.typ")));
-        assert!(!is_watchable(&PathBuf::from("/notebox/.obsidian/config.json")));
+        assert!(!is_watchable(&PathBuf::from(
+            "/notebox/.inkycap/notebox.typ"
+        )));
+        assert!(!is_watchable(&PathBuf::from(
+            "/notebox/.obsidian/config.json"
+        )));
     }
 
     #[test]

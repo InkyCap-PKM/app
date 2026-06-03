@@ -110,7 +110,6 @@ pub fn augment(
     out
 }
 
-
 fn strip_line_comments(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     for line in source.split_inclusive('\n') {
@@ -134,7 +133,6 @@ fn bib_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"#\s*bibliography\s*\(").unwrap())
 }
-
 
 /// A bibliography entry with fields extracted for UI display.
 #[derive(Debug, Clone, Serialize)]
@@ -213,14 +211,17 @@ pub fn last_parse_skipped_count() -> u32 {
 /// The cache holds a single slot — noteboxes have one active bibliography file
 /// at a time, and an LRU would just add bookkeeping.
 fn load_cached(path: &Path) -> Result<ParsedBibliography, String> {
-    let meta = std::fs::metadata(path)
-        .map_err(|e| format!("Failed to stat bibliography file: {e}"))?;
-    let mtime = meta.modified()
+    let meta =
+        std::fs::metadata(path).map_err(|e| format!("Failed to stat bibliography file: {e}"))?;
+    let mtime = meta
+        .modified()
         .map_err(|e| format!("Failed to read bibliography mtime: {e}"))?;
     let size = meta.len();
 
     {
-        let guard = parse_cache().lock().map_err(|e| format!("Cache poisoned: {e}"))?;
+        let guard = parse_cache()
+            .lock()
+            .map_err(|e| format!("Cache poisoned: {e}"))?;
         if let Some(slot) = guard.as_ref() {
             if slot.key.path == path && slot.key.mtime == mtime && slot.key.size == size {
                 return Ok(slot.parsed.clone());
@@ -240,7 +241,11 @@ fn load_cached(path: &Path) -> Result<ParsedBibliography, String> {
 
     if let Ok(mut guard) = parse_cache().lock() {
         *guard = Some(CacheSlot {
-            key: CacheKey { path: path.to_path_buf(), mtime, size },
+            key: CacheKey {
+                path: path.to_path_buf(),
+                mtime,
+                size,
+            },
             parsed: parsed.clone(),
         });
     }
@@ -262,8 +267,8 @@ pub fn get_entry_notes(path: &Path, key: &str) -> Result<Vec<RefNote>, String> {
 }
 
 fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
-    let bib = biblatex::Bibliography::parse(content)
-        .map_err(|e| format!("BibTeX parse error: {e}"))?;
+    let bib =
+        biblatex::Bibliography::parse(content).map_err(|e| format!("BibTeX parse error: {e}"))?;
     let mut entries = Vec::new();
     let mut notes = Vec::new();
     let mut skipped: u32 = 0;
@@ -304,9 +309,16 @@ fn parse_bibtex(content: &str) -> Result<ParsedBibliography, String> {
         }
     }
     if skipped > 0 {
-        log::warn!("Skipped {skipped} BibTeX entries with type errors; loaded {} entries", entries.len());
+        log::warn!(
+            "Skipped {skipped} BibTeX entries with type errors; loaded {} entries",
+            entries.len()
+        );
     }
-    Ok(ParsedBibliography { entries, notes, skipped_entries: skipped })
+    Ok(ParsedBibliography {
+        entries,
+        notes,
+        skipped_entries: skipped,
+    })
 }
 
 /// Pull user-note fields (`annotation`, `annote`, `note`) from a raw biblatex
@@ -333,7 +345,11 @@ fn parse_hayagriva(content: &str) -> Result<ParsedBibliography, String> {
     let library = hayagriva::io::from_yaml_str(content)
         .map_err(|e| format!("Hayagriva YAML parse error: {e}"))?;
     let (entries, notes) = hayagriva_to_entries(&library);
-    Ok(ParsedBibliography { entries, notes, skipped_entries: 0 })
+    Ok(ParsedBibliography {
+        entries,
+        notes,
+        skipped_entries: 0,
+    })
 }
 
 fn hayagriva_to_entries(library: &hayagriva::Library) -> (Vec<BibEntry>, Vec<Vec<RefNote>>) {
@@ -357,7 +373,10 @@ fn hayagriva_to_entries(library: &hayagriva::Library) -> (Vec<BibEntry>, Vec<Vec
         let has_notes = !entry_notes.is_empty();
         entries.push(BibEntry {
             key: entry.key().to_string(),
-            title, authors, year, entry_type,
+            title,
+            authors,
+            year,
+            entry_type,
             zotero_item_key: None,
             has_notes,
             extra_fields: std::collections::HashMap::new(),
@@ -393,32 +412,39 @@ struct CslDate {
 }
 
 fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
-    let csl_entries: Vec<CslJsonEntry> = serde_json::from_str(content)
-        .map_err(|e| format!("CSL JSON parse error: {e}"))?;
+    let csl_entries: Vec<CslJsonEntry> =
+        serde_json::from_str(content).map_err(|e| format!("CSL JSON parse error: {e}"))?;
 
     let mut entries = Vec::new();
     let mut notes = Vec::new();
     for e in csl_entries {
-        let authors = e.author.unwrap_or_default().into_iter().map(|n| {
-            match (n.family, n.given) {
+        let authors = e
+            .author
+            .unwrap_or_default()
+            .into_iter()
+            .map(|n| match (n.family, n.given) {
                 (Some(f), Some(g)) => format!("{f}, {g}"),
                 (Some(f), None) => f,
                 (None, Some(g)) => g,
                 (None, None) => String::new(),
-            }
-        }).filter(|s| !s.is_empty()).collect();
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        let year = e.issued.and_then(|d| {
-            d.date_parts.and_then(|parts| {
-                parts.first().and_then(|p| {
-                    p.first().map(|v| match v {
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::String(s) => s.clone(),
-                        _ => String::new(),
+        let year = e
+            .issued
+            .and_then(|d| {
+                d.date_parts.and_then(|parts| {
+                    parts.first().and_then(|p| {
+                        p.first().map(|v| match v {
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::String(s) => s.clone(),
+                            _ => String::new(),
+                        })
                     })
                 })
             })
-        }).filter(|s| !s.is_empty());
+            .filter(|s| !s.is_empty());
 
         let mut entry_notes = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -444,7 +470,11 @@ fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
         });
         notes.push(entry_notes);
     }
-    Ok(ParsedBibliography { entries, notes, skipped_entries: 0 })
+    Ok(ParsedBibliography {
+        entries,
+        notes,
+        skipped_entries: 0,
+    })
 }
 
 /// Sanitize a BibTeX field value for safe embedding inside `{...}`.
@@ -466,7 +496,9 @@ fn sanitize_bibtex_value(value: &str) -> std::borrow::Cow<'_, str> {
         let mut prev_ws = false;
         for c in value.chars() {
             if c.is_whitespace() {
-                if !prev_ws { s.push(' '); }
+                if !prev_ws {
+                    s.push(' ');
+                }
                 prev_ws = true;
             } else {
                 s.push(c);
@@ -484,11 +516,19 @@ fn sanitize_bibtex_value(value: &str) -> std::borrow::Cow<'_, str> {
         for c in result.chars() {
             match c {
                 '{' => depth += 1,
-                '}' => { depth -= 1; if depth < 0 { safe = false; break; } }
+                '}' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        safe = false;
+                        break;
+                    }
+                }
                 _ => {}
             }
         }
-        if depth != 0 { safe = false; }
+        if depth != 0 {
+            safe = false;
+        }
         if !safe {
             result = result.replace('{', r"\{").replace('}', r"\}");
         }
@@ -510,11 +550,17 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
         let bib_type = zotero_type_to_bibtex(&entry.entry_type);
         out.push_str(&format!("@{}{{{},\n", bib_type, entry.key));
         if !entry.title.is_empty() {
-            out.push_str(&format!("  title = {{{}}},\n", sanitize_bibtex_value(&entry.title)));
+            out.push_str(&format!(
+                "  title = {{{}}},\n",
+                sanitize_bibtex_value(&entry.title)
+            ));
         }
         if !entry.authors.is_empty() {
             let authors = entry.authors.join(" and ");
-            out.push_str(&format!("  author = {{{}}},\n", sanitize_bibtex_value(&authors)));
+            out.push_str(&format!(
+                "  author = {{{}}},\n",
+                sanitize_bibtex_value(&authors)
+            ));
         }
         if let Some(ref year) = entry.year {
             out.push_str(&format!("  year = {{{}}},\n", year));
@@ -529,7 +575,11 @@ pub fn export_entries_to_bibtex(entries: &[BibEntry]) -> String {
         fields.sort_by(|a, b| a.0.cmp(b.0));
         for (field, value) in fields {
             if !value.is_empty() {
-                out.push_str(&format!("  {} = {{{}}},\n", field, sanitize_bibtex_value(value)));
+                out.push_str(&format!(
+                    "  {} = {{{}}},\n",
+                    field,
+                    sanitize_bibtex_value(value)
+                ));
             }
         }
         out.push_str("}\n\n");
@@ -633,12 +683,10 @@ fn strip_code_spans(source: &str) -> String {
                 i += 1;
             }
             // Find matching closing backtick sequence of the same length
-            let closing = std::str::from_utf8(&bytes[i..])
-                .ok()
-                .and_then(|rest| {
-                    let needle: String = (0..tick_count).map(|_| '`').collect();
-                    rest.find(&needle).map(|pos| pos + i)
-                });
+            let closing = std::str::from_utf8(&bytes[i..]).ok().and_then(|rest| {
+                let needle: String = (0..tick_count).map(|_| '`').collect();
+                rest.find(&needle).map(|pos| pos + i)
+            });
             if let Some(close_start) = closing {
                 let end = close_start + tick_count;
                 for j in tick_start..end.min(len) {
@@ -659,7 +707,10 @@ fn strip_code_spans(source: &str) -> String {
 /// `valid_keys`. Replaces `@key` with `\@key` so Typst treats it as
 /// literal text instead of a citation reference. Skips code spans and
 /// already-escaped `\@` (same contexts as `extract_citations`).
-pub fn escape_invalid_citations(source: &str, valid_keys: &std::collections::HashSet<String>) -> String {
+pub fn escape_invalid_citations(
+    source: &str,
+    valid_keys: &std::collections::HashSet<String>,
+) -> String {
     if valid_keys.is_empty() {
         // Can't determine what's valid — leave source untouched to avoid
         // accidentally escaping legitimate citations.
@@ -760,14 +811,18 @@ mod tests {
         let src = "#import \"/lib.typ\": *\n= Title\n";
         let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
         assert!(out.contains("#apply-bibliography(\"/references.bib\")"));
-        assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
+        assert!(out
+            .trim_end()
+            .ends_with("#apply-bibliography(\"/references.bib\")"));
     }
 
     #[test]
     fn injects_at_end_when_no_import() {
         let src = "= Title\nbody\n";
         let out = augment(src, &notebox(), &notebox().join("references.bib"), None);
-        assert!(out.trim_end().ends_with("#apply-bibliography(\"/references.bib\")"));
+        assert!(out
+            .trim_end()
+            .ends_with("#apply-bibliography(\"/references.bib\")"));
         assert!(out.starts_with("= Title"));
     }
 
@@ -780,10 +835,13 @@ mod tests {
     #[test]
     fn injects_with_style() {
         let src = "#import \"/lib.typ\": *\n= Title\n";
-        let out = augment(src, &notebox(), &notebox().join("references.bib"), Some("apa"));
-        assert!(
-            out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")")
+        let out = augment(
+            src,
+            &notebox(),
+            &notebox().join("references.bib"),
+            Some("apa"),
         );
+        assert!(out.contains("#apply-bibliography(\"/references.bib\", style: \"apa\")"));
     }
 
     /// Our injected wrapper must not be detected as a user-declared

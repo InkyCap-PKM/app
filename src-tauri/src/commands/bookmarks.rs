@@ -6,9 +6,7 @@ use crate::state::AppState;
 
 /// Return all bookmarks in their current order.
 #[tauri::command]
-pub async fn list_bookmarks(
-    state: State<'_, AppState>,
-) -> Result<Vec<Bookmark>, InkyCapError> {
+pub async fn list_bookmarks(state: State<'_, AppState>) -> Result<Vec<Bookmark>, InkyCapError> {
     let bm = state.bookmarks.read().await;
     Ok(bm.clone())
 }

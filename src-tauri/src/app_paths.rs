@@ -120,17 +120,26 @@ mod tests {
 
     #[test]
     fn config_dir_ends_in_inkycap() {
-        assert_eq!(config_dir().file_name().and_then(|s| s.to_str()), Some("inkycap"));
+        assert_eq!(
+            config_dir().file_name().and_then(|s| s.to_str()),
+            Some("inkycap")
+        );
     }
 
     #[test]
     fn data_dir_ends_in_inkycap() {
-        assert_eq!(data_dir().file_name().and_then(|s| s.to_str()), Some("inkycap"));
+        assert_eq!(
+            data_dir().file_name().and_then(|s| s.to_str()),
+            Some("inkycap")
+        );
     }
 
     #[test]
     fn cache_dir_ends_in_inkycap() {
-        assert_eq!(cache_dir().file_name().and_then(|s| s.to_str()), Some("inkycap"));
+        assert_eq!(
+            cache_dir().file_name().and_then(|s| s.to_str()),
+            Some("inkycap")
+        );
     }
 
     #[test]
@@ -145,7 +154,10 @@ mod tests {
 
         migrate_legacy_cache_paths_at(&old, &new);
 
-        assert!(!old_file.exists(), "old metadata-cache.sqlite should be gone");
+        assert!(
+            !old_file.exists(),
+            "old metadata-cache.sqlite should be gone"
+        );
         let new_file = new.join("metadata-cache.sqlite");
         assert!(new_file.exists(), "new metadata-cache.sqlite should exist");
         assert_eq!(std::fs::read(&new_file).unwrap(), b"sqlite-bytes");
@@ -167,7 +179,10 @@ mod tests {
 
         migrate_legacy_cache_paths_at(&old, &new);
 
-        assert!(!a.exists() && !b.exists(), "old search indexes should be gone");
+        assert!(
+            !a.exists() && !b.exists(),
+            "old search indexes should be gone"
+        );
         assert!(new.join("search-index-abc123.bin").exists());
         assert!(new.join("search-index-deadbeef.bin").exists());
         assert!(unrelated.exists(), "non-cache files in old root must stay");
@@ -202,6 +217,9 @@ mod tests {
         let old = tmp.path().join("never-existed");
         let new = tmp.path().join("new");
         migrate_legacy_cache_paths_at(&old, &new);
-        assert!(!new.exists(), "should not create new root when old is absent");
+        assert!(
+            !new.exists(),
+            "should not create new root when old is absent"
+        );
     }
 }

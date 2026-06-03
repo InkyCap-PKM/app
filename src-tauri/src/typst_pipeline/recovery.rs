@@ -22,9 +22,9 @@
 use std::ops::Range;
 use std::path::Path;
 
-use typst::World;
 use typst::diag::SourceDiagnostic;
 use typst::syntax::{FileId, LinkedNode, Source, Span, SyntaxKind};
+use typst::World;
 
 use crate::typst_pipeline::world::NoteboxWorld;
 
@@ -110,7 +110,10 @@ fn enclosing_import_range(source: &Source, target: &Range<usize>) -> Option<Rang
         if r.start > target.start || r.end < target.end {
             return None; // doesn't contain the target — neither will its children
         }
-        if matches!(node.kind(), SyntaxKind::ModuleImport | SyntaxKind::ModuleInclude) {
+        if matches!(
+            node.kind(),
+            SyntaxKind::ModuleImport | SyntaxKind::ModuleInclude
+        ) {
             // In markup the leading `#` is a sibling `Hash` token, not part of
             // the import node's range. Extend the start over it so the patch
             // doesn't leave a stray `#` (which would itself be a fresh error).

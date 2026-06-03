@@ -116,9 +116,10 @@ impl MetadataCache {
     /// Returns an empty map if the notebox has no cached entries yet (e.g.
     /// first run on this notebox).
     pub fn load_notebox(&self, notebox_root: &Path) -> Result<HashMap<PathBuf, CachedFile>> {
-        let conn = self.conn.lock().map_err(|_| {
-            InkyCapError::Cache("metadata cache mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| InkyCapError::Cache("metadata cache mutex poisoned".to_string()))?;
 
         let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
@@ -139,16 +140,32 @@ impl MetadataCache {
                 let content: Option<String> = row.get(5)?;
                 let agenda_json: String = row.get(6)?;
                 let unresolved_suggestions: i64 = row.get(7)?;
-                Ok((path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions))
+                Ok((
+                    path,
+                    mtime,
+                    size,
+                    properties_json,
+                    title,
+                    content,
+                    agenda_json,
+                    unresolved_suggestions,
+                ))
             })?;
 
             for row in rows {
-                let (path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions) = row?;
+                let (
+                    path,
+                    mtime,
+                    size,
+                    properties_json,
+                    title,
+                    content,
+                    agenda_json,
+                    unresolved_suggestions,
+                ) = row?;
                 let properties: HashMap<String, PropertyValue> =
                     serde_json::from_str(&properties_json).map_err(|e| {
-                        InkyCapError::Cache(format!(
-                            "corrupt properties_json for {path}: {e}"
-                        ))
+                        InkyCapError::Cache(format!("corrupt properties_json for {path}: {e}"))
                     })?;
                 // A corrupt agenda blob degrades to "no markers" rather than
                 // failing the whole cache read — the markers are rebuilt on
@@ -174,9 +191,7 @@ impl MetadataCache {
 
         // Tags.
         {
-            let mut stmt = conn.prepare(
-                "SELECT path, tag FROM file_tags WHERE notebox_id = ?1",
-            )?;
+            let mut stmt = conn.prepare("SELECT path, tag FROM file_tags WHERE notebox_id = ?1")?;
             let rows = stmt.query_map(params![notebox_id], |row| {
                 let path: String = row.get(0)?;
                 let tag: String = row.get(1)?;
@@ -220,9 +235,10 @@ impl MetadataCache {
             return Ok(());
         }
 
-        let mut conn = self.conn.lock().map_err(|_| {
-            InkyCapError::Cache("metadata cache mutex poisoned".to_string())
-        })?;
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| InkyCapError::Cache("metadata cache mutex poisoned".to_string()))?;
         let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
         let tx = conn.transaction()?;
@@ -239,15 +255,13 @@ impl MetadataCache {
                     agenda_json = excluded.agenda_json, \
                     unresolved_suggestions = excluded.unresolved_suggestions",
             )?;
-            let mut delete_tags = tx.prepare(
-                "DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2",
-            )?;
+            let mut delete_tags =
+                tx.prepare("DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2")?;
             let mut insert_tag = tx.prepare(
                 "INSERT OR IGNORE INTO file_tags (notebox_id, path, tag) VALUES (?1, ?2, ?3)",
             )?;
-            let mut delete_links = tx.prepare(
-                "DELETE FROM file_links WHERE notebox_id = ?1 AND source_path = ?2",
-            )?;
+            let mut delete_links =
+                tx.prepare("DELETE FROM file_links WHERE notebox_id = ?1 AND source_path = ?2")?;
             let mut insert_link = tx.prepare(
                 "INSERT INTO file_links (notebox_id, source_path, target_text, ordinal) \
                  VALUES (?1, ?2, ?3, ?4)",
@@ -277,12 +291,7 @@ impl MetadataCache {
 
                 delete_links.execute(params![notebox_id, &path_str])?;
                 for (ordinal, link) in file.links.iter().enumerate() {
-                    insert_link.execute(params![
-                        notebox_id,
-                        &path_str,
-                        link,
-                        ordinal as i64,
-                    ])?;
+                    insert_link.execute(params![notebox_id, &path_str, link, ordinal as i64,])?;
                 }
             }
         }
@@ -300,9 +309,10 @@ impl MetadataCache {
     /// Delete a single file's row (and its tags/links via FK cascade) from
     /// the cache. Used by the file watcher on `FileDeleted`.
     pub fn delete_file(&self, notebox_root: &Path, path: &Path) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| {
-            InkyCapError::Cache("metadata cache mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| InkyCapError::Cache("metadata cache mutex poisoned".to_string()))?;
         let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
         let path_str = path.to_string_lossy().to_string();
         conn.execute(
@@ -314,12 +324,9 @@ impl MetadataCache {
 
     /// Remove cache entries for files that no longer exist on disk. Called
     /// after a full scan so the cache stays in sync with the filesystem.
-    pub fn prune(
-        &self,
-        notebox_root: &Path,
-        existing: &HashSet<PathBuf>,
-    ) -> Result<usize> {
-        self.prune_collecting(notebox_root, existing).map(|(n, _)| n)
+    pub fn prune(&self, notebox_root: &Path, existing: &HashSet<PathBuf>) -> Result<usize> {
+        self.prune_collecting(notebox_root, existing)
+            .map(|(n, _)| n)
     }
 
     /// Like [`prune`] but also returns the relative paths that were deleted,
@@ -329,14 +336,13 @@ impl MetadataCache {
         notebox_root: &Path,
         existing: &HashSet<PathBuf>,
     ) -> Result<(usize, Vec<PathBuf>)> {
-        let conn = self.conn.lock().map_err(|_| {
-            InkyCapError::Cache("metadata cache mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| InkyCapError::Cache("metadata cache mutex poisoned".to_string()))?;
         let notebox_id = Self::get_or_create_notebox_id(&conn, notebox_root)?;
 
-        let mut stmt = conn.prepare(
-            "SELECT path FROM files WHERE notebox_id = ?1",
-        )?;
+        let mut stmt = conn.prepare("SELECT path FROM files WHERE notebox_id = ?1")?;
         let cached_paths: Vec<String> = stmt
             .query_map(params![notebox_id], |row| row.get::<_, String>(0))?
             .filter_map(|r| r.ok())

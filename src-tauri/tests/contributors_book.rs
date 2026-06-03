@@ -72,8 +72,16 @@ fn merged_book_with_contributors_and_credit_compiles() {
     // illegal in `<...>` markup-label syntax and previously derailed the
     // merged compile with "unclosed label".
     let chapters = vec![
-        write_chapter(&notebox_root, "Information Technology and Libraries (ITAL)", "ITAL"),
-        write_chapter(&notebox_root, "Journal of Creative Library Practice", "JCLP"),
+        write_chapter(
+            &notebox_root,
+            "Information Technology and Libraries (ITAL)",
+            "ITAL",
+        ),
+        write_chapter(
+            &notebox_root,
+            "Journal of Creative Library Practice",
+            "JCLP",
+        ),
     ];
 
     // A roster exercising the byline grouping (author + editor + translator)
@@ -82,7 +90,11 @@ fn merged_book_with_contributors_and_credit_compiles() {
     const CONCEPT: &str = "https://credit.niso.org/contributor-roles/conceptualization/";
     const WRITING: &str = "https://credit.niso.org/contributor-roles/writing-original-draft/";
     let contributors = vec![
-        contrib("Ada \"Countess\" Lovelace", Some("author"), &[CONCEPT, WRITING]),
+        contrib(
+            "Ada \"Countess\" Lovelace",
+            Some("author"),
+            &[CONCEPT, WRITING],
+        ),
         contrib("Bob Jones", None, &[CONCEPT]),
         contrib("Sam Lee", Some("editor"), &[]),
         contrib("Pat Roy", Some("translator"), &[]),
@@ -110,8 +122,14 @@ fn merged_book_with_contributors_and_credit_compiles() {
     );
 
     // The byline + CRediT calls must be present in the emitted source…
-    assert!(source.contains("#contributors-byline("), "byline call emitted");
-    assert!(source.contains("#credit-statement("), "credit statement call emitted");
+    assert!(
+        source.contains("#contributors-byline("),
+        "byline call emitted"
+    );
+    assert!(
+        source.contains("#credit-statement("),
+        "credit statement call emitted"
+    );
 
     // …and the whole thing must actually compile through Typst (this is
     // what catches a lib.typ syntax error).
@@ -147,11 +165,31 @@ fn credit_statement_suppressed_when_disabled() {
         include_bibliography: false,
         include_credit_statement: false,
     };
-    let source = build_book_source(&[], &options, None, None, None, None, None, false, None, None);
-    assert!(source.contains("#contributors-byline("), "byline still rendered");
-    assert!(!source.contains("#credit-statement("), "credit statement suppressed");
+    let source = build_book_source(
+        &[],
+        &options,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        None,
+        None,
+    );
+    assert!(
+        source.contains("#contributors-byline("),
+        "byline still rendered"
+    );
+    assert!(
+        !source.contains("#credit-statement("),
+        "credit statement suppressed"
+    );
     // Document author derived from the contributor roster.
-    assert!(source.contains("author: \"Ada Lovelace\""), "doc author from contributors");
+    assert!(
+        source.contains("author: \"Ada Lovelace\""),
+        "doc author from contributors"
+    );
 }
 
 #[test]
@@ -169,10 +207,23 @@ fn single_chapter_with_spaced_paren_stem_compiles() {
     let source = build_book_source(
         &[chapter],
         &plain_options(),
-        None, None, None, None, None, false, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        None,
+        None,
     );
-    assert!(source.contains("chapters: (\"Knowledge Organization (KO)\",)"), "one-element array");
-    assert!(source.contains("#chapter-anchor(\"Knowledge Organization (KO)\")"), "fn-form anchor");
+    assert!(
+        source.contains("chapters: (\"Knowledge Organization (KO)\",)"),
+        "one-element array"
+    );
+    assert!(
+        source.contains("#chapter-anchor(\"Knowledge Organization (KO)\")"),
+        "fn-form anchor"
+    );
 
     let book_path = notebox_root.join("__book.typ");
     std::fs::write(&book_path, &source).expect("write merged source");

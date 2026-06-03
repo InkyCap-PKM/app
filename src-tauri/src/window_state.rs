@@ -237,9 +237,7 @@ pub fn attach<R: Runtime>(window: &WebviewWindow<R>) -> Arc<AtomicBool> {
                 let delta = store.delta.lock().unwrap().unwrap_or((0, 0));
                 let mut s = store.state.lock().unwrap();
                 if !maximized {
-                    if let (Ok(inner), Ok(pos)) =
-                        (win.inner_size(), win.outer_position())
-                    {
+                    if let (Ok(inner), Ok(pos)) = (win.inner_size(), win.outer_position()) {
                         s.width = inner.width.saturating_sub(delta.0);
                         s.height = inner.height.saturating_sub(delta.1);
                         s.x = pos.x;

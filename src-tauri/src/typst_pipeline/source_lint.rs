@@ -35,8 +35,7 @@ static ATX_HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(#{1,6})[ \t]+(\S.*)$").unwrap());
 
 /// `**bold**` (Markdown) — Typst uses single `*bold*`.
-static MD_BOLD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\*\*([^*\n]+)\*\*").unwrap());
+static MD_BOLD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*\*([^*\n]+)\*\*").unwrap());
 
 /// `![alt](url)` Markdown image. Matched before links so the leading `!` form
 /// wins. URL must be non-empty and space-free (a plain path/URL).
@@ -300,7 +299,9 @@ mod tests {
 
     #[test]
     fn converts_links_images_and_bold() {
-        let out = apply_md_fixes("See ![a cat](/img/cat.png) and [the docs](https://x.io) in **bold**.\n");
+        let out = apply_md_fixes(
+            "See ![a cat](/img/cat.png) and [the docs](https://x.io) in **bold**.\n",
+        );
         assert_eq!(
             out,
             "See #image(\"/img/cat.png\", alt: \"a cat\") and #link(\"https://x.io\")[the docs] in *bold*.\n"

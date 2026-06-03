@@ -212,19 +212,21 @@ impl SearchEngine {
 
         let processed: Vec<DocBuild> = files
             .into_par_iter()
-            .map(|(path, content, tags, title, property_keys, property_values)| {
-                let (mtime, ctime) = file_timestamps(&path);
-                build_doc(
-                    path,
-                    &content,
-                    tags,
-                    title,
-                    property_keys,
-                    property_values,
-                    mtime,
-                    ctime,
-                )
-            })
+            .map(
+                |(path, content, tags, title, property_keys, property_values)| {
+                    let (mtime, ctime) = file_timestamps(&path);
+                    build_doc(
+                        path,
+                        &content,
+                        tags,
+                        title,
+                        property_keys,
+                        property_values,
+                        mtime,
+                        ctime,
+                    )
+                },
+            )
             .collect();
 
         for built in processed {
@@ -232,7 +234,11 @@ impl SearchEngine {
             engine.path_to_doc.insert(built.entry.path.clone(), doc_id);
             engine.docs.push(built.entry);
             for (word, positions) in built.word_positions {
-                engine.index.entry(word).or_default().push((doc_id, positions));
+                engine
+                    .index
+                    .entry(word)
+                    .or_default()
+                    .push((doc_id, positions));
             }
         }
 
@@ -409,11 +415,8 @@ impl SearchEngine {
                 // UTF-16 conversion for the frontend happens later, in the
                 // command), so the slice lands on char boundaries.
                 if let Some(verify) = verify_span {
-                    match_ranges.retain(|(s, e)| {
-                        line_text
-                            .get(*s..*e)
-                            .map_or(false, |span| verify(span))
-                    });
+                    match_ranges
+                        .retain(|(s, e)| line_text.get(*s..*e).map_or(false, |span| verify(span)));
                     if match_ranges.is_empty() {
                         continue;
                     }
@@ -495,25 +498,33 @@ impl SearchEngine {
                 // Return all docs NOT in the exclude set
                 let mut result = HashMap::new();
                 for (doc_id, doc) in self.docs.iter().enumerate() {
-                    if !exclude.contains_key(&doc_id) && self.path_to_doc.get(&doc.path) == Some(&doc_id) {
+                    if !exclude.contains_key(&doc_id)
+                        && self.path_to_doc.get(&doc.path) == Some(&doc_id)
+                    {
                         // Include with first line as placeholder
                         let mut lines = HashMap::new();
                         if !doc.lines.is_empty() {
-                            lines.insert(0, vec![WordPosition {
-                                line: 0,
-                                word_index: 0,
-                                char_start: 0,
-                                char_end: 0,
-                            }]);
+                            lines.insert(
+                                0,
+                                vec![WordPosition {
+                                    line: 0,
+                                    word_index: 0,
+                                    char_start: 0,
+                                    char_end: 0,
+                                }],
+                            );
                         }
                         result.insert(doc_id, lines);
                     }
                 }
                 result
             }
-            QueryNode::Proximity { left, right, distance, ordered } => {
-                self.find_proximity(left, right, *distance, *ordered)
-            }
+            QueryNode::Proximity {
+                left,
+                right,
+                distance,
+                ordered,
+            } => self.find_proximity(left, right, *distance, *ordered),
         }
     }
 
@@ -673,15 +684,16 @@ impl SearchEngine {
             }
 
             let matches = match kind {
-                FilterKind::Path => {
-                    doc.path.to_string_lossy().to_lowercase().contains(&value_lower)
-                }
-                FilterKind::File => {
-                    doc.file_name.to_lowercase().contains(&value_lower)
-                }
-                FilterKind::Tag => {
-                    doc.tags.iter().any(|t| t.to_lowercase().contains(&value_lower))
-                }
+                FilterKind::Path => doc
+                    .path
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(&value_lower),
+                FilterKind::File => doc.file_name.to_lowercase().contains(&value_lower),
+                FilterKind::Tag => doc
+                    .tags
+                    .iter()
+                    .any(|t| t.to_lowercase().contains(&value_lower)),
                 FilterKind::Section => {
                     // Match notes with a heading (lowercased) containing
                     // the value as a substring. Heading text is collected
@@ -712,9 +724,7 @@ impl SearchEngine {
                             false
                         }
                     } else {
-                        doc.property_keys
-                            .iter()
-                            .any(|k| k.contains(&value_lower))
+                        doc.property_keys.iter().any(|k| k.contains(&value_lower))
                     }
                 }
                 FilterKind::Annotation => {
@@ -798,8 +808,7 @@ impl SearchEngine {
                         .iter()
                         .enumerate()
                         .find(|(idx, line)| {
-                            !doc.import_line_indices.contains(idx)
-                                && !line.trim().is_empty()
+                            !doc.import_line_indices.contains(idx) && !line.trim().is_empty()
                         })
                         .map(|(idx, _)| idx)
                         .unwrap_or(0);
@@ -861,7 +870,11 @@ impl SearchEngine {
                             } else {
                                 let a = lp.word_index;
                                 let b = rp.word_index;
-                                if a > b { a - b } else { b - a }
+                                if a > b {
+                                    a - b
+                                } else {
+                                    b - a
+                                }
                             };
                             if dist <= distance {
                                 valid_lines
@@ -1082,8 +1095,7 @@ fn build_doc(
         local_index.entry(token.word.clone()).or_default().push(pos);
     }
 
-    let property_keys_lower: Vec<String> =
-        property_keys.iter().map(|k| k.to_lowercase()).collect();
+    let property_keys_lower: Vec<String> = property_keys.iter().map(|k| k.to_lowercase()).collect();
 
     DocBuild {
         entry: DocEntry {
@@ -1228,7 +1240,8 @@ mod tests {
         // "citation" appears on a plain body line AND inside an annotation.
         let engine = SearchEngine::build(vec![(
             PathBuf::from("/notebox/n.md"),
-            "Plain body mentions citation here.\n\n#annotation[please add a citation]\n".to_string(),
+            "Plain body mentions citation here.\n\n#annotation[please add a citation]\n"
+                .to_string(),
             Vec::new(),
             None,
             Vec::new(),
@@ -1428,7 +1441,10 @@ mod tests {
         // Replace "Rust" with empty string (deletion)
         let replacements = engine.search_and_replace("Rust", "", &paths, true, false);
         assert_eq!(replacements.len(), 1, "Should have replaced in 1 file");
-        assert!(!replacements[0].1.contains("Rust"), "Rust should be removed");
+        assert!(
+            !replacements[0].1.contains("Rust"),
+            "Rust should be removed"
+        );
         assert_eq!(replacements[0].2, 2);
     }
 
@@ -1438,7 +1454,9 @@ mod tests {
         let paths = vec![PathBuf::from("/notebox/note1.md")];
         let replacements = engine.search_and_replace("Rust", "", &paths, true, true);
         assert_eq!(replacements.len(), 1, "Should have replaced in 1 file");
-        assert!(!replacements[0].1.contains("Rust"), "Rust should be removed");
+        assert!(
+            !replacements[0].1.contains("Rust"),
+            "Rust should be removed"
+        );
     }
-
 }
