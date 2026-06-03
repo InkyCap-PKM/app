@@ -1,0 +1,11 @@
+# Revisions listed here are skipped by `git blame` so that bulk,
+# non-semantic reformatting commits don't obscure the real author of
+# each line. Wire it into your local git with:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# (This repo already sets that for you; a fresh clone needs it run once.)
+# GitHub, Codeberg/Forgejo, and `git blame` on the CLI all honour it.
+
+# style: apply cargo fmt across src-tauri
+b20efd1d366fcfda8e70df6201afffbcdeca0c5f
