@@ -40,12 +40,60 @@
   /* UI scale factor — updated by applyUiScale() */
   --ui-scale: 1;
 
-  /* Control-surface radius. Used by panel header buttons, filter
-     pills, split buttons, segmented toggles, and the shared
-     .ui-icon-btn utility — anything that reads as a clickable
-     "control" in a panel or heading row. Update here to retune the
-     whole UI's roundedness in one place. */
-  --radius-control: 6px;
+  /* ── Corner-radius scale ────────────────────────────────────────
+     One scale for the whole UI. Reach for a step, never a literal px.
+       --radius-sm  inputs, badges, chips, small controls
+       --radius-md  buttons, panel controls, dropdowns, popups
+       --radius-lg  modals / dialogs
+     --radius-control is kept as a back-compat alias of --radius-md so
+     existing rules keep resolving; new code should use the scale. */
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --radius-control: var(--radius-md);
+  /* Radius for text inputs, textareas, and select/combobox triggers.
+     Currently unified with the control radius so every interactive
+     element shares one roundedness. Flip to --radius-sm to make form
+     fields a touch tighter than buttons again. */
+  --radius-input: var(--radius-md);
+
+  /* ── Spacing scale ──────────────────────────────────────────────
+     Geometric-ish step scale for padding/gap. The recurring ad-hoc
+     paddings (2px 6px, 4px 8px, 6px 14px) map onto these. Multiplied
+     by --density so a single toggle rescales interface tightness
+     (see [data-density="compact"] override below). */
+  --density: 1;
+  --space-1: calc(2px * var(--density));
+  --space-2: calc(4px * var(--density));
+  --space-3: calc(6px * var(--density));
+  --space-4: calc(8px * var(--density));
+  --space-5: calc(12px * var(--density));
+  --space-6: calc(16px * var(--density));
+
+  /* ── Buttons & focus ────────────────────────────────────────────
+     Shared button geometry consumed by the .btn utility (layout.css).
+     --focus-ring is the single keyboard-focus affordance applied via
+     :focus-visible across interactive elements. */
+  --btn-pad-y: 6px;
+  --btn-pad-x: 14px;
+  --btn-radius: var(--radius-md);
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-color, #1D7874) 45%, transparent);
+
+  /* ── Motion ─────────────────────────────────────────────────────
+     Consistent micro-interaction timing. Keep transitions short and
+     uniform so the UI feels responsive, not animated. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+
+  /* ── Elevation tiers ────────────────────────────────────────────
+     Named surface levels for layered chrome. These alias the per-theme
+     background primitives (resolved at use time, so they stay correct
+     under every theme/palette): surface-0 = base content, surface-1 =
+     raised chrome (sidebars, panels), surface-2 = active/selected. */
+  --surface-0: var(--bg-primary);
+  --surface-1: var(--bg-secondary);
+  --surface-2: var(--bg-active);
 
   /* ── Surface roles ──────────────────────────────────────────────
      Two coordinated UI-surface styles, distinguished by element ROLE,
@@ -73,7 +121,7 @@
   /* Popup surface — floating menus, dropdowns, suggestion popups. */
   --popup-bg: var(--bg-primary);
   --popup-border-color: var(--border-subtle);
-  --popup-radius: 6px;
+  --popup-radius: var(--radius-md);
   /* Two-layer shadow: a tight, near-zero-blur "contact" layer gives a
      crisp, solid edge (the elementary-OS look); a softer ambient layer
      adds depth without the whole frame going blurry. */
@@ -84,7 +132,7 @@
   /* Modal surface — centered, backdropped dialogs. */
   --modal-bg: var(--bg-primary);
   --modal-border-color: var(--border-primary);
-  --modal-radius: 8px;
+  --modal-radius: var(--radius-lg);
   /* Same two-layer approach as --popup-shadow, scaled up for a dialog. */
   --modal-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 24px rgba(0, 0, 0, 0.18);
   --modal-backdrop: rgba(0, 0, 0, 0.45);
@@ -101,6 +149,14 @@
      while still sitting below --z-toast, so errors surface over everything.
      Use it for floating surfaces that can open from inside a modal. */
   --z-menu-over-modal: 2500;
+}
+
+/* Compact density — rescales the --space-* padding/gap scale in one
+   lever. Set data-density="compact" on <html> (Settings → Appearance).
+   Only paddings expressed through the spacing scale shrink; the scale's
+   adoption grows as more rules migrate off hardcoded px. */
+[data-density="compact"] {
+  --density: 0.85;
 }
 
 :root,

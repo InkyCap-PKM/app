@@ -104,14 +104,14 @@ const NoteboxSeedHost: Component = () => {
             </div>
             <div class="app-modal__footer">
               <button
-                class="app-modal__btn app-modal__btn--secondary"
+                class="btn btn--secondary"
                 onClick={copy}
                 disabled={!selected()}
               >
                 {t("noteboxSeed.copyAndOpen")}
               </button>
               <button
-                class="app-modal__btn app-modal__btn--primary"
+                class="btn btn--primary"
                 onClick={skip}
               >
                 {t("noteboxSeed.useDefaults")}

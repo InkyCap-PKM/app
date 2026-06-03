@@ -118,13 +118,13 @@ const PromptHost: Component = () => {
             </div>
             <div class="app-modal__footer">
               <button
-                class="app-modal__btn app-modal__btn--secondary"
+                class="btn btn--secondary"
                 onClick={() => resolveConfirm(false)}
               >
                 {c().cancelLabel ?? "Cancel"}
               </button>
               <button
-                class="app-modal__btn app-modal__btn--primary"
+                class="btn btn--primary"
                 onClick={() => resolveConfirm(true, confirmChecked())}
               >
                 {c().confirmLabel ?? "OK"}
@@ -183,13 +183,13 @@ const PromptHost: Component = () => {
             </div>
             <div class="app-modal__footer">
               <button
-                class="app-modal__btn app-modal__btn--secondary"
+                class="btn btn--secondary"
                 onClick={cancel}
               >
                 {p().cancelLabel ?? "Cancel"}
               </button>
               <button
-                class="app-modal__btn app-modal__btn--primary"
+                class="btn btn--primary"
                 onClick={submit}
               >
                 {p().confirmLabel ?? "OK"}

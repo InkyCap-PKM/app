@@ -9,6 +9,33 @@ export interface FuzzyMatch {
 }
 
 /**
+ * Substring ("contains") match — the behaviour of the app's plain text
+ * filters (agenda, sidebar, references, etc.). Returns null when `query` does
+ * not appear in `target` as a contiguous, case-insensitive substring;
+ * otherwise a score (higher = better) and the single matched range for
+ * highlighting. Unlike {@link fuzzyMatch} this does NOT match characters
+ * scattered across the string — "exp" matches "Export" but not "edit panel".
+ */
+export function substringMatch(query: string, target: string): FuzzyMatch | null {
+  if (query.length === 0) return { score: 0, ranges: [] };
+
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  const idx = t.indexOf(q);
+  if (idx === -1) return null;
+
+  let score = 100 - idx; // an earlier match ranks higher
+  if (idx === 0) {
+    score += 30; // prefix match
+  } else if ("/-_ :".includes(target[idx - 1])) {
+    score += 15; // match at a word boundary
+  }
+  score += Math.max(0, 20 - target.length); // prefer shorter / more specific targets
+
+  return { score, ranges: [[idx, idx + q.length]] };
+}
+
+/**
  * Score how well `query` fuzzy-matches `target`.
  * Consecutive matches are weighted higher. Case-insensitive.
  */

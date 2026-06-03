@@ -975,7 +975,7 @@ const ManageSection: Component = () => {
             {busy() ? t("git.manage.saving") : t("git.manage.save")}
           </button>
 
-          <button class="git-panel__danger-btn" onClick={disable}>
+          <button class="btn btn--danger btn--sm git-panel__danger-btn" onClick={disable}>
             {t("git.manage.disable")}
           </button>
         </div>

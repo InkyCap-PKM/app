@@ -252,7 +252,7 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
               <div class="settings__footer">
                 <Show when={tabHasResettableGroups(activeTab())}>
                   <button
-                    class="settings__reset-btn"
+                    class="btn btn--danger"
                     onClick={() => resetTabSettings(activeTab())}
                   >
                     {t("settings.resetToDefaults")}

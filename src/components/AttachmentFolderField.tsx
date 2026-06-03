@@ -241,14 +241,14 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
             </div>
             <div class="app-modal__footer">
               <button
-                class="app-modal__btn app-modal__btn--secondary"
+                class="btn btn--secondary"
                 onClick={closeModal}
                 disabled={applying()}
               >
                 {t("common.cancel")}
               </button>
               <button
-                class="app-modal__btn app-modal__btn--primary"
+                class="btn btn--primary"
                 onClick={apply}
                 disabled={!canApply() || applying()}
               >

@@ -300,6 +300,23 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Instead, distinguish heading/label elements with `font-weight: 600`, subtle `letter-spacing` (0.3–0.5px), muted color (`--fg-muted` / `--fg-dim`), or a border/background — not capitalization transforms.
 - This applies everywhere: sidebar headings, settings section labels, command palette categories, diagnostic badges, collection metadata labels.
 
+### Buttons, badges, inputs (shared utilities)
+- Text/action buttons use the **`.btn`** utility + a variant
+  (`.btn--primary/--secondary/--danger/--ghost`, plus `.btn--sm`). Do
+  **not** author a new `*__btn` class for an action button. Square
+  icon-only buttons use **`.ui-icon-btn`** (canonical). Small labels/chips
+  use **`.badge`** (+ `--accent/--danger/--count`).
+- Geometry and colour come from token scales in
+  [src/styles/themes.css](src/styles/themes.css): radius
+  (`--radius-sm/md/lg`), spacing (`--space-1…6`), `--btn-*`,
+  `--focus-ring`, motion (`--ease-out`, `--dur-fast/base`), elevation
+  (`--surface-0/1/2`). **Never hardcode a radius, padding, colour, or
+  transition** — reach for the scale. `--radius-control` is an alias of
+  `--radius-md`.
+- Full reference, conventions, and recorded decisions (7px control
+  radius, deferred density toggle, no frosted surfaces):
+  [documentation/developer/ui-styling.md](documentation/developer/ui-styling.md).
+
 ### UI surfaces (menus, popups, dialogs)
 - Floating, transient surfaces — context menus, dropdowns, command/`/`
   palettes, suggestion & autocomplete popups, hover preview tooltips,

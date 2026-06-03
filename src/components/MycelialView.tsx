@@ -1110,13 +1110,13 @@ export default function MycelialView(props: MycelialViewProps) {
                 />
                 <div class="mycelial-namer__actions">
                   <button
-                    class="app-modal__btn app-modal__btn--secondary"
+                    class="btn btn--secondary"
                     onClick={() => setNamer(null)}
                   >
                     {t("common.cancel")}
                   </button>
                   <button
-                    class="app-modal__btn app-modal__btn--primary"
+                    class="btn btn--primary"
                     disabled={!namerDraft().trim()}
                     onClick={submit}
                   >

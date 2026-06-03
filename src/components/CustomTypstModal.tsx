@@ -72,10 +72,10 @@ export default function CustomTypstModal(props: CustomTypstModalProps) {
           <div ref={editorParent} class="custom-typst-modal__editor" />
         </div>
         <div class="app-modal__footer">
-          <button class="app-modal__btn app-modal__btn--secondary" onClick={props.onClose}>
+          <button class="btn btn--secondary" onClick={props.onClose}>
             {t("common.cancel")}
           </button>
-          <button class="app-modal__btn app-modal__btn--primary" onClick={save}>
+          <button class="btn btn--primary" onClick={save}>
             {t("common.save")}
           </button>
         </div>
