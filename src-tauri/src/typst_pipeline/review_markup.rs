@@ -1,6 +1,5 @@
 //! Export-time resolution of the collaboration *review layer* — inline
-//! `#suggestion(...)` tracked changes plus the `#annotation(...)` and
-//! `#review-decision(...)` block notes.
+//! `#suggestion(...)` tracked changes plus the `#annotation(...)` block notes.
 //!
 //! Two host-side jobs, both AST-based (Typst-first — `typst::syntax` is the
 //! same parser the compiler uses, so byte ranges land on char boundaries and
@@ -21,7 +20,7 @@
 //!    the `inkycap-notebox` package — i.e. the Pandoc path, whose own Typst
 //!    reader has no access to our package definitions — call this so the
 //!    surviving "keep" marks compile instead of erroring on an undefined
-//!    `suggestion` / `annotation` / `review-decision` identifier.
+//!    `suggestion` / `annotation` identifier.
 
 use std::ops::Range;
 
@@ -32,7 +31,7 @@ use crate::typst_pipeline::suggestion::{count_suggestions, resolve_all_suggestio
 /// Block-level review functions from `inkycap-notebox` that carry reviewer
 /// commentary rather than document content. Stripped for accept/reject; left
 /// intact for keep (the compiler renders them).
-const BLOCK_REVIEW_CALLS: &[&str] = &["annotation", "review-decision"];
+const BLOCK_REVIEW_CALLS: &[&str] = &["annotation"];
 
 /// How the export should treat the collaboration review layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,7 +75,7 @@ pub fn count_review_markup(source: &str) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// Block-review AST handling (annotation / review-decision)
+// Block-review AST handling (annotation)
 // ---------------------------------------------------------------------------
 
 /// Remove every block-review call from the source. Used by accept/reject — the
@@ -104,8 +103,8 @@ fn strip_block_review(source: &str) -> String {
     out
 }
 
-/// Collect the hash-extended span of every `#annotation(...)` /
-/// `#review-decision(...)` call in the source, in document order.
+/// Collect the hash-extended span of every `#annotation(...)` call in the
+/// source, in document order.
 fn collect_block_review(source: &str) -> Vec<Range<usize>> {
     fn walk(node: &LinkedNode, source: &str, out: &mut Vec<Range<usize>>) {
         if node.kind() == SyntaxKind::FuncCall {
@@ -173,19 +172,9 @@ mod tests {
     }
 
     #[test]
-    fn accept_strips_review_decision() {
-        let src = "before\n#review-decision(\"Title\", \"accepted\", note: \"looks good\")\nafter\n";
-        assert_eq!(
-            prepare_review_markup(src, ReviewMarkupMode::Accept),
-            "before\nafter\n"
-        );
-    }
-
-    #[test]
     fn count_covers_all_review_kinds() {
-        let src = "#suggestion(kind: \"insert\")[a] #annotation[b] \
-                   #review-decision(\"t\", \"accepted\")";
-        assert_eq!(count_review_markup(src), 3);
+        let src = "#suggestion(kind: \"insert\")[a] #annotation[b]";
+        assert_eq!(count_review_markup(src), 2);
         assert_eq!(count_review_markup("plain text"), 0);
     }
 

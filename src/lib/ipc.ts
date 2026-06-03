@@ -1271,8 +1271,8 @@ export async function exportNotePdf(
 export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1";
 
 /// How an export should treat the collaboration review layer (inline
-/// `#suggestion` tracked changes plus `#annotation` / `#review-decision`
-/// notes). Mirrors `ReviewMarkupMode::from_opt` on the Rust side.
+/// `#suggestion` tracked changes plus `#annotation` notes). Mirrors
+/// `ReviewMarkupMode::from_opt` on the Rust side.
 export type ReviewMarkupMode = "accept" | "reject" | "keep";
 
 export async function exportNotePdfToFile(
@@ -1324,8 +1324,8 @@ export async function exportNoteHtml(
 }
 
 /// Count of collaboration review-markup constructs in a note (suggestions +
-/// annotations + review decisions). Drives whether the export dialog shows its
-/// "Review markup" control.
+/// annotations). Drives whether the export dialog shows its "Review markup"
+/// control.
 export async function countNoteReviewMarkup(path: string): Promise<number> {
   return invoke<number>("count_note_review_markup", { path });
 }

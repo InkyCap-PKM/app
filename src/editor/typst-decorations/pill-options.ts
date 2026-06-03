@@ -94,6 +94,7 @@ const REGISTRY: Record<string, PillOptionsBuilder> = {
   task:      taskOptions,
   due:       dueOptions,
   sym:       symOptions,
+  suggestion: suggestionOptions,
 };
 
 /** Returns option sections for the named pill. Functions with a curated
@@ -868,6 +869,20 @@ function dueOptions(view: EditorView, from: number, to: number): PillMenuSection
       }],
     },
   ];
+}
+
+// ── #suggestion(...) ────────────────────────────────────────────────
+//
+// The inline tracked-change pill has NO curated parameters: its kind and date
+// are already shown in the Annotations/Changes sidebar, the proposed/old text
+// is edited via the standard "Edit source" / "Open in source editor" actions,
+// and Accept/Reject/Comment live on the widget's own click dialogue. An empty
+// section list keeps the pill menu to the standard actions and — crucially —
+// suppresses `genericArgsOptions`, which would otherwise expose the raw `kind`
+// keyword as an error-prone editable field.
+
+function suggestionOptions(): PillMenuSection[] {
+  return [];
 }
 
 // ── #sym.* ──────────────────────────────────────────────────────────

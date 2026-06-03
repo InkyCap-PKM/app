@@ -48,7 +48,7 @@ the notebox.
   "import_line": "#import \"/.inkycap/notebox.typ\": *",
   "query_labels": [
     "inkycap-note", "inkycap-tag", "inkycap-link", "inkycap-agenda",
-    "inkycap-annotation", "inkycap-review-decision", "inkycap-suggestion"
+    "inkycap-annotation", "inkycap-suggestion"
   ],
   "docs": "documentation/developer/extending/notebox-format.md"
 }
@@ -79,8 +79,8 @@ typst query path/to/note.typ "<inkycap-link>" --field value
 `query_labels` lists the full set. Each label's `value` is a dictionary; the
 exact keys are defined by the functions in
 [`inkycap-notebox/lib.typ`](../../../inkycap-notebox/lib.typ) (`note`, `tag`,
-`wikilink`, `task`, `due`, `annotation`, `review-decision`, `suggestion`). That
-file is the source of truth for the dictionary shapes.
+`wikilink`, `task`, `due`, `annotation`, `suggestion`). That file is the source
+of truth for the dictionary shapes.
 
 ## Writing safely from outside InkyCap
 

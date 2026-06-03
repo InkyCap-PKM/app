@@ -135,6 +135,9 @@ const lspTriggerExtension = EditorView.inputHandler.of(
 );
 
 function lspHoverSource(view: EditorView, pos: number, _side: number): Promise<Tooltip | null> {
+  // Suppressed in visual mode — Tinymist signature/definition hovers are
+  // source-editor noise when the markup they describe is decorated away.
+  if (view.state.facet(visualModeFacet)) return Promise.resolve(null);
   const client = view.state.facet(lspClientFacet);
   const uri = view.state.facet(documentUriFacet);
   if (!client || !uri || !client.isRunning()) return Promise.resolve(null);
