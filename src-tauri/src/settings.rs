@@ -122,6 +122,12 @@ pub struct AppearanceSettings {
     /// How the file tree groups folders relative to files when sorting:
     /// "before" (folders first), "after" (files first), or "inline" (interleaved).
     pub folder_grouping: String,
+    /// The user's chosen sort mode for the file tree. One of "name-asc",
+    /// "name-desc", "modified-desc", "modified-asc", "created-desc",
+    /// "created-asc". Persisted here so a re-open preserves the ordering
+    /// the user picked. Stored as a string so the frontend's union type
+    /// is the single source of truth — Rust just round-trips the value.
+    pub file_tree_sort: String,
     /// Moment-style format pattern for displaying dates in the UI
     /// (Agenda due dates, backup timestamps, last-backup indicator, etc.).
     /// Does not affect how dates are stored — only their presentation.
@@ -144,6 +150,7 @@ impl Default for AppearanceSettings {
             accent_color: "#1D7874".to_string(),
             zoom_target: "content".to_string(),
             folder_grouping: "before".to_string(),
+            file_tree_sort: "name-asc".to_string(),
             date_format: "D MMM YYYY".to_string(),
             ui_locale: "en".to_string(),
         }

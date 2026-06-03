@@ -39,7 +39,8 @@ import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
-import { settings } from "../stores/settings";
+import { settings, updateSetting } from "../stores/settings";
+import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
@@ -111,14 +112,6 @@ function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
         : n,
     );
 }
-
-type FileSortMode =
-  | "name-asc"
-  | "name-desc"
-  | "modified-desc"
-  | "modified-asc"
-  | "created-desc"
-  | "created-asc";
 
 type ListSortMode = "name-asc" | "name-desc" | "count-desc" | "count-asc";
 
@@ -198,7 +191,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // File tree: sort mode + per-folder expansion state hoisted from the
   // TreeNode component so the Expand All / Collapse All button can flip
   // every folder in one click. Default to all-collapsed (empty set).
-  const [fileSortMode, setFileSortMode] = createSignal<FileSortMode>("name-asc");
+  // File-tree sort is a user-global preference (persisted across launches),
+  // so it lives in `settings.appearance.file_tree_sort` rather than a
+  // per-mount signal. The getter/setter shape is kept identical to a
+  // createSignal so the dropdown's existing callsites need no change.
+  const fileSortMode = (): FileSortMode => settings.appearance.file_tree_sort;
+  const setFileSortMode = (value: FileSortMode) =>
+    updateSetting("appearance", "file_tree_sort", value);
   const [showFileSortMenu, setShowFileSortMenu] = createSignal(false);
   const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
   const [showNewMenu, setShowNewMenu] = createSignal(false);

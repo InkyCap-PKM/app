@@ -745,7 +745,7 @@ body.is-resizing-pane .pane-resizer {
   outline: none;
 }
 
-.left-sidebar__tree-root:focus-within .sidebar-item--kbd-focus {
+html[data-input-modality="keyboard"] .left-sidebar__tree-root:focus-within .sidebar-item--kbd-focus {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
@@ -757,7 +757,7 @@ body.is-resizing-pane .pane-resizer {
   outline: none;
 }
 
-[data-list-nav]:focus-within .is-kbd-active {
+html[data-input-modality="keyboard"] [data-list-nav]:focus-within .is-kbd-active {
   box-shadow: inset 0 0 0 2px var(--accent);
   border-radius: 4px;
 }

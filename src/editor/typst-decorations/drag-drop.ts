@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import * as ipc from "../../lib/ipc";
 import { typstStringEscape } from "../../lib/typst";
+import { fileToBase64 } from "../../lib/file-bytes";
 import { pasteUrlHandler } from "./paste-url";
 import { protectedRangesField } from "./visual-plugin";
 
@@ -68,11 +69,7 @@ function insertAttachment(view: EditorView, relativePath: string, pos: number) {
 
 async function handleDroppedFile(view: EditorView, file: File, pos: number) {
   try {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const base64 = btoa(binary);
+    const base64 = await fileToBase64(file);
     const savedName = await ipc.copyToAttachments(file.name, base64);
     insertAttachment(view, savedName, pos);
   } catch (err) {
@@ -106,11 +103,7 @@ function parseUriList(raw: string): string[] {
 
 async function handlePastedImage(view: EditorView, file: File) {
   try {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const base64 = btoa(binary);
+    const base64 = await fileToBase64(file);
     const name = file.name || `pasted-${Date.now()}.${getExtension(file.type.split("/")[1] ?? "png")}`;
     const savedName = await ipc.copyToAttachments(name, base64);
     const pos = view.state.selection.main.from;
