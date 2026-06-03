@@ -318,6 +318,8 @@ body.is-resizing-pane .pane-resizer {
   background: transparent;
   border-color: transparent;
   color: var(--fg-muted);
+  /* Flat like an ordinary tab — drop the focused active tab's elevation. */
+  box-shadow: none;
 }
 
 /* ─── Tab-strip pane menu (PanelTopOpen dropdown) ─────────────────────── */
@@ -941,17 +943,34 @@ svg.lucide {
   white-space: nowrap;
   min-width: 0;
   flex-shrink: 0;
+  /* Settle state changes instead of snapping, so hover/active read as a
+     tab gaining body rather than a colour flicking on. */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .tab--active {
   background: var(--bg-primary);
   color: var(--fg-primary);
-  border-color: var(--border-input);
+  /* A lightly crisped neutral edge — firmer than a plain input border for
+     definition, but well short of a dark stroke; the elevation still carries
+     most of the lift. */
+  border-color: color-mix(in srgb, var(--border-input), var(--fg-muted) 15%);
+  box-shadow: var(--tab-active-shadow);
 }
 
-.tab:hover {
+/* Hover gives an inactive tab a defined edge and an opaque neutral surface
+   that lifts toward the page colour — so it reads as a solid object, not the
+   translucent accent wash it used to be. The edge picks up the accent colour
+   on hover as a quiet cue, while the fill stays neutral so it doesn't shout. */
+.tab:hover:not(.tab--active),
+.pane:not(.pane--focused) .tab--active:hover {
   color: var(--fg-primary);
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--bg-primary) 70%, var(--bg-secondary));
+  border-color: var(--accent);
 }
 
 
