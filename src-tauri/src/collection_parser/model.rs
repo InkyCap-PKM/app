@@ -127,7 +127,10 @@ impl CollectionStyle {
                 entries.push(format!("spacing: {}", ensure_length_unit(spacing, "em")));
             }
             if let Some(ref indent) = par.first_line_indent {
-                entries.push(format!("first-line-indent: {}", ensure_length_unit(indent, "em")));
+                entries.push(format!(
+                    "first-line-indent: {}",
+                    ensure_length_unit(indent, "em")
+                ));
             }
             if let Some(justify) = par.justify {
                 entries.push(format!("justify: {}", justify));
@@ -624,7 +627,10 @@ views:
 "#;
         let base = parse_collection_file(yaml).unwrap();
         assert_eq!(base.icon.as_deref(), Some("lucide:book"));
-        assert_eq!(base.typst_template.as_deref(), Some("@preview/charged-ieee:0.1.0"));
+        assert_eq!(
+            base.typst_template.as_deref(),
+            Some("@preview/charged-ieee:0.1.0")
+        );
         assert_eq!(base.bibliography_style.as_deref(), Some("ieee"));
     }
 }

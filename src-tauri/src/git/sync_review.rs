@@ -100,10 +100,16 @@ pub fn diff_hunks(baseline: &str, current: &str) -> Vec<SyncHunk> {
         let (baseline_text, current_text) = match *op {
             DiffOp::Delete {
                 old_index, old_len, ..
-            } => (concat(&base_lines[old_index..old_index + old_len]), String::new()),
+            } => (
+                concat(&base_lines[old_index..old_index + old_len]),
+                String::new(),
+            ),
             DiffOp::Insert {
                 new_index, new_len, ..
-            } => (String::new(), concat(&cur_lines[new_index..new_index + new_len])),
+            } => (
+                String::new(),
+                concat(&cur_lines[new_index..new_index + new_len]),
+            ),
             DiffOp::Replace {
                 old_index,
                 old_len,
@@ -144,9 +150,9 @@ pub fn revert_hunk(
     for op in &ops {
         match *op {
             // Unchanged lines pass through (identical on both sides).
-            DiffOp::Equal {
-                new_index, len, ..
-            } => out.push_str(&concat(&cur_lines[new_index..new_index + len])),
+            DiffOp::Equal { new_index, len, .. } => {
+                out.push_str(&concat(&cur_lines[new_index..new_index + len]))
+            }
             _ => {
                 let is_target = current_range(op) == Some((current_start, current_end)) && !matched;
                 if is_target {
@@ -246,7 +252,8 @@ mod tests {
         let hunks = diff_hunks(baseline, current);
         assert_eq!(hunks.len(), 2);
         let first = &hunks[0];
-        let reverted = revert_hunk(baseline, current, first.current_start, first.current_end).unwrap();
+        let reverted =
+            revert_hunk(baseline, current, first.current_start, first.current_end).unwrap();
         // First line back to baseline, last line still the current edit.
         assert_eq!(reverted, "a\nb\nc\nD\n");
     }
@@ -316,7 +323,10 @@ mod tests {
     #[test]
     fn drops_import_only_added_hunk() {
         // Baseline lacked the preamble; current added it — pure structural noise.
-        let hunks = diff_hunks("= Title\n", "#import \"/.inkycap/notebox.typ\": *\n= Title\n");
+        let hunks = diff_hunks(
+            "= Title\n",
+            "#import \"/.inkycap/notebox.typ\": *\n= Title\n",
+        );
         assert_eq!(hunks.len(), 1);
         assert!(drop_structural_hunks(hunks, is_import).is_empty());
     }

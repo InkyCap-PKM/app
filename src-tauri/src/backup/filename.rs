@@ -20,9 +20,8 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 /// insensitively against the *stem* (filename without extension) of any
 /// substituted value to catch e.g. `CON.foo` which is reserved too.
 const WINDOWS_RESERVED_STEMS: &[&str] = &[
-    "con", "prn", "aux", "nul",
-    "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
-    "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
 /// Sanitize a value that will be substituted into a filename. Replaces

@@ -39,11 +39,7 @@ impl PropertyIndex {
 
             // Index tags
             for tag in &note.tags {
-                index
-                    .tags
-                    .entry(tag.clone())
-                    .or_default()
-                    .push(id.clone());
+                index.tags.entry(tag.clone()).or_default().push(id.clone());
             }
 
             // Index aliases
@@ -151,7 +147,11 @@ impl PropertyIndex {
                 .iter()
                 .filter_map(|item| {
                     if let PropertyValue::String(s) = item {
-                        if !s.is_empty() { Some(s.clone()) } else { None }
+                        if !s.is_empty() {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }

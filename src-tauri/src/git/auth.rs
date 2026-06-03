@@ -126,9 +126,7 @@ pub fn identity_for_remote(remote: &str) -> Option<GitIdentity> {
 /// Set (or replace) the commit identity for `remote`.
 pub fn set_identity_for_remote(remote: &str, identity: GitIdentity) -> Result<()> {
     let mut store = load_identities();
-    store
-        .identities
-        .insert(normalize_remote(remote), identity);
+    store.identities.insert(normalize_remote(remote), identity);
     save_identities(&store)
 }
 
@@ -300,11 +298,26 @@ mod tests {
     #[test]
     fn normalize_remote_unifies_equivalent_spellings() {
         let canonical = "codeberg.org/joch/notes";
-        assert_eq!(normalize_remote("https://codeberg.org/joch/notes.git"), canonical);
-        assert_eq!(normalize_remote("https://codeberg.org/joch/notes"), canonical);
-        assert_eq!(normalize_remote("git@codeberg.org:joch/notes.git"), canonical);
-        assert_eq!(normalize_remote("ssh://git@codeberg.org/joch/notes"), canonical);
-        assert_eq!(normalize_remote("  HTTPS://Codeberg.org/joch/Notes.git/ "), canonical);
+        assert_eq!(
+            normalize_remote("https://codeberg.org/joch/notes.git"),
+            canonical
+        );
+        assert_eq!(
+            normalize_remote("https://codeberg.org/joch/notes"),
+            canonical
+        );
+        assert_eq!(
+            normalize_remote("git@codeberg.org:joch/notes.git"),
+            canonical
+        );
+        assert_eq!(
+            normalize_remote("ssh://git@codeberg.org/joch/notes"),
+            canonical
+        );
+        assert_eq!(
+            normalize_remote("  HTTPS://Codeberg.org/joch/Notes.git/ "),
+            canonical
+        );
     }
 
     #[test]
@@ -320,7 +333,15 @@ mod tests {
     #[test]
     fn identity_complete_requires_both_fields() {
         assert!(!GitIdentity::default().is_complete());
-        assert!(!GitIdentity { name: "A".into(), email: "  ".into() }.is_complete());
-        assert!(GitIdentity { name: "A".into(), email: "a@b.c".into() }.is_complete());
+        assert!(!GitIdentity {
+            name: "A".into(),
+            email: "  ".into()
+        }
+        .is_complete());
+        assert!(GitIdentity {
+            name: "A".into(),
+            email: "a@b.c".into()
+        }
+        .is_complete());
     }
 }

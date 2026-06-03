@@ -222,7 +222,10 @@ mod tests {
         assert!(entries.iter().all(|e| !e.encrypted));
 
         let mut zip = open(&archive).unwrap();
-        assert_eq!(read_entry_bytes(&mut zip, "manifest.json", None).unwrap(), b"{\"k\":1}");
+        assert_eq!(
+            read_entry_bytes(&mut zip, "manifest.json", None).unwrap(),
+            b"{\"k\":1}"
+        );
         assert_eq!(
             read_entry_bytes(&mut zip, "notes/note.typ", None).unwrap(),
             b"file body"
@@ -246,6 +249,9 @@ mod tests {
 
         // Decryption returns the original bytes.
         let mut zip = open(&archive).unwrap();
-        assert_eq!(read_entry_bytes(&mut zip, "secret.txt", Some(pw)).unwrap(), b"classified");
+        assert_eq!(
+            read_entry_bytes(&mut zip, "secret.txt", Some(pw)).unwrap(),
+            b"classified"
+        );
     }
 }

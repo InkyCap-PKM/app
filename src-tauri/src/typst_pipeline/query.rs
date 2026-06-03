@@ -173,9 +173,7 @@ pub fn compile_and_query(
 /// `wikilink(...)` and `tag(...)` call shapes the `inkycap-notebox`
 /// package exports — anything else would require evaluation to be
 /// trusted.
-fn extract_body_metadata_via_syntax(
-    source: &str,
-) -> (Vec<String>, Vec<String>, Vec<AgendaMarker>) {
+fn extract_body_metadata_via_syntax(source: &str) -> (Vec<String>, Vec<String>, Vec<AgendaMarker>) {
     let root = parse(source);
     let node = LinkedNode::new(&root);
     let mut links = Vec::new();
@@ -487,10 +485,8 @@ fn typst_value_to_property(value: &Value) -> PropertyValue {
         Value::Float(f) => PropertyValue::Number(*f),
         Value::Str(s) => PropertyValue::String(s.as_str().to_string()),
         Value::Array(arr) => {
-            let items: Vec<PropertyValue> = arr
-                .iter()
-                .map(|v| typst_value_to_property(v))
-                .collect();
+            let items: Vec<PropertyValue> =
+                arr.iter().map(|v| typst_value_to_property(v)).collect();
             PropertyValue::List(items)
         }
         Value::Dict(dict) => {
@@ -523,11 +519,7 @@ mod tests {
         crate::notebox_package::scaffold(&root);
 
         let note_path = root.join("test.typ");
-        let full_source = format!(
-            "{}\n\n{}",
-            crate::notebox_package::import_line(),
-            source
-        );
+        let full_source = format!("{}\n\n{}", crate::notebox_package::import_line(), source);
         fs::write(&note_path, &full_source).expect("write note");
 
         (dir, root)
@@ -535,9 +527,8 @@ mod tests {
 
     #[test]
     fn extracts_note_metadata() {
-        let (_dir, root) = setup_notebox_with_package(
-            r#"#note(title: "Test Note", tags: ("research", "typst"))"#,
-        );
+        let (_dir, root) =
+            setup_notebox_with_package(r#"#note(title: "Test Note", tags: ("research", "typst"))"#);
         let note_path = root.join("test.typ");
         let source = fs::read_to_string(&note_path).unwrap();
 
@@ -639,9 +630,8 @@ Reference to #wikilink("Target Note") here.
 
     #[test]
     fn extracts_link_refs_from_note_metadata() {
-        let (_dir, root) = setup_notebox_with_package(
-            r#"#note(title: "Test", source: link-ref("Source Note"))"#,
-        );
+        let (_dir, root) =
+            setup_notebox_with_package(r#"#note(title: "Test", source: link-ref("Source Note"))"#);
         let note_path = root.join("test.typ");
         let source = fs::read_to_string(&note_path).unwrap();
 
@@ -662,7 +652,11 @@ Reference to #wikilink("Target Note") here.
         let mut compiler = TypstCompiler::new(root);
         let result = compile_and_query(&mut compiler, &note_path, source);
 
-        let shared_count = result.tags.iter().filter(|t| t.as_str() == "shared").count();
+        let shared_count = result
+            .tags
+            .iter()
+            .filter(|t| t.as_str() == "shared")
+            .count();
         assert_eq!(shared_count, 1, "tag 'shared' should appear exactly once");
         assert!(result.tags.contains(&"unique".to_string()));
     }
@@ -734,7 +728,10 @@ Reference to #wikilink("Target Note") here.
         let mut compiler = TypstCompiler::new(root);
         let result = compile_and_query(&mut compiler, &note_path, source);
 
-        let collection = result.properties.get("collection").expect("collection property");
+        let collection = result
+            .properties
+            .get("collection")
+            .expect("collection property");
         assert!(collection.contains("my-paper"));
         assert!(collection.contains("thesis-ch3"));
         assert!(!collection.contains("other"));
@@ -897,7 +894,10 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
             collect_frame_text(&page.frame, &mut text);
         }
 
-        assert!(text.contains("HOSTBODYMARKER"), "host body missing; rendered: {text}");
+        assert!(
+            text.contains("HOSTBODYMARKER"),
+            "host body missing; rendered: {text}"
+        );
         assert!(
             text.contains("INCLUDEDBODYMARKER"),
             "included note's body did not render; rendered: {text}"

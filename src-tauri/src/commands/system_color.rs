@@ -118,7 +118,11 @@ fn gnome_accent() -> Option<String> {
         return None;
     }
     let raw = String::from_utf8(output.stdout).ok()?;
-    let name = raw.trim().trim_matches('\'').trim_matches('"').to_lowercase();
+    let name = raw
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_lowercase();
     // Hex map of GNOME's named accents (from libadwaita's accent palette).
     // Kept inline rather than as a constant table because the list is small
     // and the only caller is right here.

@@ -243,7 +243,9 @@ fn parse_suggestion(call: &LinkedNode, source: &str) -> Option<ParsedSuggestion>
                 body_inner = Some(inner_of_brackets(&child));
             }
             SyntaxKind::Named => {
-                let Some(named) = child.cast::<ast::Named>() else { continue };
+                let Some(named) = child.cast::<ast::Named>() else {
+                    continue;
+                };
                 match named.name().as_str() {
                     "kind" => {
                         if let ast::Expr::Str(s) = named.expr() {
@@ -295,8 +297,17 @@ mod tests {
 
     #[test]
     fn build_insert_call() {
-        let c = suggestion_call(SuggestionKind::Insert, "new text", None, Some("alice"), Some("2026-05-23"));
-        assert_eq!(c, "#suggestion(kind: \"insert\", by: \"alice\", on: \"2026-05-23\")[new text]");
+        let c = suggestion_call(
+            SuggestionKind::Insert,
+            "new text",
+            None,
+            Some("alice"),
+            Some("2026-05-23"),
+        );
+        assert_eq!(
+            c,
+            "#suggestion(kind: \"insert\", by: \"alice\", on: \"2026-05-23\")[new text]"
+        );
     }
 
     #[test]
@@ -307,8 +318,17 @@ mod tests {
 
     #[test]
     fn build_replace_call_carries_old() {
-        let c = suggestion_call(SuggestionKind::Replace, "new", Some("old"), Some("bob"), None);
-        assert_eq!(c, "#suggestion(kind: \"replace\", old: [old], by: \"bob\")[new]");
+        let c = suggestion_call(
+            SuggestionKind::Replace,
+            "new",
+            Some("old"),
+            Some("bob"),
+            None,
+        );
+        assert_eq!(
+            c,
+            "#suggestion(kind: \"replace\", old: [old], by: \"bob\")[new]"
+        );
     }
 
     #[test]
@@ -383,7 +403,10 @@ mod tests {
         // Body content is markup, not a string — emphasis must survive accept.
         let src = "see #suggestion(kind: \"insert\")[a _key_ point] here";
         let off = src.find("#suggestion").unwrap();
-        assert_eq!(resolve_suggestion_at(src, off, true), "see a _key_ point here");
+        assert_eq!(
+            resolve_suggestion_at(src, off, true),
+            "see a _key_ point here"
+        );
     }
 
     #[test]

@@ -747,7 +747,10 @@ mod tests {
     fn rename_leaves_unrelated_references_untouched() {
         let src = "#image(\"/img/other.png\")\n#image(\"/img/photo.png\")";
         let out = rename(src, "img/photo.png", "img/photo-x.png", "");
-        assert_eq!(out, "#image(\"/img/other.png\")\n#image(\"/img/photo-x.png\")");
+        assert_eq!(
+            out,
+            "#image(\"/img/other.png\")\n#image(\"/img/photo-x.png\")"
+        );
     }
 
     #[test]

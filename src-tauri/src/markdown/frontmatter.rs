@@ -104,10 +104,7 @@ fn convert_value(v: &serde_yaml::Value) -> Option<ParsedYamlValue> {
             } else {
                 PropertyType::Text
             };
-            Some(ParsedYamlValue::Scalar {
-                raw: s.clone(),
-                ty,
-            })
+            Some(ParsedYamlValue::Scalar { raw: s.clone(), ty })
         }
         serde_yaml::Value::Sequence(items) => {
             let strings: Vec<String> = items.iter().filter_map(scalar_to_string).collect();
@@ -198,7 +195,9 @@ pub fn sanitize_ident(key: &str) -> String {
     }
     let trimmed = out.trim_matches('-').to_string();
     if trimmed.is_empty() || !trimmed.chars().next().unwrap().is_ascii_alphabetic() {
-        format!("field-{}", trimmed).trim_end_matches('-').to_string()
+        format!("field-{}", trimmed)
+            .trim_end_matches('-')
+            .to_string()
     } else {
         trimmed
     }
@@ -231,9 +230,8 @@ mod tests {
 
     #[test]
     fn infers_scalar_types() {
-        let fields = parse_frontmatter_fields(
-            "count: 42\nflag: true\nwhen: 2024-01-15\nname: Widget",
-        );
+        let fields =
+            parse_frontmatter_fields("count: 42\nflag: true\nwhen: 2024-01-15\nname: Widget");
         let ty = |k: &str| {
             fields
                 .iter()

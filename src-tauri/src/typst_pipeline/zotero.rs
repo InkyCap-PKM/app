@@ -42,13 +42,17 @@ pub fn auto_detect_path() -> Option<PathBuf> {
             dirs::data_dir().map(|d| d.join("Zotero").join("Zotero").join("zotero.sqlite")),
         ]
     } else if cfg!(target_os = "macos") {
-        vec![
-            dirs::home_dir().map(|d| d.join("Zotero").join("zotero.sqlite")),
-        ]
+        vec![dirs::home_dir().map(|d| d.join("Zotero").join("zotero.sqlite"))]
     } else {
         vec![
             dirs::home_dir().map(|d| d.join("Zotero").join("zotero.sqlite")),
-            dirs::home_dir().map(|d| d.join("snap").join("zotero-snap").join("common").join("Zotero").join("zotero.sqlite")),
+            dirs::home_dir().map(|d| {
+                d.join("snap")
+                    .join("zotero-snap")
+                    .join("common")
+                    .join("Zotero")
+                    .join("zotero.sqlite")
+            }),
         ]
     };
 
@@ -119,9 +123,7 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
     };
 
     let items: Vec<(i64, String, String)> = item_stmt
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
         .map_err(|e| format!("Failed to query items: {e}"))?
         .filter_map(|r| r.ok())
         .collect();
@@ -160,23 +162,55 @@ pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
                     "title" => title = row.1,
                     "date" => date = Some(extract_year(&row.1)),
                     "citationKey" => citation_key = Some(row.1),
-                    "publicationTitle" => { extra_fields.insert("journal".to_string(), row.1); }
-                    "bookTitle" => { extra_fields.insert("booktitle".to_string(), row.1); }
-                    "publisher" => { extra_fields.insert("publisher".to_string(), row.1); }
-                    "place" => { extra_fields.insert("address".to_string(), row.1); }
-                    "volume" => { extra_fields.insert("volume".to_string(), row.1); }
-                    "issue" | "number" => { extra_fields.insert("number".to_string(), row.1); }
-                    "pages" | "numPages" => { extra_fields.insert("pages".to_string(), row.1); }
-                    "DOI" => { extra_fields.insert("doi".to_string(), row.1); }
-                    "url" => { extra_fields.insert("url".to_string(), row.1); }
-                    "ISBN" => { extra_fields.insert("isbn".to_string(), row.1); }
-                    "ISSN" => { extra_fields.insert("issn".to_string(), row.1); }
+                    "publicationTitle" => {
+                        extra_fields.insert("journal".to_string(), row.1);
+                    }
+                    "bookTitle" => {
+                        extra_fields.insert("booktitle".to_string(), row.1);
+                    }
+                    "publisher" => {
+                        extra_fields.insert("publisher".to_string(), row.1);
+                    }
+                    "place" => {
+                        extra_fields.insert("address".to_string(), row.1);
+                    }
+                    "volume" => {
+                        extra_fields.insert("volume".to_string(), row.1);
+                    }
+                    "issue" | "number" => {
+                        extra_fields.insert("number".to_string(), row.1);
+                    }
+                    "pages" | "numPages" => {
+                        extra_fields.insert("pages".to_string(), row.1);
+                    }
+                    "DOI" => {
+                        extra_fields.insert("doi".to_string(), row.1);
+                    }
+                    "url" => {
+                        extra_fields.insert("url".to_string(), row.1);
+                    }
+                    "ISBN" => {
+                        extra_fields.insert("isbn".to_string(), row.1);
+                    }
+                    "ISSN" => {
+                        extra_fields.insert("issn".to_string(), row.1);
+                    }
                     // abstractNote skipped — not needed for bibliography rendering
-                    "edition" => { extra_fields.insert("edition".to_string(), row.1); }
-                    "series" => { extra_fields.insert("series".to_string(), row.1); }
-                    "institution" | "university" => { extra_fields.insert("institution".to_string(), row.1); }
-                    "conferenceName" => { extra_fields.insert("booktitle".to_string(), row.1); }
-                    "language" => { extra_fields.insert("language".to_string(), row.1); }
+                    "edition" => {
+                        extra_fields.insert("edition".to_string(), row.1);
+                    }
+                    "series" => {
+                        extra_fields.insert("series".to_string(), row.1);
+                    }
+                    "institution" | "university" => {
+                        extra_fields.insert("institution".to_string(), row.1);
+                    }
+                    "conferenceName" => {
+                        extra_fields.insert("booktitle".to_string(), row.1);
+                    }
+                    "language" => {
+                        extra_fields.insert("language".to_string(), row.1);
+                    }
                     _ => {}
                 }
             }

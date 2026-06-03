@@ -100,9 +100,9 @@ impl Parser {
     }
 
     fn parse_string_literal(&mut self) -> Result<String, InkyCapError> {
-        let quote = self.advance().ok_or_else(|| {
-            InkyCapError::FilterParse("Expected string literal".to_string())
-        })?;
+        let quote = self
+            .advance()
+            .ok_or_else(|| InkyCapError::FilterParse("Expected string literal".to_string()))?;
         if quote != '"' && quote != '\'' {
             return Err(InkyCapError::FilterParse(format!(
                 "Expected quote, got '{}'",
@@ -416,7 +416,11 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
 /// fails to parse — a malformed expression or an unrecognised shape — counts
 /// as "does not match" so a broken row fails closed in an AND list and is
 /// simply skipped in an OR list, never matching a note by accident.
-fn evaluate_filter_member(member: &serde_yaml::Value, note: &NoteMetadata, self_path: &Path) -> bool {
+fn evaluate_filter_member(
+    member: &serde_yaml::Value,
+    note: &NoteMetadata,
+    self_path: &Path,
+) -> bool {
     match member {
         serde_yaml::Value::String(expr_str) => match parse_filter_expr(expr_str) {
             Ok(expr) => evaluate(&expr, note, self_path),
@@ -515,11 +519,12 @@ mod tests {
     #[test]
     fn test_parse_equality_string() {
         let expr = parse_filter_expr(r#"file.ext == "typ""#).unwrap();
-        let note = make_note(vec![(
-            "file.ext",
-            PropertyValue::String("typ".to_string()),
-        )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        let note = make_note(vec![("file.ext", PropertyValue::String("typ".to_string()))]);
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
@@ -529,14 +534,22 @@ mod tests {
             "file.folder",
             PropertyValue::String("my/notes/folder".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
     fn test_parse_boolean_comparison() {
         let expr = parse_filter_expr("task == false").unwrap();
         let note = make_note(vec![("task", PropertyValue::Bool(false))]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
@@ -546,7 +559,11 @@ mod tests {
             "tags",
             PropertyValue::List(vec![PropertyValue::String("rust".to_string())]),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
@@ -556,14 +573,22 @@ mod tests {
             "publisher-type",
             PropertyValue::String("journal".to_string()),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
     fn test_parse_bracket_access_is_empty() {
         let expr = parse_filter_expr(r#"note["publisher-type"].isEmpty()"#).unwrap();
         let note = make_note(vec![("publisher-type", PropertyValue::Null)]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
@@ -576,7 +601,11 @@ mod tests {
                 PropertyValue::String("tauri".to_string()),
             ]),
         )]);
-        assert!(evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        assert!(evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     // -- Extended coverage: negative cases, error handling,
@@ -616,28 +645,31 @@ mod tests {
     #[test]
     fn test_equality_negative_case() {
         let expr = parse_filter_expr(r#"file.ext == "typ""#).unwrap();
-        let note = make_note(vec![(
-            "file.ext",
-            PropertyValue::String("pdf".to_string()),
-        )]);
-        assert!(!evaluate(&expr, &note, Path::new("/notebox/test.collection")));
+        let note = make_note(vec![("file.ext", PropertyValue::String("pdf".to_string()))]);
+        assert!(!evaluate(
+            &expr,
+            &note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
     fn test_inequality_both_directions() {
         let expr = parse_filter_expr(r#"file.ext != "typ""#).unwrap();
 
-        let typ_note = make_note(vec![(
-            "file.ext",
-            PropertyValue::String("typ".to_string()),
-        )]);
-        assert!(!evaluate(&expr, &typ_note, Path::new("/notebox/test.collection")));
+        let typ_note = make_note(vec![("file.ext", PropertyValue::String("typ".to_string()))]);
+        assert!(!evaluate(
+            &expr,
+            &typ_note,
+            Path::new("/notebox/test.collection")
+        ));
 
-        let pdf_note = make_note(vec![(
-            "file.ext",
-            PropertyValue::String("pdf".to_string()),
-        )]);
-        assert!(evaluate(&expr, &pdf_note, Path::new("/notebox/test.collection")));
+        let pdf_note = make_note(vec![("file.ext", PropertyValue::String("pdf".to_string()))]);
+        assert!(evaluate(
+            &expr,
+            &pdf_note,
+            Path::new("/notebox/test.collection")
+        ));
     }
 
     #[test]
@@ -648,13 +680,21 @@ mod tests {
             "file.tags",
             PropertyValue::List(vec![PropertyValue::String("rust".into())]),
         )]);
-        assert!(!evaluate(&expr, &has_rust, Path::new("/notebox/x.collection")));
+        assert!(!evaluate(
+            &expr,
+            &has_rust,
+            Path::new("/notebox/x.collection")
+        ));
 
         let no_rust = make_note(vec![(
             "file.tags",
             PropertyValue::List(vec![PropertyValue::String("go".into())]),
         )]);
-        assert!(evaluate(&expr, &no_rust, Path::new("/notebox/x.collection")));
+        assert!(evaluate(
+            &expr,
+            &no_rust,
+            Path::new("/notebox/x.collection")
+        ));
     }
 
     #[test]
@@ -860,7 +900,10 @@ and:
         // Untagged but in the Research folder — the OR alternative.
         let in_folder = make_note(vec![
             ("file.name", PropertyValue::String("Folder".into())),
-            ("file.folder", PropertyValue::String("notebox/Research".into())),
+            (
+                "file.folder",
+                PropertyValue::String("notebox/Research".into()),
+            ),
         ]);
         assert!(evaluate_filter_group(&group, &in_folder, p));
 
@@ -889,10 +932,18 @@ and:
             "collection",
             PropertyValue::List(vec![PropertyValue::String("other-project".into())]),
         )]);
-        assert!(!evaluate(&expr, &non_member, Path::new("/notebox/x.collection")));
+        assert!(!evaluate(
+            &expr,
+            &non_member,
+            Path::new("/notebox/x.collection")
+        ));
 
         let no_collection = make_note(vec![]);
-        assert!(!evaluate(&expr, &no_collection, Path::new("/notebox/x.collection")));
+        assert!(!evaluate(
+            &expr,
+            &no_collection,
+            Path::new("/notebox/x.collection")
+        ));
     }
 
     #[test]

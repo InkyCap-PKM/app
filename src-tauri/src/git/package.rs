@@ -52,8 +52,7 @@ pub fn export(root: &Path, dest: &Path, password: Option<&str>) -> Result<Packag
     let mut builder = ZipBuilder::create(dest, password.map(str::to_string))?;
     let mut summary = PackageSummary::default();
     for entry in walkdir::WalkDir::new(&git_dir).follow_links(true) {
-        let entry =
-            entry.map_err(|e| InkyCapError::ExportFailed(format!("walking .git: {e}")))?;
+        let entry = entry.map_err(|e| InkyCapError::ExportFailed(format!("walking .git: {e}")))?;
         let path = entry.path();
         let rel = path.strip_prefix(&git_dir).map_err(|e| {
             InkyCapError::ExportFailed(format!("relativising {}: {e}", path.display()))
@@ -199,7 +198,10 @@ mod tests {
         let pkg = tempfile::tempdir().unwrap();
         let archive = pkg.path().join("notebox.inkypkg");
         let summary = export(src.path(), &archive, None).unwrap();
-        assert!(summary.file_count > 0, "wrote at least HEAD + a loose object");
+        assert!(
+            summary.file_count > 0,
+            "wrote at least HEAD + a loose object"
+        );
 
         let staging = extract_to_temp(&archive, None).unwrap();
         let restored = GitBackend::open(staging.path()).unwrap();

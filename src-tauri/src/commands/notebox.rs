@@ -251,7 +251,9 @@ pub async fn open_notebox(
         }
         let git_cfg = session.notebox_settings.read().await.git.clone();
         match git_cfg {
-            Some(git_cfg) => surface_git_status(&app_handle, label.clone(), canonical_root, git_cfg),
+            Some(git_cfg) => {
+                surface_git_status(&app_handle, label.clone(), canonical_root, git_cfg)
+            }
             // No collaboration config, but the notebox may still be a git repo
             // with a remote (an external clone, or a config dropped/not yet
             // written) — surface a reconnect offer rather than treating it as
@@ -389,7 +391,11 @@ fn surface_git_status(
 /// `notebox:git-reconnectable` so the frontend can offer a one-click reconnect
 /// (deriving the remote/branch from git) instead of presenting a blank setup
 /// form. A plain notebox (no repo, or a repo without a remote) emits nothing.
-fn surface_reconnectable_git(handle: &tauri::AppHandle, owner_label: String, root: std::path::PathBuf) {
+fn surface_reconnectable_git(
+    handle: &tauri::AppHandle,
+    owner_label: String,
+    root: std::path::PathBuf,
+) {
     let handle = handle.clone();
     tokio::task::spawn_blocking(move || {
         use crate::git::backend::GitBackend;
@@ -632,7 +638,10 @@ fn docs_notebox_root() -> std::path::PathBuf {
 fn is_docs_notebox(path: &str) -> bool {
     let candidate = std::path::PathBuf::from(path);
     let docs = docs_notebox_root();
-    match (std::fs::canonicalize(&candidate), std::fs::canonicalize(&docs)) {
+    match (
+        std::fs::canonicalize(&candidate),
+        std::fs::canonicalize(&docs),
+    ) {
         (Ok(a), Ok(b)) => a == b,
         _ => candidate == docs,
     }

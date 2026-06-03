@@ -211,9 +211,11 @@ impl CorpusStats {
         // Store for incremental subtraction and neighborhood queries
         self.doc_unigrams.insert(path.to_path_buf(), seen_unigrams);
         self.doc_bigrams.insert(path.to_path_buf(), bigrams_vec);
-        self.doc_bigram_sets.insert(path.to_path_buf(), seen_bigrams);
+        self.doc_bigram_sets
+            .insert(path.to_path_buf(), seen_bigrams);
         self.doc_trigrams.insert(path.to_path_buf(), trigrams_vec);
-        self.doc_trigram_sets.insert(path.to_path_buf(), seen_trigrams);
+        self.doc_trigram_sets
+            .insert(path.to_path_buf(), seen_trigrams);
     }
 
     /// Remove a document's contribution from corpus statistics.
@@ -359,12 +361,7 @@ impl CorpusStats {
         };
         // doc_unigrams stores unique term *sets*, so per-doc term frequency is
         // approximated as 1/word_count — consistent with avg_tfidf_in_neighborhood.
-        let center_wc = self
-            .doc_word_count
-            .get(center)
-            .copied()
-            .unwrap_or(1)
-            .max(1) as f64;
+        let center_wc = self.doc_word_count.get(center).copied().unwrap_or(1).max(1) as f64;
         let center_vec: HashMap<&str, f64> = center_terms
             .iter()
             .map(|t| (t.as_str(), idf(t) / center_wc))
@@ -398,9 +395,7 @@ impl CorpusStats {
                 scored.push((cosine, path));
             }
         }
-        scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().take(m).map(|(_, p)| p.clone()).collect()
     }
 
@@ -473,11 +468,8 @@ impl CorpusStats {
                     }
                     continue;
                 }
-                let neighborhood_count = self.count_neighborhood_presence(
-                    term,
-                    &neighborhood_set,
-                    &self.doc_unigrams,
-                );
+                let neighborhood_count =
+                    self.count_neighborhood_presence(term, &neighborhood_set, &self.doc_unigrams);
                 if neighborhood_count == 0 {
                     continue;
                 }
@@ -500,15 +492,14 @@ impl CorpusStats {
                     }),
                     // An emergent concept must recur across the neighborhood —
                     // a term in a single note is just a word.
-                    None if neighborhood_count >= config.min_neighborhood_presence => {
-                        emergent.push(EmergentConcept {
+                    None if neighborhood_count >= config.min_neighborhood_presence => emergent
+                        .push(EmergentConcept {
                             term: term.clone(),
                             score,
                             source_notes,
                             doc_count: neighborhood_count,
                             is_bigram: false,
-                        })
-                    }
+                        }),
                     None => {}
                 }
             }
@@ -538,8 +529,7 @@ impl CorpusStats {
                 // Bigrams are the multi-word "unnamed concepts" the view is
                 // really after, so their composite score is boosted.
                 let score = config.bigram_boost
-                    * (config.pmi_weight * pmi.max(0.0)
-                        + config.proximity_weight * proximity);
+                    * (config.pmi_weight * pmi.max(0.0) + config.proximity_weight * proximity);
                 if score <= 0.0 {
                     continue;
                 }
@@ -557,15 +547,14 @@ impl CorpusStats {
                         doc_count: neighborhood_count,
                         is_bigram: true,
                     }),
-                    None if neighborhood_count >= config.min_neighborhood_presence => {
-                        emergent.push(EmergentConcept {
+                    None if neighborhood_count >= config.min_neighborhood_presence => emergent
+                        .push(EmergentConcept {
                             term: display_term,
                             score,
                             source_notes,
                             doc_count: neighborhood_count,
                             is_bigram: true,
-                        })
-                    }
+                        }),
                     None => {}
                 }
             }
@@ -576,11 +565,7 @@ impl CorpusStats {
         // pairs do. Trigrams that recur are the strongest concept signal.
         if config.include_trigrams {
             for (trigram_key, _count) in &self.trigram_count {
-                let df = self
-                    .trigram_doc_freq
-                    .get(trigram_key)
-                    .copied()
-                    .unwrap_or(0);
+                let df = self.trigram_doc_freq.get(trigram_key).copied().unwrap_or(0);
                 if df < config.trigram_min_freq || df > max_doc_freq {
                     continue;
                 }
@@ -621,15 +606,14 @@ impl CorpusStats {
                         doc_count: neighborhood_count,
                         is_bigram: true,
                     }),
-                    None if neighborhood_count >= config.min_neighborhood_presence => {
-                        emergent.push(EmergentConcept {
+                    None if neighborhood_count >= config.min_neighborhood_presence => emergent
+                        .push(EmergentConcept {
                             term: display_term,
                             score,
                             source_notes,
                             doc_count: neighborhood_count,
                             is_bigram: true,
-                        })
-                    }
+                        }),
                     None => {}
                 }
             }
@@ -718,21 +702,24 @@ impl CorpusStats {
         notes
     }
 
-    fn avg_tfidf_in_neighborhood(
-        &self,
-        term: &str,
-        neighborhood: &HashSet<&PathBuf>,
-    ) -> f64 {
+    fn avg_tfidf_in_neighborhood(&self, term: &str, neighborhood: &HashSet<&PathBuf>) -> f64 {
         let term_owned = term.to_owned();
         let mut sum = 0.0;
         let mut count = 0usize;
 
         for path in neighborhood {
-            let Some(unigrams) = self.doc_unigrams.get(path.as_path()) else { continue };
+            let Some(unigrams) = self.doc_unigrams.get(path.as_path()) else {
+                continue;
+            };
             if !unigrams.contains(&term_owned) {
                 continue;
             }
-            let doc_wc = self.doc_word_count.get(path.as_path()).copied().unwrap_or(1).max(1);
+            let doc_wc = self
+                .doc_word_count
+                .get(path.as_path())
+                .copied()
+                .unwrap_or(1)
+                .max(1);
             let tfidf = self.tfidf(term, 1, doc_wc);
             sum += tfidf;
             count += 1;
@@ -854,8 +841,12 @@ fn stitch_overlapping_shingles(emergent: &mut Vec<EmergentConcept>) {
     if merged.is_empty() {
         return;
     }
-    let mut rebuilt: Vec<EmergentConcept> =
-        emergent.drain(..).enumerate().filter(|(i, _)| !consumed[*i]).map(|(_, c)| c).collect();
+    let mut rebuilt: Vec<EmergentConcept> = emergent
+        .drain(..)
+        .enumerate()
+        .filter(|(i, _)| !consumed[*i])
+        .map(|(_, c)| c)
+        .collect();
     rebuilt.extend(merged);
     *emergent = rebuilt;
 }
@@ -941,8 +932,7 @@ pub fn extract_trigrams_from_tokens(
         }
         if let (Some(a), Some(b)) = (&w1, &w2) {
             if line1 == token.line && line2 == token.line {
-                let mut key =
-                    String::with_capacity(a.len() + b.len() + word.len() + 2);
+                let mut key = String::with_capacity(a.len() + b.len() + word.len() + 2);
                 key.push_str(a);
                 key.push(BIGRAM_SEP);
                 key.push_str(b);
@@ -989,14 +979,8 @@ mod tests {
             make_token("epistemology", 0),
             make_token("philosophy", 1),
         ];
-        let tokens2 = vec![
-            make_token("biology", 0),
-            make_token("evolution", 0),
-        ];
-        let tokens3 = vec![
-            make_token("philosophy", 0),
-            make_token("metaphysics", 0),
-        ];
+        let tokens2 = vec![make_token("biology", 0), make_token("evolution", 0)];
+        let tokens3 = vec![make_token("philosophy", 0), make_token("metaphysics", 0)];
 
         stats.add_doc(Path::new("note1.typ"), &tokens1);
         stats.add_doc(Path::new("note2.typ"), &tokens2);

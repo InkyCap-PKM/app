@@ -113,9 +113,7 @@ fn has_any_table(conn: &Connection) -> bool {
 /// if the schema doesn't match, which triggers the delete-and-retry path
 /// in [`MetadataCache::open`].
 fn verify_schema(conn: &Connection) -> rusqlite::Result<()> {
-    let has_content: bool = conn
-        .prepare("SELECT content FROM files LIMIT 0")
-        .is_ok();
+    let has_content: bool = conn.prepare("SELECT content FROM files LIMIT 0").is_ok();
     if !has_content {
         return Err(rusqlite::Error::InvalidColumnName(
             "schema verification failed: files table missing content column".to_string(),

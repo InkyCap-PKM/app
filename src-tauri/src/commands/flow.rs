@@ -111,4 +111,3 @@ pub fn bfs_link_graph(
 
     (nodes, edges)
 }
-

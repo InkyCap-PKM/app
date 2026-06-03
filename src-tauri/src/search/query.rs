@@ -30,10 +30,7 @@ pub enum QueryNode {
     /// Logical NOT (exclude matches).
     Not(Box<QueryNode>),
     /// A field-scoped filter: path:, file:, tag:, section:, property:.
-    Filter {
-        kind: FilterKind,
-        value: String,
-    },
+    Filter { kind: FilterKind, value: String },
     /// Proximity search: two terms within N words of each other.
     Proximity {
         left: String,
@@ -107,7 +104,10 @@ pub fn collection_filter_values(node: &QueryNode) -> Vec<String> {
 
 fn collect_collection_values(node: &QueryNode, out: &mut Vec<String>) {
     match node {
-        QueryNode::Filter { kind: FilterKind::Collection, value } => {
+        QueryNode::Filter {
+            kind: FilterKind::Collection,
+            value,
+        } => {
             out.push(value.clone());
         }
         QueryNode::And(l, r) | QueryNode::Or(l, r) => {
@@ -204,11 +204,11 @@ fn tokenize(input: &str) -> Vec<Token> {
         // of subsequent filters.
         if let Some((kind_len, kind)) = match_filter_prefix(&chars, i) {
             i += kind_len + 1; // past "<kind>:"
-            // Read the value as a sequence of segments. A segment is either
-            // a quoted run (`"..."` — spaces allowed inside) or an unquoted
-            // run terminated by whitespace or a paren. Adjacent segments
-            // concatenate, which makes `property:status="in progress"`
-            // produce the value `status=in progress`.
+                               // Read the value as a sequence of segments. A segment is either
+                               // a quoted run (`"..."` — spaces allowed inside) or an unquoted
+                               // run terminated by whitespace or a paren. Adjacent segments
+                               // concatenate, which makes `property:status="in progress"`
+                               // produce the value `status=in progress`.
             let mut value = String::new();
             let mut have_segment = false;
             loop {
@@ -264,8 +264,15 @@ fn tokenize(input: &str) -> Vec<Token> {
 /// If `chars[i..]` starts with `<prefix>:` for one of the known filter
 /// prefixes (case-insensitive), return `(prefix_len, lowercased_prefix)`.
 fn match_filter_prefix(chars: &[char], i: usize) -> Option<(usize, String)> {
-    const PREFIXES: &[&str] =
-        &["path", "file", "tag", "section", "property", "annotation", "collection"];
+    const PREFIXES: &[&str] = &[
+        "path",
+        "file",
+        "tag",
+        "section",
+        "property",
+        "annotation",
+        "collection",
+    ];
     for prefix in PREFIXES {
         let pl = prefix.len();
         if i + pl + 1 > chars.len() {
@@ -349,10 +356,7 @@ fn parse_atom(tokens: &[Token], pos: &mut usize) -> Option<QueryNode> {
             Some(inner)
         }
         Token::Phrase(p) => {
-            let words: Vec<String> = p
-                .split_whitespace()
-                .map(|w| w.to_lowercase())
-                .collect();
+            let words: Vec<String> = p.split_whitespace().map(|w| w.to_lowercase()).collect();
             *pos += 1;
             if words.is_empty() {
                 None
@@ -444,14 +448,23 @@ mod tests {
     #[test]
     fn case_insensitive_prefix() {
         let q = parse_query("Tag:rust").unwrap();
-        assert!(matches!(q, QueryNode::Filter { kind: FilterKind::Tag, .. }));
+        assert!(matches!(
+            q,
+            QueryNode::Filter {
+                kind: FilterKind::Tag,
+                ..
+            }
+        ));
     }
 
     #[test]
     fn parses_collection_filter() {
         let q = parse_query("collection:papers").unwrap();
         match q {
-            QueryNode::Filter { kind: FilterKind::Collection, value } => {
+            QueryNode::Filter {
+                kind: FilterKind::Collection,
+                value,
+            } => {
                 assert_eq!(value, "papers");
             }
             other => panic!("expected Collection filter, got {other:?}"),
@@ -481,7 +494,10 @@ mod tests {
     fn property_with_quoted_value() {
         let q = parse_query("property:author=\"Jane Doe\"").unwrap();
         match q {
-            QueryNode::Filter { kind: FilterKind::Property, value } => {
+            QueryNode::Filter {
+                kind: FilterKind::Property,
+                value,
+            } => {
                 assert_eq!(value, "author=Jane Doe");
             }
             other => panic!("expected Property filter, got {other:?}"),

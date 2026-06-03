@@ -69,7 +69,10 @@ pub fn parse_font_stack(stack: &str) -> Vec<String> {
             if trimmed.is_empty() {
                 return None;
             }
-            if GENERIC_KEYWORDS.iter().any(|k| trimmed.eq_ignore_ascii_case(k)) {
+            if GENERIC_KEYWORDS
+                .iter()
+                .any(|k| trimmed.eq_ignore_ascii_case(k))
+            {
                 return None;
             }
             Some(trimmed.to_string())
@@ -151,11 +154,7 @@ pub fn build_defaults_show_call_resolved(user: &UserSettings) -> String {
     let resolved_text = font_resolver::resolve_role(FontRole::Text, &user.fonts);
     let resolved_mono = font_resolver::resolve_role(FontRole::Monospace, &user.fonts);
     let mono_str = resolved_mono.unwrap_or_default();
-    build_defaults_show_call(
-        &user.document,
-        resolved_text.as_deref(),
-        &mono_str,
-    )
+    build_defaults_show_call(&user.document, resolved_text.as_deref(), &mono_str)
 }
 
 /// Inject style rules into the source after the inkycap-notebox import line.
@@ -308,9 +307,9 @@ mod tests {
             None,
             "\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\", monospace",
         );
-        assert!(rules.contains(
-            "monospace-font: (\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\")"
-        ));
+        assert!(
+            rules.contains("monospace-font: (\"Adwaita Mono\", \"Ubuntu Mono\", \"Fira Mono\")")
+        );
     }
 
     #[test]
@@ -438,9 +437,7 @@ mod tests {
         };
         let rules = style.to_typst_show_call();
         // Page geometry: direct #set rule. Numbering patterns are quoted.
-        assert!(rules.contains(
-            "#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"
-        ));
+        assert!(rules.contains("#set page(paper: \"us-letter\", columns: 2, numbering: \"1\")"));
         // Text/par: delegated to lib.typ
         assert!(rules.contains("#show: apply-collection-style.with("));
         assert!(rules.contains(

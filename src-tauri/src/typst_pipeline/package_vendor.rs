@@ -165,7 +165,8 @@ fn package_typ_files(pkg_dir: &Path) -> Vec<std::path::PathBuf> {
 }
 
 fn has_typ_ext(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("typ"))
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("typ"))
 }
 
 #[cfg(test)]

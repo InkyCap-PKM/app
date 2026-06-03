@@ -36,7 +36,10 @@ fn writes_plain_archive_with_forward_slashes() {
     })
     .unwrap();
 
-    assert!(summary.file_count >= 2, "expected at least the two .typ files");
+    assert!(
+        summary.file_count >= 2,
+        "expected at least the two .typ files"
+    );
     assert!(dest.exists(), "archive file should exist");
 
     let file = fs::File::open(&dest).unwrap();
@@ -111,15 +114,16 @@ fn writes_encrypted_archive_refuses_extraction_without_password() {
     };
     let msg = err.to_string().to_lowercase();
     assert!(
-        msg.contains("password")
-            || msg.contains("encrypted")
-            || msg.contains("aes"),
+        msg.contains("password") || msg.contains("encrypted") || msg.contains("aes"),
         "expected an encryption-related error, got: {err}"
     );
 
     // Sanity-check the decrypt path works with the correct password.
     let mut entry = zip
-        .by_name_decrypt("notebox/note one.typ", b"hunter2-correct-horse-battery-staple")
+        .by_name_decrypt(
+            "notebox/note one.typ",
+            b"hunter2-correct-horse-battery-staple",
+        )
         .unwrap();
     let mut buf = String::new();
     entry.read_to_string(&mut buf).unwrap();

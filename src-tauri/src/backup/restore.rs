@@ -180,10 +180,12 @@ pub fn extract_files(
         // Defence-in-depth: reject any component that's `..` or
         // absolute. The archive entry IS attacker-controlled.
         let rel_path = PathBuf::from(rel);
-        if rel_path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir))
-        {
+        if rel_path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir | std::path::Component::RootDir
+            )
+        }) {
             return Err(InkyCapError::InvalidPath(format!(
                 "archive entry has unsafe path: {interior}"
             )));
@@ -205,9 +207,7 @@ pub fn extract_files(
                     continue;
                 }
                 RestoreConflictPolicy::Overwrite => dest.clone(),
-                RestoreConflictPolicy::Rename => {
-                    rename_target(&dest)
-                }
+                RestoreConflictPolicy::Rename => rename_target(&dest),
             }
         } else {
             dest.clone()

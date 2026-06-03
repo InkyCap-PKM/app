@@ -30,19 +30,17 @@ struct ForbiddenPattern {
     line_allowlist: &'static [&'static str],
 }
 
-const FORBIDDEN: &[ForbiddenPattern] = &[
-    ForbiddenPattern {
-        description: "byte-cast to char (corrupts multi-byte UTF-8). \
+const FORBIDDEN: &[ForbiddenPattern] = &[ForbiddenPattern {
+    description: "byte-cast to char (corrupts multi-byte UTF-8). \
                       Use `push_str(&s[a..b])` for slices, or stay in `Vec<u8>` \
                       until reassembling via `String::from_utf8` / `from_utf8_lossy`.",
-        // Catches `bytes[i] as char`, `b as char`, and similar single-byte
-        // -> char casts. We deliberately don't try to be clever — the rule
-        // is "no `as char` from a u8 expression", and any legitimate
-        // exception can opt out via `// utf8-safe: <reason>`.
-        needle: " as char",
-        line_allowlist: &["utf8-safe:"],
-    },
-];
+    // Catches `bytes[i] as char`, `b as char`, and similar single-byte
+    // -> char casts. We deliberately don't try to be clever — the rule
+    // is "no `as char` from a u8 expression", and any legitimate
+    // exception can opt out via `// utf8-safe: <reason>`.
+    needle: " as char",
+    line_allowlist: &["utf8-safe:"],
+}];
 
 /// Files (relative to `src/`) that are exempt from the scan entirely.
 /// Empty for now — keep it that way unless a genuinely safe construct

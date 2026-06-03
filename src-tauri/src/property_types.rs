@@ -169,10 +169,7 @@ impl PropertyTypeRegistry {
         match serde_json::to_string_pretty(&file) {
             Ok(json) => {
                 if let Err(err) = std::fs::write(&path, json) {
-                    log::warn!(
-                        "property_types: failed to write {}: {err}",
-                        path.display()
-                    );
+                    log::warn!("property_types: failed to write {}: {err}", path.display());
                 }
             }
             Err(err) => {

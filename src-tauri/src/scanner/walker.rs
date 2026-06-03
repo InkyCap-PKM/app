@@ -427,10 +427,7 @@ pub async fn scan_notebox_cached(
                     // tanked the whole compile and stored an empty result.
                     // The body-stripped fallback in `compile_and_query` will
                     // succeed on the re-parse path below.
-                    let non_file_props = cached
-                        .properties
-                        .keys()
-                        .any(|k| !k.starts_with("file."));
+                    let non_file_props = cached.properties.keys().any(|k| !k.starts_with("file."));
                     let cached_empty = !non_file_props && cached.tags.is_empty();
                     let looks_like_note = content.contains("#note(");
                     // Same idea but specifically for wikilinks: a cached
@@ -443,16 +440,15 @@ pub async fn scan_notebox_cached(
                     // substring check — false positives just trigger an
                     // unnecessary reparse, which is harmless.
                     let cached_no_links = cached.links.is_empty();
-                    let content_has_wikilinks = content.contains("#wikilink(")
-                        || content.contains("[[");
+                    let content_has_wikilinks =
+                        content.contains("#wikilink(") || content.contains("[[");
                     if (cached_empty && looks_like_note)
                         || (cached_no_links && content_has_wikilinks)
                     {
                         // fall through to reparse
                     } else {
                         let note = cached_to_note(cached, path, notebox_root, &stat);
-                        link_index
-                            .set_forward_links(path.clone(), note.links.clone());
+                        link_index.set_forward_links(path.clone(), note.links.clone());
                         notes.push(note);
                         contents.push((path.clone(), content));
                         stats.cache_hits += 1;
@@ -470,7 +466,9 @@ pub async fn scan_notebox_cached(
             enrich_with_query(&mut note, qr);
 
             link_index.set_forward_links(path.clone(), note.links.clone());
-            to_upsert.push(note_to_cached_file(&note, relpath, stat.mtime, stat.size, &content));
+            to_upsert.push(note_to_cached_file(
+                &note, relpath, stat.mtime, stat.size, &content,
+            ));
             notes.push(note);
             contents.push((path.clone(), content));
             stats.cache_misses += 1;

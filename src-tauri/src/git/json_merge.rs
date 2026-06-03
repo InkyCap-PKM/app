@@ -163,7 +163,11 @@ mod tests {
         assert_eq!(m.conflicts[0].path, "view");
         assert_eq!(m.conflicts[0].mine, json!("reading"));
         assert_eq!(m.conflicts[0].theirs, json!("live"));
-        assert_eq!(m.merged, json!({ "view": "reading" }), "merged defaults to mine");
+        assert_eq!(
+            m.merged,
+            json!({ "view": "reading" }),
+            "merged defaults to mine"
+        );
     }
 
     #[test]

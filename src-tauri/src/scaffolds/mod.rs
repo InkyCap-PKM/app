@@ -181,7 +181,13 @@ fn parse_typst_string_literal(raw: &str) -> Option<String> {
 fn slugify(title: &str) -> String {
     let slug: String = title
         .chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let collapsed: String = slug
         .split('-')

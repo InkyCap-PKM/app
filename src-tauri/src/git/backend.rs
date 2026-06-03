@@ -105,21 +105,25 @@ pub struct ChangedPath {
 /// renames identically. Untracked entries (workdir additions) count as adds.
 fn delta_to_changed(delta: &git2::DiffDelta) -> Option<ChangedPath> {
     match delta.status() {
-        git2::Delta::Added | git2::Delta::Untracked => delta.new_file().path().map(|p| ChangedPath {
-            path: p.to_path_buf(),
-            status: ChangeStatus::Added,
-            old_path: None,
-        }),
+        git2::Delta::Added | git2::Delta::Untracked => {
+            delta.new_file().path().map(|p| ChangedPath {
+                path: p.to_path_buf(),
+                status: ChangeStatus::Added,
+                old_path: None,
+            })
+        }
         git2::Delta::Deleted => delta.old_file().path().map(|p| ChangedPath {
             path: p.to_path_buf(),
             status: ChangeStatus::Deleted,
             old_path: None,
         }),
-        git2::Delta::Renamed | git2::Delta::Copied => delta.new_file().path().map(|p| ChangedPath {
-            path: p.to_path_buf(),
-            status: ChangeStatus::Renamed,
-            old_path: delta.old_file().path().map(std::path::Path::to_path_buf),
-        }),
+        git2::Delta::Renamed | git2::Delta::Copied => {
+            delta.new_file().path().map(|p| ChangedPath {
+                path: p.to_path_buf(),
+                status: ChangeStatus::Renamed,
+                old_path: delta.old_file().path().map(std::path::Path::to_path_buf),
+            })
+        }
         // Modified and anything else with a content change → conservatively a
         // modification of the new path.
         _ => delta.new_file().path().map(|p| ChangedPath {
@@ -387,9 +391,9 @@ impl GitBackend {
         opts.include_untracked(true)
             .recurse_untracked_dirs(true)
             .include_ignored(false);
-        let mut diff =
-            self.repo
-                .diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts))?;
+        let mut diff = self
+            .repo
+            .diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts))?;
         // A moved note's new copy arrives untracked, so rename detection must opt
         // into untracked sources to pair it with the deleted original.
         let mut find = git2::DiffFindOptions::new();
@@ -458,8 +462,14 @@ impl GitBackend {
     /// would actually use. `None` when either is unset or empty.
     pub fn config_identity(&self) -> Option<(String, String)> {
         let cfg = self.repo.config().ok()?;
-        let name = cfg.get_string("user.name").ok().filter(|s| !s.trim().is_empty())?;
-        let email = cfg.get_string("user.email").ok().filter(|s| !s.trim().is_empty())?;
+        let name = cfg
+            .get_string("user.name")
+            .ok()
+            .filter(|s| !s.trim().is_empty())?;
+        let email = cfg
+            .get_string("user.email")
+            .ok()
+            .filter(|s| !s.trim().is_empty())?;
         Some((name, email))
     }
 
@@ -608,7 +618,8 @@ impl GitBackend {
                 continue; // a conflicted path stays at ours until resolved
             }
             // Defense in depth: never write through a path that escapes the root.
-            if cp.path
+            if cp
+                .path
                 .components()
                 .any(|c| matches!(c, std::path::Component::ParentDir))
             {
@@ -698,14 +709,9 @@ impl GitBackend {
         };
         let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
 
-        let oid = self.repo.commit(
-            Some("HEAD"),
-            author,
-            author,
-            message,
-            &tree,
-            &parent_refs,
-        )?;
+        let oid = self
+            .repo
+            .commit(Some("HEAD"), author, author, message, &tree, &parent_refs)?;
         Ok(oid)
     }
 
@@ -830,8 +836,7 @@ const GITIGNORE_ENTRIES: &[(&str, &str)] = &[
 pub fn ensure_collaboration_gitignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let present: std::collections::HashSet<&str> =
-        existing.lines().map(str::trim).collect();
+    let present: std::collections::HashSet<&str> = existing.lines().map(str::trim).collect();
 
     let missing: Vec<&(&str, &str)> = GITIGNORE_ENTRIES
         .iter()
@@ -936,7 +941,10 @@ mod tests {
 
         let bytes = b.read_blob_at(oid, Path::new("note.typ")).unwrap().unwrap();
         assert_eq!(String::from_utf8(bytes).unwrap(), "líne with ünïcode 🌱\n");
-        assert!(b.read_blob_at(oid, Path::new("absent.typ")).unwrap().is_none());
+        assert!(b
+            .read_blob_at(oid, Path::new("absent.typ"))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -964,7 +972,10 @@ mod tests {
 
         // Each version's content is fetchable by its commit hash.
         let oldest = git2::Oid::from_str(&hist[1].commit).unwrap();
-        let bytes = b.read_blob_at(oldest, Path::new("note.typ")).unwrap().unwrap();
+        let bytes = b
+            .read_blob_at(oldest, Path::new("note.typ"))
+            .unwrap()
+            .unwrap();
         assert_eq!(String::from_utf8(bytes).unwrap(), "one\n");
     }
 
@@ -972,7 +983,10 @@ mod tests {
     fn file_history_empty_on_unborn_branch() {
         let dir = tempfile::tempdir().unwrap();
         let b = GitBackend::open_or_init(dir.path()).unwrap();
-        assert!(b.file_history(Path::new("note.typ"), 10).unwrap().is_empty());
+        assert!(b
+            .file_history(Path::new("note.typ"), 10)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -1028,7 +1042,8 @@ mod tests {
         // c1: a.typ + b.typ
         std::fs::write(dir.path().join("a.typ"), "a1\n").unwrap();
         std::fs::write(dir.path().join("b.typ"), "b1\n").unwrap();
-        b.stage_paths(&[PathBuf::from("a.typ"), PathBuf::from("b.typ")]).unwrap();
+        b.stage_paths(&[PathBuf::from("a.typ"), PathBuf::from("b.typ")])
+            .unwrap();
         let c1 = b.commit("c1", &sig()).unwrap();
         // c2: modify a, delete b, add c
         std::fs::write(dir.path().join("a.typ"), "a2\n").unwrap();
@@ -1044,9 +1059,30 @@ mod tests {
         let mut changed = b.changed_paths(Some(c1), c2).unwrap();
         changed.sort_by(|x, y| x.path.cmp(&y.path));
         assert_eq!(changed.len(), 3);
-        assert_eq!(changed[0], ChangedPath { path: PathBuf::from("a.typ"), status: ChangeStatus::Modified, old_path: None });
-        assert_eq!(changed[1], ChangedPath { path: PathBuf::from("b.typ"), status: ChangeStatus::Deleted, old_path: None });
-        assert_eq!(changed[2], ChangedPath { path: PathBuf::from("c.typ"), status: ChangeStatus::Added, old_path: None });
+        assert_eq!(
+            changed[0],
+            ChangedPath {
+                path: PathBuf::from("a.typ"),
+                status: ChangeStatus::Modified,
+                old_path: None
+            }
+        );
+        assert_eq!(
+            changed[1],
+            ChangedPath {
+                path: PathBuf::from("b.typ"),
+                status: ChangeStatus::Deleted,
+                old_path: None
+            }
+        );
+        assert_eq!(
+            changed[2],
+            ChangedPath {
+                path: PathBuf::from("c.typ"),
+                status: ChangeStatus::Added,
+                old_path: None
+            }
+        );
 
         // Unborn `from` (None) ⇒ every path in `to` is an add.
         let from_empty = b.changed_paths(None, c1).unwrap();
@@ -1125,9 +1161,20 @@ mod tests {
 
         ensure_collaboration_gitignore(root).unwrap();
         let after = std::fs::read_to_string(root.join(".gitignore")).unwrap();
-        assert!(after.contains(".inkycap/incoming/"), "missing entry backfilled");
-        assert_eq!(after.matches(".inkycap/local.json").count(), 1, "no duplication");
-        assert_eq!(after.matches(GITIGNORE_MARKER).count(), 1, "header stays single");
+        assert!(
+            after.contains(".inkycap/incoming/"),
+            "missing entry backfilled"
+        );
+        assert_eq!(
+            after.matches(".inkycap/local.json").count(),
+            1,
+            "no duplication"
+        );
+        assert_eq!(
+            after.matches(GITIGNORE_MARKER).count(),
+            1,
+            "header stays single"
+        );
     }
 
     // ── Phase 5 merge engine ─────────────────────────────────────────────
@@ -1201,12 +1248,19 @@ mod tests {
             MergeOutcome::Clean(t) => t,
             MergeOutcome::Conflicts(p) => panic!("expected clean, got {p:?}"),
         };
-        b.commit_tree("Merge", &sig(), tree, &[ours, theirs]).unwrap();
+        b.commit_tree("Merge", &sig(), tree, &[ours, theirs])
+            .unwrap();
         b.checkout_head_force().unwrap();
 
         // Both sides' edits are present, and the merge fast-forwards the remote.
-        assert_eq!(std::fs::read_to_string(bpath.join("x.typ")).unwrap(), "CHANGED1\nl2\nl3\n");
-        assert_eq!(std::fs::read_to_string(bpath.join("y.typ")).unwrap(), "B-EDIT\n");
+        assert_eq!(
+            std::fs::read_to_string(bpath.join("x.typ")).unwrap(),
+            "CHANGED1\nl2\nl3\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(bpath.join("y.typ")).unwrap(),
+            "B-EDIT\n"
+        );
         assert!(
             !b.push("origin", &branch).unwrap().rejected,
             "a merge commit parented on theirs fast-forwards the remote"
@@ -1266,8 +1320,14 @@ mod tests {
         assert_eq!(app.conflicts, vec![PathBuf::from("conflict.typ")]);
         assert_eq!(app.applied, vec![PathBuf::from("clean.typ")]);
         // The clean file now holds theirs; the conflicted file still holds mine.
-        assert_eq!(std::fs::read_to_string(bpath.join("clean.typ")).unwrap(), "THEIRS clean\n");
-        assert_eq!(std::fs::read_to_string(bpath.join("conflict.typ")).unwrap(), "BBB\nline2\n");
+        assert_eq!(
+            std::fs::read_to_string(bpath.join("clean.typ")).unwrap(),
+            "THEIRS clean\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(bpath.join("conflict.typ")).unwrap(),
+            "BBB\nline2\n"
+        );
     }
 
     /// When the remote's branch disappears (a reset / migrated / re-created
@@ -1314,7 +1374,10 @@ mod tests {
         let theirs = b.remote_tracking_oid("origin", &branch).unwrap().unwrap();
         b.fast_forward_checkout(theirs).unwrap();
 
-        assert_eq!(std::fs::read_to_string(bpath.join("x.typ")).unwrap(), "after\n");
+        assert_eq!(
+            std::fs::read_to_string(bpath.join("x.typ")).unwrap(),
+            "after\n"
+        );
         assert_eq!(b.current_head().unwrap().unwrap().1, theirs);
     }
 }

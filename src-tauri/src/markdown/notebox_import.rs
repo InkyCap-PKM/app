@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+use crate::notebox_package;
 use crate::property_types::{builtin_property_type, is_system_property, PropertyType};
 use crate::typst_pipeline::path_rebase::rebase_relative_paths;
-use crate::notebox_package;
 
 use super::frontmatter::{parse_frontmatter_fields, sanitize_ident, system_alias};
 use super::md_to_typst::{
@@ -71,7 +71,9 @@ pub fn detect_math_mode(notebox_root: &Path) -> MathImportMode {
 /// falling back to lexical order for non-numeric components.
 fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
     let parse = |s: &str| -> Vec<u64> {
-        s.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect()
+        s.split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect()
     };
     parse(a).cmp(&parse(b)).then_with(|| a.cmp(b))
 }
@@ -144,9 +146,11 @@ pub fn import_from_directory(
             }
             let target_dir = target.join(relative);
             if let Err(e) = fs::create_dir_all(&target_dir) {
-                result
-                    .errors
-                    .push(format!("Failed to create directory {}: {}", relative.display(), e));
+                result.errors.push(format!(
+                    "Failed to create directory {}: {}",
+                    relative.display(),
+                    e
+                ));
             }
             continue;
         }
@@ -160,10 +164,7 @@ pub fn import_from_directory(
         if extension == "md" {
             convert_markdown_file(path, relative, target, &options, &mut result);
         } else {
-            let filename = relative
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let filename = relative.file_name().and_then(|s| s.to_str()).unwrap_or("");
             if !filename.is_empty() && embed_targets.contains(filename) {
                 copy_asset_to_attachment_folder(
                     path,
@@ -276,9 +277,7 @@ pub fn import_from_zip(
     let file = match fs::File::open(zip_path) {
         Ok(f) => f,
         Err(e) => {
-            result
-                .errors
-                .push(format!("Failed to open zip: {}", e));
+            result.errors.push(format!("Failed to open zip: {}", e));
             return result;
         }
     };
@@ -309,7 +308,9 @@ pub fn import_from_zip(
         let mut entry = match archive.by_index(i) {
             Ok(e) => e,
             Err(e) => {
-                result.errors.push(format!("Failed to read zip entry {}: {}", i, e));
+                result
+                    .errors
+                    .push(format!("Failed to read zip entry {}: {}", i, e));
                 continue;
             }
         };
@@ -340,9 +341,11 @@ pub fn import_from_zip(
         if entry.is_dir() {
             let target_dir = target.join(&relative);
             if let Err(e) = fs::create_dir_all(&target_dir) {
-                result
-                    .errors
-                    .push(format!("Failed to create directory {}: {}", relative.display(), e));
+                result.errors.push(format!(
+                    "Failed to create directory {}: {}",
+                    relative.display(),
+                    e
+                ));
             }
             continue;
         }
@@ -356,18 +359,12 @@ pub fn import_from_zip(
             continue;
         }
 
-        let extension = relative
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let extension = relative.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         if extension == "md" {
             convert_markdown_bytes(&content, &relative, target, &options, &mut result);
         } else {
-            let filename = relative
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let filename = relative.file_name().and_then(|s| s.to_str()).unwrap_or("");
             if !filename.is_empty() && embed_targets.contains(filename) {
                 copy_asset_bytes_to_attachment_folder(
                     &content,
@@ -446,11 +443,9 @@ fn copy_asset_bytes_to_attachment_folder(
     let target_path = attach_dir.join(filename);
     match fs::write(&target_path, content) {
         Ok(()) => result.files_copied += 1,
-        Err(e) => result.errors.push(format!(
-            "Failed to write {}: {}",
-            target_path.display(),
-            e
-        )),
+        Err(e) => result
+            .errors
+            .push(format!("Failed to write {}: {}", target_path.display(), e)),
     }
 }
 
@@ -530,12 +525,7 @@ fn convert_markdown_bytes(
     }
 }
 
-fn copy_asset_file(
-    source_path: &Path,
-    relative: &Path,
-    target: &Path,
-    result: &mut ImportResult,
-) {
+fn copy_asset_file(source_path: &Path, relative: &Path, target: &Path, result: &mut ImportResult) {
     let target_path = target.join(relative);
 
     if let Some(parent) = target_path.parent() {
@@ -552,12 +542,7 @@ fn copy_asset_file(
     }
 }
 
-fn copy_asset_bytes(
-    content: &[u8],
-    relative: &Path,
-    target: &Path,
-    result: &mut ImportResult,
-) {
+fn copy_asset_bytes(content: &[u8], relative: &Path, target: &Path, result: &mut ImportResult) {
     let target_path = target.join(relative);
 
     if let Some(parent) = target_path.parent() {
@@ -612,10 +597,7 @@ pub fn detect_dialect_for_zip(zip_path: &Path) -> MarkdownDialect {
             continue;
         };
         let name = entry.name();
-        if name
-            .split('/')
-            .any(|component| component == ".obsidian")
-        {
+        if name.split('/').any(|component| component == ".obsidian") {
             return MarkdownDialect::Obsidian;
         }
     }
@@ -659,7 +641,9 @@ pub fn import_from_tarball(
     };
 
     if let Err(e) = crate::typst_packages::extract_tar_gz(file, tmp.path()) {
-        result.errors.push(format!("Failed to extract tarball: {}", e));
+        result
+            .errors
+            .push(format!("Failed to extract tarball: {}", e));
         return result;
     }
 
@@ -669,8 +653,13 @@ pub fn import_from_tarball(
     // detect_zip_root_prefix.
     let source_root = collapse_single_root(tmp.path());
 
-    let inner =
-        import_from_directory(&source_root, target, dialect, frontmatter_mapping, attachment_folder);
+    let inner = import_from_directory(
+        &source_root,
+        target,
+        dialect,
+        frontmatter_mapping,
+        attachment_folder,
+    );
     result.notes_converted += inner.notes_converted;
     result.files_copied += inner.files_copied;
     result.math_as_code += inner.math_as_code;
@@ -710,10 +699,7 @@ pub fn detect_dialect_for_tarball(tar_path: &Path) -> MarkdownDialect {
     };
     for entry in entries.flatten() {
         let Ok(path) = entry.path() else { continue };
-        if path
-            .components()
-            .any(|c| c.as_os_str() == ".obsidian")
-        {
+        if path.components().any(|c| c.as_os_str() == ".obsidian") {
             return MarkdownDialect::Obsidian;
         }
     }
@@ -897,7 +883,13 @@ fn suggest_mapping(
 ) -> (String, PropertyType, bool, bool, bool) {
     // 1) Known alias → canonical system property (handles created→date, etc.).
     if let Some(sys) = system_alias(key_lower) {
-        return (sys.to_string(), builtin_property_type(sys), true, true, false);
+        return (
+            sys.to_string(),
+            builtin_property_type(sys),
+            true,
+            true,
+            false,
+        );
     }
     // 2) Exact (case-insensitive) match to an existing property — checking
     //    both the note index (keys actually used) and the type registry
@@ -1032,13 +1024,15 @@ mod tests {
 
         // Create hidden dir that should be skipped.
         fs::create_dir_all(source.path().join(".obsidian")).unwrap();
-        fs::write(
-            source.path().join(".obsidian/config.json"),
-            "{}",
-        )
-        .unwrap();
+        fs::write(source.path().join(".obsidian/config.json"), "{}").unwrap();
 
-        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
+        let result = import_from_directory(
+            source.path(),
+            target.path(),
+            MarkdownDialect::Obsidian,
+            None,
+            "Assets".to_string(),
+        );
 
         assert_eq!(result.notes_converted, 2);
         assert_eq!(result.files_copied, 1);
@@ -1101,8 +1095,14 @@ mod tests {
             "original relative path must be rewritten, got:\n{typ}"
         );
         // File routed into the attachment folder, not its original subfolder.
-        assert!(target.path().join("Assets/pic.png").exists(), "image not routed to attachment folder");
-        assert!(!target.path().join("notes/images/pic.png").exists(), "image left at original path");
+        assert!(
+            target.path().join("Assets/pic.png").exists(),
+            "image not routed to attachment folder"
+        );
+        assert!(
+            !target.path().join("notes/images/pic.png").exists(),
+            "image left at original path"
+        );
     }
 
     #[test]
@@ -1159,7 +1159,13 @@ mod tests {
         )
         .unwrap();
 
-        let result = import_from_directory(source.path(), target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
+        let result = import_from_directory(
+            source.path(),
+            target.path(),
+            MarkdownDialect::Obsidian,
+            None,
+            "Assets".to_string(),
+        );
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
         // Emitted call points at the attachment folder, not the
@@ -1203,12 +1209,8 @@ mod tests {
             let mut zip_writer = zip::ZipWriter::new(file);
 
             let options = zip::write::SimpleFileOptions::default();
-            zip_writer
-                .start_file("notebox/hello.md", options)
-                .unwrap();
-            zip_writer
-                .write_all(b"# Hello\n\nWorld.")
-                .unwrap();
+            zip_writer.start_file("notebox/hello.md", options).unwrap();
+            zip_writer.write_all(b"# Hello\n\nWorld.").unwrap();
             zip_writer
                 .start_file("notebox/Assets/pic.jpg", options)
                 .unwrap();
@@ -1217,7 +1219,13 @@ mod tests {
         }
 
         let import_target = TempDir::new().unwrap();
-        let result = import_from_zip(&zip_path, import_target.path(), MarkdownDialect::Obsidian, None, "Assets".to_string());
+        let result = import_from_zip(
+            &zip_path,
+            import_target.path(),
+            MarkdownDialect::Obsidian,
+            None,
+            "Assets".to_string(),
+        );
 
         assert_eq!(result.notes_converted, 1);
         assert_eq!(result.files_copied, 1);

@@ -72,7 +72,11 @@ fn fc_match(alias: &str) -> Option<String> {
         return None;
     }
     let name = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Read a font family from a gsettings key. The value comes back as a
@@ -107,7 +111,11 @@ fn gsettings_font(schema: &str, key: &str) -> Option<String> {
         Some((head, tail)) if tail.chars().all(|c| c.is_ascii_digit()) => head.trim(),
         _ => unquoted,
     };
-    if family.is_empty() { None } else { Some(family.to_string()) }
+    if family.is_empty() {
+        None
+    } else {
+        Some(family.to_string())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -219,11 +227,9 @@ pub struct ResolvedFonts {
 pub fn resolve_all(fonts: &FontSettings) -> ResolvedFonts {
     let sys = system_defaults();
     ResolvedFonts {
-        interface: resolve_role(FontRole::Interface, fonts)
-            .unwrap_or_else(|| sys.sans.clone()),
+        interface: resolve_role(FontRole::Interface, fonts).unwrap_or_else(|| sys.sans.clone()),
         editor: resolve_role(FontRole::Editor, fonts).unwrap_or_else(|| sys.sans.clone()),
-        monospace: resolve_role(FontRole::Monospace, fonts)
-            .unwrap_or_else(|| sys.mono.clone()),
+        monospace: resolve_role(FontRole::Monospace, fonts).unwrap_or_else(|| sys.mono.clone()),
         text: resolve_role(FontRole::Text, fonts),
         verse: resolve_role(FontRole::Verse, fonts),
     }
@@ -237,13 +243,19 @@ mod tests {
     fn bundled_resolves_to_bundled_family() {
         let mut fonts = FontSettings::default();
         fonts.text = FontChoice::bundled();
-        assert_eq!(resolve_role(FontRole::Text, &fonts).as_deref(), Some(BUNDLED_TEXT));
+        assert_eq!(
+            resolve_role(FontRole::Text, &fonts).as_deref(),
+            Some(BUNDLED_TEXT)
+        );
     }
 
     #[test]
     fn typst_default_returns_none_for_text() {
         let mut fonts = FontSettings::default();
-        fonts.text = FontChoice { mode: FontChoice::TYPST_DEFAULT.into(), custom: String::new() };
+        fonts.text = FontChoice {
+            mode: FontChoice::TYPST_DEFAULT.into(),
+            custom: String::new(),
+        };
         assert_eq!(resolve_role(FontRole::Text, &fonts), None);
     }
 

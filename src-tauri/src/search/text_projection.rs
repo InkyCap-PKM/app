@@ -338,7 +338,9 @@ fn named_string_arg(call_node: &LinkedNode<'_>, name: &str) -> Option<String> {
         if child.kind() != SyntaxKind::Named {
             continue;
         }
-        let Some(named) = child.cast::<ast::Named>() else { continue };
+        let Some(named) = child.cast::<ast::Named>() else {
+            continue;
+        };
         if named.name().as_str() != name {
             continue;
         }
@@ -411,8 +413,8 @@ fn emit_string_tokens(
     let mut first = true;
     for (offset, word) in word_boundaries(text) {
         let char_start = col + offset;
-        let break_before = (first && out.pending_break)
-            || gap_breaks_phrase(&text[prev_word_end..offset]);
+        let break_before =
+            (first && out.pending_break) || gap_breaks_phrase(&text[prev_word_end..offset]);
         out.tokens.push(TextToken {
             word: word.to_lowercase(),
             line,
@@ -457,11 +459,11 @@ fn emit_tokens_in_range(
     let mut prev_word_end_in_seg: usize = 0;
 
     let emit = |seg_start: usize,
-                    seg_end: usize,
-                    line: usize,
-                    line_byte_start: usize,
-                    prev_end: usize,
-                    out: &mut TextProjection| {
+                seg_end: usize,
+                line: usize,
+                line_byte_start: usize,
+                prev_end: usize,
+                out: &mut TextProjection| {
         let abs_start = range.start + seg_start;
         let abs_end = range.start + seg_end;
         let word = &source[abs_start..abs_end];
@@ -515,7 +517,14 @@ fn emit_tokens_in_range(
     }
 
     if let Some(s) = word_start_in_seg {
-        emit(s, segment.len(), line, line_byte_start, prev_word_end_in_seg, out);
+        emit(
+            s,
+            segment.len(),
+            line,
+            line_byte_start,
+            prev_word_end_in_seg,
+            out,
+        );
         consume_pending(out);
         prev_word_end_in_seg = segment.len();
     }
@@ -587,11 +596,28 @@ fn is_word_char(ch: char) -> bool {
 fn is_phrase_separator(ch: char) -> bool {
     matches!(
         ch,
-        ',' | ';' | ':' | '.' | '!' | '?'
-            | '(' | ')' | '[' | ']' | '{' | '}'
-            | '/' | '\\' | '|'
-            | '"' | '«' | '»' | '\u{201C}' | '\u{201D}'
-            | '\u{2026}' | '\u{2014}' | '\u{2013}'
+        ',' | ';'
+            | ':'
+            | '.'
+            | '!'
+            | '?'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '/'
+            | '\\'
+            | '|'
+            | '"'
+            | '«'
+            | '»'
+            | '\u{201C}'
+            | '\u{201D}'
+            | '\u{2026}'
+            | '\u{2014}'
+            | '\u{2013}'
     )
 }
 
@@ -626,7 +652,9 @@ impl LineMap {
                 starts.push(i + 1);
             }
         }
-        Self { line_starts: starts }
+        Self {
+            line_starts: starts,
+        }
     }
 
     fn line_of(&self, byte: usize) -> usize {
@@ -682,7 +710,9 @@ mod tests {
             .filter(|t| t.line == 0)
             .map(|t| t.word.as_str())
             .collect();
-        let idx = line0.windows(3).position(|w| w == ["can", "i", "italicize"]);
+        let idx = line0
+            .windows(3)
+            .position(|w| w == ["can", "i", "italicize"]);
         assert!(idx.is_some(), "line tokens: {:?}", line0);
     }
 
@@ -813,11 +843,7 @@ mod tests {
         // highlight body).
         let p = project("can i _italicize_ yes I #highlight()[can]");
         let w = words(&p);
-        let on_line0: Vec<&str> = w
-            .iter()
-            .filter(|(l, _)| *l == 0)
-            .map(|(_, t)| *t)
-            .collect();
+        let on_line0: Vec<&str> = w.iter().filter(|(l, _)| *l == 0).map(|(_, t)| *t).collect();
         assert!(on_line0.contains(&"italicize"));
         // "can" appears twice on this line (leading + inside highlight);
         // we just want at least one occurrence.
@@ -870,15 +896,39 @@ mod tests {
         let src = "body line\n\n#annotation[needs a citation]\n\n#suggestion(kind: \"insert\", note: \"tighten wording\")[new bit]\n";
         let p = project(src);
         // Lines 2 and 4 (0-based) carry the annotation/suggestion calls.
-        assert!(p.annotation_lines.contains(&2), "lines: {:?}", p.annotation_lines);
-        assert!(p.annotation_lines.contains(&4), "lines: {:?}", p.annotation_lines);
+        assert!(
+            p.annotation_lines.contains(&2),
+            "lines: {:?}",
+            p.annotation_lines
+        );
+        assert!(
+            p.annotation_lines.contains(&4),
+            "lines: {:?}",
+            p.annotation_lines
+        );
         // Body prose is captured for the `annotation:` filter…
-        assert!(p.annotation_text.contains("needs a citation"), "text: {:?}", p.annotation_text);
-        assert!(p.annotation_text.contains("new bit"), "text: {:?}", p.annotation_text);
+        assert!(
+            p.annotation_text.contains("needs a citation"),
+            "text: {:?}",
+            p.annotation_text
+        );
+        assert!(
+            p.annotation_text.contains("new bit"),
+            "text: {:?}",
+            p.annotation_text
+        );
         // …including a suggestion's `note:` reviewer comment…
-        assert!(p.annotation_text.contains("tighten wording"), "text: {:?}", p.annotation_text);
+        assert!(
+            p.annotation_text.contains("tighten wording"),
+            "text: {:?}",
+            p.annotation_text
+        );
         // …but the `kind:` markup keyword is not.
-        assert!(!p.annotation_text.contains("kind"), "text: {:?}", p.annotation_text);
+        assert!(
+            !p.annotation_text.contains("kind"),
+            "text: {:?}",
+            p.annotation_text
+        );
         // The body still indexes as ordinary searchable prose.
         let w = words(&p);
         assert!(w.iter().any(|(_, t)| *t == "citation"));
