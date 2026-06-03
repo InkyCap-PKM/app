@@ -20,7 +20,6 @@ pub mod package_vendor;
 pub mod path_rebase;
 pub mod query;
 pub mod recovery;
-pub mod review;
 pub mod review_markup;
 pub mod source_lint;
 pub mod style_injection;

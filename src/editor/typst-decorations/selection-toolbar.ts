@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { StateField, type ChangeSpec, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
+import { applyToggleWrap } from "./wrap-format";
 import { VERSE_ICON_SVG } from "../../components/icons/verse";
 import { t, localeVersion } from "../../lib/i18n";
 
@@ -106,16 +107,6 @@ function clearLinePrefix(view: EditorView) {
   eachSelectedLine(view, (rest) => rest.replace(BLOCK_PREFIX, ""));
 }
 
-function wrapSelection(view: EditorView, before: string, after: string) {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.doc.sliceString(from, to);
-  view.dispatch({
-    changes: { from, to, insert: before + selected + after } as ChangeSpec,
-    selection: { anchor: from + before.length, head: to + before.length },
-  });
-  view.focus();
-}
-
 const DROPDOWN_ITEMS: DropdownItem[] = [
   {
     label: "Bulleted list",
@@ -134,13 +125,13 @@ const DROPDOWN_ITEMS: DropdownItem[] = [
     label: "Highlight",
     labelKey: "selToolbar.highlight",
     icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
-    action: (v) => wrapSelection(v, "#highlight[", "]"),
+    action: (v) => applyToggleWrap(v, "#highlight[", "]"),
   },
   {
     label: "Callout",
     labelKey: "selToolbar.callout",
     icon: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg>`,
-    action: (v) => wrapSelection(v, '#callout("note")[', "]"),
+    action: (v) => applyToggleWrap(v, '#callout("note")[', "]"),
   },
   { label: "", separator: true, action: () => {} },
   {
@@ -267,14 +258,14 @@ function getToolbar(): HTMLElement {
         e.preventDefault();
         closeAllPopups();
         if (!activeView) return;
-        applyWrap(activeView, action.wrap[0], action.wrap[1]);
+        applyToggleWrap(activeView, action.wrap[0], action.wrap[1]);
       });
       toolbar.appendChild(btn);
     }
 
     /* ── Superscript / subscript / footnote ──
-     * Content-bracket inserts wrapping the selection. `applyWrap` toggles them
-     * off when the selection already carries the markup, matching B/I/U/S —
+     * Content-bracket inserts wrapping the selection. `applyToggleWrap` toggles
+     * them off when the selection already carries the markup, matching B/I/U/S —
      * so they sit alongside the other inline character formatting. */
     const wrapButtons: { svg: string; titleKey: string; wrap: [string, string] }[] = [
       { svg: ICON_SUPERSCRIPT, titleKey: "selToolbar.superscript", wrap: ["#super[", "]"] },
@@ -287,7 +278,7 @@ function getToolbar(): HTMLElement {
         e.preventDefault();
         closeAllPopups();
         if (!activeView) return;
-        applyWrap(activeView, b.wrap[0], b.wrap[1]);
+        applyToggleWrap(activeView, b.wrap[0], b.wrap[1]);
       });
       toolbar.appendChild(btn);
     }
@@ -301,7 +292,7 @@ function getToolbar(): HTMLElement {
       e.preventDefault();
       closeAllPopups();
       if (!activeView) return;
-      applyWrap(activeView, '#link("")[', "]");
+      applyToggleWrap(activeView, '#link("")[', "]");
     });
     toolbar.appendChild(linkBtn);
 
@@ -341,7 +332,7 @@ function getToolbar(): HTMLElement {
       e.preventDefault();
       closeAllPopups();
       if (!activeView) return;
-      applyWrap(activeView, "`", "`");
+      applyToggleWrap(activeView, "`", "`");
     });
     toolbar.appendChild(codeBtn);
 
@@ -354,7 +345,7 @@ function getToolbar(): HTMLElement {
       e.preventDefault();
       closeAllPopups();
       if (!activeView) return;
-      applyWrap(activeView, "$", "$");
+      applyToggleWrap(activeView, "$", "$");
     });
     toolbar.appendChild(mathBtn);
 
@@ -457,7 +448,7 @@ function getAlignPopup(anchorBtn: HTMLElement): HTMLElement {
         e.preventDefault();
         closeAllPopups();
         if (!activeView) return;
-        wrapSelection(activeView, `#align(${a.value})[`, "]");
+        applyToggleWrap(activeView, `#align(${a.value})[`, "]");
       });
       alignPopup.appendChild(btn);
     }
@@ -547,30 +538,6 @@ function showToolbar(view: EditorView) {
   el.style.top = `${top - 44}px`;
   el.style.transform = "translateX(-50%)";
   el.style.display = "flex";
-}
-
-function applyWrap(view: EditorView, before: string, after: string) {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.doc.sliceString(from, to);
-
-  if (
-    selected.startsWith(before) &&
-    selected.endsWith(after) &&
-    selected.length >= before.length + after.length
-  ) {
-    const inner = selected.slice(before.length, selected.length - after.length);
-    view.dispatch({
-      changes: { from, to, insert: inner } as ChangeSpec,
-      selection: { anchor: from, head: from + inner.length },
-    });
-  } else {
-    view.dispatch({
-      changes: { from, to, insert: before + selected + after } as ChangeSpec,
-      selection: { anchor: from + before.length, head: to + before.length },
-    });
-  }
-
-  view.focus();
 }
 
 /* ── User-gesture gate ───────────────────────────────────── */

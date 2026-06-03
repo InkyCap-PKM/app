@@ -48,12 +48,12 @@ export const visualTheme = EditorView.theme({
     verticalAlign: "super",
     lineHeight: "0",
   },
-  // Inline #quote[…] body — wrap in smart quotes so the visual editor
-  // tracks Typst's inline-quote rendering (effectively HTML `<q>`). The
-  // ::before / ::after pseudo-elements are non-editable presentation
-  // only; the body content between them remains live source.
-  ".cm-typst-quote-inline::before": { content: '"\\201C"' },
-  ".cm-typst-quote-inline::after": { content: '"\\201D"' },
+  // Inline #quote[…] smart quotes — atomic widgets standing in for the hidden
+  // `#quote[` / `]` markup so the visual editor tracks Typst's inline-quote
+  // rendering (effectively HTML `<q>`). Presentation only; the body between
+  // them remains live source. See QuoteGlyphWidget for why these are widgets
+  // rather than ::before/::after pseudo-elements.
+  ".cm-typst-quote-glyph": { color: "inherit" },
   ".cm-typst-raw-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
     backgroundColor: "var(--syntax-mono-bg)",

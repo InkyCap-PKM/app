@@ -10,6 +10,7 @@ import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 import { anchorPanelMenu } from "../../lib/uiMenu";
 import { buildSuggestionCall } from "./annotation-insert";
 import { parseInlineBody, type BodySegment } from "./block-body-parse";
+import { t } from "../../lib/i18n";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -103,7 +104,7 @@ function buildTaskSpan(
   box.textContent = seg.done ? "☑" : "☐";
   if (ctx) {
     const callFrom = ctx.bodyFrom + seg.start;
-    box.title = seg.done ? "Mark as not done" : "Mark as done";
+    box.title = seg.done ? t("task.markNotDone") : t("task.markDone");
     box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -624,7 +625,7 @@ export class TaskWidget extends WidgetType {
     const box = document.createElement("span");
     box.className = "cm-typst-task__box";
     box.textContent = this.done ? "☑" : "☐";
-    box.title = this.done ? "Mark as not done" : "Mark as done";
+    box.title = this.done ? t("task.markNotDone") : t("task.markDone");
     box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -738,6 +739,15 @@ export class SuggestionWidget extends WidgetType {
       && this.note === other.note;
   }
 
+  /** Human label for the suggestion's kind, localized. */
+  private kindLabel(): string {
+    return this.kind === "insert"
+      ? t("suggestion.kind.insert")
+      : this.kind === "delete"
+        ? t("suggestion.kind.delete")
+        : t("suggestion.kind.replace");
+  }
+
   private attribution(): string {
     const parts: string[] = [];
     if (this.by) parts.push(this.by);
@@ -777,11 +787,13 @@ export class SuggestionWidget extends WidgetType {
       wrap.appendChild(c);
     }
 
-    const kindLabel =
-      this.kind === "insert" ? "Insertion" : this.kind === "delete" ? "Deletion" : "Replacement";
     const attr = this.attribution();
-    const noteSuffix = this.note.trim() ? `\nComment: ${this.note.trim()}` : "";
-    wrap.title = `Suggested ${kindLabel.toLowerCase()}${attr ? ` by ${attr}` : ""} — click to review${noteSuffix}`;
+    const noteSuffix = this.note.trim()
+      ? `\n${t("suggestion.commentPrefix")} ${this.note.trim()}`
+      : "";
+    wrap.title = t("suggestion.widgetTitle", { kind: this.kindLabel() })
+      + (attr ? ` ${t("suggestion.byAttribution", { who: attr })}` : "")
+      + noteSuffix;
 
     wrap.addEventListener("mousedown", (e) => {
       e.preventDefault();
@@ -849,7 +861,11 @@ export function openSuggestionMenu(
 ) {
   closeSuggestionMenu();
   const kindLabel =
-    p.kind === "insert" ? "Insertion" : p.kind === "delete" ? "Deletion" : "Replacement";
+    p.kind === "insert"
+      ? t("suggestion.kind.insert")
+      : p.kind === "delete"
+        ? t("suggestion.kind.delete")
+        : t("suggestion.kind.replace");
   const attr = [p.by, p.on].filter(Boolean).join(" · ");
 
   const menu = document.createElement("div");
@@ -865,13 +881,12 @@ export function openSuggestionMenu(
   // suggestion (visible in the doc + Annotations pane). Accept/Reject resolve
   // the change and DISCARD the comment along with the suggestion mark: once the
   // change is decided, the review-conversation note is moot, so resolving leaves
-  // only the clean result — nothing further for the user to clean up. (Earlier
-  // this folded the note into an inline #annotation, which left a stray comment
-  // the accepting user then had to delete without knowing where it came from.)
+  // only the clean result. The proposed text itself is edited inline by expanding
+  // the pill (the marks can run to many paragraphs — too big for this popup).
   const comment = document.createElement("textarea");
   comment.className = "cm-suggestion-menu__comment";
   comment.rows = 2;
-  comment.placeholder = "Comment — Save to keep it on the open suggestion";
+  comment.placeholder = t("suggestion.menu.commentPlaceholder");
   comment.value = p.note;
   // Keep keystrokes/selection inside the textarea, not routed to CodeMirror.
   for (const ev of ["mousedown", "keydown", "beforeinput", "input"]) {
@@ -887,7 +902,7 @@ export function openSuggestionMenu(
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
   saveBtn.className = "cm-suggestion-menu__item is-comment";
-  saveBtn.textContent = "Save comment";
+  saveBtn.textContent = t("suggestion.menu.saveComment");
   saveBtn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -923,8 +938,8 @@ export function openSuggestionMenu(
     });
     row.appendChild(b);
   };
-  mkBtn("Accept", "is-accept", true);
-  mkBtn("Reject", "is-reject", false);
+  mkBtn(t("suggestion.menu.accept"), "is-accept", true);
+  mkBtn(t("suggestion.menu.reject"), "is-reject", false);
   menu.appendChild(row);
 
   document.body.appendChild(menu);

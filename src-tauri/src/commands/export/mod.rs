@@ -33,9 +33,9 @@ pub use pdf::{
 pub use site::export_collection_static_site;
 
 /// Number of collaboration review-markup constructs (`#suggestion`,
-/// `#annotation`, `#review-decision`) in a note. The export dialog calls this
-/// when opening so it only shows its "Review markup" control for notes that
-/// actually carry tracked changes.
+/// `#annotation`) in a note. The export dialog calls this when opening so it
+/// only shows its "Review markup" control for notes that actually carry
+/// tracked changes.
 #[tauri::command]
 pub async fn count_note_review_markup(
     path: String,

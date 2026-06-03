@@ -40,7 +40,6 @@ pub const QUERY_LABELS: &[&str] = &[
     "inkycap-link",
     "inkycap-agenda",
     "inkycap-annotation",
-    "inkycap-review-decision",
     "inkycap-suggestion",
 ];
 

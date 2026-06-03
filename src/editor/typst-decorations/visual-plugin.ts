@@ -62,8 +62,32 @@ const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
 const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
-// Inline #quote[…] body — adds smart-quote brackets via ::before/::after.
-const quoteInlineMark = Decoration.mark({ class: "cm-typst-quote-inline" });
+// Inline #quote[…] smart-quote glyphs. Rendered as atomic replace-widgets over
+// the hidden `#quote[` opener and `]` closer rather than CSS ::before/::after
+// on the body span. A widget gives the caret a definite edge to bind to: with a
+// caret at the body's end, it sits at the *left* edge of the closing-quote
+// widget and renders before the `”` — whereas a trailing ::after pseudo-element
+// pushed the caret visually past the closing quote ("cursor after the closing
+// quote" bug). U+201C `“` / U+201D `”`.
+class QuoteGlyphWidget extends WidgetType {
+  constructor(private readonly glyph: string) {
+    super();
+  }
+  eq(other: QuoteGlyphWidget) {
+    return other.glyph === this.glyph;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-typst-quote-glyph";
+    span.textContent = this.glyph;
+    return span;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+const openQuote = Decoration.replace({ widget: new QuoteGlyphWidget("“") });
+const closeQuote = Decoration.replace({ widget: new QuoteGlyphWidget("”") });
 // Block #quote(block:true)[…] body while editing — italic + muted, bounded to
 // the body so text trailing after the closing `]` on the same line is NOT
 // styled as part of the quote (the bar + geometry come from the line deco).
@@ -849,7 +873,11 @@ const BLOCK_FUNCS = new Set([
 // the raw `#footnote[…]` source the moment the cursor is adjacent or inside —
 // the same temporary-expand-on-cursor affordance wikilinks use — instead of
 // staying an opaque widget that can only be edited from source mode.
-const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "suggestion", "footnote"]);
+// `suggestion` is deliberately NOT here: like `task` it always renders its
+// widget (click → Accept/Reject/Comment dialogue) and surfaces a standard
+// FuncPillWidget on the cursor line — clicking the pill expands the raw source
+// inline for editing. Its case below pushes both decorations.
+const INTERACTIVE_FUNCS = new Set(["wikilink", "tag", "link", "footnote"]);
 
 /** Best-effort extraction of an ISO `YYYY-MM-DD` date from a snippet of
  *  Typst source — recognizes a `datetime(...)` call (positional or named
@@ -1191,15 +1219,23 @@ function handleFuncCall(
       return false;
     }
     case "suggestion": {
-      // Interactive widget (no pill): the marks render always; cursor-adjacent
-      // reveals raw source for editing the proposed text (handled by the
-      // INTERACTIVE_FUNCS early-return above).
+      // Same model as #task: the tracked-change marks always render as the
+      // SuggestionWidget (click → Accept/Reject/Comment dialogue), and when the
+      // cursor is on the line a standard FuncPillWidget appears. Clicking the
+      // pill expands the raw `#suggestion(...)` source inline (the standard pill
+      // behaviour), so multi-paragraph proposals are edited as real text rather
+      // than crammed into a popup field; source mode remains available too.
       const kind = (extractNamedStringArg(text, "kind") ?? "insert") as SuggestionKind;
       const by = extractNamedStringArg(text, "by") ?? "";
       const on = extractNamedStringArg(text, "on") ?? "";
       const note = extractNamedStringArg(text, "note") ?? "";
       const body = extractBodyBracket(text) ?? "";
       const oldText = kind === "replace" ? (extractNamedBracket(text, "old") ?? "") : "";
+      if (showPill) {
+        decos.push(
+          Decoration.widget({ widget: new FuncPillWidget(from, "suggestion"), side: -1 }).range(from),
+        );
+      }
       decos.push(
         Decoration.replace({
           widget: new SuggestionWidget(kind, body, oldText, by, on, from, note),
@@ -1324,12 +1360,11 @@ function handleFuncCall(
         return false;
       }
       // Inline: same content-bracket pill pattern as #strike, #emph, etc.
-      // The body stays live-editable Typst source; `quoteInlineMark`
-      // wraps it in smart quotes via ::before / ::after so the visual
-      // representation tracks Typst's `<q>`-like rendering. We span the
-      // whole body with a single mark (rather than addSplitMarks) so the
-      // smart quotes appear once around the entire content, not per
-      // segment broken up by inner function-call replace widgets.
+      // The body stays live-editable Typst source between two atomic smart-
+      // quote widgets that stand in for the hidden `#quote[` opener and `]`
+      // closer, so the visual representation tracks Typst's `<q>`-like
+      // rendering. Widgets (rather than ::before/::after on the body) keep the
+      // caret on the correct side of each quote — see QuoteGlyphWidget.
       // Note: "quote" is in BLOCK_FUNCS (for the block form), so the
       // generic showPill is always false. Compute it locally for inline.
       const inlineShowPill = onCursor && hashOffset === 1;
@@ -1337,12 +1372,9 @@ function handleFuncCall(
       if (content) {
         decos.push((inlineShowPill
           ? Decoration.replace({ widget: new FuncPillWidget(from, "quote") })
-          : hide
+          : openQuote
         ).range(from, content.from));
-        decos.push(hide.range(content.to, to));
-        if (content.from < content.to) {
-          pushMark(decos, quoteInlineMark, content.from, content.to);
-        }
+        decos.push(closeQuote.range(content.to, to));
       }
       return true;
     }

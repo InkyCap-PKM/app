@@ -2,6 +2,7 @@ import { type EditorView, type KeyBinding } from "@codemirror/view";
 import { Facet, type EditorState, type ChangeSpec, type Line } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
+import { toggleWrap } from "./wrap-format";
 
 /**
  * When true, indent/outdent of a list item also moves any nested
@@ -163,61 +164,28 @@ function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   return !inVerbatimLineContext(state, pos);
 }
 
-function wrapSelection(
-  state: EditorState,
-  before: string,
-  after: string,
-): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  const { from, to } = state.selection.main;
-
-  if (from === to) {
-    return {
-      changes: { from, insert: before + after },
-      selection: { anchor: from + before.length, head: from + before.length },
-    };
-  }
-
-  const selected = state.doc.sliceString(from, to);
-  if (
-    selected.startsWith(before) &&
-    selected.endsWith(after) &&
-    selected.length >= before.length + after.length
-  ) {
-    const inner = selected.slice(before.length, selected.length - after.length);
-    return {
-      changes: { from, to, insert: inner },
-      selection: { anchor: from, head: from + inner.length },
-    };
-  }
-
-  return {
-    changes: { from, to, insert: before + selected + after },
-    selection: { anchor: from + before.length, head: to + before.length },
-  };
+function toggleBold(state: EditorState) {
+  return toggleWrap(state, "*", "*");
 }
 
-function toggleBold(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "*", "*");
+function toggleItalic(state: EditorState) {
+  return toggleWrap(state, "_", "_");
 }
 
-function toggleItalic(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "_", "_");
+function toggleStrikethrough(state: EditorState) {
+  return toggleWrap(state, "#strike[", "]");
 }
 
-function toggleStrikethrough(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "#strike[", "]");
+function toggleHighlight(state: EditorState) {
+  return toggleWrap(state, "#highlight[", "]");
 }
 
-function toggleHighlight(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "#highlight[", "]");
+function toggleInlineCode(state: EditorState) {
+  return toggleWrap(state, "`", "`");
 }
 
-function toggleInlineCode(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "`", "`");
-}
-
-function toggleInlineMath(state: EditorState): { changes: ChangeSpec; selection: { anchor: number; head: number } } | null {
-  return wrapSelection(state, "$", "$");
+function toggleInlineMath(state: EditorState) {
+  return toggleWrap(state, "$", "$");
 }
 
 function adjustHeading(state: EditorState, delta: number): { changes: ChangeSpec; selection: { anchor: number } } | null {
