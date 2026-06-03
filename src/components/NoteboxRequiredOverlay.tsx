@@ -121,7 +121,7 @@ const NoteboxRequiredOverlay: Component = () => {
           </div>
           <div class="app-modal__footer">
             <button
-              class="app-modal__btn app-modal__btn--primary notebox-required__open-btn"
+              class="btn btn--primary notebox-required__open-btn"
               onClick={openOrCreate}
               disabled={blocked()}
             >

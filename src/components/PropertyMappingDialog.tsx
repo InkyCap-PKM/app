@@ -275,11 +275,11 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
           </div>
         </div>
         <div class="app-modal__footer">
-          <button class="app-modal__btn app-modal__btn--secondary" onClick={props.onCancel}>
+          <button class="btn btn--secondary" onClick={props.onCancel}>
             {t("common.cancel")}
           </button>
           <button
-            class="app-modal__btn app-modal__btn--primary"
+            class="btn btn--primary"
             onClick={confirm}
             disabled={hasErrors()}
           >

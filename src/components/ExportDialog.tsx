@@ -428,11 +428,11 @@ const ExportDialog: Component = () => {
           </div>
 
           <div class="export-dialog__footer">
-            <button class="export-dialog__btn--secondary" onClick={close}>
+            <button class="btn btn--secondary" onClick={close}>
               {t("common.cancel")}
             </button>
             <button
-              class="export-dialog__btn--primary"
+              class="btn btn--primary"
               onClick={doExport}
               disabled={exporting() || (FORMAT_INFO[format()].pandoc && !pandocAvailable())}
             >

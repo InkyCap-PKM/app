@@ -9,7 +9,6 @@ import {
   CATEGORY_LABEL_KEYS,
   type Command,
 } from "../lib/command-registry";
-import { fuzzyMatch } from "../lib/fuzzy";
 import { useI18n } from "../lib/i18n";
 
 interface CommandPaletteProps {

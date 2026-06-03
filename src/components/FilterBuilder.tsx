@@ -391,10 +391,10 @@ const FilterBuilder: Component<{
       <div class="filter-builder__header">
         <span>{t("filter.title")}</span>
         <div class="filter-builder__actions">
-          <button class="filter-builder__btn" onClick={handleSave}>
+          <button class="btn btn--primary btn--sm" onClick={handleSave}>
             {t("common.apply")}
           </button>
-          <button class="filter-builder__btn filter-builder__btn--secondary" onClick={props.onClose}>
+          <button class="btn btn--secondary btn--sm" onClick={props.onClose}>
             {t("common.cancel")}
           </button>
         </div>

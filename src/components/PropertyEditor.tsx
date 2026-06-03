@@ -498,7 +498,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
         onClick={() => (isOpen() ? closePicker() : openPicker())}
       >
         <For each={currentItems()}>
-          {(item) => <span class="property-editor__tag">{item}</span>}
+          {(item) => <span class="badge badge--accent">{item}</span>}
         </For>
         <Show when={currentItems().length === 0}>
           <span class="property-editor__value property-editor__value--empty">
@@ -654,7 +654,7 @@ const CollectionEditor: Component<PropertyEditorProps> = (props) => {
       <div class="property-editor__tags" onClick={() => setCollectionPickerOpen(!collectionPickerOpen())}>
         <For each={currentItems()}>
           {(item) => (
-            <span class="property-editor__tag">{item}</span>
+            <span class="badge badge--accent">{item}</span>
           )}
         </For>
         <Show when={currentItems().length === 0}>

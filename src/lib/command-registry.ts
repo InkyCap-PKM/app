@@ -2,7 +2,7 @@
 // Used by the command palette (Ctrl+P) and for keybinding display.
 
 import { createSignal } from "solid-js";
-import { fuzzyMatch, type FuzzyMatch } from "./fuzzy";
+import { substringMatch, type FuzzyMatch } from "./fuzzy";
 
 export type CommandCategory =
   | "File"
@@ -128,14 +128,15 @@ export function searchCommands(query: string, maxResults = 30): ScoredCommand[] 
   const scored: ScoredCommand[] = [];
   for (const command of all) {
     // Match against title
-    const titleMatch = fuzzyMatch(query, command.title);
+    const titleMatch = substringMatch(query, command.title);
     if (titleMatch) {
       scored.push({ command, match: titleMatch });
       continue;
     }
-    // Also try matching against category + title
+    // Also try matching against category + title (so typing a category name
+    // surfaces its commands). Substring, same as the app's plain text filters.
     const combined = `${command.category}: ${command.title}`;
-    const combinedMatch = fuzzyMatch(query, combined);
+    const combinedMatch = substringMatch(query, combined);
     if (combinedMatch) {
       // Adjust ranges to only cover the title portion
       scored.push({ command, match: { score: combinedMatch.score - 5, ranges: [] } });

@@ -95,7 +95,6 @@
   top: 0;
   bottom: 0;
   width: 6px;
-  margin-left: -3px;
   cursor: col-resize;
   z-index: 20;
   background: transparent;
@@ -108,12 +107,17 @@
   opacity: 0.4;
 }
 
+/* Each handle seats against its divider from inside its own side panel, so
+   the hover bar never reaches across into the content column (where it used
+   to clip the top tab's edge). Left handle hugs the sidebar→content divider
+   from the sidebar side; right handle hugs the content→panel divider from the
+   panel side — mirror images, consistently "on the panel side". */
 .resize-handle--left {
-  left: calc(var(--toolbar-width) + var(--left-width) + 4px);
+  left: calc(var(--toolbar-width) + var(--left-width) - 6px);
 }
 
 .resize-handle--right {
-  left: calc(100vw - var(--right-width) + 4px);
+  left: calc(100vw - var(--right-width));
 }
 
 .app-shell.app-shell--left-collapsed .resize-handle--left,
@@ -505,7 +509,7 @@ body.is-resizing-pane .pane-resizer {
   color: var(--status-fg);
   font-size: var(--text-sm);
   padding: 1px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
@@ -657,7 +661,7 @@ body.is-resizing-pane .pane-resizer {
   min-width: 0;
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 3px;
+  border-radius: var(--radius-input);
   padding: 0 4px;
   color: var(--fg-primary);
   font-family: inherit;
@@ -1085,7 +1089,7 @@ svg.lucide {
      beside them) so the view switchers read clearly as clickable tab-buttons
      rather than plain text. The active tab strengthens it below. */
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 3px 6px 3px 10px;
@@ -1133,8 +1137,10 @@ svg.lucide {
   background: var(--bg-hover);
 }
 
+/* The close affordance stays visible on every tab — active, hovered, or
+   not — so it never pops in under the cursor (which made it easy to click
+   by accident). It sits muted by default and turns red on direct hover. */
 .collection-table__view-delete {
-  visibility: hidden;
   background: none;
   border: none;
   color: var(--fg-dim);
@@ -1146,11 +1152,6 @@ svg.lucide {
   flex-shrink: 0;
 }
 
-.collection-table__view-tab:hover .collection-table__view-delete,
-.collection-table__view-tab--active .collection-table__view-delete {
-  visibility: visible;
-}
-
 .collection-table__view-delete:hover {
   color: var(--accent-danger);
 }
@@ -1158,7 +1159,7 @@ svg.lucide {
 .collection-table__view-rename-input {
   background: var(--bg-active);
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-base);
   padding: 3px 8px;
@@ -1176,7 +1177,7 @@ svg.lucide {
 .collection-table__toolbar-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 3px 10px;
@@ -1412,7 +1413,7 @@ svg.lucide {
 .collection-table__cell-input {
   background: var(--bg-primary);
   border: 1px solid var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 1px 4px;
@@ -1682,29 +1683,7 @@ svg.lucide {
   gap: 4px;
 }
 
-.filter-builder__btn {
-  background: var(--accent);
-  border: none;
-  border-radius: 4px;
-  color: #fff;
-  cursor: pointer;
-  padding: 4px 12px;
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.filter-builder__btn:hover {
-  background: var(--accent-hover);
-}
-
-.filter-builder__btn--secondary {
-  background: var(--border-primary);
-  color: var(--fg-secondary);
-}
-
-.filter-builder__btn--secondary:hover {
-  background: var(--border-input);
-}
+/* Filter-builder footer buttons use the shared .btn system (see markup). */
 
 /* A boolean group: a combinator header, its member rows / sub-groups, and
    the add buttons. The root group is unadorned (the .filter-builder box is
@@ -1760,7 +1739,7 @@ svg.lucide {
 .filter-builder__input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 4px 8px;
@@ -1980,7 +1959,7 @@ svg.lucide {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 5px 8px;
@@ -2019,7 +1998,7 @@ svg.lucide {
 .sidebar-item__rename-input {
   background: var(--bg-primary);
   border: 1px solid var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 3px 6px;
@@ -2164,10 +2143,10 @@ svg.lucide {
 .property-editor__input {
   background: var(--bg-input);
   border: 1px solid var(--border-input);
-  border-radius: 3px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   width: 100%;
   box-sizing: border-box;
   outline: none;
@@ -2454,13 +2433,7 @@ svg.lucide {
   padding: 1px 0;
 }
 
-.property-editor__tag {
-  background: var(--accent-purple-bg);
-  color: var(--accent-purple);
-  font-size: var(--text-base);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
+/* Property tags use the shared .badge .badge--accent chip (see markup). */
 
 /* Quick-open command palette */
 .quick-open__overlay {
@@ -3025,9 +2998,9 @@ svg.lucide {
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--fg-dim);
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   vertical-align: middle;
   letter-spacing: 0.2px;
 }
@@ -3083,10 +3056,10 @@ svg.lucide {
 .settings__number-input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
-  padding: 4px 8px;
+  padding: var(--space-2) var(--space-4);
   width: 70px;
   text-align: center;
   outline: none;
@@ -3110,10 +3083,10 @@ svg.lucide {
 .settings__text-input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
-  padding: 4px 8px;
+  padding: var(--space-2) var(--space-4);
   width: 200px;
   outline: none;
   flex-shrink: 0;
@@ -3293,9 +3266,9 @@ svg.lucide {
   overflow-y: auto;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached dropdown — keeps the 4px radius of the control it
+  /* Input-attached dropdown — matches the --radius-sm of the input it
      hangs off rather than the free-floating --popup-radius. */
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
 }
@@ -3346,7 +3319,9 @@ svg.lucide {
 .settings__combobox-input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px 0 0 4px;
+  /* Left half of a split control — round the left corners only; the
+     toggle butts against the square right edge. */
+  border-radius: var(--radius-input) 0 0 var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 4px 8px;
@@ -3366,7 +3341,7 @@ svg.lucide {
   justify-content: center;
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-input) var(--radius-input) 0;
   color: var(--fg-muted);
   cursor: pointer;
   padding: 0 6px;
@@ -3391,7 +3366,7 @@ svg.lucide {
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
   /* Input-attached — keeps the control's 4px radius. */
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
   max-height: 180px;
@@ -3494,11 +3469,11 @@ svg.lucide {
 .color-picker__hex {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-family: var(--editor-font-mono, monospace);
   font-size: var(--text-base);
-  padding: 3px 6px;
+  padding: var(--space-1) var(--space-3);
   width: 92px;
   outline: none;
 }
@@ -3535,19 +3510,7 @@ svg.lucide {
   border-top: 1px solid var(--border-primary);
 }
 
-.settings__reset-btn {
-  background: none;
-  border: 1px solid var(--accent-danger, #ef4444);
-  border-radius: 4px;
-  color: var(--accent-danger, #ef4444);
-  cursor: pointer;
-  font-size: var(--text-base);
-  padding: 6px 14px;
-}
-
-.settings__reset-btn:hover {
-  background: color-mix(in srgb, var(--accent-danger, #ef4444) 10%, transparent);
-}
+/* Settings reset button uses the shared .btn .btn--danger system (see markup). */
 
 .settings__section-note {
   font-size: var(--text-base);
@@ -3567,7 +3530,7 @@ svg.lucide {
 .settings__detect-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   cursor: pointer;
   font-size: var(--text-base);
@@ -3633,7 +3596,7 @@ svg.lucide {
 .cm-fmt-toolbar__block-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   cursor: pointer;
   font-size: var(--text-md);
@@ -3655,7 +3618,7 @@ svg.lucide {
 .cm-fmt-toolbar__btn {
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--text-lg);
@@ -3780,7 +3743,7 @@ svg.lucide {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   padding: 5px 8px;
   font-size: var(--text-md);
@@ -3790,6 +3753,129 @@ svg.lucide {
 
 .search-panel__input:focus {
   border-color: var(--accent);
+}
+
+/* ── Shared button system ────────────────────────────────────────────
+   Canonical text/action button utility. Compose `.btn` + one variant
+   (and optionally `.btn--sm` for a compact footprint). Geometry and
+   colour come from the --btn-*, --radius-*, --space-*, --accent* and
+   --focus-ring tokens (themes.css) so the whole app retunes from one
+   place. Prefer this over authoring a new component-scoped button class.
+     .btn--primary    accent-filled call to action
+     .btn--secondary  neutral bordered action
+     .btn--danger     destructive action (outlined, accent-danger)
+     .btn--ghost      borderless text action
+   For square icon-only panel/header buttons use .ui-icon-btn instead. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--btn-pad-y) var(--btn-pad-x);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  font-family: inherit;
+  font-size: var(--text-md);
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-out);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Compact size — for dense footers/toolbars (filter builder, inline panels). */
+.btn--sm {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--secondary {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+  color: var(--fg-primary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn--danger {
+  background: transparent;
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--accent-danger-bg);
+}
+
+.btn--ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* ── Shared badge / chip ─────────────────────────────────────────────
+   Small inline label or chip (tags, scope labels, source markers).
+   Compose `.badge` + an optional variant. For a numeric count use
+   `.badge--count` (fully rounded pill). Prefer this over a new
+   component-scoped badge class. Status indicators that are a bare dot
+   or coloured text (e.g. tab unread dot, git status line) are a
+   different role and intentionally stay separate. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+}
+
+.badge--count {
+  border: none;
+  border-radius: 999px;
+  background: var(--border-input);
+  color: var(--fg-secondary);
+}
+
+.badge--accent {
+  border-color: transparent;
+  background: var(--accent-purple-bg);
+  color: var(--accent-purple);
+}
+
+.badge--danger {
+  border-color: transparent;
+  background: var(--accent-danger-bg);
+  color: var(--accent-danger);
 }
 
 /* Shared icon-button style. Used by the search-panel toggle row and any
@@ -3863,10 +3949,19 @@ svg.lucide {
   cursor: default;
 }
 
+/* Unified keyboard-focus affordance for the icon-button utilities — these
+   otherwise had no visible focus state. Pointer users never see it
+   (:focus-visible), keyboard users get the shared --focus-ring. */
+.icon-btn:focus-visible,
+.ui-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .search-panel__replace-btn {
   background: var(--accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 5px 10px;
@@ -3996,7 +4091,7 @@ svg.lucide {
   margin-left: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-input);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 6px;
@@ -4107,7 +4202,7 @@ svg.lucide {
 .search-panel__page-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 8px;
@@ -4174,7 +4269,7 @@ svg.lucide {
 .search-panel__sort-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 6px;
@@ -4239,8 +4334,8 @@ svg.lucide {
   background: var(--bg-input);
   color: var(--fg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: var(--radius-input);
+  padding: var(--space-2) var(--space-4);
   font-family: inherit;
   font-size: var(--text-md);
   cursor: pointer;
@@ -4406,7 +4501,7 @@ svg.lucide {
 .creation-rules__add-btn {
   background: var(--accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 4px 10px;
@@ -4482,7 +4577,7 @@ svg.lucide {
 .creation-rules__disable-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 8px;
@@ -4537,7 +4632,7 @@ svg.lucide {
 .creation-rules__restore-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 6px 16px;
@@ -4574,7 +4669,7 @@ svg.lucide {
 .creation-rules__save-btn {
   background: var(--accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 6px 16px;
@@ -4589,7 +4684,7 @@ svg.lucide {
 .creation-rules__cancel-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 6px 16px;
@@ -4606,7 +4701,7 @@ svg.lucide {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--fg-primary);
   font-family: var(--editor-font-mono, monospace);
@@ -4978,7 +5073,7 @@ svg.lucide {
   justify-content: center;
   padding: 2px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
@@ -5181,7 +5276,7 @@ svg.lucide {
 .icon-picker__trigger {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-secondary);
   cursor: pointer;
   padding: 4px 10px;
@@ -6398,7 +6493,7 @@ svg.lucide {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 5px 8px;
@@ -6701,7 +6796,7 @@ svg.lucide {
   padding: 5px 26px 5px 8px;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   color: var(--fg-primary);
   font-size: var(--text-md);
   outline: none;
@@ -6763,8 +6858,8 @@ svg.lucide {
   display: inline-block;
   font-size: var(--text-xs);
   padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
   color: var(--fg-muted);
   margin-left: 6px;
   vertical-align: middle;
@@ -7053,7 +7148,7 @@ svg.lucide {
   background: var(--accent);
   color: var(--accent-text, #fff);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 6px 16px;
   font-size: var(--text-md);
   cursor: pointer;
@@ -7108,7 +7203,7 @@ svg.lucide {
   background: var(--bg-secondary);
   color: var(--fg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 4px 10px;
   font-size: var(--text-base);
   cursor: pointer;
@@ -7773,7 +7868,7 @@ svg.lucide {
   background: var(--bg-input);
   color: var(--fg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   padding: 5px 8px;
   font-size: var(--text-sm);
   font-family: inherit;
@@ -9698,7 +9793,7 @@ svg.lucide {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--toolbar-float-fg);
   font-size: var(--text-md);
@@ -9828,7 +9923,7 @@ svg.lucide {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .export-dialog__header h3 {
@@ -9951,42 +10046,10 @@ svg.lucide {
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-primary);
 }
 
-.export-dialog__btn--secondary {
-  padding: 6px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  cursor: pointer;
-  font-size: var(--text-md);
-}
-
-.export-dialog__btn--secondary:hover {
-  background: var(--bg-hover);
-}
-
-.export-dialog__btn--primary {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 4px;
-  background: var(--accent-color, #4a9eff);
-  color: white;
-  cursor: pointer;
-  font-size: var(--text-md);
-  font-weight: 500;
-}
-
-.export-dialog__btn--primary:hover {
-  opacity: 0.9;
-}
-
-.export-dialog__btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Export-dialog action buttons use the shared .btn system (see markup). */
 
 .export-dialog__hint {
   font-size: var(--text-sm);
@@ -10049,7 +10112,7 @@ svg.lucide {
 
 .app-modal__header {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .app-modal__header h3 {
@@ -10075,7 +10138,7 @@ svg.lucide {
 .app-modal__input {
   padding: 8px 10px;
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   background: var(--bg-secondary);
   color: var(--fg-primary);
   font-size: var(--text-md);
@@ -10152,42 +10215,10 @@ svg.lucide {
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-primary);
 }
 
-.app-modal__btn {
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: var(--text-md);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.app-modal__btn--secondary {
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-}
-
-.app-modal__btn--secondary:hover {
-  background: var(--bg-hover);
-}
-
-.app-modal__btn--primary {
-  border: 1px solid transparent;
-  background: var(--accent, #1D7874);
-  color: #fff;
-  font-weight: 500;
-}
-
-.app-modal__btn--primary:hover {
-  opacity: 0.9;
-}
-
-.app-modal__btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* App-modal action buttons use the shared .btn system (see markup). */
 
 /* Body paragraph inside an .app-modal (seed dialog, notebox-required overlay). */
 .app-modal__text {
@@ -10213,7 +10244,7 @@ svg.lucide {
 .property-map {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: var(--modal-radius);
   overflow: hidden;
 }
@@ -10236,12 +10267,12 @@ svg.lucide {
   letter-spacing: 0.3px;
   color: var(--fg-muted);
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .property-map__row + .property-map__row,
 .property-map__row {
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-primary);
 }
 
 .property-map__head + .property-map__row {
@@ -10290,7 +10321,7 @@ svg.lucide {
   background: var(--bg-input);
   color: var(--fg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   font-family: inherit;
   font-size: var(--text-md);
   outline: none;
@@ -10348,7 +10379,7 @@ svg.lucide {
   width: 100%;
   text-align: left;
   padding: 8px 10px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   background: var(--bg-secondary);
   color: var(--fg-primary);
@@ -10412,7 +10443,7 @@ svg.lucide {
 
 .scaffold-picker__header {
   padding: 10px 14px 8px 14px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -10435,7 +10466,7 @@ svg.lucide {
 
 .scaffold-picker__results .quick-open__empty code {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 0.9em;
@@ -10480,7 +10511,7 @@ svg.lucide {
   font-size: var(--text-sm);
   color: var(--fg-dim);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
 }
 
@@ -10490,7 +10521,7 @@ svg.lucide {
 
 .templates-pane__help code {
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 0.9em;
@@ -10589,11 +10620,11 @@ svg.lucide {
   align-items: center;
   gap: 4px;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   color: var(--fg-primary);
   font-size: var(--text-sm);
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-family: inherit;
 }
@@ -10610,7 +10641,7 @@ svg.lucide {
 
 .templates-panel__section-desc code {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 0.9em;
@@ -10653,7 +10684,7 @@ svg.lucide {
 
 .templates-panel__item-action {
   background: transparent;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   color: var(--fg-muted);
   font-size: var(--text-sm);
   padding: 3px 8px;
@@ -10694,8 +10725,8 @@ svg.lucide {
   font-size: var(--text-sm);
   color: var(--fg-dim);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
   padding: 0 5px;
   letter-spacing: 0.3px;
 }
@@ -10705,7 +10736,7 @@ svg.lucide {
   font-size: var(--text-sm);
   color: var(--fg-dim);
   background: var(--bg-secondary);
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--border-primary);
   border-radius: 4px;
 }
 
@@ -10719,7 +10750,7 @@ svg.lucide {
 
 .attachment-folder-field__current {
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   background: var(--bg-elevated);
   color: var(--fg-muted);
   font-family: var(--editor-font-mono, monospace);
@@ -11543,20 +11574,10 @@ svg.lucide {
   cursor: default;
 }
 
+/* Visual styling comes from .btn .btn--danger .btn--sm (see markup); this
+   rule only carries the layout spacing from the primary button above it. */
 .git-panel__danger-btn {
-  background: none;
-  border: 1px solid var(--accent-danger);
-  color: var(--accent-danger);
-  border-radius: var(--radius-control);
-  padding: 5px 10px;
-  font-size: var(--text-sm);
-  font-family: inherit;
-  cursor: pointer;
-  margin-top: 8px;
-}
-
-.git-panel__danger-btn:hover {
-  background: var(--accent-danger-bg);
+  margin-top: var(--space-4);
 }
 
 /* Collapsible action section (Import/export changes · Sync changes). The header
