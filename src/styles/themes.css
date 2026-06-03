@@ -185,6 +185,9 @@
   --border-subtle: #e6e6e6;
   --border-input: #c8c8c8;
   --border-input-focus: var(--accent-color, #1D7874);
+  /* A whisper of elevation for the active editor tab, so it lifts off the
+     strip as a solid card. Kept deliberately faint — one soft 1px drop. */
+  --tab-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   /* Off-state background for toggle switches — a clearly neutral grey so
      "off" reads as distinct from the accent-coloured "on" state. */
   --toggle-off-bg: #b6b6b6;
@@ -330,6 +333,9 @@
   --border-subtle: #0f3035;
   --border-input: #2a5a52;
   --border-input-focus: var(--accent-color, #1D7874);
+  /* Dark surfaces swallow a faint shadow, so the active-tab lift is cast a
+     touch stronger here to register the same whisper of elevation. */
+  --tab-active-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   /* Off-state background for toggle switches — a desaturated grey, kept
      well clear of the teal accent so "off" is obvious at a glance. */
   --toggle-off-bg: #5e6463;

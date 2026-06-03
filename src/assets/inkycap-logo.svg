@@ -55,7 +55,7 @@
       <circle cx="65" cy="45" r="10"/>
       <line x1="45" y1="45" x2="55" y2="45"/>
     </g>
-    <circle cx="35" cy="45" r="1.5" fill="#071e22"/>
-    <circle cx="65" cy="45" r="1.5" fill="#071e22"/>
+    <circle cx="35" cy="45" r="3.6" fill="#071e22"/>
+    <circle cx="65" cy="45" r="3.6" fill="#071e22"/>
   </g>
 </svg>
