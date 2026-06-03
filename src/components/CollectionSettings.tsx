@@ -33,7 +33,7 @@ import type { CollectionPanelTab } from "../stores/layout";
 import LucideIconPicker from "./LucideIconPicker";
 import ContributorsEditor from "./ContributorsEditor";
 import { FontPicker } from "./FontPicker";
-import { CITATION_STYLES } from "./SettingsPanel";
+import { CITATION_STYLES } from "./settings/shared";
 import { Dropdown } from "./Dropdown";
 import { LengthInput } from "./LengthInput";
 import { PresetSelect, type PresetOption } from "./PresetSelect";
