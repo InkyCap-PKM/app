@@ -13,6 +13,7 @@
 // participate as their own "editor" region with zero extra bookkeeping.
 
 import { activeEditorView } from "../stores/editor";
+import { distractionFree, setDistractionFree } from "../stores/layout";
 
 export type FocusRegionKind = "sidebar" | "editor" | "right-panel" | "status-bar";
 
@@ -117,6 +118,7 @@ function cyclePanelTabs(dir: 1 | -1): boolean {
 
 /** Contextual navigation keys handled in the bubble phase so anything that
  *  legitimately consumes them first wins:
+ *   - Escape in distraction-free mode returns to the regular layout.
  *   - Escape from a non-editor region returns focus to the editor (but text
  *     inputs keep their own clear/blur Escape semantics).
  *   - Ctrl+PageDown / Ctrl+PageUp cycle the focused panel's tab strip; left
@@ -126,6 +128,20 @@ function handleNavKeys(e: KeyboardEvent): void {
   if (e.defaultPrevented) return;
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) return;
+
+  // Distraction-free mode: a bare Escape returns to the regular layout. The
+  // bubble phase plus the `defaultPrevented` guard above means open overlays
+  // (command palette, quick open, settings) and the editor's own
+  // autocomplete/search keymaps — all of which preventDefault on Escape —
+  // keep priority. Genuine text inputs keep their own clear/blur semantics;
+  // the CodeMirror editor (contentEditable, the usual focus here) does not, so
+  // writing-then-Escape exits as expected. Escape only ever exits, never
+  // enters, distraction-free mode.
+  if (e.key === "Escape" && distractionFree() && active.tagName !== "INPUT" && active.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    setDistractionFree(false);
+    return;
+  }
 
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "PageDown" || e.key === "PageUp")) {
     if (cyclePanelTabs(e.key === "PageDown" ? 1 : -1)) e.preventDefault();
