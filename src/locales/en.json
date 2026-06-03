@@ -1653,7 +1653,7 @@
   "statusBar.chars.one": "{count} character",
   "statusBar.chars.other": "{count} characters",
   "statusBar.distractionFree": "Distraction-free mode",
-  "statusBar.exitDistractionFree": "Exit distraction-free mode",
+  "statusBar.exitDistractionFree": "Exit distraction-free mode (Esc)",
   "statusBar.manageNoteboxes": "Manage noteboxes...",
   "statusBar.openInNewWindow": "Open in a new window",
   "statusBar.openElsewhere": "Open in another window",
