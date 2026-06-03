@@ -1,0 +1,25 @@
+#!/bin/sh
+# Versioned pre-commit hook. Enabled for this repo via:
+#
+#     git config core.hooksPath .githooks
+#
+# (A fresh clone needs that run once — it is not copied automatically.)
+#
+# Guards the canonical Rust formatting: if anything under src-tauri is not
+# rustfmt-clean, the commit is blocked. Fix with:  cargo fmt --manifest-path src-tauri/Cargo.toml
+#
+# This is whitespace-only enforcement and runs in well under a second.
+# Bypass in a genuine pinch with:  git commit --no-verify
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not found on PATH; skipping rustfmt check." >&2
+    exit 0
+fi
+
+if ! cargo fmt --check --manifest-path src-tauri/Cargo.toml; then
+    echo >&2
+    echo "pre-commit: Rust code is not formatted. Run:" >&2
+    echo "    cargo fmt --manifest-path src-tauri/Cargo.toml" >&2
+    echo "then stage the changes and commit again." >&2
+    exit 1
+fi

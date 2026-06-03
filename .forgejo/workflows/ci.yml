@@ -1,0 +1,29 @@
+# Forgejo Actions workflow for Codeberg CI.
+#
+# INERT until you enable Actions on the repository:
+#   Codeberg → repo → Settings → Actions → enable, and ensure a runner is
+#   available (Codeberg offers shared runners you opt into).
+# Once enabled, every push and pull request runs `cargo fmt --check`
+# server-side, unbypassable.
+#
+# Scope is deliberately minimal — just the fast formatting gate. A full
+# Tauri build/test is heavy; add `cargo test` / `npm test` jobs here when
+# you want them, mindful of runner minutes.
+#
+# `runs-on` / the container image target Codeberg's shared runners; adjust
+# if your runner advertises different labels.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  rustfmt:
+    runs-on: docker
+    container:
+      image: rust:1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure rustfmt is installed
+        run: rustup component add rustfmt
+      - name: Check Rust formatting
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
