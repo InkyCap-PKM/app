@@ -1694,8 +1694,6 @@
   "leftSidebar.menuNewFolder": "New Folder",
   "leftSidebar.moveFile": "Move file to...",
   "leftSidebar.moveFolder": "Move folder to...",
-  "leftSidebar.moveFiles": "Move files to...",
-  "leftSidebar.deleteItems": "Delete {count} items",
   "leftSidebar.mergeTagsTitle": "Merge tags",
   "leftSidebar.mergeTagsBody": "A tag already exists with the name \"{newTag}\". Renaming \"{oldTag}\" will merge tags into \"{newTag}\". Continue?",
   "leftSidebar.deleteTagTitle": "Delete tag",
