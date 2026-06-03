@@ -108,15 +108,11 @@ fn compute_sleep_secs(settings: &BackupSettings, notebox_root: Option<&Path>) ->
     if !settings.enabled {
         return None;
     }
-    let Some(notebox_root) = notebox_root else {
-        return None;
-    };
+    let notebox_root = notebox_root?;
     if settings.interval_hours == 0 {
         return None;
     }
-    let Some(path) = settings.path.as_ref() else {
-        return None;
-    };
+    let path = settings.path.as_ref()?;
     if path.is_empty() {
         return None;
     }

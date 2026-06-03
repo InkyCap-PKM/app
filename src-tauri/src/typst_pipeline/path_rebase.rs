@@ -240,9 +240,7 @@ fn rebase_path(value: &str, note_dir: &Path) -> Option<String> {
             Component::CurDir => continue,
             Component::ParentDir => {
                 // Escapes notebox root when there's nothing to pop.
-                if normalized.pop().is_none() {
-                    return None;
-                }
+                normalized.pop()?;
             }
             Component::Normal(s) => normalized.push(s),
             // Should not occur for a relative input on Unix; treat

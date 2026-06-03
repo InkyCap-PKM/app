@@ -448,12 +448,10 @@ fn parse_csl_json(content: &str) -> Result<ParsedBibliography, String> {
 
         let mut entry_notes = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for field in [e.annotation, e.note] {
-            if let Some(text) = field {
-                let trimmed = text.trim().to_string();
-                if !trimmed.is_empty() && seen.insert(trimmed.clone()) {
-                    entry_notes.push(RefNote { content: trimmed });
-                }
+        for text in [e.annotation, e.note].into_iter().flatten() {
+            let trimmed = text.trim().to_string();
+            if !trimmed.is_empty() && seen.insert(trimmed.clone()) {
+                entry_notes.push(RefNote { content: trimmed });
             }
         }
 
@@ -670,9 +668,7 @@ fn strip_code_spans(source: &str) -> String {
                     i += 1;
                 }
             }
-            for j in start..i.min(len) {
-                out[j] = b' ';
-            }
+            out[start..i.min(len)].fill(b' ');
             continue;
         }
         if bytes[i] == b'`' {
@@ -689,9 +685,7 @@ fn strip_code_spans(source: &str) -> String {
             });
             if let Some(close_start) = closing {
                 let end = close_start + tick_count;
-                for j in tick_start..end.min(len) {
-                    out[j] = b' ';
-                }
+                out[tick_start..end.min(len)].fill(b' ');
                 i = end;
             }
             // No closing found — the ticks are literal; leave i advanced past them

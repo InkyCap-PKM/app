@@ -32,6 +32,18 @@ type DomWithObserver = HTMLElement & { __cmTableResizeObserver?: ResizeObserver 
 
 const EMPTY_CELL: TableCell = { content: "", relFrom: 0, relTo: 0 };
 
+/** Element-wise equality for the nullable string arrays in `TableData`
+ *  (`columns`, `align`, `rowSizes`). Two nulls are equal; a null and a
+ *  present array are not. */
+function arraysEqual(a: string[] | null, b: string[] | null): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 /**
  * Cross-rebuild focus target.
  *
@@ -85,15 +97,14 @@ export class TableWidget extends WidgetType {
 
   eq(other: TableWidget) {
     if (this.from !== other.from || this.to !== other.to) return false;
-    if (this.data.columns.length !== other.data.columns.length) return false;
-    const a = this.data.align, b = other.data.align;
-    if ((a == null) !== (b == null)) return false;
-    if (a && b) {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) {
-        if (a[i] !== b[i]) return false;
-      }
-    }
+    // Compare column widths element-wise, not just the count — a drag-resize
+    // that changes `columns: (1fr, 2fr)` → `(1fr, 3fr)` keeps the same length
+    // but must rebuild the widget, otherwise the new sizing never renders
+    // until an unrelated edit forces a rebuild (stale-render bug).
+    if (!arraysEqual(this.data.columns, other.data.columns)) return false;
+    // Likewise for explicit row heights (`rows:` drag-resize).
+    if (!arraysEqual(this.data.rowSizes, other.data.rowSizes)) return false;
+    if (!arraysEqual(this.data.align, other.data.align)) return false;
     const thisRows = this.getAllRows();
     const otherRows = other.getAllRows();
     if (thisRows.length !== otherRows.length) return false;

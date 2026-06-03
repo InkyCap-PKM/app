@@ -61,6 +61,24 @@ const StatusBar: Component = () => {
   const isFileTab = () => getActiveTab()?.type === "file";
   const stats = wordCountStats;
 
+  // Shared "click anywhere to dismiss" wiring for the upward status-bar menus.
+  // The next document click closes the menu and removes the listener; tracking
+  // the active handler lets `onCleanup` tear it down too, so a menu left open
+  // when the component unmounts doesn't leak a document listener.
+  let activeDismiss: (() => void) | null = null;
+  const armDismiss = (close: () => void) => {
+    setTimeout(() => {
+      const onDocClick = () => {
+        close();
+        document.removeEventListener("click", onDocClick);
+        activeDismiss = null;
+      };
+      activeDismiss = () => document.removeEventListener("click", onDocClick);
+      document.addEventListener("click", onDocClick);
+    }, 0);
+  };
+  onCleanup(() => activeDismiss?.());
+
   // Cursor line:column — shown only in Source Edit mode, where it matches the
   // raw file so the user can jump to a reported error (e.g. the audit's L55:28).
   // In Live/Reading mode the source positions don't line up with what's shown,
@@ -101,13 +119,7 @@ const StatusBar: Component = () => {
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setSwitcherMenu({ x: rect.left, anchorTop: statusBarTop() });
-    setTimeout(() => {
-      const onDocClick = () => {
-        setSwitcherMenu(null);
-        document.removeEventListener("click", onDocClick);
-      };
-      document.addEventListener("click", onDocClick);
-    }, 0);
+    armDismiss(() => setSwitcherMenu(null));
   }
 
   // ── Spellcheck language switcher ──────────────────────────────────────
@@ -155,13 +167,7 @@ const StatusBar: Component = () => {
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setSpellMenu({ x: rect.left, anchorTop: statusBarTop() });
-    setTimeout(() => {
-      const onDocClick = () => {
-        setSpellMenu(null);
-        document.removeEventListener("click", onDocClick);
-      };
-      document.addEventListener("click", onDocClick);
-    }, 0);
+    armDismiss(() => setSpellMenu(null));
   }
 
   /// Notebox-relative path of the current file tab, e.g.

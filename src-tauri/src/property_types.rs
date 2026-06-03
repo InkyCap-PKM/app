@@ -17,9 +17,11 @@ use crate::models::note::PropertyValue;
 /// One of the user-facing property types shown in the context menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum PropertyType {
     /// Leave the value alone — no coercion, renderer picks an editor
     /// from the actual value type (current behavior for untyped keys).
+    #[default]
     Auto,
     Checkbox,
     Date,
@@ -54,12 +56,6 @@ pub const SYSTEM_PROPERTY_KEYS: &[&str] = &[
 
 pub fn is_system_property(key: &str) -> bool {
     SYSTEM_PROPERTY_KEYS.contains(&key)
-}
-
-impl Default for PropertyType {
-    fn default() -> Self {
-        PropertyType::Auto
-    }
 }
 
 /// Built-in standard property types that are always available.

@@ -59,6 +59,9 @@ pub struct MigrationResult {
     pub errors: Vec<String>,
 }
 
+/// Dry-run the attachment-folder rename: report whether the target exists, how
+/// many files it already holds, and any name conflicts — so the frontend can
+/// warn before committing. Performs no filesystem changes.
 #[tauri::command]
 pub async fn preview_attachment_folder_migration(
     new_folder: String,
@@ -123,6 +126,10 @@ pub async fn preview_attachment_folder_migration(
     })
 }
 
+/// Move every attachment into `new_folder` (one atomic directory rename) and
+/// rewrite the `#image`/`#read`/etc. paths in referencing notes to match.
+/// The fs move happens first; per-note rewrite errors are reported but do not
+/// roll it back. Returns the move result and any rewrite errors.
 #[tauri::command]
 pub async fn migrate_attachment_folder(
     new_folder: String,

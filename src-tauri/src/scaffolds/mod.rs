@@ -314,7 +314,7 @@ mod tests {
         let expanded = expand_variables("{{date:D MMMM YYYY}}", "x");
         let first = expanded.content.split_whitespace().next().unwrap();
         let parsed: u32 = first.parse().expect("day parses as integer");
-        assert!(parsed >= 1 && parsed <= 31);
+        assert!((1..=31).contains(&parsed));
         if parsed < 10 {
             assert_eq!(first.len(), 1, "single-digit day must not be zero-padded");
         }

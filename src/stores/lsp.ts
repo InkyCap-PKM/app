@@ -21,7 +21,9 @@ export async function startLsp(noteboxPath: string): Promise<void> {
     await client.start(noteboxPath);
     setLspReady(true);
     setLspError(null);
-    console.log("[LSP] Tinymist initialized, ready for", noteboxPath);
+    // Diagnostic only; no path logged (local-first privacy — paths don't go to
+    // the console either). console.debug so it's filterable, not normal noise.
+    console.debug("[LSP] Tinymist initialized");
   } catch (err) {
     const msg = errorText(err);
     console.error("[LSP] Failed to start Tinymist:", msg);

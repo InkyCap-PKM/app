@@ -3,15 +3,22 @@
 # INERT until you enable Actions on the repository:
 #   Codeberg → repo → Settings → Actions → enable, and ensure a runner is
 #   available (Codeberg offers shared runners you opt into).
-# Once enabled, every push and pull request runs `cargo fmt --check`
-# server-side, unbypassable.
+# Once enabled, every push and pull request runs these gates server-side,
+# unbypassable.
 #
-# Scope is deliberately minimal — just the fast formatting gate. A full
-# Tauri build/test is heavy; add `cargo test` / `npm test` jobs here when
-# you want them, mindful of runner minutes.
+# Jobs:
+#   - rustfmt:  formatting gate (fast).
+#   - clippy:   lint gate, `-D warnings` (the tree is clippy-clean; this keeps
+#               it that way). Two crate-wide allows live in src-tauri/src/lib.rs
+#               for inherent domain shape — see the comment there.
+#   - rust-test: the Rust unit + integration tests.
+#   - frontend: TypeScript typecheck, i18n key/placeholder parity, and the
+#               Vitest suite.
 #
-# `runs-on` / the container image target Codeberg's shared runners; adjust
-# if your runner advertises different labels.
+# A full Tauri *bundle* (the packaged app) is deliberately not built here — it
+# is heavy on runner minutes and the unit/integration suites cover the logic.
+# `runs-on` / the container image target Codeberg's shared runners; adjust if
+# your runner advertises different labels.
 name: CI
 
 on: [push, pull_request]
@@ -27,3 +34,50 @@ jobs:
         run: rustup component add rustfmt
       - name: Check Rust formatting
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+
+  clippy:
+    runs-on: docker
+    container:
+      image: rust:1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev pkg-config
+      - name: Ensure clippy is installed
+        run: rustup component add clippy
+      - name: Lint with clippy (warnings are errors)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --lib --tests -- -D warnings
+
+  rust-test:
+    runs-on: docker
+    container:
+      image: rust:1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev pkg-config
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  frontend:
+    runs-on: docker
+    container:
+      image: node:22-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install npm dependencies
+        run: npm ci
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+      - name: i18n key/placeholder parity
+        run: npm run i18n:check
+      - name: Run frontend tests
+        run: npm run test

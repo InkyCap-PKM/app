@@ -216,19 +216,12 @@ impl Default for StartupSettings {
 /// General behaviour settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct BehaviourSettings {
     /// When a file is opened in a new tab (Ctrl/Cmd+click or a right-click
     /// "open in new tab" action), switch the content focus to that tab
     /// immediately. When false, the tab opens in the background.
     pub switch_to_new_tab: bool,
-}
-
-impl Default for BehaviourSettings {
-    fn default() -> Self {
-        Self {
-            switch_to_new_tab: false,
-        }
-    }
 }
 
 /// Typst-facing document defaults that affect compilation, reading view,
@@ -348,15 +341,10 @@ impl Default for FontSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ExportSettings {
     /// Custom path to the Pandoc binary. If not set, auto-detected from PATH.
     pub pandoc_path: Option<String>,
-}
-
-impl Default for ExportSettings {
-    fn default() -> Self {
-        Self { pandoc_path: None }
-    }
 }
 
 /// Notebox backup settings — controls how, when, and where the backup

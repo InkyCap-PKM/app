@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nickelpack/tauri/v2/crates/tauri-config-schema/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "InkyCap",
   "version": "0.1.0",
   "identifier": "com.inkycap.editor",

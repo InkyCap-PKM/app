@@ -6,22 +6,22 @@
 //! the design rationale; the high-level shape is:
 //!
 //!   - `archive`   — builds the zip file from a notebox root (+ optional
-//!                   user-config folder).
+//!     user-config folder).
 //!   - `filename`  — substitutes `{notebox}`, `{YYYY}`, … tokens into the
-//!                   configured filename pattern, sanitizing each
-//!                   substitution against Windows-reserved characters and
-//!                   reserved names.
+//!     configured filename pattern, sanitizing each
+//!     substitution against Windows-reserved characters and
+//!     reserved names.
 //!   - `state`     — persists "last successful backup" timestamp so the
-//!                   scheduler and only-on-change guard can do their job
-//!                   across restarts. Lives in
-//!                   `$CONFIG_DIR/inkycap/backup_state.json`, separate from
-//!                   settings.json because it churns more frequently and
-//!                   isn't really a user preference.
+//!     scheduler and only-on-change guard can do their job
+//!     across restarts. Lives in
+//!     `$CONFIG_DIR/inkycap/backup_state.json`, separate from
+//!     settings.json because it churns more frequently and
+//!     isn't really a user preference.
 //!   - `password`  — read/write/delete the per-machine backup password in
-//!                   the OS keychain via the `keyring` crate.
+//!     the OS keychain via the `keyring` crate.
 //!   - `runner`    — the public entry point for a one-shot backup: locks
-//!                   a mutex, builds the destination path, calls
-//!                   `archive::write`, prunes old backups, updates state.
+//!     a mutex, builds the destination path, calls
+//!     `archive::write`, prunes old backups, updates state.
 //!
 //! Scheduling (interval timer, on-launch check, only-on-change guard) lives
 //! one layer up in `commands::backup` and the background task started from

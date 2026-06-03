@@ -111,7 +111,7 @@ static UNKNOWN_FUNC_RE: LazyLock<Regex> =
 /// Convert InkyCap Typst source to markdown.
 pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> String {
     let mut out = String::with_capacity(input.len());
-    let mut lines = input.lines().peekable();
+    let lines = input.lines().peekable();
     let mut frontmatter_fields: Vec<(String, String)> = Vec::new();
     let mut in_note_call = false;
     let mut note_buf = String::new();
@@ -120,7 +120,7 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
     let mut in_code_block = false;
     let mut code_block_lang = String::new();
 
-    while let Some(line) = lines.next() {
+    for line in lines {
         // Skip import lines.
         if IMPORT_RE.is_match(line) {
             continue;
@@ -654,12 +654,7 @@ fn convert_typst_emphasis(text: &str) -> String {
 }
 
 fn find_closing_marker(chars: &[char], start: usize, marker: char) -> Option<usize> {
-    for i in start..chars.len() {
-        if chars[i] == marker && (i == 0 || chars[i - 1] != ' ') {
-            return Some(i);
-        }
-    }
-    None
+    (start..chars.len()).find(|&i| chars[i] == marker && (i == 0 || chars[i - 1] != ' '))
 }
 
 /// Parse `#note(...)` content into (key, value) pairs for YAML frontmatter.

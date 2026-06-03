@@ -832,11 +832,13 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   if (!onlyRanges) {
     // Detect bare HTML-like tags (e.g. <script>) that are ambiguous in Typst
     const docText = state.doc.toString();
+    // The syntax tree is invariant across this scan — fetch it once rather than
+    // per regex match (could be many `<…>` occurrences in a long document).
+    const tree = syntaxTree(state);
     let match: RegExpExecArray | null;
     ANGLE_BRACKET_TAGS.lastIndex = 0;
     while ((match = ANGLE_BRACKET_TAGS.exec(docText)) !== null) {
       const pos = match.index;
-      const tree = syntaxTree(state);
       let inCode = false;
       tree.iterate({
         from: pos,
@@ -2070,9 +2072,17 @@ const visualField = StateField.define<DecorationSet>({
     if (tr.docChanged) {
       const ep = tr.state.field(expandedFuncField, false) ?? null;
       if (ep !== null) return buildDecorations(tr.state);
+      // Document edits (including newline/paste/undo/redo) carry change sets we
+      // can map decoration ranges against — handle them incrementally.
       return rebuildDocChange(decos, tr);
     }
     if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
+      // Tree identity changed WITHOUT a doc change: the async (WASM) parser
+      // finished re-parsing in a later transaction. There is no change set to
+      // map old decoration ranges against, so an incremental update can't be
+      // applied safely — a full rebuild against the freshly-available tree is
+      // the correct (and only sound) response. Doc-driven edits never reach
+      // here; they took the incremental `rebuildDocChange` path above.
       return buildDecorations(tr.state);
     }
     if (tr.startState.facet(autoExpandFacet) !== tr.state.facet(autoExpandFacet)) {

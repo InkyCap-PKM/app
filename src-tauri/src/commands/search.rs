@@ -67,7 +67,7 @@ pub async fn notebox_search(
         Vec::new()
     };
     let verify =
-        (!terms.is_empty()).then(|| move |span: &str| terms.iter().any(|t| t.matches(span)));
+        (!terms.is_empty()).then_some(move |span: &str| terms.iter().any(|t| t.matches(span)));
 
     // Resolve membership for any `collection:` filter in the query before we
     // take the search-engine lock (resolution reads the collection files and

@@ -49,20 +49,15 @@ use crate::property_types::{builtin_property_type, PropertyType};
 /// `==highlight==` are converted in both dialects — they're widely
 /// used outside Obsidian (Logseq, Foam, Pandoc) and not at risk of
 /// colliding with anything in standard markdown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MarkdownDialect {
     /// CommonMark / GitHub-Flavored Markdown. `#` is always literal
     /// outside heading positions; no math; no `%%` comments.
+    #[default]
     Standard,
     /// Obsidian-flavored markdown. Tag syntax, `$…$` math,
     /// `%%comment%%`, callout blockquotes.
     Obsidian,
-}
-
-impl Default for MarkdownDialect {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 /// Options controlling the markdown-to-typst conversion.
@@ -108,7 +103,7 @@ impl Default for MarkdownToTypstOptions {
 
 /// Strategy for importing LaTeX math, chosen per-import by probing the target
 /// notebox for a user-installed `mitex` package.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum MathImportMode {
     /// `mitex` is installed — render LaTeX via `#mi(`…`)` (inline) and
     /// `#mitex(`…`)` (block), adding the package import to notes that use it.
@@ -118,13 +113,8 @@ pub enum MathImportMode {
     /// math) or a fenced ```` ```latex ```` block (display math). Nothing is
     /// lost and the note still compiles; the user can install mitex or
     /// rewrite the math as Typst math later.
+    #[default]
     Preserve,
-}
-
-impl Default for MathImportMode {
-    fn default() -> Self {
-        MathImportMode::Preserve
-    }
 }
 
 /// Counts/flags from one conversion, so the importer can report how many
@@ -403,7 +393,7 @@ fn escape_unrecognized_hashes(text: &str) -> String {
                 j += 1;
             }
             let ident = &text[after_hash..j];
-            if !ident.is_empty() && EMITTED_TYPST_CALLS.iter().any(|n| *n == ident) {
+            if !ident.is_empty() && EMITTED_TYPST_CALLS.contains(&ident) {
                 // Recognized call — keep `#name` intact, copy through.
                 out.push_str(&text[i..j]);
                 i = j;
@@ -899,11 +889,7 @@ impl<'a> Converter<'a> {
                 self.emit(&format!("`{}`", code));
             }
             Event::SoftBreak => {
-                if self.in_code_block {
-                    self.emit("\n");
-                } else {
-                    self.emit("\n");
-                }
+                self.emit("\n");
             }
             Event::HardBreak => {
                 self.emit(" \\\n");

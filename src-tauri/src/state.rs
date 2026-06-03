@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::bookmarks::{self, Bookmark};
 use crate::cache::MetadataCache;
-use crate::corpus_stats::CorpusStats;
+use crate::corpus_stats::{CorpusStats, PersistedCorpusStats};
 use crate::link_index::LinkIndex;
 use crate::notebox_settings::{NoteboxCitationSettings, NoteboxSettings};
 use crate::property_types::PropertyTypeRegistry;
@@ -91,6 +91,9 @@ pub struct NoteboxSession {
     /// persistence — the index is only written to disk if at least
     /// `SEARCH_SAVE_INTERVAL_SECS` have elapsed since the last save.
     last_search_save: AtomicI64,
+    /// Unix timestamp of the last corpus-stats save. Same debounce as the
+    /// search index — both are caches reconciled against file mtimes on open.
+    last_corpus_save: AtomicI64,
 }
 
 impl NoteboxSession {
@@ -111,6 +114,7 @@ impl NoteboxSession {
             typst_compiler: Mutex::new(None),
             metadata_cache,
             last_search_save: AtomicI64::new(0),
+            last_corpus_save: AtomicI64::new(0),
         }
     }
 
@@ -268,15 +272,75 @@ impl NoteboxSession {
 
         let property_index = PropertyIndex::build(notes);
 
-        // Build corpus statistics for the Mycelial View.
-        let corpus_stats = {
+        // Single "now" reused for both the corpus-stats and search-index save
+        // timestamps below.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Corpus statistics for the Mycelial View. Load the persisted snapshot
+        // and incrementally reconcile it against the current files (mtime vs
+        // `saved_at`) rather than re-tokenizing the whole corpus on every open
+        // — the same load-then-update pattern the search index uses.
+        let corpus_path = corpus_stats_path(&notebox_root);
+        let corpus_stats = if let Some(persisted) =
+            PersistedCorpusStats::load_from_file(&corpus_path)
+        {
+            let mut stats = persisted.stats;
+            // `stopwords` is `#[serde(skip)]`, so re-derive it after load.
+            stats.reload_stopwords(Some(&notebox_root));
+            let saved_at = persisted.saved_at;
+
+            // Drop docs for files pruned since the snapshot, and any indexed
+            // path no longer present in the current scan.
+            if let Some(ref cs) = cache_stats {
+                for path in &cs.pruned_paths {
+                    stats.delete_doc(path);
+                }
+            }
+            let current_paths: HashSet<&Path> = contents.iter().map(|(p, _)| p.as_path()).collect();
+            let stale: Vec<PathBuf> = stats
+                .indexed_paths()
+                .into_iter()
+                .filter(|p| !current_paths.contains(p.as_path()))
+                .collect();
+            for path in &stale {
+                stats.delete_doc(path);
+            }
+
+            // Re-project files newer than the snapshot, or not yet present.
+            let mut updated = 0usize;
+            for (path, content) in &contents {
+                let mtime = file_mtimes.get(path).copied().unwrap_or(0);
+                if mtime > saved_at || !stats.contains_doc(path) {
+                    let projection = crate::search::text_projection::project(content);
+                    stats.update_doc(path, &projection.tokens);
+                    updated += 1;
+                }
+            }
+            log::info!(
+                "corpus stats: loaded persisted, {} docs, {} updated, {} pruned",
+                stats.total_docs,
+                updated,
+                stale.len()
+            );
+            stats
+        } else {
             let docs: Vec<(PathBuf, &str)> = contents
                 .iter()
                 .map(|(p, c)| (p.clone(), c.as_str()))
                 .collect();
-            CorpusStats::build(&docs, Some(&notebox_root))
+            let stats = CorpusStats::build(&docs, Some(&notebox_root));
+            log::info!(
+                "corpus stats: built from scratch ({} docs)",
+                stats.total_docs
+            );
+            stats
         };
-        log::info!("corpus stats: {} docs indexed", corpus_stats.total_docs);
+        // Persist for next launch.
+        PersistedCorpusStats::save_borrowed(&corpus_stats, now, &corpus_path);
+        self.last_corpus_save.store(now, Ordering::Relaxed);
 
         // Try to load the persisted search index and incrementally update it
         // rather than rebuilding from scratch.
@@ -346,11 +410,7 @@ impl NoteboxSession {
             );
             SearchEngine::build(search_files)
         };
-        // Save the search engine for next launch.
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        // Save the search engine for next launch (reusing `now` from above).
         let persisted = PersistedSearchIndex {
             engine: search_engine,
             saved_at: now,
@@ -480,6 +540,40 @@ impl NoteboxSession {
     ///   4. metadata cache (via `cache_upsert_note`, acquires its own guard)
     ///   5. property_index (write, last — consumes the parsed note)
     pub async fn reindex_note(&self, path: &std::path::Path, content: &str) {
+        self.reindex_note_inner(path, content).await;
+        // Resolve once after the per-note update. For a single note the prop
+        // index now contains it (the inner step updates it before we get here),
+        // so backlinks for newly-arrived self-references resolve on first index.
+        self.resolve_all_backlinks().await;
+        self.maybe_save_search_index().await;
+        self.maybe_save_corpus_stats().await;
+    }
+
+    /// Re-index a *batch* of notes with a **single** backlink resolution at the
+    /// end, instead of one O(notebox) re-resolution per note.
+    ///
+    /// The watcher coalesces bursts of file changes (a git checkout, a tool
+    /// rewriting many notes, an editor's write-then-touch double event) into
+    /// one call here — collapsing what used to be N concurrent tasks each
+    /// doing an O(N) StemIndex rebuild (O(N²) total, all contending on the
+    /// single compiler mutex) into one sequential pass plus one resolve.
+    pub async fn reindex_notes(&self, batch: Vec<(std::path::PathBuf, String)>) {
+        if batch.is_empty() {
+            return;
+        }
+        for (path, content) in &batch {
+            self.reindex_note_inner(path, content).await;
+        }
+        self.resolve_all_backlinks().await;
+        self.maybe_save_search_index().await;
+        self.maybe_save_corpus_stats().await;
+    }
+
+    /// Per-note index update shared by [`reindex_note`] and [`reindex_notes`].
+    /// Updates the link forward-edges, search engine, corpus stats, metadata
+    /// cache, and property index — but does **not** resolve backlinks or
+    /// persist the search index; the caller does that once for the whole batch.
+    async fn reindex_note_inner(&self, path: &std::path::Path, content: &str) {
         let notebox_root = self.notebox_root.read().await;
         let Some(root) = notebox_root.as_ref() else {
             return;
@@ -511,40 +605,16 @@ impl NoteboxSession {
             Err(_) => self.carry_forward_file_props(path, &mut note).await,
         }
 
-        // 1. Link index: forget the old links, record the new ones, and do a
-        // full re-resolution against the entire notebox.
-        //
-        // A targeted `resolve_note_links(path)` was tempting (cheaper per
-        // call) but it only updates the *current* note's outgoing links and
-        // the backlinks of its targets. It does not fix two real cases:
-        //   • A newly-arrived note B that other pre-existing notes A already
-        //     wikilinked by name — those forward_raw["B"] entries were
-        //     resolved before B existed and so still produce an empty
-        //     forward[A], and never populate backward[B] either.
-        //   • A renamed/deleted note that leaves stale forward[A] entries on
-        //     other notes pointing at a path that no longer exists.
-        // `resolve_and_build_backlinks` is O(N + L_total) over the StemIndex
-        // — sub-millisecond per save at notebox sizes we care about — and
-        // produces a coherent index unconditionally.
-        let mut link_index = self.link_index.write().await;
-        link_index.remove_note(&path.to_path_buf());
-        for link_target in &note.links {
-            link_index.add_link(path.to_path_buf(), link_target.clone());
-        }
-        let all_paths: Vec<std::path::PathBuf> = {
-            let prop_index = self.property_index.read().await;
-            let mut paths: Vec<std::path::PathBuf> = prop_index.notes.keys().cloned().collect();
-            // prop_index is updated *after* link_index (lock-ordering rules),
-            // so for a brand-new note the current path is not yet present
-            // here — add it explicitly so self-referential wikilinks resolve
-            // on the very first index.
-            if !paths.iter().any(|p| p == &path.to_path_buf()) {
-                paths.push(path.to_path_buf());
+        // 1. Link index: forget the old links, record the new ones. The
+        // notebox-wide re-resolution is deferred to `resolve_all_backlinks`,
+        // run once by the caller after every note in the batch is updated.
+        {
+            let mut link_index = self.link_index.write().await;
+            link_index.remove_note(&path.to_path_buf());
+            for link_target in &note.links {
+                link_index.add_link(path.to_path_buf(), link_target.clone());
             }
-            paths
-        };
-        link_index.resolve_and_build_backlinks(&all_paths);
-        drop(link_index);
+        }
 
         // 2. Search engine.
         let tags = note.tags.clone();
@@ -581,34 +651,47 @@ impl NoteboxSession {
         let mut prop_index = self.property_index.write().await;
         prop_index.update_note(note);
         drop(prop_index);
+    }
 
-        // 5. Debounced search index persistence.
-        self.maybe_save_search_index().await;
+    /// Rebuild the whole backlink index from the current set of indexed notes.
+    ///
+    /// A targeted `resolve_note_links(path)` was tempting (cheaper per call)
+    /// but it only updates the *current* note's outgoing links and the
+    /// backlinks of its targets. It does not fix two real cases:
+    ///   • A newly-arrived note B that other pre-existing notes A already
+    ///     wikilinked by name — those `forward_raw["B"]` entries were resolved
+    ///     before B existed and so still produce an empty `forward[A]`.
+    ///   • A renamed/deleted note that leaves stale `forward[A]` entries on
+    ///     other notes pointing at a path that no longer exists.
+    /// `resolve_and_build_backlinks` is O(N + L_total) over the StemIndex and
+    /// produces a coherent index unconditionally. Acquires `link_index` (write)
+    /// then `property_index` (read), preserving the documented lock ordering.
+    async fn resolve_all_backlinks(&self) {
+        let mut link_index = self.link_index.write().await;
+        let all_paths: Vec<std::path::PathBuf> = {
+            let prop_index = self.property_index.read().await;
+            prop_index.notes.keys().cloned().collect()
+        };
+        link_index.resolve_and_build_backlinks(&all_paths);
     }
 
     /// Remove a note from every index AND from the persistent metadata cache.
     /// Companion to [`reindex_note`].
     pub async fn remove_from_indices(&self, path: &std::path::Path) {
-        let path_buf = path.to_path_buf();
+        self.remove_from_indices_inner(path).await;
+        self.resolve_all_backlinks().await;
+        self.maybe_save_search_index().await;
+        self.maybe_save_corpus_stats().await;
+    }
 
+    /// Per-note removal shared by [`remove_from_indices`] and the watcher's
+    /// batched apply path. Drops the note from every index and the cache but
+    /// does not resolve backlinks or persist — the caller does that once.
+    async fn remove_from_indices_inner(&self, path: &std::path::Path) {
+        let path_buf = path.to_path_buf();
         {
             let mut link_index = self.link_index.write().await;
             link_index.remove_note(&path_buf);
-            // Other notes may still carry the removed path in their resolved
-            // forward[] list (or have raw wikilinks that previously resolved
-            // to it). A full re-resolution drops the stale entries and lets
-            // the resolver re-target any duplicates by stem if another note
-            // with the same name still exists.
-            let all_paths: Vec<std::path::PathBuf> = {
-                let prop_index = self.property_index.read().await;
-                prop_index
-                    .notes
-                    .keys()
-                    .filter(|p| *p != &path_buf)
-                    .cloned()
-                    .collect()
-            };
-            link_index.resolve_and_build_backlinks(&all_paths);
         }
         {
             let mut prop_index = self.property_index.write().await;
@@ -623,7 +706,6 @@ impl NoteboxSession {
             stats.delete_doc(path);
         }
         self.cache_remove_note(path).await;
-        self.maybe_save_search_index().await;
     }
 
     /// Save the search index to disk if at least 60 seconds have elapsed
@@ -650,6 +732,32 @@ impl NoteboxSession {
         let index_path = search_index_path(&notebox_root);
         PersistedSearchIndex::save_borrowed(&engine, now, &index_path);
         self.last_search_save.store(now, Ordering::Relaxed);
+    }
+
+    /// Persist the corpus stats if at least `SEARCH_SAVE_INTERVAL_SECS` have
+    /// elapsed since the last save. Same debounce and rationale as
+    /// [`maybe_save_search_index`] — both are mtime-reconciled caches.
+    async fn maybe_save_corpus_stats(&self) {
+        const CORPUS_SAVE_INTERVAL_SECS: i64 = 60;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let last = self.last_corpus_save.load(Ordering::Relaxed);
+        if now - last < CORPUS_SAVE_INTERVAL_SECS {
+            return;
+        }
+
+        let notebox_root = match self.notebox_root.read().await.clone() {
+            Some(r) => r,
+            None => return,
+        };
+
+        let stats = self.corpus_stats.read().await;
+        let path = corpus_stats_path(&notebox_root);
+        PersistedCorpusStats::save_borrowed(&stats, now, &path);
+        self.last_corpus_save.store(now, Ordering::Relaxed);
     }
 }
 
@@ -701,6 +809,12 @@ pub struct AppState {
 /// async `copy_path_to_attachments` invocation, short enough that a stale
 /// entry can't be reused later in the session.
 const DROP_ALLOWLIST_TTL: Duration = Duration::from_secs(60);
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl AppState {
     pub fn new() -> Self {
@@ -850,6 +964,13 @@ fn search_index_path(notebox_root: &Path) -> PathBuf {
     crate::app_paths::cache_dir().join(format!("search-index-{short}.bin"))
 }
 
+fn corpus_stats_path(notebox_root: &Path) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(notebox_root.to_string_lossy().as_bytes());
+    let short = &hex::encode(&hash)[..16];
+    crate::app_paths::cache_dir().join(format!("corpus-stats-{short}.bin"))
+}
+
 /// Tiny hex encoder (avoids pulling in the `hex` crate).
 mod hex {
     pub fn encode(bytes: &[u8]) -> String {
@@ -917,8 +1038,8 @@ pub fn configure_bibliography(
                 .zotero_database_path
                 .as_ref()
                 .map(PathBuf::from)
-                .or_else(|| crate::typst_pipeline::zotero::auto_detect_path());
-            let Some(db_path) = db else { return None };
+                .or_else(crate::typst_pipeline::zotero::auto_detect_path);
+            let db_path = db?;
             match crate::typst_pipeline::zotero::read_entries(&db_path) {
                 Ok(entries) => {
                     match crate::typst_pipeline::bibliography::write_zotero_export(

@@ -76,11 +76,13 @@ import { promptText } from "../stores/prompt";
 import {
   rightPanelTab,
   setRightPanelTab,
+  rightCollapsed,
   type RightPanelTab,
   collectionPanelTab,
   setCollectionPanelTab,
   type CollectionPanelTab,
 } from "../stores/layout";
+import { rescanHeadings } from "../editor/typst-decorations/heading-tracker";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
@@ -187,6 +189,15 @@ const RightPanel: Component = () => {
   // changes (not per keystroke), so it's cheap.
   createEffect(() => {
     rescanAnnotations(activeEditorView()?.view);
+  });
+
+  // Keep the outline populated. The heading tracker only updates live while the
+  // outline pane is open (gated + debounced for perf), so re-scan here whenever
+  // the active editor changes or the outline pane (re)opens.
+  createEffect(() => {
+    if (rightPanelTab() === "outline" && !rightCollapsed()) {
+      rescanHeadings(activeEditorView()?.view);
+    }
   });
 
   // Tracked changes (suggestions) in the active note still awaiting an
@@ -465,13 +476,25 @@ const RightPanel: Component = () => {
   onCleanup(() => document.removeEventListener("inkycap:note-saved", onNoteSaved));
 
   let indexUpdatedUnlisten: UnlistenFn | null = null;
+  let indexListenerDisposed = false;
   onMount(async () => {
-    indexUpdatedUnlisten = await listen("notebox:index-updated", () => {
+    const unlisten = await listen("notebox:index-updated", () => {
       refetchMetadata();
       refreshAllLinks();
     });
+    // If the component disposed while `listen` was still pending, the cleanup
+    // below already ran against a null handle — unlisten immediately so we
+    // don't leak a subscription that fires after teardown.
+    if (indexListenerDisposed) {
+      unlisten();
+    } else {
+      indexUpdatedUnlisten = unlisten;
+    }
   });
-  onCleanup(() => indexUpdatedUnlisten?.());
+  onCleanup(() => {
+    indexListenerDisposed = true;
+    indexUpdatedUnlisten?.();
+  });
 
   const [backlinks, { refetch: refetchBacklinks }] = createResource(
     () => activeFileTab()?.path,

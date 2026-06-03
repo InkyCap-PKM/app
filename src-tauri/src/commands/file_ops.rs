@@ -71,7 +71,7 @@ pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<Stri
         let paths = rx
             .await
             .map_err(|_| InkyCapError::InvalidPath("clipboard channel closed".into()))?;
-        return Ok(paths);
+        Ok(paths)
     }
     #[cfg(target_os = "macos")]
     {
@@ -123,7 +123,9 @@ pub async fn paste_clipboard_to_attachments(
             if !src.is_file() {
                 continue;
             }
-            let data = std::fs::read(&src)?;
+            // Async read — clipboard file references can be large media and
+            // must not block the async worker.
+            let data = tokio::fs::read(&src).await?;
             let filename = src
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -447,7 +449,9 @@ pub async fn copy_path_to_attachments(
         .ok_or_else(|| {
             InkyCapError::InvalidPath(format!("Source has no filename: {}", source_path))
         })?;
-    let data = std::fs::read(&src)?;
+    // Async read — copied source files can be large media; don't block the
+    // async worker on the read.
+    let data = tokio::fs::read(&src).await?;
     write_to_attachments(&filename, &data, &app, &session).await
 }
 

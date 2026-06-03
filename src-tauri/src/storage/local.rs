@@ -87,8 +87,7 @@ impl NoteboxStorage for LocalNoteboxStorage {
                 true
             }
         }) {
-            let entry = entry
-                .map_err(|e| InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            let entry = entry.map_err(|e| InkyCapError::Io(std::io::Error::other(e)))?;
             if entry.file_type().is_file() {
                 if let Some(file_ext) = entry.path().extension() {
                     if file_ext == ext {
@@ -122,16 +121,16 @@ impl NoteboxStorage for LocalNoteboxStorage {
             .unwrap_or_default();
         let path_str = full
             .strip_prefix(&self.canonical_root)
-            .map(|p| to_frontend_string(p))
+            .map(to_frontend_string)
             .unwrap_or_else(|_| to_frontend_string(&full));
 
-        let ctime = meta.created().ok().and_then(|t| {
+        let ctime = meta.created().ok().map(|t| {
             let dt: chrono::DateTime<chrono::Utc> = t.into();
-            Some(dt.to_rfc3339())
+            dt.to_rfc3339()
         });
-        let mtime = meta.modified().ok().and_then(|t| {
+        let mtime = meta.modified().ok().map(|t| {
             let dt: chrono::DateTime<chrono::Utc> = t.into();
-            Some(dt.to_rfc3339())
+            dt.to_rfc3339()
         });
 
         Ok(FileMetadata {
@@ -149,7 +148,7 @@ impl NoteboxStorage for LocalNoteboxStorage {
         let root = self.canonical_root.clone();
         tokio::task::spawn_blocking(move || build_file_tree(&root))
             .await
-            .map_err(|e| InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(|e| InkyCapError::Io(std::io::Error::other(e)))?
     }
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
@@ -211,20 +210,11 @@ impl NoteboxStorage for LocalNoteboxStorage {
         // trash::delete is blocking, run on spawn_blocking
         let full_clone = full.clone();
         tokio::task::spawn_blocking(move || {
-            trash::delete(&full_clone).map_err(|e| {
-                InkyCapError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Trash error: {}", e),
-                ))
-            })
+            trash::delete(&full_clone)
+                .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Trash error: {}", e))))
         })
         .await
-        .map_err(|e| {
-            InkyCapError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Join error: {}", e),
-            ))
-        })?
+        .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Join error: {}", e))))?
     }
 }
 
@@ -249,8 +239,7 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
         });
 
     for entry in walker {
-        let entry = entry
-            .map_err(|e| InkyCapError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        let entry = entry.map_err(|e| InkyCapError::Io(std::io::Error::other(e)))?;
         let parent = entry.path().parent().unwrap_or(root).to_path_buf();
         let is_dir = entry.file_type().is_dir();
         let name = entry.file_name().to_string_lossy().into_owned();

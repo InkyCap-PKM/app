@@ -355,10 +355,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
     // Resolve the current cursor; fall back to the open file (if visible),
     // then the first row, so the very first keypress has somewhere to start.
-    let idx = rows.findIndex((r) => r.node.path === focusedTreePath());
+    let idx = rows.findIndex((r) => pathEquals(r.node.path, focusedTreePath()));
     if (idx < 0) {
       const activePath = getActiveTab()?.path ?? null;
-      idx = activePath ? rows.findIndex((r) => r.node.path === activePath) : -1;
+      idx = activePath ? rows.findIndex((r) => pathEquals(r.node.path, activePath)) : -1;
       if (idx < 0) idx = 0;
     }
     const cur = rows[idx];
@@ -711,7 +711,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     // would match it and re-focus the scroll instead of opening the note.
     // `allowDuplicate` forces a distinct, regular editor tab in that case.
     const hasScrollTabForPath = tabs.some(
-      (t) => t.path === node.path && isScrollEnabled(t.id),
+      (t) => pathEquals(t.path, node.path) && isScrollEnabled(t.id),
     );
     openTab(
       { type: "file", title: node.name, path: node.path },
@@ -870,7 +870,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       await ipc.deleteCollectionFile(col.path);
       // Close any open tab for this collection
       const openCollTab = tabs.find(
-        (t) => t.type === "collection" && t.path === col.path,
+        (t) => t.type === "collection" && pathEquals(t.path, col.path),
       );
       if (openCollTab) closeTab(openCollTab.id);
       refresh();
@@ -1040,7 +1040,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           await ipc.deleteFile(item.path);
           // Close any open tab for this file.
           const openFileTab = tabs.find(
-            (t) => t.type === "file" && t.path === item.path,
+            (t) => t.type === "file" && pathEquals(t.path, item.path),
           );
           if (openFileTab) closeTab(openFileTab.id);
         }
@@ -1447,7 +1447,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 const rows = flattenVisibleTree();
                 if (rows.length === 0) return;
                 const activePath = getActiveTab()?.path ?? null;
-                const start = activePath && rows.some((r) => r.node.path === activePath)
+                const start = activePath && rows.some((r) => pathEquals(r.node.path, activePath))
                   ? activePath
                   : rows[0].node.path;
                 focusTreeRow(start);
@@ -2058,7 +2058,7 @@ const TreeNode: Component<{
 
   const isRenaming = () => props.renamingPath === props.node.path;
   const isActive = () =>
-    !props.node.is_dir && props.activePath === props.node.path;
+    !props.node.is_dir && pathEquals(props.activePath, props.node.path);
 
   /// Folder a drop on this row moves the item into: the folder itself
   /// for a directory row, or the containing folder for a file row.

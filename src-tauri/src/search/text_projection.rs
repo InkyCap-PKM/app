@@ -200,14 +200,14 @@ fn handle_func_call(
     match callee_name.as_deref() {
         // The `#note(…)` properties block is metadata, not body prose;
         // its values flow through the property-search path on DocEntry.
-        Some("note") => return,
+        Some("note") => (),
 
         // Runtime hooks emitted by lib.typ — never user-visible prose.
-        Some("metadata") => return,
+        Some("metadata") => (),
 
         // Auto-emitted by `#bibliography(…)` and friends. Skip the path
         // arg too; users don't search by .bib filename.
-        Some("bibliography") => return,
+        Some("bibliography") => (),
 
         Some("tag") => {
             // `#tag("name")` — extract the name as a searchable token,
@@ -221,7 +221,6 @@ fn handle_func_call(
                     .push(line);
                 emit_string_tokens(&name, anchor, line_map, out);
             }
-            return;
         }
 
         Some("wikilink") => {
@@ -232,7 +231,6 @@ fn handle_func_call(
             if let Some((name, anchor)) = first_positional_string_at(node) {
                 emit_string_tokens(&name, anchor, line_map, out);
             }
-            return;
         }
 
         Some("annotation") | Some("suggestion") => {
@@ -267,7 +265,6 @@ fn handle_func_call(
                 }
             }
             descend_into_content_blocks(node, source, line_map, out);
-            return;
         }
 
         Some("link") | Some("link-ref") => {
@@ -275,7 +272,6 @@ fn handle_func_call(
             // ContentBlock for the display body. The URL itself is not
             // prose; skip it.
             descend_into_content_blocks(node, source, line_map, out);
-            return;
         }
 
         Some("image") => {
@@ -290,7 +286,6 @@ fn handle_func_call(
                     emit_string_tokens(stem, anchor + stem_offset, line_map, out);
                 }
             }
-            return;
         }
 
         _ => {

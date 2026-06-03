@@ -308,11 +308,7 @@ pub async fn list_scaffolds(
     let files = storage.list_files(&scaffold_dir, "*.typ").await?;
     let names: Vec<String> = files
         .iter()
-        .filter_map(|p| {
-            p.strip_prefix(&scaffold_dir)
-                .ok()
-                .map(|rel| to_frontend_string(rel))
-        })
+        .filter_map(|p| p.strip_prefix(&scaffold_dir).ok().map(to_frontend_string))
         .collect();
 
     Ok(names)

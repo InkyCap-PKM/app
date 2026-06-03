@@ -198,14 +198,13 @@ fn cached_to_note(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // `file.folder` is exposed to collection filters and the property panel and
+    // is compared against forward-slash paths from the file tree — flow it
+    // through the frontend-shape helper (like `file.path` below) so Windows
+    // callers don't trip on `\` separators or a `\\?\` verbatim prefix.
     let folder = abs_path
         .parent()
-        .map(|p| {
-            p.strip_prefix(notebox_root)
-                .unwrap_or(p)
-                .display()
-                .to_string()
-        })
+        .map(|p| crate::storage::to_frontend_string(p.strip_prefix(notebox_root).unwrap_or(p)))
         .unwrap_or_default();
     let ext = abs_path
         .extension()
@@ -217,7 +216,7 @@ fn cached_to_note(
     // value is matched against forward-slash paths from the file tree.
     let rel_path = abs_path
         .strip_prefix(notebox_root)
-        .map(|p| crate::storage::to_frontend_string(p))
+        .map(crate::storage::to_frontend_string)
         .unwrap_or_else(|_| crate::storage::to_frontend_string(abs_path));
 
     properties.insert("file.name".to_string(), PropertyValue::String(name));
@@ -317,7 +316,16 @@ pub async fn scan_notebox(
     let mut link_index = LinkIndex::new();
 
     for path in &note_files {
-        let (mut note, content) = parse_note_from_disk(storage, path).await?;
+        // Log-and-skip a single unreadable/locked note (antivirus, a sync
+        // tool mid-write) rather than failing the entire notebox scan — the
+        // cache-aware path already skips per-file on stat failure.
+        let (mut note, content) = match parse_note_from_disk(storage, path).await {
+            Ok(v) => v,
+            Err(err) => {
+                log::warn!("scan: skipping unreadable note {}: {err}", path.display());
+                continue;
+            }
+        };
         if let Ok(stat) = stat_file(path).await {
             file_mtimes.insert(path.clone(), stat.mtime);
         }
@@ -459,7 +467,15 @@ pub async fn scan_notebox_cached(
         }
 
         if !used_cache {
-            let (mut note, content) = parse_note_from_disk(storage, path).await?;
+            // Log-and-skip a single unreadable note rather than aborting the
+            // whole scan (the stat-failure branch above already skips per-file).
+            let (mut note, content) = match parse_note_from_disk(storage, path).await {
+                Ok(v) => v,
+                Err(err) => {
+                    log::warn!("scan: skipping unreadable note {}: {err}", path.display());
+                    continue;
+                }
+            };
 
             // Extract body-derived metadata via typst query.
             let qr = query::compile_and_query(compiler, path, content.clone());

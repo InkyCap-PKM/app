@@ -347,6 +347,7 @@ export default function MycelialView(props: MycelialViewProps) {
     setExcludedTerms([]);
     setHoveredGraphNode(null);
     clearTimeout(pulseTimer);
+    clearTimeout(hoverTimeout);
     document.removeEventListener("inkycap:mycelial-reload", onMycelialReload);
   });
 

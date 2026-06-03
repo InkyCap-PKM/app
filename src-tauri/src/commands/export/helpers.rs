@@ -443,8 +443,8 @@ pub(super) fn find_matching_paren(s: &str, open_pos: usize) -> Option<usize> {
     let mut depth = 0;
     let mut in_string = false;
     let bytes = s.as_bytes();
-    for i in open_pos..bytes.len() {
-        match bytes[i] {
+    for (i, &byte) in bytes.iter().enumerate().skip(open_pos) {
+        match byte {
             b'"' if !in_string => in_string = true,
             b'"' if in_string => in_string = false,
             b'(' if !in_string => depth += 1,
@@ -573,6 +573,7 @@ pub(super) async fn localize_html_assets(
 /// Resolve a template reference to a Typst import path.
 ///
 /// - Paths starting with `/` are notebox-root-relative, passed through.
+///
 /// Resolve a creation-rule's Typst-template reference into something we can
 /// inject as `#import "<resolved>": *`.
 ///

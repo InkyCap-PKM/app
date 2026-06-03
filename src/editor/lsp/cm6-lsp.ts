@@ -1,5 +1,5 @@
 import { type Extension, EditorState, Facet, StateEffect, StateField } from "@codemirror/state";
-import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { type CompletionContext, type CompletionResult, type Completion, startCompletion, snippet } from "@codemirror/autocomplete";
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
@@ -80,7 +80,10 @@ function lspCompletionSource(ctx: CompletionContext): Promise<CompletionResult |
   const word = ctx.matchBefore(/[\w\-.]+/);
   if (!ctx.explicit && !trigger && !word) return Promise.resolve(null);
 
-  flushSync();
+  // The typing-time sync is debounced per view; push the current doc now so
+  // the server completes against the latest text instead of waiting out the
+  // debounce (which would complete against stale text or miss the trigger).
+  client.changeDocument(uri, ctx.state.doc.toString());
 
   const pos = offsetToLspPosition(ctx.state.doc, ctx.pos);
 
@@ -274,34 +277,36 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
   return () => client.setDiagnosticsHandler(() => {});
 }
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingSync: (() => void) | null = null;
+// Debounced document sync, scoped *per view*. A module-global timer would be
+// shared across split panes editing different documents, so the second pane's
+// pending sync would overwrite the first's and one document's change would
+// never reach the language server. Holding the timer in the plugin instance
+// (and clearing it in `destroy`) keeps each editor's sync independent and
+// leak-free.
+const lspSyncExtension = ViewPlugin.fromClass(
+  class {
+    private timer: ReturnType<typeof setTimeout> | null = null;
 
-function flushSync() {
-  if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = null;
-  if (pendingSync) {
-    pendingSync();
-    pendingSync = null;
-  }
-}
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+      const client = update.state.facet(lspClientFacet);
+      const uri = update.state.facet(documentUriFacet);
+      if (!client || !uri || !client.isRunning()) return;
 
-const lspSyncExtension = EditorView.updateListener.of((update) => {
-  if (!update.docChanged) return;
-
-  const client = update.state.facet(lspClientFacet);
-  const uri = update.state.facet(documentUriFacet);
-  if (!client || !uri || !client.isRunning()) return;
-
-  if (debounceTimer) clearTimeout(debounceTimer);
-  pendingSync = () => client.changeDocument(uri, update.state.doc.toString());
-  debounceTimer = setTimeout(() => {
-    if (pendingSync) {
-      pendingSync();
-      pendingSync = null;
+      if (this.timer) clearTimeout(this.timer);
+      const doc = update.state.doc.toString();
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        client.changeDocument(uri, doc);
+      }, 200);
     }
-  }, 200);
-});
+
+    destroy() {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+    }
+  },
+);
 
 const lspTheme = EditorView.baseTheme({
   ".cm-lsp-hover": {

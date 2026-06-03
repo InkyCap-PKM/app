@@ -709,7 +709,7 @@ pub fn detect_dialect_for_tarball(tar_path: &Path) -> MarkdownDialect {
 /// Detect if all entries in a zip share a single root directory prefix
 /// (common when zipping a folder).
 fn detect_zip_root_prefix(archive: &mut ZipArchive<fs::File>) -> Option<PathBuf> {
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return None;
     }
 

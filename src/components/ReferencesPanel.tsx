@@ -3,6 +3,7 @@ import { Component, createResource, createSignal, createMemo, For, Show, onMount
 import { attachListNav } from "../lib/list-nav";
 import CitationRow from "./CitationRow";
 import { getActiveTab } from "../stores/tabs";
+import { pathEquals } from "../lib/paths";
 import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
@@ -175,7 +176,7 @@ const ReferencesPanel: Component = () => {
 
     const onNoteSaved = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.path === activeFileTab()?.path) {
+      if (pathEquals(detail?.path, activeFileTab()?.path)) {
         refetchCitations();
       }
     };

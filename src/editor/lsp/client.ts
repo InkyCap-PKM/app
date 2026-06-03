@@ -73,7 +73,9 @@ export class LspClient {
     this.transport.setNotificationHandler((msg) => this.handleNotification(msg));
     await this.transport.spawn(["lsp"]);
 
-    console.log("[LSP] Sending initialize request to", this.rootUri);
+    // Diagnostic only; rootUri (a filesystem path) is not logged — local-first
+    // privacy keeps paths off the console. console.debug so it's filterable.
+    console.debug("[LSP] Sending initialize request");
     const initResult = await this.transport.request("initialize", {
       processId: null,
       capabilities: {
@@ -104,14 +106,14 @@ export class LspClient {
 
     if (initResult.result) {
       this.capabilities = (initResult.result as { capabilities: LspServerCapabilities }).capabilities ?? {};
-      console.log("[LSP] Server capabilities received");
+      console.debug("[LSP] Server capabilities received");
     } else if (initResult.error) {
       console.error("[LSP] Initialize error:", initResult.error);
     }
 
     await this.transport.notify("initialized", {});
     this.initialized = true;
-    console.log("[LSP] Handshake complete");
+    console.debug("[LSP] Handshake complete");
   }
 
   async stop(): Promise<void> {

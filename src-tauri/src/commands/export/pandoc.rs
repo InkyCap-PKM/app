@@ -421,6 +421,13 @@ fn strip_odt_title_paragraphs(xml: &str, title_styles: &regex::Regex) -> String 
         .to_string()
 }
 
+/// Matches an existing `<meta:keyword>…</meta:keyword>` element (plus
+/// trailing whitespace) so the keyword set can be rewritten wholesale.
+fn odt_keyword_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"<meta:keyword>[^<]*</meta:keyword>\s*").unwrap())
+}
+
 pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)]) -> String {
     let mut result = xml.to_string();
     let closing = "</office:meta>";
@@ -438,8 +445,7 @@ pub(super) fn inject_odt_meta_properties(xml: &str, metadata: &[(String, String)
                 upsert_xml_element(&mut result, "dc:date", &odt_date, closing);
             }
             "keywords" => {
-                let kw_re = regex::Regex::new(r"<meta:keyword>[^<]*</meta:keyword>\s*").unwrap();
-                result = kw_re.replace_all(&result, "").to_string();
+                result = odt_keyword_re().replace_all(&result, "").to_string();
 
                 let mut kw_xml = String::new();
                 for kw in value.split(", ") {

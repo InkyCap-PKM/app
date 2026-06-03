@@ -63,7 +63,7 @@ async fn build_delimited_export(
             .map(|col| {
                 row.cells
                     .get(col)
-                    .map(|v| property_value_to_string(v))
+                    .map(property_value_to_string)
                     .unwrap_or_default()
             })
             .collect();
