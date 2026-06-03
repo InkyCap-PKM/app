@@ -62,23 +62,23 @@ const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
 const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
-// Inline #quote[…] smart-quote glyphs. Rendered as atomic replace-widgets over
-// the hidden `#quote[` opener and `]` closer rather than CSS ::before/::after
-// on the body span. A widget gives the caret a definite edge to bind to: with a
-// caret at the body's end, it sits at the *left* edge of the closing-quote
-// widget and renders before the `”` — whereas a trailing ::after pseudo-element
-// pushed the caret visually past the closing quote ("cursor after the closing
-// quote" bug). U+201C `“` / U+201D `”`.
-class QuoteGlyphWidget extends WidgetType {
-  constructor(private readonly glyph: string) {
+// A small atomic widget that renders a fixed glyph in place of hidden markup —
+// e.g. the inline-quote smart quotes over `#quote[` / `]`, or the `[[` `]]` `::`
+// brackets that re-skin an editable `#wikilink(...)`. A widget (rather than CSS
+// ::before/::after) gives the caret a definite edge to bind to: a caret at the
+// boundary sits on the widget's near side, so it renders before/after the glyph
+// as expected rather than being pushed past a trailing pseudo-element (the
+// "cursor after the closing quote" bug).
+class GlyphWidget extends WidgetType {
+  constructor(private readonly glyph: string, private readonly className: string) {
     super();
   }
-  eq(other: QuoteGlyphWidget) {
-    return other.glyph === this.glyph;
+  eq(other: GlyphWidget) {
+    return other.glyph === this.glyph && other.className === this.className;
   }
   toDOM() {
     const span = document.createElement("span");
-    span.className = "cm-typst-quote-glyph";
+    span.className = this.className;
     span.textContent = this.glyph;
     return span;
   }
@@ -86,8 +86,17 @@ class QuoteGlyphWidget extends WidgetType {
     return false;
   }
 }
-const openQuote = Decoration.replace({ widget: new QuoteGlyphWidget("“") });
-const closeQuote = Decoration.replace({ widget: new QuoteGlyphWidget("”") });
+// Inline #quote[…] smart quotes (U+201C `“` / U+201D `”`).
+const openQuote = Decoration.replace({ widget: new GlyphWidget("“", "cm-typst-quote-glyph") });
+const closeQuote = Decoration.replace({ widget: new GlyphWidget("”", "cm-typst-quote-glyph") });
+// Editable-wikilink brackets: a cursor-adjacent `#wikilink("Name", label: "L")`
+// is re-skinned as `[[Name::L]]`, hiding the call wrapper behind these widgets
+// while the name/label stay as live source text the picker still operates on.
+const openWikiBracket = Decoration.replace({ widget: new GlyphWidget("[[", "cm-typst-wikilink-bracket") });
+const closeWikiBracket = Decoration.replace({ widget: new GlyphWidget("]]", "cm-typst-wikilink-bracket") });
+const wikiHeadingSep = Decoration.replace({ widget: new GlyphWidget("::", "cm-typst-wikilink-bracket") });
+// Styling for the editable note/heading text shown between the brackets.
+const wikilinkEditMark = Decoration.mark({ class: "cm-typst-wikilink-edit" });
 // Block #quote(block:true)[…] body while editing — italic + muted, bounded to
 // the body so text trailing after the closing `]` on the same line is NOT
 // styled as part of the quote (the bar + geometry come from the line deco).
@@ -925,7 +934,10 @@ function handleFuncCall(
   const alignedImage = funcName === "align" ? parseAlignedImage(text) : null;
 
   if (INTERACTIVE_FUNCS.has(funcName)) {
-    if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
+    // wikilink stays interactive (no generic pill) but renders an editable
+    // `[[Name]]` form on cursor instead of dropping to raw `#wikilink(...)`
+    // source — handled in its case below, so it must not early-return here.
+    if (funcName !== "wikilink" && isCursorAdjacentOrInside(state, from, to, cursors)) return false;
   } else if (BLOCK_WIDGET_FUNCS.has(funcName) || funcName === "callout" || funcName === "quote" || funcName === "annotation" || alignedImage) {
     // image, callout, quote, annotation use the pill-above-element pattern:
     // the element stays rendered; a pill is shown above it on cursor
@@ -1188,20 +1200,51 @@ function handleFuncCall(
     }
     case "wikilink": {
       const target = extractFirstStringArg(text);
+      if (target === null || target === undefined) return false;
       const display = extractNamedStringArg(text, "display");
       const label = extractNamedStringArg(text, "label");
-      if (target) {
-        const files = fileList();
-        const normalizedTarget = target.toLowerCase().replace(/\.typ$/, "");
-        const exists = files.some(f => f.name.replace(/\.typ$/, "").toLowerCase() === normalizedTarget);
-        decos.push(
-          Decoration.replace({
-            widget: new WikilinkWidget(target, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight, formatting.headingLevel, label ?? "", exists),
-            inclusiveStart: false,
-            inclusiveEnd: false,
-          }).range(from, to),
-        );
+
+      // Editing affordance: when the cursor is on/adjacent to the call, re-skin
+      // it as an editable `[[Name]]` / `[[Name::label]]` instead of revealing
+      // raw `#wikilink(...)`. The call's own source is untouched, so the
+      // wikilink suggestion picker (which scans the source) keeps working; the
+      // bracket/`::` widgets just hide the function wrapper, and the name/label
+      // stay as live editable text between them.
+      if (isCursorAdjacentOrInside(state, from, to, cursors)) {
+        // A `display:` alias has no `[[ ]]` form — fall back to raw source.
+        if (display !== null && display !== undefined) return false;
+        const q1 = text.indexOf('"');
+        const q2 = q1 >= 0 ? text.indexOf('"', q1 + 1) : -1;
+        if (q1 < 0 || q2 < 0) return false;
+        // `#wikilink("` → `[[`
+        decos.push(openWikiBracket.range(from, from + q1 + 1));
+        pushMark(decos, wikilinkEditMark, from + q1 + 1, from + q2);
+        if (label !== null && label !== undefined) {
+          const q3 = text.indexOf('"', q2 + 1);
+          const q4 = q3 >= 0 ? text.indexOf('"', q3 + 1) : -1;
+          if (q3 < 0 || q4 < 0) return false;
+          // `", label: "` → `::`, then the label text, then `")` → `]]`
+          decos.push(wikiHeadingSep.range(from + q2, from + q3 + 1));
+          pushMark(decos, wikilinkEditMark, from + q3 + 1, from + q4);
+          decos.push(closeWikiBracket.range(from + q4, to));
+        } else {
+          // `")` → `]]`
+          decos.push(closeWikiBracket.range(from + q2, to));
+        }
+        return false;
       }
+
+      // Cursor away → the rendered link pill, exactly as before.
+      const files = fileList();
+      const normalizedTarget = target.toLowerCase().replace(/\.typ$/, "");
+      const exists = files.some(f => f.name.replace(/\.typ$/, "").toLowerCase() === normalizedTarget);
+      decos.push(
+        Decoration.replace({
+          widget: new WikilinkWidget(target, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight, formatting.headingLevel, label ?? "", exists),
+          inclusiveStart: false,
+          inclusiveEnd: false,
+        }).range(from, to),
+      );
       return false;
     }
     case "link": {

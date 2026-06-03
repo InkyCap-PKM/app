@@ -404,6 +404,15 @@ export const visualTheme = EditorView.theme({
     fontWeight: "300",
     opacity: "0.7",
   },
+  // Editable `[[Name::label]]` affordance shown when the cursor is on a
+  // wikilink: muted brackets/`::` framing live, link-coloured note/heading text.
+  ".cm-typst-wikilink-bracket": {
+    color: "var(--fg-dim)",
+    opacity: "0.7",
+  },
+  ".cm-typst-wikilink-edit": {
+    color: "var(--syntax-link)",
+  },
   ".cm-typst-footnote": {
     color: "var(--syntax-link)",
     cursor: "help",
