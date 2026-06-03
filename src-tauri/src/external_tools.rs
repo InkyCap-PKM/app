@@ -141,7 +141,16 @@ pub async fn run_external_tool(
         None
     } else {
         let stdin = child.stdin.take();
-        let data = input_text.into_bytes();
+        // Reduce the piped text to plain prose first when the tool opts in —
+        // grammar/style checkers want the writing, not the `#import` preamble,
+        // `#note(...)` metadata, inline markup, math, or code. Done here (not
+        // on the frontend) because the Typst parser is Rust-only; see CLAUDE.md
+        // Typst-first principle and `crate::typst_pipeline::plaintext`.
+        let data = if tool.strip_markup {
+            crate::typst_pipeline::plaintext::extract_plain_text(&input_text).into_bytes()
+        } else {
+            input_text.into_bytes()
+        };
         Some(tokio::spawn(async move {
             if let Some(mut s) = stdin {
                 let _ = s.write_all(&data).await;

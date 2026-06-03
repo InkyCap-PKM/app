@@ -2830,6 +2830,8 @@ function ExtensionsSettingsSection() {
         args: [],
         input: "selection",
         output: "replace",
+        show_in: "palette",
+        strip_markup: true,
       },
     ]);
 
@@ -2904,6 +2906,7 @@ function ExtensionsSettingsSection() {
             <SettingSelect
               label={t("settings.extensions.input")}
               description={t("settings.extensions.inputHelp")}
+              help={t("settings.extensions.inputChannelsHelp")}
               value={tool().input}
               options={[
                 { value: "selection", label: t("settings.extensions.input.selection") },
@@ -2923,6 +2926,23 @@ function ExtensionsSettingsSection() {
                 { value: "panel", label: t("settings.extensions.output.panel") },
               ]}
               onChange={(v) => patch(i, { output: v as ExternalTool["output"] })}
+            />
+            <SettingSelect
+              label={t("settings.extensions.showIn")}
+              description={t("settings.extensions.showInHelp")}
+              value={tool().show_in ?? "palette"}
+              options={[
+                { value: "palette", label: t("settings.extensions.showIn.palette") },
+                { value: "slash", label: t("settings.extensions.showIn.slash") },
+                { value: "both", label: t("settings.extensions.showIn.both") },
+              ]}
+              onChange={(v) => patch(i, { show_in: v as ExternalTool["show_in"] })}
+            />
+            <SettingToggle
+              label={t("settings.extensions.stripMarkup")}
+              description={t("settings.extensions.stripMarkupHelp")}
+              value={tool().strip_markup ?? true}
+              onChange={(v) => patch(i, { strip_markup: v })}
             />
           </div>
         )}

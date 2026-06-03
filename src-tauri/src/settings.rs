@@ -461,6 +461,19 @@ pub struct ExternalTool {
     /// does not act on this — it echoes the value to the frontend, which
     /// applies the disposition.
     pub output: String,
+    /// Where the tool is offered: `"palette"` (the global command palette,
+    /// the default — it never disturbs the editor selection, so
+    /// `input: "selection"` tools work), `"slash"` (the editor `/` menu, best
+    /// for insert-at-cursor tools), or `"both"`. The backend does not act on
+    /// this — the frontend reads it to decide where to surface the tool.
+    pub show_in: String,
+    /// When `true` (the default), the note/selection text is reduced to plain
+    /// prose — the `#import` preamble, `#note(...)` metadata, inline markup,
+    /// math, and code are stripped — before being written to the tool's stdin.
+    /// Best for text-oriented tools (grammar/style checkers); turn off for
+    /// tools that need the raw Typst source. See
+    /// [`crate::typst_pipeline::plaintext`].
+    pub strip_markup: bool,
 }
 
 impl Default for ExternalTool {
@@ -472,6 +485,8 @@ impl Default for ExternalTool {
             args: Vec::new(),
             input: "selection".to_string(),
             output: "replace".to_string(),
+            show_in: "palette".to_string(),
+            strip_markup: true,
         }
     }
 }

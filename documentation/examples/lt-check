@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# InkyCap external tool: grammar/style check via the hosted LanguageTool API.
+#
+# Contract (see documentation/developer/extending/external-tools.md):
+#   stdin  — the note or selection text InkyCap pipes in
+#   stdout — a human-readable report (rendered in a side panel)
+#   exit 0 on success; non-zero is surfaced as a failure.
+#
+# Override the endpoint/language with env vars if you self-host later:
+#   LT_API_URL=http://localhost:8081/v2/check  LT_LANG=en-GB
+#
+# Privacy note: with the default (hosted) endpoint, the text you check is
+# sent to languagetool.org. Point LT_API_URL at a local server to stay offline.
+
+API="${LT_API_URL:-https://api.languagetool.org/v2/check}"
+LANG_CODE="${LT_LANG:-en-CA}"
+
+text=$(cat)
+
+# Nothing meaningful to check.
+if [ -z "${text//[[:space:]]/}" ]; then
+  echo "Nothing to check (no text provided)."
+  exit 0
+fi
+
+response=$(curl -s --max-time 30 \
+  --data-urlencode "text=${text}" \
+  --data "language=${LANG_CODE}" \
+  "$API")
+status=$?
+
+if [ $status -ne 0 ] || [ -z "$response" ]; then
+  echo "LanguageTool request failed (network error or empty response)."
+  exit 1
+fi
+
+count=$(printf '%s' "$response" | jq '.matches | length' 2>/dev/null)
+if [ -z "$count" ]; then
+  echo "Unexpected response from LanguageTool:"
+  printf '%s\n' "$response"
+  exit 1
+fi
+
+if [ "$count" -eq 0 ]; then
+  echo "No issues found (language: $LANG_CODE)."
+  exit 0
+fi
+
+echo "LanguageTool found $count issue(s) [language: $LANG_CODE]:"
+echo
+printf '%s' "$response" | jq -r '
+  .matches[]
+  | "- \(.message)"
+    + (if (.replacements | length) > 0
+         then "\n    Suggestions: " + ([.replacements[].value] | join(", "))
+         else "" end)
+    + "\n    Context: ...\(.context.text)...\n"
+'
