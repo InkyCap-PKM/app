@@ -1,7 +1,7 @@
 // Settings panel — modal overlay for configuring user preferences.
 // Organized into tabs.
 
-import { Component, JSX, Show, createSignal, createEffect, createResource, For, onMount, onCleanup } from "solid-js";
+import { Component, JSX, Show, createSignal, createEffect, createResource, For, Index, onMount, onCleanup } from "solid-js";
 import {
   settings,
   updateSetting,
@@ -2845,23 +2845,29 @@ function ExtensionsSettingsSection() {
       </p>
       <ExperimentalNotice />
 
-      <For each={tools()}>
+      {/* `<Index>` (not `<For>`) is load-bearing here: it keys rows by
+          position and exposes each item as a signal, so editing a field
+          updates the binding in place instead of recreating the row's DOM.
+          `<For>` is referentially keyed, and `patch`'s `{ ...tool }` spread
+          mints a new object reference per keystroke — which would tear down
+          and rebuild the focused input, dropping focus after one character. */}
+      <Index each={tools()}>
         {(tool, i) => (
           <div class="settings__tool-card">
             <div class="settings__tool-card-head">
               <input
                 type="text"
                 class="settings__text-input"
-                value={tool.name}
+                value={tool().name}
                 placeholder={t("settings.extensions.namePlaceholder")}
                 aria-label={t("settings.extensions.name")}
-                onInput={(e) => patch(i(), { name: e.currentTarget.value })}
+                onInput={(e) => patch(i, { name: e.currentTarget.value })}
               />
               <button
                 class="icon-btn"
                 title={t("common.remove")}
                 aria-label={t("common.remove")}
-                onClick={() => remove(i())}
+                onClick={() => remove(i)}
               >
                 <X size={16} />
               </button>
@@ -2872,11 +2878,11 @@ function ExtensionsSettingsSection() {
               <input
                 type="text"
                 class="settings__text-input"
-                value={tool.command}
+                value={tool().command}
                 placeholder={t("settings.extensions.commandPlaceholder")}
-                onInput={(e) => patch(i(), { command: e.currentTarget.value })}
+                onInput={(e) => patch(i, { command: e.currentTarget.value })}
               />
-              <button class="settings__inline-btn" onClick={() => void browse(i())}>
+              <button class="settings__inline-btn" onClick={() => void browse(i)}>
                 {t("common.browse")}
               </button>
             </div>
@@ -2886,10 +2892,10 @@ function ExtensionsSettingsSection() {
             <textarea
               class="settings__text-input settings__textarea"
               rows={2}
-              value={tool.args.join("\n")}
+              value={tool().args.join("\n")}
               placeholder={"--flag\n$INKYCAP_FILE" /* i18n-exempt: literal argument/placeholder syntax */}
               onInput={(e) =>
-                patch(i(), {
+                patch(i, {
                   args: e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean),
                 })
               }
@@ -2898,29 +2904,29 @@ function ExtensionsSettingsSection() {
             <SettingSelect
               label={t("settings.extensions.input")}
               description={t("settings.extensions.inputHelp")}
-              value={tool.input}
+              value={tool().input}
               options={[
                 { value: "selection", label: t("settings.extensions.input.selection") },
                 { value: "note", label: t("settings.extensions.input.note") },
                 { value: "none", label: t("settings.extensions.input.none") },
               ]}
-              onChange={(v) => patch(i(), { input: v as ExternalTool["input"] })}
+              onChange={(v) => patch(i, { input: v as ExternalTool["input"] })}
             />
             <SettingSelect
               label={t("settings.extensions.output")}
               description={t("settings.extensions.outputHelp")}
-              value={tool.output}
+              value={tool().output}
               options={[
                 { value: "replace", label: t("settings.extensions.output.replace") },
                 { value: "insert", label: t("settings.extensions.output.insert") },
                 { value: "notify", label: t("settings.extensions.output.notify") },
                 { value: "panel", label: t("settings.extensions.output.panel") },
               ]}
-              onChange={(v) => patch(i(), { output: v as ExternalTool["output"] })}
+              onChange={(v) => patch(i, { output: v as ExternalTool["output"] })}
             />
           </div>
         )}
-      </For>
+      </Index>
 
       <button class="settings__add-btn" onClick={add}>
         {t("settings.extensions.add")}
