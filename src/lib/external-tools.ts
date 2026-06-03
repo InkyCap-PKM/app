@@ -49,9 +49,11 @@ async function runTool(view: EditorView, tool: ExternalTool): Promise<void> {
       return;
     }
     if (result.output === "panel") {
-      // Persistent right-panel pane — for multi-line output you want to keep
-      // visible while editing. Never touches the document.
-      showToolOutputPane(tool.id, tool.name, result.stdout);
+      // Note-scoped right-panel pane — for multi-line output you want to keep
+      // visible while editing. Scoped to the note it ran against (so it hides
+      // when you switch notes) and carries the tool's chosen icon. Never
+      // touches the document.
+      showToolOutputPane(tool.id, tool.name, result.stdout, filePath, tool.icon);
       return;
     }
     // "replace" overwrites the selection; "insert" drops the result in at the

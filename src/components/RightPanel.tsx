@@ -245,14 +245,34 @@ const RightPanel: Component = () => {
     return tab?.type === "file" ? tab : undefined;
   };
 
-  // Contributed right-panel tab (plugin / manifest query-view) whose id is the
-  // current active panel, if any. Built-in ids resolve to undefined, so the
-  // built-in panes render exactly as before when nothing is contributed.
-  const activeContributed = () => rightPanelContribution(activePanel());
   // Contributed tabs whose `when` gate currently passes — file-scoped, shown in
   // the same tab group as Properties/Links/etc.
   const visibleContributions = () =>
     rightPanelContributions().filter((c) => !c.when || c.when());
+  // Contributed right-panel tab (plugin / manifest query-view) whose id is the
+  // current active panel, if any — but only when its `when` gate passes, so a
+  // note-scoped pane (e.g. an external tool's output) stops rendering once the
+  // user switches away from its note. Built-in ids resolve to undefined, so the
+  // built-in panes render exactly as before when nothing is contributed.
+  const activeContributed = () => {
+    const c = rightPanelContribution(activePanel());
+    return c && (!c.when || c.when()) ? c : undefined;
+  };
+
+  // A note-scoped contributed pane (external-tool output) is hidden when its
+  // `when` gate closes — the user navigated away from the note it belongs to,
+  // or it was closed. If it was the active tab, fall back to a built-in one so
+  // the pane area isn't left blank. Mirrors the scroll-context revert above.
+  createEffect(() => {
+    const active = activePanel();
+    const contributed = rightPanelContribution(active);
+    const stillVisible = contributed && (!contributed.when || contributed.when());
+    // Only act on contributed ids (built-ins never resolve to a contribution),
+    // and only when the pane is gone or gated out.
+    if (active.startsWith("tool-output:") && !stillVisible) {
+      setActivePanel("outline");
+    }
+  });
 
   const activeCollectionTab = () => {
     const tab = getActiveTab();

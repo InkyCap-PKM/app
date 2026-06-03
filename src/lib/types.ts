@@ -462,6 +462,9 @@ export interface ExternalTool {
    *  (markup, `#import`, `#note(...)`, math, and code stripped) before being
    *  sent to the tool's stdin. Turn off for tools that need raw Typst source. */
   strip_markup: boolean;
+  /** Optional icon for the tool's output-pane tab, as a `"lucide:<name>"`
+   *  string (the icon-picker format). Empty means the default terminal glyph. */
+  icon: string;
 }
 
 /** User-global registry of external tools. */

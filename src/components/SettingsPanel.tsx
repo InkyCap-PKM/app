@@ -35,6 +35,7 @@ import { Pencil, Check, X, Handshake } from "lucide-solid";
 import CreationRuleEditor from "./CreationRuleEditor";
 import { ColorPicker } from "./ColorPicker";
 import { FontPicker } from "./FontPicker";
+import LucideIconPicker from "./LucideIconPicker";
 import { FontRoleRow, type FontRoleOption } from "./FontRoleRow";
 import { SettingCombobox } from "./SettingCombobox";
 import { Dropdown } from "./Dropdown";
@@ -151,9 +152,14 @@ function resetTabSettings(tab: SettingsTab) {
   if (g.notebox.length > 0) resetNoteboxSettingGroups(g.notebox);
 }
 
+// The last-viewed settings tab, remembered across the modal's open/close
+// within a session. Module scope (not component-local) so it survives the
+// panel's unmount when closed; it resets to "overview" on app restart because
+// it's never persisted. An explicit `initialTab` prop (a deep-link) still wins.
+const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
+
 const SettingsPanel: Component<SettingsPanelProps> = (props) => {
   const t = useI18n();
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("overview");
 
   createEffect(() => {
     if (props.visible && props.initialTab) {
@@ -2832,6 +2838,7 @@ function ExtensionsSettingsSection() {
         output: "replace",
         show_in: "palette",
         strip_markup: true,
+        icon: "",
       },
     ]);
 
@@ -2857,6 +2864,12 @@ function ExtensionsSettingsSection() {
         {(tool, i) => (
           <div class="settings__tool-card">
             <div class="settings__tool-card-head">
+              {/* Optional icon for the tool's output-pane tab; empty keeps the
+                  default terminal glyph. Shares the collections icon picker. */}
+              <LucideIconPicker
+                value={tool().icon ?? ""}
+                onSelect={(v) => patch(i, { icon: v })}
+              />
               <input
                 type="text"
                 class="settings__text-input"

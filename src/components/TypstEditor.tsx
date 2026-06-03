@@ -857,7 +857,10 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
     root.style.setProperty(
       "--md-side-padding-min",
-      s.readable_line_length ? "clamp(16px, 4vw, 64px)" : "0px",
+      // With the comfortable measure off the text runs full-width; keep a
+      // one-character gutter on each edge so it isn't flush against the panel
+      // borders. `ch` tracks the body font so the breathing room scales.
+      s.readable_line_length ? "clamp(16px, 4vw, 64px)" : "1ch",
     );
   });
 

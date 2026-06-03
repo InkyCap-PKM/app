@@ -62,7 +62,9 @@ const App: Component = () => {
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("filetree");
   const [quickOpenVisible, setQuickOpenVisible] = createSignal(false);
   const [settingsVisible, setSettingsVisible] = createSignal(false);
-  const [settingsInitialTab, setSettingsInitialTab] = createSignal<string>("overview");
+  // An explicit tab to open Settings on (a deep-link). `undefined` means "open
+  // wherever the user last was" — SettingsPanel remembers that within a session.
+  const [settingsInitialTab, setSettingsInitialTab] = createSignal<string | undefined>(undefined);
   const [cmdPaletteVisible, setCmdPaletteVisible] = createSignal(false);
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
   const [refNotePickerVisible, setRefNotePickerVisible] = createSignal(false);
@@ -175,7 +177,8 @@ const App: Component = () => {
   });
 
   const toggleSettings = () => {
-    setSettingsInitialTab("overview");
+    // No forced tab — reopen on the section the user last viewed this session.
+    setSettingsInitialTab(undefined);
     setSettingsVisible((v) => !v);
   };
 
@@ -303,7 +306,9 @@ const App: Component = () => {
 
   const onOpenSettings = (e: Event) => {
     const detail = (e as CustomEvent).detail;
-    setSettingsInitialTab(detail?.tab ?? "overview");
+    // A deep-link may target a specific tab; without one, honour the remembered
+    // section rather than forcing Overview.
+    setSettingsInitialTab(detail?.tab);
     setSettingsVisible(true);
   };
   document.addEventListener("inkycap:open-settings", onOpenSettings);
