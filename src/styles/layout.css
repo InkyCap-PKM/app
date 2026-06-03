@@ -2453,7 +2453,9 @@ svg.lucide {
   background: var(--modal-bg);
   border: 1px solid var(--modal-border-color);
   border-radius: var(--modal-radius);
-  width: 500px;
+  /* ~1/3 wider than the previous 500px, but capped to the viewport so it
+     stays usable in a narrow window. */
+  width: min(680px, 92vw);
   max-height: 520px;
   display: flex;
   flex-direction: column;
@@ -2484,7 +2486,10 @@ svg.lucide {
 .quick-open__result {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  /* Let a long folder path drop onto its own line beneath the name rather
+     than being clipped when name + path can't share one row. */
+  flex-wrap: wrap;
+  gap: 2px 8px;
   padding: 8px 16px;
   cursor: pointer;
   font-size: var(--text-lg);
@@ -2501,18 +2506,17 @@ svg.lucide {
 
 .quick-open__result-name {
   color: var(--fg-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap rather than ellipsize so a very long name stays fully readable. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .quick-open__result-folder {
   color: var(--fg-dim);
   font-size: var(--text-base);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
+  /* Wrap a deep directory path onto as many lines as it needs. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .quick-open__highlight {
