@@ -87,7 +87,7 @@ async fn read_clipboard_text(app: &tauri::AppHandle) -> Result<Option<String>, S
             let _ = tx.send(text);
         })
         .map_err(|e| format!("run_on_main_thread failed: {}", e))?;
-        return rx.await.map_err(|_| "clipboard channel closed".to_string());
+        rx.await.map_err(|_| "clipboard channel closed".to_string())
     }
 
     #[cfg(target_os = "macos")]

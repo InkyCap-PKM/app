@@ -13,6 +13,12 @@ pub struct PropertyIndex {
     pub aliases: HashMap<String, Vec<NoteId>>,
 }
 
+impl Default for PropertyIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PropertyIndex {
     pub fn new() -> Self {
         Self {

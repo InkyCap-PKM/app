@@ -301,6 +301,17 @@ impl CorpusStats {
         self.remove_doc(path);
     }
 
+    /// Paths currently indexed — one entry per document. Used to reconcile a
+    /// persisted snapshot against the current notebox on load.
+    pub fn indexed_paths(&self) -> Vec<PathBuf> {
+        self.doc_word_count.keys().cloned().collect()
+    }
+
+    /// Whether a document is currently indexed.
+    pub fn contains_doc(&self, path: &Path) -> bool {
+        self.doc_word_count.contains_key(path)
+    }
+
     /// Compute TF-IDF for a term in a specific document context.
     pub fn tfidf(&self, term: &str, term_count_in_doc: usize, doc_word_count: usize) -> f64 {
         if doc_word_count == 0 || self.total_docs == 0 {
@@ -564,7 +575,7 @@ impl CorpusStats {
         // PMIs — a phrase "w1 w2 w3" holds together only if both adjacent
         // pairs do. Trigrams that recur are the strongest concept signal.
         if config.include_trigrams {
-            for (trigram_key, _count) in &self.trigram_count {
+            for trigram_key in self.trigram_count.keys() {
                 let df = self.trigram_doc_freq.get(trigram_key).copied().unwrap_or(0);
                 if df < config.trigram_min_freq || df > max_doc_freq {
                     continue;
@@ -675,7 +686,7 @@ impl CorpusStats {
             .iter()
             .filter(|path| {
                 sets.get(path.as_path())
-                    .map_or(false, |s| s.contains(&term_owned))
+                    .is_some_and(|s| s.contains(&term_owned))
             })
             .count()
     }
@@ -691,7 +702,7 @@ impl CorpusStats {
             .iter()
             .filter(|path| {
                 sets.get(path.as_path())
-                    .map_or(false, |s| s.contains(&term_owned))
+                    .is_some_and(|s| s.contains(&term_owned))
             })
             .map(|path| crate::storage::to_frontend_string(path))
             .collect();
@@ -777,10 +788,11 @@ fn stitch_overlapping_shingles(emergent: &mut Vec<EmergentConcept>) {
                 continue;
             }
             // wi advanced by one word == wj.
-            if wi[1..] == words[j][..words[j].len() - 1] && share_source(i, j) {
-                if best.map_or(true, |b| emergent[j].score > emergent[b].score) {
-                    best = Some(j);
-                }
+            if wi[1..] == words[j][..words[j].len() - 1]
+                && share_source(i, j)
+                && best.is_none_or(|b| emergent[j].score > emergent[b].score)
+            {
+                best = Some(j);
             }
         }
         successor[i] = best;
@@ -950,11 +962,48 @@ pub fn extract_trigrams_from_tokens(
     trigrams
 }
 
-/// Persisted form for cache serialization.
+/// Persisted form for cache serialization. Mirrors `PersistedSearchIndex`:
+/// the stats are loaded on notebox open and incrementally reconciled against
+/// the current files (via `saved_at` vs file mtime) instead of rebuilt from
+/// scratch — an O(corpus) re-tokenization the search index already avoids.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PersistedCorpusStats {
     pub stats: CorpusStats,
     pub saved_at: i64,
+}
+
+impl PersistedCorpusStats {
+    /// Serialize a borrowed `CorpusStats` with a save timestamp. Best-effort:
+    /// a serialization or write failure is logged and ignored (the snapshot is
+    /// a cache; a missing one just rebuilds on next open).
+    pub fn save_borrowed(stats: &CorpusStats, saved_at: i64, path: &Path) {
+        #[derive(Serialize)]
+        struct Ref<'a> {
+            stats: &'a CorpusStats,
+            saved_at: i64,
+        }
+        let encoded = match bincode::serialize(&Ref { stats, saved_at }) {
+            Ok(data) => data,
+            Err(err) => {
+                log::warn!("corpus stats: serialization failed: {err}");
+                return;
+            }
+        };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(err) = std::fs::write(path, encoded) {
+            log::warn!("corpus stats: write failed at {}: {err}", path.display());
+        }
+    }
+
+    /// Load a persisted snapshot, or `None` if absent/unreadable/stale-format.
+    /// The `stopwords` set is `#[serde(skip)]`, so the caller must
+    /// `reload_stopwords` after loading.
+    pub fn load_from_file(path: &Path) -> Option<Self> {
+        let data = std::fs::read(path).ok()?;
+        bincode::deserialize(&data).ok()
+    }
 }
 
 #[cfg(test)]

@@ -102,7 +102,12 @@ struct WordPosition {
 }
 
 /// Per-document index data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` produces a *tombstone*: an empty entry with an empty path. A
+/// tombstone occupies a freed doc-id slot until that slot is reused, and is
+/// skipped by every full-doc iteration because its empty path never matches
+/// `path_to_doc` (see `remove_doc`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct DocEntry {
     path: PathBuf,
     file_name: String,
@@ -162,15 +167,51 @@ struct DocEntry {
 /// The inverted index: word → list of (doc_id, positions).
 type PostingList = Vec<(usize, Vec<WordPosition>)>;
 
+/// Compile a user-supplied search pattern with bounded compiled size. Search
+/// patterns can arrive from shared/imported queries, so cap the compiled
+/// program and DFA so a pathologically large pattern can't blow memory. The
+/// `regex` crate has no catastrophic backtracking, so this is the only DoS
+/// surface worth bounding here. Returns `None` on invalid or over-budget
+/// patterns (callers treat that as "matches nothing").
+fn compile_bounded_regex(pattern: &str) -> Option<Regex> {
+    const SIZE_LIMIT: usize = 1 << 20; // 1 MiB compiled program
+    const DFA_SIZE_LIMIT: usize = 1 << 20; // 1 MiB lazy-DFA cache
+    regex::RegexBuilder::new(pattern)
+        .size_limit(SIZE_LIMIT)
+        .dfa_size_limit(DFA_SIZE_LIMIT)
+        .build()
+        .ok()
+}
+
 /// Full-text search engine with an in-memory inverted index.
 #[derive(Serialize, Deserialize)]
 pub struct SearchEngine {
-    /// All indexed documents.
+    /// All indexed documents, indexed by doc-id. Freed slots hold a tombstone
+    /// (`DocEntry::default`) and are listed in `free_ids` for reuse; the vec
+    /// never shrinks so existing doc-ids stay valid as keys into posting lists.
     docs: Vec<DocEntry>,
     /// Path → doc index for fast lookup.
     path_to_doc: HashMap<PathBuf, usize>,
     /// Inverted index: lowercase word → posting list.
     index: HashMap<String, PostingList>,
+    /// Parallel to `docs`: the unique index words each doc-id contributed.
+    /// Lets `remove_doc` rescan only those words' posting lists instead of
+    /// every posting list in the notebox (the difference between O(words in
+    /// one note) and O(unique words in the whole notebox) on every save).
+    /// Empty for tombstoned slots.
+    #[serde(default)]
+    doc_words: Vec<Vec<String>>,
+    /// Doc-id slots vacated by `remove_doc`, available for reuse so `docs`
+    /// (and its heavy per-doc `lines`) doesn't grow unbounded across an
+    /// editing session that repeatedly re-indexes the same note.
+    #[serde(default)]
+    free_ids: Vec<usize>,
+}
+
+impl Default for SearchEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SearchEngine {
@@ -179,6 +220,8 @@ impl SearchEngine {
             docs: Vec::new(),
             path_to_doc: HashMap::new(),
             index: HashMap::new(),
+            doc_words: Vec::new(),
+            free_ids: Vec::new(),
         }
     }
 
@@ -233,13 +276,16 @@ impl SearchEngine {
             let doc_id = engine.docs.len();
             engine.path_to_doc.insert(built.entry.path.clone(), doc_id);
             engine.docs.push(built.entry);
+            let mut words = Vec::with_capacity(built.word_positions.len());
             for (word, positions) in built.word_positions {
+                words.push(word.clone());
                 engine
                     .index
                     .entry(word)
                     .or_default()
                     .push((doc_id, positions));
             }
+            engine.doc_words.push(words);
         }
 
         engine
@@ -255,7 +301,7 @@ impl SearchEngine {
         property_keys: Vec<String>,
         property_values: HashMap<String, Vec<String>>,
     ) {
-        // Remove old entry if it exists
+        // Remove old entry if it exists (frees its slot for reuse below).
         self.remove_doc(path);
 
         let (mtime, ctime) = file_timestamps(path);
@@ -270,28 +316,70 @@ impl SearchEngine {
             ctime,
         );
 
-        let doc_id = self.docs.len();
+        // Reuse a freed slot when one is available so `docs` (and the per-doc
+        // `lines` it holds) doesn't grow on every re-index; otherwise append.
+        let doc_id = match self.free_ids.pop() {
+            Some(id) => {
+                self.docs[id] = built.entry;
+                id
+            }
+            None => {
+                let id = self.docs.len();
+                self.docs.push(built.entry);
+                self.doc_words.push(Vec::new());
+                id
+            }
+        };
         self.path_to_doc.insert(path.to_path_buf(), doc_id);
-        self.docs.push(built.entry);
 
+        let mut words = Vec::with_capacity(built.word_positions.len());
         for (word, positions) in built.word_positions {
-            let posting = self.index.entry(word).or_default();
-            posting.push((doc_id, positions));
+            words.push(word.clone());
+            self.index
+                .entry(word)
+                .or_default()
+                .push((doc_id, positions));
         }
+        self.doc_words[doc_id] = words;
     }
 
     /// Remove a document from the index.
+    ///
+    /// Touches only the posting lists for the words this document actually
+    /// contributed (tracked in `doc_words`), then tombstones the doc slot and
+    /// marks it reusable — so removal cost scales with the size of the one
+    /// note, not with the size of the whole notebox. A posting list that
+    /// becomes empty is dropped to keep `index` from accumulating dead keys.
     pub fn remove_doc(&mut self, path: &Path) {
-        if let Some(&doc_id) = self.path_to_doc.get(path) {
-            // Remove from posting lists
-            for posting in self.index.values_mut() {
-                posting.retain(|(id, _)| *id != doc_id);
+        let Some(doc_id) = self.path_to_doc.remove(path) else {
+            return;
+        };
+        // Take the word list out so we can mutate `self.index` without an
+        // overlapping borrow of `self.doc_words`.
+        let words = self
+            .doc_words
+            .get_mut(doc_id)
+            .map(std::mem::take)
+            .unwrap_or_default();
+        for word in &words {
+            let now_empty = if let Some(posting) = self.index.get_mut(word) {
+                if let Some(pos) = posting.iter().position(|(id, _)| *id == doc_id) {
+                    posting.swap_remove(pos);
+                }
+                posting.is_empty()
+            } else {
+                false
+            };
+            if now_empty {
+                self.index.remove(word);
             }
-            // Note: we don't remove from self.docs to avoid invalidating IDs.
-            // The doc entry stays but won't appear in search results since
-            // its posting entries are removed.
-            self.path_to_doc.remove(path);
         }
+        // Free the heavy DocEntry payload (notably its `lines`) and mark the
+        // slot reusable; the vec keeps its length so existing doc-ids stay valid.
+        if let Some(slot) = self.docs.get_mut(doc_id) {
+            *slot = DocEntry::default();
+        }
+        self.free_ids.push(doc_id);
     }
 
     /// Execute a search query and return ranked results — one entry per
@@ -374,7 +462,7 @@ impl SearchEngine {
             // level-1 heading. The bonus is awarded once — matching both
             // doesn't stack.
             let match_in_title = {
-                let in_property = doc.title.as_ref().map_or(false, |t| {
+                let in_property = doc.title.as_ref().is_some_and(|t| {
                     let t_lower = t.to_lowercase();
                     self.query_matches_text(query, &t_lower)
                 });
@@ -382,7 +470,7 @@ impl SearchEngine {
                     || doc
                         .first_h1
                         .as_ref()
-                        .map_or(false, |t| self.query_matches_text(query, t))
+                        .is_some_and(|t| self.query_matches_text(query, t))
             };
             let doc_score = compute_score(
                 match_in_filename,
@@ -415,8 +503,7 @@ impl SearchEngine {
                 // UTF-16 conversion for the frontend happens later, in the
                 // command), so the slice lands on char boundaries.
                 if let Some(verify) = verify_span {
-                    match_ranges
-                        .retain(|(s, e)| line_text.get(*s..*e).map_or(false, |span| verify(span)));
+                    match_ranges.retain(|(s, e)| line_text.get(*s..*e).is_some_and(verify));
                     if match_ranges.is_empty() {
                         continue;
                     }
@@ -467,6 +554,16 @@ impl SearchEngine {
             QueryNode::Regex(pattern) => self.find_regex(pattern),
             QueryNode::Filter { kind, value } => self.find_filter(kind, value, collections),
             QueryNode::And(left, right) => {
+                // `positive AND NOT x` is the common shape of an excluding
+                // query (`foo -bar`). Evaluate the positive side and subtract
+                // the excluded docs directly, instead of evaluating `Not` into
+                // a notebox-scale complement map and intersecting it away.
+                if let QueryNode::Not(inner) = right.as_ref() {
+                    return self.evaluate_and_not(left, inner, collections);
+                }
+                if let QueryNode::Not(inner) = left.as_ref() {
+                    return self.evaluate_and_not(right, inner, collections);
+                }
                 let left_matches = self.evaluate(left, collections);
                 let right_matches = self.evaluate(right, collections);
                 // Intersect doc IDs
@@ -528,6 +625,21 @@ impl SearchEngine {
         }
     }
 
+    /// Evaluate `positive AND NOT excluded` lazily: keep the positive side's
+    /// matches, drop any doc that the excluded side matches. Avoids the
+    /// notebox-scale complement map a standalone `Not` would build.
+    fn evaluate_and_not(
+        &self,
+        positive: &QueryNode,
+        excluded: &QueryNode,
+        collections: &CollectionMembership,
+    ) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
+        let mut matches = self.evaluate(positive, collections);
+        let exclude = self.evaluate(excluded, collections);
+        matches.retain(|doc_id, _| !exclude.contains_key(doc_id));
+        matches
+    }
+
     /// Find documents containing a single term.
     fn find_term(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let mut result = HashMap::new();
@@ -554,43 +666,47 @@ impl SearchEngine {
         let mut result = HashMap::new();
 
         for (doc_id, line_positions) in &first_matches {
-            let mut valid_lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
-
-            for (line, positions) in line_positions {
-                for start_pos in positions {
-                    // Check if consecutive words follow
-                    let mut all_match = true;
-                    let mut phrase_positions = vec![start_pos.clone()];
-
-                    for (offset, word) in words.iter().enumerate().skip(1) {
-                        let expected_word_idx = start_pos.word_index + offset;
-                        let found = self.index.get(word.as_str()).map_or(false, |posting| {
-                            posting.iter().any(|(did, poss)| {
-                                *did == *doc_id
-                                    && poss.iter().any(|p| {
-                                        p.line == *line && p.word_index == expected_word_idx
-                                    })
-                            })
-                        });
-                        if !found {
-                            all_match = false;
-                            break;
-                        }
-                        // Find the actual position for highlighting
-                        if let Some(posting) = self.index.get(word.as_str()) {
-                            for (did, poss) in posting {
-                                if *did == *doc_id {
-                                    for p in poss {
-                                        if p.line == *line && p.word_index == expected_word_idx {
-                                            phrase_positions.push(p.clone());
-                                            break;
-                                        }
-                                    }
-                                }
+            // Build a doc-local lookup for each subsequent phrase word:
+            // (line, word_index) → position. Each word's posting list is
+            // scanned exactly once for this doc (not once per candidate start
+            // position, and not across every doc as the old nested scan did),
+            // so phrase matching is O(positions) instead of
+            // O(starts × words × notebox-wide-postings).
+            let tail_maps: Vec<HashMap<(usize, usize), &WordPosition>> = words[1..]
+                .iter()
+                .map(|word| {
+                    let mut map = HashMap::new();
+                    if let Some(posting) = self.index.get(word.as_str()) {
+                        if let Some((_, poss)) = posting.iter().find(|(did, _)| did == doc_id) {
+                            for p in poss {
+                                map.insert((p.line, p.word_index), p);
                             }
                         }
                     }
+                    map
+                })
+                .collect();
 
+            // If any tail word never appears in this doc, no phrase can match.
+            if tail_maps.iter().any(|m| m.is_empty()) {
+                continue;
+            }
+
+            let mut valid_lines: HashMap<usize, Vec<WordPosition>> = HashMap::new();
+            for (line, positions) in line_positions {
+                for start_pos in positions {
+                    let mut phrase_positions = vec![start_pos.clone()];
+                    let mut all_match = true;
+                    for (offset, map) in tail_maps.iter().enumerate() {
+                        let expected = (*line, start_pos.word_index + offset + 1);
+                        match map.get(&expected) {
+                            Some(p) => phrase_positions.push((*p).clone()),
+                            None => {
+                                all_match = false;
+                                break;
+                            }
+                        }
+                    }
                     if all_match {
                         valid_lines
                             .entry(*line)
@@ -612,9 +728,9 @@ impl SearchEngine {
     fn find_wildcard(&self, pattern: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         // Convert glob pattern to regex
         let regex_pattern = format!("^{}$", pattern.replace('*', ".*"));
-        let re = match Regex::new(&regex_pattern) {
-            Ok(r) => r,
-            Err(_) => return HashMap::new(),
+        let re = match compile_bounded_regex(&regex_pattern) {
+            Some(r) => r,
+            None => return HashMap::new(),
         };
 
         let mut result: HashMap<usize, HashMap<usize, Vec<WordPosition>>> = HashMap::new();
@@ -635,9 +751,9 @@ impl SearchEngine {
 
     /// Find documents with lines matching a regex pattern.
     fn find_regex(&self, pattern: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
-        let re = match Regex::new(pattern) {
-            Ok(r) => r,
-            Err(_) => return HashMap::new(),
+        let re = match compile_bounded_regex(pattern) {
+            Some(r) => r,
+            None => return HashMap::new(),
         };
 
         let mut result = HashMap::new();
@@ -743,7 +859,7 @@ impl SearchEngine {
                     // whether this document is one of the member paths.
                     collections
                         .get(&value_lower)
-                        .map_or(false, |members| members.contains(&doc.path))
+                        .is_some_and(|members| members.contains(&doc.path))
                 }
             };
 
@@ -784,7 +900,7 @@ impl SearchEngine {
                             || doc
                                 .lines
                                 .get(line_idx)
-                                .map_or(false, |l| l.to_lowercase().contains(&value_lower));
+                                .is_some_and(|l| l.to_lowercase().contains(&value_lower));
                         if hit {
                             lines.entry(line_idx).or_default().push(WordPosition {
                                 line: line_idx,
@@ -870,11 +986,7 @@ impl SearchEngine {
                             } else {
                                 let a = lp.word_index;
                                 let b = rp.word_index;
-                                if a > b {
-                                    a - b
-                                } else {
-                                    b - a
-                                }
+                                a.abs_diff(b)
                             };
                             if dist <= distance {
                                 valid_lines
@@ -905,7 +1017,7 @@ impl SearchEngine {
             }
             QueryNode::Wildcard(pattern) => {
                 let regex_pattern = format!("^{}$", pattern.replace('*', ".*"));
-                Regex::new(&regex_pattern)
+                compile_bounded_regex(&regex_pattern)
                     .map(|re| re.is_match(text))
                     .unwrap_or(false)
             }
@@ -940,9 +1052,9 @@ impl SearchEngine {
         } else {
             format!("(?i){}", base)
         };
-        let re = match Regex::new(&pattern) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
+        let re = match compile_bounded_regex(&pattern) {
+            Some(r) => r,
+            None => return Vec::new(),
         };
 
         file_paths
@@ -1432,6 +1544,60 @@ mod tests {
         let query2 = parse_query("\"rust programming\"").unwrap();
         let results2 = engine.search(&query2, 10);
         assert!(results2.is_empty() || !results2.iter().any(|r| r.path.contains("note1")));
+    }
+
+    #[test]
+    fn remove_doc_prunes_empty_postings_and_frees_slot() {
+        let mut engine = make_engine();
+        let doc_count = engine.docs.len();
+
+        // `python` appears only in note2; removing note2 should drop the word
+        // from the index entirely (incremental removal must prune empty
+        // posting lists, not leave dead keys behind).
+        engine.remove_doc(Path::new("/notebox/note2.md"));
+        assert!(!engine.index.contains_key("python"));
+        assert!(!engine
+            .path_to_doc
+            .contains_key(Path::new("/notebox/note2.md")));
+        assert_eq!(engine.free_ids.len(), 1, "freed slot should be reusable");
+        // The slot vec must not shrink (existing doc-ids stay valid).
+        assert_eq!(engine.docs.len(), doc_count);
+
+        // A search for the removed word finds nothing; other docs unaffected.
+        assert!(engine
+            .search(&parse_query("python").unwrap(), 10)
+            .is_empty());
+        assert!(!engine.search(&parse_query("rust").unwrap(), 10).is_empty());
+
+        // Re-indexing a new note reuses the freed slot rather than growing docs.
+        engine.update_doc(
+            Path::new("/notebox/note4.md"),
+            "# Fresh\nGo is a compiled language.",
+            vec!["go".to_string()],
+            Some("Fresh".to_string()),
+            Vec::new(),
+            HashMap::new(),
+        );
+        assert_eq!(
+            engine.docs.len(),
+            doc_count,
+            "slot was reused, not appended"
+        );
+        assert!(engine.free_ids.is_empty());
+        assert_eq!(
+            unique_paths(&engine.search(&parse_query("go").unwrap(), 10)),
+            1
+        );
+    }
+
+    #[test]
+    fn and_not_excludes_without_materializing_complement() {
+        let engine = make_engine();
+        // `rust -python`: note1 has rust and not python → kept; note2 has both
+        // rust and python → excluded.
+        let results = engine.search(&parse_query("rust -python").unwrap(), 10);
+        assert!(results.iter().all(|r| r.path.contains("note1")));
+        assert_eq!(unique_paths(&results), 1);
     }
 
     #[test]

@@ -113,6 +113,10 @@ pub struct MycelialData {
     pub excluded_terms: Vec<ExcludedTerm>,
 }
 
+/// Build the Mycelial View graph centred on `path`: BFS the wikilink graph to
+/// `max_depth`, widen it with the most semantically-similar notes (corpus
+/// stats), then surface latent links and emergent concepts with their source
+/// mentions. The heaviest read-side command — see the inline step comments.
 #[tauri::command]
 pub async fn get_mycelial_data(
     path: String,
@@ -193,43 +197,57 @@ pub async fn get_mycelial_data(
 
     // 4. Latent links: keep only notes that mention the target without a
     //    wikilink to it, and resolve the mention's location for deep-linking.
-    let mut latent_links: Vec<LatentLink> = Vec::new();
-    {
+    //
+    //    Snapshot each candidate source's forward links up front so we never
+    //    hold the `link_index` read lock across the `resolve_mention` file
+    //    reads below — a concurrent reindex needs the write lock, and holding
+    //    a read guard across I/O would stall it.
+    let forward_links: HashMap<PathBuf, Vec<PathBuf>> = {
         let link_index = session.link_index.read().await;
-        for cand in analysis.latent {
-            let target = PathBuf::from(&cand.target_path);
-            let mut mentions: Vec<SourceMention> = Vec::new();
+        let mut map: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        for cand in &analysis.latent {
             for src in &cand.source_notes {
                 let src_path = PathBuf::from(src);
-                if src_path == target {
-                    continue;
-                }
-                if link_index
-                    .get_forward_links(&src_path)
-                    .iter()
-                    .any(|f| f == &target)
-                {
-                    continue;
-                }
-                if let Some(m) = resolve_mention(storage.as_ref(), &src_path, &cand.term).await {
-                    mentions.push(m);
-                }
-                if mentions.len() >= MAX_MENTIONS {
-                    break;
-                }
+                map.entry(src_path.clone())
+                    .or_insert_with(|| link_index.get_forward_links(&src_path));
             }
-            if mentions.is_empty() {
+        }
+        map
+    };
+
+    let mut latent_links: Vec<LatentLink> = Vec::new();
+    for cand in analysis.latent {
+        let target = PathBuf::from(&cand.target_path);
+        let mut mentions: Vec<SourceMention> = Vec::new();
+        for src in &cand.source_notes {
+            let src_path = PathBuf::from(src);
+            if src_path == target {
                 continue;
             }
-            latent_links.push(LatentLink {
-                term: cand.term,
-                target_name: stem_name(&target),
-                target_path: cand.target_path,
-                score: cand.score,
-                is_bigram: cand.is_bigram,
-                mentions,
-            });
+            let already_linked = forward_links
+                .get(&src_path)
+                .is_some_and(|f| f.iter().any(|p| p == &target));
+            if already_linked {
+                continue;
+            }
+            if let Some(m) = resolve_mention(storage.as_ref(), &src_path, &cand.term).await {
+                mentions.push(m);
+            }
+            if mentions.len() >= MAX_MENTIONS {
+                break;
+            }
         }
+        if mentions.is_empty() {
+            continue;
+        }
+        latent_links.push(LatentLink {
+            term: cand.term,
+            target_name: stem_name(&target),
+            target_path: cand.target_path,
+            score: cand.score,
+            is_bigram: cand.is_bigram,
+            mentions,
+        });
     }
     latent_links.truncate(config.top_k);
 
@@ -466,6 +484,8 @@ pub(crate) async fn append_unique_word(path: &Path, term: &str) -> Result<(), In
     Ok(())
 }
 
+/// Append `term` to the notebox's `mycelial-stopwords.txt` so it stops
+/// surfacing as an emergent concept, and reload the in-memory stopword set.
 #[tauri::command]
 pub async fn add_mycelial_stopword(
     term: String,

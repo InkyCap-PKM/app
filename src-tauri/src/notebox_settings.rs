@@ -425,11 +425,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
-        let mut settings = NoteboxSettings::default();
-        settings.git = Some(NoteboxGitConfig {
-            remote: "https://codeberg.org/athena-otlet/notes".to_string(),
-            branch: "main".to_string(),
-        });
+        let settings = NoteboxSettings {
+            git: Some(NoteboxGitConfig {
+                remote: "https://codeberg.org/athena-otlet/notes".to_string(),
+                branch: "main".to_string(),
+            }),
+            ..Default::default()
+        };
         save_settings(root, &settings).unwrap();
 
         let shared = std::fs::read_to_string(settings_path(root)).unwrap();

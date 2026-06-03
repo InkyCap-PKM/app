@@ -178,12 +178,14 @@ fn format_numbering(value: &str) -> String {
 /// Page-numbering scheme for the merged book export.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "style", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum BookPageNumbering {
     /// Arabic numerals from the very first page.
     Arabic,
     /// Front matter unnumbered; chapters start at 1.
     ArabicFromChapters,
     /// Front matter in lowercase roman (i, ii, iii…); chapters restart at 1.
+    #[default]
     RomanThenArabic,
     /// No numbers until the chosen page, then arabic 1, 2, 3…
     /// `start_page` is the absolute page of the document on which the first
@@ -191,49 +193,35 @@ pub enum BookPageNumbering {
     ArabicFromPage { start_page: u32 },
 }
 
-impl Default for BookPageNumbering {
-    fn default() -> Self {
-        BookPageNumbering::RomanThenArabic
-    }
-}
-
 /// How a chapter's top-level heading is sourced when merging.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum InjectChapterHeading {
     /// Always inject `= <title>` from the note's `title` property,
     /// regardless of any `=` heading already in the file.
     Always,
     /// Inject only when the note doesn't already start with a `=` heading.
+    #[default]
     Fallback,
     /// Never inject. The note must own its top-level heading.
     Never,
 }
 
-impl Default for InjectChapterHeading {
-    fn default() -> Self {
-        InjectChapterHeading::Fallback
-    }
-}
-
 /// How wikilinks resolve when included in a merged book.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum BookWikilinkMode {
     /// Resolve wikilinks to in-document chapter labels when the target is
     /// part of the merged book. Targets outside the book fall back to plain
     /// text.
+    #[default]
     Internal,
     /// Behave like single-note compilation: link to `<name>.typ`.
     External,
     /// Strip linking entirely; render only the visible text.
     Plain,
-}
-
-impl Default for BookWikilinkMode {
-    fn default() -> Self {
-        BookWikilinkMode::Internal
-    }
 }
 
 /// Persistent "Export as book" configuration stored in the `.collection` file.

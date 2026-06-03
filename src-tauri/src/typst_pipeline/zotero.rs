@@ -56,16 +56,67 @@ pub fn auto_detect_path() -> Option<PathBuf> {
         ]
     };
 
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.exists())
 }
 
-/// Read all library items from a Zotero SQLite database.
+/// Single-slot, mtime+size-keyed cache of the parsed Zotero library, mirroring
+/// the `.bib`/`.yml` path in `bibliography.rs`. Reading the SQLite DB is the
+/// citation-injection step's cost, and it runs twice per compile on the hot
+/// reading-mode render path — for a large Zotero library that's two full DB
+/// scans every keystroke-debounced compile. Caching on (mtime, size) collapses
+/// repeated reads to one until the user changes the library in Zotero.
+struct ZoteroCacheSlot {
+    path: PathBuf,
+    mtime: std::time::SystemTime,
+    size: u64,
+    entries: Vec<BibEntry>,
+}
+
+fn zotero_cache() -> &'static std::sync::Mutex<Option<ZoteroCacheSlot>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Option<ZoteroCacheSlot>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Read all library items from a Zotero SQLite database, using the mtime+size
+/// cache. Falls through to a fresh read if the DB changed or stat fails.
 pub fn read_entries(db_path: &Path) -> Result<Vec<BibEntry>, String> {
+    // Best-effort stat; if it fails we just skip the cache and read fresh.
+    let stat = std::fs::metadata(db_path)
+        .ok()
+        .and_then(|m| m.modified().ok().map(|mtime| (mtime, m.len())));
+
+    if let Some((mtime, size)) = stat {
+        let guard = zotero_cache()
+            .lock()
+            .map_err(|e| format!("Cache poisoned: {e}"))?;
+        if let Some(slot) = guard.as_ref() {
+            if slot.path == db_path && slot.mtime == mtime && slot.size == size {
+                return Ok(slot.entries.clone());
+            }
+        }
+    }
+
+    let entries = read_entries_uncached(db_path)?;
+
+    if let Some((mtime, size)) = stat {
+        if let Ok(mut guard) = zotero_cache().lock() {
+            *guard = Some(ZoteroCacheSlot {
+                path: db_path.to_path_buf(),
+                mtime,
+                size,
+                entries: entries.clone(),
+            });
+        }
+    }
+    Ok(entries)
+}
+
+/// Uncached read of all library items from a Zotero SQLite database.
+fn read_entries_uncached(db_path: &Path) -> Result<Vec<BibEntry>, String> {
     let conn = open_zotero_readonly(db_path)?;
 
     let mut entries = Vec::new();

@@ -182,7 +182,7 @@ pub(crate) async fn collection_member_paths(
                 let included = base
                     .filters
                     .as_ref()
-                    .map_or(true, |g| evaluate_filter_group(g, note, path));
+                    .is_none_or(|g| evaluate_filter_group(g, note, path));
                 if included {
                     members.insert(note.path.clone());
                 }
@@ -261,16 +261,21 @@ pub async fn get_collection_data(
 
     // Apply sort rules
     if let Some(ref sort_rules) = view.sort {
+        // Precompute the descending flag for each rule once — the previous code
+        // re-uppercased `rule.direction` into a fresh String inside every
+        // comparison (O(rows·log rows·rules) allocations).
+        let descending: Vec<bool> = sort_rules
+            .iter()
+            .map(|r| r.direction.eq_ignore_ascii_case("desc"))
+            .collect();
         matching_rows.sort_by(|a, b| {
-            for rule in sort_rules {
+            for (rule, &desc) in sort_rules.iter().zip(descending.iter()) {
                 let a_val = a.cells.get(&rule.property);
                 let b_val = b.cells.get(&rule.property);
-                let ord = compare_property_values(a_val, b_val);
-                let ord = if rule.direction.to_uppercase() == "DESC" {
-                    ord.reverse()
-                } else {
-                    ord
-                };
+                let mut ord = compare_property_values(a_val, b_val);
+                if desc {
+                    ord = ord.reverse();
+                }
                 if ord != std::cmp::Ordering::Equal {
                     return ord;
                 }

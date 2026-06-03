@@ -20,6 +20,43 @@ use crate::typst_pipeline::diagnostic::TypstDiagnostic;
 use crate::typst_pipeline::recovery;
 use crate::typst_pipeline::world::NoteboxWorld;
 
+/// Lightweight timer for the `typst::compile` hot path. CLAUDE.md asks for
+/// compile-time instrumentation "from the outset"; this logs the elapsed time
+/// of each compile at `debug` level (off in release/normal runs, so zero cost
+/// to users) so a compile-time regression surfaces in a dev log rather than
+/// only when a user notices. Logs the file name only — not the full path —
+/// to keep the local-first privacy stance.
+struct CompileTimer {
+    label: &'static str,
+    file: String,
+    start: std::time::Instant,
+}
+
+impl CompileTimer {
+    fn start(label: &'static str, path: &Path) -> Self {
+        Self {
+            label,
+            file: path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_string(),
+            start: std::time::Instant::now(),
+        }
+    }
+
+    /// Emit the elapsed-time log. Call immediately after the `typst::compile`
+    /// returns so the measurement brackets only the compile itself.
+    fn done(self) {
+        log::debug!(
+            "typst {} [{}] took {:?}",
+            self.label,
+            self.file,
+            self.start.elapsed()
+        );
+    }
+}
+
 /// PDF standard presets exposed to the frontend. Each variant maps to a
 /// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
 ///
@@ -156,7 +193,9 @@ impl TypstCompiler {
             return None;
         }
 
+        let _t = CompileTimer::start("compile_document", abs_path);
         let warned = typst::compile::<PagedDocument>(&self.world);
+        _t.done();
         warned.output.ok()
     }
 
@@ -202,7 +241,9 @@ impl TypstCompiler {
         // typst::compile returns a Warned<SourceResult<PagedDocument>>:
         //   - .output: Result<PagedDocument, EcoVec<SourceDiagnostic>>
         //   - .warnings: EcoVec<SourceDiagnostic>
+        let _t = CompileTimer::start("compile_svg", abs_path);
         let warned = typst::compile::<PagedDocument>(&self.world);
+        _t.done();
 
         let mut diagnostics: Vec<TypstDiagnostic> = warned
             .warnings
@@ -260,7 +301,9 @@ impl TypstCompiler {
             .set_main(abs_path, source)
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
 
+        let _t = CompileTimer::start("compile_pdf", abs_path);
         let warned = typst::compile::<PagedDocument>(&self.world);
+        _t.done();
 
         match warned.output {
             Ok(document) => {
@@ -368,7 +411,9 @@ impl TypstCompiler {
             .set_main(abs_path, source.clone())
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
 
+        let _t = CompileTimer::start("compile_html", abs_path);
         let warned = typst::compile::<HtmlDocument>(&self.world);
+        _t.done();
 
         let mut diagnostics: Vec<TypstDiagnostic> = warned
             .warnings

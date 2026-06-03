@@ -96,7 +96,34 @@ pub async fn get_file_metadata(
         .notes
         .get(&path_buf)
         .cloned()
-        .ok_or_else(|| InkyCapError::FileNotFound(path))
+        .ok_or(InkyCapError::FileNotFound(path))
+}
+
+/// Stat a list of linked note paths into [`LinkInfo`] rows. The filesystem
+/// stats run on a blocking pool — never on the async worker, and never while
+/// holding the `link_index` read lock (a concurrent reindex needs the write
+/// lock). Callers snapshot the path list off the index first, then call this.
+async fn link_infos_for(paths: Vec<PathBuf>) -> Vec<LinkInfo> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|p| {
+                let name = p
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let (mtime, ctime) = file_times(&p);
+                LinkInfo {
+                    path: to_frontend_string(&p),
+                    name,
+                    modified_time: mtime,
+                    created_time: ctime,
+                }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Return all notes that link to the given file path via wikilinks.
@@ -107,26 +134,14 @@ pub async fn get_backlinks(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let session = state.session(window.label()).await;
-    let link_index = session.link_index.read().await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
-    let backlinks = link_index.get_backlinks(&path_buf);
-    Ok(backlinks
-        .into_iter()
-        .map(|p| {
-            let name = p
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let (mtime, ctime) = file_times(&p);
-            LinkInfo {
-                path: to_frontend_string(&p),
-                name,
-                modified_time: mtime,
-                created_time: ctime,
-            }
-        })
-        .collect())
+    // Snapshot the path list, then drop the index lock before any stat I/O.
+    let backlinks = {
+        let link_index = session.link_index.read().await;
+        link_index.get_backlinks(&path_buf)
+    };
+    Ok(link_infos_for(backlinks).await)
 }
 
 /// Return all notes that the given file links to via wikilinks.
@@ -137,26 +152,14 @@ pub async fn get_forward_links(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<LinkInfo>, InkyCapError> {
     let session = state.session(window.label()).await;
-    let link_index = session.link_index.read().await;
     let path_buf = sanitize_notebox_arg(&path)?;
 
-    let links = link_index.get_forward_links(&path_buf);
-    Ok(links
-        .into_iter()
-        .map(|p| {
-            let name = p
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let (mtime, ctime) = file_times(&p);
-            LinkInfo {
-                path: to_frontend_string(&p),
-                name,
-                modified_time: mtime,
-                created_time: ctime,
-            }
-        })
-        .collect())
+    // Snapshot the path list, then drop the index lock before any stat I/O.
+    let links = {
+        let link_index = session.link_index.read().await;
+        link_index.get_forward_links(&path_buf)
+    };
+    Ok(link_infos_for(links).await)
 }
 
 /// One entry in the Outbound Links section of the right-panel Links tab.
@@ -338,17 +341,24 @@ pub async fn read_media_bytes(
     window: tauri::WebviewWindow,
 ) -> Result<tauri::ipc::Response, InkyCapError> {
     let session = state.session(window.label()).await;
-    let notebox_root = session.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+    // Clone the root and drop the lock before any filesystem work — media can
+    // be hundreds of MB, and we must not hold the notebox_root read lock (or
+    // block the async worker) across the read.
+    let root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
 
     let clean = target.split('|').next().unwrap_or(&target).trim();
     let stripped = clean.trim_start_matches('/').trim_start_matches('\\');
     let candidate = root.join(stripped);
-    let resolved = crate::storage::path::validate_notebox_path(root, &candidate)?;
+    let resolved = crate::storage::path::validate_notebox_path(&root, &candidate)?;
     if !resolved.is_file() {
         return Err(InkyCapError::InvalidPath(format!("Not a file: {target}")));
     }
-    let bytes = std::fs::read(&resolved)?;
+    let bytes = tokio::fs::read(&resolved).await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -615,7 +625,7 @@ pub async fn ensure_heading_label(
     let mut found = false;
     for line in content.lines() {
         if !found && line.trim_start().starts_with(&target_prefix) {
-            new_content.push_str(&line.trim_end().to_string());
+            new_content.push_str(line.trim_end());
             new_content.push_str(&format!(" <{label}>"));
             found = true;
         } else {

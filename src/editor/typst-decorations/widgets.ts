@@ -307,8 +307,8 @@ export class CodeBlockWidget extends WidgetType {
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "cm-typst-codeblock-copy";
-    copyBtn.title = "Copy code";
-    copyBtn.setAttribute("aria-label", "Copy code");
+    copyBtn.title = t("widget.codeBlock.copy");
+    copyBtn.setAttribute("aria-label", t("widget.codeBlock.copy"));
     copyBtn.innerHTML = // static-only
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
     copyBtn.addEventListener("mousedown", (e) => {
@@ -323,10 +323,10 @@ export class CodeBlockWidget extends WidgetType {
         .writeText(codeText)
         .then(() => {
           copyBtn.classList.add("is-copied");
-          copyBtn.title = "Copied";
+          copyBtn.title = t("widget.codeBlock.copied");
           setTimeout(() => {
             copyBtn.classList.remove("is-copied");
-            copyBtn.title = "Copy code";
+            copyBtn.title = t("widget.codeBlock.copy");
           }, 1200);
         })
         .catch((err) => {
@@ -1926,7 +1926,9 @@ export class AnnotationBlockWidget extends WidgetType {
     heading.className = "cm-typst-callout-heading";
     heading.style.color = ANNOTATION_COLOR;
     const attribution = [this.by, this.on].filter(Boolean).join(" · ");
-    heading.textContent = attribution ? `Annotation — ${attribution}` : "Annotation";
+    heading.textContent = attribution
+      ? t("widget.annotation.labelBy", { name: attribution })
+      : t("widget.annotation.label");
     inner.appendChild(heading);
 
     if (this.bodyText) {
@@ -2143,7 +2145,7 @@ function showCiteContextMenu(
   });
   const label = document.createElement("span");
   label.className = "cm-typst-pill-menu-label";
-  label.textContent = "Convert to advanced citation";
+  label.textContent = t("widget.citation.convertToAdvanced");
   item.appendChild(label);
   menu.appendChild(item);
 

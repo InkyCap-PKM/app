@@ -16,6 +16,10 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# serde_yaml 0.9 is the final release — the crate is archived/unmaintained
+# upstream. It still works and has no open advisories, but if YAML support
+# grows or an advisory lands, migrate to a maintained fork (`serde_yml`) or
+# move the (small) YAML surface — markdown frontmatter parsing — to TOML.
 serde_yaml = "0.9"
 walkdir = "2"
 notify = "8"

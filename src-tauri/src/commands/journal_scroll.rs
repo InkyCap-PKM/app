@@ -76,6 +76,9 @@ pub struct ScrollEntry {
     pub title: String,
 }
 
+/// Resolve a Journal Scroll query (filter + sort) into the ordered list of
+/// matching note entries the frontend pages through. Reads the property index;
+/// performs no compilation.
 #[tauri::command]
 pub async fn run_scroll_query(
     query: ScrollQuery,
@@ -111,6 +114,10 @@ pub struct FindInScrollQuery {
     pub target: String,
 }
 
+/// Return the signed offset (relative to `anchor`) of `target` within a scroll
+/// query's ordered results, or `None` if `target` isn't in the query. Lets the
+/// wikilink-click handler page in the right direction to a not-yet-loaded entry
+/// (see [`FindInScrollQuery`]).
 #[tauri::command]
 pub async fn find_offset_in_scroll_query(
     query: FindInScrollQuery,
@@ -247,6 +254,9 @@ pub struct ConnectionFlags {
     pub shares_tags: bool,
 }
 
+/// For each path in `paths`, compute its connection flags relative to `anchor`
+/// (links-to / linked-from / shares-tags) so the Journal Scroll can show
+/// per-entry connection icons. Reads the link and property indexes.
 #[tauri::command]
 pub async fn compute_connection_flags(
     anchor: String,

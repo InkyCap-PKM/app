@@ -154,81 +154,36 @@ pub async fn open_notebox(
             let handle = app_handle.clone();
             let owner = label.clone();
             tokio::task::spawn_blocking(move || {
-                while let Ok(event) = rx.recv() {
-                    // Broadcast to every window. Each window's frontend self-
-                    // scopes: the file tree re-queries its own session (so a
-                    // change in another window's notebox never alters this
-                    // one), and an open editor reloads only if the changed
-                    // path is the file it's showing. `owner` is still threaded
-                    // to the cache-sync helpers so they reindex the right
-                    // window's session.
-                    match &event {
-                        crate::events::AppEvent::FileChanged { path, change } => {
-                            let _ = handle.emit(
-                                "notebox:file-changed",
-                                serde_json::json!({
-                                    "path": to_frontend_string(path),
-                                    "change": match change {
-                                        crate::events::ChangeKind::Content => "Content",
-                                        crate::events::ChangeKind::Metadata => "Metadata",
-                                    }
-                                }),
-                            );
-                            sync_cache_for_changed_file(&handle, owner.clone(), path.clone());
+                use std::sync::mpsc::RecvTimeoutError;
+                use std::time::Duration;
+
+                // Coalesce a burst of watcher events into one batch: after the
+                // first event, keep draining until the stream goes quiet for
+                // `COALESCE_WINDOW` (or we hit `COALESCE_MAX`). This collapses a
+                // git checkout / bulk rewrite / editor write-then-touch storm
+                // into a single reindex pass — one notebox-wide backlink
+                // rebuild — instead of one O(notebox) rebuild per event.
+                const COALESCE_WINDOW: Duration = Duration::from_millis(200);
+                const COALESCE_MAX: usize = 1024;
+
+                // `recv` returns `Err` when the sender is dropped (watcher
+                // replaced or notebox closed), which ends the loop.
+                while let Ok(first) = rx.recv() {
+                    let mut events = vec![first];
+                    let mut disconnected = false;
+                    while events.len() < COALESCE_MAX {
+                        match rx.recv_timeout(COALESCE_WINDOW) {
+                            Ok(e) => events.push(e),
+                            Err(RecvTimeoutError::Timeout) => break,
+                            Err(RecvTimeoutError::Disconnected) => {
+                                disconnected = true;
+                                break;
+                            }
                         }
-                        crate::events::AppEvent::FileCreated { path } => {
-                            let _ = handle.emit(
-                                "notebox:file-created",
-                                serde_json::json!({
-                                    "path": to_frontend_string(path)
-                                }),
-                            );
-                            sync_cache_for_changed_file(&handle, owner.clone(), path.clone());
-                        }
-                        crate::events::AppEvent::FileDeleted { path } => {
-                            let _ = handle.emit(
-                                "notebox:file-deleted",
-                                serde_json::json!({
-                                    "path": to_frontend_string(path)
-                                }),
-                            );
-                            sync_cache_for_deleted_file(&handle, owner.clone(), path.clone());
-                        }
-                        crate::events::AppEvent::FileRenamed { from, to } => {
-                            // Fire the existing delete+create events first so
-                            // the frontend file tree refreshes the same way
-                            // it always has — components that only care about
-                            // tree state don't need to know about renames.
-                            // The dedicated `notebox:file-renamed` event is for
-                            // listeners that want to follow the move (e.g.
-                            // an open editor tab transferring to the new path).
-                            let _ = handle.emit(
-                                "notebox:file-deleted",
-                                serde_json::json!({
-                                    "path": to_frontend_string(from)
-                                }),
-                            );
-                            let _ = handle.emit(
-                                "notebox:file-created",
-                                serde_json::json!({
-                                    "path": to_frontend_string(to)
-                                }),
-                            );
-                            let _ = handle.emit(
-                                "notebox:file-renamed",
-                                serde_json::json!({
-                                    "from": to_frontend_string(from),
-                                    "to": to_frontend_string(to)
-                                }),
-                            );
-                            sync_cache_for_renamed_file(
-                                &handle,
-                                owner.clone(),
-                                from.clone(),
-                                to.clone(),
-                            );
-                        }
-                        _ => {}
+                    }
+                    dispatch_watcher_batch(&handle, &owner, events);
+                    if disconnected {
+                        break;
                     }
                 }
             });
@@ -427,25 +382,117 @@ fn surface_reconnectable_git(
     });
 }
 
-/// Re-parse a file that the watcher reported as changed/created and push the
-/// result through [`AppState::reindex_note`]. That helper updates every
-/// in-memory index (link, property, search) *and* writes through to the
-/// persistent metadata cache, so the UI stays in sync with external edits
-/// without a notebox restart. Spawns a short-lived async task because the
-/// watcher dispatcher runs on a blocking thread.
-fn sync_cache_for_changed_file(handle: &tauri::AppHandle, owner: String, path: std::path::PathBuf) {
-    // Only `.typ` note files participate in the in-memory indices and cache.
-    if path.extension().and_then(|e| e.to_str()) != Some("typ") {
-        return;
+/// Apply one coalesced window of watcher events.
+///
+/// Frontend refresh events are emitted immediately, per event, so the file
+/// tree and open editors stay responsive (each window self-scopes; see the
+/// dispatcher comment). The *heavy* index work — re-parsing notes and
+/// rebuilding the backlink index — is collapsed into a single batched reindex
+/// so a burst doesn't trigger N concurrent O(notebox) rebuilds.
+///
+/// Deletes and renames are rarer and keep their dedicated per-event helpers,
+/// but a path that ends the window deleted or renamed is removed from the
+/// reindex set so we never re-parse a file that no longer exists.
+fn dispatch_watcher_batch(
+    handle: &tauri::AppHandle,
+    owner: &str,
+    events: Vec<crate::events::AppEvent>,
+) {
+    use crate::events::{AppEvent, ChangeKind};
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+
+    let is_note = |p: &std::path::Path| p.extension().and_then(|e| e.to_str()) == Some("typ");
+    let mut reindex_order: Vec<PathBuf> = Vec::new();
+    let mut reindex_set: HashSet<PathBuf> = HashSet::new();
+
+    for event in &events {
+        match event {
+            AppEvent::FileChanged { path, change } => {
+                let _ = handle.emit(
+                    "notebox:file-changed",
+                    serde_json::json!({
+                        "path": to_frontend_string(path),
+                        "change": match change {
+                            ChangeKind::Content => "Content",
+                            ChangeKind::Metadata => "Metadata",
+                        }
+                    }),
+                );
+                if is_note(path) && reindex_set.insert(path.clone()) {
+                    reindex_order.push(path.clone());
+                }
+            }
+            AppEvent::FileCreated { path } => {
+                let _ = handle.emit(
+                    "notebox:file-created",
+                    serde_json::json!({ "path": to_frontend_string(path) }),
+                );
+                if is_note(path) && reindex_set.insert(path.clone()) {
+                    reindex_order.push(path.clone());
+                }
+            }
+            AppEvent::FileDeleted { path } => {
+                let _ = handle.emit(
+                    "notebox:file-deleted",
+                    serde_json::json!({ "path": to_frontend_string(path) }),
+                );
+                // If this file was changed earlier in the same window, drop it
+                // from the reindex set — the delete wins.
+                reindex_set.remove(path);
+                sync_cache_for_deleted_file(handle, owner.to_string(), path.clone());
+            }
+            AppEvent::FileRenamed { from, to } => {
+                // Fire delete+create so the tree refreshes the same way it
+                // always has, plus the dedicated rename event for listeners
+                // that follow the move (e.g. an open editor tab).
+                let _ = handle.emit(
+                    "notebox:file-deleted",
+                    serde_json::json!({ "path": to_frontend_string(from) }),
+                );
+                let _ = handle.emit(
+                    "notebox:file-created",
+                    serde_json::json!({ "path": to_frontend_string(to) }),
+                );
+                let _ = handle.emit(
+                    "notebox:file-renamed",
+                    serde_json::json!({
+                        "from": to_frontend_string(from),
+                        "to": to_frontend_string(to)
+                    }),
+                );
+                // The rename helper reindexes `to` itself; drop both endpoints
+                // from the batch.
+                reindex_set.remove(from);
+                reindex_set.remove(to);
+                sync_cache_for_renamed_file(handle, owner.to_string(), from.clone(), to.clone());
+            }
+            _ => {}
+        }
     }
 
+    // Drop any path that ended the window deleted/renamed (still present in
+    // `reindex_order` but removed from the set).
+    reindex_order.retain(|p| reindex_set.contains(p));
+    if !reindex_order.is_empty() {
+        spawn_batch_reindex(handle, owner.to_string(), reindex_order);
+    }
+}
+
+/// Re-parse a coalesced set of changed/created notes and push them through
+/// [`AppState::reindex_notes`] — a single notebox-wide backlink resolution for
+/// the whole batch. Each path is re-validated against the canonical notebox
+/// root (defense in depth for symlinked watcher events) and read through the
+/// validated storage pipeline. Spawns a short-lived async task because the
+/// watcher dispatcher runs on a blocking thread.
+fn spawn_batch_reindex(handle: &tauri::AppHandle, owner: String, paths: Vec<std::path::PathBuf>) {
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let state = handle.state::<AppState>();
         let session = state.session(&owner).await;
 
-        // Need both notebox_root and storage to parse the file. If either is
-        // missing the notebox has been closed, so just bail out silently.
+        // Need both notebox_root and storage. If either is missing the notebox
+        // has been closed, so bail out silently.
         let notebox_root = match session.notebox_root.read().await.clone() {
             Some(r) => r,
             None => return,
@@ -455,41 +502,38 @@ fn sync_cache_for_changed_file(handle: &tauri::AppHandle, owner: String, path: s
             None => return,
         };
 
-        // Skip files that fall outside the canonical notebox root — the
-        // storage layer canonicalizes notebox_root on open, and watcher events
-        // for symlinked files resolve to their real paths, so any event
-        // whose path doesn't live under the root is an escape attempt and
-        // we refuse to index it.
-        if path.strip_prefix(&notebox_root).is_err() {
+        let mut batch: Vec<(std::path::PathBuf, String)> = Vec::with_capacity(paths.len());
+        for path in paths {
+            // Skip files outside the canonical notebox root — watcher events
+            // for symlinked files resolve to their real paths, so an out-of-
+            // root path is an escape attempt and we refuse to index it.
+            let rel = match path.strip_prefix(&notebox_root) {
+                Ok(rel) => rel.to_path_buf(),
+                Err(_) => continue,
+            };
+            match storage.read_file(&rel).await {
+                Ok(content) => batch.push((path, content)),
+                Err(err) => {
+                    // File may have been deleted between the change event and
+                    // the re-parse — the next FileDeleted event will clean up.
+                    log::warn!("watcher reindex failed for {}: {err}", path.display());
+                }
+            }
+        }
+
+        if batch.is_empty() {
             return;
         }
 
-        // Read the current content through the validated storage pipeline
-        // and push it into the unified reindex helper. We read via storage
-        // (rather than calling the walker directly) so the path is
-        // re-validated against the notebox root even though it came from the
-        // watcher — defense in depth for the symlink case above.
-        let rel = path
-            .strip_prefix(&notebox_root)
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|_| path.clone());
-        match storage.read_file(&rel).await {
-            Ok(content) => {
-                session.reindex_note(&path, &content).await;
-                // Notify any UI that mirrors the in-memory indices that the
-                // external change has been absorbed. Frontend components
-                // like the backlinks pane refetch on this.
-                use tauri::Emitter;
-                let _ = handle.emit(
-                    "notebox:index-updated",
-                    serde_json::json!({ "path": to_frontend_string(&path) }),
-                );
-            }
-            Err(err) => {
-                // File may have been deleted between the change event and
-                // the re-parse — the next FileDeleted event will clean up.
-                log::warn!("watcher reindex failed for {}: {err}", path.display());
-            }
+        // Reindex the whole batch with one backlink resolution, then notify
+        // UI that mirrors the in-memory indices (e.g. the backlinks pane).
+        let updated: Vec<std::path::PathBuf> = batch.iter().map(|(p, _)| p.clone()).collect();
+        session.reindex_notes(batch).await;
+        for path in &updated {
+            let _ = handle.emit(
+                "notebox:index-updated",
+                serde_json::json!({ "path": to_frontend_string(path) }),
+            );
         }
     });
 }
@@ -892,12 +936,21 @@ pub async fn move_notebox(
         }
     }
 
-    std::fs::rename(&old, &new).map_err(|e| {
-        InkyCapError::InvalidPath(format!(
-            "Failed to move notebox from {} to {}: {}",
-            old_path, new_path, e
-        ))
-    })?;
+    // Run the rename on a blocking pool — a cross-directory move can fall back
+    // to a recursive copy on some filesystems, which must not block the async
+    // worker.
+    {
+        let (old, new) = (old.clone(), new.clone());
+        tauri::async_runtime::spawn_blocking(move || std::fs::rename(&old, &new))
+            .await
+            .map_err(|e| std::io::Error::other(format!("move task failed: {e}")))?
+            .map_err(|e| {
+                InkyCapError::InvalidPath(format!(
+                    "Failed to move notebox from {} to {}: {}",
+                    old_path, new_path, e
+                ))
+            })?;
+    }
 
     let mut cfg = config::load_config();
     let was_active = cfg.notebox_path.as_deref() == Some(&old_path);
@@ -958,8 +1011,22 @@ pub async fn seed_notebox_from_source(
     target_path: String,
     source_path: String,
 ) -> Result<NoteboxSeedResult, InkyCapError> {
-    let target = std::path::PathBuf::from(&target_path);
-    let source = std::path::PathBuf::from(&source_path);
+    // The body is a sequence of blocking std::fs copies; run it on a blocking
+    // pool so the async worker isn't stalled.
+    tauri::async_runtime::spawn_blocking(move || {
+        seed_notebox_from_source_blocking(&target_path, &source_path)
+    })
+    .await
+    .map_err(|e| std::io::Error::other(format!("seed task failed: {e}")))?
+}
+
+/// Synchronous worker for [`seed_notebox_from_source`], run on a blocking pool.
+fn seed_notebox_from_source_blocking(
+    target_path: &str,
+    source_path: &str,
+) -> Result<NoteboxSeedResult, InkyCapError> {
+    let target = std::path::PathBuf::from(target_path);
+    let source = std::path::PathBuf::from(source_path);
 
     if !target.is_dir() {
         return Err(InkyCapError::InvalidPath(format!(

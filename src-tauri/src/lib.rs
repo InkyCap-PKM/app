@@ -1,3 +1,11 @@
+// Two clippy lints are allowed crate-wide because they flag inherent domain
+// shape, not fixable problems: Tauri commands legitimately take many arguments
+// (path + options + `State` + `WebviewWindow` + …), and the index/parse layers
+// carry genuinely complex tuple/map types whose meaning is clearer inline than
+// behind an alias. Everything else is clippy-clean and enforced in CI.
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+
 pub mod app_paths;
 pub mod backup;
 pub mod bookmarks;

@@ -41,17 +41,13 @@ pub async fn export_self_contained_typ(
     let image_paths = extract_image_paths(&content);
     let mut rewritten = content.clone();
     for img_path in &image_paths {
-        let abs_img = if img_path.starts_with('/') {
-            root.join(&img_path[1..])
+        let abs_img = if let Some(stripped) = img_path.strip_prefix('/') {
+            root.join(stripped)
         } else {
             path_buf.parent().unwrap_or(&root).join(img_path)
         };
         if abs_img.exists() {
-            let rel = if img_path.starts_with('/') {
-                &img_path[1..]
-            } else {
-                img_path.as_str()
-            };
+            let rel = img_path.strip_prefix('/').unwrap_or(img_path.as_str());
             let dest = output_dir.join(rel);
             if let Some(parent) = dest.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -137,8 +133,8 @@ pub async fn export_figures(
 
     let mut exported = Vec::new();
     for img_path in &image_paths {
-        let abs_img = if img_path.starts_with('/') {
-            root.join(&img_path[1..])
+        let abs_img = if let Some(stripped) = img_path.strip_prefix('/') {
+            root.join(stripped)
         } else {
             path_buf.parent().unwrap_or(root).join(img_path)
         };

@@ -1138,10 +1138,7 @@ pub async fn git_note_history(
         // click to compare with the current note". `last_sync_oid` is the local
         // tip recorded just before the merge, so its blob is the user's version.
         let local = crate::notebox_settings::load_local_state(&root);
-        let took_theirs = local
-            .last_sync_conflicted
-            .iter()
-            .any(|p| *p == rel_frontend);
+        let took_theirs = local.last_sync_conflicted.contains(&rel_frontend);
         if took_theirs {
             if let Some(baseline) = local.last_sync_oid {
                 for v in &mut versions {
@@ -1592,11 +1589,9 @@ pub async fn git_get_identity(
         .await
         .clone()
         .ok_or(InkyCapError::NoteboxNotOpen)?;
-    Ok(
-        tokio::task::spawn_blocking(move || resolved_local_identity(&root, &git.remote))
-            .await
-            .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))?,
-    )
+    tokio::task::spawn_blocking(move || resolved_local_identity(&root, &git.remote))
+        .await
+        .map_err(|e| InkyCapError::Git(format!("get-identity task failed: {e}")))
 }
 
 /// The commit identity InkyCap **would** stamp on this notebox's commits, for
@@ -2230,7 +2225,7 @@ mod tests {
     }
 
     /// Seed the remote with `files` from clone A and push them on `main`.
-    fn seed(a: &GitBackend, apath: &Path, url: &str, files: &[(&str, &str)]) {
+    fn seed(a: &GitBackend, apath: &Path, _url: &str, files: &[(&str, &str)]) {
         a.ensure_initial_branch("main").unwrap();
         for (name, content) in files {
             std::fs::write(apath.join(name), content).unwrap();
@@ -2241,7 +2236,7 @@ mod tests {
         assert!(!a.push(REMOTE_NAME, "main").unwrap().rejected);
     }
 
-    fn commit_push(a: &GitBackend, apath: &Path, url: &str, file: &str, content: &str) {
+    fn commit_push(a: &GitBackend, apath: &Path, _url: &str, file: &str, content: &str) {
         std::fs::write(apath.join(file), content).unwrap();
         a.stage_all().unwrap();
         a.commit("a-edit", &a.author_signature(None).unwrap())
@@ -2395,7 +2390,7 @@ mod tests {
 
     /// Seed a single-line `settings.json` (so a both-sides edit forces a git
     /// conflict on the one line, exercising the structured merge) plus a note.
-    fn seed_settings(a: &GitBackend, apath: &Path, url: &str, json: &str) {
+    fn seed_settings(a: &GitBackend, apath: &Path, _url: &str, json: &str) {
         std::fs::create_dir_all(apath.join(".inkycap")).unwrap();
         std::fs::write(apath.join(".inkycap/settings.json"), json).unwrap();
         std::fs::write(apath.join("n.typ"), "n\n").unwrap();

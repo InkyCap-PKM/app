@@ -20,9 +20,15 @@
 use crate::font_resolver::{self, FontRole};
 use crate::settings::{DocumentDefaults, UserSettings};
 
-/// Sanitize a string value for safe embedding in a Typst quoted string literal.
+/// Escape a string value for safe embedding in a Typst quoted string literal.
+///
+/// Every caller wraps the result in `"..."`, so we *escape* (`\` → `\\`, `"` →
+/// `\"`) rather than strip — a value that legitimately contains a backslash or
+/// quote (an unusual font family, a paper name) survives round-trip while
+/// staying injection-safe. Backslash is escaped first so the quote-escape's own
+/// backslash isn't doubled.
 pub fn sanitize_typst_string(s: &str) -> String {
-    s.replace('\\', "").replace('"', "")
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// Ensure a Typst length expression has a unit suffix. If the trimmed value

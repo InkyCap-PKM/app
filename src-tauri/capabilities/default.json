@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nickelpack/tauri/v2/crates/tauri-utils/schema/capability.json",
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for the main window and secondary note/doc windows",
   "windows": ["main", "note-*"],

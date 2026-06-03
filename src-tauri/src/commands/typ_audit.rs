@@ -588,7 +588,7 @@ mod tests {
         let src = "#note(collection: (\"X\",))\n= Body\n";
         let out = apply_preamble_fixes(src, &import_line());
         assert!(has_notebox_import(&out));
-        assert_eq!(note_call_span(&out).is_some(), true);
+        assert!(note_call_span(&out).is_some());
         // The user's existing #note() must be preserved verbatim.
         assert!(out.contains("#note(collection: (\"X\",))"));
         // Import comes first (canonical version-less path).

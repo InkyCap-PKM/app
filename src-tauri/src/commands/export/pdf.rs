@@ -527,7 +527,7 @@ pub async fn export_collection_book_pdf(
         notes.push(BookNote {
             stem,
             abs_path: note_path_buf,
-            content: rebased.into(),
+            content: rebased,
             title,
         });
     }

@@ -426,10 +426,10 @@ mod tests {
     fn sanitize_blocks_parent_refs() {
         assert!(sanitize_relative(Path::new("../escape.txt")).is_none());
         assert!(sanitize_relative(Path::new("/etc/passwd")).is_none());
-        assert!(sanitize_relative(Path::new("./safe.txt")).unwrap() == PathBuf::from("safe.txt"));
+        assert!(sanitize_relative(Path::new("./safe.txt")).unwrap() == Path::new("safe.txt"));
         assert!(
             sanitize_relative(Path::new("nested/file.txt")).unwrap()
-                == PathBuf::from("nested/file.txt")
+                == Path::new("nested/file.txt")
         );
     }
 }

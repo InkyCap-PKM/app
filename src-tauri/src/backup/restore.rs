@@ -3,7 +3,7 @@
 //!   - `list_archives` — enumerate archives in the destination folder.
 //!   - `list_contents`  — open one archive and return its entries.
 //!   - `extract_files`  — pull selected entries back onto the filesystem,
-//!                        with deterministic conflict handling.
+//!     with deterministic conflict handling.
 //!
 //! Encryption-aware: when an archive is AES-encrypted, the caller passes
 //! the password (typically fetched from the OS keychain) and we route

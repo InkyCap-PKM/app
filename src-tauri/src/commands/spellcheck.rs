@@ -133,7 +133,7 @@ pub async fn read_spellcheck_dictionary(code: String) -> Result<DictionaryData, 
         });
     }
 
-    if code.is_empty() || code.contains(|c| c == '/' || c == '\\' || c == '.') {
+    if code.is_empty() || code.contains(['/', '\\', '.']) {
         return Err(InkyCapError::InvalidPath(format!(
             "Invalid dictionary code: {code}"
         )));

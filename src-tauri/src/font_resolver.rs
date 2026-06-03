@@ -241,8 +241,10 @@ mod tests {
 
     #[test]
     fn bundled_resolves_to_bundled_family() {
-        let mut fonts = FontSettings::default();
-        fonts.text = FontChoice::bundled();
+        let fonts = FontSettings {
+            text: FontChoice::bundled(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_role(FontRole::Text, &fonts).as_deref(),
             Some(BUNDLED_TEXT)
@@ -251,19 +253,23 @@ mod tests {
 
     #[test]
     fn typst_default_returns_none_for_text() {
-        let mut fonts = FontSettings::default();
-        fonts.text = FontChoice {
-            mode: FontChoice::TYPST_DEFAULT.into(),
-            custom: String::new(),
+        let fonts = FontSettings {
+            text: FontChoice {
+                mode: FontChoice::TYPST_DEFAULT.into(),
+                custom: String::new(),
+            },
+            ..Default::default()
         };
         assert_eq!(resolve_role(FontRole::Text, &fonts), None);
     }
 
     #[test]
     fn verse_follow_inherits_text() {
-        let mut fonts = FontSettings::default();
-        fonts.text = FontChoice::custom("CustomSerif");
-        fonts.verse = FontChoice::follow();
+        let fonts = FontSettings {
+            text: FontChoice::custom("CustomSerif"),
+            verse: FontChoice::follow(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_role(FontRole::Verse, &fonts).as_deref(),
             Some("CustomSerif"),
@@ -272,8 +278,10 @@ mod tests {
 
     #[test]
     fn custom_empty_falls_back_to_system() {
-        let mut fonts = FontSettings::default();
-        fonts.text = FontChoice::custom("");
+        let fonts = FontSettings {
+            text: FontChoice::custom(""),
+            ..Default::default()
+        };
         // Doesn't panic; returns system serif (whatever it is).
         assert!(resolve_role(FontRole::Text, &fonts).is_some());
     }

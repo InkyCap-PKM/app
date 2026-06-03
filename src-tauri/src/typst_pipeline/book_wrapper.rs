@@ -959,7 +959,7 @@ fn escape_typst_markup(s: &str) -> String {
 /// chapter title fallback when the note has no `title` property.
 fn humanize_stem(stem: &str) -> String {
     let words: Vec<String> = stem
-        .split(|c: char| c == '-' || c == '_' || c == ' ')
+        .split(['-', '_', ' '])
         .filter(|w| !w.is_empty())
         .map(|w| {
             let mut chars = w.chars();

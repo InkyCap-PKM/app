@@ -38,17 +38,18 @@ pub async fn get_bibliography_entries(
         "zotero" => {
             let db = zotero_path
                 .map(PathBuf::from)
-                .or_else(|| crate::typst_pipeline::zotero::auto_detect_path());
+                .or_else(crate::typst_pipeline::zotero::auto_detect_path);
             match db {
-                Some(p) => crate::typst_pipeline::zotero::read_entries(&p)
-                    .map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => {
+                    crate::typst_pipeline::zotero::read_entries(&p).map_err(InkyCapError::Typst)
+                }
                 None => Ok(Vec::new()),
             }
         }
         _ => {
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
-                Some(p) => bibliography::parse_bibliography(&p).map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => bibliography::parse_bibliography(&p).map_err(InkyCapError::Typst),
                 None => Ok(Vec::new()),
             }
         }
@@ -122,17 +123,18 @@ pub(crate) async fn load_entries_inner(
         "zotero" => {
             let db = zotero_path
                 .map(PathBuf::from)
-                .or_else(|| crate::typst_pipeline::zotero::auto_detect_path());
+                .or_else(crate::typst_pipeline::zotero::auto_detect_path);
             match db {
-                Some(p) => crate::typst_pipeline::zotero::read_entries(&p)
-                    .map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => {
+                    crate::typst_pipeline::zotero::read_entries(&p).map_err(InkyCapError::Typst)
+                }
                 None => Ok(Vec::new()),
             }
         }
         _ => {
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
-                Some(p) => bibliography::parse_bibliography(&p).map_err(|e| InkyCapError::Typst(e)),
+                Some(p) => bibliography::parse_bibliography(&p).map_err(InkyCapError::Typst),
                 None => Ok(Vec::new()),
             }
         }
@@ -207,13 +209,13 @@ pub async fn get_reference_notes(
         "zotero" => {
             let db = zotero_path
                 .map(PathBuf::from)
-                .or_else(|| crate::typst_pipeline::zotero::auto_detect_path());
+                .or_else(crate::typst_pipeline::zotero::auto_detect_path);
             match db {
                 Some(p) => {
                     // Zotero stores the item_key, but we receive a citation key.
                     // Look up the item_key from the entries list.
                     let entries = crate::typst_pipeline::zotero::read_entries(&p)
-                        .map_err(|e| InkyCapError::Typst(e))?;
+                        .map_err(InkyCapError::Typst)?;
                     let item_key = entries
                         .iter()
                         .find(|e| e.key == key)
@@ -221,7 +223,7 @@ pub async fn get_reference_notes(
                     match item_key {
                         Some(ik) => {
                             let raw_notes = crate::typst_pipeline::zotero::read_notes(&p, ik)
-                                .map_err(|e| InkyCapError::Typst(e))?;
+                                .map_err(InkyCapError::Typst)?;
                             Ok(raw_notes
                                 .into_iter()
                                 .map(|html| bibliography::RefNote {
@@ -240,8 +242,8 @@ pub async fn get_reference_notes(
             let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref());
             match bib {
                 Some(p) => {
-                    let notes = bibliography::get_entry_notes(&p, &key)
-                        .map_err(|e| InkyCapError::Typst(e))?;
+                    let notes =
+                        bibliography::get_entry_notes(&p, &key).map_err(InkyCapError::Typst)?;
                     Ok(notes
                         .into_iter()
                         .map(|n| bibliography::RefNote {
@@ -318,10 +320,8 @@ fn strip_html_tags(html: &str) -> String {
             let after_open = &rest[tag_open + 1..];
             if let Some(tag_close) = after_open.find('>') {
                 let tag_content = &after_open[..tag_close];
-                if is_block_tag(tag_content) {
-                    if !out.is_empty() && !out.ends_with('\n') {
-                        out.push('\n');
-                    }
+                if is_block_tag(tag_content) && !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
                 }
                 rest = &after_open[tag_close + 1..];
             } else {
@@ -486,7 +486,7 @@ fn strip_latex_markup(input: &str) -> String {
     s = bare_cmd_re.replace_all(&s, "").to_string();
 
     // Remove stray braces and LaTeX superscript/subscript operators
-    s = s.replace('{', "").replace('}', "");
+    s = s.replace(['{', '}'], "");
     s = s.replace('^', "").replace('~', " ");
 
     // Clean up: collapse multiple blank lines, trim

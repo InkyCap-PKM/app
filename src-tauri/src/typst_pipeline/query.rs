@@ -115,11 +115,43 @@ fn is_transcluded(key: Option<PosKey>, boundary: Option<PosKey>) -> bool {
 /// truly never compiled, an empty result is the honest answer.
 ///
 /// [`MetadataCache`]: crate::cache::MetadataCache
+/// Drop-based timer for the full compile+query path. CLAUDE.md asks for query
+/// instrumentation "from the outset"; logging on drop covers every early
+/// return. `debug` level, file name only (local-first privacy).
+struct QueryTimer {
+    file: String,
+    start: std::time::Instant,
+}
+
+impl QueryTimer {
+    fn start(path: &Path) -> Self {
+        Self {
+            file: path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_string(),
+            start: std::time::Instant::now(),
+        }
+    }
+}
+
+impl Drop for QueryTimer {
+    fn drop(&mut self) {
+        log::debug!(
+            "typst compile_and_query [{}] took {:?}",
+            self.file,
+            self.start.elapsed()
+        );
+    }
+}
+
 pub fn compile_and_query(
     compiler: &mut TypstCompiler,
     abs_path: &Path,
     source: String,
 ) -> QueryResult {
+    let _t = QueryTimer::start(abs_path);
     // First try compiling the full file. If that fails — typically because of
     // unresolved citations on a file without an inline `#bibliography(...)`,
     // a panic-free typst error in the body, etc. — fall
@@ -485,8 +517,7 @@ fn typst_value_to_property(value: &Value) -> PropertyValue {
         Value::Float(f) => PropertyValue::Number(*f),
         Value::Str(s) => PropertyValue::String(s.as_str().to_string()),
         Value::Array(arr) => {
-            let items: Vec<PropertyValue> =
-                arr.iter().map(|v| typst_value_to_property(v)).collect();
+            let items: Vec<PropertyValue> = arr.iter().map(typst_value_to_property).collect();
             PropertyValue::List(items)
         }
         Value::Dict(dict) => {

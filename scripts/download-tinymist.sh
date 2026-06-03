@@ -12,6 +12,49 @@ set -euo pipefail
 TINYMIST_VERSION="0.14.16"
 BINARIES_DIR="$(cd "$(dirname "$0")/../src-tauri/binaries" && pwd)"
 
+# Pinned SHA-256 of each release archive, keyed by Tauri target triple. These
+# are committed to the repo (copied from the release's `sha256.sum`), so they
+# are the trust anchor: a tampered or MITM'd download — or a silently-replaced
+# release asset — fails verification before we ever `chmod +x` and bundle a
+# native binary the app spawns. Bump these in lockstep with TINYMIST_VERSION
+# (fetch the new `sha256.sum` from the release and copy the matching lines).
+declare -A EXPECTED_SHA256=(
+  [x86_64-unknown-linux-gnu]="7d6b4b5b83ad81497370419d206b25617d6f5a294b73cf11aa137e041a0242f4"
+  [aarch64-unknown-linux-gnu]="3aef71a2c428e25c2ab1e293391c58b842ea22479f502ec5f2eea2e3b6fe85b4"
+  [x86_64-apple-darwin]="4456e6a7bff189075dc9c22d51120fc5a88894f8bb2518d2e61b9b695819bdce"
+  [aarch64-apple-darwin]="3c077f74d1caa6e2cbb5d4726e5ef4f5f49e7ecb4a6742a2e7a7e72e7133ba87"
+  [x86_64-pc-windows-msvc]="dc4ccb2729b48d19e85dd2ce63123ea59f1048424de9d9df44e592eccc072a60"
+  [aarch64-pc-windows-msvc]="d4ac13fd5ff8cd84c98d4dc6515fc68caed8329a732874f67f1e506ec2aab5d3"
+)
+
+# Verify a downloaded archive against the pinned hash for $TARGET. Aborts if the
+# hash is unknown (unrecognized target → fail closed) or doesn't match.
+verify_checksum() {
+  local archive="$1" target="$2"
+  local expected="${EXPECTED_SHA256[$target]:-}"
+  if [[ -z "$expected" ]]; then
+    echo "No pinned SHA-256 for target '$target' — refusing to install an unverified binary." >&2
+    exit 1
+  fi
+  local actual
+  if command -v sha256sum &>/dev/null; then
+    actual="$(sha256sum "$archive" | awk '{print $1}')"
+  elif command -v shasum &>/dev/null; then
+    actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+  else
+    echo "Neither sha256sum nor shasum found — cannot verify download." >&2
+    exit 1
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Checksum mismatch for $target!" >&2
+    echo "  expected: $expected" >&2
+    echo "  actual:   $actual" >&2
+    echo "Refusing to install a binary that failed verification." >&2
+    exit 1
+  fi
+  echo "Checksum OK ($actual)"
+}
+
 detect_target() {
   local arch os
   arch="$(uname -m)"
@@ -70,6 +113,9 @@ else
   echo "Neither curl nor wget found" >&2
   exit 1
 fi
+
+# Verify the download against the pinned hash before trusting it.
+verify_checksum "$ARCHIVE_PATH" "$TARGET"
 
 # Extract the binary from the archive
 if [[ "$ARCHIVE_EXT" == ".tar.gz" ]]; then
