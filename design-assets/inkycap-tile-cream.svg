@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- macOS-style rounded-square tile (squircle approx via rounded rect),
+       96px transparent margin for dock breathing room, rx = 22.37% of side. -->
+  <rect x="96" y="96" width="832" height="832" rx="186" ry="186" fill="#ECE5D7"/>
+  <!-- Reuse the flat artwork as the single source of truth; centered with padding. -->
+  <image xlink:href="inkycap-logo.svg" href="inkycap-logo.svg"
+         x="172" y="172" width="680" height="680"/>
+</svg>

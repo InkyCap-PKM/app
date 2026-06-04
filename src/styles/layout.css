@@ -2848,18 +2848,69 @@ svg.lucide {
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+  /* Breathing room between the logo's foot and the Notebox Management row. */
+  margin-bottom: var(--space-6);
 }
 
 .settings__overview-header > div:first-child {
   flex: 1;
 }
 
+/* Left column of the Overview header: branding + version, software updates,
+   and help stacked so they fill the space beside the tall logo. */
+.settings__overview-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The brand/version row leads the column — no top padding, and no bottom
+   border: the branding flows straight into the Help section without a rule
+   between them. The update control sits to its right, aligned with the app
+   name at the top rather than centred against the multi-line version block. */
+.settings__row.settings__overview-brand {
+  padding-top: 0;
+  border-bottom: none;
+  align-items: flex-start;
+}
+
+/* "Check for updates" cluster: the button, with any in-flight status / release
+   notes stacking beneath it, kept right-aligned against the row edge. */
+.settings__update-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* Centre the button against the InkyCap/version/link block rather than
+     pinning it to the top of the row. */
+  align-self: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.settings__update-status {
+  text-align: right;
+}
+
+/* App name reads as the page's heading — set in Junicode (the brand serif)
+   at the same size as the "Settings" dialog title. The doubled class beats
+   `.settings__label`, which is defined later in this file with equal
+   specificity and would otherwise win on font-size. */
+.settings__label.settings__overview-title {
+  font-family: "Junicode", serif;
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+
 .settings__overview-logo {
-  width: 160px;
-  height: 160px;
+  /* The asset's viewBox is cropped to the mark, so the box hugs the artwork
+     (portrait ~466:560) — no dead space to compensate for. The crown lines
+     up with the InkyCap heading row via the header's flex-start alignment. */
+  height: 134px;
+  width: auto;
   object-fit: contain;
   flex-shrink: 0;
-  padding: 12px;
 }
 
 [data-theme="dark"] .settings__overview-logo {

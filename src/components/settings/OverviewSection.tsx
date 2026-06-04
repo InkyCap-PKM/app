@@ -56,13 +56,14 @@ export function OverviewSection(props: { onClose: () => void }) {
 
   return (
     <div class="settings__section">
-      {/* Branding + Version */}
+      {/* Branding, version, updates and help all flow in the left column so
+          they fill the space beside the tall logo rather than leaving a gap. */}
       <div class="settings__overview-header">
-        <div>
-          <div class="settings__row">
+        <div class="settings__overview-main">
+          <div class="settings__row settings__overview-brand">
             <div class="settings__row-info">
               {/* i18n-exempt: brand name */}
-              <label class="settings__label">InkyCap</label>
+              <label class="settings__label settings__overview-title">InkyCap</label>
               <span class="settings__description">
                 {t("settings.overview.version")}{" "}
                 {version.loading ? "…" : version() ?? "—"}
@@ -75,6 +76,22 @@ export function OverviewSection(props: { onClose: () => void }) {
                 {SITE_LABEL}
               </button>
             </div>
+            {/* "Check for updates" sits beside the version — no separate
+                "Software updates" heading or hint row is needed. */}
+            <UpdateChecker />
+          </div>
+
+          {/* Help */}
+          <div class="settings__section-header">
+            <span class="settings__label" >{t("settings.overview.help")}</span>
+          </div>
+          <div class="settings__row">
+            <div class="settings__row-info">
+              <button type="button" class="settings__link" onClick={openDocs}>
+                {t("settings.overview.documentation")}
+              </button>
+              <span class="settings__description">{t("settings.overview.documentationHint")}</span>
+            </div>
           </div>
         </div>
         <img
@@ -82,22 +99,6 @@ export function OverviewSection(props: { onClose: () => void }) {
           alt={"InkyCap" /* i18n-exempt: brand name */}
           class="settings__overview-logo"
         />
-      </div>
-
-      {/* Updates */}
-      <UpdateChecker />
-
-      {/* Help */}
-      <div class="settings__section-header">
-        <span class="settings__label" >{t("settings.overview.help")}</span>
-      </div>
-      <div class="settings__row">
-        <div class="settings__row-info">
-          <button type="button" class="settings__link" onClick={openDocs}>
-            {t("settings.overview.documentation")}
-          </button>
-          <span class="settings__description">{t("settings.overview.documentationHint")}</span>
-        </div>
       </div>
 
       <NoteboxManagementSection onClose={props.onClose} />

@@ -51,19 +51,14 @@ export default function UpdateChecker() {
     }
   };
 
+  // Status copy is only worth showing once a check is in flight or has a
+  // result — the idle hint ("check whether a newer version is available") is
+  // redundant next to a button that says exactly that, so it's suppressed.
+  const showStatus = () => status() !== "idle";
+
   return (
-    <div class="settings__row">
-      <div class="settings__row-info">
-        <span class="settings__label">{t("settings.updates.title")}</span>
-        <span class="settings__description">{statusText()}</span>
-        <Show when={status() === "error" && updateError()}>
-          <span class="settings__description settings__update-error">{updateError()}</span>
-        </Show>
-        <Show when={status() === "available" && updateNotes()}>
-          <pre class="settings__notices settings__update-notes">{updateNotes()}</pre>
-        </Show>
-      </div>
-      <div class="settings__sources-actions">
+    <div class="settings__update-control">
+      <div class="settings__update-action">
         <Switch>
           <Match when={status() === "checking"}>
             <button type="button" class="btn btn--secondary btn--sm" disabled>
@@ -101,6 +96,15 @@ export default function UpdateChecker() {
           </Match>
         </Switch>
       </div>
+      <Show when={showStatus()}>
+        <span class="settings__description settings__update-status">{statusText()}</span>
+      </Show>
+      <Show when={status() === "error" && updateError()}>
+        <span class="settings__description settings__update-error">{updateError()}</span>
+      </Show>
+      <Show when={status() === "available" && updateNotes()}>
+        <pre class="settings__notices settings__update-notes">{updateNotes()}</pre>
+      </Show>
     </div>
   );
 }

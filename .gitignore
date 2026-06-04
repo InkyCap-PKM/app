@@ -25,8 +25,9 @@ Thumbs.db
 .filenignore
 InkyCap.code-workspace
 
-# Design assets (WIP icons, not ready for repo)
-design-assets/
+# Design assets: source artwork + the icon-tile the build derives from the
+# mark (src/assets/inkycap-logo.svg) via scripts/gen-icon-tile.mjs. Versioned
+# so the icon build's inputs travel with the repo.
 
 # Sidecar binaries (downloaded per-platform, ~30MB each)
 src-tauri/binaries/
