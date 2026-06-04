@@ -102,6 +102,10 @@ const DEFAULTS: UserSettings = {
   external_tools: {
     tools: [],
   },
+  updates: {
+    check_on_startup: false,
+    include_beta: false,
+  },
 };
 
 // ── Per-notebox defaults ─────────────────────────────────────────────

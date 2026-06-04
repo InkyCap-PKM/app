@@ -224,6 +224,19 @@ pub struct BehaviourSettings {
     pub switch_to_new_tab: bool,
 }
 
+/// In-app update preferences. A check never runs without user action unless
+/// `check_on_startup` is explicitly enabled — InkyCap makes no network request
+/// otherwise (local-first, no silent calls).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct UpdateSettings {
+    /// Check once shortly after launch. Opt-in; default false.
+    pub check_on_startup: bool,
+    /// Also surface development (beta) releases — the even-numbered release
+    /// channel. Default false: only user-facing (odd) releases are offered.
+    pub include_beta: bool,
+}
+
 /// Typst-facing document defaults that affect compilation, reading view,
 /// and export. User-global because typography is tuned to the device the
 /// user is writing on (display size, eye comfort); a notebox or collection
@@ -431,6 +444,7 @@ pub struct UserSettings {
     pub behaviour: BehaviourSettings,
     pub backup: BackupSettings,
     pub external_tools: ExternalToolSettings,
+    pub updates: UpdateSettings,
 }
 
 /// A user-registered external program InkyCap can pipe text through — the

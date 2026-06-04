@@ -1,6 +1,6 @@
 [package]
 name = "inkycap"
-version = "0.1.0"
+version = "202606.1.1"
 edition = "2021"
 description = "A Tauri-based Typst editor for academic note-taking"
 
@@ -14,6 +14,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
+# In-app "Check for updates": fetches a signed release manifest from Codeberg
+# Pages, downloads the platform artifact, verifies its minisign signature, and
+# installs. Windows/macOS install + relaunch; Linux is AppImage-only (the user
+# restarts). Update checks only happen when the user clicks, or on startup if
+# they opt in — never silently (local-first, no telemetry).
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde_yaml 0.9 is the final release — the crate is archived/unmaintained

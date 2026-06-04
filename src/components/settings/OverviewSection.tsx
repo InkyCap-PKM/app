@@ -1,8 +1,9 @@
 // Overview tab: branding/version, a Help placeholder, and the embedded
 // notebox-management surface (add / clone / import / open / move / remove,
 // plus the per-notebox collaboration toggle).
-import { createSignal, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import * as ipc from "../../lib/ipc";
+import { openDocumentationWindow } from "../../lib/docs-window";
 import { errorText } from "../../lib/errors";
 import { pathEquals } from "../../lib/paths";
 import {
@@ -14,7 +15,7 @@ import {
 } from "../../stores/notebox";
 import { noteboxSettings } from "../../stores/settings";
 import { maybeSeedNotebox } from "../../stores/notebox-seed";
-import { showToast } from "../../stores/toasts";
+import { showToast, toastError } from "../../stores/toasts";
 import { promptConfirmWithCheckbox } from "../../stores/prompt";
 import { disableCollaboration, reconnectCollaboration, setupPackageHandoff } from "../../stores/git";
 import { toHttpsRemote } from "../../lib/git-remote";
@@ -25,23 +26,54 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Pencil, Check, X, Handshake } from "lucide-solid";
 import HelpButton from "../HelpButton";
 import ExperimentalNotice from "../ExperimentalNotice";
+import UpdateChecker from "../UpdateChecker";
 import inkycapLogo from "../../assets/inkycap-logo.svg";
+
+// InkyCap's website, shown as a clickable link in the Overview. Held as
+// constants (not JSX text) so the domain isn't treated as translatable copy.
+const SITE_LABEL = "inkycap.org";
+const SITE_URL = "https://inkycap.org";
 
 export function OverviewSection(props: { onClose: () => void }) {
   const t = useI18n();
+  // Version comes from the build (see scripts/version.mjs). The middle
+  // component is odd for user-facing releases, even for development builds.
+  const [version] = createResource(() => ipc.appVersion());
+  const isDevChannel = () => {
+    const v = version();
+    if (!v) return false;
+    const minor = Number(v.split(".")[1]);
+    return Number.isFinite(minor) && minor % 2 === 0;
+  };
+
+  async function openDocs() {
+    try {
+      await openDocumentationWindow(t("settings.overview.documentation"));
+    } catch (e) {
+      toastError(t("help.docs.inkycapFailed"), e);
+    }
+  }
+
   return (
     <div class="settings__section">
       {/* Branding + Version */}
       <div class="settings__overview-header">
         <div>
-          <div class="settings__section-header">
-            <span class="settings__label">{t("settings.overview.version")}</span>
-          </div>
           <div class="settings__row">
             <div class="settings__row-info">
               {/* i18n-exempt: brand name */}
               <label class="settings__label">InkyCap</label>
-              <span class="settings__description">{t("settings.overview.versionPlaceholder")}</span>
+              <span class="settings__description">
+                {t("settings.overview.version")}{" "}
+                {version.loading ? "…" : version() ?? "—"}
+                <Show when={isDevChannel()}>
+                  {" "}
+                  <span class="badge badge--accent">{t("settings.overview.channelDev")}</span>
+                </Show>
+              </span>
+              <button type="button" class="settings__link" onClick={() => ipc.openUrlExternally(SITE_URL)}>
+                {SITE_LABEL}
+              </button>
             </div>
           </div>
         </div>
@@ -52,13 +84,19 @@ export function OverviewSection(props: { onClose: () => void }) {
         />
       </div>
 
+      {/* Updates */}
+      <UpdateChecker />
+
       {/* Help */}
       <div class="settings__section-header">
         <span class="settings__label" >{t("settings.overview.help")}</span>
       </div>
       <div class="settings__row">
         <div class="settings__row-info">
-          <span class="settings__description">{t("settings.overview.helpPlaceholder")}</span>
+          <button type="button" class="settings__link" onClick={openDocs}>
+            {t("settings.overview.documentation")}
+          </button>
+          <span class="settings__description">{t("settings.overview.documentationHint")}</span>
         </div>
       </div>
 

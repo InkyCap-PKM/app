@@ -2897,6 +2897,50 @@ svg.lucide {
   gap: 16px;
 }
 
+/* Sources tab: the right-hand cluster of a component row — licence badge plus
+   the "open project page" icon button, kept together against the row edge. */
+.settings__sources-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Sources tab: the lazily-loaded "Full third-party notices" viewer — a
+   scrollable, read-only dump of the per-dependency notices file. */
+.settings__notices-tabs {
+  margin-top: var(--space-3);
+}
+
+/* Update checker (Overview): release-notes block reuses the notices viewer
+   styling but stays compact; the error detail is muted/danger-tinted. */
+.settings__update-notes {
+  max-height: 160px;
+  margin-top: var(--space-2);
+}
+
+.settings__update-error {
+  color: var(--accent-danger);
+}
+
+.settings__notices {
+  margin-top: var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--fg-muted);
+  font-family: var(--editor-font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .settings__row-info {
   display: flex;
   flex-direction: column;
@@ -2909,6 +2953,25 @@ svg.lucide {
   font-size: var(--text-md);
   color: var(--fg-primary);
   font-weight: 500;
+}
+
+/* Inline text link inside settings rows (Overview: website, documentation).
+   A button styled as a link — keeps external-open routed through IPC rather
+   than a navigating <a href>. */
+.settings__link {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.settings__link:hover {
+  text-decoration: underline;
 }
 
 /* A setting label paired with an inline "?" help trigger (HelpButton). Keeps

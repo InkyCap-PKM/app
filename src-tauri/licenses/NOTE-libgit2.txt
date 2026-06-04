@@ -1,0 +1,26 @@
+libgit2 — GPLv2 with a linking exception
+=========================================
+
+InkyCap statically vendors libgit2 (via the `git2` crate's `vendored-libgit2`
+feature) for its notebox git-collaboration transport.
+
+libgit2 is licensed under the GNU General Public License version 2, *with a
+special linking exception* that explicitly permits combining and distributing
+libgit2 with code under terms of your choosing — i.e. linking it into a program
+that is not itself GPL. This exception is what makes embedding libgit2 in
+InkyCap permissible.
+
+The exact wording from libgit2's COPYING file:
+
+  In addition to the permissions in the GNU General Public License, the authors
+  give you unlimited permission to link the compiled version of this library
+  into combinations with other programs, and to distribute those combinations
+  without any restriction coming from the use of this file. (The General Public
+  License restrictions do apply in other respects; for example, they cover
+  modification of the file, and distribution when not linked into a combined
+  executable.)
+
+The full GPLv2 text is in `GPL-2.0-or-later.txt`.
+
+Project: https://libgit2.org/
+Source:  https://github.com/libgit2/libgit2/blob/main/COPYING

@@ -374,7 +374,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 ## Branch & workflow
 
 - **Active branch:** `main`
-- **Remote:** `origin` at `git@codeberg.org:joch/InkyCap-Notes.git`
+- **Remote:** `origin` at `git@codeberg.org:InkyCap/app.git` (org-owned; transferred from the original personal `joch/InkyCap-Notes`)
 
 ## Where to start
 

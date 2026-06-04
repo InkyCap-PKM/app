@@ -1,0 +1,17 @@
+New Computer Modern — GPL with a font exception
+===============================================
+
+The New Computer Modern font family is one of Typst's default fonts, embedded
+in the InkyCap binary through the `typst-assets` crate (`fonts` feature).
+
+It is distributed under the GNU General Public License (v3) together with a
+*font exception*, the same arrangement TeX/LaTeX fonts conventionally use. The
+exception clarifies that documents which merely embed or include the fonts (for
+example, a PDF InkyCap exports) are NOT considered derivative works of the
+fonts and are therefore not subject to the GPL. Modifying and redistributing
+the font files themselves remains governed by the GPL.
+
+The full GPLv3 text is in `GPL-3.0-or-later.txt`. The font's own License.txt
+(carrying the exact exception wording) ships with the font package.
+
+Project: https://ctan.org/pkg/newcomputermodern
