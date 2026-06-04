@@ -119,6 +119,55 @@ export function SourcesSettingsSection() {
   return (
     <div class="settings__section">
       <div class="settings__section-header">
+        <span class="settings__label">
+          {t("settings.about.heading")} InkyCap
+        </span>
+      </div>
+      <p class="settings__section-note settings__section-note--plain">
+        {t("settings.about.copyright")}
+      </p>
+      <p class="settings__section-note settings__section-note--plain">
+        {t("settings.about.licenseLead")}
+        <button
+          type="button"
+          class="settings__link settings__link--inline"
+          onClick={() =>
+            visit("https://forge.gouv.qc.ca/licence/liliq-p/", "LiLiQ-P")
+          }
+        >
+          {t("settings.about.liliqFr")}
+        </button>
+        {t("settings.about.licenseSeparator")}
+        <button
+          type="button"
+          class="settings__link settings__link--inline"
+          onClick={() =>
+            visit("https://forge.gouv.qc.ca/licence/en/liliq-p/", "LiLiQ-P")
+          }
+        >
+          {t("settings.about.liliqEn")}
+        </button>
+        {t("settings.about.licenseTrail")}{" "}
+        {t("settings.about.docsLead")}
+        <button
+          type="button"
+          class="settings__link settings__link--inline"
+          onClick={() =>
+            visit(
+              "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+              "Creative Commons CC BY-NC-SA",
+            )
+          }
+        >
+          {t("settings.about.ccLabel")}
+        </button>
+        {t("settings.about.docsTrail")}
+      </p>
+      <p class="settings__section-note settings__section-note--plain">
+        {t("settings.about.thanks")}
+      </p>
+
+      <div class="settings__section-header">
         <span class="settings__label">{t("settings.sources.heading")}</span>
       </div>
       <p class="settings__section-note">{t("settings.sources.intro")}</p>

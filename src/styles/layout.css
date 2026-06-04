@@ -3025,6 +3025,15 @@ svg.lucide {
   text-decoration: underline;
 }
 
+/* Inline variant: a link rendered mid-sentence (About: LiLiQ-P licence names).
+   Drops the block-level alignment/margin so it flows within the paragraph. */
+.settings__link--inline {
+  align-self: auto;
+  margin-top: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
 /* A setting label paired with an inline "?" help trigger (HelpButton). Keeps
    the label text and the circled "?" on one baseline, mirroring the spacing
    of the notebox-management section title. */
@@ -3681,6 +3690,15 @@ svg.lucide {
 .settings__section-note--warn {
   background: color-mix(in srgb, #e6a700 12%, transparent);
   color: var(--fg-secondary);
+}
+
+/* Plain variant: prose with no tinted card behind it (About section).
+   Drops the background and the side padding so the text aligns flush with
+   the section headers. */
+.settings__section-note--plain {
+  background: none;
+  padding: 0;
+  margin-bottom: 8px;
 }
 
 .settings__detect-btn {
