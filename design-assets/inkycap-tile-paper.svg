@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4EEE1"/>
+      <stop offset="1" stop-color="#DED4BF"/>
+    </linearGradient>
+  </defs>
+  <rect x="96" y="96" width="832" height="832" rx="186" ry="186" fill="url(#paper)"/>
+  <image xlink:href="inkycap-logo.svg" href="inkycap-logo.svg"
+         x="172" y="172" width="680" height="680"/>
+</svg>

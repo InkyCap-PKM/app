@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="24"
+   height="24"
+   viewBox="0 0 24 24"
+   fill="none"
+   stroke="currentColor"
+   stroke-width="2"
+   stroke-linecap="round"
+   stroke-linejoin="round"
+   class="lucide lucide-flag-icon lucide-flag"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="flag.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="true"
+     inkscape:zoom="16.729167"
+     inkscape:cx="5.9178081"
+     inkscape:cy="10.729763"
+     inkscape:window-width="1920"
+     inkscape:window-height="1011"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1">
+    <inkscape:grid
+       id="grid1"
+       units="px"
+       originx="0"
+       originy="0"
+       spacingx="1"
+       spacingy="1"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="true"
+       visible="true" />
+  </sodipodi:namedview>
+  <path
+     d="M 4.0091375,21.811535 4.0684003,4.3738457 C 4.0696331,4.0111014 4.2153227,3.6695211 4.4649675,3.4518727 5.4946313,2.554179 6.7469921,2.0689133 8.0340719,2.0689133 c 2.9742541,0 4.9570891,2.3049324 7.2700671,2.3049324 1.321891,0 2.335451,-0.3073244 3.040679,-0.921973 0.653578,-0.5698106 1.586269,-0.027711 1.586269,0.921973 V 15.898508 c 0,0.362747 -0.146922,0.704325 -0.396567,0.921973 -1.029664,0.897694 -2.282025,1.382959 -3.569105,1.382959 -2.974254,0 -4.957089,-2.304932 -7.9313431,-2.304932 -1.4632164,4.2e-5 -2.8750876,0.626989 -3.9656716,1.760968"
+     id="path1"
+     sodipodi:nodetypes="csssscsssscc"
+     style="stroke-width:2.13783" />
+  <g
+     id="g3"
+     transform="matrix(0.931095,0,0,0.931095,0.82220453,-0.9340366)">
+    <path
+       d="m 12,8 v 4"
+       id="path2" />
+    <path
+       d="m 12,16 h 0.01"
+       id="path3" />
+  </g>
+</svg>
