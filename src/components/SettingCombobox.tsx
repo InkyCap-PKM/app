@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { useI18n } from "../lib/i18n";
+import { SettingLabel } from "./settings/shared";
 
 interface SettingComboboxProps {
   label: string;
@@ -52,12 +53,7 @@ export function SettingCombobox(props: SettingComboboxProps) {
   return (
     <div class="settings__row">
       <div class="settings__row-info">
-        <label class="settings__label">
-          {props.label}
-          <Show when={props.scope === "notebox"}>
-            <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
-          </Show>
-        </label>
+        <SettingLabel label={props.label} scope={props.scope} />
         <span class="settings__description">{props.description}</span>
       </div>
       <div

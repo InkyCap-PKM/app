@@ -7,7 +7,7 @@ import { noteboxInfo } from "../../stores/notebox";
 import { useI18n } from "../../lib/i18n";
 import { noteboxRootDefault } from "../../lib/dialog-defaults";
 import { open } from "@tauri-apps/plugin-dialog";
-import { SettingSelect, CITATION_STYLES } from "./shared";
+import { SettingSelect, SettingLabel, CITATION_STYLES } from "./shared";
 
 export function CitationsSettingsSection() {
   const t = useI18n();
@@ -59,10 +59,7 @@ export function CitationsSettingsSection() {
       <Show when={noteboxSettings.citations.source === "file"}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">
-              {t("settings.citations.bibFile.label")}
-              <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
-            </label>
+            <SettingLabel label={t("settings.citations.bibFile.label")} scope="notebox" />
             <span class="settings__description">
               {t("settings.citations.bibFile.description")}
             </span>
@@ -140,10 +137,7 @@ export function CitationsSettingsSection() {
       <Show when={styleValue() === "custom"}>
         <div class="settings__row">
           <div class="settings__row-info">
-            <label class="settings__label">
-              {t("settings.citations.customCsl.label")}
-              <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
-            </label>
+            <SettingLabel label={t("settings.citations.customCsl.label")} scope="notebox" />
             <span class="settings__description">{t("settings.citations.customCsl.description")}</span>
           </div>
           <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
