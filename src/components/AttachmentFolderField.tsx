@@ -23,6 +23,7 @@ import type { AttachmentMigrationPreview } from "../lib/ipc";
 import { initSettings } from "../stores/settings";
 import { showToast } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
+import { SettingLabel } from "./settings/shared";
 
 const PREVIEW_DEBOUNCE_MS = 300;
 
@@ -140,10 +141,7 @@ const AttachmentFolderField: Component<{ value: string }> = (props) => {
     <>
       <div class="settings__row">
         <div class="settings__row-info">
-          <label class="settings__label">
-            {t("attachmentFolder.label")}
-            <span class="settings__scope-badge">{t("settings.scopeBadge")}</span>
-          </label>
+          <SettingLabel label={t("attachmentFolder.label")} scope="notebox" />
           <span class="settings__description">
             {t("attachmentFolder.description")}
           </span>

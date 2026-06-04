@@ -37,7 +37,6 @@ import {
   MessageCircle,
   Bot,
   HatGlasses,
-  Handshake,
   Box,
   Asterisk,
   DraftingCompass,
@@ -157,6 +156,9 @@ import {
   Boxes,
   Orbit,
   Hammer,
+  PenTool,
+  Hand,
+  HeartHandshake,
 } from "lucide-solid";
 import type { Component as SolidComponent } from "solid-js";
 
@@ -193,6 +195,7 @@ const CURATED_ICONS: IconEntry[] = [
   { name: "folder-pen", component: FolderPen },
   // Writing & notes
   { name: "pencil-ruler", component: PencilRuler },
+  { name: "pen-tool", component: PenTool },
   { name: "section", component: Section },
   { name: "pilcrow", component: Pilcrow },
   { name: "notepad-text", component: NotepadText },
@@ -232,7 +235,7 @@ const CURATED_ICONS: IconEntry[] = [
   { name: "message-circle", component: MessageCircle },
   { name: "bot", component: Bot },
   { name: "hat-glasses", component: HatGlasses },
-  { name: "handshake", component: Handshake },
+  { name: "heart-handshake", component: HeartHandshake },
   // Shapes & math
   { name: "box", component: Box },
   { name: "boxes", component: Boxes },
@@ -329,6 +332,7 @@ const CURATED_ICONS: IconEntry[] = [
   { name: "turtle", component: Turtle },
   // People & identity
   { name: "user", component: User },
+  { name: "hand", component: Hand },
   { name: "person-standing", component: PersonStanding },
   { name: "speech", component: Speech },
   { name: "book-user", component: BookUser },

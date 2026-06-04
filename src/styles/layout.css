@@ -10289,6 +10289,14 @@ svg.lucide {
   border: 1px solid var(--border-primary);
   border-radius: var(--modal-radius);
   overflow: hidden;
+  /* The grid must keep its natural (content) height so the scrolling
+     .app-modal__body overflows and shows a scrollbar. The body is a flex
+     column, and WebKitGTK (the Tauri webview) otherwise shrinks this flex
+     child to fit the body's max-height — its `overflow: hidden` then clips
+     the trailing rows with no scrollbar, leaving them unreachable. Blink
+     doesn't shrink it, so the bug is WebKit-only. flex-shrink: 0 keeps the
+     grid full-height on both engines. */
+  flex-shrink: 0;
 }
 
 .property-map__head,
