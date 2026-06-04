@@ -403,6 +403,16 @@ export interface BehaviourSettings {
   switch_to_new_tab: boolean;
 }
 
+/** In-app update preferences. A check never runs without user action unless
+ *  `check_on_startup` is explicitly enabled (local-first, no silent calls). */
+export interface UpdateSettings {
+  /** Check once shortly after launch. Opt-in; default false. */
+  check_on_startup: boolean;
+  /** Also surface development (beta) releases — the even-numbered release
+   *  channel. Default false: only user-facing (odd) releases are offered. */
+  include_beta: boolean;
+}
+
 export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
 
 export interface FontChoice {
@@ -442,6 +452,7 @@ export interface UserSettings {
   behaviour: BehaviourSettings;
   backup: BackupSettings;
   external_tools: ExternalToolSettings;
+  updates: UpdateSettings;
 }
 
 /** A user-registered external program the external-tool bridge can pipe text

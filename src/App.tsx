@@ -35,6 +35,7 @@ import TypAuditDialog from "./components/TypAuditDialog";
 import { initNotebox, openNotebox, showNoteboxPicker, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initLocale, syncLocaleFromSettings } from "./stores/locale";
+import { maybeCheckOnStartup } from "./stores/updater";
 import {
   initSettings,
   onSettingsChange,
@@ -273,6 +274,13 @@ const App: Component = () => {
 
     // Load creation rules into the reactive store (toolbar reads from it)
     void loadCreationRules();
+
+    // Opt-in update check on launch (main window only — secondary windows like
+    // the documentation viewer pass a `?notebox=`/`?new` param). No network
+    // request unless the user enabled settings.updates.check_on_startup.
+    if (!noteboxParam && params.get("new") === null) {
+      void maybeCheckOnStartup();
+    }
 
     // External drag-drop from the OS file manager.
     //

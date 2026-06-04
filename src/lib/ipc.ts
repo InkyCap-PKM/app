@@ -1013,6 +1013,26 @@ export async function openUrlExternally(url: string): Promise<void> {
   return invoke<void>("open_url_externally", { url });
 }
 
+/**
+ * Read a bundled third-party licence notices file (Settings → Sources). `kind`
+ * is validated against a fixed allowlist on the backend, so it can never be an
+ * arbitrary path.
+ */
+export async function readThirdPartyNotices(kind: "rust" | "js"): Promise<string> {
+  return invoke<string>("read_third_party_notices", { kind });
+}
+
+/** The running app's version string, e.g. `202606.1.1`. */
+export async function appVersion(): Promise<string> {
+  return invoke<string>("app_version");
+}
+
+/** Whether this install self-updates (`"auto"`) or is package-managed
+ *  (`"manual"` — non-AppImage Linux). Drives the Check-for-Updates flow. */
+export async function updateInstallKind(): Promise<"auto" | "manual"> {
+  return invoke<"auto" | "manual">("update_install_kind");
+}
+
 // Creation rules
 
 export async function listCreationRules(): Promise<CreationRule[]> {

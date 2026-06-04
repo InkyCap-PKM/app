@@ -12,7 +12,6 @@
 
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import { X } from "lucide-solid";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useI18n } from "../lib/i18n";
 import { isMac } from "../lib/platform";
 import * as ipc from "../lib/ipc";
@@ -26,6 +25,7 @@ import {
   CATEGORY_LABEL_KEYS,
 } from "../lib/command-registry";
 import { VISUAL_EDITOR_KEYS, MARKUP_REFERENCE } from "../lib/help-content";
+import { openDocumentationWindow } from "../lib/docs-window";
 
 type HelpView = "ui" | "visual" | "markup";
 
@@ -153,18 +153,7 @@ const HelpPanel: Component = () => {
   }
   async function openInkyCapDocs() {
     try {
-      const path = await ipc.openDocumentationNotebox();
-      const existing = await WebviewWindow.getByLabel("note-docs");
-      if (existing) {
-        await existing.setFocus();
-        return;
-      }
-      new WebviewWindow("note-docs", {
-        url: `index.html?notebox=${encodeURIComponent(path)}`,
-        title: t("help.docs.inkycap"),
-        width: 1000,
-        height: 760,
-      });
+      await openDocumentationWindow(t("help.docs.inkycap"));
     } catch (e) {
       toastError(t("help.docs.inkycapFailed"), e);
     }

@@ -1,3 +1,4 @@
+pub mod about;
 pub mod agenda;
 pub mod attachment_migration;
 pub mod backup;

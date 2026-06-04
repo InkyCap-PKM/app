@@ -119,6 +119,23 @@ export function BehaviourSettingsSection() {
         onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
       />
 
+      {/* Software updates */}
+      <div class="settings__section-header">
+        <span class="settings__label">{t("settings.updates.title")}</span>
+      </div>
+      <SettingToggle
+        label={t("settings.updates.checkOnStartup.label")}
+        description={t("settings.updates.checkOnStartup.description")}
+        value={settings.updates.check_on_startup}
+        onChange={(v) => updateSetting("updates", "check_on_startup", v)}
+      />
+      <SettingToggle
+        label={t("settings.updates.includeBeta.label")}
+        description={t("settings.updates.includeBeta.description")}
+        value={settings.updates.include_beta}
+        onChange={(v) => updateSetting("updates", "include_beta", v)}
+      />
+
       {/* Journal Scroll settings */}
       <div class="settings__section-header">
         <span class="settings__label">{t("settings.behaviour.journalScroll")}</span>

@@ -159,6 +159,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             use std::sync::atomic::Ordering;
 
@@ -206,6 +208,9 @@ pub fn run() {
         })
         .manage(state::AppState::new())
         .invoke_handler(tauri::generate_handler![
+            commands::about::read_third_party_notices,
+            commands::about::app_version,
+            commands::about::update_install_kind,
             commands::git::git_setup_collaboration,
             commands::git::git_reconnect_collaboration,
             commands::git::git_status,

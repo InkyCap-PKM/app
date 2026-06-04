@@ -17,6 +17,7 @@ import { ExportSettingsSection } from "./settings/ExportSettingsSection";
 import { BackupSettingsSection } from "./settings/BackupSettingsSection";
 import { BehaviourSettingsSection } from "./settings/BehaviourSettingsSection";
 import { ExtensionsSettingsSection } from "./settings/ExtensionsSettingsSection";
+import { SourcesSettingsSection } from "./settings/SourcesSettingsSection";
 
 interface SettingsPanelProps {
   visible: boolean;
@@ -24,7 +25,7 @@ interface SettingsPanelProps {
   initialTab?: string;
 }
 
-type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour" | "extensions";
+type SettingsTab = "overview" | "editor" | "language" | "appearance" | "files" | "citations" | "export" | "creation-rules" | "behaviour" | "extensions" | "sources";
 
 const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "overview", labelKey: "settings.tab.overview" },
@@ -39,6 +40,9 @@ const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "creation-rules", labelKey: "settings.tab.creationRules" },
   { id: "behaviour", labelKey: "settings.tab.behaviour" },
   { id: "extensions", labelKey: "settings.tab.extensions" },
+  // Acknowledgements for the open-source components InkyCap is built on — kept
+  // last so it reads as a closing "thank you" rather than a configuration tab.
+  { id: "sources", labelKey: "settings.tab.sources" },
 ];
 
 /** Which settings groups a tab's "Reset to defaults" button resets.
@@ -62,10 +66,12 @@ const TAB_SETTING_GROUPS: Record<SettingsTab, TabSettingGroups> = {
   export: { user: ["export", "backup"], notebox: [] },
   "creation-rules": { user: [], notebox: [] },
   behaviour: {
-    user: ["startup", "behaviour"],
+    user: ["startup", "behaviour", "updates"],
     notebox: ["startup", "journal_scroll"],
   },
   extensions: { user: ["external_tools"], notebox: [] },
+  // Sources is informational only — nothing to reset.
+  sources: { user: [], notebox: [] },
 };
 
 function tabHasResettableGroups(tab: SettingsTab): boolean {
@@ -178,6 +184,9 @@ const SettingsPanel: Component<SettingsPanelProps> = (props) => {
                 </Show>
                 <Show when={activeTab() === "extensions"}>
                   <ExtensionsSettingsSection />
+                </Show>
+                <Show when={activeTab() === "sources"}>
+                  <SourcesSettingsSection />
                 </Show>
               </div>
 
