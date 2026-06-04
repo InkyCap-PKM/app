@@ -34,7 +34,8 @@ import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
-import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
+import { pathEquals, pathStartsWith } from "../lib/paths";
+import { isLinux } from "../lib/platform";
 import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
@@ -102,6 +103,7 @@ function isAppEditable(name: string): boolean {
 function treeItemId(path: string): string {
   return `tree-item-${encodeURIComponent(path)}`;
 }
+
 
 function visibleFileTree(nodes: FileTreeNode[]): FileTreeNode[] {
   return nodes
@@ -203,8 +205,63 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [showNewMenu, setShowNewMenu] = createSignal(false);
 
   // File tree drag-and-drop: path of the directory (or "" for notebox
-  // root) currently hovered as a move target, so the row can highlight.
+  // root) currently hovered as a move target, so the destination folder
+  // can highlight. `draggingPath` is the row being dragged, so it can dim
+  // in place.
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
+  const [draggingPath, setDraggingPath] = createSignal<string | null>(null);
+
+  // Drag ghost: a real DOM chip that follows the cursor. We don't use the
+  // native `setDragImage` — WebKitGTK rasterizes it at CSS (1×) resolution and
+  // the compositor upscales it by the device-pixel-ratio, so on a HiDPI screen
+  // it's both blurry and oversized. A live element renders at native
+  // resolution (crisp) and is fully styleable; the source `dragstart`
+  // suppresses the native image and hands us the label + start point.
+  let dragGhostEl: HTMLDivElement | null = null;
+  const onGhostDragOver = (e: DragEvent) => {
+    if (dragGhostEl) {
+      dragGhostEl.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 10}px)`;
+    }
+  };
+  const startDragGhost = (label: string, x: number, y: number) => {
+    removeDragGhost();
+    const el = document.createElement("div");
+    el.className = "tree-drag-ghost";
+    el.textContent = label;
+    el.style.transform = `translate(${x + 12}px, ${y + 10}px)`;
+    document.body.appendChild(el);
+    dragGhostEl = el;
+    // Capture phase: rows call stopPropagation in their own dragover, so a
+    // bubble-phase document listener would never fire while over the tree.
+    document.addEventListener("dragover", onGhostDragOver, true);
+  };
+  const removeDragGhost = () => {
+    document.removeEventListener("dragover", onGhostDragOver, true);
+    dragGhostEl?.remove();
+    dragGhostEl = null;
+  };
+
+  // Tear down all drag state (dim, target highlight, auto-scroll, ghost) when
+  // a drag ends. Listen for BOTH `drop` and `dragend`, in the capture phase:
+  //  - On a successful move, `moveItems` refreshes the tree and unmounts the
+  //    source row, so its `dragend` may never fire — but `drop` fires first.
+  //  - `dragend` covers cancels (Escape, release outside any target), where
+  //    there is no `drop`.
+  //  - Capture phase, because rows call stopPropagation in their own drag
+  //    handlers, which would hide a bubble-phase document listener.
+  const endDrag = () => {
+    setDraggingPath(null);
+    setDragOverDir(null);
+    stopAutoScroll();
+    removeDragGhost();
+  };
+  document.addEventListener("drop", endDrag, true);
+  document.addEventListener("dragend", endDrag, true);
+  onCleanup(() => {
+    document.removeEventListener("drop", endDrag, true);
+    document.removeEventListener("dragend", endDrag, true);
+    removeDragGhost();
+  });
 
   // Collections: sort mode + inline search filter. Sort reuses the File
   // Tree options (name / modified / created) per product spec — the
@@ -323,34 +380,220 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   const [focusedTreePath, setFocusedTreePath] = createSignal<string | null>(null);
 
   /// Visible rows in display order (depth-first, honouring expanded dirs),
-  /// each paired with its parent path so Left-arrow can climb to the parent.
-  function flattenVisibleTree(): { node: FileTreeNode; parentPath: string | null }[] {
-    const out: { node: FileTreeNode; parentPath: string | null }[] = [];
-    const walk = (nodes: FileTreeNode[], parentPath: string | null) => {
+  /// each carrying its parent path (so Left-arrow can climb to the parent)
+  /// and its depth (for indent + windowed render). This flat list is the
+  /// single source of truth for both keyboard navigation and the virtualized
+  /// render — a recursive component tree on a multi-thousand-note notebox
+  /// would mount thousands of live rows; the windowed render below mounts
+  /// only the visible slice.
+  type FlatRow = { node: FileTreeNode; parentPath: string | null; depth: number };
+  const flatRows = createMemo<FlatRow[]>(() => {
+    const out: FlatRow[] = [];
+    const walk = (nodes: FileTreeNode[], parentPath: string | null, depth: number) => {
       for (const node of nodes) {
-        out.push({ node, parentPath });
+        out.push({ node, parentPath, depth });
         if (node.is_dir && expandedDirs().has(node.path) && node.children) {
-          walk(node.children, node.path);
+          walk(node.children, node.path, depth + 1);
         }
       }
     };
-    walk(filteredFileTree(), null);
+    walk(filteredFileTree(), null, 0);
     return out;
+  });
+
+  // --- File-tree virtualization (fixed-height windowing) ---
+  // Rows are uniform-height `.sidebar-item`s, so a flat windowed list keeps
+  // the DOM bounded regardless of notebox size. The scroll container is the
+  // shared `.left-sidebar__content` (the Files header sits above the tree),
+  // so the window is derived from how far the tree has scrolled past that
+  // container's top edge — measured by rects, which needs no CSS change and
+  // doesn't disturb the other sidebar modes that share the same scroller.
+  const TREE_OVERSCAN = 8; // rows rendered beyond the viewport on each side
+  const [rowHeight, setRowHeight] = createSignal(28); // measured from a live row
+  const [treeScrolledPast, setTreeScrolledPast] = createSignal(0); // px of tree above the viewport top
+  const [treeViewportH, setTreeViewportH] = createSignal(0);
+
+  let treeRootEl: HTMLDivElement | undefined;
+  let treeScrollEl: HTMLElement | null = null;
+  let detachTreeScroll: (() => void) | undefined;
+
+  const measureRowHeight = () => {
+    const row = treeRootEl?.querySelector<HTMLElement>(".sidebar-item");
+    const h = row?.offsetHeight ?? 0;
+    if (h > 0 && h !== rowHeight()) setRowHeight(h);
+  };
+
+  const recomputeTreeWindow = () => {
+    if (!treeRootEl || !treeScrollEl) return;
+    const cr = treeScrollEl.getBoundingClientRect();
+    const tr = treeRootEl.getBoundingClientRect();
+    // How far the top of the tree content has scrolled above the scroll
+    // container's top edge (0 while the Files header is still in view).
+    setTreeScrolledPast(Math.max(0, cr.top - tr.top));
+    setTreeViewportH(treeScrollEl.clientHeight);
+  };
+
+  // --- Drag auto-scroll ---
+  // WebKitGTK (Linux) doesn't auto-scroll an overflow container when a drag
+  // nears its edge, so drive it manually: while a tree-move drag hovers within
+  // `DRAG_EDGE` px of the scroller's top/bottom, step the scroll each frame.
+  // The dragover listener is attached in the CAPTURE phase on the scroller so
+  // it still fires when a row's own dragover calls stopPropagation.
+  //
+  // WKWebView (macOS) and WebView2 (Windows) auto-scroll natively, so the
+  // manual loop is gated to Linux — running both would double the edge speed.
+  // (The windowing still tracks native scrolling fine: its own `scroll`
+  // listener recomputes the visible slice regardless of what drives the scroll.)
+  const MANUAL_DRAG_AUTOSCROLL = isLinux();
+  const DRAG_EDGE = 40; // px from an edge that triggers auto-scroll
+  const DRAG_SCROLL_SPEED = 14; // px per frame at the very edge
+  let autoScrollVel = 0;
+  let autoScrollRAF = 0;
+
+  const stepAutoScroll = () => {
+    if (autoScrollVel !== 0 && treeScrollEl) {
+      treeScrollEl.scrollTop += autoScrollVel;
+      recomputeTreeWindow();
+      autoScrollRAF = requestAnimationFrame(stepAutoScroll);
+    } else {
+      autoScrollRAF = 0;
+    }
+  };
+
+  const stopAutoScroll = () => {
+    autoScrollVel = 0;
+    if (autoScrollRAF) {
+      cancelAnimationFrame(autoScrollRAF);
+      autoScrollRAF = 0;
+    }
+  };
+
+  const onTreeDragOverCapture = (e: DragEvent) => {
+    if (!treeScrollEl || !e.dataTransfer?.types.includes(TREE_MOVE_MIME)) {
+      stopAutoScroll();
+      return;
+    }
+    const r = treeScrollEl.getBoundingClientRect();
+    const topDist = e.clientY - r.top;
+    const botDist = r.bottom - e.clientY;
+    if (topDist < DRAG_EDGE) {
+      // Ramp speed up as the pointer gets closer to the edge.
+      autoScrollVel = -DRAG_SCROLL_SPEED * (1 - Math.max(0, topDist) / DRAG_EDGE);
+    } else if (botDist < DRAG_EDGE) {
+      autoScrollVel = DRAG_SCROLL_SPEED * (1 - Math.max(0, botDist) / DRAG_EDGE);
+    } else {
+      autoScrollVel = 0;
+    }
+    if (autoScrollVel !== 0 && autoScrollRAF === 0) {
+      autoScrollRAF = requestAnimationFrame(stepAutoScroll);
+    }
+  };
+
+  // Attached as the tree-root `ref`. Wires scroll/resize tracking to the
+  // shared content scroller and takes the first row-height measurement.
+  // Re-runs on every filetree-mode mount, so it tears down any prior wiring
+  // first; the component-level onCleanup covers final unmount.
+  //
+  // Solid fires `ref` before the element is connected to the document, so
+  // `closest()` can't see the scroll container yet — resolve it (and attach
+  // listeners) after mount via rAF, otherwise the window stays frozen at the
+  // first screenful and the tree never scrolls.
+  const initTreeViewport = (el: HTMLDivElement) => {
+    detachTreeScroll?.();
+    treeRootEl = el;
+    requestAnimationFrame(() => {
+      const scrollEl = el.closest<HTMLElement>(".left-sidebar__content");
+      if (!scrollEl) return;
+      treeScrollEl = scrollEl;
+      const onScroll = () => recomputeTreeWindow();
+      scrollEl.addEventListener("scroll", onScroll, { passive: true });
+      // Only Linux needs the manual edge auto-scroll (see MANUAL_DRAG_AUTOSCROLL).
+      if (MANUAL_DRAG_AUTOSCROLL) {
+        scrollEl.addEventListener("dragover", onTreeDragOverCapture, true);
+      }
+      const ro = new ResizeObserver(() => {
+        recomputeTreeWindow();
+        measureRowHeight();
+      });
+      ro.observe(scrollEl);
+      measureRowHeight();
+      recomputeTreeWindow();
+      detachTreeScroll = () => {
+        scrollEl.removeEventListener("scroll", onScroll);
+        scrollEl.removeEventListener("dragover", onTreeDragOverCapture, true);
+        stopAutoScroll();
+        ro.disconnect();
+      };
+    });
+  };
+  onCleanup(() => detachTreeScroll?.());
+
+  // Re-measure when the UI font size changes (row height tracks it).
+  createEffect(() => {
+    settings.editor.font_size;
+    if (treeRootEl) requestAnimationFrame(measureRowHeight);
+  });
+
+  const treeWindow = createMemo(() => {
+    const rh = rowHeight() || 28;
+    const total = flatRows().length;
+    const start = Math.max(0, Math.floor(treeScrolledPast() / rh) - TREE_OVERSCAN);
+    const count = Math.ceil((treeViewportH() || 0) / rh) + TREE_OVERSCAN * 2;
+    return { start, end: Math.min(total, start + count) };
+  });
+  const windowedRows = createMemo(() => {
+    const { start, end } = treeWindow();
+    return flatRows().slice(start, end);
+  });
+
+  // Scroll the row at `idx` (in `flatRows`) minimally into view. Index-based
+  // so it works even when the target row isn't currently mounted.
+  function scrollTreeRowIntoView(idx: number) {
+    if (!treeScrollEl || !treeRootEl || idx < 0) return;
+    const cr = treeScrollEl.getBoundingClientRect();
+    const tr = treeRootEl.getBoundingClientRect();
+    const rh = rowHeight() || 28;
+    // Top of the tree content in the scroller's scroll coordinates.
+    const treeTop = treeScrollEl.scrollTop + (tr.top - cr.top);
+    const rowTop = treeTop + idx * rh;
+    const rowBottom = rowTop + rh;
+    const viewTop = treeScrollEl.scrollTop;
+    const viewBottom = viewTop + treeScrollEl.clientHeight;
+    if (rowTop < viewTop) treeScrollEl.scrollTop = rowTop;
+    else if (rowBottom > viewBottom) treeScrollEl.scrollTop = rowBottom - treeScrollEl.clientHeight;
+  }
+
+  /// Dir paths in the tree that are ancestors of `path` (for reveal: a
+  /// collapsed ancestor isn't mounted, so expansion can't be driven from the
+  /// row component — it's computed here against the full tree instead).
+  function ancestorDirsOf(path: string): string[] {
+    const acc: string[] = [];
+    const walk = (nodes: FileTreeNode[]) => {
+      for (const n of nodes) {
+        if (n.is_dir && !pathEquals(path, n.path) && pathStartsWith(path, n.path)) {
+          acc.push(n.path);
+          if (n.children) walk(n.children);
+        }
+      }
+    };
+    walk(filteredFileTree());
+    return acc;
   }
 
   function focusTreeRow(path: string | null) {
     setFocusedTreePath(path);
     if (path) {
-      requestAnimationFrame(() =>
-        document.getElementById(treeItemId(path))?.scrollIntoView({ block: "nearest" }),
-      );
+      requestAnimationFrame(() => {
+        const idx = flatRows().findIndex((r) => pathEquals(r.node.path, path));
+        scrollTreeRowIntoView(idx);
+      });
     }
   }
 
   function onTreeKeyDown(e: KeyboardEvent) {
     // A row's inline rename input lives inside the tree; let it own its keys.
     if ((e.target as HTMLElement).tagName === "INPUT") return;
-    const rows = flattenVisibleTree();
+    const rows = flatRows();
     if (rows.length === 0) return;
 
     // Resolve the current cursor; fall back to the open file (if visible),
@@ -494,6 +737,37 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   };
   document.addEventListener("inkycap:reveal-in-tree", onRevealInTree);
   onCleanup(() => document.removeEventListener("inkycap:reveal-in-tree", onRevealInTree));
+
+  // Reveal a path: expand its (possibly collapsed, thus unmounted) ancestor
+  // folders, then scroll its row into view by index. Driven here rather than
+  // from the row component because in the windowed list an off-screen target
+  // — and any collapsed ancestor — has no mounted component to react.
+  createEffect(() => {
+    const rp = revealPath();
+    if (!rp) return;
+    const ancestors = ancestorDirsOf(rp);
+    if (ancestors.length > 0) {
+      setExpandedDirs((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const p of ancestors) if (!next.has(p)) { next.add(p); changed = true; }
+        return changed ? next : prev;
+      });
+    }
+    // After expansion has flowed into `flatRows`, locate and scroll to the
+    // row. When reveal also switched the sidebar into filetree mode, the
+    // tree-root (and thus `treeScrollEl`) may not be wired yet this frame —
+    // retry a few frames until the scroller is ready.
+    const scrollWhenReady = (tries: number) => {
+      if (!treeScrollEl && tries < 6) {
+        requestAnimationFrame(() => scrollWhenReady(tries + 1));
+        return;
+      }
+      const idx = flatRows().findIndex((r) => pathEquals(r.node.path, rp));
+      if (idx >= 0) scrollTreeRowIntoView(idx);
+    };
+    requestAnimationFrame(() => scrollWhenReady(0));
+  });
 
   // Other panels (e.g. SearchPanel) bookmark items asynchronously and
   // dispatch this event to make the Bookmarks pane re-query.
@@ -1419,7 +1693,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             </div>
           </div>
           <Show
-            when={!fileTree.loading}
+            // Only show the loading hint on the very first load. Solid keeps
+            // the resolved tree available during a refetch (e.g. after a move),
+            // so gating on "have we any data yet" keeps the tree on screen and
+            // avoids a jarring flash to the loading state after each drop.
+            when={fileTree() !== undefined}
             fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
           >
             {/* Root drop zone: a drag released outside any folder row
@@ -1427,6 +1705,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 stop propagation on their own drag events, so this only
                 fires for the empty space / top-level area. */}
             <div
+              ref={initTreeViewport}
               classList={{
                 "left-sidebar__tree-root": true,
                 "left-sidebar__tree-root--drop-target":
@@ -1444,7 +1723,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               onKeyDown={onTreeKeyDown}
               onFocus={() => {
                 if (focusedTreePath()) return;
-                const rows = flattenVisibleTree();
+                const rows = flatRows();
                 if (rows.length === 0) return;
                 const activePath = getActiveTab()?.path ?? null;
                 const start = activePath && rows.some((r) => pathEquals(r.node.path, activePath))
@@ -1473,31 +1752,55 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 }
               }}
             >
-              <For each={filteredFileTree()}>
-                {(node) => (
-                  <TreeNode
-                    node={node}
-                    focusedPath={focusedTreePath}
-                    onNodeClick={handleNodeClick}
-                    onContext={handleFileContext}
-                    renamingPath={fileRenamingPath()}
-                    renameValue={fileRenameValue()}
-                    onRenameInput={setFileRenameValue}
-                    onRenameCommit={commitFileRename}
-                    onRenameCancel={() => setFileRenamingPath(null)}
-                    activePath={getActiveTab()?.path ?? null}
-                    revealPath={revealPath()}
-                    noteboxRoot={noteboxInfo()?.path ?? ""}
-                    expandedDirs={expandedDirs}
-                    onToggleDir={toggleDir}
-                    treeMoveMime={TREE_MOVE_MIME}
-                    dragItems={dragItemsFor}
-                    dragOverDir={dragOverDir}
-                    setDragOverDir={setDragOverDir}
-                    onMoveItems={moveItems}
-                  />
-                )}
-              </For>
+              {/* Windowed render: a full-height spacer preserves the scrollbar
+                  while only the visible row slice is mounted, translated to its
+                  position. Descendants are already separate flat rows, so each
+                  TreeNode renders just itself (indented by depth) — no recursion. */}
+              <div
+                style={{
+                  height: `${flatRows().length * (rowHeight() || 28)}px`,
+                  position: "relative",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${treeWindow().start * (rowHeight() || 28)}px)`,
+                  }}
+                >
+                  <For each={windowedRows()}>
+                    {(row) => (
+                      <TreeNode
+                        node={row.node}
+                        depth={row.depth}
+                        focusedPath={focusedTreePath}
+                        onNodeClick={handleNodeClick}
+                        onContext={handleFileContext}
+                        renamingPath={fileRenamingPath()}
+                        renameValue={fileRenameValue()}
+                        onRenameInput={setFileRenameValue}
+                        onRenameCommit={commitFileRename}
+                        onRenameCancel={() => setFileRenamingPath(null)}
+                        activePath={getActiveTab()?.path ?? null}
+                        noteboxRoot={noteboxInfo()?.path ?? ""}
+                        expandedDirs={expandedDirs}
+                        onToggleDir={toggleDir}
+                        treeMoveMime={TREE_MOVE_MIME}
+                        dragItems={dragItemsFor}
+                        dragOverDir={dragOverDir}
+                        setDragOverDir={setDragOverDir}
+                        draggingPath={draggingPath}
+                        setDraggingPath={setDraggingPath}
+                        onStartDragGhost={startDragGhost}
+                        onMoveItems={moveItems}
+                      />
+                    )}
+                  </For>
+                </div>
+              </div>
             </div>
           </Show>
         </Show>
@@ -2030,7 +2333,6 @@ const TreeNode: Component<{
   onRenameCommit: () => void;
   onRenameCancel: () => void;
   activePath: string | null;
-  revealPath: string | null;
   noteboxRoot: string;
   /// Hoisted expansion state so the Expand All / Collapse All toolbar
   /// button can flip every folder at once. Each TreeNode reads its own
@@ -2047,6 +2349,12 @@ const TreeNode: Component<{
   dragItems: (node: FileTreeNode) => { path: string; is_dir: boolean }[];
   dragOverDir: () => string | null;
   setDragOverDir: (path: string | null) => void;
+  /// Path of the row currently being dragged (dims it in place).
+  draggingPath: () => string | null;
+  setDraggingPath: (path: string | null) => void;
+  /// Spawn the cursor-following drag-ghost chip (the native drag image is
+  /// suppressed because WebKitGTK renders it blurry/oversized on HiDPI).
+  onStartDragGhost: (label: string, clientX: number, clientY: number) => void;
   onMoveItems: (
     items: { path: string; is_dir: boolean }[],
     destDir: string,
@@ -2068,32 +2376,9 @@ const TreeNode: Component<{
     return slash >= 0 ? props.node.path.slice(0, slash) : props.noteboxRoot;
   };
   const isDropTarget = () => props.dragOverDir() === props.node.path;
-
-  // Auto-expand directory if it's an ancestor of the reveal target.
-  // Path comparisons go through the canonical-shape helpers so a stray
-  // separator difference from any one path source (file tree, tab path,
-  // search result) doesn't strand "Reveal in file tree" on Windows.
-  const isAncestorOfReveal = () => {
-    const rp = props.revealPath;
-    return props.node.is_dir && rp != null && pathStartsWith(rp, props.node.path);
-  };
-
-  // When revealPath changes and this dir is an ancestor, expand it.
-  // Toggles through the hoisted setter so the parent's set stays in sync.
-  createEffect(() => {
-    if (isAncestorOfReveal() && !expanded()) {
-      props.onToggleDir(normalizePath(props.node.path));
-    }
-  });
-
-  let itemRef: HTMLDivElement | undefined;
-
-  // Scroll into view when this node is the reveal target
-  createEffect(() => {
-    if (pathEquals(props.revealPath, props.node.path) && itemRef) {
-      itemRef.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  });
+  // Reveal (auto-expand ancestors + scroll into view) is driven from the
+  // parent against the flat list, since a collapsed/off-screen target has no
+  // mounted row to react here.
 
   return (
     <div>
@@ -2101,7 +2386,6 @@ const TreeNode: Component<{
         when={isRenaming()}
         fallback={
           <div
-            ref={itemRef}
             id={treeItemId(props.node.path)}
             role="treeitem"
             aria-selected={isActive() || undefined}
@@ -2114,6 +2398,7 @@ const TreeNode: Component<{
               "sidebar-item--active": isActive(),
               "sidebar-item--kbd-focus": props.focusedPath() === props.node.path,
               "sidebar-item--drop-target": isDropTarget(),
+              "sidebar-item--dragging": props.draggingPath() === props.node.path,
             }}
             style={{ "padding-left": `${depth * 16 + 8}px` }}
             draggable={true}
@@ -2135,6 +2420,21 @@ const TreeNode: Component<{
               } else {
                 e.dataTransfer!.effectAllowed = "move";
               }
+              // Suppress WebKitGTK's native drag image (a blurry, oversized
+              // snapshot of the row) and drive a crisp DOM chip that follows
+              // the cursor instead — see `startDragGhost`. The suppressor must
+              // be a 1×1 transparent element that is ATTACHED to the document:
+              // a detached element aborts the drag in WebKitGTK. It's removed
+              // on the next tick, once the browser has taken the image.
+              const blank = document.createElement("canvas");
+              blank.width = blank.height = 1;
+              blank.style.cssText = "position:fixed;top:-10px;left:-10px;opacity:0";
+              document.body.appendChild(blank);
+              e.dataTransfer!.setDragImage(blank, 0, 0);
+              setTimeout(() => blank.remove(), 0);
+              props.onStartDragGhost(props.node.name, e.clientX, e.clientY);
+              // Dim the source row in place.
+              props.setDraggingPath(props.node.path);
             }}
             onDragOver={(e) => {
               if (!e.dataTransfer?.types.includes(props.treeMoveMime)) return;
@@ -2144,12 +2444,15 @@ const TreeNode: Component<{
               e.preventDefault();
               e.stopPropagation();
               e.dataTransfer.dropEffect = "move";
-              props.setDragOverDir(props.node.path);
+              // Highlight the folder the item will actually land in — the
+              // folder itself for a directory row, the containing folder for
+              // a file row — so the indicator shows the real destination.
+              props.setDragOverDir(dropDest());
             }}
             onDragLeave={(e) => {
               if (
                 e.currentTarget === e.target &&
-                props.dragOverDir() === props.node.path
+                props.dragOverDir() === dropDest()
               ) {
                 props.setDragOverDir(null);
               }
@@ -2157,6 +2460,7 @@ const TreeNode: Component<{
             onDrop={(e) => {
               const raw = e.dataTransfer?.getData(props.treeMoveMime);
               props.setDragOverDir(null);
+              props.setDraggingPath(null);
               if (!raw) return;
               e.preventDefault();
               e.stopPropagation();
@@ -2214,34 +2518,6 @@ const TreeNode: Component<{
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
         </div>
-      </Show>
-      <Show when={expanded() && props.node.children}>
-        <For each={props.node.children}>
-          {(child) => (
-            <TreeNode
-              node={child}
-              focusedPath={props.focusedPath}
-              onNodeClick={props.onNodeClick}
-              onContext={props.onContext}
-              renamingPath={props.renamingPath}
-              renameValue={props.renameValue}
-              onRenameInput={props.onRenameInput}
-              onRenameCommit={props.onRenameCommit}
-              onRenameCancel={props.onRenameCancel}
-              activePath={props.activePath}
-              revealPath={props.revealPath}
-              noteboxRoot={props.noteboxRoot}
-              expandedDirs={props.expandedDirs}
-              onToggleDir={props.onToggleDir}
-              treeMoveMime={props.treeMoveMime}
-              dragItems={props.dragItems}
-              dragOverDir={props.dragOverDir}
-              setDragOverDir={props.setDragOverDir}
-              onMoveItems={props.onMoveItems}
-              depth={depth + 1}
-            />
-          )}
-        </For>
       </Show>
     </div>
   );

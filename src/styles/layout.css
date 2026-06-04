@@ -715,7 +715,38 @@ body.is-resizing-pane .pane-resizer {
    cursor during a move drag. */
 .sidebar-item--drop-target {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* The row being dragged dims in place so it's clear what's in flight;
+   the drag-image ghost the cursor carries stays full opacity. */
+.sidebar-item--dragging {
+  opacity: 0.45;
+}
+
+/* Cursor-following drag-ghost chip for a file-tree move. It's a live DOM
+   element (not a native setDragImage snapshot, which WebKitGTK rasterizes
+   blurry/oversized on HiDPI), positioned via a JS-set transform at top:0;
+   left:0. `pointer-events: none` keeps it from intercepting drop targets. */
+.tree-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-toast);
+  padding: 4px 10px;
+  max-width: 280px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-md);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--fg-primary);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--popup-shadow);
+  pointer-events: none;
 }
 
 /* File tree root drop zone — wraps the tree so a drop released in the

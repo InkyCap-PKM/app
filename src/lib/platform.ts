@@ -24,6 +24,19 @@ export function isWindows(): boolean {
 }
 
 /**
+ * True if the user is on Linux — i.e. the Tauri webview is WebKitGTK.
+ *
+ * Defined as "neither macOS nor Windows" so any other Unix the WebKitGTK
+ * webview runs on (BSD, etc.) is treated the same way. Used to opt into
+ * behaviour WebKitGTK lacks that WKWebView (macOS) and WebView2 (Windows)
+ * provide natively — currently drag auto-scroll of the file tree.
+ */
+export function isLinux(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return !isMac() && !isWindows();
+}
+
+/**
  * Platform-correct primary modifier label for keyboard shortcut hints.
  *
  * Returns `⌘` on macOS, `Ctrl` elsewhere. Pair with explicit `+` / space
