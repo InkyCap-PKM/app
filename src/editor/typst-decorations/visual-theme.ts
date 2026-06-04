@@ -308,6 +308,55 @@ export const visualTheme = EditorView.theme({
     padding: "2px 6px",
     textAlign: "center" as any,
   },
+  // Inline-block wrapper around the preview <img> so the resize handle can be
+  // anchored to the image's own box (not the full-width block) and the parent's
+  // text-align still controls left/centre/right placement.
+  ".cm-typst-image-holder": {
+    position: "relative",
+    display: "inline-block",
+    maxWidth: "100%",
+    lineHeight: "0",
+  },
+  // Corner drag handle — hidden until the image is hovered or being resized.
+  // nwse cursor signals a proportional (aspect-locked) corner drag.
+  ".cm-typst-image-resize-handle": {
+    position: "absolute",
+    right: "0",
+    bottom: "0",
+    width: "14px",
+    height: "14px",
+    boxSizing: "border-box",
+    cursor: "nwse-resize",
+    background: "var(--accent)",
+    border: "2px solid var(--surface-0)",
+    borderRadius: "var(--radius-sm)",
+    opacity: "0",
+    transition: "opacity var(--dur-fast) var(--ease-out)",
+    touchAction: "none",
+    zIndex: "1",
+  },
+  ".cm-typst-image-holder:hover .cm-typst-image-resize-handle, .cm-typst-image-holder.is-resizing .cm-typst-image-resize-handle": {
+    opacity: "1",
+  },
+  // Live width readout shown only while dragging.
+  ".cm-typst-image-size-badge": {
+    position: "absolute",
+    top: "var(--space-1)",
+    right: "var(--space-1)",
+    padding: "1px 6px",
+    fontFamily: "var(--editor-font-mono, monospace)",
+    fontSize: "0.72em",
+    lineHeight: "1.4",
+    color: "var(--fg-primary)",
+    background: "var(--popup-bg)",
+    border: "1px solid var(--popup-border-color)",
+    borderRadius: "var(--radius-sm)",
+    opacity: "0",
+    pointerEvents: "none",
+  },
+  ".cm-typst-image-holder.is-resizing .cm-typst-image-size-badge": {
+    opacity: "1",
+  },
   ".cm-typst-media-block": {
     display: "block",
     margin: "4px 0",

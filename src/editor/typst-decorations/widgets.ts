@@ -24,6 +24,122 @@ function typstLengthToCss(value: string): string {
   return v;
 }
 
+/** Resolve the document offset of the `#image(...)` call backing an image
+ *  widget anchored at `pos`. A bare image is anchored at its own `#image`;
+ *  an alignment-wrapped image (`#align(kw)[#image(...)]`) is anchored at the
+ *  `#align`, so we step inward to the `#image` whose `width:` we want to edit.
+ *  Mirrors the inner-image resolution in `imageOptions` so drag-resize and the
+ *  pill's Width field write to the same argument. */
+function resolveImageCallFrom(view: EditorView, pos: number): number {
+  const liveTo = findCallEnd(view, pos);
+  const src = view.state.doc.sliceString(pos, liveTo);
+  if (/^\s*#align\b/.test(src)) {
+    const idx = src.indexOf("#image");
+    if (idx >= 0) return pos + idx;
+  }
+  return pos;
+}
+
+// Round a fraction of the text column to a whole-percent width, clamped to a
+// sane authoring range. Typst's `image(width: …)` accepts a ratio, and a
+// percentage is the resolution-independent, WYSIWYM-friendly unit — it scales
+// to the page's text column the same way the editor preview scales to its own
+// content width (CLAUDE.md: the visual editor is an authoring tool, not a
+// pixel-faithful renderer).
+function fractionToPercent(width: number, reference: number): number {
+  if (reference <= 0) return 100;
+  return Math.max(5, Math.min(100, Math.round((width / reference) * 100)));
+}
+
+/** Attach a hover-revealed corner handle that resizes an image by dragging.
+ *
+ *  Width-only by design: Typst scales the unconstrained axis proportionally
+ *  and the widgets already set `height: auto` when only width is present, so a
+ *  single handle gives aspect-locked resizing for free. During the drag we
+ *  update the `<img>` width in pixels for smooth feedback and pin the
+ *  alignment container to the left so the handle tracks the cursor regardless
+ *  of centre/right alignment; on release we convert to a percentage and write
+ *  it through `applyCallTransform` + `upsertNamedArg` — the same source-mutation
+ *  path the pill's Width field uses, so the source ↔ visual round-trip
+ *  invariant (R11) holds. Nothing is dispatched mid-drag (per the CM6 widget
+ *  recipe: sync the source once when the gesture ends, never per input event). */
+function attachImageResize(
+  view: EditorView,
+  holder: HTMLElement,
+  img: HTMLImageElement,
+  callFromAt: () => number,
+): void {
+  const handle = document.createElement("div");
+  handle.className = "cm-typst-image-resize-handle";
+  handle.title = t("widget.image.resizeHint");
+
+  const badge = document.createElement("div");
+  badge.className = "cm-typst-image-size-badge";
+
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+  let refW = 0;
+  let pct = 100;
+  let alignEl: HTMLElement | null = null;
+  let savedAlign = "";
+
+  const onMove = (e: PointerEvent) => {
+    if (!dragging) return;
+    const min = Math.max(24, refW * 0.05);
+    const w = Math.max(min, Math.min(startW + (e.clientX - startX), refW));
+    pct = fractionToPercent(w, refW);
+    img.style.width = `${w}px`;
+    img.style.height = "auto";
+    img.style.maxWidth = "none";
+    img.style.maxHeight = "none";
+    badge.textContent = `${pct}%`;
+  };
+
+  const onUp = (e: PointerEvent) => {
+    if (!dragging) return;
+    dragging = false;
+    handle.releasePointerCapture?.(e.pointerId);
+    handle.removeEventListener("pointermove", onMove);
+    handle.removeEventListener("pointerup", onUp);
+    holder.classList.remove("is-resizing");
+    if (alignEl) alignEl.style.textAlign = savedAlign;
+    applyCallTransform(view, callFromAt(), (s) => upsertNamedArg(s, "width", `${pct}%`));
+    view.focus();
+  };
+
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = img.getBoundingClientRect();
+    startX = e.clientX;
+    startW = rect.width;
+    // Reference width = the content column the image lays out within. The
+    // block/inline image container spans that column, so its client width is
+    // the right base for the percentage.
+    refW = holder.parentElement?.clientWidth || rect.width;
+    // Pin the alignment container left so the dragged right edge tracks the
+    // cursor 1:1 instead of growing symmetrically away from a centre anchor.
+    alignEl = holder.parentElement;
+    if (alignEl) { savedAlign = alignEl.style.textAlign; alignEl.style.textAlign = "left"; }
+    pct = fractionToPercent(startW, refW);
+    badge.textContent = `${pct}%`;
+    dragging = true;
+    holder.classList.add("is-resizing");
+    handle.setPointerCapture?.(e.pointerId);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  });
+
+  // Defense in depth: keep the raw mouse-family events that pair with the
+  // pointer drag from reaching CodeMirror's selection handling.
+  handle.addEventListener("mousedown", (e) => e.stopPropagation());
+  handle.addEventListener("click", (e) => e.stopPropagation());
+
+  holder.appendChild(handle);
+  holder.appendChild(badge);
+}
+
 // Build the small pill row that block elements (image, callout,
 // blockquote) show at their top edge when the cursor is on the line.
 // The pill is rendered INSIDE the element's widget DOM, not as a
@@ -472,14 +588,17 @@ export class ImageBlockWidget extends WidgetType {
     const imgPath = this.path;
     ipc.resolveEmbedPath(imgPath).then((absPath) => {
       if (!absPath) return;
+      // The holder is an inline-block wrapper so (a) the resize handle can be
+      // absolutely positioned over the image's corner and (b) `inner`'s
+      // text-align governs left/centre/right placement of the whole image
+      // without per-margin overrides.
+      const holder = document.createElement("div");
+      holder.className = "cm-typst-image-holder";
+
       const img = document.createElement("img");
       img.className = "cm-typst-image-img";
       img.alt = this.alt ?? imgPath;
       img.src = convertFileSrc(absPath);
-      // The base style centres the image (margin: 0 auto); override per the
-      // alignment so left/right sit flush to their margin.
-      if (this.align === "left") { img.style.marginLeft = "0"; img.style.marginRight = "auto"; }
-      else if (this.align === "right") { img.style.marginLeft = "auto"; img.style.marginRight = "0"; }
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
       // Preserve aspect ratio when only one axis is constrained — Typst scales
@@ -490,7 +609,10 @@ export class ImageBlockWidget extends WidgetType {
       if (this.width || this.height) img.style.maxHeight = "none";
       img.addEventListener("load", () => { label.style.display = "none"; });
       img.addEventListener("error", () => { img.style.display = "none"; });
-      inner.insertBefore(img, label);
+
+      holder.appendChild(img);
+      attachImageResize(view, holder, img, () => resolveImageCallFrom(view, this.pos));
+      inner.insertBefore(holder, label);
     });
     wrap.appendChild(inner);
   }
