@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use chrono::Locale;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{InkyCapError, Result};
@@ -170,6 +171,7 @@ pub fn resolve_target_dir(
     rule: &CreationRule,
     notebox_root: &std::path::Path,
     fallback_folder: &str,
+    locale: Locale,
 ) -> PathBuf {
     let raw = if rule.target_folder.is_empty() {
         fallback_folder
@@ -179,7 +181,7 @@ pub fn resolve_target_dir(
     if raw.is_empty() {
         return notebox_root.to_path_buf();
     }
-    let expanded = scaffolds::expand_variables(raw, "");
+    let expanded = scaffolds::expand_variables(raw, "", locale);
     notebox_root.join(&expanded.content)
 }
 
@@ -219,6 +221,7 @@ pub fn execute_rule(
     title_override: Option<&str>,
     fallback_folder: &str,
     zid_pattern: &str,
+    locale: Locale,
 ) -> Result<(PathBuf, String, Option<usize>)> {
     let pattern_empty = rule.filename_pattern.trim().is_empty();
     let expanded_name = if pattern_empty {
@@ -230,7 +233,7 @@ pub fn execute_rule(
         }
     } else {
         let expanded =
-            scaffolds::expand_variables_with_zid(&rule.filename_pattern, "", zid_pattern);
+            scaffolds::expand_variables_with_zid(&rule.filename_pattern, "", zid_pattern, locale);
         let candidate = expanded.content.trim().to_string();
         if candidate.is_empty() {
             // Pattern reduced to nothing (e.g. only {{zid}} with zid off).
@@ -246,7 +249,7 @@ pub fn execute_rule(
         }
     };
 
-    let target_dir = resolve_target_dir(rule, notebox_root, fallback_folder);
+    let target_dir = resolve_target_dir(rule, notebox_root, fallback_folder, locale);
     let filename = format!("{}.typ", expanded_name);
     let file_path = target_dir.join(&filename);
 
@@ -271,8 +274,15 @@ mod tests {
         // The new-note rule ships with an empty filename_pattern so the UI
         // prompts the user (or supplies a ZID) — no auto-generated stem.
         let rules = default_rules();
-        let err = execute_rule(&rules[0], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
-            .expect_err("empty pattern with no override must signal");
+        let err = execute_rule(
+            &rules[0],
+            Path::new("/notebox"),
+            None,
+            "",
+            "YYYYMMDDHHmmss",
+            Locale::en_US,
+        )
+        .expect_err("empty pattern with no override must signal");
         match err {
             InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -284,6 +294,7 @@ mod tests {
             Some("Hello"),
             "",
             "YYYYMMDDHHmmss",
+            Locale::en_US,
         )
         .expect("new-note executes with override");
         let filename = path.file_name().unwrap().to_string_lossy();
@@ -295,9 +306,15 @@ mod tests {
     #[test]
     fn test_execute_daily_note_rule() {
         let rules = default_rules();
-        let (path, _content, _cursor) =
-            execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
-                .expect("daily-note default executes");
+        let (path, _content, _cursor) = execute_rule(
+            &rules[1],
+            Path::new("/notebox"),
+            None,
+            "",
+            "YYYYMMDDHHmmss",
+            Locale::en_US,
+        )
+        .expect("daily-note default executes");
         // The default daily-note rule targets `Daily/{{date:YYYY}}` (capital
         // D) — match the rule, not a lowercased guess.
         assert!(path.to_string_lossy().contains("Daily"));
@@ -308,9 +325,15 @@ mod tests {
     #[test]
     fn test_daily_note_target_uses_year_subfolder() {
         let rules = default_rules();
-        let (path, _, _) =
-            execute_rule(&rules[1], Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
-                .expect("daily-note default executes");
+        let (path, _, _) = execute_rule(
+            &rules[1],
+            Path::new("/notebox"),
+            None,
+            "",
+            "YYYYMMDDHHmmss",
+            Locale::en_US,
+        )
+        .expect("daily-note default executes");
         let year = chrono::Local::now().format("%Y").to_string();
         // Use `Path::starts_with` rather than a stringified substring search:
         // `PathBuf::join` uses `\` on Windows, so a literal `"daily/<year>/"`
@@ -331,8 +354,15 @@ mod tests {
     fn test_execute_empty_pattern_requires_title_override() {
         let mut rule = default_rules()[0].clone();
         rule.filename_pattern = String::new();
-        let err = execute_rule(&rule, Path::new("/notebox"), None, "", "YYYYMMDDHHmmss")
-            .expect_err("empty pattern with no override must signal");
+        let err = execute_rule(
+            &rule,
+            Path::new("/notebox"),
+            None,
+            "",
+            "YYYYMMDDHHmmss",
+            Locale::en_US,
+        )
+        .expect_err("empty pattern with no override must signal");
         match err {
             InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -349,6 +379,7 @@ mod tests {
             Some("My Note"),
             "",
             "YYYYMMDDHHmmss",
+            Locale::en_US,
         )
         .expect("override satisfies empty pattern");
         let filename = path.file_name().unwrap().to_string_lossy();
@@ -366,6 +397,7 @@ mod tests {
             Some("note"),
             "Inbox",
             "YYYYMMDDHHmmss",
+            Locale::en_US,
         )
         .expect("executes");
         // Component-wise containment, not string substring — see the

@@ -30,17 +30,17 @@ describe("errorText", () => {
     expect(errorText(e)).toBe("Some new English message");
   });
 
-  it("translates into the active locale (pseudo-locale proves the swap is live)", () => {
-    setLocale("en-XX");
+  it("translates into the active locale (fr-CA proves the swap is live)", () => {
+    setLocale("fr-CA");
     const out = errorText(envelope("notebox-not-open", "Notebox not open"));
-    // Pseudo-locale brackets + accents every translated string; the detail-less
-    // template still resolves, proving it routed through errors.* not the raw msg.
-    expect(out).toMatch(/^⟦.*⟧$/);
+    // The French value differs from the English backend message, proving it
+    // routed through errors.* rather than falling back to the raw message.
+    expect(out).toBe("Boîte de notes non ouverte");
   });
 
-  it("preserves the interpolated detail verbatim through the pseudo-locale", () => {
-    setLocale("en-XX");
-    // `{detail}` is left intact by pseudoize, so the path survives untransformed.
+  it("preserves the interpolated detail verbatim through the active locale", () => {
+    setLocale("fr-CA");
+    // `{detail}` is left intact by the translation, so the path survives untransformed.
     expect(errorText(envelope("git", "Git error: boom", "boom"))).toContain("boom");
   });
 

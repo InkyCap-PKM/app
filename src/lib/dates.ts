@@ -32,27 +32,41 @@
 // consumed as `MMM` + `M`.
 
 import { settings } from "../stores/settings";
+import { localeCode } from "./i18n";
 
 /** Default pattern shipped with the app. Mirrors `AppearanceSettings::default`
  *  on the Rust side so the two can't drift. */
 export const DEFAULT_DATE_FORMAT = "D MMM YYYY";
 
-const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const MONTH_LONG = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKDAY_LONG = [
-  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
-];
+// Month and weekday NAMES come from the active UI locale, not a hardcoded
+// English table, so `MMMM`/`dddd` render "juin"/"jeudi" under French and so on.
+// `Intl.DateTimeFormat` instances are cached per (locale, field) — constructing
+// one is comparatively expensive and these run on every date render. The Rust
+// side localizes the same tokens via `chrono::format_localized` (see
+// `scaffolds::moment_to_chrono_format`), so generated-in-file dates match.
+const nameFormatterCache = new Map<string, Intl.DateTimeFormat>();
+function localizedName(
+  d: Date,
+  locale: string,
+  field: "month" | "weekday",
+  width: "long" | "short",
+): string {
+  const key = `${locale}|${field}|${width}`;
+  let fmt = nameFormatterCache.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, { [field]: width });
+    nameFormatterCache.set(key, fmt);
+  }
+  return fmt.format(d);
+}
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
 
-/** Replace moment-style tokens in `pattern` with components of `d`. */
-function applyPattern(d: Date, pattern: string): string {
+/** Replace moment-style tokens in `pattern` with components of `d`, drawing
+ *  localized month/weekday names from `locale`. */
+function applyPattern(d: Date, pattern: string, locale: string): string {
   let out = "";
   let i = 0;
   const len = pattern.length;
@@ -60,12 +74,12 @@ function applyPattern(d: Date, pattern: string): string {
     // Order matters: longer prefixes first.
     if (pattern.startsWith("YYYY", i)) { out += String(d.getFullYear()); i += 4; continue; }
     if (pattern.startsWith("YY", i))   { out += pad2(d.getFullYear() % 100); i += 2; continue; }
-    if (pattern.startsWith("MMMM", i)) { out += MONTH_LONG[d.getMonth()]; i += 4; continue; }
-    if (pattern.startsWith("MMM", i))  { out += MONTH_SHORT[d.getMonth()]; i += 3; continue; }
+    if (pattern.startsWith("MMMM", i)) { out += localizedName(d, locale, "month", "long"); i += 4; continue; }
+    if (pattern.startsWith("MMM", i))  { out += localizedName(d, locale, "month", "short"); i += 3; continue; }
     if (pattern.startsWith("MM", i))   { out += pad2(d.getMonth() + 1); i += 2; continue; }
     if (pattern.startsWith("M", i))    { out += String(d.getMonth() + 1); i += 1; continue; }
-    if (pattern.startsWith("dddd", i)) { out += WEEKDAY_LONG[d.getDay()]; i += 4; continue; }
-    if (pattern.startsWith("ddd", i))  { out += WEEKDAY_SHORT[d.getDay()]; i += 3; continue; }
+    if (pattern.startsWith("dddd", i)) { out += localizedName(d, locale, "weekday", "long"); i += 4; continue; }
+    if (pattern.startsWith("ddd", i))  { out += localizedName(d, locale, "weekday", "short"); i += 3; continue; }
     if (pattern.startsWith("DD", i))   { out += pad2(d.getDate()); i += 2; continue; }
     if (pattern.startsWith("D", i))    { out += String(d.getDate()); i += 1; continue; }
     if (pattern.startsWith("HH", i))   { out += pad2(d.getHours()); i += 2; continue; }
@@ -112,7 +126,7 @@ export function formatUserDate(
   const d = toDate(input);
   if (!d) return typeof input === "string" ? input : String(input);
   const pattern = override ?? settings.appearance.date_format ?? DEFAULT_DATE_FORMAT;
-  return applyPattern(d, pattern || DEFAULT_DATE_FORMAT);
+  return applyPattern(d, pattern || DEFAULT_DATE_FORMAT, localeCode());
 }
 
 /** Format a date-time using the user's date pattern followed by a
@@ -122,7 +136,7 @@ export function formatUserDateTime(input: Date | string | number): string {
   const d = toDate(input);
   if (!d) return typeof input === "string" ? input : String(input);
   const datePart = formatUserDate(d);
-  const timePart = d.toLocaleTimeString(undefined, {
+  const timePart = d.toLocaleTimeString(localeCode(), {
     hour: "2-digit",
     minute: "2-digit",
   });

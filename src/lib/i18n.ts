@@ -58,6 +58,7 @@ export const DEFAULT_LOCALE = "en";
 // a half-added file (no metadata) from rendering a broken dropdown row.
 const LOCALE_META: Record<string, Omit<LocaleMeta, "code">> = {
   en: { nativeName: "English", dir: "ltr" },
+  "fr-CA": { nativeName: "Français (Québec)", dir: "ltr" },
 };
 
 // ── Dictionary loading ───────────────────────────────────────────────
@@ -74,50 +75,6 @@ const dicts: Record<string, FlatDict> = {};
 for (const [path, dict] of Object.entries(modules)) {
   const code = path.replace(/^.*\/(.+)\.json$/, "$1");
   dicts[code] = dict;
-}
-
-// Pseudo-locale generation (dev only). Declared BEFORE the generation block
-// below: `pseudoize` reads `ACCENT_MAP`, and `const` has no hoisting — calling
-// it at module-eval time before this point throws a TDZ ReferenceError. (The
-// production build never hits this since the DEV block is dead-code-eliminated,
-// which is why it must be guarded here, not just at the call site.)
-const ACCENT_MAP: Record<string, string> = {
-  a: "ȧ", b: "ƀ", c: "ƈ", d: "ḓ", e: "ḗ", f: "ƒ", g: "ɠ", h: "ħ", i: "ī",
-  j: "ĵ", k: "ķ", l: "ŀ", m: "ḿ", n: "ƞ", o: "ō", p: "ƥ", q: "ɋ", r: "ř",
-  s: "ş", t: "ŧ", u: "ŭ", v: "ṽ", w: "ẇ", x: "ẋ", y: "ẏ", z: "ž",
-  A: "Ȧ", B: "Ɓ", C: "Ƈ", D: "Ḓ", E: "Ḗ", F: "Ƒ", G: "Ɠ", H: "Ħ", I: "Ī",
-  J: "Ĵ", K: "Ķ", L: "Ŀ", M: "Ḿ", N: "Ƞ", O: "Ō", P: "Ƥ", Q: "Ɋ", R: "Ř",
-  S: "Ş", T: "Ŧ", U: "Ŭ", V: "Ṽ", W: "Ẇ", X: "Ẋ", Y: "Ẏ", Z: "Ž",
-};
-
-/** Build a pseudo-locale dict: accent + bracket + pad each English value while
- *  preserving `{placeholders}` verbatim so substitution still works. */
-function pseudoize(base: FlatDict): FlatDict {
-  const out: FlatDict = {};
-  for (const [key, value] of Object.entries(base)) {
-    // Split on `{param}` tokens, transform only the literal segments.
-    const transformed = value
-      .split(/(\{\w+\})/g)
-      .map((seg) =>
-        seg.startsWith("{") && seg.endsWith("}")
-          ? seg
-          : seg.replace(/[a-zA-Z]/g, (c) => ACCENT_MAP[c] ?? c),
-      )
-      .join("");
-    out[key] = `⟦${transformed}⟧`;
-  }
-  return out;
-}
-
-// Dev-only pseudo-locale: every English string accented, bracketed, and
-// padded, with `{placeholders}` left intact. Switching to it proves the swap is
-// live end-to-end and makes un-migrated (still-hardcoded) strings obvious —
-// they stay plain ASCII while everything routed through i18n turns into
-// `⟦Ḗḗxxpōōrt⟧`. Excluded from production builds.
-const PSEUDO_LOCALE = "en-XX";
-if (import.meta.env.DEV && dicts[DEFAULT_LOCALE]) {
-  dicts[PSEUDO_LOCALE] = pseudoize(dicts[DEFAULT_LOCALE]);
-  LOCALE_META[PSEUDO_LOCALE] = { nativeName: "Pseudo (en-XX)", dir: "ltr" };
 }
 
 /** Locales offered in the Settings → Language picker (file + metadata both

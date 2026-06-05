@@ -6,6 +6,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { getActiveTab, closeTab } from "../stores/tabs";
 import * as ipc from "./ipc";
+import { t } from "./i18n";
 import { toastError } from "../stores/toasts";
 
 /** Confirm and permanently delete the active file tab's note, then
@@ -14,8 +15,8 @@ import { toastError } from "../stores/toasts";
 export async function deleteActiveFileInteractive(): Promise<void> {
   const tab = getActiveTab();
   if (!tab || tab.type !== "file") return;
-  const confirmed = await ask("Delete this file permanently?", {
-    title: "Delete file",
+  const confirmed = await ask(t("fileActions.deleteConfirm"), {
+    title: t("fileActions.deleteTitle"),
     kind: "warning",
   });
   if (!confirmed) return;
@@ -23,6 +24,6 @@ export async function deleteActiveFileInteractive(): Promise<void> {
     await ipc.deleteFile(tab.path);
     closeTab(tab.id);
   } catch (err) {
-    toastError("Delete failed", err);
+    toastError(t("fileActions.deleteFailed"), err);
   }
 }

@@ -1,7 +1,7 @@
 import { Component, createSignal, createMemo, createEffect, Show, For, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight } from "lucide-solid";
-import { useI18n } from "../lib/i18n";
+import { useI18n, localeCode } from "../lib/i18n";
 
 // A self-contained calendar date picker.
 //
@@ -67,14 +67,16 @@ function sameDay(a: YMD | null, b: YMD | null): boolean {
   return !!a && !!b && a.y === b.y && a.m === b.m && a.d === b.d;
 }
 
-// Locale-aware month/year heading and weekday labels. Intl resolves the
-// user's system locale, so this needs no i18n wiring of its own.
-const MONTH_FMT = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-const WEEKDAY_FMT = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-// Sunday-2023-01-01 .. Saturday — a known week to pull weekday names from.
-const WEEKDAY_LABELS = Array.from({ length: 7 }, (_, i) =>
-  WEEKDAY_FMT.format(new Date(2023, 0, 1 + i)),
-);
+// Locale-aware month/year heading and weekday labels, keyed off the active UI
+// locale (not the system locale) so they switch with the language picker.
+function monthFmt(locale: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" });
+}
+function weekdayLabels(locale: string): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  // Sunday-2023-01-01 .. Saturday — a known week to pull weekday names from.
+  return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(2023, 0, 1 + i)));
+}
 
 const DatePicker: Component<DatePickerProps> = (props) => {
   const t = useI18n();
@@ -223,9 +225,10 @@ const DatePicker: Component<DatePickerProps> = (props) => {
     return out;
   });
 
+  const weekdays = createMemo(() => weekdayLabels(localeCode()));
   const headingLabel = () => {
     const { y, m } = view();
-    return MONTH_FMT.format(new Date(y, m, 1));
+    return monthFmt(localeCode()).format(new Date(y, m, 1));
   };
 
   return (
@@ -275,7 +278,7 @@ const DatePicker: Component<DatePickerProps> = (props) => {
             </div>
 
             <div class="date-picker__grid">
-              <For each={WEEKDAY_LABELS}>
+              <For each={weekdays()}>
                 {(label) => <span class="date-picker__weekday">{label}</span>}
               </For>
               <For each={cells()}>

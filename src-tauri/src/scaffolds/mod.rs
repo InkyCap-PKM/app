@@ -21,10 +21,24 @@
 
 use std::path::Path;
 
-use chrono::Local;
+use chrono::{Local, Locale};
 use regex::Regex;
 
 use crate::errors::Result;
+
+/// Map an InkyCap UI-locale code (BCP-47, e.g. "fr-CA") to the `chrono::Locale`
+/// used for localized month/weekday names in `{{date:...}}` / `{{time:...}}`
+/// expansion. Mirrors the frontend's `Intl`-based date formatting in
+/// `src/lib/dates.ts` so a date generated into a file matches the date shown
+/// in the UI. Unknown codes fall back to English. Extend this as locales are
+/// added.
+pub fn chrono_locale(ui_locale: &str) -> Locale {
+    match ui_locale {
+        "fr-CA" | "fr_CA" => Locale::fr_CA,
+        s if s.starts_with("fr") => Locale::fr_FR,
+        _ => Locale::en_US,
+    }
+}
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
 
@@ -40,9 +54,10 @@ pub async fn expand_scaffold(
     storage: &dyn NoteboxStorage,
     scaffold_path: &Path,
     title: &str,
+    locale: Locale,
 ) -> Result<ExpandedScaffold> {
     let raw = storage.read_file(scaffold_path).await?;
-    Ok(expand_variables(&raw, title))
+    Ok(expand_variables(&raw, title, locale))
 }
 
 /// Read a scaffold file and expand variables including `{{zid}}`.
@@ -51,9 +66,10 @@ pub async fn expand_scaffold_with_zid(
     scaffold_path: &Path,
     title: &str,
     zid_pattern: &str,
+    locale: Locale,
 ) -> Result<ExpandedScaffold> {
     let raw = storage.read_file(scaffold_path).await?;
-    Ok(expand_variables_with_zid(&raw, title, zid_pattern))
+    Ok(expand_variables_with_zid(&raw, title, zid_pattern, locale))
 }
 
 /// Generate a Zettelkasten ID from a moment-style format pattern.
@@ -66,8 +82,9 @@ pub fn generate_zid(pattern: &str) -> String {
 
 /// Expand scaffold variables in a string.
 /// If `zid_pattern` is non-empty, the `{{zid}}` variable is also expanded.
-pub fn expand_variables(input: &str, title: &str) -> ExpandedScaffold {
-    expand_variables_with_zid(input, title, "")
+/// `locale` controls localized month/weekday names in `{{date:...}}`.
+pub fn expand_variables(input: &str, title: &str, locale: Locale) -> ExpandedScaffold {
+    expand_variables_with_zid(input, title, "", locale)
 }
 
 /// Expand scaffold variables in a string, including optional `{{zid}}`.
@@ -78,7 +95,12 @@ pub fn expand_variables(input: &str, title: &str) -> ExpandedScaffold {
 /// the caller-supplied `title` (typically the filename without extension).
 /// This lets a Daily Note scaffold author `title: "{{date:D MMMM YYYY}}"`
 /// once and reuse `{{title}}` in the H1 to match.
-pub fn expand_variables_with_zid(input: &str, title: &str, zid_pattern: &str) -> ExpandedScaffold {
+pub fn expand_variables_with_zid(
+    input: &str,
+    title: &str,
+    zid_pattern: &str,
+    locale: Locale,
+) -> ExpandedScaffold {
     let now = Local::now();
 
     // Pass 1: expand everything except {{title}} / {{slug}} (those depend on
@@ -101,7 +123,9 @@ pub fn expand_variables_with_zid(input: &str, title: &str, zid_pattern: &str) ->
         .replace_all(&result, |caps: &regex::Captures| {
             let fmt = &caps[1];
             let chrono_fmt = moment_to_chrono_format(fmt);
-            now.format(&chrono_fmt).to_string()
+            // `format_localized` renders `%B`/`%A` (month/weekday names) in
+            // `locale`; purely numeric formats are unaffected.
+            now.format_localized(&chrono_fmt, locale).to_string()
         })
         .to_string();
 
@@ -110,7 +134,7 @@ pub fn expand_variables_with_zid(input: &str, title: &str, zid_pattern: &str) ->
         .replace_all(&result, |caps: &regex::Captures| {
             let fmt = &caps[1];
             let chrono_fmt = moment_to_chrono_format(fmt);
-            now.format(&chrono_fmt).to_string()
+            now.format_localized(&chrono_fmt, locale).to_string()
         })
         .to_string();
 
@@ -271,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_expand_simple() {
-        let expanded = expand_variables("= {{title}}\nCreated: {{date}}", "My Note");
+        let expanded = expand_variables("= {{title}}\nCreated: {{date}}", "My Note", Locale::en_US);
         assert!(expanded.content.starts_with("= My Note\nCreated: "));
         let date_part = expanded.content.split("Created: ").nth(1).unwrap();
         assert_eq!(date_part.len(), 10);
@@ -280,14 +304,14 @@ mod tests {
 
     #[test]
     fn test_expand_formatted_date() {
-        let expanded = expand_variables("{{date:YYYYMMDDHHmmss}}", "test");
+        let expanded = expand_variables("{{date:YYYYMMDDHHmmss}}", "test", Locale::en_US);
         assert_eq!(expanded.content.len(), 14);
         assert!(expanded.content.chars().all(|c| c.is_ascii_digit()));
     }
 
     #[test]
     fn test_expand_formatted_date_iso() {
-        let expanded = expand_variables("{{date:YYYY-MM-DD}}", "test");
+        let expanded = expand_variables("{{date:YYYY-MM-DD}}", "test", Locale::en_US);
         assert_eq!(expanded.content.len(), 10);
     }
 
@@ -311,7 +335,7 @@ mod tests {
         // Sanity: the produced format string yields a day with no leading
         // zero. We can't assert the actual day (test runs on any date), but
         // we can assert there's no zero-padded leading digit.
-        let expanded = expand_variables("{{date:D MMMM YYYY}}", "x");
+        let expanded = expand_variables("{{date:D MMMM YYYY}}", "x", Locale::en_US);
         let first = expanded.content.split_whitespace().next().unwrap();
         let parsed: u32 = first.parse().expect("day parses as integer");
         assert!((1..=31).contains(&parsed));
@@ -324,7 +348,7 @@ mod tests {
     fn test_title_resolves_from_note_property() {
         // When the scaffold sets a title property, {{title}} uses it.
         let input = "#note(title: \"Hello World\")\n\n= {{title}}";
-        let expanded = expand_variables(input, "fallback-filename");
+        let expanded = expand_variables(input, "fallback-filename", Locale::en_US);
         assert!(expanded.content.contains("= Hello World"));
         assert!(!expanded.content.contains("fallback-filename"));
     }
@@ -335,7 +359,7 @@ mod tests {
         // gets expanded in pass 1, and {{title}} in the body picks up the
         // already-expanded value.
         let input = "#note(title: \"Day {{date:YYYY}}\")\n\n= {{title}}";
-        let expanded = expand_variables(input, "filename");
+        let expanded = expand_variables(input, "filename", Locale::en_US);
         let year = chrono::Local::now().format("%Y").to_string();
         assert!(expanded.content.contains(&format!("= Day {}", year)));
     }
@@ -343,14 +367,14 @@ mod tests {
     #[test]
     fn test_title_falls_back_to_filename_without_property() {
         // No #note() title → {{title}} resolves to the filename parameter.
-        let expanded = expand_variables("= {{title}}", "MyNote");
+        let expanded = expand_variables("= {{title}}", "MyNote", Locale::en_US);
         assert!(expanded.content.contains("= MyNote"));
     }
 
     #[test]
     fn test_slug_follows_resolved_title() {
         let input = "#note(title: \"My Research Note\")\n\nslug: {{slug}}";
-        let expanded = expand_variables(input, "fallback");
+        let expanded = expand_variables(input, "fallback", Locale::en_US);
         assert!(expanded.content.contains("slug: my-research-note"));
     }
 
@@ -359,7 +383,7 @@ mod tests {
         // {{filename}} ignores the title property — it is always the on-disk
         // filename, used by the New Note scaffold to break a {{title}} cycle.
         let input = "#note(title: \"{{filename}}\")\n\nfile: {{filename}}";
-        let expanded = expand_variables(input, "abc123");
+        let expanded = expand_variables(input, "abc123", Locale::en_US);
         assert!(expanded.content.contains("file: abc123"));
         assert!(expanded.content.contains("title: \"abc123\""));
     }
@@ -370,14 +394,14 @@ mod tests {
         // resolution should fall back to the filename rather than leaving
         // `{{title}}` unexpanded in the output.
         let input = "#note(title: \"{{title}}\")\n\n= {{title}}";
-        let expanded = expand_variables(input, "MyFile");
+        let expanded = expand_variables(input, "MyFile", Locale::en_US);
         assert!(expanded.content.contains("= MyFile"));
         assert!(!expanded.content.contains("{{title}}"));
     }
 
     #[test]
     fn test_no_variables() {
-        let expanded = expand_variables("Just plain text.", "title");
+        let expanded = expand_variables("Just plain text.", "title", Locale::en_US);
         assert_eq!(expanded.content, "Just plain text.");
         assert!(expanded.cursor_offset.is_none());
     }
@@ -393,21 +417,54 @@ mod tests {
 
     #[test]
     fn test_slug_variable() {
-        let expanded = expand_variables("file: {{slug}}.typ", "My Research Note");
+        let expanded = expand_variables("file: {{slug}}.typ", "My Research Note", Locale::en_US);
         assert_eq!(expanded.content, "file: my-research-note.typ");
     }
 
     #[test]
     fn test_cursor_position() {
-        let expanded = expand_variables("= Title\n\n{{cursor}}\n", "test");
+        let expanded = expand_variables("= Title\n\n{{cursor}}\n", "test", Locale::en_US);
         assert_eq!(expanded.content, "= Title\n\n\n");
         assert_eq!(expanded.cursor_offset, Some(9));
     }
 
     #[test]
     fn test_cursor_with_other_variables() {
-        let expanded = expand_variables("= {{title}}\n\n{{cursor}}", "Hello");
+        let expanded = expand_variables("= {{title}}\n\n{{cursor}}", "Hello", Locale::en_US);
         assert_eq!(expanded.content, "= Hello\n\n");
         assert_eq!(expanded.cursor_offset, Some(9));
+    }
+
+    #[test]
+    fn test_localized_month_and_weekday_names() {
+        // Month/weekday name tokens render in the supplied locale. We can't
+        // hardcode the expected name (the test runs on any date), so we
+        // compare against chrono's own localized formatting of "now" and
+        // assert the French and English renderings differ for the weekday.
+        let now = chrono::Local::now();
+        let fr = expand_variables("{{date:dddd MMMM}}", "x", Locale::fr_CA);
+        let en = expand_variables("{{date:dddd MMMM}}", "x", Locale::en_US);
+        let want_fr = now.format_localized("%A %B", Locale::fr_CA).to_string();
+        assert_eq!(fr.content, want_fr);
+        // A French weekday name is never identical to its English counterpart
+        // (e.g. "vendredi" vs "Friday"), so the two locales must diverge.
+        assert_ne!(fr.content, en.content);
+    }
+
+    #[test]
+    fn test_numeric_format_is_locale_independent() {
+        // Purely numeric formats (e.g. ISO dates, zid patterns) must produce
+        // identical output regardless of locale.
+        let fr = expand_variables("{{date:YYYY-MM-DD}}", "x", Locale::fr_CA);
+        let en = expand_variables("{{date:YYYY-MM-DD}}", "x", Locale::en_US);
+        assert_eq!(fr.content, en.content);
+    }
+
+    #[test]
+    fn test_chrono_locale_mapping() {
+        assert_eq!(chrono_locale("fr-CA"), Locale::fr_CA);
+        assert_eq!(chrono_locale("fr"), Locale::fr_FR);
+        assert_eq!(chrono_locale("en"), Locale::en_US);
+        assert_eq!(chrono_locale("xx-YY"), Locale::en_US);
     }
 }

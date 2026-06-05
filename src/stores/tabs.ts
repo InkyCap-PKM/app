@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { pathEquals } from "../lib/paths";
+import { t } from "../lib/i18n";
 import { settings } from "./settings";
 import {
   focusedActiveTabId,
@@ -489,10 +490,12 @@ export function getActiveTab(): Tab | undefined {
   return id ? tabs.find((t) => t.id === id) : undefined;
 }
 
-/** Display title for a tab. File tabs drop the extension; other tab types
- *  keep their title verbatim. The dot must follow at least one character so
- *  a leading-dot file like ".gitignore" doesn't render blank. */
+/** Display title for a tab. Empty tabs show the localized "New tab" label
+ *  rather than their stored placeholder title; file tabs drop the extension;
+ *  other tab types keep their title verbatim. The dot must follow at least one
+ *  character so a leading-dot file like ".gitignore" doesn't render blank. */
 export function tabDisplayTitle(tab: Pick<Tab, "type" | "title">): string {
+  if (tab.type === "empty") return t("tabStrip.newTab");
   if (tab.type !== "file") return tab.title;
   return tab.title.replace(/^(.+)\.[^.]+$/, "$1");
 }

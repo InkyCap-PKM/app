@@ -138,11 +138,12 @@ pub async fn execute_creation_rule(
     // auto-property, plus this notebox's "New note location" preference —
     // that's the fallback when the rule itself has no target folder set
     // (e.g. the built-in New Note).
-    let (zid_enabled, zid_pattern) = {
+    let (zid_enabled, zid_pattern, locale) = {
         let settings = state.settings.read().await;
         (
             settings.files.zettelkasten_enabled,
             settings.files.zid_pattern.clone(),
+            scaffolds::chrono_locale(&settings.appearance.ui_locale),
         )
     };
     let fallback_folder = {
@@ -175,6 +176,7 @@ pub async fn execute_creation_rule(
         title_override.as_deref(),
         &fallback_folder,
         &zid_pattern,
+        locale,
     )?;
 
     // If the rule has a scaffold, read and expand it
@@ -191,6 +193,7 @@ pub async fn execute_creation_rule(
                 &scaffold_file_path,
                 &title,
                 &zid_pattern,
+                locale,
             )
             .await?;
             content = expanded.content;
@@ -408,9 +411,12 @@ pub async fn prepare_scaffold_insert(
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let zid_pattern = {
+    let (zid_pattern, locale) = {
         let settings = state.settings.read().await;
-        settings.files.zid_pattern.clone()
+        (
+            settings.files.zid_pattern.clone(),
+            scaffolds::chrono_locale(&settings.appearance.ui_locale),
+        )
     };
 
     // Resolve scaffold path. Accept either the bare name (with or without
@@ -432,9 +438,14 @@ pub async fn prepare_scaffold_insert(
     // Kept in the signature for IPC compatibility with the frontend caller.
     let _ = (cursor_offset, selection_from, selection_to);
 
-    let expanded =
-        scaffolds::expand_scaffold_with_zid(storage.as_ref(), &scaffold_path, &title, &zid_pattern)
-            .await?;
+    let expanded = scaffolds::expand_scaffold_with_zid(
+        storage.as_ref(),
+        &scaffold_path,
+        &title,
+        &zid_pattern,
+        locale,
+    )
+    .await?;
 
     Ok(assemble_scaffold_insert(&current_source, &expanded.content))
 }
