@@ -16,11 +16,17 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import * as ipc from "../lib/ipc";
 import type { ExcludedTerm } from "../lib/types";
-import { excludedTerms, requestMycelialReload } from "../stores/mycelial";
+import { requestMycelialReload } from "../stores/mycelial";
 import { toastError } from "../stores/toasts";
 import { useI18n, tPlural } from "../lib/i18n";
 
-const MycelialFilteringPanel: Component = () => {
+interface MycelialFilteringPanelProps {
+  /** Suppressed terms for the focused Mycelial tab, resolved by the right panel
+   *  from the tab-keyed store so split-pane views don't share one list. */
+  excludedTerms: ExcludedTerm[];
+}
+
+const MycelialFilteringPanel: Component<MycelialFilteringPanelProps> = (props) => {
   const t = useI18n();
   const [draft, setDraft] = createSignal("");
 
@@ -73,7 +79,7 @@ const MycelialFilteringPanel: Component = () => {
           <div class="right-panel__header-actions" />
         </div>
         <Show
-          when={excludedTerms().length > 0}
+          when={props.excludedTerms.length > 0}
           fallback={
             <p class="sidebar-hint">
               {t("mycelialFilter.empty")}
@@ -81,7 +87,7 @@ const MycelialFilteringPanel: Component = () => {
           }
         >
           <div class="concept-filtering__list">
-            <For each={excludedTerms()}>
+            <For each={props.excludedTerms}>
               {(term) => (
                 <div class="concept-filtering__row">
                   <div class="concept-filtering__term">

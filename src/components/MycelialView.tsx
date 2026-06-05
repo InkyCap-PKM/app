@@ -23,16 +23,13 @@ import { settings } from "../stores/settings";
 import { useI18n } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import {
-  contextNotes,
-  setContextNotes,
-  contextEdges,
-  setContextEdges,
+  publishMycelialState,
+  clearMycelialState,
   setHoveredGraphNode,
   hoveredContextNote,
-  setExcludedTerms,
   type MycelialContextNote,
 } from "../stores/mycelial";
-import type { LatentLink, SourceMention, FlowEdge } from "../lib/types";
+import type { LatentLink, SourceMention, FlowEdge, ExcludedTerm } from "../lib/types";
 import {
   computeMycelialLayout,
   hashString,
@@ -45,6 +42,9 @@ import {
 
 interface MycelialViewProps {
   path: string;
+  /** Owning tab id — the key this view publishes its right-panel state under,
+   *  so split-pane Mycelial Views don't clobber each other's context list. */
+  tabId: string;
 }
 
 const ZOOM_MIN = 0.15;
@@ -61,9 +61,8 @@ interface ViewCacheEntry {
   history: string[];
   centerPath: string;
   maxDepth: number;
-  /** Right-panel context list — cached so a tab switch and return doesn't
-   *  blank it (the underlying signal is module-global and gets cleared on
-   *  unmount). */
+  /** Right-panel context list — cached so recentering and returning to a note
+   *  doesn't blank it while the new graph loads. */
   contextNotes: MycelialContextNote[];
   contextEdges: FlowEdge[];
 }
@@ -118,6 +117,12 @@ export default function MycelialView(props: MycelialViewProps) {
   const [layout, setLayout] = createSignal<MycelialLayout | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [hoveredBox, setHoveredBox] = createSignal<string | null>(null);
+  // Per-instance graph state. Local (not module-global) so two Mycelial Views
+  // in split panes keep separate context lists; an effect publishes these to
+  // the tab-keyed store for the right panel to read.
+  const [contextNotes, setContextNotes] = createSignal<MycelialContextNote[]>([]);
+  const [contextEdges, setContextEdges] = createSignal<FlowEdge[]>([]);
+  const [excludedTerms, setExcludedTerms] = createSignal<ExcludedTerm[]>([]);
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
@@ -340,11 +345,19 @@ export default function MycelialView(props: MycelialViewProps) {
   const onMycelialReload = () => loadData();
   document.addEventListener("inkycap:mycelial-reload", onMycelialReload);
 
+  // Mirror this view's context list and excluded terms into the tab-keyed store
+  // so the right panel can render the *focused* mycelial tab's data. Re-runs
+  // whenever either signal changes; the panel reads back via mycelialStateFor.
+  createEffect(() => {
+    publishMycelialState(props.tabId, {
+      contextNotes: contextNotes(),
+      excludedTerms: excludedTerms(),
+    });
+  });
+
   onCleanup(() => {
     if (loadedPath) cacheView(loadedPath);
-    setContextNotes([]);
-    setContextEdges([]);
-    setExcludedTerms([]);
+    clearMycelialState(props.tabId);
     setHoveredGraphNode(null);
     clearTimeout(pulseTimer);
     clearTimeout(hoverTimeout);

@@ -4,7 +4,7 @@
 import { Component, createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js";
 import { getActiveTab, openTab, closeTab } from "../stores/tabs";
 import {
-  contextNotes,
+  mycelialStateFor,
   hoveredGraphNode,
   setHoveredContextNote,
 } from "../stores/mycelial";
@@ -255,6 +255,11 @@ const RightPanel: Component = () => {
     const tab = getActiveTab();
     return tab?.type === "file" ? tab : undefined;
   };
+
+  // The focused tab's published Mycelial state — keyed by tab id so split-pane
+  // Mycelial Views resolve to their own context list, not whichever rendered
+  // last. Empty when the focused tab isn't a mycelial view.
+  const mycelialState = () => mycelialStateFor(getActiveTab()?.id);
 
   // Contributed tabs whose `when` gate currently passes — file-scoped, shown in
   // the same tab group as Properties/Links/etc.
@@ -1357,7 +1362,7 @@ const RightPanel: Component = () => {
       {/* Concept Filtering pane — suppressed terms + stopword editor. */}
       <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "filtering"}>
         <div class="right-panel__tab-content">
-          <MycelialFilteringPanel />
+          <MycelialFilteringPanel excludedTerms={mycelialState().excludedTerms} />
         </div>
       </Show>
 
@@ -1370,7 +1375,7 @@ const RightPanel: Component = () => {
 
           const sortedFiltered = createMemo(() => {
             const filter = contextFilter().toLowerCase();
-            let notes = contextNotes();
+            let notes = mycelialState().contextNotes;
             if (filter) {
               notes = notes.filter((n) => n.name.toLowerCase().includes(filter));
             }
@@ -1408,7 +1413,7 @@ const RightPanel: Component = () => {
               <div class="right-panel__section">
                 <div class="right-panel__section-header">
                   <span>{t("rightPanel.linkedContext")}</span>
-                  <span class="right-panel__count">{contextNotes().length}</span>
+                  <span class="right-panel__count">{mycelialState().contextNotes.length}</span>
                 </div>
                 <div class="mycelial-context__controls">
                   <div class="mycelial-context__filter-wrap">

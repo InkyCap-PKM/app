@@ -64,7 +64,7 @@ const PaneLeaf: Component<{ leaf: LeafPane }> = (props) => {
                   return <CollectionTable path={currentTab.path} />;
                 }
                 if (currentTab.type === "mycelial") {
-                  return <MycelialView path={currentTab.path} />;
+                  return <MycelialView path={currentTab.path} tabId={currentTab.id} />;
                 }
                 if (currentTab.type === "version-diff") {
                   // A version-diff tab without metadata can't render (e.g. a
