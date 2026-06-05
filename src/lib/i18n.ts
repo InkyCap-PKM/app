@@ -58,7 +58,7 @@ export const DEFAULT_LOCALE = "en";
 // a half-added file (no metadata) from rendering a broken dropdown row.
 const LOCALE_META: Record<string, Omit<LocaleMeta, "code">> = {
   en: { nativeName: "English", dir: "ltr" },
-  "fr-CA": { nativeName: "Français (Québec)", dir: "ltr" },
+  "fr-CA": { nativeName: "Français", dir: "ltr" },
 };
 
 // ── Dictionary loading ───────────────────────────────────────────────
