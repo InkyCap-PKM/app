@@ -31,6 +31,9 @@ import {
   goForward,
   getCachedEditorState,
   setCachedEditorState,
+  getCachedScroll,
+  getCachedReadingScroll,
+  setCachedReadingScroll,
   closeTab,
   tabReadingFormat,
   setTabReadingFormat,
@@ -286,6 +289,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       documentUri: uri,
       onUpdate: onDocUpdate,
       restoreState: cached,
+      restoreScroll: getCachedScroll(props.tabId, props.path),
     });
     if (cached) {
       usedCachedState = true;
@@ -301,10 +305,16 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   function destroyEditor() {
     if (editorHandle) {
       // Snapshot the editor state before tearing the view down so the next
-      // mount of this tab can restore doc + selection + undo history.
+      // mount of this tab can restore doc + selection + undo history + scroll
+      // position.
       if (currentPath) {
         try {
-          setCachedEditorState(props.tabId, currentPath, editorHandle.serializeState());
+          setCachedEditorState(
+            props.tabId,
+            currentPath,
+            editorHandle.serializeState(),
+            editorHandle.scrollSnapshot(),
+          );
         } catch (err) {
           console.error("[TypstEditor] failed to cache editor state:", err);
         }
@@ -1061,11 +1071,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             result={htmlResult()}
             loading={htmlResult.loading}
             documentFont={resolveTextFontSync(settings.fonts)}
+            tabId={props.tabId}
+            path={props.path}
           />
         }>
           <TypstReadingView
             result={compileResult()}
             loading={compileResult.loading}
+            tabId={props.tabId}
+            path={props.path}
           />
         </Show>
       </Show>
@@ -1075,14 +1089,60 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
 const PT_TO_CSS_PX = 4 / 3;
 
+/** Persist and restore the scroll offset of a reading-mode container across
+ *  tab switches. The `.typst-reading` div is the scroll surface and is
+ *  unmounted/remounted whenever the active tab changes, so — like the CM6
+ *  editor — it would otherwise snap back to the top. We remember the user's
+ *  place (rAF-throttled, one write per frame) keyed by tab + path, and re-apply
+ *  it once the compiled content has laid out. The cached offset lives until the
+ *  tab is closed (see `closeTab`), matching source/live mode. */
+function attachReadingScrollMemory(
+  el: HTMLElement,
+  tabId: string,
+  path: string,
+  ready: () => boolean,
+): void {
+  let queued = false;
+  el.addEventListener(
+    "scroll",
+    () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        setCachedReadingScroll(tabId, path, el.scrollTop);
+      });
+    },
+    { passive: true },
+  );
+
+  const saved = getCachedReadingScroll(tabId, path);
+  if (!saved) return;
+  let restored = false;
+  createEffect(() => {
+    if (restored || !ready()) return;
+    restored = true;
+    // Defer one frame so the compiled pages have committed to the DOM and the
+    // container has its full scrollHeight before we set the offset.
+    requestAnimationFrame(() => {
+      if (el.isConnected) el.scrollTop = saved;
+    });
+  });
+}
+
 interface TypstReadingViewProps {
   result: TypstCompileResult | undefined;
   loading: boolean;
+  tabId: string;
+  path: string;
 }
 
 const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
   return (
-    <div class="typst-reading">
+    <div
+      class="typst-reading"
+      ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result)}
+    >
       <Show when={props.loading && !props.result}>
         <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
       </Show>
@@ -1139,6 +1199,8 @@ interface TypstHtmlReadingViewProps {
   result: TypstHtmlResult | undefined;
   loading: boolean;
   documentFont?: string;
+  tabId: string;
+  path: string;
 }
 
 /// typst-html emits `#video`/`#audio` as `<video src="/Assets/clip.mp4">` with
@@ -1171,7 +1233,10 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
   };
 
   return (
-    <div class="typst-reading typst-reading--html">
+    <div
+      class="typst-reading typst-reading--html"
+      ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result?.html)}
+    >
       <Show when={props.loading && !props.result}>
         <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
       </Show>
