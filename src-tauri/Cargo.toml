@@ -35,7 +35,7 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 regex = "1"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde", "unstable-locales"] }
 tauri-plugin-dialog = "2.7.0"
 dirs = "6.0.0"
 rayon = "1"

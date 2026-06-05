@@ -2,9 +2,8 @@
 // the load-bearing invariants: the static `t` contract, live locale swapping,
 // and the registry-gating rule.
 //
-// The module loads dictionaries at import time via `import.meta.glob`; under
-// Vitest `import.meta.env.DEV` is true, so the `en` dictionary plus the
-// generated `en-XX` pseudo-locale are both present.
+// The module loads dictionaries at import time via `import.meta.glob`, so the
+// `en` source dictionary and the shipped `fr-CA` translation are both present.
 
 import { describe, it, expect, afterEach } from "vitest";
 import {
@@ -55,14 +54,14 @@ describe("setLocale", () => {
 
   it("bumps localeVersion so static consumers can refresh", () => {
     const before = localeVersion();
-    setLocale("en-XX");
+    setLocale("fr-CA");
     expect(localeVersion()).toBeGreaterThan(before);
   });
 
-  it("swaps the static dictionary live (pseudo-locale brackets every string)", () => {
-    setLocale("en-XX");
-    expect(t("settings.language.ui.label")).toMatch(/^⟦.*⟧$/);
-    // The placeholder survives pseudo-ization, so substitution still works.
+  it("swaps the static dictionary live (fr-CA returns French strings)", () => {
+    setLocale("fr-CA");
+    expect(t("settings.language.ui.label")).toBe("Langue de l'interface");
+    // The placeholder survives the swap, so substitution still works.
     expect(t("wikilink.suggest.create", { name: "Foo" })).toContain("Foo");
     setLocale("en");
     expect(t("settings.language.ui.label")).toBe("Interface language");

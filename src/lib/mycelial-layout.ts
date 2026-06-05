@@ -12,6 +12,7 @@
  */
 
 import type { FlowNode, FlowEdge, LatentLink, EmergentConcept } from "./types";
+import { t, tPlural } from "./i18n";
 
 export const NOTE_W = 156;
 export const NOTE_H = 46;
@@ -448,9 +449,9 @@ export function computeMycelialLayout(
       return {
         ...base,
         title: l.target_name,
-        subtitle: "Latent link",
+        subtitle: t("mycelial.legend.latent"),
         snippet: top ? top.snippet : "",
-        sourceLabel: `mentioned in ${l.mentions.length} note${l.mentions.length > 1 ? "s" : ""}`,
+        sourceLabel: tPlural("mycelial.node.mentionedIn", l.mentions.length),
         latent: l,
       };
     }
@@ -460,9 +461,9 @@ export function computeMycelialLayout(
       return {
         ...base,
         title: e.term,
-        subtitle: "Potential page",
+        subtitle: t("mycelial.node.potentialPage"),
         snippet: top ? top.snippet : "",
-        sourceLabel: `emerged from ${e.mentions.length} note${e.mentions.length > 1 ? "s" : ""}`,
+        sourceLabel: tPlural("mycelial.node.emergedFrom", e.mentions.length),
         emergent: e,
       };
     }

@@ -154,8 +154,8 @@ export function SourcesSettingsSection() {
           class="settings__link settings__link--inline"
           onClick={() =>
             visit(
-              "https://creativecommons.org/licenses/by-nc-sa/4.0/",
-              "Creative Commons CC BY-NC-SA",
+              "https://creativecommons.org/licenses/by-sa/4.0/",
+              "Creative Commons CC BY-SA",
             )
           }
         >

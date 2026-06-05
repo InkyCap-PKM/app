@@ -9,6 +9,7 @@ import { createSignal } from "solid-js";
 import type { NoteboxRegistryEntry } from "../lib/types";
 import { pathEquals } from "../lib/paths";
 import * as ipc from "../lib/ipc";
+import { t } from "../lib/i18n";
 import { toastError, toastWarning } from "./toasts";
 
 export interface NoteboxSeedRequest {
@@ -94,6 +95,6 @@ export async function maybeSeedNotebox(
     const result = await ipc.seedNoteboxFromSource(targetPath, choice.sourcePath);
     for (const w of result.warnings) toastWarning(w);
   } catch (e) {
-    toastError("Failed to copy from existing notebox", e);
+    toastError(t("noteboxSeed.copyFailed"), e);
   }
 }
