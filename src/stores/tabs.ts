@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import type { StateEffect } from "@codemirror/state";
 import { pathEquals } from "../lib/paths";
 import { t } from "../lib/i18n";
 import { settings } from "./settings";
@@ -100,15 +101,35 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 const historyMap = new Map<string, TabHistory>();
 
 // Per-tab editor state cache. Stores a serialized CodeMirror EditorState
-// (doc + selection + undo history) so that switching away from a tab and
-// back again preserves Ctrl-Z and the rest of the editor's transient state.
-// The cache is keyed by tab ID and tied to a path so we can invalidate it
-// when a tab is navigated in-place to a different file.
+// (doc + selection + undo history) plus the scroll position, so that
+// switching away from a tab and back again preserves Ctrl-Z and returns the
+// reader to where they had scrolled — rather than resetting to the top. The
+// cache is keyed by tab ID and tied to a path so we can invalidate it when a
+// tab is navigated in-place to a different file. Entries live until the tab is
+// closed (see `closeTab`), giving "remember my place until I close it"
+// semantics across any number of tab switches.
 interface CachedEditorState {
   path: string;
-  json: unknown;
+  /** Serialized CM6 state (doc + selection + history) for source/live mode. */
+  json?: unknown;
+  /** Document-anchored scroll position for source/live mode. */
+  scroll?: StateEffect<unknown>;
+  /** Pixel scroll offset of the reading-mode container (`.typst-reading`). */
+  readingScrollTop?: number;
 }
 const editorStateCache = new Map<string, CachedEditorState>();
+
+/** Merge a partial update into a tab's cache entry, preserving fields that
+ *  belong to other editor modes. A path change resets the entry so a tab
+ *  navigated in-place to a different file doesn't inherit stale scroll/state. */
+function patchCacheEntry(tabId: string, path: string, patch: Partial<Omit<CachedEditorState, "path">>): void {
+  const existing = editorStateCache.get(tabId);
+  if (existing && pathEquals(existing.path, path)) {
+    editorStateCache.set(tabId, { ...existing, ...patch });
+  } else {
+    editorStateCache.set(tabId, { path, ...patch });
+  }
+}
 
 export function getCachedEditorState(tabId: string, path: string): unknown | undefined {
   const entry = editorStateCache.get(tabId);
@@ -116,8 +137,29 @@ export function getCachedEditorState(tabId: string, path: string): unknown | und
   return entry.json;
 }
 
-export function setCachedEditorState(tabId: string, path: string, json: unknown): void {
-  editorStateCache.set(tabId, { path, json });
+export function getCachedScroll(tabId: string, path: string): StateEffect<unknown> | undefined {
+  const entry = editorStateCache.get(tabId);
+  if (!entry || !pathEquals(entry.path, path)) return undefined;
+  return entry.scroll;
+}
+
+export function setCachedEditorState(
+  tabId: string,
+  path: string,
+  json: unknown,
+  scroll?: StateEffect<unknown>,
+): void {
+  patchCacheEntry(tabId, path, { json, scroll });
+}
+
+export function getCachedReadingScroll(tabId: string, path: string): number | undefined {
+  const entry = editorStateCache.get(tabId);
+  if (!entry || !pathEquals(entry.path, path)) return undefined;
+  return entry.readingScrollTop;
+}
+
+export function setCachedReadingScroll(tabId: string, path: string, top: number): void {
+  patchCacheEntry(tabId, path, { readingScrollTop: top });
 }
 
 export function clearCachedEditorState(tabId: string): void {

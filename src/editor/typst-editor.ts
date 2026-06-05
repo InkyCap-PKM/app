@@ -1,4 +1,4 @@
-import { Compartment, EditorState, Prec, StateField, Transaction, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, StateField, Transaction, type Extension, type StateEffect } from "@codemirror/state";
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
@@ -186,6 +186,10 @@ export interface TypstEditorHandle {
   setSearchMatches(ranges: SearchMatchRange[]): void;
   /** Serialize doc + selection + undo history. Pair with `restoreState`. */
   serializeState(): unknown;
+  /** Capture the current scroll position as a document-anchored effect. Pair
+   *  with the `restoreScroll` option so a remount of this tab returns the
+   *  reader to where they left off. */
+  scrollSnapshot(): StateEffect<unknown>;
   destroy(): void;
 }
 
@@ -210,6 +214,13 @@ export interface TypstEditorOptions {
    * tab switches that unmount/remount the editor component.
    */
   restoreState?: unknown;
+  /**
+   * Scroll effect from a previous `scrollSnapshot()` call. When provided, the
+   * view restores this scroll position on its first measure (via CM6's
+   * `EditorViewConfig.scrollTo`), so reactivating a tab returns the reader to
+   * where they had scrolled rather than the top of the document.
+   */
+  restoreScroll?: StateEffect<unknown>;
 }
 
 const inkycapTheme = EditorView.theme({
@@ -759,6 +770,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const view = new EditorView({
     state,
     parent: options.parent,
+    scrollTo: options.restoreScroll,
   });
 
   return {
@@ -937,6 +949,9 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
     },
     serializeState() {
       return view.state.toJSON({ history: historyField });
+    },
+    scrollSnapshot() {
+      return view.scrollSnapshot();
     },
     destroy() {
       view.destroy();
