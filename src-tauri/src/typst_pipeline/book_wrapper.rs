@@ -19,7 +19,8 @@
 use std::path::PathBuf;
 
 use crate::collection_parser::model::{
-    BookExportConfig, BookPageNumbering, BookWikilinkMode, Contributor, InjectChapterHeading,
+    BibliographyMode, BookExportConfig, BookPageNumbering, BookWikilinkMode, Contributor,
+    InjectChapterHeading, TocPlacement,
 };
 use crate::notebox_package::strip_note_preamble;
 use crate::typst_pipeline::contributors;
@@ -61,8 +62,11 @@ pub struct BookExportOptions {
     pub wikilink_mode: BookWikilinkMode,
     pub include_title_page: bool,
     pub include_outline: bool,
+    /// Where the table of contents is placed relative to the chapters.
+    pub toc_placement: TocPlacement,
     pub page_numbering: BookPageNumbering,
-    pub include_bibliography: bool,
+    /// How the bibliography is sourced — consolidated or per-note in place.
+    pub bibliography_mode: BibliographyMode,
     /// Render the CRediT contributions statement (when contributors carry
     /// CRediT roles). The byline renders regardless.
     pub include_credit_statement: bool,
@@ -85,8 +89,9 @@ impl BookExportOptions {
             wikilink_mode: cfg.wikilink_mode.unwrap_or_default(),
             include_title_page: cfg.include_title_page.unwrap_or(true),
             include_outline: cfg.include_outline.unwrap_or(true),
+            toc_placement: cfg.toc_placement.unwrap_or_default(),
             page_numbering: cfg.page_numbering.unwrap_or_default(),
-            include_bibliography: cfg.include_bibliography.unwrap_or(true),
+            bibliography_mode: cfg.bibliography_mode.unwrap_or_default(),
             include_credit_statement: cfg.include_credit_statement.unwrap_or(true),
         }
     }
@@ -643,15 +648,48 @@ pub fn build_book_source(
         }
     }
 
-    // Outline. Routed through `outline-with-bare-page-numbers` in the
+    // Resolve where the table of contents goes. The outline is whole-document
+    // regardless of position, so placement changes only *where* it sits.
+    // An `AfterChapter` anchor whose stem isn't part of the resolved note set
+    // falls back to `Beginning` (the safe front-matter default). Only a
+    // `Beginning`-placed ToC participates in front-matter page numbering;
+    // every other placement makes it ordinary body content.
+    enum TocSpot<'a> {
+        None,
+        Beginning,
+        AfterChapter(&'a str),
+        End,
+    }
+    let toc_spot = if !options.include_outline {
+        TocSpot::None
+    } else {
+        match &options.toc_placement {
+            TocPlacement::Beginning => TocSpot::Beginning,
+            TocPlacement::End => TocSpot::End,
+            TocPlacement::AfterChapter { stem } => {
+                if notes.iter().any(|n| &n.stem == stem) {
+                    TocSpot::AfterChapter(stem.as_str())
+                } else {
+                    TocSpot::Beginning
+                }
+            }
+        }
+    };
+    // The outline is routed through `outline-with-bare-page-numbers` in the
     // notebox package — that helper scopes a `show outline.entry` rule to a
     // single outline call so decorated body page-numbering patterns
     // ("Page 1 of N", etc.) don't leak into the TOC's page labels.
-    if options.include_outline {
-        s.push_str(&format!(
+    let outline_call = || {
+        format!(
             "#outline-with-bare-page-numbers(depth: {})\n",
             options.toc_depth
-        ));
+        )
+    };
+
+    // Outline at the front (the default). The trailing hard pagebreak starts
+    // the first chapter on a fresh page.
+    if matches!(toc_spot, TocSpot::Beginning) {
+        s.push_str(&outline_call());
         s.push_str("#pagebreak()\n");
     }
 
@@ -686,7 +724,15 @@ pub fn build_book_source(
             s.push_str("#pagebreak(weak: true)\n");
         }
 
-        let raw_body = prepare_note_for_include(&note.content);
+        // In `Unified` mode every per-note `#bibliography(...)` is stripped so
+        // the book has a single consolidated list. In `InPlace` mode the
+        // author's own declaration is preserved (the export pre-flight has
+        // already ensured at most one note declares one). The preamble import
+        // and `#note(...)` call are stripped either way.
+        let raw_body = match options.bibliography_mode {
+            BibliographyMode::Unified => prepare_note_for_include(&note.content),
+            BibliographyMode::InPlace => strip_note_preamble(&note.content).to_string(),
+        };
         let body = if normalize_headings {
             normalize_heading_levels(&raw_body, 2)
         } else {
@@ -728,28 +774,71 @@ pub fn build_book_source(
         if !body.ends_with('\n') {
             s.push('\n');
         }
+
+        // ToC anchored after this chapter. A leading pagebreak puts it on its
+        // own page; the next chapter supplies its own weak break (or, for the
+        // last chapter, the bibliography does).
+        if matches!(toc_spot, TocSpot::AfterChapter(st) if st == note.stem.as_str()) {
+            s.push_str("#pagebreak(weak: true)\n");
+            s.push_str(&outline_call());
+        }
+    }
+
+    // ToC at the very end — after the final chapter, before the bibliography.
+    if matches!(toc_spot, TocSpot::End) {
+        s.push_str("#pagebreak(weak: true)\n");
+        s.push_str(&outline_call());
     }
 
     // ── Bibliography ───────────────────────────────────────────────────────
-    if let Some(path) = bibliography_path {
-        s.push_str("#pagebreak(weak: true)\n");
-        // Route through the package wrapper for consistency with the
-        // single-note pipeline; behaviour is identical because
-        // `apply-bibliography` forwards to Typst's own `#bibliography`.
-        match bibliography_style {
-            Some(style) => s.push_str(&format!(
-                "#apply-bibliography(\"{}\", style: \"{}\")\n",
-                typst_escape(path),
-                typst_escape(style)
-            )),
-            None => s.push_str(&format!(
-                "#apply-bibliography(\"{}\")\n",
-                typst_escape(path)
-            )),
+    // Only `Unified` mode emits a consolidated bibliography. `InPlace` leaves
+    // the authors' own per-note `#bibliography(...)` declarations untouched
+    // (see the chapter loop) and emits nothing here.
+    if options.bibliography_mode == BibliographyMode::Unified {
+        if let Some(path) = bibliography_path {
+            s.push_str("#pagebreak(weak: true)\n");
+            // Route through the package wrapper for consistency with the
+            // single-note pipeline; behaviour is identical because
+            // `apply-bibliography` forwards to Typst's own `#bibliography`.
+            match bibliography_style {
+                Some(style) => s.push_str(&format!(
+                    "#apply-bibliography(\"{}\", style: \"{}\")\n",
+                    typst_escape(path),
+                    typst_escape(style)
+                )),
+                None => s.push_str(&format!(
+                    "#apply-bibliography(\"{}\")\n",
+                    typst_escape(path)
+                )),
+            }
         }
     }
 
     s
+}
+
+/// Stems of the notes that declare their own top-level `#bibliography(...)`
+/// (or the package wrapper `#apply-bibliography(...)`). Used by the export
+/// pre-flight to reject `InPlace` bibliography mode when more than one note
+/// declares a bibliography — Typst 0.14 permits only one per document, so a
+/// merged book with two would fail to compile with a cryptic error.
+///
+/// The scan mirrors [`strip_bibliography_call`]: a line whose first
+/// non-whitespace content is the call, skipping comment lines. It is
+/// deliberately conservative — a false negative merely defers to Typst's own
+/// error, never a false positive that blocks a valid export.
+pub fn notes_declaring_bibliography(notes: &[BookNote]) -> Vec<String> {
+    notes
+        .iter()
+        .filter(|note| {
+            note.content.lines().any(|line| {
+                let t = line.trim_start();
+                !t.starts_with("//")
+                    && (t.starts_with("#bibliography(") || t.starts_with("#apply-bibliography("))
+            })
+        })
+        .map(|note| note.stem.clone())
+        .collect()
 }
 
 /// Render the default title page used when no template is set.
@@ -1220,6 +1309,136 @@ After
             "expected user-written #bibliography(...) to be stripped, got source:\n{}",
             src
         );
+    }
+
+    #[test]
+    fn toc_placement_beginning_is_default_front_matter() {
+        // Default placement is Beginning — the outline precedes the chapters.
+        let opts = options();
+        let notes = vec![note(
+            "alpha",
+            "#import \"/x\": *\n#note()\n= Alpha\nAlpha body",
+        )];
+        let src = build_book_source(
+            &notes, &opts, None, None, None, None, None, false, None, None,
+        );
+        let toc = src.find("#outline-with-bare-page-numbers").unwrap();
+        let body = src.find("Alpha body").unwrap();
+        assert!(
+            toc < body,
+            "default ToC sits in front matter; source:\n{src}"
+        );
+    }
+
+    #[test]
+    fn toc_placement_end_puts_outline_after_chapters() {
+        let mut opts = options();
+        opts.toc_placement = TocPlacement::End;
+        let notes = vec![
+            note("alpha", "#import \"/x\": *\n#note()\n= Alpha\nAlpha body"),
+            note("beta", "#import \"/x\": *\n#note()\n= Beta\nBeta body"),
+        ];
+        let src = build_book_source(
+            &notes, &opts, None, None, None, None, None, false, None, None,
+        );
+        let toc = src
+            .find("#outline-with-bare-page-numbers")
+            .expect("outline present");
+        let last_body = src.find("Beta body").expect("last chapter body present");
+        assert!(
+            toc > last_body,
+            "End placement puts the ToC after the final chapter; source:\n{src}"
+        );
+    }
+
+    #[test]
+    fn toc_placement_after_chapter_sits_between_chapters() {
+        let mut opts = options();
+        opts.toc_placement = TocPlacement::AfterChapter {
+            stem: "alpha".into(),
+        };
+        let notes = vec![
+            note("alpha", "#import \"/x\": *\n#note()\n= Alpha\nAlpha body"),
+            note("beta", "#import \"/x\": *\n#note()\n= Beta\nBeta body"),
+        ];
+        let src = build_book_source(
+            &notes, &opts, None, None, None, None, None, false, None, None,
+        );
+        let a = src.find("Alpha body").unwrap();
+        let toc = src.find("#outline-with-bare-page-numbers").unwrap();
+        let b = src.find("Beta body").unwrap();
+        assert!(
+            a < toc && toc < b,
+            "ToC anchored after 'alpha' sits between the two chapters; source:\n{src}"
+        );
+    }
+
+    #[test]
+    fn toc_placement_after_missing_chapter_falls_back_to_beginning() {
+        let mut opts = options();
+        opts.toc_placement = TocPlacement::AfterChapter {
+            stem: "ghost".into(),
+        };
+        let notes = vec![note(
+            "alpha",
+            "#import \"/x\": *\n#note()\n= Alpha\nAlpha body",
+        )];
+        let src = build_book_source(
+            &notes, &opts, None, None, None, None, None, false, None, None,
+        );
+        let toc = src.find("#outline-with-bare-page-numbers").unwrap();
+        let body = src.find("Alpha body").unwrap();
+        assert!(
+            toc < body,
+            "an anchor stem not in the book falls back to front matter; source:\n{src}"
+        );
+    }
+
+    #[test]
+    fn in_place_bibliography_mode_keeps_per_note_calls() {
+        let mut opts = options();
+        opts.bibliography_mode = BibliographyMode::InPlace;
+        let notes = vec![note(
+            "alpha",
+            "#import \"/x\": *\n#note()\n= Alpha\nA\n#bibliography(\"refs.bib\")",
+        )];
+        // Even with a collection bib path supplied, InPlace mode must not emit a
+        // consolidated #apply-bibliography, and must preserve the note's own
+        // #bibliography(...) rather than stripping it.
+        let src = build_book_source(
+            &notes,
+            &opts,
+            None,
+            None,
+            None,
+            Some("refs.bib"),
+            Some("ieee"),
+            false,
+            None,
+            None,
+        );
+        assert_eq!(
+            src.matches("#apply-bibliography(").count(),
+            0,
+            "no consolidated bibliography in place mode; source:\n{src}"
+        );
+        assert_eq!(
+            src.matches("#bibliography(").count(),
+            1,
+            "the note's own bibliography is preserved; source:\n{src}"
+        );
+    }
+
+    #[test]
+    fn notes_declaring_bibliography_counts_declaring_notes() {
+        let notes = vec![
+            note("a", "= A\nbody"),
+            note("b", "= B\n#bibliography(\"refs.bib\")"),
+            note("c", "= C\n#apply-bibliography(\"refs.bib\")"),
+            note("d", "= D\n// #bibliography(\"x\") is only a comment"),
+        ];
+        let declaring = notes_declaring_bibliography(&notes);
+        assert_eq!(declaring, vec!["b".to_string(), "c".to_string()]);
     }
 
     #[test]

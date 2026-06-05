@@ -224,6 +224,45 @@ pub enum BookWikilinkMode {
     Plain,
 }
 
+/// Where the merged book's table of contents is placed relative to the
+/// chapters. The ToC is anchored by note **stem** (the book's chapter
+/// identity); if the anchored stem isn't part of the resolved export set at
+/// build time, placement falls back to `Beginning`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Default)]
+pub enum TocPlacement {
+    /// Front matter, before the first chapter (the conventional default).
+    /// Only this placement participates in front-matter page numbering.
+    #[default]
+    Beginning,
+    /// After the final chapter, before the consolidated bibliography.
+    End,
+    /// Immediately after the chapter with this stem.
+    AfterChapter { stem: String },
+}
+
+/// How the merged book sources its bibliography. Typst 0.14 permits only one
+/// `#bibliography()` per document, so these two modes are mutually exclusive:
+/// either we consolidate (and strip per-note declarations) or we leave the
+/// author's per-note declarations in place (capped at one across the book).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum BibliographyMode {
+    /// Strip every per-note `#bibliography(...)` and emit a single
+    /// consolidated bibliography at the back of the book from the
+    /// collection's bibliography file. The default.
+    #[default]
+    Unified,
+    /// Leave per-note `#bibliography(...)` declarations untouched and emit no
+    /// consolidated bibliography. The author controls placement by writing
+    /// the call where they want it. The export is rejected before compile if
+    /// more than one note declares a bibliography (Typst's one-bibliography
+    /// limit).
+    InPlace,
+}
+
 /// Persistent "Export as book" configuration stored in the `.collection` file.
 /// Every field is optional; the export dialog supplies sensible defaults at
 /// use time, so a freshly created collection without a `book:` block can be
@@ -258,12 +297,15 @@ pub struct BookExportConfig {
     pub include_outline: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_numbering: Option<BookPageNumbering>,
-    /// When `Some(false)`, the rendered bibliography is suppressed from the
-    /// output via `#show bibliography: it => hide(it)`. Citation resolution
-    /// is unaffected — only the visible reference list disappears. Defaults
-    /// to `true` (bibliography included) when unset.
+    /// Where the table of contents sits relative to the chapters. Defaults to
+    /// `Beginning` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include_bibliography: Option<bool>,
+    pub toc_placement: Option<TocPlacement>,
+    /// How the bibliography is sourced — a single consolidated list
+    /// (`Unified`) or the authors' own per-note declarations (`InPlace`).
+    /// Defaults to `Unified` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bibliography_mode: Option<BibliographyMode>,
     /// When `Some(false)`, the CRediT contributions statement is omitted from
     /// the book export even if contributors carry CRediT roles. The
     /// multi-author byline still renders. Defaults to `true` when unset.

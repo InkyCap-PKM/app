@@ -12,7 +12,8 @@
 //! runs.
 
 use inkycap_lib::collection_parser::model::{
-    BookPageNumbering, BookWikilinkMode, Contributor, InjectChapterHeading,
+    BibliographyMode, BookPageNumbering, BookWikilinkMode, Contributor, InjectChapterHeading,
+    TocPlacement,
 };
 use inkycap_lib::storage::path::canonicalize_root;
 use inkycap_lib::typst_pipeline::book_wrapper::{build_book_source, BookExportOptions, BookNote};
@@ -57,7 +58,8 @@ fn plain_options() -> BookExportOptions {
         include_title_page: false,
         include_outline: false,
         page_numbering: BookPageNumbering::Arabic,
-        include_bibliography: false,
+        toc_placement: TocPlacement::Beginning,
+        bibliography_mode: BibliographyMode::Unified,
         include_credit_statement: false,
     }
 }
@@ -113,7 +115,8 @@ fn merged_book_with_contributors_and_credit_compiles() {
         include_title_page: true,
         include_outline: true,
         page_numbering: BookPageNumbering::RomanThenArabic,
-        include_bibliography: false,
+        toc_placement: TocPlacement::Beginning,
+        bibliography_mode: BibliographyMode::Unified,
         include_credit_statement: true,
     };
 
@@ -162,7 +165,8 @@ fn credit_statement_suppressed_when_disabled() {
         include_title_page: true,
         include_outline: false,
         page_numbering: BookPageNumbering::Arabic,
-        include_bibliography: false,
+        toc_placement: TocPlacement::Beginning,
+        bibliography_mode: BibliographyMode::Unified,
         include_credit_statement: false,
     };
     let source = build_book_source(

@@ -22,9 +22,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { noteboxRootDefault } from "../lib/dialog-defaults";
 import type {
   BookExportConfig,
+  BibliographyMode,
   CollectionFile,
   CollectionStyle,
   Contributor,
+  TocPlacement,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { propertyVersion, bumpPropertyVersion } from "../stores/notebox";
@@ -182,10 +184,14 @@ const CollectionStyleEditor: Component<{
         <div class="collection-meta__style-grid">
           {/* Page */}
           <div class="collection-meta__style-group">
-            <span class="collection-meta__style-group-label">{t("collection.style.group.page")}</span>
+            <span class="collection-meta__style-group-label">
+              {t("collection.style.group.page")}
+            </span>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.paperSize")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.paperSize")}
+              </label>
               <Dropdown<string>
                 value={String(val("page", "paper"))}
                 options={COLLECTION_PAGE_SIZES.map((opt) => ({
@@ -199,7 +205,9 @@ const CollectionStyleEditor: Component<{
 
             <div class="collection-meta__row">
               <span class="collection-meta__label-group">
-                <label class="collection-meta__label">{t("collection.style.margins")}</label>
+                <label class="collection-meta__label">
+                  {t("collection.style.margins")}
+                </label>
                 <HelpButton label={t("collection.style.marginsHelpLabel")}>
                   {t("collection.style.marginsHelp")}
                 </HelpButton>
@@ -214,7 +222,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.columns")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.columns")}
+              </label>
               <input
                 type="number"
                 class="settings__number-input"
@@ -230,12 +240,16 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.pageNumbering")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.pageNumbering")}
+              </label>
               <PresetSelect
                 value={String(val("page", "numbering"))}
                 options={PAGE_NUMBERING_PRESETS}
                 onChange={(v) => update("page.numbering", v)}
-                customPlaceholder={t("collection.style.pageNumberingPlaceholder")}
+                customPlaceholder={t(
+                  "collection.style.pageNumberingPlaceholder",
+                )}
                 ariaLabel={t("collection.style.pageNumbering")}
               />
             </div>
@@ -243,10 +257,14 @@ const CollectionStyleEditor: Component<{
 
           {/* Text */}
           <div class="collection-meta__style-group">
-            <span class="collection-meta__style-group-label">{t("collection.style.group.text")}</span>
+            <span class="collection-meta__style-group-label">
+              {t("collection.style.group.text")}
+            </span>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.font")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.font")}
+              </label>
               <FontPicker
                 value={val("text", "font")}
                 onChange={(v) => update("text.font", v)}
@@ -255,7 +273,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.size")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.size")}
+              </label>
               <LengthInput
                 value={String(val("text", "size"))}
                 units={["pt", "em"]}
@@ -265,7 +285,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.language")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.language")}
+              </label>
               <PresetSelect
                 value={String(val("text", "lang"))}
                 options={LANGUAGE_PRESETS}
@@ -277,7 +299,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.region")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.region")}
+              </label>
               <PresetSelect
                 value={String(val("text", "region"))}
                 options={REGION_PRESETS}
@@ -291,12 +315,20 @@ const CollectionStyleEditor: Component<{
 
           {/* Paragraph */}
           <div class="collection-meta__style-group">
-            <span class="collection-meta__style-group-label">{t("collection.style.group.paragraph")}</span>
+            <span class="collection-meta__style-group-label">
+              {t("collection.style.group.paragraph")}
+            </span>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.justify")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.justify")}
+              </label>
               <Dropdown<string>
-                value={val("paragraph", "justify") === "" ? "" : String(val("paragraph", "justify"))}
+                value={
+                  val("paragraph", "justify") === ""
+                    ? ""
+                    : String(val("paragraph", "justify"))
+                }
                 options={[
                   { value: "", label: t("common.inherit") },
                   { value: "true", label: t("common.yes") },
@@ -310,7 +342,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.lineSpacing")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.lineSpacing")}
+              </label>
               <LengthInput
                 value={String(val("paragraph", "leading"))}
                 units={["em", "pt", "cm", "mm"]}
@@ -320,7 +354,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.paragraphSpacing")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.paragraphSpacing")}
+              </label>
               <LengthInput
                 value={String(val("paragraph", "spacing"))}
                 units={["em", "pt", "cm", "mm"]}
@@ -330,7 +366,9 @@ const CollectionStyleEditor: Component<{
             </div>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.firstLineIndent")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.firstLineIndent")}
+              </label>
               <LengthInput
                 value={String(val("paragraph", "first_line_indent"))}
                 units={["em", "pt", "cm", "mm"]}
@@ -342,15 +380,21 @@ const CollectionStyleEditor: Component<{
 
           {/* Heading */}
           <div class="collection-meta__style-group">
-            <span class="collection-meta__style-group-label">{t("collection.style.group.heading")}</span>
+            <span class="collection-meta__style-group-label">
+              {t("collection.style.group.heading")}
+            </span>
 
             <div class="collection-meta__row">
-              <label class="collection-meta__label">{t("collection.style.headingNumbering")}</label>
+              <label class="collection-meta__label">
+                {t("collection.style.headingNumbering")}
+              </label>
               <PresetSelect
                 value={String(val("heading", "numbering"))}
                 options={HEADING_NUMBERING_PRESETS}
                 onChange={(v) => update("heading.numbering", v)}
-                customPlaceholder={t("collection.style.headingNumberingPlaceholder")}
+                customPlaceholder={t(
+                  "collection.style.headingNumberingPlaceholder",
+                )}
                 ariaLabel={t("collection.style.headingNumbering")}
               />
             </div>
@@ -375,7 +419,9 @@ const CollectionStyleEditor: Component<{
           <Show when={advancedOpen()}>
             <div class="collection-meta__row">
               <span class="collection-meta__label-group">
-                <label class="collection-meta__label">{t("collection.style.customTypst")}</label>
+                <label class="collection-meta__label">
+                  {t("collection.style.customTypst")}
+                </label>
                 <HelpButton label={t("collection.style.customTypstHelpLabel")}>
                   {t("collection.style.customTypstHelp")}
                 </HelpButton>
@@ -384,10 +430,14 @@ const CollectionStyleEditor: Component<{
                 class="settings__detect-btn"
                 onClick={() => setShowCustomTypstModal(true)}
               >
-                {hasCustomTypst() ? t("collection.style.editEllipsis") : t("collection.style.addEllipsis")}
+                {hasCustomTypst()
+                  ? t("collection.style.editEllipsis")
+                  : t("collection.style.addEllipsis")}
               </button>
               <Show when={hasCustomTypst()}>
-                <span class="collection-meta__hint">{t("collection.style.inUse")}</span>
+                <span class="collection-meta__hint">
+                  {t("collection.style.inUse")}
+                </span>
               </Show>
             </div>
           </Show>
@@ -416,10 +466,26 @@ const CollectionStyleEditor: Component<{
 const CollectionBookEditor: Component<{
   collectionFile: CollectionFile;
   collectionName: string;
+  collectionPath: string;
   templateInUse: boolean;
   onSave: (book: BookExportConfig | null) => Promise<void>;
 }> = (props) => {
   const t = useI18n();
+
+  // The chapters that make up the book, in the default view's order. Used to
+  // populate the "after chapter" table-of-contents placement options. The
+  // empty view name asks the backend for the collection's default view; the
+  // stored placement anchors on the chapter's stem, so the exact view here
+  // isn't load-bearing — only the labels are.
+  const [chapters] = createResource(
+    () => props.collectionPath,
+    async (path) => {
+      const data = await ipc.getCollectionData(path, "");
+      return data.rows.map((r) => ({
+        stem: r.file_name.replace(/\.typ$/i, ""),
+      }));
+    },
+  );
   type PageStyle =
     | "arabic"
     | "arabic_from_chapters"
@@ -435,7 +501,9 @@ const CollectionBookEditor: Component<{
 
   const [title, setTitle] = createSignal(cfg().title ?? "");
   const [subtitle, setSubtitle] = createSignal(cfg().subtitle ?? "");
-  const [contributors, setContributors] = createSignal<Contributor[]>(cfg().contributors ?? []);
+  const [contributors, setContributors] = createSignal<Contributor[]>(
+    cfg().contributors ?? [],
+  );
   const [includeCreditStatement, setIncludeCreditStatement] = createSignal(
     cfg().include_credit_statement ?? true,
   );
@@ -449,15 +517,21 @@ const CollectionBookEditor: Component<{
   const [includeOutline, setIncludeOutline] = createSignal(
     cfg().include_outline ?? true,
   );
-  const [includeBibliography, setIncludeBibliography] = createSignal(
-    cfg().include_bibliography ?? true,
+  const [tocPlacement, setTocPlacement] = createSignal<TocPlacement>(
+    cfg().toc_placement ?? { kind: "beginning" },
   );
-  const [injectMode, setInjectMode] = createSignal<"always" | "fallback" | "never">(
-    cfg().inject_chapter_heading ?? "fallback",
+  // Bibliography mode: unified consolidates one list at the back (default);
+  // in-place keeps each note's own `#bibliography(...)`. Surfaced as a single
+  // "unified" checkbox — unchecked means in-place.
+  const [bibUnified, setBibUnified] = createSignal(
+    (cfg().bibliography_mode ?? "unified") === "unified",
   );
-  const [wikilinkMode, setWikilinkMode] = createSignal<"internal" | "external" | "plain">(
-    cfg().wikilink_mode ?? "internal",
-  );
+  const [injectMode, setInjectMode] = createSignal<
+    "always" | "fallback" | "never"
+  >(cfg().inject_chapter_heading ?? "fallback");
+  const [wikilinkMode, setWikilinkMode] = createSignal<
+    "internal" | "external" | "plain"
+  >(cfg().wikilink_mode ?? "internal");
 
   const initialNumbering = cfg().page_numbering;
   const [pageStyle, setPageStyle] = createSignal<PageStyle>(
@@ -490,8 +564,11 @@ const CollectionBookEditor: Component<{
       wikilink_mode: wikilinkMode(),
       include_title_page: includeTitlePage(),
       include_outline: includeOutline(),
+      toc_placement: tocPlacement(),
       page_numbering: pageNumbering,
-      include_bibliography: includeBibliography(),
+      bibliography_mode: (bibUnified()
+        ? "unified"
+        : "in_place") as BibliographyMode,
       include_credit_statement: includeCreditStatement(),
     };
   }
@@ -500,11 +577,43 @@ const CollectionBookEditor: Component<{
     await props.onSave(buildConfig());
   }
 
+  // The ToC placement is stored as a tagged `TocPlacement`; the Dropdown works
+  // in flat strings. `beginning`/`end` map directly, an after-chapter anchor
+  // encodes as `after:<stem>`.
+  const tocValue = () => {
+    const p = tocPlacement();
+    return p.kind === "after_chapter" ? `after:${p.stem}` : p.kind;
+  };
+  const tocOptions = () => [
+    { value: "beginning", label: t("collection.book.tocPlacement.beginning") },
+    ...(chapters() ?? []).map((c) => ({
+      value: `after:${c.stem}`,
+      label: t("collection.book.tocPlacement.afterChapter", {
+        chapter: c.stem,
+      }),
+    })),
+    { value: "end", label: t("collection.book.tocPlacement.end") },
+  ];
+  function setTocFromValue(v: string) {
+    if (v === "end") setTocPlacement({ kind: "end" });
+    else if (v.startsWith("after:"))
+      setTocPlacement({
+        kind: "after_chapter",
+        stem: v.slice("after:".length),
+      });
+    else setTocPlacement({ kind: "beginning" });
+    flush();
+  }
+
   return (
     <>
-      <div class="collection-meta__section-label">{t("collection.book.metadata")}</div>
+      <div class="collection-meta__section-label">
+        {t("collection.book.metadata")}
+      </div>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.title")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.title")}
+        </label>
         <input
           type="text"
           class="settings__text-input"
@@ -515,7 +624,9 @@ const CollectionBookEditor: Component<{
         />
       </div>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.subtitle")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.subtitle")}
+        </label>
         <input
           type="text"
           class="settings__text-input"
@@ -524,7 +635,9 @@ const CollectionBookEditor: Component<{
           onChange={flush}
         />
       </div>
-      <div class="collection-meta__section-label">{t("collection.book.contributors")}</div>
+      <div class="collection-meta__section-label">
+        {t("collection.book.contributors")}
+      </div>
       <ContributorsEditor
         initial={cfg().contributors ?? []}
         includeCreditStatement={includeCreditStatement()}
@@ -535,7 +648,9 @@ const CollectionBookEditor: Component<{
         }}
       />
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.date")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.date")}
+        </label>
         <input
           type="text"
           class="settings__text-input"
@@ -547,7 +662,9 @@ const CollectionBookEditor: Component<{
         />
       </div>
       <div class="collection-meta__row collection-meta__row--top">
-        <label class="collection-meta__label">{t("collection.book.abstract")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.abstract")}
+        </label>
         <textarea
           class="settings__text-input"
           rows={3}
@@ -558,7 +675,9 @@ const CollectionBookEditor: Component<{
         />
       </div>
 
-      <div class="collection-meta__section-label">{t("collection.book.structure")}</div>
+      <div class="collection-meta__section-label">
+        {t("collection.book.structure")}
+      </div>
       <Show when={props.templateInUse}>
         <div class="collection-meta__row">
           <span class="collection-meta__hint">
@@ -568,7 +687,9 @@ const CollectionBookEditor: Component<{
       </Show>
       <Show when={!props.templateInUse}>
         <div class="collection-meta__row">
-          <label class="collection-meta__label">{t("collection.book.titlePage")}</label>
+          <label class="collection-meta__label">
+            {t("collection.book.titlePage")}
+          </label>
           <label class="collection-meta__inline-check">
             <input
               type="checkbox"
@@ -614,33 +735,61 @@ const CollectionBookEditor: Component<{
           />
         </Show>
       </div>
+      <Show when={includeOutline()}>
+        <div class="collection-meta__row">
+          <label class="collection-meta__label">
+            {t("collection.book.tocPlacement")}
+          </label>
+          <Dropdown<string>
+            value={tocValue()}
+            options={tocOptions()}
+            onChange={setTocFromValue}
+            ariaLabel={t("collection.book.tocPlacement")}
+          />
+        </div>
+      </Show>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.bibliography")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.bibliography")}
+        </label>
         <label class="collection-meta__inline-check">
           <input
             type="checkbox"
-            checked={includeBibliography()}
+            checked={bibUnified()}
             onChange={(e) => {
-              setIncludeBibliography(e.currentTarget.checked);
+              setBibUnified(e.currentTarget.checked);
               flush();
             }}
           />
-          {t("collection.book.includeInOutput")}
+          {t("collection.book.bibliographyUnified")}
         </label>
-        <Show when={!includeBibliography()}>
-          <span class="collection-meta__hint" style={{ "margin-left": "12px" }}>
-            {t("collection.book.bibliographyHiddenHint")}
-          </span>
-        </Show>
       </div>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.chapterHeading")}</label>
+        <span class="collection-meta__hint">
+          {bibUnified()
+            ? t("collection.book.bibliographyUnifiedHint")
+            : t("collection.book.bibliographyInPlaceHint")}
+        </span>
+      </div>
+      <div class="collection-meta__row">
+        <label class="collection-meta__label">
+          {t("collection.book.chapterHeading")}
+        </label>
         <Dropdown<"always" | "fallback" | "never">
           value={injectMode()}
           options={[
-            { value: "fallback", label: t("collection.book.chapterHeading.fallback") },
-            { value: "always", label: t("collection.book.chapterHeading.always") },
-            { value: "never", label: t("collection.book.chapterHeading.never") },
+            {
+              value: "fallback",
+              label: t("collection.book.chapterHeading.fallback"),
+            },
+            {
+              value: "always",
+              label: t("collection.book.chapterHeading.always"),
+            },
+            {
+              value: "never",
+              label: t("collection.book.chapterHeading.never"),
+            },
           ]}
           onChange={(v) => {
             setInjectMode(v);
@@ -650,14 +799,24 @@ const CollectionBookEditor: Component<{
         />
       </div>
 
-      <div class="collection-meta__section-label">{t("collection.book.wikilinks")}</div>
+      <div class="collection-meta__section-label">
+        {t("collection.book.wikilinks")}
+      </div>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.resolution")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.resolution")}
+        </label>
         <Dropdown<"internal" | "external" | "plain">
           value={wikilinkMode()}
           options={[
-            { value: "internal", label: t("collection.book.wikilink.internal") },
-            { value: "external", label: t("collection.book.wikilink.external") },
+            {
+              value: "internal",
+              label: t("collection.book.wikilink.internal"),
+            },
+            {
+              value: "external",
+              label: t("collection.book.wikilink.external"),
+            },
             { value: "plain", label: t("collection.book.wikilink.plain") },
           ]}
           onChange={(v) => {
@@ -668,19 +827,32 @@ const CollectionBookEditor: Component<{
         />
       </div>
 
-      <div class="collection-meta__section-label">{t("collection.book.pageNumbering")}</div>
+      <div class="collection-meta__section-label">
+        {t("collection.book.pageNumbering")}
+      </div>
       <p class="collection-meta__hint" style={{ margin: "0 0 6px" }}>
         {t("collection.book.pageNumberingHint")}
       </p>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.book.style")}</label>
+        <label class="collection-meta__label">
+          {t("collection.book.style")}
+        </label>
         <Dropdown<PageStyle>
           value={pageStyle()}
           options={[
-            { value: "roman_then_arabic", label: t("collection.book.pageStyle.romanThenArabic") },
-            { value: "arabic_from_chapters", label: t("collection.book.pageStyle.arabicFromChapters") },
+            {
+              value: "roman_then_arabic",
+              label: t("collection.book.pageStyle.romanThenArabic"),
+            },
+            {
+              value: "arabic_from_chapters",
+              label: t("collection.book.pageStyle.arabicFromChapters"),
+            },
             { value: "arabic", label: t("collection.book.pageStyle.arabic") },
-            { value: "arabic_from_page", label: t("collection.book.pageStyle.arabicFromPage") },
+            {
+              value: "arabic_from_page",
+              label: t("collection.book.pageStyle.arabicFromPage"),
+            },
           ]}
           onChange={(v) => {
             setPageStyle(v);
@@ -691,7 +863,9 @@ const CollectionBookEditor: Component<{
       </div>
       <Show when={pageStyle() === "arabic_from_page"}>
         <div class="collection-meta__row">
-          <label class="collection-meta__label">{t("collection.book.startOnPage")}</label>
+          <label class="collection-meta__label">
+            {t("collection.book.startOnPage")}
+          </label>
           <input
             type="number"
             class="settings__number-input"
@@ -762,7 +936,9 @@ const CollectionCharacteristicsEditor: Component<{
     const result = await open({
       title: t("settings.citations.cslPickerTitle"),
       defaultPath: await noteboxRootDefault(),
-      filters: [{ name: t("settings.citations.cslFilterName"), extensions: ["csl"] }],
+      filters: [
+        { name: t("settings.citations.cslFilterName"), extensions: ["csl"] },
+      ],
     });
     if (result) {
       saveField("bibliography_style", result as string);
@@ -772,7 +948,9 @@ const CollectionCharacteristicsEditor: Component<{
   return (
     <>
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.char.icon")}</label>
+        <label class="collection-meta__label">
+          {t("collection.char.icon")}
+        </label>
         <LucideIconPicker
           value={props.collectionFile.icon ?? "lucide:folder-pen"}
           onSelect={saveIcon}
@@ -781,7 +959,9 @@ const CollectionCharacteristicsEditor: Component<{
 
       <div class="collection-meta__row">
         <span class="collection-meta__label-group">
-          <label class="collection-meta__label">{t("collection.char.template")}</label>
+          <label class="collection-meta__label">
+            {t("collection.char.template")}
+          </label>
           <HelpButton label={t("collection.char.templateHelpLabel")}>
             {t("collection.char.templateHelp")}
           </HelpButton>
@@ -797,15 +977,26 @@ const CollectionCharacteristicsEditor: Component<{
       </div>
 
       <div class="collection-meta__row">
-        <label class="collection-meta__label">{t("collection.char.bibStyle")}</label>
-        <div style={{ display: "flex", gap: "6px", "align-items": "center", "flex-wrap": "wrap" }}>
+        <label class="collection-meta__label">
+          {t("collection.char.bibStyle")}
+        </label>
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            "align-items": "center",
+            "flex-wrap": "wrap",
+          }}
+        >
           <Show when={bibStyleValue() === "custom"}>
             <input
               type="text"
               class="settings__text-input"
               style={{ width: "180px", "min-width": "120px" }}
               value={props.collectionFile.bibliography_style ?? ""}
-              onInput={(e) => saveField("bibliography_style", e.currentTarget.value)}
+              onInput={(e) =>
+                saveField("bibliography_style", e.currentTarget.value)
+              }
               placeholder={t("collection.char.bibStylePlaceholder")}
             />
             <button
@@ -833,18 +1024,29 @@ const CollectionCharacteristicsEditor: Component<{
 
       <div class="collection-meta__row">
         <span class="collection-meta__label-group">
-          <label class="collection-meta__label">{t("collection.char.bibFile")}</label>
+          <label class="collection-meta__label">
+            {t("collection.char.bibFile")}
+          </label>
           <HelpButton label={t("collection.char.bibFileHelpLabel")}>
             {t("collection.char.bibFileHelp")}
           </HelpButton>
         </span>
-        <div style={{ display: "flex", gap: "6px", "align-items": "center", flex: "1" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            "align-items": "center",
+            flex: "1",
+          }}
+        >
           <input
             type="text"
             class="settings__text-input"
             style={{ flex: "1" }}
             value={props.collectionFile.bibliography_file ?? ""}
-            onInput={(e) => saveField("bibliography_file", e.currentTarget.value)}
+            onInput={(e) =>
+              saveField("bibliography_file", e.currentTarget.value)
+            }
             placeholder={t("collection.char.bibFilePlaceholder")}
           />
           <button
@@ -854,7 +1056,12 @@ const CollectionCharacteristicsEditor: Component<{
               const result = await open({
                 title: t("collection.char.bibPickerTitle"),
                 defaultPath: await noteboxRootDefault(),
-                filters: [{ name: t("settings.citations.bibFilterName"), extensions: ["bib", "yml", "yaml", "json"] }],
+                filters: [
+                  {
+                    name: t("settings.citations.bibFilterName"),
+                    extensions: ["bib", "yml", "yaml", "json"],
+                  },
+                ],
               });
               if (result) saveField("bibliography_file", result as string);
             }}
@@ -878,10 +1085,20 @@ const CollectionSettings: Component<{
   tab: CollectionPanelTab;
 }> = (props) => {
   const t = useI18n();
-  const [collectionFile, { refetch }] = createResource(
+  // The loaded `.collection` file, tagged with the path it was loaded for.
+  // Keyed on `propertyVersion` so it refetches after any autosave. The editors
+  // snapshot their fields into local signals on mount, so the editor tree is
+  // remounted (below) whenever `loadedPath` changes. Keying on the *loaded*
+  // path rather than `props.collectionPath` matters: on a collection switch the
+  // prop changes a beat before the refetch resolves, and the resource keeps the
+  // previous value until then — so remounting on `loadedPath` avoids
+  // snapshotting the outgoing collection's data into the new editor.
+  const [collectionData, { refetch }] = createResource(
     () => [props.collectionPath, propertyVersion()] as const,
-    ([p]) => ipc.getCollectionFile(p),
+    async ([p]) => ({ path: p, file: await ipc.getCollectionFile(p) }),
   );
+  const loadedFile = () => collectionData()?.file;
+  const loadedPath = () => collectionData()?.path;
 
   // Autosave callback shared by the editors: refetch our copy and bump the
   // property version so CollectionTable's filter lock / member rows refresh.
@@ -891,9 +1108,10 @@ const CollectionSettings: Component<{
   };
 
   async function saveStyle(style: CollectionStyle | null) {
-    const cf = collectionFile();
+    const cf = loadedFile();
     if (!cf) return;
-    const hasValues = style && (style.page || style.text || style.paragraph || style.heading);
+    const hasValues =
+      style && (style.page || style.text || style.paragraph || style.heading);
     const updated = { ...cf, style: hasValues ? style : undefined };
     try {
       await ipc.saveCollectionFile(props.collectionPath, updated);
@@ -904,7 +1122,7 @@ const CollectionSettings: Component<{
   }
 
   async function saveCustomTypst(value: string) {
-    const cf = collectionFile();
+    const cf = loadedFile();
     if (!cf) return;
     const trimmed = value.trim();
     const updated = { ...cf, custom_typst: trimmed === "" ? undefined : value };
@@ -917,7 +1135,7 @@ const CollectionSettings: Component<{
   }
 
   async function saveBook(book: BookExportConfig | null) {
-    const cf = collectionFile();
+    const cf = loadedFile();
     if (!cf) return;
     const updated = { ...cf, book: book ?? null };
     try {
@@ -928,52 +1146,59 @@ const CollectionSettings: Component<{
     }
   }
 
+  // Remount the editor tree on a genuine collection switch (keyed on the
+  // loaded path) so the editors re-snapshot the new collection's values.
+  // Same-collection autosave refetches keep the same `loadedPath`, so they do
+  // not remount and never clobber an in-progress edit.
   return (
-    <Switch>
-      <Match when={props.tab === "characteristics"}>
-        <Show when={collectionFile()}>
-          {(cf) => (
-            <div class="collection-settings__body">
-              <CollectionCharacteristicsEditor
-                collectionFile={cf()}
-                collectionPath={props.collectionPath}
-                onSaved={onSaved}
-              />
-            </div>
-          )}
-        </Show>
-      </Match>
-      <Match when={props.tab === "style"}>
-        <Show when={collectionFile()}>
-          {(cf) => (
-            <div class="collection-settings__body">
-              <CollectionStyleEditor
-                alwaysExpanded
-                style={cf().style ?? null}
-                onSave={saveStyle}
-                customTypst={cf().custom_typst ?? ""}
-                onSaveCustomTypst={saveCustomTypst}
-                collectionName={props.collectionName}
-              />
-            </div>
-          )}
-        </Show>
-      </Match>
-      <Match when={props.tab === "book"}>
-        <Show when={collectionFile()}>
-          {(cf) => (
-            <div class="collection-settings__body">
-              <CollectionBookEditor
-                collectionFile={cf()}
-                collectionName={props.collectionName}
-                templateInUse={!!cf().typst_template}
-                onSave={saveBook}
-              />
-            </div>
-          )}
-        </Show>
-      </Match>
-    </Switch>
+    <Show when={loadedPath()} keyed>
+      <Switch>
+        <Match when={props.tab === "characteristics"}>
+          <Show when={loadedFile()}>
+            {(cf) => (
+              <div class="collection-settings__body">
+                <CollectionCharacteristicsEditor
+                  collectionFile={cf()}
+                  collectionPath={props.collectionPath}
+                  onSaved={onSaved}
+                />
+              </div>
+            )}
+          </Show>
+        </Match>
+        <Match when={props.tab === "style"}>
+          <Show when={loadedFile()}>
+            {(cf) => (
+              <div class="collection-settings__body">
+                <CollectionStyleEditor
+                  alwaysExpanded
+                  style={cf().style ?? null}
+                  onSave={saveStyle}
+                  customTypst={cf().custom_typst ?? ""}
+                  onSaveCustomTypst={saveCustomTypst}
+                  collectionName={props.collectionName}
+                />
+              </div>
+            )}
+          </Show>
+        </Match>
+        <Match when={props.tab === "book"}>
+          <Show when={loadedFile()}>
+            {(cf) => (
+              <div class="collection-settings__body">
+                <CollectionBookEditor
+                  collectionFile={cf()}
+                  collectionName={props.collectionName}
+                  collectionPath={props.collectionPath}
+                  templateInUse={!!cf().typst_template}
+                  onSave={saveBook}
+                />
+              </div>
+            )}
+          </Show>
+        </Match>
+      </Switch>
+    </Show>
   );
 };
 

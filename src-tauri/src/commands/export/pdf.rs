@@ -10,10 +10,9 @@ use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
-    apply_bibliography_visibility, apply_review_mode, args_has_named_arg, find_matching_paren,
-    inject_document_metadata, parse_date_to_typst_datetime, parse_first_string_arg,
-    parse_named_string_arg, prepare_bibliography, resolve_effective_bib,
-    resolve_template_path_with_root,
+    apply_review_mode, args_has_named_arg, find_matching_paren, inject_document_metadata,
+    parse_date_to_typst_datetime, parse_first_string_arg, parse_named_string_arg,
+    prepare_bibliography, resolve_effective_bib, resolve_template_path_with_root,
 };
 
 // ── Single-note PDF export ──────────────────────────────────────
@@ -392,7 +391,8 @@ pub struct BookExportOverrides {
     pub include_outline: Option<bool>,
     pub page_numbering: Option<crate::collection_parser::model::BookPageNumbering>,
     pub pdf_standard: Option<PdfStandardPreset>,
-    pub include_bibliography: Option<bool>,
+    pub toc_placement: Option<crate::collection_parser::model::TocPlacement>,
+    pub bibliography_mode: Option<crate::collection_parser::model::BibliographyMode>,
     /// Review-markup policy ("accept"/"reject"/"keep") applied to every note
     /// before it is inlined into the book. Absent → keep marks.
     pub review_mode: Option<String>,
@@ -486,8 +486,11 @@ pub async fn export_collection_book_pdf(
         if let Some(v) = ov.page_numbering {
             options.page_numbering = v;
         }
-        if let Some(v) = ov.include_bibliography {
-            options.include_bibliography = v;
+        if let Some(v) = ov.toc_placement {
+            options.toc_placement = v;
+        }
+        if let Some(v) = ov.bibliography_mode {
+            options.bibliography_mode = v;
         }
     }
 
@@ -554,6 +557,25 @@ pub async fn export_collection_book_pdf(
             "Label collisions detected. The merged book cannot define the same label in multiple notes:\n{}",
             lines.join("\n")
         )));
+    }
+
+    // In-place bibliography mode keeps each note's own `#bibliography(...)`.
+    // Typst 0.14 allows only one bibliography per document, so more than one
+    // declaring note can't produce a valid merged book. Catch it here with a
+    // clear message instead of surfacing Typst's cryptic multi-bibliography
+    // error after a full compile.
+    if matches!(
+        options.bibliography_mode,
+        crate::collection_parser::model::BibliographyMode::InPlace
+    ) {
+        let declaring = book_wrapper::notes_declaring_bibliography(&notes);
+        if declaring.len() > 1 {
+            return Err(InkyCapError::ExportFailed(format!(
+                "Multiple bibliographies in a merged book are not supported: {} notes declare their own #bibliography(...) ({}). Typst allows only one bibliography per document. Switch to a unified bibliography to consolidate them, or keep a #bibliography(...) in only one note.",
+                declaring.len(),
+                declaring.join(", ")
+            )));
+        }
     }
 
     let app_settings = state.settings.read().await;
@@ -658,7 +680,6 @@ pub async fn export_collection_book_pdf(
         compiler.set_bibliography_style(Some(style.clone()));
     }
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
-    let source = apply_bibliography_visibility(source, options.include_bibliography);
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
     check_pdf_standard_requirements(&source, book_pdf_standard)?;
     // Keep a copy to map any compile error's offset back to the note it came

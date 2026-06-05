@@ -51,6 +51,8 @@ import type {
   GitPackageExportResult,
   GitBundlePackagesResult,
   AnnotationScope,
+  TocPlacement,
+  BibliographyMode,
 } from "./types";
 
 export async function getSavedNoteboxPath(): Promise<string | null> {
@@ -1415,12 +1417,12 @@ export interface BookExportOverrides {
   wikilinkMode?: BookWikilinkMode;
   includeTitlePage?: boolean;
   includeOutline?: boolean;
+  tocPlacement?: TocPlacement;
   pageNumbering?: BookPageNumbering;
   pdfStandard?: PdfStandardPreset;
-  /// When `false`, the merged PDF compiles with citation resolution intact
-  /// but the rendered bibliography is suppressed via a Typst show rule.
-  /// Defaults to `true` when omitted.
-  includeBibliography?: boolean;
+  /// `unified` consolidates a single bibliography at the back; `in_place`
+  /// keeps each note's own `#bibliography(...)`. Omitted → collection default.
+  bibliographyMode?: BibliographyMode;
   /// Review-markup policy applied to every note before it's inlined into the
   /// book. Omitted → keep tracked-change marks.
   reviewMode?: ReviewMarkupMode;

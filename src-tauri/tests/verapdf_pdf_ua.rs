@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use inkycap_lib::collection_parser::model::{
-    BookPageNumbering, BookWikilinkMode, InjectChapterHeading,
+    BibliographyMode, BookPageNumbering, BookWikilinkMode, InjectChapterHeading, TocPlacement,
 };
 use inkycap_lib::commands::export::ensure_document_date_for_standard;
 use inkycap_lib::storage::path::canonicalize_root;
@@ -137,7 +137,8 @@ fn merged_book_pdf_ua1_export_is_compliant() {
         include_title_page: true,
         include_outline: true,
         page_numbering: BookPageNumbering::RomanThenArabic,
-        include_bibliography: true,
+        toc_placement: TocPlacement::Beginning,
+        bibliography_mode: BibliographyMode::Unified,
         contributors: vec![],
         include_credit_statement: false,
     };
