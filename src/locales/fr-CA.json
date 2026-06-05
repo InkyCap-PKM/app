@@ -229,6 +229,7 @@
   "tabStrip.scrollRight": "Faire défiler les onglets vers la droite",
   "tabStrip.newTab": "Nouvel onglet",
   "diagnostic.hint": "indice : {text}",
+  "diagnostic.citationResolvesInPreview": "cette citation se résout automatiquement dans l'aperçu, où la bibliographie est ajoutée pour vous",
   "journalScroll.empty": "Aucune note ne correspond au filtre de défilement actuel.",
   "journalScroll.compiling": "Compilation…",
   "journalScroll.recoveredNote": "Affichage d'un rendu partiel — le contenu en erreur ci-dessous a été ignoré pour que le reste de l'entrée demeure visible.",

@@ -229,6 +229,7 @@
   "tabStrip.scrollRight": "Scroll tabs right",
   "tabStrip.newTab": "New tab",
   "diagnostic.hint": "hint: {text}",
+  "diagnostic.citationResolvesInPreview": "this citation resolves automatically in the preview, where the bibliography is added for you",
   "journalScroll.empty": "No notes match the current scroll filter.",
   "journalScroll.compiling": "Compiling…",
   "journalScroll.recoveredNote": "Showing a partial render — the errored content below was skipped so the rest of the entry stays visible.",
