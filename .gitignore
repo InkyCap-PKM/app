@@ -25,6 +25,9 @@ Thumbs.db
 .filenignore
 InkyCap.code-workspace
 
+# Runtime scheduled-task lock (per-machine; created/removed by the app)
+.claude/scheduled_tasks.lock
+
 # Design assets: source artwork + the icon-tile the build derives from the
 # mark (src/assets/inkycap-logo.svg) via scripts/gen-icon-tile.mjs. Versioned
 # so the icon build's inputs travel with the repo.
