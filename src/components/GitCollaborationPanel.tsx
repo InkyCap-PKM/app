@@ -73,6 +73,7 @@ function fmtSettingValue(v: unknown): string {
 import { showToast, toastError } from "../stores/toasts";
 import { promptConfirm, promptConfirmWithCheckbox } from "../stores/prompt";
 import { t, tPlural } from "../lib/i18n";
+import { pathEquals } from "../lib/paths";
 
 /** Icon for a change kind (mirrors the inline suggestion tones). */
 function kindIcon(kind: GitDigestEntry["status"]) {
@@ -587,6 +588,14 @@ const ChangesSinceSyncView: Component = () => {
   // digest block) so there is a single place that reports what a sync changed.
   const incomingAuthor = () => syncOutcome()?.incoming?.author_name;
 
+  // Open-suggestion count for a since-sync note, matched against the persistent
+  // unresolved list. When a note both changed in the sync AND carries tracked
+  // changes awaiting a decision, it shows once here with a "suggestions await
+  // feedback" cue rather than appearing a second time under "Changes to
+  // resolve" — UnresolvedView drops the overlap (see there).
+  const suggestionCount = (path: string) =>
+    unresolvedFiles().find((u) => pathEquals(u.path, path))?.count ?? 0;
+
   return (
     <Show when={changesSinceSync().length > 0}>
       <div class="git-panel__digest git-panel__unresolved">
@@ -607,6 +616,7 @@ const ChangesSinceSyncView: Component = () => {
           <For each={changesSinceSync()}>
             {(entry) => {
               const label = () => changeLabel(entry.relPath, entry.oldRelPath);
+              const suggestions = () => suggestionCount(entry.path);
               return (
                 <div class="sidebar-item git-panel__item" title={entry.relPath}>
                   <button
@@ -626,6 +636,13 @@ const ChangesSinceSyncView: Component = () => {
                           </span>
                         </Show>
                         <span class="git-panel__badge">{t(`git.digest.status.${entry.status}`)}</span>
+                        <Show when={suggestions() > 0}>
+                          <span class="git-panel__badge git-panel__badge--feedback">
+                            {tPlural("git.sinceSync.suggestionsAwait", suggestions(), {
+                              n: suggestions(),
+                            })}
+                          </span>
+                        </Show>
                       </span>
                     </span>
                   </button>
@@ -662,17 +679,28 @@ const UnresolvedView: Component = () => {
     openNoteForReview(entry.path, basename);
   }
 
+  // Notes the last sync also changed already appear in ChangesSinceSyncView,
+  // each carrying a "suggestions await feedback" cue — so drop them here to
+  // avoid listing the same note twice right after a sync. What remains is the
+  // persistent backlog: notes with open suggestions the most recent sync didn't
+  // touch, which stay visible even after the transient since-sync list clears
+  // (on the next edit / reopen).
+  const pending = () =>
+    unresolvedFiles().filter(
+      (u) => !changesSinceSync().some((c) => pathEquals(c.path, u.path)),
+    );
+
   return (
-    <Show when={unresolvedFiles().length > 0}>
+    <Show when={pending().length > 0}>
       <div class="git-panel__digest git-panel__unresolved">
         <p class="git-panel__share-heading">{t("git.unresolved.heading")}</p>
         <p class="sidebar-hint">
-          {tPlural("git.unresolved.count", unresolvedFiles().length, {
-            n: unresolvedFiles().length,
+          {tPlural("git.unresolved.count", pending().length, {
+            n: pending().length,
           })}
         </p>
         <div class="git-panel__list">
-          <For each={unresolvedFiles()}>
+          <For each={pending()}>
             {(entry) => {
               const basename = () => entry.relPath.split("/").pop() ?? entry.relPath;
               return (

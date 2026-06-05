@@ -80,14 +80,19 @@ export function buildAnnotationInsert(kind: InsertKind, sel: string): BuiltInser
     case "replace": {
       // `old:` carries the selection; the empty trailing `[]` is the new text.
       const insert = buildSuggestionCall({ kind, body: "", oldText: sel, ...id });
-      // Caret inside the empty trailing body bracket.
-      return { insert, cursorOffset: insert.length - 1, expand: false };
+      // Caret inside the empty trailing body bracket. Expand the raw source
+      // (like `annotation` above) so the caret actually lands there — otherwise
+      // the markup collapses to the atomic SuggestionWidget and the atomic range
+      // rounds the caret out past the `]`, so the new text isn't captured.
+      return { insert, cursorOffset: insert.length - 1, expand: true };
     }
     case "insert":
     case "delete": {
       const insert = buildSuggestionCall({ kind, body: sel, ...id });
       // Caret right after the body's opening bracket (before the wrapped text).
-      return { insert, cursorOffset: insert.indexOf("[") + 1, expand: false };
+      // Expand the raw source so the caret stays inside the bracket rather than
+      // being rounded out to the atomic widget boundary.
+      return { insert, cursorOffset: insert.indexOf("[") + 1, expand: true };
     }
   }
 }

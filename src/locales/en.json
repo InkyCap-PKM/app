@@ -696,6 +696,8 @@
   "git.sinceSync.count.one": "{n} note changed as a result of the last sync. Review and revert anything you don't want.",
   "git.sinceSync.count.other": "{n} notes changed as a result of the last sync. Review and revert anything you don't want.",
   "git.sinceSync.tookTheirs": "collision: accepted collaborator's version",
+  "git.sinceSync.suggestionsAwait.one": "{n} suggestion awaits feedback",
+  "git.sinceSync.suggestionsAwait.other": "{n} suggestions await feedback",
   "git.sinceSync.reviewHint": "Open this note to review its incoming changes",
   "git.sinceSync.revert": "Revert",
   "git.sinceSync.revertNote": "Revert this note to its pre-sync version",

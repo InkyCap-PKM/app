@@ -11891,6 +11891,15 @@ svg.lucide {
   font-weight: 600;
 }
 
+/* "N suggestions await feedback" — flags a since-sync note that also carries
+   open tracked changes, so the user knows there are inline decisions to make
+   beyond reverting the whole note. Accent (not danger) — it's a prompt, not a
+   problem. */
+.git-panel__badge--feedback {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Whole-file decision chips for a conflicted binary (Keep mine / Take theirs /
    Keep both). Mirrors the annotations view-toggle aesthetic: muted by default,
    accent when chosen. */
