@@ -3,6 +3,8 @@ import { EditorView, ViewPlugin, type ViewUpdate, hoverTooltip, type Tooltip } f
 import { type CompletionContext, type CompletionResult, type Completion, startCompletion, snippet } from "@codemirror/autocomplete";
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
+import * as ipc from "../../lib/ipc";
+import { t } from "../../lib/i18n";
 
 export const lspClientFacet = Facet.define<LspClient, LspClient | null>({
   combine: (values) => values[0] ?? null,
@@ -242,18 +244,62 @@ function renderMarkdownSimple(container: HTMLElement, md: string): void {
   }
 }
 
-function convertDiagnostics(doc: EditorView["state"]["doc"], diagnostics: LspDiagnostic[]): Diagnostic[] {
+// Tinymist's unresolved-reference diagnostic. In Typst `@key` is the generic
+// reference operator and a bibliography entry is just another label, so an
+// `@cite` to a key with no `#bibliography(...)` in scope reports the same
+// "label `<key>` does not exist" error as a genuinely broken `@fig:foo`
+// cross-reference. The captured group is the bare label name.
+const UNRESOLVED_LABEL_RE = /^label `<([^>]+)>` does not exist in the document/;
+
+// Bibliography keys, cached so the synchronous diagnostic conversion can decide
+// whether an unresolved label is actually a citation. The set is the exact
+// discriminator the backend uses: `maybe_inject_preview_bibliography` only
+// injects the bibliography (resolving the citation) when the key exists in the
+// notebox bibliography — so a match here means the reading/preview compile will
+// resolve it, and the appended hint is truthful.
+const BIB_KEY_TTL = 5000;
+let cachedBibKeys = new Set<string>();
+let bibKeyCacheTime = 0;
+
+async function refreshBibKeys(): Promise<Set<string>> {
+  if (Date.now() - bibKeyCacheTime < BIB_KEY_TTL) return cachedBibKeys;
+  try {
+    const entries = await ipc.getBibliographyEntries();
+    cachedBibKeys = new Set(entries.map((e) => e.key));
+    bibKeyCacheTime = Date.now();
+  } catch {
+    // Keep the (possibly stale) cache; a failed fetch shouldn't suppress
+    // diagnostics or strip an already-known key.
+  }
+  return cachedBibKeys;
+}
+
+function convertDiagnostics(
+  doc: EditorView["state"]["doc"],
+  diagnostics: LspDiagnostic[],
+  bibKeys: Set<string>,
+): Diagnostic[] {
   return diagnostics.map((d) => {
     const from = lspPositionToOffset(doc, d.range.start);
     const to = lspPositionToOffset(doc, d.range.end);
     const severity = d.severity === 1 ? "error"
       : d.severity === 2 ? "warning"
       : "info";
+
+    // When the unresolved label is a known bibliography key, the source-mode
+    // compile simply lacks the auto-injected bibliography that the preview adds.
+    // Reassure the user instead of leaving a bare "does not exist" error.
+    let message = d.message;
+    const labelMatch = UNRESOLVED_LABEL_RE.exec(d.message);
+    if (labelMatch && bibKeys.has(labelMatch[1])) {
+      message = `${d.message} — ${t("diagnostic.citationResolvesInPreview")}`;
+    }
+
     return {
       from: Math.min(from, doc.length),
       to: Math.min(to, doc.length),
       severity: severity as "error" | "warning" | "info",
-      message: d.message,
+      message,
       source: d.source,
     };
   });
@@ -267,14 +313,24 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
   const normalizeUri = (u: string) => decodeURIComponent(u);
   const normalizedUri = normalizeUri(uri);
 
+  let disposed = false;
   const handler = (diagUri: string, diagnostics: LspDiagnostic[]) => {
     if (normalizeUri(diagUri) !== normalizedUri) return;
-    const converted = convertDiagnostics(view.state.doc, diagnostics);
-    view.dispatch(setDiagnostics(view.state, converted));
+    // Fetch (cached) bibliography keys first so unresolved-citation errors can be
+    // annotated. The await is a no-op on cache hits; on a miss the diagnostics
+    // land a few ms later, which is imperceptible for a transient lint underline.
+    void refreshBibKeys().then((bibKeys) => {
+      if (disposed) return;
+      const converted = convertDiagnostics(view.state.doc, diagnostics, bibKeys);
+      view.dispatch(setDiagnostics(view.state, converted));
+    });
   };
 
   client.setDiagnosticsHandler(handler);
-  return () => client.setDiagnosticsHandler(() => {});
+  return () => {
+    disposed = true;
+    client.setDiagnosticsHandler(() => {});
+  };
 }
 
 // Debounced document sync, scoped *per view*. A module-global timer would be
