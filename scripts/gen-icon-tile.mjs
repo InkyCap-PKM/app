@@ -49,11 +49,17 @@ const scale = +(TARGET_H / MARK_H).toFixed(5);
 const tx = +(TILE / 2 - MARK_CX * scale).toFixed(2);
 const ty = +(TILE / 2 - MARK_CY * scale).toFixed(2);
 
-// Background rounded square: a small (40px) transparent margin so the corners
-// aren't clipped, with Apple-ish corner rounding (~22.4% of the side) that
-// also reads well on Windows/Linux. No large dock inset — the mark fills the
-// tile uniformly across platforms.
-const BG_MARGIN = 40;
+// Background rounded square: a minimal (16px ≈ 1.5%) transparent keyline so
+// the antialiased edge has a hair of breathing room, with Apple-ish corner
+// rounding (~22.4% of the side) that also reads well on Windows/Linux. This is
+// near-full-bleed: GNOME/KDE/Windows ship rounded squares edge-to-edge, so a
+// minimal keyline maximizes the tile's footprint in the dock/alt-tab. The
+// corners are rounded, so there's nothing at the canvas corner to clip anyway.
+// macOS nominally prefers a larger inset, but this one tile feeds every
+// platform via `tauri icon`; the rounded shape keeps it from reading oversized
+// there. No large dock inset — the mark fills the tile uniformly across
+// platforms.
+const BG_MARGIN = 16;
 const bgSide = TILE - BG_MARGIN * 2;
 const bgRadius = Math.round(bgSide * 0.2237);
 
