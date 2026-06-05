@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::backup::{password, restore, runner, state};
 use crate::errors::{InkyCapError, Result};
 use crate::state::AppState;
+use crate::storage::to_frontend_string;
 
 /// Run a backup immediately. Returns `Ok(None)` when the only-on-change
 /// guard kicked in for a *scheduled* tick — manual runs from the command
@@ -219,18 +220,37 @@ pub async fn restore_backup_files(
     entries: Vec<String>,
     conflict: restore::RestoreConflictPolicy,
     password_override: Option<String>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    app_handle: AppHandle,
 ) -> Result<Vec<restore::RestoreResult>> {
     let archive = PathBuf::from(archive_path);
-    let target = PathBuf::from(target_root);
+    let target = PathBuf::from(&target_root);
     let password = match password_override {
         Some(p) if !p.is_empty() => Some(p),
         _ => tokio::task::spawn_blocking(password::get)
             .await
             .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??,
     };
-    tokio::task::spawn_blocking(move || {
+    let results = tokio::task::spawn_blocking(move || {
         restore::extract_files(&archive, &target, &entries, password.as_deref(), conflict)
     })
     .await
-    .map_err(|e| InkyCapError::ExportFailed(format!("restore task panicked: {e}")))?
+    .map_err(|e| InkyCapError::ExportFailed(format!("restore task panicked: {e}")))??;
+
+    // If the restore wrote into the notebox currently open in this window, its
+    // files changed underneath the session — rebuild the indexes so search,
+    // backlinks, and the Mycelial View reflect the restored content. A
+    // multi-file restore is a bulk write the file watcher can miss. Restores to
+    // any other folder have no open session to refresh.
+    let session = state.session(window.label()).await;
+    if let Some(root) = session.notebox_root.read().await.clone() {
+        let same_notebox = std::fs::canonicalize(&target_root)
+            .map(|tc| to_frontend_string(&tc) == to_frontend_string(&root))
+            .unwrap_or(false);
+        if same_notebox {
+            crate::commands::notebox::spawn_index_rebuild(app_handle, session.clone());
+        }
+    }
+    Ok(results)
 }

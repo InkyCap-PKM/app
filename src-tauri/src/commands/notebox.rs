@@ -237,24 +237,9 @@ pub async fn open_notebox(
 
     // Phase B — spawn the heavy index build in the background for this
     // session. The UI is already interactive; features that depend on the
-    // indexes (search, tags, backlinks, properties) should show a loading
-    // state until the `notebox:index-ready` event fires on this window.
-    let bg_handle = app_handle.clone();
-    let bg_session = session.clone();
-    tauri::async_runtime::spawn(async move {
-        match bg_session.build_indexes().await {
-            Ok(stats) => {
-                let _ = bg_handle.emit("notebox:index-ready", &stats);
-            }
-            Err(err) => {
-                log::error!("Background index build failed: {err}");
-                let _ = bg_handle.emit(
-                    "notebox:index-error",
-                    serde_json::json!({ "error": err.to_string() }),
-                );
-            }
-        }
-    });
+    // indexes (search, tags, backlinks, properties) show a loading state until
+    // the `notebox:index-ready` event fires.
+    spawn_index_rebuild(app_handle.clone(), session.clone());
 
     Ok(NoteboxInfo {
         path: to_frontend_string(&notebox_path),
@@ -263,6 +248,38 @@ pub async fn open_notebox(
         collection_count,
         property_keys: Vec::new(),
     })
+}
+
+/// Rebuild a session's indexes in the background after a bulk on-disk change
+/// (notebox open, markdown import, git sync/pull, package import, backup
+/// restore) and signal the frontend when they are ready via
+/// `notebox:index-ready` (or `notebox:index-error` on failure).
+///
+/// `build_indexes` is incremental — the metadata cache reconciles by mtime, so
+/// only files that actually changed are re-parsed — which makes this cheap for a
+/// small sync and correct for a large one. It is the reliable alternative to
+/// leaning on the file watcher alone, whose OS event queue can silently overflow
+/// when thousands of files land at once (a bulk import, a large pull, a full
+/// restore), leaving the link graph, search index, and corpus stale so
+/// backlinks, search, and the Mycelial View show the new notes as unconnected.
+pub(crate) fn spawn_index_rebuild(
+    app_handle: tauri::AppHandle,
+    session: std::sync::Arc<crate::state::NoteboxSession>,
+) {
+    tauri::async_runtime::spawn(async move {
+        match session.build_indexes().await {
+            Ok(stats) => {
+                let _ = app_handle.emit("notebox:index-ready", &stats);
+            }
+            Err(err) => {
+                log::error!("Background index rebuild failed: {err}");
+                let _ = app_handle.emit(
+                    "notebox:index-error",
+                    serde_json::json!({ "error": err.to_string() }),
+                );
+            }
+        }
+    });
 }
 
 /// On opening a *collaborative* notebox (one carrying a [`NoteboxGitConfig`]

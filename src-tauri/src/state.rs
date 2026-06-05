@@ -290,6 +290,12 @@ impl NoteboxSession {
             let mut stats = persisted.stats;
             // `stopwords` is `#[serde(skip)]`, so re-derive it after load.
             stats.reload_stopwords(Some(&notebox_root));
+            // Repair `total_docs` against the per-document maps. Snapshots
+            // written before the `remove_doc` over-decrement fix (e.g. a corpus
+            // built entirely via `update_doc` during a bulk markdown import) can
+            // carry a `total_docs` stuck near 1 while holding thousands of docs,
+            // which silently disables Mycelial's latent/emergent analysis.
+            stats.resync_total_docs();
             let saved_at = persisted.saved_at;
 
             // Drop docs for files pruned since the snapshot, and any indexed

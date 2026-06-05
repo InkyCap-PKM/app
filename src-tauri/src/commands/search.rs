@@ -9,6 +9,7 @@ use crate::search::engine::AnnotationScope;
 use crate::search::query::parse_query;
 use crate::search::results::{ReplaceResult, SearchResponse};
 use crate::state::AppState;
+use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 
 /// Get all tags with their counts (for tag autocomplete).
@@ -289,7 +290,7 @@ pub async fn search_and_replace(
         }
 
         results.push(ReplaceResult {
-            path: path.to_string_lossy().to_string(),
+            path: to_frontend_string(path),
             replacements: *count,
         });
     }
