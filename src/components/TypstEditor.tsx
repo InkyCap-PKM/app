@@ -45,7 +45,7 @@ import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-edito
 import { getLspClient, lspReady } from "../stores/lsp";
 import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
 import { noteboxInfo } from "../stores/notebox";
-import { setActiveEditorView } from "../stores/editor";
+import { registerEditorView, unregisterEditorView } from "../stores/editor";
 import { trackWrite, awaitPendingWrite } from "../stores/editor-writes";
 import { resolveTextFontSync } from "../lib/fontResolver";
 import { toastError } from "../stores/toasts";
@@ -295,7 +295,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         editorHandle.ensureParsed();
       }
     }
-    setActiveEditorView(editorHandle);
+    registerEditorView(props.tabId, editorHandle);
   }
 
   function destroyEditor() {
@@ -309,7 +309,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           console.error("[TypstEditor] failed to cache editor state:", err);
         }
       }
-      setActiveEditorView(undefined);
+      unregisterEditorView(props.tabId, editorHandle);
       editorHandle.destroy();
       editorHandle = undefined;
     }
