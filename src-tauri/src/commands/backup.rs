@@ -232,25 +232,61 @@ pub async fn restore_backup_files(
             .await
             .map_err(|e| InkyCapError::BadRequest(format!("keychain task panicked: {e}")))??,
     };
-    let results = tokio::task::spawn_blocking(move || {
-        restore::extract_files(&archive, &target, &entries, password.as_deref(), conflict)
+    // Is this an in-place restore of the notebox open in this window? Decides
+    // (a) whether `user-config/` entries route back to the OS app-config dir
+    // instead of landing loose in the notebox root, and (b) whether to rebuild
+    // the session indexes afterward.
+    let session = state.session(window.label()).await;
+    let restoring_to_open_notebox = match session.notebox_root.read().await.clone() {
+        Some(root) => std::fs::canonicalize(&target_root)
+            .map(|tc| to_frontend_string(&tc) == to_frontend_string(&root))
+            .unwrap_or(false),
+        None => false,
+    };
+
+    let results = tokio::task::spawn_blocking(move || -> Result<Vec<restore::RestoreResult>> {
+        if restoring_to_open_notebox {
+            // `user-config/` entries are a snapshot of the OS app-config dir
+            // (the backup's `user_config_root`); restore them there, not into
+            // the notebox root. `notebox/` (and any unprefixed) entries still
+            // restore to the notebox.
+            let (config_entries, notebox_entries): (Vec<String>, Vec<String>) = entries
+                .into_iter()
+                .partition(|e| e.starts_with("user-config/"));
+            let mut out = restore::extract_files(
+                &archive,
+                &target,
+                &notebox_entries,
+                password.as_deref(),
+                conflict,
+            )?;
+            if !config_entries.is_empty() {
+                let config_root = crate::app_paths::config_dir();
+                std::fs::create_dir_all(&config_root)?;
+                out.extend(restore::extract_files(
+                    &archive,
+                    &config_root,
+                    &config_entries,
+                    password.as_deref(),
+                    conflict,
+                )?);
+            }
+            Ok(out)
+        } else {
+            // Alternate-folder restore: an explicit "extract everything here"
+            // recovery action, so honour the single target the user chose.
+            restore::extract_files(&archive, &target, &entries, password.as_deref(), conflict)
+        }
     })
     .await
     .map_err(|e| InkyCapError::ExportFailed(format!("restore task panicked: {e}")))??;
 
-    // If the restore wrote into the notebox currently open in this window, its
-    // files changed underneath the session — rebuild the indexes so search,
-    // backlinks, and the Mycelial View reflect the restored content. A
-    // multi-file restore is a bulk write the file watcher can miss. Restores to
-    // any other folder have no open session to refresh.
-    let session = state.session(window.label()).await;
-    if let Some(root) = session.notebox_root.read().await.clone() {
-        let same_notebox = std::fs::canonicalize(&target_root)
-            .map(|tc| to_frontend_string(&tc) == to_frontend_string(&root))
-            .unwrap_or(false);
-        if same_notebox {
-            crate::commands::notebox::spawn_index_rebuild(app_handle, session.clone());
-        }
+    // The in-place restore changed the notebox's files underneath the session —
+    // rebuild the indexes so search, backlinks, and the Mycelial View reflect
+    // the restored content (a multi-file restore is a bulk write the file
+    // watcher can miss).
+    if restoring_to_open_notebox {
+        crate::commands::notebox::spawn_index_rebuild(app_handle, session.clone());
     }
     Ok(results)
 }
