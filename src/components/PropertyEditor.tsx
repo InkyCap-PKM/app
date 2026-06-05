@@ -59,7 +59,10 @@ function validateValue(value: PropertyValue, declaredType: string): string | nul
         return "property.editor.expectedDatetime";
       break;
     case "list":
-      if (!Array.isArray(value)) return "property.editor.expectedList";
+      // A single scalar is a valid in-progress list — the user may be about to
+      // add more items, and the ListEditor (and the backend's `coerce_value`)
+      // both treat a lone scalar as a one-item list. Only an object-shaped value
+      // would be genuinely wrong here, and `PropertyValue` can't produce one.
       break;
     case "text":
       if (typeof value !== "string" && !Array.isArray(value)) return "property.editor.expectedText";

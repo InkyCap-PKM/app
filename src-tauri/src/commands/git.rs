@@ -946,6 +946,14 @@ pub async fn git_sync(
         .await
         .map_err(|e| InkyCapError::Git(format!("sync task failed: {e}")))?;
     emit_sync_events(&app_handle, window.label(), &result);
+    // A pull rewrites notes in the working tree; rebuild the session indexes so
+    // backlinks, search, and the Mycelial View reflect the incoming changes. The
+    // file watcher alone can miss a large merge (its OS event queue overflows on
+    // bulk writes), so don't depend on it. `build_indexes` is incremental, so a
+    // small sync only re-parses the handful of files that changed.
+    if matches!(&result, Ok(o) if o.pulled) {
+        crate::commands::notebox::spawn_index_rebuild(app_handle.clone(), session.clone());
+    }
     result
 }
 
@@ -1801,6 +1809,12 @@ pub async fn git_import_package(
     .await
     .map_err(|e| InkyCapError::Git(format!("import task failed: {e}")))?;
     emit_sync_events(&app_handle, window.label(), &result);
+    // Reconciling a package into the open notebox rewrites notes in the working
+    // tree; rebuild the session indexes so the imported changes are reflected
+    // (the file watcher can miss a bulk reconcile). Incremental, like git_sync.
+    if matches!(&result, Ok(o) if o.pulled) {
+        crate::commands::notebox::spawn_index_rebuild(app_handle.clone(), session.clone());
+    }
     result
 }
 

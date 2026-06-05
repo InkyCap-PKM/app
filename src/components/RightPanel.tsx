@@ -628,9 +628,15 @@ const RightPanel: Component = () => {
   /// IPC. A failure (parse error, index not ready) returns `[]` so the
   /// pane falls back to showing no matches rather than blowing up.
   const [filterMatches] = createResource(
-    () => ({ q: debouncedFilterQuery().trim(), ready: indexReady() }),
-    async ({ q, ready }): Promise<SearchResult[] | null> => {
-      if (!q || !ready) return null;
+    () => ({ q: debouncedFilterQuery().trim(), ready: indexReady(), show: linksShowFilter() }),
+    async ({ q, ready, show }): Promise<SearchResult[] | null> => {
+      // The filter only applies while its input is actually shown. `filterQuery`
+      // persists across sessions (so re-opening the filter keeps your text), but
+      // `showFilter` can be false with a non-empty stored query — without this
+      // guard that stale query would filter the Inbound/Outbound lists down to
+      // nothing with no visible filter UI and no way to clear it, making links
+      // silently disappear in every notebox.
+      if (!show || !q || !ready) return null;
       try {
         const resp = await ipc.noteboxSearch(q, 1000, false);
         return resp.results;
@@ -1931,7 +1937,7 @@ const RightPanel: Component = () => {
                 </For>
                 <Show when={sortedBacklinks().length === 0}>
                   <p class="sidebar-hint">
-                    {linksFilterQuery().trim()
+                    {linksShowFilter() && linksFilterQuery().trim()
                       ? t("rightPanel.noMatchingInbound")
                       : t("rightPanel.noInbound")}
                   </p>
@@ -2044,7 +2050,7 @@ const RightPanel: Component = () => {
                 </For>
                 <Show when={sortedForwardLinks().length === 0}>
                   <p class="sidebar-hint">
-                    {linksFilterQuery().trim()
+                    {linksShowFilter() && linksFilterQuery().trim()
                       ? t("rightPanel.noMatchingOutbound")
                       : t("rightPanel.noOutbound")}
                   </p>

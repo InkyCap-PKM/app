@@ -120,7 +120,7 @@ export function SourcesSettingsSection() {
     <div class="settings__section">
       <div class="settings__section-header">
         <span class="settings__label">
-          {t("settings.about.heading")} InkyCap
+          {t("settings.about.heading", { app: "InkyCap" })}
         </span>
       </div>
       <p class="settings__section-note settings__section-note--plain">

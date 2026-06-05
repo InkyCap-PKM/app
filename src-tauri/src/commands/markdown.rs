@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::errors::InkyCapError;
 use crate::markdown::md_to_typst::{FieldMapping, FrontmatterMapping};
@@ -413,6 +413,15 @@ pub async fn import_markdown_notebox(
             reg.save();
         }
     }
+
+    // The imported notes were written straight to disk by the importer, so the
+    // session's in-memory indexes (link graph, corpus stats, search index,
+    // property index) and the on-disk metadata cache still reflect the
+    // pre-import state. A bulk import of thousands of notes is exactly the case
+    // the per-file watcher path handles poorly, so rebuild explicitly rather
+    // than relying on it; without this, backlinks, search, and the Mycelial
+    // View show the new notes as unconnected.
+    crate::commands::notebox::spawn_index_rebuild(window.app_handle().clone(), session.clone());
 
     Ok(result)
 }

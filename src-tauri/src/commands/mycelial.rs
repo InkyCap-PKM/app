@@ -127,12 +127,19 @@ pub async fn get_mycelial_data(
     let session = state.session(window.label()).await;
     let max_depth = max_depth.unwrap_or(2).min(3);
     let center_path = sanitize_notebox_arg(&path)?;
+    // The centre note's id, in the same `to_frontend_string` shape every other
+    // node id (and every edge endpoint) carries. The raw `path` argument is an
+    // OS-native string — on Windows it may use `\` separators or a `\\?\`
+    // verbatim prefix — so using it directly as the centre id makes it
+    // string-unequal to its own edges in the frontend layout, which collapses
+    // the graph to just the anchor. Deriving the id here keeps it consistent.
+    let center_id = to_frontend_string(&center_path);
     let config = MycelialConfig::default();
 
     // 1. BFS the link graph — these are the notebox's explicit connections.
     let (link_nodes, link_edges) = {
         let link_index = session.link_index.read().await;
-        bfs_link_graph(&link_index, &center_path, &path, max_depth)
+        bfs_link_graph(&link_index, &center_path, &center_id, max_depth)
     };
 
     // 2. Map every existing page name -> its path, so corpus analysis can tell
@@ -178,11 +185,10 @@ pub async fn get_mycelial_data(
     //    a single note for unlinked notes; similarity gives it real context.
     let (analysis, link_node_ids) = {
         let corpus_stats = session.corpus_stats.read().await;
-        let center_id = PathBuf::from(&path);
         let mut neighborhood: HashSet<PathBuf> =
             link_nodes.iter().map(|n| PathBuf::from(&n.id)).collect();
-        neighborhood.insert(center_id.clone());
-        for p in corpus_stats.similar_docs(&center_id, config.semantic_neighbors) {
+        neighborhood.insert(center_path.clone());
+        for p in corpus_stats.similar_docs(&center_path, config.semantic_neighbors) {
             neighborhood.insert(p);
         }
         let neighborhood: Vec<PathBuf> = neighborhood.into_iter().collect();
@@ -288,25 +294,30 @@ pub async fn get_mycelial_data(
             source_ids.insert(m.path.clone());
         }
     }
-    source_ids.remove(&path);
+    source_ids.remove(&center_id);
 
     // `source_ids` / `link_node_ids` are HashSets — iteration order varies
     // per call. Sort the rendered node lists by id so the Mycelial View
     // layout (whose force simulation seeds off input order) is stable across
     // recomputes of the same notebox.
-    let mut source_notes: Vec<FlowNode> = source_ids.iter().map(|p| flow_node(p, &path)).collect();
+    let mut source_notes: Vec<FlowNode> = source_ids
+        .iter()
+        .map(|p| flow_node(p, &center_id))
+        .collect();
     source_notes.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut context_notes: Vec<FlowNode> = link_node_ids
         .iter()
-        .filter(|id| **id != path && !source_ids.contains(*id) && !latent_targets.contains(*id))
-        .map(|p| flow_node(p, &path))
+        .filter(|id| {
+            **id != center_id && !source_ids.contains(*id) && !latent_targets.contains(*id)
+        })
+        .map(|p| flow_node(p, &center_id))
         .collect();
     context_notes.sort_by(|a, b| a.id.cmp(&b.id));
 
     // Faint wikilinks among the rendered notes (excludes latent targets,
     // whose connections are shown as the latent links themselves).
-    let rendered: HashSet<&String> = std::iter::once(&path)
+    let rendered: HashSet<&String> = std::iter::once(&center_id)
         .chain(source_ids.iter())
         .chain(context_notes.iter().map(|n| &n.id))
         .collect();
@@ -331,7 +342,7 @@ pub async fn get_mycelial_data(
         .collect();
 
     Ok(MycelialData {
-        center: path,
+        center: center_id,
         source_notes,
         context_notes,
         context_edges,

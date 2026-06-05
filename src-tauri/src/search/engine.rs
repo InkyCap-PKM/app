@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::note::PropertyValue;
 use crate::search::query::{FilterKind, QueryNode};
 use crate::search::results::{compute_score, SearchResult};
+use crate::storage::to_frontend_string;
 
 /// How a search treats text inside `#annotation[…]` / `#suggestion[…]` marks.
 /// Drives the SearchPanel's tri-state annotation toggle.
@@ -513,7 +514,7 @@ impl SearchEngine {
                     collect_context(&doc.lines, &doc.import_line_indices, line_idx, 2);
 
                 results.push(SearchResult {
-                    path: doc.path.to_string_lossy().to_string(),
+                    path: to_frontend_string(&doc.path),
                     file_name: doc.file_name.clone(),
                     line_number: line_idx + 1,
                     line_text,

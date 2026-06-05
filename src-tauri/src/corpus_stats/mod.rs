@@ -220,7 +220,17 @@ impl CorpusStats {
 
     /// Remove a document's contribution from corpus statistics.
     fn remove_doc(&mut self, path: &Path) {
-        if self.total_docs > 0 {
+        // Only count a removal when the document is actually present. `update_doc`
+        // is remove-then-add, so using it to ADD a brand-new document must not
+        // decrement `total_docs` — otherwise the spurious decrement cancels the
+        // `add_doc` increment and the counter never grows. A corpus built
+        // entirely through `update_doc` (e.g. a bulk markdown import reindexing
+        // thousands of files into a fresh corpus) would otherwise leave
+        // `total_docs` stuck near 1 while the per-doc maps fill up, tripping the
+        // `total_docs < min_corpus_size` guard in `analyze_neighborhood`.
+        // `doc_word_count` is the canonical presence map (`add_doc` always
+        // populates it; `contains_doc` reads it).
+        if self.doc_word_count.contains_key(path) && self.total_docs > 0 {
             self.total_docs -= 1;
         }
 
@@ -310,6 +320,16 @@ impl CorpusStats {
     /// Whether a document is currently indexed.
     pub fn contains_doc(&self, path: &Path) -> bool {
         self.doc_word_count.contains_key(path)
+    }
+
+    /// Re-derive `total_docs` from the per-document maps. The invariant is
+    /// `total_docs == doc_word_count.len()` (one entry per indexed document);
+    /// call this after loading a persisted snapshot to repair any historical
+    /// desync — notably snapshots written before the `remove_doc`
+    /// over-decrement fix, where a corpus built via `update_doc` (bulk import)
+    /// left the counter stuck near 1 while the maps were fully populated.
+    pub fn resync_total_docs(&mut self) {
+        self.total_docs = self.doc_word_count.len();
     }
 
     /// Compute TF-IDF for a term in a specific document context.
@@ -1083,6 +1103,36 @@ mod tests {
         assert_eq!(stats.doc_freq.get("alpha"), None);
         assert_eq!(stats.doc_freq.get("gamma"), Some(&1));
         assert_eq!(stats.total_docs, 1);
+    }
+
+    #[test]
+    fn update_doc_on_new_docs_grows_total_docs() {
+        // Regression: `update_doc` is remove-then-add. Using it to ADD brand-new
+        // documents — exactly what a bulk markdown import does when it reindexes
+        // every file into a fresh corpus — must still grow `total_docs`. A prior
+        // over-decrement in `remove_doc` cancelled the `add_doc` increment, so a
+        // whole imported notebox ended up with `total_docs == 1` while the
+        // per-doc maps were fully populated, tripping the `min_corpus_size` guard
+        // in `analyze_neighborhood` and disabling latent/emergent detection.
+        let mut stats = CorpusStats::new(None);
+        for i in 0..50 {
+            let tokens = vec![make_token("alpha", 0), make_token(&format!("term{i}"), 0)];
+            stats.update_doc(Path::new(&format!("note{i}.typ")), &tokens);
+        }
+        assert_eq!(stats.total_docs, 50);
+        assert_eq!(stats.total_docs, stats.indexed_paths().len());
+    }
+
+    #[test]
+    fn resync_total_docs_repairs_a_desynced_counter() {
+        // Repairs historical snapshots written with the over-decrement bug.
+        let mut stats = CorpusStats::new(None);
+        for i in 0..10 {
+            stats.add_doc(Path::new(&format!("note{i}.typ")), &[make_token("x", 0)]);
+        }
+        stats.total_docs = 1; // simulate a desynced persisted counter
+        stats.resync_total_docs();
+        assert_eq!(stats.total_docs, 10);
     }
 
     fn concept(term: &str, score: f64, sources: &[&str]) -> EmergentConcept {
