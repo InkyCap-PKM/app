@@ -207,6 +207,21 @@ export interface Contributor {
   credit_roles: string[];
 }
 
+/// Where the merged book's table of contents sits relative to the chapters.
+/// Mirrors the Rust `TocPlacement` (internally tagged on `kind`). `stem` is
+/// the chapter note's file stem; an anchor whose stem isn't in the export set
+/// falls back to `beginning` at build time.
+export type TocPlacement =
+  | { kind: "beginning" }
+  | { kind: "end" }
+  | { kind: "after_chapter"; stem: string };
+
+/// How the merged book sources its bibliography. `unified` consolidates one
+/// list at the back (stripping per-note declarations); `in_place` keeps each
+/// note's own `#bibliography(...)` (capped at one across the whole book by
+/// Typst). Mirrors the Rust `BibliographyMode`.
+export type BibliographyMode = "unified" | "in_place";
+
 /// Persistent "Export as book" configuration. Mirrors the Rust
 /// `BookExportConfig`. All fields optional; defaults are supplied when
 /// missing (see `BookExportOverrides` in `ipc.ts`).
@@ -222,13 +237,14 @@ export interface BookExportConfig {
   wikilink_mode?: "internal" | "external" | "plain" | null;
   include_title_page?: boolean | null;
   include_outline?: boolean | null;
+  toc_placement?: TocPlacement | null;
   page_numbering?:
     | { style: "arabic" }
     | { style: "arabic_from_chapters" }
     | { style: "roman_then_arabic" }
     | { style: "arabic_from_page"; start_page: number }
     | null;
-  include_bibliography?: boolean | null;
+  bibliography_mode?: BibliographyMode | null;
   /** When false, the CRediT contributions statement is omitted from the book
    *  export (the byline still renders). Defaults to true when unset. */
   include_credit_statement?: boolean | null;
