@@ -1625,6 +1625,13 @@ export async function getFileCitations(path: string): Promise<FileCitation[]> {
   return invoke<FileCitation[]>("get_file_citations", { path });
 }
 
+/** Render the references cited in `path` as static, pre-formatted Typst markup
+ *  (in the notebox's citation style) for placing on the clipboard. Returns an
+ *  empty string when the file cites nothing. */
+export async function copyFileBibliography(path: string): Promise<string> {
+  return invoke<string>("copy_file_bibliography", { path });
+}
+
 export async function aggregateCitations(
   paths: string[],
 ): Promise<AggregatedCitation[]> {

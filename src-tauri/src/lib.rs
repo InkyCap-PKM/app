@@ -387,6 +387,7 @@ pub fn run() {
             commands::markdown::export_collection_batch_markdown,
             commands::bibliography::get_bibliography_entries,
             commands::bibliography::get_file_citations,
+            commands::bibliography::copy_file_bibliography,
             commands::bibliography::aggregate_citations,
             commands::bibliography::refresh_bibliography,
             commands::bibliography::detect_zotero_path,

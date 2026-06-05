@@ -6904,48 +6904,42 @@ svg.lucide {
   }
 }
 
-.references-panel__header-row {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-
+/* "Browse references" toggle sits in a `.right-panel__section-header` and
+   shares its heading typography (sm / 600 / muted), but unlike the static
+   section labels it expands/collapses the browse list — so it carries a
+   resting outline and a disclosure chevron to read unmistakably as a button.
+   The negative left margin pulls the chevron back to the header's content
+   edge so the row still aligns with the other section labels. */
 .references-panel__toggle {
-  flex: 1;
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -4px;
+  padding: 2px 8px 2px 4px;
   background: none;
-  border: none;
-  color: var(--accent);
-  font-size: var(--text-md);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
   cursor: pointer;
   text-align: left;
 }
 
 .references-panel__toggle:hover {
   background: var(--bg-hover);
-}
-
-.references-panel__refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-right: 4px;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  color: var(--fg-dim);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.references-panel__refresh:hover {
-  background: var(--bg-hover);
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.references-panel__refresh:disabled {
+.references-panel__toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.left-sidebar__icon-btn:disabled,
+.right-panel__icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }

@@ -97,6 +97,76 @@ pub async fn get_file_citations(
     Ok(citations)
 }
 
+/// Render the references cited in `path` as static, pre-formatted Typst markup,
+/// using the notebox's resolved citation style, and return it for the frontend
+/// to place on the clipboard. Unlike a live `#bibliography(...)`, the result is
+/// a frozen snapshot the user can paste into any note and have render
+/// identically without citation resolution. Returns an empty string when the
+/// file cites nothing.
+#[tauri::command]
+pub async fn copy_file_bibliography(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let notebox_root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let storage = session.get_storage().await?;
+    let source = storage.read_file(&sanitize_notebox_arg(&path)?).await?;
+    let keys = bibliography::extract_citations(&source);
+    if keys.is_empty() {
+        return Ok(String::new());
+    }
+
+    let (source_kind, bib_path, zotero_path, custom_csl, style_name) = {
+        let notebox = session.notebox_settings.read().await;
+        let global = state.settings.read().await;
+        (
+            notebox.citations.source.clone(),
+            notebox.citations.bibliography_path.clone(),
+            global.citations.zotero_database_path.clone(),
+            notebox.citations.custom_csl_path.clone(),
+            global.citations.citation_style.clone(),
+        )
+    };
+
+    let library = match source_kind.as_str() {
+        "zotero" => {
+            let db = zotero_path
+                .map(PathBuf::from)
+                .or_else(crate::typst_pipeline::zotero::auto_detect_path);
+            let entries = match db {
+                Some(p) => {
+                    crate::typst_pipeline::zotero::read_entries(&p).map_err(InkyCapError::Typst)?
+                }
+                None => Vec::new(),
+            };
+            // Materialize Zotero as BibTeX first — the same shape the live
+            // compile pipeline feeds Typst — then parse it into a library.
+            let bibtex = bibliography::export_entries_to_bibtex(&entries);
+            bibliography::parse_library_bibtex(&bibtex).map_err(InkyCapError::Typst)?
+        }
+        _ => {
+            let bib = bibliography::detect_default(&notebox_root, bib_path.as_deref()).ok_or_else(
+                || InkyCapError::Typst("No bibliography file is configured".to_string()),
+            )?;
+            bibliography::load_library(&bib).map_err(InkyCapError::Typst)?
+        }
+    };
+
+    let style =
+        bibliography::resolve_style(&notebox_root, custom_csl.as_deref(), style_name.as_deref())
+            .map_err(InkyCapError::Typst)?;
+
+    bibliography::render_cited_bibliography(&library, &keys, &style).map_err(InkyCapError::Typst)
+}
+
 /// Shared entry loading logic.
 pub(crate) async fn load_entries_inner(
     state: &AppState,
