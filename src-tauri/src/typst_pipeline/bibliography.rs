@@ -742,6 +742,268 @@ fn cite_func_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"#\s*cite\s*\(\s*<\s*([^>]+)\s*>").unwrap())
 }
 
+// ---------------------------------------------------------------------------
+// Static bibliography rendering (the "copy formatted bibliography" feature).
+//
+// A live `#bibliography(...)` is resolved at compile time against the whole
+// document's citations. This path produces the *opposite*: a frozen Typst-
+// markup snapshot of the references cited in one note, formatted in the user's
+// citation style, that can be pasted into any other note and render identically
+// without re-running citation resolution.
+//
+// Per CLAUDE.md's Typst-first principle: Typst's own `#bibliography` is driven
+// by hayagriva, and that is exactly what we call here — we do not hand-format
+// references. The only thing Typst can't natively give us is a *static* render
+// of a live bibliography, which is the whole reason this code exists. We map
+// hayagriva's rendered `ElemChild` formatting tree onto the equivalent Typst
+// markup (`_italic_`, `*bold*`, `#super[...]`, `#smallcaps[...]`,
+// `#underline[...]`, `#link(...)`), so the pasted output carries the same
+// emphasis the compiled bibliography would.
+// ---------------------------------------------------------------------------
+
+/// Parse a bibliography file into a hayagriva [`Library`](hayagriva::Library)
+/// for rendering. Unlike [`parse_bibliography`], which returns display-only
+/// [`BibEntry`] rows, this keeps the full hayagriva entries that the CSL
+/// renderer needs.
+pub fn load_library(path: &Path) -> Result<hayagriva::Library, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read bibliography file: {e}"))?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext {
+        "bib" => parse_library_bibtex(&content),
+        "yml" | "yaml" => hayagriva::io::from_yaml_str(&content)
+            .map_err(|e| format!("Hayagriva YAML parse error: {e}")),
+        // CSL JSON has no native hayagriva reader; the live `#bibliography`
+        // path doesn't support it as a render source either, so we surface a
+        // clear error rather than silently dropping fields.
+        "json" => {
+            Err("CSL JSON bibliographies can't be rendered to static Typst markup yet".to_string())
+        }
+        _ => Err(format!("Unsupported bibliography format: .{ext}")),
+    }
+}
+
+/// Parse a BibTeX string into a hayagriva [`Library`](hayagriva::Library).
+/// Used for the Zotero source, which is materialized as BibTeX first (the same
+/// shape the live compile pipeline feeds Typst).
+pub fn parse_library_bibtex(content: &str) -> Result<hayagriva::Library, String> {
+    hayagriva::io::from_biblatex_str(content).map_err(|errs| {
+        let joined = errs
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("BibTeX parse error: {joined}")
+    })
+}
+
+/// Resolve the CSL style to render with, mirroring the live compile pipeline's
+/// precedence (see `NoteboxSession::open_notebox_fast`): a per-notebox custom
+/// `.csl` file wins, otherwise the user-global named style, defaulting to
+/// `chicago-author-date`.
+pub fn resolve_style(
+    notebox_root: &Path,
+    custom_csl_path: Option<&str>,
+    style_name: Option<&str>,
+) -> Result<hayagriva::citationberg::IndependentStyle, String> {
+    use hayagriva::citationberg::{IndependentStyle, Style};
+
+    if let Some(rel) = custom_csl_path.filter(|s| !s.is_empty()) {
+        // `custom_csl_path` is notebox-root-absolute (`/styles/foo.csl`); join
+        // strips the leading slash so it resolves under the notebox.
+        let path = notebox_root.join(rel.trim_start_matches('/'));
+        let xml = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read CSL style file: {e}"))?;
+        return IndependentStyle::from_xml(&xml).map_err(|e| format!("Invalid CSL style: {e}"));
+    }
+
+    let name = style_name
+        .filter(|s| !s.is_empty() && *s != "custom")
+        .unwrap_or("chicago-author-date");
+    let archived = hayagriva::archive::ArchivedStyle::by_name(name)
+        .or_else(|| hayagriva::archive::ArchivedStyle::by_name("chicago-author-date"))
+        .ok_or_else(|| format!("Unknown citation style: {name}"))?;
+    match archived.get() {
+        Style::Independent(s) => Ok(s),
+        Style::Dependent(_) => Err(format!(
+            "Citation style '{name}' is a dependent style and can't render a bibliography directly"
+        )),
+    }
+}
+
+/// Render the references for `keys` as static Typst markup, formatted with the
+/// given CSL `style`. Returns one paragraph per reference (blank-line
+/// separated), in the style's own sort order. Keys not present in `library`
+/// (e.g. typos or non-bibliographic `@`-tokens) are skipped. Returns an empty
+/// string when no key resolves to an entry.
+pub fn render_cited_bibliography(
+    library: &hayagriva::Library,
+    keys: &[String],
+    style: &hayagriva::citationberg::IndependentStyle,
+) -> Result<String, String> {
+    use hayagriva::{BibliographyDriver, BibliographyRequest, CitationItem, CitationRequest};
+
+    let locales = hayagriva::archive::locales();
+
+    let mut driver = BibliographyDriver::new();
+    let mut any = false;
+    for key in keys {
+        if let Some(entry) = library.get(key) {
+            any = true;
+            driver.citation(CitationRequest::from_items(
+                vec![CitationItem::with_entry(entry)],
+                style,
+                &locales,
+            ));
+        }
+    }
+    if !any {
+        return Ok(String::new());
+    }
+
+    let rendered = driver.finish(BibliographyRequest {
+        style,
+        locale: None,
+        locale_files: &locales,
+    });
+
+    let Some(bib) = rendered.bibliography else {
+        return Err("The selected citation style does not define a bibliography".to_string());
+    };
+
+    let mut paragraphs = Vec::with_capacity(bib.items.len());
+    for item in &bib.items {
+        let mut para = String::new();
+        // Numeric styles (IEEE, Vancouver) split the leading label into
+        // `first_field`; author-date styles leave it `None`.
+        if let Some(first) = &item.first_field {
+            elem_child_to_typst(first, &mut para);
+            para.push(' ');
+        }
+        elem_children_to_typst(&item.content, &mut para);
+        let trimmed = para.trim();
+        if !trimmed.is_empty() {
+            paragraphs.push(trimmed.to_string());
+        }
+    }
+    Ok(paragraphs.join("\n\n"))
+}
+
+fn elem_children_to_typst(children: &hayagriva::ElemChildren, out: &mut String) {
+    for child in &children.0 {
+        elem_child_to_typst(child, out);
+    }
+}
+
+fn elem_child_to_typst(child: &hayagriva::ElemChild, out: &mut String) {
+    use hayagriva::ElemChild;
+    match child {
+        ElemChild::Text(formatted) => {
+            out.push_str(&wrap_formatting(
+                &escape_typst_markup(&formatted.text),
+                &formatted.formatting,
+            ));
+        }
+        // Block-vs-inline display only matters for hanging indents in the
+        // rendered list; inside a single pasted reference we keep everything on
+        // one paragraph, so recurse inline regardless of `display`.
+        ElemChild::Elem(elem) => elem_children_to_typst(&elem.children, out),
+        // hayagriva's contract: `Markup` is already Typst markup — emit verbatim.
+        ElemChild::Markup(markup) => out.push_str(markup),
+        ElemChild::Link { text, url } => {
+            // hayagriva commonly emits a URL's leading portion as plain text
+            // (e.g. a `https://doi.org/` DOI prefix) immediately followed by a
+            // Link whose `url` is that prefix plus the link's display text.
+            // Emitted as-is, Typst auto-links the bare-URL prefix into a
+            // *separate, truncated* link sitting next to ours. Re-absorb such a
+            // prefix into this single link so the whole URL is one clean link.
+            let mut display = text.text.clone();
+            if let Some(prefix) = url.strip_suffix(&text.text) {
+                let escaped_prefix = escape_typst_markup(prefix);
+                if !escaped_prefix.is_empty() && out.ends_with(&escaped_prefix) {
+                    out.truncate(out.len() - escaped_prefix.len());
+                    display = format!("{prefix}{}", text.text);
+                }
+            }
+
+            out.push_str("#link(\"");
+            out.push_str(&escape_typst_string(url));
+            out.push('"');
+            if display == *url {
+                // Body identical to the destination: Typst renders the URL as
+                // the link text on its own. Omitting the body also avoids a
+                // nested auto-link firing on a bare URL inside `[...]`.
+                out.push(')');
+            } else {
+                out.push_str(")[");
+                out.push_str(&wrap_formatting(
+                    &escape_typst_markup(&display),
+                    &text.formatting,
+                ));
+                out.push(']');
+            }
+        }
+        // Only emitted for in-text citations, never in a bibliography list.
+        ElemChild::Transparent { .. } => {}
+    }
+}
+
+/// Wrap already-escaped `text` in the Typst markup equivalent to hayagriva's
+/// resolved [`Formatting`](hayagriva::Formatting). Whitespace-only runs are left
+/// bare so we don't emit empty `_ _` / `*  *` artifacts.
+fn wrap_formatting(text: &str, fmt: &hayagriva::Formatting) -> String {
+    use hayagriva::citationberg::{
+        FontStyle, FontVariant, FontWeight, TextDecoration, VerticalAlign,
+    };
+
+    if text.trim().is_empty() {
+        return text.to_string();
+    }
+
+    let mut s = text.to_string();
+    match fmt.vertical_align {
+        VerticalAlign::Sup => s = format!("#super[{s}]"),
+        VerticalAlign::Sub => s = format!("#sub[{s}]"),
+        _ => {}
+    }
+    if fmt.font_variant == FontVariant::SmallCaps {
+        s = format!("#smallcaps[{s}]");
+    }
+    if fmt.text_decoration == TextDecoration::Underline {
+        s = format!("#underline[{s}]");
+    }
+    if fmt.font_weight == FontWeight::Bold {
+        s = format!("*{s}*");
+    }
+    if fmt.font_style == FontStyle::Italic {
+        s = format!("_{s}_");
+    }
+    s
+}
+
+/// Escape the characters that carry markup meaning in Typst content mode, so a
+/// rendered reference string becomes literal text. Hyphens, periods, commas,
+/// and parentheses are intentionally left alone — they're common in citations
+/// and benign in markup.
+fn escape_typst_markup(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(
+            c,
+            '\\' | '*' | '_' | '`' | '$' | '#' | '<' | '>' | '@' | '[' | ']'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Escape a string for embedding inside a Typst `"..."` string literal.
+fn escape_typst_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -954,5 +1216,109 @@ mod tests {
         let out = escape_invalid_citations(src, &valid);
         // @smith2020 is valid, @host is inside a string literal — neither should be escaped
         assert_eq!(out, src);
+    }
+
+    #[test]
+    fn escape_typst_markup_neutralizes_special_chars() {
+        // Markup-significant characters must be backslash-escaped so a rendered
+        // reference becomes literal text, not accidental formatting.
+        assert_eq!(escape_typst_markup("a*b_c#d@e"), r"a\*b\_c\#d\@e");
+        // Brackets (which would otherwise open a content block) and angle
+        // brackets (labels) too.
+        assert_eq!(escape_typst_markup("[1] <x>"), r"\[1\] \<x\>");
+        // Benign punctuation is left alone.
+        assert_eq!(escape_typst_markup("pp. 12-15, 2020."), "pp. 12-15, 2020.");
+    }
+
+    #[test]
+    fn wrap_formatting_emits_markup_for_emphasis() {
+        use hayagriva::citationberg::FontStyle;
+        let fmt = hayagriva::Formatting {
+            font_style: FontStyle::Italic,
+            ..Default::default()
+        };
+        assert_eq!(wrap_formatting("Title", &fmt), "_Title_");
+        // Whitespace-only runs stay bare (no empty `_ _`).
+        assert_eq!(wrap_formatting("  ", &fmt), "  ");
+    }
+
+    #[test]
+    fn render_cited_bibliography_formats_titles() {
+        // A minimal Hayagriva YAML library; the rendered reference should carry
+        // the cited entry and italicize the work's title (chicago-author-date).
+        let yaml = r#"
+gross1961:
+    type: Article
+    author: Gross, E. P.
+    title: Structure of a Quantized Vortex in Boson Systems
+    date: 1961
+    parent:
+        type: Periodical
+        title: Il Nuovo Cimento
+"#;
+        let library = hayagriva::io::from_yaml_str(yaml).unwrap();
+        let style = resolve_style(
+            std::path::Path::new("/tmp/notebox"),
+            None,
+            Some("chicago-author-date"),
+        )
+        .unwrap();
+        let keys = vec!["gross1961".to_string()];
+        let out = render_cited_bibliography(&library, &keys, &style).unwrap();
+        assert!(out.contains("Gross"), "expected author in: {out:?}");
+        assert!(out.contains("1961"), "expected year in: {out:?}");
+        // Some emphasis markup must be present (journal/title italics).
+        assert!(out.contains('_'), "expected italic markup in: {out:?}");
+        // Keys that don't resolve are skipped, yielding an empty string.
+        let none = render_cited_bibliography(&library, &["nope".to_string()], &style).unwrap();
+        assert_eq!(none, "");
+    }
+
+    #[test]
+    fn link_with_url_prefix_collapses_to_single_clean_link() {
+        use hayagriva::{ElemChild, Formatted};
+
+        // hayagriva's DOI shape: a plain-text "https://doi.org/" prefix followed
+        // by a Link whose url is that prefix + the display text. The prefix must
+        // be re-absorbed so Typst doesn't auto-link the bare-URL fragment.
+        let url = "https://doi.org/10.48550/arXiv.2304.07327";
+        let children = hayagriva::ElemChildren(vec![
+            ElemChild::Text(Formatted {
+                text: "https://doi.org/".to_string(),
+                formatting: hayagriva::Formatting::default(),
+            }),
+            ElemChild::Link {
+                text: Formatted {
+                    text: "10.48550/arXiv.2304.07327".to_string(),
+                    formatting: hayagriva::Formatting::default(),
+                },
+                url: url.to_string(),
+            },
+        ]);
+
+        let mut out = String::new();
+        elem_children_to_typst(&children, &mut out);
+        // Single body-less link to the full URL — no stray bare-URL prefix left
+        // for Typst to auto-link.
+        assert_eq!(out, format!("#link(\"{url}\")"));
+        assert!(
+            !out.contains("doi.org/#link"),
+            "bare prefix leaked: {out:?}"
+        );
+    }
+
+    #[test]
+    fn link_with_distinct_anchor_keeps_body() {
+        use hayagriva::{ElemChild, Formatted};
+        let children = hayagriva::ElemChildren(vec![ElemChild::Link {
+            text: Formatted {
+                text: "Project page".to_string(),
+                formatting: hayagriva::Formatting::default(),
+            },
+            url: "https://example.com/x".to_string(),
+        }]);
+        let mut out = String::new();
+        elem_children_to_typst(&children, &mut out);
+        assert_eq!(out, "#link(\"https://example.com/x\")[Project page]");
     }
 }

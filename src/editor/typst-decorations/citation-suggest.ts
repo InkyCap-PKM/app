@@ -131,8 +131,16 @@ function detectCitationContext(view: EditorView): SuggestState {
   const query = textBefore.slice(atIdx + 1);
   if (/\s/.test(query)) return EMPTY;
 
+  // Typst (and the backend's `extract_citations`) treat `@key` as a citation
+  // wherever it appears — including right after a letter, digit, or a previous
+  // citation's last character (`@a@b`, `word@key`). The only `@` that is *not*
+  // a citation is an escaped one: a `\` before the `@` is `\@`, a literal
+  // at-sign. Skipping it keeps us in step with the backend, and avoids the
+  // failure mode where an `@` lands just after a line's hidden trailing
+  // soft-break `\` — treating that as a citation would insert `\@key`, escaping
+  // the citation and making the `\` render visibly.
   const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : " ";
-  if (/[A-Za-z0-9_\-]/.test(charBefore)) return EMPTY;
+  if (charBefore === "\\") return EMPTY;
 
   return { active: true, from: line.from + atIdx, query };
 }
@@ -232,11 +240,15 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
 function acceptItem(view: EditorView, state: SuggestState, entry: BibEntry) {
   const cursor = view.state.selection.main.from;
   const insert = `@${entry.key}`;
+  // Set suppression *before* dispatch: the dispatch synchronously runs the
+  // tracker's `update`, which would otherwise re-detect the `@key` context and
+  // requeue the popup. With the range already set, that update closes the popup
+  // instead of reopening it — so a single Enter both inserts and dismisses.
+  suppressedRange = { from: state.from, to: state.from + insert.length };
   view.dispatch({
     changes: { from: state.from, to: cursor, insert },
     selection: { anchor: state.from + insert.length },
   });
-  suppressedRange = { from: state.from, to: state.from + insert.length };
   hidePopup();
 }
 
@@ -292,6 +304,13 @@ const suggestKeyHandler = Prec.highest(keymap.of([
 const suggestTracker = ViewPlugin.fromClass(
   class {
     private state: SuggestState = EMPTY;
+    // Handle of the deferred `showPopup` so a later update can cancel it. The
+    // popup is opened on the next animation frame (to coalesce bursts of
+    // keystrokes); without cancellation, the frame scheduled by the final
+    // keystroke before Enter would fire *after* `acceptItem` has already
+    // inserted the citation and hidden the popup — reopening it and forcing
+    // the user to press Enter a second time to dismiss it.
+    private pendingFrame = 0;
 
     constructor(view: EditorView) {
       this.state = detectCitationContext(view);
@@ -311,16 +330,29 @@ const suggestTracker = ViewPlugin.fromClass(
         }
       }
 
+      // Drop any frame queued by an earlier update; this update supersedes it.
+      if (this.pendingFrame) {
+        cancelAnimationFrame(this.pendingFrame);
+        this.pendingFrame = 0;
+      }
+
       if (this.state.active && !suppressedRange) {
         const view = update.view;
         const state = this.state;
-        requestAnimationFrame(() => showPopup(view, state));
+        this.pendingFrame = requestAnimationFrame(() => {
+          this.pendingFrame = 0;
+          // Re-check at frame time: an intervening accept may have set
+          // `suppressedRange`, in which case the popup must stay closed.
+          if (suppressedRange) return;
+          showPopup(view, state);
+        });
       } else {
         hidePopup();
       }
     }
 
     destroy() {
+      if (this.pendingFrame) cancelAnimationFrame(this.pendingFrame);
       hidePopup();
     }
   },

@@ -11,7 +11,8 @@ import { fuzzyMatch } from "../lib/fuzzy";
 import { useI18n, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
-import { RefreshCw } from "lucide-solid";
+import { showToast } from "../stores/toasts";
+import { RefreshCw, ClipboardCopy, ChevronRight, ChevronDown } from "lucide-solid";
 
 const PAGE_SIZE = 50;
 
@@ -266,32 +267,64 @@ const ReferencesPanel: Component = () => {
     }
   }
 
+  const [copyingBib, setCopyingBib] = createSignal(false);
+
+  // Copy the active file's references as static, pre-formatted Typst markup so
+  // the user can paste a frozen bibliography into another note (no live
+  // `#bibliography(...)` needed). Backend renders via hayagriva in the
+  // notebox's citation style; we just place the result on the clipboard.
+  async function handleCopyBibliography() {
+    const path = activeFileTab()?.path;
+    if (!path || copyingBib()) return;
+    setCopyingBib(true);
+    try {
+      const markup = await ipc.copyFileBibliography(path);
+      if (!markup) {
+        showToast("info", t("references.copyBibEmpty"));
+        return;
+      }
+      await navigator.clipboard.writeText(markup);
+      showToast("success", t("references.copyBibDone"));
+    } catch (err) {
+      showToast("error", errorText(err));
+    } finally {
+      setCopyingBib(false);
+    }
+  }
+
   return (
     <div class="references-panel">
       {/* Browse all references */}
       <div class="right-panel__section">
-        <div class="references-panel__header-row">
+        <div class="right-panel__section-header">
           <button
             class="references-panel__toggle"
+            aria-expanded={showAll()}
             onClick={() => {
               setShowAll(!showAll());
               setBrowseQuery("");
               setVisibleCount(PAGE_SIZE);
             }}
           >
+            <Show when={showAll()} fallback={<ChevronRight size={13} />}>
+              <ChevronDown size={13} />
+            </Show>
             {showAll() ? t("references.hideRefs") : t("references.browseRefs")}
           </button>
-          <button
-            class="references-panel__refresh"
-            onClick={handleRefresh}
-            disabled={refreshing()}
-            title={t("references.refresh")}
-          >
-            <RefreshCw
-              size={14}
-              class={`refresh-icon${refreshing() ? " refresh-icon--spinning" : ""}`}
-            />
-          </button>
+          <div class="right-panel__header-actions">
+            <button
+              class="right-panel__icon-btn"
+              onClick={handleRefresh}
+              disabled={refreshing()}
+              title={t("references.refresh")}
+              aria-label={t("references.refresh")}
+            >
+              <RefreshCw
+                size={14}
+                class={`refresh-icon${refreshing() ? " refresh-icon--spinning" : ""}`}
+              />
+            </button>
+          </div>
         </div>
         <Show when={showAll()}>
           <Show when={browseError()}>
@@ -439,10 +472,25 @@ const ReferencesPanel: Component = () => {
 
       {/* Citations in current file */}
       <div class="right-panel__section">
-        <div class="right-panel__heading">
-          {t("references.citations")}
+        <div class="right-panel__section-header">
+          <span>
+            {t("references.citations")}
+            <Show when={citations()?.length}>
+              <span class="right-panel__count"> ({citations()!.length})</span>
+            </Show>
+          </span>
           <Show when={citations()?.length}>
-            <span class="right-panel__count"> ({citations()!.length})</span>
+            <div class="right-panel__header-actions">
+              <button
+                class="right-panel__icon-btn"
+                onClick={handleCopyBibliography}
+                disabled={copyingBib()}
+                title={t("references.copyBib")}
+                aria-label={t("references.copyBib")}
+              >
+                <ClipboardCopy size={14} />
+              </button>
+            </div>
           </Show>
         </div>
         <Show when={citationError()}>
