@@ -10,6 +10,7 @@ import { showWikilinkContextMenu } from "../../lib/wikilink-nav";
 import { anchorPanelMenu } from "../../lib/uiMenu";
 import { buildSuggestionCall } from "./annotation-insert";
 import { parseInlineBody, type BodySegment } from "./block-body-parse";
+import { findLabelDefinition } from "./label-nav";
 import { t } from "../../lib/i18n";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
@@ -2304,11 +2305,15 @@ export class LabelLinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** Move the cursor to (and scroll to) the `<label>` definition in this note. */
+/** Move the cursor to (and scroll to) the `<label>` definition in this note —
+ *  the anchor that tags an element, not a reference to it (which would land the
+ *  cursor back inside the clicked link and reveal its source). Cursor goes to
+ *  the start of the tagged line so the heading/element reads naturally. */
 function jumpToLabel(view: EditorView, label: string): void {
-  const pos = view.state.doc.toString().indexOf(`<${label}>`);
+  const pos = findLabelDefinition(view.state.doc.toString(), label);
   if (pos < 0) return;
-  view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+  const lineStart = view.state.doc.lineAt(pos).from;
+  view.dispatch({ selection: { anchor: lineStart }, scrollIntoView: true });
   view.focus();
 }
 
