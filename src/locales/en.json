@@ -344,6 +344,7 @@
   "editor.reading.recovered": "Showing a partial render — the errored content below was skipped so the rest of the document stays visible.",
   "editor.reading.noPages": "(No pages produced.)",
   "editor.reading.noHtml": "(No HTML produced.)",
+  "visual.link.jumpToLabel": "Jump to {label}",
   "editor.toast.saveFailed": "Save failed",
   "editor.toast.autoSaveFailed": "Auto-save failed",
   "editor.toast.spellcheckFailed": "Spellcheck failed to load",
