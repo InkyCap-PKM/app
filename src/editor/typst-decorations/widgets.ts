@@ -198,6 +198,26 @@ function buildWikilinkSpan(target: string, display: string): HTMLElement {
   return link;
 }
 
+/** Build an interactive external-link span for a rendered block body. Mirrors
+ *  LinkWidget's behaviour (pointer cursor, mousedown → openLink) and stops the
+ *  event from reaching CM so the click opens the URL instead of dropping the
+ *  block into source-edit mode. Without the handler the span is inert and a
+ *  click inside the callout just enters edit mode. */
+function buildLinkSpan(url: string, display: string): HTMLElement {
+  const a = document.createElement("span");
+  a.className = "cm-typst-link";
+  a.style.cursor = "pointer";
+  a.textContent = display || url;
+  a.title = url;
+  a.addEventListener("mousedown", (e) => {
+    if (e.button === 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void openLink(url);
+  });
+  return a;
+}
+
 /** Optional context that makes a block body's inline elements interactive.
  *  `bodyFrom` is the absolute document offset where the body string begins, so
  *  a segment's in-body `start` resolves to a real source position. */
@@ -281,14 +301,9 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
         parent.appendChild(pill);
         break;
       }
-      case "link": {
-        const a = document.createElement("span");
-        a.className = "cm-typst-link";
-        a.textContent = seg.display;
-        a.title = seg.url;
-        parent.appendChild(a);
+      case "link":
+        parent.appendChild(buildLinkSpan(seg.url, seg.display));
         break;
-      }
       case "task":
         parent.appendChild(buildTaskSpan(seg, ctx));
         break;
@@ -338,7 +353,9 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
  *  edit mode as expected. */
 function blockBodyIgnoreEvent(e: Event): boolean {
   if (e.type !== "mousedown") return false;
-  return !!(e.target as HTMLElement).closest(".cm-typst-wikilink, .cm-typst-task__box");
+  return !!(e.target as HTMLElement).closest(
+    ".cm-typst-wikilink, .cm-typst-link, .cm-typst-task__box",
+  );
 }
 
 function stripMetadata(source: string): string {
