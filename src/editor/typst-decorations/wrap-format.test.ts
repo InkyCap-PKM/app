@@ -10,9 +10,16 @@ import { toggleWrap } from "./wrap-format";
 // and the delimiters live just OUTSIDE the selection.
 //
 // Pure state transform — runs without the WASM Typst parser.
-function apply(doc: string, anchor: number, head: number, before: string, after: string) {
+function apply(
+  doc: string,
+  anchor: number,
+  head: number,
+  before: string,
+  after: string,
+  caretInWrapper?: number,
+) {
   const state = EditorState.create({ doc, selection: { anchor, head } });
-  const spec = toggleWrap(state, before, after);
+  const spec = toggleWrap(state, before, after, caretInWrapper);
   const next = state.update(spec);
   return {
     doc: next.state.doc.toString(),
@@ -63,5 +70,34 @@ describe("toggleWrap", () => {
     // Leading "*" but no trailing one → treated as unformatted, wraps.
     const r = apply("foo *bar baz", 5, 8, "*", "*");
     expect(r.doc).toBe("foo **bar* baz");
+  });
+
+  // The link wrapper has an inner slot (the URL quotes) distinct from the
+  // wrapped label, so `caretInWrapper` drops the caret there instead of
+  // leaving the label selected. Mirrors the toolbar/Mod-k link action.
+  const LINK_BEFORE = '#link("")[';
+  const LINK_SLOT = '#link("'.length; // caret position between the quotes
+
+  it("drops the caret in the URL slot when wrapping a selection as a link", () => {
+    // Select "bar" in "foo bar baz".
+    const r = apply("foo bar baz", 4, 7, LINK_BEFORE, "]", LINK_SLOT);
+    expect(r.doc).toBe('foo #link("")[bar] baz');
+    // Collapsed caret sits between the quotes, not on the "bar" label.
+    expect([r.from, r.to]).toEqual([4 + LINK_SLOT, 4 + LINK_SLOT]);
+    expect(r.doc.slice(r.from - 1, r.from + 1)).toBe('""');
+  });
+
+  it("drops the caret in the URL slot for an empty selection", () => {
+    const r = apply("foo  baz", 4, 4, LINK_BEFORE, "]", LINK_SLOT);
+    expect(r.doc).toBe('foo #link("")[] baz');
+    expect([r.from, r.to]).toEqual([4 + LINK_SLOT, 4 + LINK_SLOT]);
+  });
+
+  it("still toggles a link off from outside the selection", () => {
+    // Label "bar" selected, link markup decorated away around it.
+    const doc = 'foo #link("https://x.test")[bar] baz';
+    const from = doc.indexOf("bar");
+    const r = apply(doc, from, from + 3, '#link("https://x.test")[', "]", LINK_SLOT);
+    expect(r.doc).toBe("foo bar baz");
   });
 });

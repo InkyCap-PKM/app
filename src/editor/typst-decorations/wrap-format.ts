@@ -30,12 +30,24 @@ export interface WrapTransaction {
  * keyboard shortcuts (keymaps.ts) and the selection toolbar so the toggle rule
  * lives in exactly one place.
  */
-export function toggleWrap(state: EditorState, before: string, after: string): WrapTransaction {
+export function toggleWrap(
+  state: EditorState,
+  before: string,
+  after: string,
+  caretInWrapper?: number,
+): WrapTransaction {
   const { from, to } = state.selection.main;
+
+  // `caretInWrapper` is for wrappers that have an inner slot distinct from the
+  // wrapped text — e.g. `#link("")[…]`, where the caret should land in the
+  // empty URL string (offset 7, between the quotes), not on the label. When
+  // omitted, the caret defaults to just after `before`. Only the insert cases
+  // (1) and (4) honour it; the unwrap cases (2) and (3) are unaffected.
+  const insertCaret = caretInWrapper ?? before.length;
 
   // (1) Empty selection: drop an empty pair and put the caret inside it.
   if (from === to) {
-    const at = from + before.length;
+    const at = from + insertCaret;
     return {
       changes: { from, insert: before + after },
       selection: { anchor: at, head: at },
@@ -78,7 +90,16 @@ export function toggleWrap(state: EditorState, before: string, after: string): W
     };
   }
 
-  // (4) Not wrapped → wrap.
+  // (4) Not wrapped → wrap. With an explicit inner slot, collapse the caret
+  // into it (e.g. the URL quotes of `#link("")[label]`); otherwise keep the
+  // wrapped text selected so re-toggling or typing replaces it.
+  if (caretInWrapper != null) {
+    const at = from + caretInWrapper;
+    return {
+      changes: { from, to, insert: before + selected + after },
+      selection: { anchor: at, head: at },
+    };
+  }
   return {
     changes: { from, to, insert: before + selected + after },
     selection: { anchor: from + before.length, head: to + before.length },
@@ -86,7 +107,12 @@ export function toggleWrap(state: EditorState, before: string, after: string): W
 }
 
 /** Dispatch {@link toggleWrap} on a view and restore focus to the editor. */
-export function applyToggleWrap(view: EditorView, before: string, after: string): void {
-  view.dispatch(toggleWrap(view.state, before, after));
+export function applyToggleWrap(
+  view: EditorView,
+  before: string,
+  after: string,
+  caretInWrapper?: number,
+): void {
+  view.dispatch(toggleWrap(view.state, before, after, caretInWrapper));
   view.focus();
 }

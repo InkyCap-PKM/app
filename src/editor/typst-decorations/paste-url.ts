@@ -63,12 +63,11 @@ function showMenu(view: EditorView, url: string, selectedText: string) {
       action: () => {
         hidePopup();
         const { from, to } = view.state.selection.main;
-        // Wrap the URL in a raw/code span so neither the editor parser
-        // nor the Typst compiler treats it as a clickable link.
-        const escaped = "`" + url + "`";
+        // Insert the URL verbatim — just the text, no wrapping. The user asked
+        // for plain text, so they decide how (or whether) to style it.
         view.dispatch({
-          changes: { from, to, insert: escaped },
-          selection: { anchor: from + escaped.length },
+          changes: { from, to, insert: url },
+          selection: { anchor: from + url.length },
         });
         view.focus();
       },
@@ -142,6 +141,17 @@ function showMenu(view: EditorView, url: string, selectedText: string) {
   document.addEventListener("mousedown", handleClickOutside, true);
 }
 
+/** Is the caret sitting inside the URL string of a `#link("…")` call?
+ *  True for the Ctrl+K scenario (`#link("⎸")[label]`) and any partially-typed
+ *  link URL. We look for an open `#link("` on the caret's line with no closing
+ *  quote between it and the caret. */
+function isInsideLinkUrlSlot(view: EditorView): boolean {
+  const { from } = view.state.selection.main;
+  const line = view.state.doc.lineAt(from);
+  const before = view.state.doc.sliceString(line.from, from);
+  return /#link\("[^"]*$/.test(before);
+}
+
 export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolean {
   const text = event.clipboardData?.getData("text/plain")?.trim();
   if (!text || !URL_RE.test(text)) return false;
@@ -149,8 +159,23 @@ export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolea
   event.preventDefault();
 
   const { from, to } = view.state.selection.main;
-  const selectedText = from !== to ? view.state.doc.sliceString(from, to) : "";
 
+  // Caret already inside a `#link("…")` URL slot (e.g. after Ctrl+K): drop the
+  // bare URL straight in — no `#link()` wrapper and no extra quotes, which
+  // would otherwise nest a second link and double the quotes. No popup: the
+  // user already committed to a link, they're just filling in the address.
+  if (isInsideLinkUrlSlot(view)) {
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: { anchor: from + text.length },
+    });
+    view.focus();
+    return true;
+  }
+
+  // Otherwise offer the choice — including when pasting over a selection, where
+  // "Link" wraps the selected text as the link label.
+  const selectedText = from !== to ? view.state.doc.sliceString(from, to) : "";
   showMenu(view, text, selectedText);
   return true;
 }
