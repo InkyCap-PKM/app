@@ -10,6 +10,10 @@ import { useI18n } from "../lib/i18n";
 /// catalog's known role values.
 const OTHER_ROLE = "__other__";
 
+/// The NISO CRediT (Contributor Roles Taxonomy) reference, linked from the
+/// "Include CRediT contributions statement" toggle.
+const CREDIT_TAXONOMY_URL = "https://credit.niso.org/";
+
 /// The Book Metadata contributors table: each row is a contributor with a
 /// display name, a bibliographic role (drives the byline), and CRediT roles
 /// (drive the optional contributions statement).
@@ -184,7 +188,35 @@ const ContributorsEditor: Component<{
             flush();
           }}
         />
-        {t("contributors.includeCreditStatement")}
+        <span>
+          {(() => {
+            // Render "CRediT" as a link to the NISO taxonomy without making it
+            // a separate translation unit: the surrounding sentence stays one
+            // string with a `{credit}` slot, and we splice the link in.
+            const [before, after] = t("contributors.includeCreditStatement").split("{credit}");
+            return (
+              <>
+                {before}
+                <a
+                  href={CREDIT_TAXONOMY_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="contributors-editor__credit-link"
+                  onClick={(e) => {
+                    // Don't let the click bubble to the <label> and toggle the
+                    // checkbox; open the taxonomy in the user's browser instead.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void ipc.openUrlExternally(CREDIT_TAXONOMY_URL);
+                  }}
+                >
+                  {t("contributors.creditLinkText")}
+                </a>
+                {after}
+              </>
+            );
+          })()}
+        </span>
       </label>
     </div>
   );
