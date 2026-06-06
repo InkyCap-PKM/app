@@ -292,7 +292,10 @@ function getToolbar(): HTMLElement {
       e.preventDefault();
       closeAllPopups();
       if (!activeView) return;
-      applyToggleWrap(activeView, '#link("")[', "]");
+      // Drop the caret inside the empty URL string (`#link("⎸")[label]`) so the
+      // user can type or paste the address straight away; the selection becomes
+      // the link label.
+      applyToggleWrap(activeView, '#link("")[', "]", '#link("'.length);
     });
     toolbar.appendChild(linkBtn);
 

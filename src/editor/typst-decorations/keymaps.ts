@@ -180,6 +180,13 @@ function toggleHighlight(state: EditorState) {
   return toggleWrap(state, "#highlight[", "]");
 }
 
+function toggleLink(state: EditorState) {
+  // Caret lands in the empty URL slot (`#link("⎸")[…]`) so the address can be
+  // typed or pasted immediately; the selected text becomes the link label.
+  // Matches the toolbar link button.
+  return toggleWrap(state, '#link("")[', "]", '#link("'.length);
+}
+
 function toggleInlineCode(state: EditorState) {
   return toggleWrap(state, "`", "`");
 }
@@ -444,6 +451,15 @@ export const typstKeymap: KeyBinding[] = [
     key: "Mod-Shift-h",
     run(view) {
       const result = toggleHighlight(view.state);
+      if (!result) return false;
+      view.dispatch({ changes: result.changes, selection: result.selection });
+      return true;
+    },
+  },
+  {
+    key: "Mod-k",
+    run(view) {
+      const result = toggleLink(view.state);
       if (!result) return false;
       view.dispatch({ changes: result.changes, selection: result.selection });
       return true;
