@@ -3,6 +3,7 @@ import { type ChangeSpec, type Extension, Prec } from "@codemirror/state";
 import { fileList } from "../../stores/filelist";
 import { aliases } from "../../stores/aliases";
 import { wikilinkScore } from "./wikilink-match";
+import { inVerbatimLineContext } from "./keymaps";
 import { typstStringEscape } from "../../lib/typst";
 import { t } from "../../lib/i18n";
 import * as ipc from "../../lib/ipc";
@@ -158,7 +159,11 @@ function detectWikilinkContext(view: EditorView): SuggestState {
   // and the cursor).
   const textBefore = lineText.slice(0, cursorInLine);
   const bracketIdx = textBefore.lastIndexOf("[[");
-  if (bracketIdx >= 0) {
+  // A `[[` written inside an inline raw span (`` `[[` ``) — e.g. a callout body
+  // that documents the wikilink shortcut — is literal text, not the start of a
+  // link. Don't pop the picker for it (it would otherwise fire endlessly with
+  // the rest of the line as the query).
+  if (bracketIdx >= 0 && !inVerbatimLineContext(view.state, line.from + bracketIdx + 1)) {
     const afterBrackets = textBefore.slice(bracketIdx + 2);
     if (!afterBrackets.includes("]")) {
       const sepIdx = afterBrackets.indexOf("::");

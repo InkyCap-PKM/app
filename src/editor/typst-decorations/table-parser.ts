@@ -276,6 +276,13 @@ function findArgEnd(text: string, start: number): number {
       i = skipString(text, i);
       continue;
     }
+    if (ch === "`") {
+      // Inline raw (`` `…` ``): brackets/parens/quotes inside are literal —
+      // e.g. a shortcut cell `[`Ctrl+Shift+]`]` carries a `]` that must not
+      // close the cell early. Skip the whole span.
+      i = skipInlineRaw(text, i);
+      continue;
+    }
     if (ch === "(") parenDepth++;
     if (ch === ")") {
       if (parenDepth === 0) return i;
@@ -300,6 +307,10 @@ function findMatchingParen(text: string, openIdx: number): number {
       i = skipString(text, i);
       continue;
     }
+    if (ch === "`") {
+      i = skipInlineRaw(text, i);
+      continue;
+    }
     if (ch === "(") depth++;
     if (ch === ")") {
       depth--;
@@ -312,6 +323,19 @@ function findMatchingParen(text: string, openIdx: number): number {
     i++;
   }
   return -1;
+}
+
+/** If `text[start]` opens an inline raw run (one or more backticks), return the
+ *  index just past the matching closing run; otherwise return `start`. Brackets,
+ *  parens, and quotes inside raw are literal Typst content and must never affect
+ *  delimiter matching. Mirrors the raw-skip in the visual decoration matchers. */
+function skipInlineRaw(text: string, start: number): number {
+  if (text[start] !== "`") return start;
+  let n = 1;
+  while (start + n < text.length && text[start + n] === "`") n++;
+  const fence = "`".repeat(n);
+  const close = text.indexOf(fence, start + n);
+  return close >= 0 ? close + n : text.length;
 }
 
 function skipString(text: string, start: number): number {
@@ -335,6 +359,9 @@ function skipBracket(text: string, start: number): number {
     else if (text[i] === "]") depth--;
     else if (text[i] === '"') {
       i = skipString(text, i);
+      continue;
+    } else if (text[i] === "`") {
+      i = skipInlineRaw(text, i);
       continue;
     }
     i++;

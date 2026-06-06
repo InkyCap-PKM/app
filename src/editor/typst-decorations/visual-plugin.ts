@@ -102,13 +102,19 @@ const wikilinkEditMark = Decoration.mark({ class: "cm-typst-wikilink-edit" });
 // styled as part of the quote (the bar + geometry come from the line deco).
 const blockquoteBodyMark = Decoration.mark({ class: "cm-typst-blockquote-body" });
 
+// `inclusiveEnd` so a replaced widget sitting at the heading's end boundary —
+// e.g. the `]]` close-bracket of an editable wikilink whose call ends the line
+// (`=== [[Name]]`), or a trailing inline `#tag`/`#footnote` — is drawn *inside*
+// the heading span and inherits its font size. Without it, CM closes the
+// heading span before that trailing widget, so it renders at base size while
+// the rest of the heading stays large.
 const headingMarks = [
-  Decoration.mark({ class: "cm-typst-h1" }),
-  Decoration.mark({ class: "cm-typst-h2" }),
-  Decoration.mark({ class: "cm-typst-h3" }),
-  Decoration.mark({ class: "cm-typst-h4" }),
-  Decoration.mark({ class: "cm-typst-h5" }),
-  Decoration.mark({ class: "cm-typst-h6" }),
+  Decoration.mark({ class: "cm-typst-h1", inclusiveEnd: true }),
+  Decoration.mark({ class: "cm-typst-h2", inclusiveEnd: true }),
+  Decoration.mark({ class: "cm-typst-h3", inclusiveEnd: true }),
+  Decoration.mark({ class: "cm-typst-h4", inclusiveEnd: true }),
+  Decoration.mark({ class: "cm-typst-h5", inclusiveEnd: true }),
+  Decoration.mark({ class: "cm-typst-h6", inclusiveEnd: true }),
 ];
 
 const termKey = Decoration.mark({ class: "cm-typst-term-key" });
@@ -241,11 +247,11 @@ export function correctedFuncCallEnd(state: EditorState, funcFrom: number, lezer
           if (trimmed.startsWith("[")) {
             const bStart = realEnd + (after.length - trimmed.length);
             const bScan = state.doc.sliceString(bStart, Math.min(bStart + 50000, state.doc.length));
-            let bd = 0;
-            for (let j = 0; j < bScan.length; j++) {
-              if (bScan[j] === "[") bd++;
-              else if (bScan[j] === "]") { bd--; if (bd === 0) { realEnd = bStart + j + 1; break; } }
-            }
+            // Balance the content `[…]` while treating brackets inside inline
+            // raw / behind `\`-escapes as literal, so a `[[` documented inside
+            // a callout body's backticks doesn't run the call end past its `]`.
+            const bClose = matchContentBracket(bScan, 0, bScan.length);
+            if (bClose >= 0) realEnd = bStart + bClose + 1;
           }
         }
         balanced = true;
@@ -1594,6 +1600,37 @@ function extractContentBracket(
  * `[` inside a string argument doesn't close the list early. Returns a
  * zero-width range for an empty body (`[]`), like extractContentBracket.
  */
+/** Skip an inline raw span (`` `…` ``, `` ``…`` ``) whose opening backtick run
+ *  starts at `i`. Returns the index just past the matching closing fence, or
+ *  `end` when the span is unterminated within `[i, end)`. */
+function skipInlineRaw(text: string, i: number, end: number): number {
+  let n = 0;
+  while (i + n < end && text[i + n] === "`") n++;
+  const fence = "`".repeat(n);
+  const close = text.indexOf(fence, i + n);
+  return close >= 0 && close < end ? close + n : end;
+}
+
+/** Index of the `]` that closes the `[` at `open`, balancing nested brackets
+ *  but treating any `[`/`]` inside an inline raw span (`` `…` ``) or behind a
+ *  `\`-escape as literal — Typst markup rules. -1 if unbalanced in `[open, end)`.
+ *  This is what keeps a literal `[[` written inside backticks (e.g. a callout
+ *  body that documents the wikilink shortcut) from unbalancing the call's `[…]`
+ *  body and dropping the whole block back to raw source. */
+function matchContentBracket(text: string, open: number, end: number): number {
+  let depth = 0;
+  let i = open;
+  while (i < end) {
+    const ch = text[i];
+    if (ch === "\\") { i += 2; continue; }
+    if (ch === "`") { i = skipInlineRaw(text, i, end); continue; }
+    if (ch === "[") depth++;
+    else if (ch === "]") { depth--; if (depth === 0) return i; }
+    i++;
+  }
+  return -1;
+}
+
 function bracketRangeAfterArgs(
   text: string,
   nodeFrom: number,
@@ -1615,15 +1652,9 @@ function bracketRangeAfterArgs(
   }
   const open = text.indexOf("[", scanFrom);
   if (open < 0) return null;
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === "[") depth++;
-    else if (text[i] === "]") {
-      depth--;
-      if (depth === 0) return { from: nodeFrom + open + 1, to: nodeFrom + i };
-    }
-  }
-  return null;
+  const close = matchContentBracket(text, open, text.length);
+  if (close < 0) return null;
+  return { from: nodeFrom + open + 1, to: nodeFrom + close };
 }
 
 function extractFirstStringArg(text: string): string | null {
