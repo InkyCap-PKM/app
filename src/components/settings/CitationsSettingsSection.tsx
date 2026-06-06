@@ -9,6 +9,10 @@ import { noteboxRootDefault } from "../../lib/dialog-defaults";
 import { open } from "@tauri-apps/plugin-dialog";
 import { SettingSelect, SettingLabel, CITATION_STYLES } from "./shared";
 
+/// The Citation Style Language project, where users can download more `.csl`
+/// styles. Linked from the custom-CSL help text.
+const CSL_PROJECT_URL = "https://citationstyles.org/";
+
 export function CitationsSettingsSection() {
   const t = useI18n();
   const [detectingZotero, setDetectingZotero] = createSignal(false);
@@ -139,6 +143,31 @@ export function CitationsSettingsSection() {
           <div class="settings__row-info">
             <SettingLabel label={t("settings.citations.customCsl.label")} scope="notebox" />
             <span class="settings__description">{t("settings.citations.customCsl.description")}</span>
+            <span class="settings__description">
+              {(() => {
+                // "Citation Style Language" links to the CSL project; keep the
+                // sentence one translation unit with a {link} slot.
+                const [before, after] = t("settings.citations.customCsl.downloadHint").split("{link}");
+                return (
+                  <>
+                    {before}
+                    <a
+                      href={CSL_PROJECT_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      class="inline-link"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void ipc.openUrlExternally(CSL_PROJECT_URL);
+                      }}
+                    >
+                      {t("settings.citations.customCsl.downloadHintLink")}
+                    </a>
+                    {after}
+                  </>
+                );
+              })()}
+            </span>
           </div>
           <div style={{ display: "flex", gap: "6px", "align-items": "center" }}>
             <input
