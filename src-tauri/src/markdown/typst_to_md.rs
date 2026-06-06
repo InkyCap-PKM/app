@@ -63,11 +63,16 @@ static LINK_RE: LazyLock<Regex> =
 static LINK_BARE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"#link\("([^"]*)"\)"#).unwrap());
 
-// Matches `#image("path")` and `#image("path", width: 25%, …)` — the trailing
-// named args (width/height/fit/alt) have no CommonMark equivalent and are
-// dropped; only the path is carried into `![](path)`.
+// Matches `#image("path")` and `#image("path", width: 25%, …)`. The path goes
+// into `![](path)`; an `alt:` arg (if present) is recovered into the `![alt]`
+// text via `IMAGE_ALT_RE`. Other named args (width/height/fit) have no
+// CommonMark equivalent and are dropped.
 static IMAGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"(?:,[^)]*)?\)"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"#image\("([^"]*)"((?:,[^)]*)?)\)"#).unwrap());
+
+// Extracts the `alt: "…"` value from an `#image(…)` argument tail.
+static IMAGE_ALT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"alt:\s*"((?:[^"\\]|\\.)*)""#).unwrap());
 
 static CALLOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"#callout\("([^"]*)"(?:,\s*title:\s*"([^"]*)")?\)\[(.*?)\]"#).unwrap()
@@ -320,10 +325,15 @@ fn convert_inline(text: &str, options: &TypstToMarkdownOptions) -> String {
         .replace_all(&result, |caps: &regex::Captures| format!("<{}>", &caps[1]))
         .into_owned();
 
-    // Images.
+    // Images. Recover the `alt:` arg into the `![alt]` text; unescape the Typst
+    // string literal so the markdown carries plain text.
     result = IMAGE_RE
         .replace_all(&result, |caps: &regex::Captures| {
-            format!("![]({})", &caps[1])
+            let alt = IMAGE_ALT_RE
+                .captures(&caps[2])
+                .map(|a| a[1].replace("\\\"", "\"").replace("\\\\", "\\"))
+                .unwrap_or_default();
+            format!("![{}]({})", alt, &caps[1])
         })
         .into_owned();
 
@@ -838,6 +848,26 @@ mod tests {
         let input = "#image(\"photo.png\")";
         let result = convert(input);
         assert!(result.contains("![](photo.png)"));
+    }
+
+    #[test]
+    fn image_alt_recovered_into_markdown_alt_text() {
+        let input = "#image(\"/Assets/photo.png\", alt: \"My caption\")";
+        let result = convert(input);
+        assert!(
+            result.contains("![My caption](/Assets/photo.png)"),
+            "got: {result}"
+        );
+    }
+
+    #[test]
+    fn image_alt_recovered_alongside_other_args() {
+        let input = "#image(\"/Assets/p.png\", width: 25%, alt: \"a caption\")";
+        let result = convert(input);
+        assert!(
+            result.contains("![a caption](/Assets/p.png)"),
+            "got: {result}"
+        );
     }
 
     #[test]
