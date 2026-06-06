@@ -316,13 +316,6 @@ export interface AppearanceSettings {
   accent_color: string;
   zoom_target: ZoomTarget;
   /**
-   * How the file tree groups folders relative to files when sorting:
-   * - "before" — all folders first, then files (both sorted by the chosen mode).
-   * - "after"  — all files first, then folders.
-   * - "inline" — folders and files are interleaved together under the chosen sort.
-   */
-  folder_grouping: FolderGrouping;
-  /**
    * The user's chosen sort for the file tree. Persisted so a re-open of
    * the app (or a different notebox) preserves the ordering they picked.
    */
@@ -531,6 +524,17 @@ export interface NoteboxFileSettings {
   new_note_folder: string;
   attachment_folder: string;
   excluded_files_regex: string[];
+  /**
+   * How this notebox's file tree groups folders relative to files when sorting:
+   * - "before" — all folders first, then files (both sorted by the chosen mode).
+   * - "after"  — all files first, then folders.
+   * - "inline" — folders and files are interleaved together under the chosen sort.
+   *
+   * Per-notebox so each notebox can present its own folder layout the way that
+   * suits it (a flat journal vs. a deeply-nested research notebox want
+   * different defaults).
+   */
+  folder_grouping: FolderGrouping;
 }
 
 /** Notebox-specific startup state. */

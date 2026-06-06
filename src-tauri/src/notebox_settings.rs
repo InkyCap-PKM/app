@@ -30,6 +30,12 @@ pub struct NoteboxFileSettings {
     pub attachment_folder: String,
     /// Regex patterns for files to exclude from search and quick-open.
     pub excluded_files_regex: Vec<String>,
+    /// How this notebox's file tree groups folders relative to files when
+    /// sorting: "before" (folders first), "after" (files first), or "inline"
+    /// (interleaved). Per-notebox so each notebox's folder layout presents the
+    /// way that suits it. Stored as a string so the frontend's union type is the
+    /// single source of truth — Rust just round-trips the value.
+    pub folder_grouping: String,
 }
 
 impl Default for NoteboxFileSettings {
@@ -39,6 +45,7 @@ impl Default for NoteboxFileSettings {
             new_note_folder: String::new(),
             attachment_folder: "Assets".to_string(),
             excluded_files_regex: Vec::new(),
+            folder_grouping: "before".to_string(),
         }
     }
 }

@@ -1,7 +1,7 @@
 // Appearance tab: theme + background palettes, accent, font roles/sizes,
 // zoom + folder-grouping, date format, and rendering defaults.
 import { createResource } from "solid-js";
-import { settings, updateSetting } from "../../stores/settings";
+import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
 import { setThemePreference, setBgPaletteLight, setBgPaletteDark } from "../../stores/theme";
 import type { BgPalette, FontChoice, SystemFontDefaults } from "../../lib/types";
 import * as ipc from "../../lib/ipc";
@@ -164,13 +164,14 @@ export function AppearanceSettingsSection() {
       <SettingSelect
         label={t("settings.appearance.folderGrouping.label")}
         description={t("settings.appearance.folderGrouping.description")}
-        value={settings.appearance.folder_grouping}
+        value={noteboxSettings.files.folder_grouping}
         options={[
           { value: "before", label: t("settings.appearance.folderGrouping.option.before") },
           { value: "after", label: t("settings.appearance.folderGrouping.option.after") },
           { value: "inline", label: t("settings.appearance.folderGrouping.option.inline") },
         ]}
-        onChange={(v) => updateSetting("appearance", "folder_grouping", v as "before" | "after" | "inline")}
+        onChange={(v) => updateNoteboxSetting("files", "folder_grouping", v as "before" | "after" | "inline")}
+        scope="notebox"
       />
       <DateFormatSettingRow />
 

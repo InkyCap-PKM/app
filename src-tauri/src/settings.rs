@@ -119,9 +119,6 @@ pub struct AppearanceSettings {
     pub accent_color: String,
     /// What Ctrl+/Ctrl- adjusts: "content", "interface", or "both".
     pub zoom_target: String,
-    /// How the file tree groups folders relative to files when sorting:
-    /// "before" (folders first), "after" (files first), or "inline" (interleaved).
-    pub folder_grouping: String,
     /// The user's chosen sort mode for the file tree. One of "name-asc",
     /// "name-desc", "modified-desc", "modified-asc", "created-desc",
     /// "created-asc". Persisted here so a re-open preserves the ordering
@@ -149,7 +146,6 @@ impl Default for AppearanceSettings {
             accent_source: "default".to_string(),
             accent_color: "#1D7874".to_string(),
             zoom_target: "content".to_string(),
-            folder_grouping: "before".to_string(),
             file_tree_sort: "name-asc".to_string(),
             date_format: "D MMM YYYY".to_string(),
             ui_locale: "en".to_string(),

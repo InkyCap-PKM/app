@@ -40,7 +40,7 @@ import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
-import { settings, updateSetting } from "../stores/settings";
+import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
 import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
@@ -323,7 +323,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const tree = fileTree();
     if (!tree) return [];
     const filtered = visibleFileTree(tree);
-    return sortFileTree(filtered, fileSortMode(), settings.appearance.folder_grouping);
+    return sortFileTree(filtered, fileSortMode(), noteboxSettings.files.folder_grouping);
   });
 
   /// Collections, filtered by the inline search box and ordered by the
