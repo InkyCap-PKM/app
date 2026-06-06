@@ -2043,7 +2043,16 @@ function rebuildRanges(
       // dirty so it is dropped and rebuilt with the rest of the element.
       const overlaps = iter.from < r.to && iter.to > r.from;
       const pointInRange = iter.from === iter.to && iter.from >= r.from && iter.from < r.to;
-      if (overlaps || pointInRange) {
+      // The symmetric end-boundary case: an expanded block element (image,
+      // embed) renders its preview as a `side: 1` block widget anchored at the
+      // element's *end* — a point sitting exactly at r.to, which the half-open
+      // tests above exclude. Left in place, the stale widget survives while
+      // buildDecorations re-emits a fresh copy at the same spot, doubling the
+      // preview. Treat a block-widget point at r.to as dirty so it is rebuilt
+      // (its FuncCall node still overlaps the range, so the rebuild re-adds it).
+      const blockWidgetAtEnd =
+        iter.from === iter.to && iter.from === r.to && iter.value.spec?.block === true;
+      if (overlaps || pointInRange || blockWidgetAtEnd) {
         inDirty = true;
         break;
       }
