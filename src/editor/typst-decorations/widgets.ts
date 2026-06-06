@@ -2247,6 +2247,71 @@ export class LinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/** A `#link(<label>)[text]` internal cross-reference — its destination is a
+ *  Typst label (an anchor next to a heading, etc.) rather than a URL. The
+ *  string-URL form is `LinkWidget`; this renders the same way but, on click,
+ *  jumps the editor to where the `<label>` is defined in this note instead of
+ *  opening anything externally. Without this the call fell through to raw
+ *  source, showing `#link(<label>)[…]` literally. */
+export class LabelLinkWidget extends WidgetType {
+  constructor(
+    readonly label: string,
+    readonly display: string,
+  ) {
+    super();
+  }
+
+  eq(other: LabelLinkWidget) {
+    return this.label === other.label && this.display === other.display;
+  }
+
+  toDOM(view: EditorView) {
+    const el = document.createElement("span");
+    el.className = "cm-typst-link cm-typst-link--internal";
+    el.style.cursor = "pointer";
+    el.title = t("visual.link.jumpToLabel", { label: this.label });
+
+    const text = document.createElement("span");
+    text.textContent = this.display || this.label;
+    el.appendChild(text);
+
+    // A "link" (chain) glyph, distinct from LinkWidget's external-arrow, to
+    // signal this jumps within the document rather than opening externally.
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("width", "12");
+    icon.setAttribute("height", "12");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "2");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.classList.add("cm-typst-link-external-icon");
+    icon.innerHTML = // static-only
+      '<path d="M9 17H7A5 5 0 0 1 7 7h2"/>' +
+      '<path d="M15 7h2a5 5 0 1 1 0 10h-2"/>' +
+      '<line x1="8" x2="16" y1="12" y2="12"/>';
+    el.appendChild(icon);
+
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      jumpToLabel(view, this.label);
+    });
+    return el;
+  }
+
+  ignoreEvent() { return true; }
+}
+
+/** Move the cursor to (and scroll to) the `<label>` definition in this note. */
+function jumpToLabel(view: EditorView, label: string): void {
+  const pos = view.state.doc.toString().indexOf(`<${label}>`);
+  if (pos < 0) return;
+  view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+  view.focus();
+}
+
 export class CitationWidget extends WidgetType {
   constructor(
     readonly key: string,

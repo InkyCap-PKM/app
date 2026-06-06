@@ -24,6 +24,7 @@ import {
   DueWidget,
   WikilinkWidget,
   LinkWidget,
+  LabelLinkWidget,
   CitationWidget,
   VerseWidget,
   FootnoteWidget,
@@ -1256,12 +1257,26 @@ function handleFuncCall(
       return false;
     }
     case "link": {
+      const display = extractBracketContent(text);
       const url = extractFirstStringArg(text);
       if (url) {
-        const display = extractBracketContent(text);
         decos.push(
           Decoration.replace({
             widget: new LinkWidget(url, display ?? ""),
+            inclusiveStart: false,
+            inclusiveEnd: false,
+          }).range(from, to),
+        );
+        return false;
+      }
+      // `#link(<label>)[…]` — a label reference (intra-document anchor) rather
+      // than a string URL. Render it as an internal link instead of letting it
+      // fall through to raw source.
+      const label = extractFirstLabelArg(text);
+      if (label) {
+        decos.push(
+          Decoration.replace({
+            widget: new LabelLinkWidget(label, display ?? ""),
             inclusiveStart: false,
             inclusiveEnd: false,
           }).range(from, to),
@@ -1659,6 +1674,14 @@ function bracketRangeAfterArgs(
 
 function extractFirstStringArg(text: string): string | null {
   const m = text.match(/\(\s*"([^"]*)"/) ?? text.match(/\(\s*'([^']*)'/);
+  return m ? m[1] : null;
+}
+
+/** A Typst label reference as the first argument: `#link(<my-label>)…`. This is
+ *  the intra-document anchor form of a link, distinct from the string-URL form
+ *  read by extractFirstStringArg. */
+function extractFirstLabelArg(text: string): string | null {
+  const m = text.match(/\(\s*<([^>\s]+)>/);
   return m ? m[1] : null;
 }
 
