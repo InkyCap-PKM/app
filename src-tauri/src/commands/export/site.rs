@@ -335,4 +335,39 @@ ul, ol { padding-left: 1.5em; margin: 0.8em 0; }
 .site-index li:last-child { border-bottom: none; }
 
 svg { max-width: 100%; height: auto; }
+
+/* Callouts (#callout) and annotations (#annotation): the notebox package emits
+   <div class="inkycap-callout …"> on the HTML target with the resolved kind
+   colour in --inkycap-callout-color, since typst-html drops the paged box
+   styling. */
+.inkycap-callout {
+  border-left: 3px solid var(--inkycap-callout-color, var(--accent));
+  background: color-mix(in srgb, var(--inkycap-callout-color, #448aff) 8%, transparent);
+  border-radius: 0 3px 3px 0;
+  padding: 8px 12px;
+  margin: 1em 0;
+}
+.inkycap-callout__title {
+  font-weight: 600;
+  color: var(--inkycap-callout-color, var(--accent));
+  font-size: 0.95em;
+  margin-bottom: 0.25em;
+}
+.inkycap-annotation {
+  border-left: 2px solid var(--inkycap-annotation-color, #8b5cf6);
+  background: color-mix(in srgb, var(--inkycap-annotation-color, #8b5cf6) 6%, transparent);
+  border-radius: 0 3px 3px 0;
+  padding: 6px 10px;
+  margin: 1em 0;
+}
+.inkycap-annotation__title {
+  font-weight: 600;
+  color: var(--inkycap-annotation-color, #8b5cf6);
+  font-size: 0.8em;
+  margin-bottom: 0.25em;
+}
+.inkycap-callout__body > :first-child,
+.inkycap-annotation__body > :first-child { margin-top: 0; }
+.inkycap-callout__body > :last-child,
+.inkycap-annotation__body > :last-child { margin-bottom: 0; }
 "#;

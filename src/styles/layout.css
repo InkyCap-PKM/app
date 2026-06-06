@@ -9798,6 +9798,54 @@ svg.lucide {
   height: auto;
 }
 
+/* Admonition callouts (#callout) and annotations (#annotation). The notebox
+   package emits these as <div class="inkycap-callout …"> on the HTML target
+   (typst-html can't carry the paged `block` box styling), passing the resolved
+   kind colour through the --inkycap-callout-color custom property. Mirrors the
+   paged/SVG and visual-editor look: a left border + faint tint + coloured
+   title. */
+.typst-reading__html-content .inkycap-callout {
+  border-left: 3px solid var(--inkycap-callout-color, var(--accent-primary, #448aff));
+  background: color-mix(in srgb, var(--inkycap-callout-color, #448aff) 8%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 8px 12px;
+  margin: 1em 0;
+}
+
+.typst-reading__html-content .inkycap-callout__title {
+  font-weight: 600;
+  color: var(--inkycap-callout-color, var(--accent-primary, #448aff));
+  font-size: 0.95em;
+  margin-bottom: 0.25em;
+}
+
+.typst-reading__html-content .inkycap-annotation {
+  border-left: 2px solid var(--inkycap-annotation-color, #8b5cf6);
+  background: color-mix(in srgb, var(--inkycap-annotation-color, #8b5cf6) 6%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 6px 10px;
+  margin: 1em 0;
+}
+
+.typst-reading__html-content .inkycap-annotation__title {
+  font-weight: 600;
+  color: var(--inkycap-annotation-color, #8b5cf6);
+  font-size: 0.8em;
+  margin-bottom: 0.25em;
+}
+
+/* The body's first/last block (a <p> Typst wraps text in) shouldn't add
+   margin past the callout padding. */
+.typst-reading__html-content .inkycap-callout__body > :first-child,
+.typst-reading__html-content .inkycap-annotation__body > :first-child {
+  margin-top: 0;
+}
+
+.typst-reading__html-content .inkycap-callout__body > :last-child,
+.typst-reading__html-content .inkycap-annotation__body > :last-child {
+  margin-bottom: 0;
+}
+
 /* Generic icon-only button in the editor header right group
    (e.g. the Mycelial View button). */
 .editor-header__icon-btn {
