@@ -265,6 +265,10 @@ pub async fn compile_typst_html(
     // locate and highlight them. HTML render path only — see
     // `style_injection::inject_cite_tagging`.
     let source = style_injection::inject_cite_tagging(&source);
+    // Re-emit `align()` blocks (which typst-html drops) as styled <div>s so
+    // centred/right-aligned images render. Before the offset calc so the
+    // injected line is counted and diagnostics remap correctly.
+    let source = style_injection::inject_html_align_shim(&source);
     let injected_line_offset = source.lines().count().saturating_sub(original_lines);
     let source = maybe_inject_preview_bibliography(&source, &state, &session).await;
     let source = escape_non_bib_citations(&source, &state, &session).await;

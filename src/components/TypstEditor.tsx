@@ -1220,6 +1220,13 @@ async function resolveMediaSources(root: HTMLElement): Promise<void> {
   }
 }
 
+// Note: images need no frontend src resolution here. typst-html inlines every
+// `#image(...)` as a self-contained base64 `data:` URI (typst-html's IMAGE_RULE
+// → `convert_image_to_base64_url`), so `<img>` tags already render. Only
+// `<video>`/`<audio>` (not inlined) need the blob resolution above. Aligned
+// images are handled on the backend via the `#show align: html-align` shim
+// (typst-html otherwise drops `align()` blocks).
+
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
   // Font size is intentionally left to CSS (--md-body-size) so the
   // content zoom (Ctrl+= / Ctrl+-) applies here. Only the font family
