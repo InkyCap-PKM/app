@@ -52,7 +52,6 @@ const DEFAULTS: UserSettings = {
     accent_source: "default",
     accent_color: "#1D7874",
     zoom_target: "content",
-    folder_grouping: "before",
     file_tree_sort: "name-asc",
     date_format: "D MMM YYYY",
     ui_locale: "en",
@@ -116,6 +115,7 @@ const NOTEBOX_DEFAULTS: NoteboxSettings = {
     new_note_folder: "",
     attachment_folder: "Assets",
     excluded_files_regex: [],
+    folder_grouping: "before",
   },
   startup: {
     target: "",
