@@ -700,6 +700,19 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     },
   );
 
+  // System property keys (`title`, `tags`, …) are load-bearing built-ins
+  // that can't be renamed — the sidebar hides the rename action for them
+  // (the backend also rejects it). The set is static, so fetch it once.
+  const [systemPropertyKeys] = createResource(async () => {
+    try {
+      return new Set(await ipc.getSystemPropertyKeys());
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const isSystemProperty = (key: string) =>
+    systemPropertyKeys()?.has(key) ?? false;
+
   // Refetch collections when the metadata editor saves a .collection file
   const onCollectionsChanged = () => refetchCollections();
   document.addEventListener("inkycap:collections-changed", onCollectionsChanged);
@@ -844,22 +857,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       refetchNoteboxIndex();
     } catch (err) {
       toastError(t("leftSidebar.renameTagFailed"), err);
-    }
-  }
-
-  async function handleDeleteTag(tag: string) {
-    setTagMenu(null);
-    const ok = await ask(
-      t("leftSidebar.deleteTagBody", { tag }),
-      { title: t("leftSidebar.deleteTagTitle"), kind: "warning" },
-    );
-    if (!ok) return;
-    try {
-      await ipc.deleteTag(tag);
-      refresh();
-      refetchNoteboxIndex();
-    } catch (err) {
-      toastError(t("leftSidebar.deleteTagFailed"), err);
     }
   }
 
@@ -2158,12 +2155,6 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             >
               {t("common.rename")}
             </button>
-            <button
-              class="context-menu__item context-menu__item--danger"
-              onClick={() => handleDeleteTag(menu().tag)}
-            >
-              {t("common.delete")}
-            </button>
           </div>
         )}
       </Show>
@@ -2213,12 +2204,14 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </div>
               </Show>
             </div>
-            <button
-              class="context-menu__item"
-              onClick={() => startPropertyRename(menu().key)}
-            >
-              {t("common.rename")}
-            </button>
+            <Show when={!isSystemProperty(menu().key)}>
+              <button
+                class="context-menu__item"
+                onClick={() => startPropertyRename(menu().key)}
+              >
+                {t("common.rename")}
+              </button>
+            </Show>
             <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleDeleteProperty(menu().key)}

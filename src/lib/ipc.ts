@@ -385,10 +385,6 @@ export async function renameTag(
   return invoke<void>("rename_tag", { oldTag, newTag });
 }
 
-export async function deleteTag(tag: string): Promise<void> {
-  return invoke<void>("delete_tag", { tag });
-}
-
 export async function resolveEmbedPath(
   target: string,
 ): Promise<string | null> {
