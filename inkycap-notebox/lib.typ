@@ -520,6 +520,26 @@
 }
 
 // ---------------------------------------------------------------------------
+// html-align: typst-html (0.14) has no show rule for `align()`, so an aligned
+// block — most visibly a centred or right-aligned #image — is dropped entirely
+// from the HTML output (only its surrounding paragraph survives). Re-emit it as
+// a <div> carrying the matching CSS `text-align` so it renders in the reading
+// view and HTML export. Installed as `#show align: html-align` only on the HTML
+// compile path (see `inject_html_align_shim` in style_injection.rs); paged
+// output (PDF/SVG) keeps native `align()` and is untouched.
+// ---------------------------------------------------------------------------
+
+#let html-align(it) = {
+  // Reduce the (possibly 2-D) alignment to its horizontal component — the only
+  // part with a CSS `text-align` analogue. `align()` from the editor is
+  // horizontal-only; a hand-authored `center + horizon` keeps just `center`.
+  let a = it.alignment
+  let h = if type(a) == alignment and a.x != auto { a.x } else { a }
+  let css = if h == right { "right" } else if h == center { "center" } else if h == start { "start" } else if h == end { "end" } else { "left" }
+  html.elem("div", attrs: (style: "text-align: " + css), it.body)
+}
+
+// ---------------------------------------------------------------------------
 // callout: styled admonition block. Type determines icon/color in visual mode.
 // Supported types: note, tip, warning, important, caution, example, quote,
 // abstract, info, todo, success, question, failure, danger, bug.

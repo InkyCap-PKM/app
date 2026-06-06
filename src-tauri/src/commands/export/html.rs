@@ -46,6 +46,9 @@ pub async fn export_note_html(
 
     let content = super::super::typst::inject_style_cascade(&content, &path_buf, &state).await;
     let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
+    // Re-emit `align()` blocks as styled <div>s (typst-html drops them) so
+    // centred/right-aligned images survive in the exported HTML.
+    let content = crate::typst_pipeline::style_injection::inject_html_align_shim(&content);
 
     let source = prepare_bibliography(
         content,

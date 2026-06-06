@@ -245,6 +245,37 @@ pub fn inject_cite_tagging(source: &str) -> String {
     out
 }
 
+/// Install the `align()` → `<div text-align>` show rule on the HTML render
+/// path. `typst-html` has no show rule for `AlignElem`, so a centred or
+/// right-aligned block (most visibly an `#image`) is silently dropped from the
+/// output. `html-align` (in `inkycap-notebox/lib.typ`) re-emits it as a styled
+/// `<div>`; this installs it as a document-wide `#show align: html-align`.
+///
+/// In-memory, HTML render/export only — the on-disk note and the PDF/SVG paths
+/// keep native `align()`. The rule is placed right after the inkycap-notebox
+/// import line so `html-align` is in scope; if there is no import line (not a
+/// real InkyCap note) it is left unchanged rather than referencing an undefined
+/// function.
+pub fn inject_html_align_shim(source: &str) -> String {
+    const RULE: &str = "#show align: html-align";
+
+    let mut out = String::with_capacity(source.len() + RULE.len() + 2);
+    let mut injected = false;
+    for line in source.lines() {
+        out.push_str(line);
+        out.push('\n');
+        if !injected && crate::notebox_package::is_notebox_import_line(line) {
+            out.push_str(RULE);
+            out.push('\n');
+            injected = true;
+        }
+    }
+    if !injected {
+        return source.to_string();
+    }
+    out
+}
+
 fn build_injection_block(
     defaults_rules: Option<&str>,
     collection_rules: Option<&str>,

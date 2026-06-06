@@ -89,6 +89,9 @@ pub async fn export_collection_static_site(
                 .filter(|c| !c.trim().is_empty()),
         );
         let content = super::super::typst::maybe_inject_set_notebox(&content, &state).await;
+        // Re-emit `align()` blocks as styled <div>s (typst-html drops them) so
+        // centred/right-aligned images survive in the exported site.
+        let content = style_injection::inject_html_align_shim(&content);
         let source = prepare_bibliography(content, None, None, true, &state, &session).await;
 
         let mut compiler = session.typst_compiler.lock().await;
