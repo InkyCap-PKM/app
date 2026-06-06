@@ -11,7 +11,7 @@ use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::storage::validate_notebox_path;
-use crate::typst_pipeline::path_rebase::rebase_relative_paths;
+use crate::typst_pipeline::path_rebase::{rebase_relative_paths, rewrite_referenced_path};
 
 /// Copy a file (given as base64 data) to the attachment folder.
 /// Returns the saved filename (may be renamed to avoid collisions).
@@ -639,6 +639,16 @@ pub async fn create_folder(
     Ok(to_frontend_string(&folder_path))
 }
 
+/// True when the path is a Typst note (`.typ`). Note-specific rename steps —
+/// reading the file back as UTF-8 text, reindexing it, rewriting its own
+/// wikilinks/paths — apply only to notes. Attachments (images, PDFs, …) are
+/// binary: reading them via `read_file` (which is `read_to_string`) would fail
+/// with "stream did not contain valid UTF-8" *after* the on-disk rename already
+/// succeeded, surfacing a spurious error for a rename that actually worked.
+fn is_note_file(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("typ")
+}
+
 /// Rename a file (simple rename, no link updates).
 #[tauri::command]
 pub async fn rename_file(
@@ -678,9 +688,16 @@ pub async fn rename_file(
     if is_dir {
         reindex_directory(&old, &new_path, &storage, &session).await;
     } else {
-        let content = storage.read_file(&new_path).await?;
-        remove_from_indices(&old, &session).await;
-        reindex_note(&new_path, &content, &session).await;
+        // Index updates are note-only. Reading a binary attachment back as
+        // text would fail post-rename (see `is_note_file`). Purge the old
+        // note entry if it was a note, and reindex the new path only if it is.
+        if is_note_file(&old) {
+            remove_from_indices(&old, &session).await;
+        }
+        if is_note_file(&new_path) {
+            let content = storage.read_file(&new_path).await?;
+            reindex_note(&new_path, &content, &session).await;
+        }
     }
 
     Ok(to_frontend_string(&new_path))
@@ -721,18 +738,25 @@ pub async fn rename_and_update_links(
         )));
     }
 
-    // For files, update wikilinks in referencing notes before the rename.
-    // (Doing it before — versus after, as the watcher path does — is
-    // arbitrary; the rewrite only touches files other than `old`/`new`,
-    // so either ordering converges.)
+    // Update references in other notes before the rename. (Doing it before —
+    // versus after, as the watcher path does — is arbitrary; the rewrite only
+    // touches files other than `old`/`new`, so either ordering converges.)
     if !is_dir {
-        rewrite_backlinks_for_rename(&old, &new_path, &storage, &session).await?;
-        // Phase B: rebase relative path arguments in this note's own
-        // source to notebox-root-absolute, anchored at the pre-rename
-        // parent. For a same-folder rename the anchor is unchanged so
-        // this is just canonicalization; for a follow-up move it makes
-        // the references survive.
-        rebase_paths_for_note_move(&old, &storage).await?;
+        if is_note_file(&old) {
+            // A note is referenced by wikilinks. Rewrite those in referencing
+            // notes, then rebase this note's own path args (Phase B).
+            rewrite_backlinks_for_rename(&old, &new_path, &storage, &session).await?;
+            // Phase B: rebase relative path arguments in this note's own
+            // source to notebox-root-absolute, anchored at the pre-rename
+            // parent. For a same-folder rename the anchor is unchanged so
+            // this is just canonicalization; for a follow-up move it makes
+            // the references survive.
+            rebase_paths_for_note_move(&old, &storage).await?;
+        } else {
+            // An attachment is referenced by path-bearing calls
+            // (`#image`/`#read`/`#bibliography`). Repoint them at the new name.
+            rewrite_attachment_references_for_rename(&old, &new_path, &storage, &session).await?;
+        }
     }
 
     storage.rename_file(&old, &new_path).await?;
@@ -740,9 +764,14 @@ pub async fn rename_and_update_links(
     if is_dir {
         reindex_directory(&old, &new_path, &storage, &session).await;
     } else {
-        let content = storage.read_file(&new_path).await?;
-        remove_from_indices(&old, &session).await;
-        reindex_note(&new_path, &content, &session).await;
+        // Index updates are note-only (see the matching block in `rename_file`).
+        if is_note_file(&old) {
+            remove_from_indices(&old, &session).await;
+        }
+        if is_note_file(&new_path) {
+            let content = storage.read_file(&new_path).await?;
+            reindex_note(&new_path, &content, &session).await;
+        }
     }
 
     Ok(to_frontend_string(&new_path))
@@ -1188,6 +1217,114 @@ pub(crate) async fn rewrite_backlinks_for_rename(
     Ok(())
 }
 
+/// Notebox-relative path as a forward-slash string — the shape Typst path
+/// arguments use. Strips the storage root from absolute inputs (via
+/// `notebox_relative_path`), then joins only the `Normal` components with `/`
+/// so the result is identical on every OS (no Windows backslashes leaking into
+/// a path comparison). Returns an empty string for a root-level path with no
+/// components.
+fn notebox_rel_forward_slash(
+    path: &std::path::Path,
+    storage: &crate::storage::local::LocalNoteboxStorage,
+) -> String {
+    notebox_relative_path(path, storage)
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// When an attachment file (image / data / bibliography source) is renamed,
+/// repoint every note that references it at the new name. Path-bearing calls —
+/// `#image`, `#read`, `#bibliography` — carry attachment paths; wikilinks
+/// (handled by `rewrite_backlinks_for_rename`) never point at attachments, so
+/// this is the attachment analogue of that note-to-note rewrite.
+///
+/// Scans every `.typ` note once. Rename is a rare, user-initiated action, so a
+/// streaming pass is preferable to maintaining a persistent attachment-reference
+/// index — and it mirrors the attachment-folder migration in
+/// `attachment_migration.rs`. A cheap basename pre-filter skips the AST parse
+/// for notes that can't reference the file.
+async fn rewrite_attachment_references_for_rename(
+    old: &std::path::Path,
+    new_path: &std::path::Path,
+    storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
+    session: &NoteboxSession,
+) -> Result<(), InkyCapError> {
+    let old_rel = notebox_rel_forward_slash(old, storage);
+    let new_rel = notebox_rel_forward_slash(new_path, storage);
+    if old_rel.is_empty() || old_rel == new_rel {
+        return Ok(());
+    }
+    let basename = old
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    // Scan + rewrite is a pure storage operation (see the helper); the only
+    // session-bound work is writing back and reindexing the notes that changed.
+    let changes =
+        collect_attachment_reference_rewrites(storage, &old_rel, &new_rel, &basename).await;
+    for (rel, rewritten) in changes {
+        storage.write_file(&rel, &rewritten).await?;
+        session.reindex_note(&rel, &rewritten).await;
+    }
+    Ok(())
+}
+
+/// Scan every `.typ` note for path-bearing calls (`#image`/`#read`/
+/// `#bibliography`) that reference the attachment at notebox-relative `old_rel`
+/// and compute the rewritten source pointing at `new_rel`. Returns the
+/// notebox-relative path and new content of each note that changed.
+///
+/// Separated from the session reindex so the matching logic is testable with
+/// just a storage. Only changed notes are retained — the scan reads each note
+/// transiently — so memory is bounded by the (typically small) number of notes
+/// that reference the renamed file, not by notebox size.
+async fn collect_attachment_reference_rewrites(
+    storage: &crate::storage::local::LocalNoteboxStorage,
+    old_rel: &str,
+    new_rel: &str,
+    basename: &str,
+) -> Vec<(std::path::PathBuf, String)> {
+    let notes = storage
+        .list_files(&std::path::PathBuf::from(""), "*.typ")
+        .await
+        .unwrap_or_default();
+    // `list_files` returns canonical absolute paths; feed the notebox-relative
+    // form into read/write so the storage sandbox validates consistently (same
+    // reasoning as attachment_migration.rs).
+    let strip_root = storage.canonical_root();
+    let mut changes = Vec::new();
+
+    for note_abs in notes {
+        let rel = note_abs
+            .strip_prefix(strip_root)
+            .map(|r| r.to_path_buf())
+            .unwrap_or_else(|_| note_abs.clone());
+        let content = match storage.read_file(&rel).await {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        // Every reference to the file — absolute (`/Assets/foo.png`) or relative
+        // (`foo.png`, `../Assets/foo.png`) — contains its basename, so a
+        // substring test is a sound (over-approximate) pre-filter that avoids
+        // parsing notes that can't match.
+        if !basename.is_empty() && !content.contains(basename) {
+            continue;
+        }
+        let note_dir = rel.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let rewritten = rewrite_referenced_path(&content, old_rel, new_rel, &note_dir);
+        if rewritten != content {
+            changes.push((rel, rewritten));
+        }
+    }
+    changes
+}
+
 /// Local alias for the unified indexing helper on [`AppState`]. All note
 /// mutations in this module route through `session.reindex_note` — see
 /// `state::AppState::reindex_note` for the canonical implementation and the
@@ -1437,6 +1574,66 @@ mod tests {
 
         let after = std::fs::read_to_string(&note_abs).unwrap();
         assert_eq!(after, original);
+    }
+
+    /// Renaming an attachment repoints every note that references it. A note
+    /// in a subfolder referencing the absolute path InkyCap emits gets rewritten
+    /// to the new name; a note that doesn't reference it is left untouched.
+    #[tokio::test]
+    async fn attachment_rename_rewrites_referencing_notes() {
+        // Root the notebox at a non-hidden subdir: `tempfile` names the temp
+        // dir `.tmpXXXX`, and `list_files`' WalkDir prunes hidden directories
+        // (the root included) — a real notebox root is never hidden.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        std::fs::create_dir_all(root.join("Assets")).unwrap();
+        std::fs::create_dir_all(root.join("notes")).unwrap();
+        // Two referencers (one nested) plus a note that doesn't reference it.
+        std::fs::write(root.join("a.typ"), "= A\n\n#image(\"/Assets/old.png\")\n").unwrap();
+        std::fs::write(
+            root.join("notes/b.typ"),
+            "= B\n\nText #image(\"/Assets/old.png\", width: 50%) more.\n",
+        )
+        .unwrap();
+        let unrelated = "= C\n\n#image(\"/Assets/other.png\")\n";
+        std::fs::write(root.join("notes/c.typ"), unrelated).unwrap();
+
+        let storage =
+            Arc::new(crate::storage::local::LocalNoteboxStorage::new(root.clone()).unwrap());
+
+        let changes = collect_attachment_reference_rewrites(
+            &storage,
+            "Assets/old.png",
+            "Assets/new.png",
+            "old.png",
+        )
+        .await;
+
+        // Only the two referencing notes changed.
+        assert_eq!(changes.len(), 2, "got: {changes:?}");
+        for (rel, rewritten) in &changes {
+            assert!(
+                rewritten.contains("#image(\"/Assets/new.png\""),
+                "note {} not repointed:\n{rewritten}",
+                rel.display()
+            );
+            assert!(!rewritten.contains("old.png"), "stale ref in {rewritten}");
+        }
+        // The width arg on the nested reference is preserved.
+        let nested = changes
+            .iter()
+            .find(|(rel, _)| rel.ends_with("notes/b.typ"))
+            .expect("b.typ should be among the changes");
+        assert!(
+            nested.1.contains("#image(\"/Assets/new.png\", width: 50%)"),
+            "named args must survive: {}",
+            nested.1
+        );
+        // The unrelated note is not in the change set.
+        assert!(
+            !changes.iter().any(|(rel, _)| rel.ends_with("notes/c.typ")),
+            "unrelated note must not be rewritten"
+        );
     }
 
     #[test]
