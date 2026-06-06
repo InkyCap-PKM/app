@@ -1456,6 +1456,8 @@
   "settings.citations.style.description": "Style to use as a default for the bibliography format. This can be overridden in rendered output per file or by collection.",
   "settings.citations.customCsl.label": "Custom CSL file",
   "settings.citations.customCsl.description": "Path to a .csl citation style file",
+  "settings.citations.customCsl.downloadHint": "Download more styles from the {link} project.",
+  "settings.citations.customCsl.downloadHintLink": "Citation Style Language",
   "settings.citations.customCsl.placeholder": "Path to .csl file",
   "settings.citations.cslPickerTitle": "Select CSL citation style file",
   "settings.citations.cslFilterName": "CSL Files",

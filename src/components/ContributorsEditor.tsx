@@ -201,7 +201,7 @@ const ContributorsEditor: Component<{
                   href={CREDIT_TAXONOMY_URL}
                   target="_blank"
                   rel="noreferrer"
-                  class="contributors-editor__credit-link"
+                  class="inline-link"
                   onClick={(e) => {
                     // Don't let the click bubble to the <label> and toggle the
                     // checkbox; open the taxonomy in the user's browser instead.

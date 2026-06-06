@@ -3049,6 +3049,20 @@ svg.lucide {
   color: var(--fg-dim);
 }
 
+/* Inline text link inside body/help copy (settings descriptions, etc.). */
+.inline-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.inline-link:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Inline validation message (e.g. an invalid Add-notebox folder). */
 .settings__description--error {
   color: var(--accent-danger, #c42025);
@@ -5357,19 +5371,6 @@ svg.lucide {
   font-size: var(--text-md);
   color: var(--fg-secondary);
   margin-top: 2px;
-}
-
-.contributors-editor__credit-link {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-
-.contributors-editor__credit-link:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .collection-meta__hint {
