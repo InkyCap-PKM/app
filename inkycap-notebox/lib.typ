@@ -548,17 +548,39 @@
   let color = _callout-colors.at(kind, default: rgb("#448aff"))
   let heading-text = if title != none { title } else { upper(kind.first()) + kind.slice(1) }
 
-  block(
-    width: 100%,
-    inset: (left: 12pt, rest: 8pt),
-    stroke: (left: 3pt + color),
-    fill: color.lighten(92%),
-    radius: (right: 3pt),
-    [
-      #text(fill: color, weight: "bold", size: 0.95em, heading-text) \
-      #body
-    ],
-  )
+  // Typst's `typst-html` emitter drops `block(fill:/stroke:/inset:/radius:)`
+  // box styling — it would emit only the title + body text with no admonition
+  // box. So on the HTML target we emit a semantic `<div>` carrying the kind and
+  // the resolved colour (as a CSS custom property) for a stylesheet to paint,
+  // mirroring the `<mark>` treatment in `highlight`. The paged/SVG path keeps
+  // the native `block` so PDF/reading-view output is unchanged.
+  context {
+    if target() == "html" {
+      html.elem(
+        "div",
+        attrs: (
+          class: "inkycap-callout inkycap-callout--" + kind,
+          style: "--inkycap-callout-color: " + color.to-hex() + ";",
+        ),
+        (
+          html.elem("div", attrs: (class: "inkycap-callout__title"), heading-text),
+          html.elem("div", attrs: (class: "inkycap-callout__body"), body),
+        ).join(),
+      )
+    } else {
+      block(
+        width: 100%,
+        inset: (left: 12pt, rest: 8pt),
+        stroke: (left: 3pt + color),
+        fill: color.lighten(92%),
+        radius: (right: 3pt),
+        [
+          #text(fill: color, weight: "bold", size: 0.95em, heading-text) \
+          #body
+        ],
+      )
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -591,17 +613,35 @@
   [#metadata((by: by, on: _fmt-date(on))) <inkycap-annotation>]
   let attribution = _attribution(by, on)
   let heading = "Annotation" + (if attribution != "" { " — " + attribution } else { "" })
-  block(
-    width: 100%,
-    inset: (left: 10pt, rest: 6pt),
-    stroke: (left: 2pt + _annotation-color),
-    fill: _annotation-color.lighten(94%),
-    radius: (right: 3pt),
-    [
-      #text(fill: _annotation-color, weight: "bold", size: 0.8em, heading) \
-      #body
-    ],
-  )
+  // Same HTML-target treatment as `callout`: a styled `block` collapses to bare
+  // text under `typst-html`, so emit a semantic `<div>` for the stylesheet.
+  context {
+    if target() == "html" {
+      html.elem(
+        "div",
+        attrs: (
+          class: "inkycap-annotation",
+          style: "--inkycap-annotation-color: " + _annotation-color.to-hex() + ";",
+        ),
+        (
+          html.elem("div", attrs: (class: "inkycap-annotation__title"), heading),
+          html.elem("div", attrs: (class: "inkycap-annotation__body"), body),
+        ).join(),
+      )
+    } else {
+      block(
+        width: 100%,
+        inset: (left: 10pt, rest: 6pt),
+        stroke: (left: 2pt + _annotation-color),
+        fill: _annotation-color.lighten(94%),
+        radius: (right: 3pt),
+        [
+          #text(fill: _annotation-color, weight: "bold", size: 0.8em, heading) \
+          #body
+        ],
+      )
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
