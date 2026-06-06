@@ -144,10 +144,8 @@ pub type FrontmatterMapping = HashMap<String, FieldMapping>;
 /// `![[name.png|alt]]` — Obsidian-style image embed. Must run BEFORE
 /// the wikilink regex so the `[[name]]` portion isn't matched as a
 /// plain wikilink and the leading `!` left orphaned. The alt-text
-/// group (after `|`) is captured but currently dropped on emit:
-/// `#image` in Typst doesn't take an alt argument; if we later want
-/// to preserve it for search/accessibility, the place to do so is in
-/// the replacement closure.
+/// group (after `|`) is captured and forwarded to Typst's `image(alt:)`
+/// argument for search/accessibility.
 static IMAGE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
 
@@ -487,10 +485,18 @@ fn preprocess_markdown(input: &str, attachment_folder: &str, dialect: MarkdownDi
         .replace_all(&result, |caps: &regex::Captures| {
             let name = caps[1].trim();
             let folder = attachment_folder.trim_matches('/');
-            if folder.is_empty() {
-                format!("#image(\"/{}\")", name)
+            let path = if folder.is_empty() {
+                format!("/{}", name)
             } else {
-                format!("#image(\"/{}/{}\")", folder, name)
+                format!("/{}/{}", folder, name)
+            };
+            match caps
+                .get(2)
+                .map(|m| m.as_str().trim())
+                .filter(|a| !a.is_empty())
+            {
+                Some(alt) => format!("#image(\"{}\", alt: \"{}\")", path, escape_str(alt)),
+                None => format!("#image(\"{}\")", path),
             }
         })
         .into_owned();
@@ -767,6 +773,7 @@ struct Converter<'a> {
     link_text: String,
     in_image: bool,
     image_url: String,
+    image_alt: String,
     blockquote_depth: u32,
     blockquote_buf: String,
     pending_newlines: u8,
@@ -819,6 +826,7 @@ impl<'a> Converter<'a> {
             link_text: String::new(),
             in_image: false,
             image_url: String::new(),
+            image_alt: String::new(),
             blockquote_depth: 0,
             blockquote_buf: String::new(),
             pending_newlines: 0,
@@ -1060,6 +1068,7 @@ impl<'a> Converter<'a> {
             Tag::Image { dest_url, .. } => {
                 self.in_image = true;
                 self.image_url = dest_url.to_string();
+                self.image_alt.clear();
             }
             Tag::Table(alignments) => {
                 self.in_table = true;
@@ -1174,7 +1183,20 @@ impl<'a> Converter<'a> {
                 // Route notebox-local images into the attachment folder; leave
                 // external/absolute URLs untouched.
                 let routed = route_image_url(&url, &self.attachment_folder);
-                self.emit(&format!("#image(\"{}\")", routed));
+                // The `![alt]` text is forwarded to Typst's `image(alt:)` for
+                // search/accessibility. Inline markup inside the alt is flattened
+                // to plain text (Typst's `alt` is a plain `str`).
+                let alt = std::mem::take(&mut self.image_alt);
+                let alt = alt.trim();
+                if alt.is_empty() {
+                    self.emit(&format!("#image(\"{}\")", routed));
+                } else {
+                    self.emit(&format!(
+                        "#image(\"{}\", alt: \"{}\")",
+                        routed,
+                        escape_str(alt)
+                    ));
+                }
             }
             TagEnd::Table => {
                 self.in_table = false;
@@ -1236,6 +1258,10 @@ impl<'a> Converter<'a> {
         }
 
         if self.in_image {
+            // Accumulate the `![alt]` text (raw); escaping happens at emit
+            // time via `escape_str`, and inline markup is flattened to plain
+            // text since Typst's `image(alt:)` takes a plain string.
+            self.image_alt.push_str(text);
             return;
         }
 
@@ -1627,19 +1653,19 @@ mod tests {
     }
 
     #[test]
-    fn image_embed_with_alt_text_drops_alt() {
-        // `![[name.png|alt text]]` — Typst's #image takes no alt arg,
-        // so the alt portion is dropped (captured for possible future
-        // use). Without this special-case the wikilink regex would
-        // turn it into `!#wikilink(\"name.png\", display: \"alt\")`.
+    fn image_embed_with_alt_text_preserves_alt() {
+        // `![[name.png|alt text]]` — the alt portion (after `|`) is
+        // forwarded to Typst's `image(alt:)` for search/accessibility.
+        // Without the dedicated image-embed pass the wikilink regex
+        // would turn it into `!#wikilink(\"name.png\", display: \"alt\")`.
         let opts = MarkdownToTypstOptions {
             attachment_folder: "Assets".to_string(),
             ..MarkdownToTypstOptions::default()
         };
         let result = markdown_to_typst("![[photo.png|My caption]]", &opts);
         assert!(
-            result.contains("#image(\"/Assets/photo.png\")"),
-            "expected #image() ignoring alt, got:\n{result}"
+            result.contains("#image(\"/Assets/photo.png\", alt: \"My caption\")"),
+            "expected #image() with alt arg, got:\n{result}"
         );
     }
 
@@ -1939,10 +1965,32 @@ mod tests {
 
     #[test]
     fn images() {
-        // Standard images funnel into the attachment folder (default "Assets").
+        // Standard images funnel into the attachment folder (default "Assets");
+        // the `![alt]` text is forwarded to Typst's `image(alt:)`.
         let result = convert("![alt](image.png)");
         assert!(
+            result.contains("#image(\"/Assets/image.png\", alt: \"alt\")"),
+            "got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn image_without_alt_omits_alt_arg() {
+        let result = convert("![](image.png)");
+        assert!(
             result.contains("#image(\"/Assets/image.png\")"),
+            "got:\n{result}"
+        );
+        assert!(!result.contains("alt:"), "got:\n{result}");
+    }
+
+    #[test]
+    fn image_alt_inline_markup_flattened_to_plain_text() {
+        // Markdown alt text may contain inline markup; Typst's `alt` is a
+        // plain `str`, so it's flattened to plain text.
+        let result = convert("![a *bold* caption](image.png)");
+        assert!(
+            result.contains("#image(\"/Assets/image.png\", alt: \"a bold caption\")"),
             "got:\n{result}"
         );
     }
@@ -1951,7 +1999,7 @@ mod tests {
     fn images_route_subfolder_paths_to_attachment_by_basename() {
         let result = convert("![alt](sub/dir/pic.png)");
         assert!(
-            result.contains("#image(\"/Assets/pic.png\")"),
+            result.contains("#image(\"/Assets/pic.png\", alt: \"alt\")"),
             "got:\n{result}"
         );
     }
@@ -1960,7 +2008,7 @@ mod tests {
     fn external_image_urls_unchanged() {
         let result = convert("![alt](https://example.com/x.png)");
         assert!(
-            result.contains("#image(\"https://example.com/x.png\")"),
+            result.contains("#image(\"https://example.com/x.png\", alt: \"alt\")"),
             "got:\n{result}"
         );
     }

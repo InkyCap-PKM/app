@@ -1087,8 +1087,8 @@ mod tests {
 
         let typ = fs::read_to_string(target.path().join("notes/foo.typ")).unwrap();
         assert!(
-            typ.contains("#image(\"/Assets/pic.png\")"),
-            "expected attachment-folder image path, got:\n{typ}"
+            typ.contains("#image(\"/Assets/pic.png\", alt: \"alt\")"),
+            "expected attachment-folder image path with alt, got:\n{typ}"
         );
         assert!(
             !typ.contains("images/pic.png"),
@@ -1124,7 +1124,7 @@ mod tests {
         assert!(result.errors.is_empty());
         let typ = fs::read_to_string(target.path().join("note.typ")).unwrap();
         assert!(
-            typ.contains("#image(\"https://example.com/a.png\")"),
+            typ.contains("#image(\"https://example.com/a.png\", alt: \"web\")"),
             "external URL must be left as-is, got:\n{typ}"
         );
     }
