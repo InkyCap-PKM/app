@@ -7,6 +7,10 @@ import { useI18n, AVAILABLE_LOCALES } from "../../lib/i18n";
 import { setUiLocale } from "../../stores/locale";
 import { SettingSelect, SettingToggle } from "./shared";
 
+/// The Hunspell project, whose dictionary format InkyCap's spellcheck uses.
+/// Linked from the "Install dictionaries" help text.
+const HUNSPELL_URL = "https://hunspell.github.io/";
+
 export function LanguageSettingsSection() {
   // Reactive translator: the interface-language row re-renders live when the
   // user switches language, demonstrating the seam end-to-end. (The rest of
@@ -100,8 +104,31 @@ export function LanguageSettingsSection() {
           <span class="settings__label">{trans("settings.spellcheck.install")}</span>
         </div>
         <p class="settings__field-hint">
+          {(() => {
+            // "Hunspell" links to the project; keep the sentence one
+            // translation unit with a {link} slot.
+            const [before, after] = trans("settings.spellcheck.installHintBefore").split("{link}");
+            return (
+              <>
+                {before}
+                <a
+                  href={HUNSPELL_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="inline-link"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void ipc.openUrlExternally(HUNSPELL_URL);
+                  }}
+                >
+                  {trans("settings.spellcheck.installHintLink")}
+                </a>
+                {after}
+              </>
+            );
+          })()}{" "}
           {/* i18n-exempt: literal Hunspell file extensions */}
-          {trans("settings.spellcheck.installHintBefore")} <code>.dic</code> + <code>.aff</code> {trans("settings.spellcheck.installHintAfter")}
+          <code>.dic</code> + <code>.aff</code> {trans("settings.spellcheck.installHintAfter")}
         </p>
         <button class="settings__detect-btn" onClick={openDictionaryFolder}>
           {trans("settings.spellcheck.openFolder")}
