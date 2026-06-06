@@ -963,6 +963,24 @@ export async function migrateAttachmentFolder(
   });
 }
 
+export interface IndexStats {
+  file_count: number;
+  collection_count: number;
+  property_keys: string[];
+}
+
+/**
+ * User-initiated "Rebuild cache": discard this notebox's persisted caches and
+ * rebuild every index (links, tags/properties, search, Mycelial corpus) from
+ * disk. Re-parses the whole notebox, so it can take seconds-to-minutes on a
+ * large one — drive a busy state off the returned promise. The backend emits
+ * the same refresh events as a notebox open, so other panels update on
+ * completion.
+ */
+export async function rebuildNoteboxIndexes(): Promise<IndexStats> {
+  return invoke<IndexStats>("rebuild_notebox_indexes");
+}
+
 /**
  * Read file paths from the system clipboard via wl-paste / xclip.
  * Returns an empty array if the clipboard has no file entries or

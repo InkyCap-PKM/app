@@ -251,6 +251,7 @@ pub fn run() {
             commands::notebox::move_notebox,
             commands::notebox::notebox_has_user_settings,
             commands::notebox::seed_notebox_from_source,
+            commands::notebox::rebuild_notebox_indexes,
             commands::collections::list_collections,
             commands::collections::get_collection_data,
             commands::collections::create_collection_file,

@@ -439,6 +439,45 @@ impl NoteboxSession {
         Ok(stats)
     }
 
+    /// Force a full rebuild of every index from disk, discarding the persisted
+    /// caches first. This is the user-initiated "Rebuild cache" recovery action
+    /// — distinct from [`build_indexes`], which reconciles against the caches by
+    /// mtime for speed. Here we clear them so neither a corrupt cache entry nor
+    /// a watcher-missed external change (a rename/move done in another app while
+    /// InkyCap was closed) can survive into the rebuilt indexes.
+    ///
+    /// Clearing == pruning this notebox's metadata (parse) cache with an empty
+    /// keep-set so every note is re-parsed, plus deleting the persisted search
+    /// and corpus snapshots so they are rebuilt from scratch rather than
+    /// reconciled. Then [`build_indexes`] re-parses every note and rebuilds the
+    /// link, property, search, and corpus indexes. This re-parses the whole
+    /// notebox (the slow path), so callers should treat it as a long operation.
+    pub async fn rebuild_indexes_from_disk(&self) -> crate::errors::Result<IndexStats> {
+        let notebox_root = self
+            .notebox_root
+            .read()
+            .await
+            .clone()
+            .ok_or(crate::errors::InkyCapError::NoteboxNotOpen)?;
+
+        // Drop the parse cache for this notebox so `build_indexes` re-parses
+        // every note instead of trusting cached metadata. An empty keep-set
+        // means "no file is still present", so `prune` deletes all rows for
+        // this notebox. Best-effort: a cache failure must not block recovery.
+        if let Some(cache) = self.metadata_cache.as_ref() {
+            if let Err(e) = cache.prune(&notebox_root, &HashSet::new()) {
+                log::warn!("rebuild: clearing metadata cache failed: {e} — continuing");
+            }
+        }
+        // Delete the persisted search-index and corpus-stats snapshots so
+        // `build_indexes` takes its build-from-scratch branch. Missing files
+        // are fine (first rebuild, or never persisted).
+        let _ = std::fs::remove_file(search_index_path(&notebox_root));
+        let _ = std::fs::remove_file(corpus_stats_path(&notebox_root));
+
+        self.build_indexes().await
+    }
+
     /// Write a freshly re-parsed note through to the persistent metadata
     /// cache. Called from the in-app mutation paths (file_ops, files,
     /// creation_rules) so that warm starts after lots of editing don't have

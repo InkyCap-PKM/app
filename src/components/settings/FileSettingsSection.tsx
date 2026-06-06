@@ -1,16 +1,34 @@
 // Files tab: new-note location + attachment folder, link/delete/extension
-// toggles, and the Zettelkasten-ID options.
-import { createResource, Show } from "solid-js";
+// toggles, the Zettelkasten-ID options, and a maintenance "Rebuild cache"
+// recovery action.
+import { createResource, createSignal, Show } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
-import { useI18n } from "../../lib/i18n";
+import { useI18n, tPlural } from "../../lib/i18n";
+import { showToast } from "../../stores/toasts";
+import { errorText } from "../../lib/errors";
 import AttachmentFolderField from "../AttachmentFolderField";
+import LoadingDots from "../LoadingDots";
 import { SettingSelect, SettingPathText, SettingToggle, SettingLabel, collectPaths } from "./shared";
 
 export function FileSettingsSection() {
   const t = useI18n();
   const [tree] = createResource(() => ipc.getFileTree());
   const folderSuggestions = () => tree() ? collectPaths(tree()!, true) : [];
+
+  const [rebuilding, setRebuilding] = createSignal(false);
+  async function rebuildCache() {
+    if (rebuilding()) return;
+    setRebuilding(true);
+    try {
+      const stats = await ipc.rebuildNoteboxIndexes();
+      showToast("success", tPlural("settings.files.rebuildCache.success", stats.file_count));
+    } catch (err) {
+      showToast("error", t("settings.files.rebuildCache.failed"), errorText(err));
+    } finally {
+      setRebuilding(false);
+    }
+  }
 
   return (
     <div class="settings__section">
@@ -100,6 +118,33 @@ export function FileSettingsSection() {
           onChange={(v) => updateSetting("files", "auto_title_as_zid", v)}
         />
       </Show>
+
+      {/* Maintenance */}
+      <div class="settings__section-header">
+        <span class="settings__label">{t("settings.files.maintenance")}</span>
+      </div>
+      <div class="settings__row">
+        <div class="settings__row-info">
+          <SettingLabel label={t("settings.files.rebuildCache.label")} />
+          <span class="settings__description">
+            {t("settings.files.rebuildCache.description")}
+          </span>
+        </div>
+        <button
+          type="button"
+          class="btn btn--secondary"
+          onClick={rebuildCache}
+          disabled={rebuilding()}
+        >
+          <Show
+            when={rebuilding()}
+            fallback={t("settings.files.rebuildCache.button")}
+          >
+            {t("settings.files.rebuildCache.rebuilding")}
+            <LoadingDots />
+          </Show>
+        </button>
+      </div>
     </div>
   );
 }

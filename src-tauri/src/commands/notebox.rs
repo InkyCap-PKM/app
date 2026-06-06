@@ -282,6 +282,32 @@ pub(crate) fn spawn_index_rebuild(
     });
 }
 
+/// User-initiated "Rebuild cache" recovery action (Settings → Files & Links).
+///
+/// Discards this notebox's persisted caches and rebuilds every index from disk
+/// (see [`NoteboxSession::rebuild_indexes_from_disk`]). Unlike the open-time
+/// background rebuild, this blocks until done so the frontend can drive a busy
+/// state off the returned promise; it re-parses the whole notebox, so it can
+/// take seconds-to-minutes on a large one. On success it emits the same
+/// refresh signals the open flow does — `notebox:index-ready` (counts, aliases)
+/// and `notebox:index-updated` (open collection views) — scoped to this window
+/// since the notebox is per-window.
+#[tauri::command]
+pub async fn rebuild_notebox_indexes(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<crate::state::IndexStats, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let stats = session.rebuild_indexes_from_disk().await?;
+    let _ = window.emit_to(window.label(), "notebox:index-ready", &stats);
+    let _ = window.emit_to(
+        window.label(),
+        "notebox:index-updated",
+        serde_json::json!({ "rebuilt": true }),
+    );
+    Ok(stats)
+}
+
 /// On opening a *collaborative* notebox (one carrying a [`NoteboxGitConfig`]
 /// that is already a git repo), refresh its `.gitignore` and emit a status
 /// summary (`notebox:git-status`) the frontend can show. Runs on a blocking
