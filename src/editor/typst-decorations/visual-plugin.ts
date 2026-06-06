@@ -788,6 +788,9 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
         return lines;
       })
     : Array.from({ length: state.doc.lines }, (_, i) => i + 1);
+  // Fetched once for the raw/code-context check below; the tree is invariant
+  // across this scan.
+  const escTree = syntaxTree(state);
   for (const i of escScanLines) {
     const line = state.doc.line(i);
     if (autoExpand && isOnCursorLine(state, line.from, line.to, focused)) continue;
@@ -800,7 +803,9 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
       if (ESCAPE_CHARS.includes(nextChar)) {
         const absFrom = line.from + idx;
         const key = `${absFrom}:${absFrom + 2}`;
-        if (!escapeRanges.has(key)) {
+        // A `\` inside raw/code/comment/string is literal content, not an
+        // escape — leave it visible (e.g. the lone backslash in `` `\` ``).
+        if (!escapeRanges.has(key) && !posInsideRawOrCode(escTree, absFrom)) {
           escapeDecos.push({ from: absFrom, backslashEnd: absFrom + 1, charEnd: absFrom + 2 });
         }
       }
@@ -839,9 +844,8 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   if (!onlyRanges) {
     // Detect bare HTML-like tags (e.g. <script>) that are ambiguous in Typst
     const docText = state.doc.toString();
-    // The syntax tree is invariant across this scan — fetch it once rather than
-    // per regex match (could be many `<…>` occurrences in a long document).
-    const tree = syntaxTree(state);
+    // Reuse the tree fetched for the escape scan above — invariant across both.
+    const tree = escTree;
     let match: RegExpExecArray | null;
     ANGLE_BRACKET_TAGS.lastIndex = 0;
     while ((match = ANGLE_BRACKET_TAGS.exec(docText)) !== null) {
@@ -1618,6 +1622,22 @@ function extractContentBracket(
 /** Skip an inline raw span (`` `…` ``, `` ``…`` ``) whose opening backtick run
  *  starts at `i`. Returns the index just past the matching closing fence, or
  *  `end` when the span is unterminated within `[i, end)`. */
+/** True when `pos` falls inside a Typst node where `\` is literal content, not
+ *  an escape — inline/block raw (backticks), code blocks, comments, strings.
+ *  The text-level escape scan must skip these so a backslash typed inside
+ *  `` `\` `` (or code mode) survives instead of being hidden as an escape. */
+function posInsideRawOrCode(tree: ReturnType<typeof syntaxTree>, pos: number): boolean {
+  let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, 1);
+  while (n) {
+    if (n.name === "Raw" || n.name === "RawBlock" || n.name === "CodeBlock"
+        || n.name === "Comment" || n.name === "String") {
+      return true;
+    }
+    n = n.parent;
+  }
+  return false;
+}
+
 function skipInlineRaw(text: string, i: number, end: number): number {
   let n = 0;
   while (i + n < end && text[i + n] === "`") n++;
