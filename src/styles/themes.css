@@ -177,6 +177,13 @@
   --bg-highlight: #d9d9d9;
   --bg-input: #ffffff;
   --bg-selection: color-mix(in srgb, var(--accent-color, #1D7874) 20%, transparent);
+  /* Editor selection rendered as opaque rectangles inside a translucent layer
+     (see the `.cm-selectionLayer` rule) so overlapping pieces — drawn by
+     CodeMirror around atomic widgets like a wikilink — don't compound into a
+     darker band. `fill` is the solid colour `--bg-selection` encodes; `alpha`
+     is the translucency, applied once on the layer. */
+  --editor-selection-fill: var(--accent-color, #1D7874);
+  --editor-selection-alpha: 0.2;
   --bg-matching-bracket: #d9d9d9;
   --bg-search-match: #f4dfc0;
 
@@ -325,6 +332,11 @@
   --bg-highlight: #1a4045;
   --bg-input: #0e2e33;
   --bg-selection: rgba(80, 180, 220, 0.45);
+  /* See the light-theme note above. Solid colour + alpha that together match
+     the `--bg-selection` rgba, but applied as opaque rects under a translucent
+     layer so selection overlaps don't darken. */
+  --editor-selection-fill: rgb(80, 180, 220);
+  --editor-selection-alpha: 0.45;
   --bg-matching-bracket: #1a4045;
   --bg-search-match: #2a5a52;
 

@@ -96,4 +96,21 @@ describe("correctedFuncCallEnd", () => {
     const truncated = doc.indexOf(")") + 1;
     expect(callEnd(doc, 0, truncated)).toBe(doc.indexOf("]") + 1);
   });
+
+  it("treats a `[[` inside inline raw as literal, not an unbalanced bracket", () => {
+    // The body documents the wikilink shortcut by showing a literal `[[`
+    // inside backticks. A naive bracket count would never rebalance and the
+    // call end would overshoot (dropping the callout to raw source); the
+    // raw-aware matcher must end the call right after the body's `]`.
+    const doc = '#callout("example")[Type `[[` then pick a note]\nnext para';
+    const truncated = doc.indexOf(")") + 1;
+    expect(callEnd(doc, 0, truncated)).toBe(doc.indexOf("]") + 1);
+  });
+
+  it("ignores an escaped bracket inside the body", () => {
+    const doc = '#callout("note")[a \\] b]\nmore';
+    const truncated = doc.indexOf(")") + 1;
+    // The escaped `\]` is literal; the real close is the final `]`.
+    expect(callEnd(doc, 0, truncated)).toBe(doc.lastIndexOf("]") + 1);
+  });
 });

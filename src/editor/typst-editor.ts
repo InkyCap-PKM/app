@@ -227,11 +227,20 @@ const inkycapTheme = EditorView.theme({
   "&": {
     height: "100%",
   },
+  // Selection: opaque rectangles inside a translucent layer. CodeMirror draws
+  // the selection as multiple `.cm-selectionBackground` rects, and around an
+  // atomic widget (e.g. a wikilink) those rects can overlap; a translucent
+  // per-rect colour would then compound into a darker band on the overlap.
+  // Painting the rects opaque and moving the translucency onto the layer keeps
+  // the selection one flat colour no matter how the pieces overlap.
+  "& > .cm-scroller > .cm-selectionLayer": {
+    opacity: "var(--editor-selection-alpha, 0.2)",
+  },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    backgroundColor: "var(--bg-selection) !important",
+    backgroundColor: "var(--editor-selection-fill) !important",
   },
   "& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    backgroundColor: "var(--bg-selection) !important",
+    backgroundColor: "var(--editor-selection-fill) !important",
   },
   ".cm-scroller": {
     overflow: "auto",

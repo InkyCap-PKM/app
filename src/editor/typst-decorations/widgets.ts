@@ -252,11 +252,23 @@ function buildTaskSpan(
  *  widgets (TaskWidget, TagWidget, …) so a task inside a callout looks identical
  *  to one in flowing text. With `ctx`, a task's checkbox toggles `done` in place
  *  and wikilinks navigate; without it everything is inert preview. */
+/** Drop the backslash from Typst inline escapes (`\*`, `\#`, `\[`, …) so the
+ *  escaped character shows literally — the parser leaves the `\` in text runs. */
+function unescapeInline(text: string): string {
+  return text.replace(/\\([*_#`[\]()\\])/g, "$1");
+}
+
 function renderTypstBody(text: string, parent: HTMLElement, ctx?: BlockBodyContext) {
-  for (const seg of parseInlineBody(text)) {
+  appendBodySegments(parseInlineBody(text), parent, ctx);
+}
+
+/** Render parsed block-body segments into `parent`. Recurses through `format`
+ *  wrappers so nested markup (`#highlight[a *b*]`) renders. */
+function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: BlockBodyContext) {
+  for (const seg of segs) {
     switch (seg.kind) {
       case "text":
-        parent.appendChild(document.createTextNode(seg.text));
+        parent.appendChild(document.createTextNode(unescapeInline(seg.text)));
         break;
       case "wikilink":
         parent.appendChild(buildWikilinkSpan(seg.target, seg.display));
@@ -279,6 +291,40 @@ function renderTypstBody(text: string, parent: HTMLElement, ctx?: BlockBodyConte
       case "task":
         parent.appendChild(buildTaskSpan(seg, ctx));
         break;
+      case "raw": {
+        if (seg.block) {
+          const pre = document.createElement("pre");
+          pre.className = "cm-typst-raw-block";
+          const code = document.createElement("code");
+          code.textContent = seg.text;
+          pre.appendChild(code);
+          parent.appendChild(pre);
+        } else {
+          const code = document.createElement("span");
+          code.className = "cm-typst-raw-inline";
+          code.textContent = seg.text;
+          parent.appendChild(code);
+        }
+        break;
+      }
+      case "format": {
+        const span = document.createElement("span");
+        span.className = seg.className;
+        appendBodySegments(seg.children, span, ctx);
+        parent.appendChild(span);
+        break;
+      }
+      case "list": {
+        const list = document.createElement(seg.ordered ? "ol" : "ul");
+        list.className = "cm-typst-body-list";
+        for (const item of seg.items) {
+          const li = document.createElement("li");
+          appendBodySegments(item, li, ctx);
+          list.appendChild(li);
+        }
+        parent.appendChild(list);
+        break;
+      }
     }
   }
 }

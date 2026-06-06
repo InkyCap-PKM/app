@@ -357,7 +357,7 @@
   "wikilink.suggest.hint_note": "Type :: after a note name to link to a heading",
   "wikilink.suggest.hint_tab": "…or press Tab on a page above to pick from its headings",
   "wikilink.suggest.hint_heading": "Select a heading to link directly to that section",
-  "wikilink.menu.openNewTab": "Edit in new tab",
+  "wikilink.menu.openNewTab": "Open in new tab",
   "wikilink.menu.openScroll": "Open in Journal Scroll tab",
   "wikilink.menu.openMycelial": "Open in Mycelial View tab",
   "mycelial.button.title": "Mycelial View anchored from this note",

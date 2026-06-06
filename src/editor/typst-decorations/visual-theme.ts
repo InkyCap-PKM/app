@@ -1,5 +1,27 @@
 import { EditorView } from "@codemirror/view";
 
+// Spans nested inside a heading are forced to the heading colour so a heading
+// reads as one colour — but link-family elements are excluded: a wikilink/link/
+// footnote keeps its own colour even inside a heading (standard for links, and
+// now load-bearing because heading marks are `inclusiveEnd`, so a heading that
+// ends in a wikilink encloses its pill / `[[ ]]` brackets in the heading span).
+// Without these exclusions those elements would inherit the heading colour and
+// look like plain text.
+const HEADING_LINK_EXEMPT = [
+  ".cm-typst-wikilink",
+  ".cm-typst-link",
+  ".cm-typst-footnote",
+  ".cm-typst-wikilink-edit",
+  ".cm-typst-wikilink-bracket",
+  ".cm-typst-wikilink-sep",
+];
+const headingInnerNonLinkSelector = [1, 2, 3, 4, 5, 6]
+  .map(
+    (n) =>
+      `.cm-typst-h${n} span${HEADING_LINK_EXEMPT.map((c) => `:not(${c})`).join("")}`,
+  )
+  .join(", ");
+
 export const visualTheme = EditorView.theme({
   ".cm-scroller": { overflowAnchor: "none" },
   // Let the caret follow the natural height of the line it sits on. A fixed
@@ -56,9 +78,27 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-quote-glyph": { color: "inherit" },
   ".cm-typst-raw-inline": {
     fontFamily: "var(--editor-font-mono, monospace)",
+    // Monospace renders visually larger than the body font at the same em, so
+    // step it down to read at the same size as surrounding prose — matching the
+    // 0.9em used by the editor's other code surfaces (code blocks, edit mode).
+    fontSize: "0.9em",
     backgroundColor: "var(--syntax-mono-bg)",
     borderRadius: "3px",
     padding: "1px 4px",
+  },
+  // Fenced code block inside a rendered block body (callout / quote /
+  // annotation widget). Same monospace size as inline raw, laid out as a
+  // multi-line preformatted block.
+  ".cm-typst-raw-block": {
+    fontFamily: "var(--editor-font-mono, monospace)",
+    fontSize: "0.9em",
+    backgroundColor: "var(--syntax-mono-bg)",
+    borderRadius: "4px",
+    padding: "8px 10px",
+    margin: "0.4em 0",
+    whiteSpace: "pre",
+    overflowX: "auto",
+    lineHeight: "1.4",
   },
   ".cm-typst-link": {
     color: "var(--syntax-link)",
@@ -103,7 +143,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-h1, .cm-typst-h2, .cm-typst-h3, .cm-typst-h4, .cm-typst-h5, .cm-typst-h6": {
     color: "var(--fg-primary)",
   },
-  ".cm-typst-h1 span, .cm-typst-h2 span, .cm-typst-h3 span, .cm-typst-h4 span, .cm-typst-h5 span, .cm-typst-h6 span": {
+  [headingInnerNonLinkSelector]: {
     color: "inherit !important",
   },
   ".cm-typst-h1": { fontSize: "1.8em", fontWeight: "bold", lineHeight: "1.3" },
@@ -159,6 +199,23 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-callout-body": {
     fontSize: "0.95em",
     lineHeight: "1.5",
+  },
+  // Lists rendered inside a block body (callout / quote / annotation). The
+  // body inherits CM's pre-wrap, so reset list items to normal wrapping and
+  // give the markers room; ordered vs unordered pick their own marker glyph.
+  ".cm-typst-body-list": {
+    margin: "0.15em 0",
+    paddingLeft: "1.6em",
+    whiteSpace: "normal",
+  },
+  ".cm-typst-body-list li": {
+    margin: "0.1em 0",
+  },
+  "ol.cm-typst-body-list": {
+    listStyleType: "decimal",
+  },
+  "ul.cm-typst-body-list": {
+    listStyleType: "disc",
   },
   ".cm-typst-codeblock": {
     fontFamily: "var(--editor-font-mono, monospace)",
