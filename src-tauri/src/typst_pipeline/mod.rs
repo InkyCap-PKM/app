@@ -25,6 +25,7 @@ pub mod review_markup;
 pub mod source_lint;
 pub mod style_injection;
 pub mod suggestion;
+pub mod tag_rewrite;
 pub mod world;
 pub mod zotero;
 

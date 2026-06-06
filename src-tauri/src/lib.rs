@@ -303,7 +303,6 @@ pub fn run() {
             commands::properties::get_property_order,
             commands::properties::reorder_properties,
             commands::properties::rename_tag,
-            commands::properties::delete_tag,
             commands::search::notebox_search,
             commands::search::search_and_replace,
             commands::search::get_all_tags,

@@ -19,6 +19,7 @@ use crate::state::{AppState, NoteboxSession};
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
+use crate::typst_pipeline::tag_rewrite;
 
 // ── Property type registry ────────────────────────────────────────────
 
@@ -115,6 +116,18 @@ pub async fn rename_property_key(
     let new_key = new_key.trim().to_string();
     if old_key.is_empty() || new_key.is_empty() || old_key == new_key {
         return Ok(());
+    }
+
+    // System property keys (`title`, `tags`, `date`, …) are load-bearing:
+    // the notebox package, `typst query`, and the property pipeline all key
+    // off these exact names. Renaming one would silently sever that
+    // metadata, so it's forbidden at the boundary. The sidebar also hides
+    // the rename action for these, but enforce it here too.
+    if is_system_property(&old_key) {
+        return Err(InkyCapError::BadRequest(format!(
+            "Cannot rename system property '{}'",
+            old_key
+        )));
     }
 
     {
@@ -338,15 +351,36 @@ pub async fn rename_tag(
         return Ok(());
     }
 
-    let targets: Vec<PathBuf> = {
+    // Each target carries the tag in at least one form. Snapshot the
+    // `#note(...)` `tags:` list alongside the path so we can rewrite that
+    // property without re-querying the index per file.
+    let targets: Vec<(PathBuf, Vec<String>)> = {
         let index = session.property_index.read().await;
-        index.tags.get(&old_tag).cloned().unwrap_or_default()
+        index
+            .tags
+            .get(&old_tag)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|path| {
+                let tags_prop = index
+                    .notes
+                    .get(&path)
+                    .and_then(|n| n.properties.get("tags"))
+                    .map(tags_property_list)
+                    .unwrap_or_default();
+                (path, tags_prop)
+            })
+            .collect()
     };
 
     let storage = session.get_storage().await?;
-    for path in targets {
+    for (path, tags_prop) in targets {
         let content = storage.read_file(&path).await?;
-        let updated = rewrite_tag_in_content(&content, &old_tag, Some(&new_tag));
+        // Body forms: `#tag("old")` calls and the bare `#old` shorthand.
+        let mut updated = tag_rewrite::rewrite_tag_references(&content, &old_tag, &new_tag);
+        // Note-level metadata: the `tags:` array in `#note(...)`.
+        updated = apply_tags_property_rename(&updated, &tags_prop, &old_tag, &new_tag);
         if updated != content {
             storage.write_file(&path, &updated).await?;
             session.reindex_note(&path, &updated).await;
@@ -362,39 +396,10 @@ pub async fn rename_tag(
     Ok(())
 }
 
-/// Remove a tag from every note in the notebox that carries it. Requires an open notebox.
-#[tauri::command]
-pub async fn delete_tag(
-    tag: String,
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<(), InkyCapError> {
-    let session = state.session(window.label()).await;
-    let tag = sanitize_tag(&tag);
-    if tag.is_empty() {
-        return Ok(());
-    }
-
-    let targets: Vec<PathBuf> = {
-        let index = session.property_index.read().await;
-        index.tags.get(&tag).cloned().unwrap_or_default()
-    };
-
-    let storage = session.get_storage().await?;
-    for path in targets {
-        let content = storage.read_file(&path).await?;
-        let updated = rewrite_tag_in_content(&content, &tag, None);
-        if updated != content {
-            storage.write_file(&path, &updated).await?;
-            session.reindex_note(&path, &updated).await;
-        }
-    }
-
-    // .collection: strip quoted literal references. Same caveats as rename.
-    rewrite_collection_files(&session, |text| replace_quoted(text, &tag, "")).await?;
-
-    Ok(())
-}
+// Deleting a tag globally is intentionally not offered: tags carry less
+// structure than property keys and a notebox-wide strip is easy to
+// trigger by accident and hard to undo. Renaming is the only global tag
+// operation. (Per-note tag edits happen in the editor.)
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -402,27 +407,39 @@ fn sanitize_tag(s: &str) -> String {
     s.trim().trim_start_matches('#').to_string()
 }
 
-/// Rewrite inline `#tag` references in a note's content.
-/// Pass `new_tag = None` to delete.
-fn rewrite_tag_in_content(content: &str, old: &str, new_tag: Option<&str>) -> String {
-    rewrite_inline_tag(content, old, new_tag)
+/// Extract the string members of a `#note(...)` `tags:` property value.
+/// A bare string counts as a one-element list, mirroring `lib.typ`'s
+/// coercion of `tags: "x"` to `("x",)`. Non-string members are dropped.
+fn tags_property_list(value: &PropertyValue) -> Vec<String> {
+    match value {
+        PropertyValue::String(s) if !s.is_empty() => vec![s.clone()],
+        PropertyValue::List(items) => items
+            .iter()
+            .filter_map(|v| match v {
+                PropertyValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
-/// Rewrite inline `#tag` references in the note body. Matches a tag
-/// bounded by whitespace/start-of-line and a non-tag-continuation
-/// character on the right, so `#old` is rewritten but `#older` is not.
-fn rewrite_inline_tag(body: &str, old: &str, new_tag: Option<&str>) -> String {
-    let pattern = format!(r"(^|[\s\(\[,])#{}(?P<end>[^\w/-]|$)", regex::escape(old));
-    let re = Regex::new(&pattern).unwrap();
-    re.replace_all(body, |caps: &regex::Captures| {
-        let lead = &caps[1];
-        let end = &caps["end"];
-        match new_tag {
-            Some(new) => format!("{}#{}{}", lead, new, end),
-            None => format!("{}{}", lead, end),
-        }
-    })
-    .into_owned()
+/// Rename `old` → `new` inside a note's `tags:` array, de-duplicating when
+/// the new name already appears, and write it back through the
+/// whitespace-preserving note rewriter. Returns the content unchanged when
+/// `current` doesn't carry `old`.
+fn apply_tags_property_rename(content: &str, current: &[String], old: &str, new: &str) -> String {
+    if !current.iter().any(|t| t == old) {
+        return content.to_string();
+    }
+    let mut seen = std::collections::HashSet::new();
+    let new_list: Vec<PropertyValue> = current
+        .iter()
+        .map(|t| if t == old { new } else { t.as_str() })
+        .filter(|t| seen.insert(t.to_string()))
+        .map(|t| PropertyValue::String(t.to_string()))
+        .collect();
+    note_rewriter::update_note_property(content, "tags", &PropertyValue::List(new_list))
 }
 
 /// Replace whole-word occurrences of `needle` with `replacement`.
@@ -499,35 +516,54 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    fn rewrite_inline_tag_renames_exact_match() {
-        let body = "Here is #foo and #foobar.";
-        let out = rewrite_inline_tag(body, "foo", Some("bar"));
-        assert!(out.contains("#bar"));
-        assert!(out.contains("#foobar"));
+    fn note_with_tags(raw_array: &str, body: &str) -> String {
+        format!(
+            "#import \"/.inkycap/notebox.typ\": *\n#note(\n  title: \"Demo\",\n  tags: {raw_array},\n)\n\n{body}\n"
+        )
     }
 
     #[test]
-    fn rewrite_inline_tag_deletes() {
-        let body = "Here is #foo end.";
-        let out = rewrite_inline_tag(body, "foo", None);
-        assert!(!out.contains("#foo"));
-        assert!(out.contains("Here is"));
+    fn tags_property_list_handles_array_and_scalar() {
+        let arr = PropertyValue::List(vec![
+            PropertyValue::String("foo".into()),
+            PropertyValue::String("bar".into()),
+        ]);
+        assert_eq!(tags_property_list(&arr), vec!["foo", "bar"]);
+        assert_eq!(
+            tags_property_list(&PropertyValue::String("solo".into())),
+            vec!["solo"]
+        );
+        assert!(tags_property_list(&PropertyValue::Null).is_empty());
     }
 
     #[test]
-    fn rewrite_tag_in_typst_content() {
-        let content = "#import \"/.inkycap/notebox.typ\": *\n#note(\n  tags: (\"foo\", \"bar\"),\n)\n\nSome content with #foo inline.\n";
-        let out = rewrite_tag_in_content(content, "foo", Some("baz"));
-        assert!(out.contains("#baz inline"));
-        assert!(!out.contains("#foo inline"));
+    fn rename_rewrites_tags_property_and_body_call() {
+        let content = note_with_tags("(\"foo\", \"bar\")", "Body with #tag(\"foo\") inline.");
+        let current = vec!["foo".to_string(), "bar".to_string()];
+        let mut out = tag_rewrite::rewrite_tag_references(&content, "foo", "baz");
+        out = apply_tags_property_rename(&out, &current, "foo", "baz");
+        assert!(out.contains("tags: (\"baz\", \"bar\")"));
+        assert!(out.contains("#tag(\"baz\")"));
+        assert!(!out.contains("foo"));
+        // Untouched neighbour property is preserved byte-for-byte.
+        assert!(out.contains("title: \"Demo\""));
     }
 
     #[test]
-    fn rewrite_tag_deletes_in_content() {
-        let content = "Some text #foo end.\n";
-        let out = rewrite_tag_in_content(content, "foo", None);
-        assert!(!out.contains("#foo"));
-        assert!(out.contains("Some text"));
+    fn rename_dedupes_when_target_already_present() {
+        let current = vec!["foo".to_string(), "bar".to_string()];
+        let content = note_with_tags("(\"foo\", \"bar\")", "x");
+        let out = apply_tags_property_rename(&content, &current, "foo", "bar");
+        assert!(out.contains("tags: (\"bar\",)"));
+    }
+
+    #[test]
+    fn rename_is_noop_when_tag_absent() {
+        let current = vec!["bar".to_string()];
+        let content = note_with_tags("(\"bar\",)", "x");
+        assert_eq!(
+            apply_tags_property_rename(&content, &current, "foo", "baz"),
+            content
+        );
     }
 }
