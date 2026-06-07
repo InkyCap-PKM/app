@@ -33,7 +33,7 @@ Tapez « / », choisissez *Style* (ou commencez à taper le nom), puis sélectio
   columns: (auto, 1fr),
   inset: 8pt,
   stroke: 0.5pt + luma(85%),
-  table.header([*Élément du menu*], [*Ce qu'il insère*]),
+  table.header([Élément du menu], [Ce qu'il insère]),
   [Page size], [`#set page(paper: "a4")`],
   [Page margins], [`#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))`],
   [Page numbering], [`#set page(numbering: "1")`],
