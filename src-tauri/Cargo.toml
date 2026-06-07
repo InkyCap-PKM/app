@@ -43,6 +43,12 @@ trash = "5"
 base64 = "0.22"
 flate2 = "1"
 sha2 = "0.10"
+# Embeds the bundled user-manual noteboxes (documentation/manual/*) into the
+# binary at compile time, so the documentation window has its content with no
+# runtime resource-path resolution and the docs version stays atomic with the
+# app. Build-time proc-macro only; no runtime transitive deps. Chosen over
+# Tauri `bundle.resources` to avoid cross-platform resource-dir path handling.
+include_dir = "0.7"
 rusqlite = { version = "0.32", features = ["bundled"] }
 bincode = "1"
 tempfile = "3"

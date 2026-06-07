@@ -15,6 +15,7 @@ pub mod commands;
 pub mod config;
 pub mod corpus_stats;
 pub mod creation_rules;
+pub mod docs_manual;
 pub mod errors;
 pub mod events;
 pub mod external_tools;
