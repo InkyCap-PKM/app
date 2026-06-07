@@ -336,6 +336,7 @@ pub fn run() {
             commands::typst_packages::install_typst_package_by_spec,
             commands::typst_packages::install_typst_package_from_file,
             commands::typst_packages::list_installed_packages,
+            commands::typst_packages::get_template_starter,
             commands::typst_packages::uninstall_typst_package,
             commands::typst_packages::create_local_package,
             commands::bookmarks::list_bookmarks,

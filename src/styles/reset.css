@@ -22,6 +22,19 @@ body,
   text-rendering: optimizeLegibility;
 }
 
+/* Placeholder text in every input and textarea — one dim, uniform colour so
+   example/prompt text reads clearly as a hint rather than as content the user
+   has already typed. This matters most in dark mode, where the engine default
+   (input text colour at reduced opacity) renders far too bright. `opacity: 1`
+   overrides engines (Firefox, WebKitGTK) that otherwise fade the placeholder
+   on top of the colour. Per-component rules can still override the colour, but
+   should not need to. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-dim);
+  opacity: 1;
+}
+
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;

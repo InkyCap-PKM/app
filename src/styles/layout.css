@@ -2512,10 +2512,6 @@ svg.lucide {
   font-family: inherit;
 }
 
-.quick-open__input::placeholder {
-  color: var(--fg-dim);
-}
-
 .quick-open__results {
   overflow-y: auto;
   flex: 1;
@@ -3277,11 +3273,6 @@ svg.lucide {
 
 /* Placeholder hint text must read as a prompt, not as a real entered value —
    dim it well below the primary input colour so it isn't mistaken for content. */
-.settings__text-input::placeholder {
-  color: var(--fg-dim);
-  opacity: 1;
-}
-
 /* Extensions tab — external-tool cards. A list of user-registered tools, each
    a bordered card of standard settings rows. Token-based so it tracks the
    theme; no hardcoded colours. */
@@ -4297,6 +4288,26 @@ svg.lucide {
 }
 
 /* Reminder dropdown shown when the search input has focus and is empty. */
+/* One-line reminder shown under the search box before a query is entered.
+   Reuses .inline-link for the "See the search tips for help." trigger, which
+   opens the same tips dropdown as the (i) button. */
+.search-panel__tip {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: 1.4;
+  padding: 2px 2px 4px;
+  text-align: center;
+}
+
+/* The link is a <button> (in-app action, not navigation), so strip the
+   native button chrome and let .inline-link supply the link appearance. */
+.search-panel__tip-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+}
+
 .search-panel__hints {
   background: var(--bg-input);
   border: 1px solid var(--border-input);
@@ -5028,6 +5039,26 @@ svg.lucide {
   min-width: 0;
 }
 
+/* Trailing control cluster after a collection-meta label — a text input paired
+   with a dropdown and/or a Browse button (template, bibliography style/file).
+   Wraps onto the next line in the narrow, user-resizable right panel instead of
+   overflowing past its edge or shrinking the input to nothing. */
+.collection-meta__control-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Keep the paired input usable: it fills the row but never collapses below a
+   legible width, so it drops to its own line rather than vanishing. */
+.collection-meta__control-group .settings__text-input {
+  flex: 1;
+  min-width: 140px;
+}
+
 .length-input__num {
   width: 64px;
   flex-shrink: 0;
@@ -5405,6 +5436,25 @@ svg.lucide {
   padding: 4px 0;
 }
 
+/* When a Typst template owns the layout, the style overrides can't take
+   effect — dim and block the grid (the note above explains why). Custom Typst
+   lives outside this grid, so it stays editable. */
+.collection-meta__style-grid.is-template-locked {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Short explainer shown when a template disables/supersedes a tab's controls. */
+.collection-meta__lock-note {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--surface-1);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
 .collection-meta__style-group {
   display: flex;
   flex-direction: column;
@@ -5591,10 +5641,6 @@ svg.lucide {
   padding: 12px 16px;
   outline: none;
   font-family: inherit;
-}
-
-.cmd-palette__input::placeholder {
-  color: var(--fg-dim);
 }
 
 .cmd-palette__results {
@@ -8128,10 +8174,6 @@ svg.lucide {
 
 .mycelial-context__filter:focus {
   border-color: var(--accent);
-}
-
-.mycelial-context__filter::placeholder {
-  color: var(--fg-dim);
 }
 
 .mycelial-context__filter-clear {

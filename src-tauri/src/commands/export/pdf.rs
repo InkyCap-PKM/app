@@ -599,6 +599,7 @@ pub async fn export_collection_book_pdf(
 
     let notebox_root_guard = session.notebox_root.read().await;
     let notebox_root_ref = notebox_root_guard.as_deref();
+    let notebox_root_owned = notebox_root_ref.map(|p| p.to_path_buf());
     let resolved_template = base
         .typst_template
         .as_deref()
@@ -613,7 +614,7 @@ pub async fn export_collection_book_pdf(
         &session,
     )
     .await;
-    let bib_path_for_wrapper: Option<String> = effective_bib.as_deref().map(|b| {
+    let mut bib_path_for_wrapper: Option<String> = effective_bib.as_deref().map(|b| {
         if b.starts_with('/') {
             b.to_string()
         } else {
@@ -640,6 +641,47 @@ pub async fn export_collection_book_pdf(
         parent.join(format!("{}.book.typ", stem))
     };
     drop(notebox_root_guard);
+
+    // Collection-template exports apply the bibliography through the template's
+    // own `#show: …(bibliography: bibliography("<path>"))`. Materialize that file
+    // fresh from the works actually cited by the member notes, and suppress our
+    // consolidated `#bibliography(...)` so the document has exactly one.
+    if let (Some(root), Some(custom)) = (
+        notebox_root_owned.as_deref(),
+        base.custom_typst
+            .as_deref()
+            .filter(|c| !c.trim().is_empty()),
+    ) {
+        if let Some(bib_arg_path) = book_wrapper::extract_bibliography_path(custom) {
+            let mut cited = std::collections::HashSet::new();
+            for note in &notes {
+                for key in crate::typst_pipeline::bibliography::extract_citations(&note.content) {
+                    cited.insert(key);
+                }
+            }
+            if !cited.is_empty() {
+                let entries = crate::commands::bibliography::load_entries_inner(&state, &session)
+                    .await
+                    .unwrap_or_default();
+                let filtered: Vec<_> = entries
+                    .into_iter()
+                    .filter(|e| cited.contains(&e.key))
+                    .collect();
+                if !filtered.is_empty() {
+                    if let Err(e) = crate::typst_pipeline::bibliography::write_bibliography_file(
+                        root,
+                        &bib_arg_path,
+                        &filtered,
+                    ) {
+                        log::warn!("failed to write collection bibliography {bib_arg_path}: {e}");
+                    }
+                }
+            }
+            // The template emits the bibliography via its argument — never also
+            // emit the consolidated one (Typst allows one bibliography per doc).
+            bib_path_for_wrapper = None;
+        }
+    }
 
     let body_numbering_pattern = base
         .style
@@ -691,7 +733,11 @@ pub async fn export_collection_book_pdf(
     let pdf_bytes = match compile_result {
         Ok(bytes) => bytes,
         Err(diags) => {
-            let message = book_wrapper::describe_book_diagnostics(&source_for_diag, &diags);
+            let message = book_wrapper::describe_book_diagnostics(
+                &source_for_diag,
+                &diags,
+                effective_bib.as_deref(),
+            );
             let failing = book_wrapper::book_diagnostic_note_stems(&source_for_diag, &diags);
             // Errors attributable to specific notes → let the caller offer to
             // exclude them and retry. Otherwise (front-matter, package, or

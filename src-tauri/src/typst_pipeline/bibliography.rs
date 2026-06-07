@@ -598,6 +598,42 @@ pub fn write_zotero_export(notebox_root: &Path, entries: &[BibEntry]) -> Result<
     Ok("/.inkycap/zotero-export.bib".to_string())
 }
 
+/// Write `entries` as a BibTeX file at `rel_path` (notebox-root-relative, with
+/// or without a leading `/`) inside the notebox, creating parent dirs as needed.
+/// Used to materialize a collection's cited-works bibliography fresh at export
+/// so a template's `bibliography("…")` argument resolves to current data.
+/// Returns the leading-slash notebox-relative path written. Rejects any path
+/// that would escape the notebox root.
+pub fn write_bibliography_file(
+    notebox_root: &Path,
+    rel_path: &str,
+    entries: &[BibEntry],
+) -> Result<String, String> {
+    let trimmed = rel_path.trim().trim_start_matches('/');
+    if trimmed.is_empty() {
+        return Err("empty bibliography path".to_string());
+    }
+    // Only normal path components — reject `..`, absolute, and drive prefixes so
+    // the write stays within the notebox.
+    let mut safe = PathBuf::new();
+    for comp in Path::new(trimmed).components() {
+        match comp {
+            std::path::Component::Normal(seg) => safe.push(seg),
+            std::path::Component::CurDir => {}
+            _ => return Err(format!("unsafe bibliography path: {rel_path}")),
+        }
+    }
+    let abs = notebox_root.join(&safe);
+    if let Some(parent) = abs.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create bibliography directory: {e}"))?;
+    }
+    let content = export_entries_to_bibtex(entries);
+    std::fs::write(&abs, &content)
+        .map_err(|e| format!("Failed to write bibliography file: {e}"))?;
+    Ok(format!("/{}", safe.to_string_lossy().replace('\\', "/")))
+}
+
 fn zotero_type_to_bibtex(zotero_type: &str) -> &str {
     match zotero_type {
         "journalArticle" => "article",
@@ -1053,6 +1089,33 @@ mod tests {
         );
         // Re-exporting yields identical bytes.
         assert_eq!(out, export_entries_to_bibtex(std::slice::from_ref(&entry)));
+    }
+
+    #[test]
+    fn write_bibliography_file_creates_nested_path_and_rejects_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let entry = BibEntry {
+            key: "smith2020".to_string(),
+            title: "A Title".to_string(),
+            authors: vec!["Smith, Jane".to_string()],
+            year: Some("2020".to_string()),
+            entry_type: "journalArticle".to_string(),
+            zotero_item_key: None,
+            has_notes: false,
+            extra_fields: std::collections::HashMap::new(),
+        };
+        // Leading-slash, nested path → created under the notebox; returns the
+        // normalized leading-slash form.
+        let rel =
+            write_bibliography_file(root, "/.inkycap/collection-bibs/Foo.bib", &[entry]).unwrap();
+        assert_eq!(rel, "/.inkycap/collection-bibs/Foo.bib");
+        let written =
+            std::fs::read_to_string(root.join(".inkycap/collection-bibs/Foo.bib")).unwrap();
+        assert!(written.contains("@article{smith2020,"));
+        // Traversal is rejected; nothing escapes the notebox.
+        assert!(write_bibliography_file(root, "../escape.bib", &[]).is_err());
+        assert!(write_bibliography_file(root, "/../escape.bib", &[]).is_err());
     }
 
     #[test]

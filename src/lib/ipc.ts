@@ -1156,6 +1156,18 @@ export async function listInstalledPackages(): Promise<InstalledPackageEntry[]> 
   return invoke<InstalledPackageEntry[]>("list_installed_packages");
 }
 
+/** The apply show-rule (`#show: <fn>.with(…)`) read from an installed template
+ *  package's starter scaffold, to drop into a collection's Custom Typst. When
+ *  `collectionPath` is given, the rule's `bibliography("…")` is pointed at the
+ *  collection's auto-generated hidden bib. Returns null when the spec isn't an
+ *  installed template or has no such rule. */
+export async function getTemplateStarter(
+  spec: string,
+  collectionPath?: string,
+): Promise<string | null> {
+  return invoke<string | null>("get_template_starter", { spec, collectionPath });
+}
+
 export async function uninstallTypstPackage(spec: string): Promise<void> {
   return invoke<void>("uninstall_typst_package", { spec });
 }

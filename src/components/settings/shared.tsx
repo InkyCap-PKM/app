@@ -118,7 +118,7 @@ export function SettingLabel(props: {
 
 export function SettingToggle(props: {
   label: string;
-  description?: string;
+  description?: JSX.Element;
   value: boolean;
   onChange: (v: boolean) => void;
   scope?: SettingScope;

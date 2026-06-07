@@ -371,6 +371,190 @@ fn toml_string_field(content: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Read `field = "value"` from inside the `[template]` table of a `typst.toml`.
+/// [`toml_string_field`] only reads top-level keys, but a template's `path` and
+/// `entrypoint` live under `[template]`, so track the current section and match
+/// only while inside it. Best-effort, same naive shape as the sibling helper.
+fn toml_template_section_field(content: &str, field: &str) -> Option<String> {
+    let mut in_template = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            // Enter `[template]`; any other table (including `[template.x]`
+            // subtables) leaves the section we care about.
+            in_template = trimmed == "[template]";
+            continue;
+        }
+        if !in_template {
+            continue;
+        }
+        let prefix = format!("{} =", field);
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+            let rest = rest.trim().trim_start_matches('"');
+            if let Some(end) = rest.find('"') {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Find the byte offset of the first "everywhere-form" show rule (`#show: …`)
+/// in a Typst source. The colon immediately after `show` distinguishes the
+/// everywhere form (applies a template to the whole document) from the selector
+/// form (`#show heading: …`), which we must not pick up. Only matches a rule
+/// that begins its (trimmed) line, to avoid hits inside content.
+fn find_everywhere_show(s: &str) -> Option<usize> {
+    let mut offset = 0usize;
+    for line in s.split_inclusive('\n') {
+        let lead = line.len() - line.trim_start().len();
+        let t = line.trim_start();
+        if t.starts_with("#show:") || t.starts_with("#show :") {
+            return Some(offset + lead);
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Index just past the matching close of the bracket that opens `s` (which must
+/// start at an opening `(`/`[`/`{`). Balances all three bracket kinds together
+/// and skips `"…"` strings (with `\"` escapes). Returns `None` if unbalanced.
+fn balanced_end(s: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, c) in s.char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + c.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Extract a template's "apply" show rule from its starter scaffold — the
+/// `#show: <fn>.with(…)` (or bare `#show: <fn>`) line that `typst init` would
+/// give the user. Best-effort string work; returns `None` when no everywhere-
+/// form show rule is present. Handles the call form spanning multiple lines.
+pub fn extract_show_rule(scaffold: &str) -> Option<String> {
+    let start = find_everywhere_show(scaffold)?;
+    let rest = &scaffold[start..];
+    // A call form (`.with(`) opens a paren before the line ends; balance it.
+    // Otherwise the statement is the single bare `#show: ident` line.
+    let nl = rest.find('\n');
+    let paren = rest.find('(');
+    let end = match paren {
+        Some(p) if nl.is_none_or(|n| p < n) => p + balanced_end(&rest[p..])?,
+        _ => nl.unwrap_or(rest.len()),
+    };
+    let snippet = rest[..end].trim_end();
+    if snippet.is_empty() {
+        None
+    } else {
+        Some(snippet.to_string())
+    }
+}
+
+/// Index of the next unescaped `"` in `s` (which starts just after an opening
+/// quote), or `None` if unterminated.
+fn find_close_quote(s: &str) -> Option<usize> {
+    let mut chars = s.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '"' => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Rewrite the path argument of the first `bibliography("…")` call in `snippet`
+/// to `new_path`, so a template's starter points at InkyCap's auto-generated
+/// per-collection bibliography rather than the scaffold's example file (e.g.
+/// `refs.bib`). Returns the snippet unchanged if it has no such call.
+pub fn rewrite_show_rule_bibliography(snippet: &str, new_path: &str) -> String {
+    const NEEDLE: &str = "bibliography(\"";
+    let Some(start) = snippet.find(NEEDLE) else {
+        return snippet.to_string();
+    };
+    let path_start = start + NEEDLE.len();
+    let Some(rel_end) = find_close_quote(&snippet[path_start..]) else {
+        return snippet.to_string();
+    };
+    let end = path_start + rel_end;
+    let mut out = String::with_capacity(snippet.len() - (end - path_start) + new_path.len());
+    out.push_str(&snippet[..path_start]);
+    out.push_str(new_path);
+    out.push_str(&snippet[end..]);
+    out
+}
+
+/// Read an installed template package's starter scaffold and return its apply
+/// show rule (`#show: <fn>.with(…)`), ready to drop into a collection's Custom
+/// Typst override. Returns `None` for non-package templates (a `/notebox/path`),
+/// packages that aren't installed, non-template packages, or scaffolds without
+/// an everywhere-form show rule — every miss degrades gracefully (the caller
+/// just doesn't insert a starter). The `#import` is intentionally omitted: the
+/// collection's template field already emits it on export.
+pub fn template_starter_snippet(notebox_root: &Path, spec: &str) -> Option<String> {
+    let trimmed = spec.trim();
+    // Notebox-path templates have no package scaffold to read.
+    if trimmed.is_empty() || trimmed.starts_with('/') {
+        return None;
+    }
+    // Mirror `resolve_template_path_with_root`: `@…` specs parse as-is; a bare
+    // name resolves to the local namespace.
+    let parsed = if trimmed.starts_with('@') {
+        PackageSpec::parse(trimmed)?
+    } else {
+        PackageSpec::parse_local_default(trimmed)?
+    };
+    let dir = locate_package_dir(
+        notebox_root,
+        &parsed.namespace,
+        &parsed.name,
+        &parsed.version,
+    )?;
+    let manifest = fs::read_to_string(dir.join("typst.toml")).ok()?;
+    if !manifest_declares_template(&manifest) {
+        return None;
+    }
+    let entrypoint = toml_template_section_field(&manifest, "entrypoint")?;
+    // `[template].path` (the scaffold dir) is optional — default to the package
+    // root. Both values come from the manifest, so sanitize against traversal.
+    let rel = match toml_template_section_field(&manifest, "path") {
+        Some(p) => Path::new(&p).join(&entrypoint),
+        None => PathBuf::from(&entrypoint),
+    };
+    let safe = sanitize_relative(&rel)?;
+    let scaffold = fs::read_to_string(dir.join(safe)).ok()?;
+    extract_show_rule(&scaffold)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,5 +615,87 @@ mod tests {
             sanitize_relative(Path::new("nested/file.txt")).unwrap()
                 == Path::new("nested/file.txt")
         );
+    }
+
+    #[test]
+    fn extract_show_rule_multiline_call() {
+        let scaffold = r#"#import "@preview/charged-ieee:0.1.0": *
+#show: ieee.with(
+  title: [A Paper (draft)],
+  authors: ((name: "Ada", email: "ada@x.org"),),
+  abstract: [Lorem ipsum.],
+)
+
+= Introduction
+Body text here.
+"#;
+        let rule = extract_show_rule(scaffold).unwrap();
+        assert!(rule.starts_with("#show: ieee.with("));
+        // Balances to the closing paren, not into the body.
+        assert!(rule.ends_with(')'));
+        assert!(rule.contains("abstract: [Lorem ipsum.]"));
+        assert!(!rule.contains("Introduction"));
+    }
+
+    #[test]
+    fn extract_show_rule_bare_form() {
+        let scaffold = "#import \"@preview/foo:1.0.0\": *\n#show: foo\n\n= Title\n";
+        assert_eq!(extract_show_rule(scaffold).unwrap(), "#show: foo");
+    }
+
+    #[test]
+    fn extract_show_rule_skips_selector_form() {
+        // `#show heading: …` is a selector rule, not a template application.
+        let scaffold = "#show heading: it => emph(it)\n= Heading\nText.\n";
+        assert!(extract_show_rule(scaffold).is_none());
+    }
+
+    #[test]
+    fn extract_show_rule_picks_everywhere_over_selector() {
+        let scaffold = "#show heading: set text(red)\n#show: ieee.with(title: [T])\n= H\n";
+        assert_eq!(
+            extract_show_rule(scaffold).unwrap(),
+            "#show: ieee.with(title: [T])"
+        );
+    }
+
+    #[test]
+    fn extract_show_rule_none_when_absent() {
+        assert!(extract_show_rule("#import \"@preview/foo:1.0.0\": *\n= Title\n").is_none());
+    }
+
+    #[test]
+    fn rewrite_show_rule_bibliography_swaps_path() {
+        let snippet =
+            "#show: ieee.with(\n  title: [T],\n  bibliography: bibliography(\"refs.bib\"),\n)";
+        let out = rewrite_show_rule_bibliography(snippet, "/.inkycap/collection-bibs/Foo.bib");
+        assert!(out.contains("bibliography(\"/.inkycap/collection-bibs/Foo.bib\")"));
+        assert!(!out.contains("refs.bib"));
+        // Unchanged when there's no bibliography call.
+        let plain = "#show: ieee.with(title: [T])";
+        assert_eq!(rewrite_show_rule_bibliography(plain, "/x.bib"), plain);
+    }
+
+    #[test]
+    fn template_section_field_reads_under_template_table() {
+        let manifest = r#"[package]
+name = "charged-ieee"
+version = "0.1.0"
+entrypoint = "lib.typ"
+
+[template]
+path = "template"
+entrypoint = "main.typ"
+"#;
+        assert_eq!(
+            toml_template_section_field(manifest, "entrypoint").as_deref(),
+            Some("main.typ")
+        );
+        assert_eq!(
+            toml_template_section_field(manifest, "path").as_deref(),
+            Some("template")
+        );
+        // A field that only exists at top level isn't read from [template].
+        assert_eq!(toml_template_section_field(manifest, "name"), None);
     }
 }
