@@ -100,10 +100,10 @@ const FILTER_HINTS: FilterHint[] = [
 /// the filter prefixes. The `label` is a literal syntax token (not
 /// translated); `descKey` resolves the human description at render.
 const SYNTAX_TIPS: { label: string; descKey: string }[] = [
+  { label: "word*", descKey: "search.syntaxTip.truncation" },
   { label: '"…"', descKey: "search.syntaxTip.phrase" },
   { label: "AND OR NOT", descKey: "search.syntaxTip.boolean" },
   { label: "-term", descKey: "search.syntaxTip.exclude" },
-  { label: "word*", descKey: "search.syntaxTip.truncation" },
   { label: "a W/5 b", descKey: "search.syntaxTip.proximity" },
 ];
 
@@ -665,6 +665,19 @@ const SearchPanel: Component = () => {
           <Info size={18} />
         </button>
       </div>
+
+      <Show when={!searchQuery().trim() && !showTips()}>
+        <div class="search-panel__tip">
+          {t("search.reminderTip")}{" "}
+          <button
+            type="button"
+            class="inline-link search-panel__tip-link"
+            onClick={() => setShowTips(true)}
+          >
+            {t("search.reminderTipLink")}
+          </button>
+        </div>
+      </Show>
 
       <Show when={showReplace()}>
         <div class="search-panel__replace-row">

@@ -119,17 +119,20 @@ const CollectionStyleEditor: Component<{
   /// expand/collapse header (used when embedded inside a tab whose
   /// visibility is already managed by the parent).
   alwaysExpanded?: boolean;
-  /// The collection's raw custom Typst (power-user escape hatch) and its
-  /// saver. Edited in a modal, not inline — the sidebar is too narrow for code.
+  /// The collection's raw custom Typst, shown here only to drive the "in use"
+  /// hint and the Add/Edit label. Editing happens in a modal hosted by the
+  /// parent (so the Characteristics tab's "Set up template…" reaches the same
+  /// editor); this button just requests that the parent open it.
   customTypst?: string;
-  onSaveCustomTypst?: (value: string) => void;
-  collectionName?: string;
+  onEditCustomTypst?: () => void;
+  /// When a Typst template is assigned, its `#show:` rule re-establishes the
+  /// document's layout, so these style overrides won't take effect — lock the
+  /// grid and say so. Custom Typst (where the template lives) stays editable.
+  templateInUse?: boolean;
 }> = (props) => {
   const t = useI18n();
   const [expanded, setExpanded] = createSignal(false);
   const isOpen = () => props.alwaysExpanded || expanded();
-  const [advancedOpen, setAdvancedOpen] = createSignal(false);
-  const [showCustomTypstModal, setShowCustomTypstModal] = createSignal(false);
   const hasCustomTypst = () => (props.customTypst ?? "").trim().length > 0;
 
   function update(path: string, value: string | number | boolean | null) {
@@ -181,7 +184,16 @@ const CollectionStyleEditor: Component<{
       </Show>
 
       <Show when={isOpen()}>
-        <div class="collection-meta__style-grid">
+        <Show when={props.templateInUse}>
+          <p class="collection-meta__lock-note">
+            {t("collection.style.templateControlsLayout")}
+          </p>
+        </Show>
+        <div
+          class="collection-meta__style-grid"
+          classList={{ "is-template-locked": props.templateInUse }}
+          aria-disabled={props.templateInUse ? "true" : undefined}
+        >
           {/* Page */}
           <div class="collection-meta__style-group">
             <span class="collection-meta__style-group-label">
@@ -401,57 +413,37 @@ const CollectionStyleEditor: Component<{
           </div>
         </div>
 
-        {/* Advanced — the raw Typst escape hatch, edited in a modal because the
-            sidebar is too narrow to author code in. Only offered where a saver
-            is wired (the Style Overrides tab). */}
-        <Show when={props.onSaveCustomTypst}>
-          <div class="collection-meta__section-label">
+        {/* Custom Typst — the raw escape hatch, edited in a modal (hosted by the
+            parent) because the sidebar is too narrow to author code in. Shown
+            directly (no "Advanced" group: it's the only such control) wherever
+            the opener is wired (the Style Overrides tab). */}
+        <Show when={props.onEditCustomTypst}>
+          <div class="collection-meta__row">
+            <span class="collection-meta__label-group">
+              <label class="collection-meta__label">
+                {t("collection.style.customTypst")}
+              </label>
+              <HelpButton label={t("collection.style.customTypstHelpLabel")}>
+                {t("collection.style.customTypstHelp")}
+              </HelpButton>
+            </span>
             <button
-              class="collection-meta__section-toggle"
-              onClick={() => setAdvancedOpen(!advancedOpen())}
+              class="settings__detect-btn"
+              onClick={() => props.onEditCustomTypst?.()}
             >
-              <Show when={advancedOpen()} fallback={<ChevronRight size={10} />}>
-                <ChevronDown size={10} />
-              </Show>
-              {t("collection.style.advanced")}
+              {hasCustomTypst()
+                ? t("collection.style.editEllipsis")
+                : t("collection.style.addEllipsis")}
             </button>
-          </div>
-          <Show when={advancedOpen()}>
-            <div class="collection-meta__row">
-              <span class="collection-meta__label-group">
-                <label class="collection-meta__label">
-                  {t("collection.style.customTypst")}
-                </label>
-                <HelpButton label={t("collection.style.customTypstHelpLabel")}>
-                  {t("collection.style.customTypstHelp")}
-                </HelpButton>
+            <Show when={hasCustomTypst()}>
+              <span class="collection-meta__hint">
+                {t("collection.style.inUse")}
               </span>
-              <button
-                class="settings__detect-btn"
-                onClick={() => setShowCustomTypstModal(true)}
-              >
-                {hasCustomTypst()
-                  ? t("collection.style.editEllipsis")
-                  : t("collection.style.addEllipsis")}
-              </button>
-              <Show when={hasCustomTypst()}>
-                <span class="collection-meta__hint">
-                  {t("collection.style.inUse")}
-                </span>
-              </Show>
-            </div>
-          </Show>
+            </Show>
+          </div>
         </Show>
       </Show>
 
-      <Show when={showCustomTypstModal()}>
-        <CustomTypstModal
-          value={props.customTypst ?? ""}
-          collectionName={props.collectionName ?? t("collection.defaultName")}
-          onSave={(v) => props.onSaveCustomTypst?.(v)}
-          onClose={() => setShowCustomTypstModal(false)}
-        />
-      </Show>
     </>
   );
 };
@@ -607,6 +599,11 @@ const CollectionBookEditor: Component<{
 
   return (
     <>
+      <Show when={props.templateInUse}>
+        <p class="collection-meta__lock-note">
+          {t("collection.book.templateMetadataNote")}
+        </p>
+      </Show>
       <div class="collection-meta__section-label">
         {t("collection.book.metadata")}
       </div>
@@ -678,31 +675,27 @@ const CollectionBookEditor: Component<{
       <div class="collection-meta__section-label">
         {t("collection.book.structure")}
       </div>
-      <Show when={props.templateInUse}>
-        <div class="collection-meta__row">
-          <span class="collection-meta__hint">
-            {t("collection.book.templateProvidesTitlePage")}
+      <div class="collection-meta__row">
+        <label class="collection-meta__label">
+          {t("collection.book.titlePage")}
+        </label>
+        <label class="collection-meta__inline-check">
+          <input
+            type="checkbox"
+            checked={includeTitlePage()}
+            onChange={(e) => {
+              setIncludeTitlePage(e.currentTarget.checked);
+              flush();
+            }}
+          />
+          {t("collection.book.include")}
+        </label>
+        <Show when={props.templateInUse}>
+          <span class="collection-meta__hint" style={{ "margin-left": "12px" }}>
+            {t("collection.book.titlePageTemplateHint")}
           </span>
-        </div>
-      </Show>
-      <Show when={!props.templateInUse}>
-        <div class="collection-meta__row">
-          <label class="collection-meta__label">
-            {t("collection.book.titlePage")}
-          </label>
-          <label class="collection-meta__inline-check">
-            <input
-              type="checkbox"
-              checked={includeTitlePage()}
-              onChange={(e) => {
-                setIncludeTitlePage(e.currentTarget.checked);
-                flush();
-              }}
-            />
-            {t("collection.book.include")}
-          </label>
-        </div>
-      </Show>
+        </Show>
+      </div>
       <div class="collection-meta__row">
         <label class="collection-meta__label">{t("collection.book.toc")}</label>
         <label class="collection-meta__inline-check">
@@ -892,9 +885,39 @@ const CollectionCharacteristicsEditor: Component<{
   collectionFile: CollectionFile;
   collectionPath: string;
   onSaved: () => void;
+  /// Open the shared Custom Typst editor and auto-insert the assigned
+  /// template's starter `#show:` rule — the guided way to apply a template.
+  onSetupTemplate?: () => void;
 }> = (props) => {
   const t = useI18n();
   const [customCslMode, setCustomCslMode] = createSignal(false);
+  const [customTemplateMode, setCustomTemplateMode] = createSignal(false);
+
+  // Installed template packages, offered for quick selection so a user needn't
+  // retype a spec they've already installed. The dropdown also exposes "None"
+  // (clear) and "Custom…" (type any spec or notebox path).
+  const [installedPackages] = createResource(() => ipc.listInstalledPackages());
+  const installedTemplates = () =>
+    (installedPackages() ?? []).filter((p) => p.kind === "template");
+
+  // What the template dropdown shows: an installed spec when the saved value
+  // matches one, "__custom__" when it's a hand-typed path/spec (or the user
+  // chose Custom…), and "" (None) when nothing is set.
+  const TEMPLATE_CUSTOM = "__custom__";
+  const templateSelectValue = () => {
+    if (customTemplateMode()) return TEMPLATE_CUSTOM;
+    const cur = props.collectionFile.typst_template ?? "";
+    if (!cur) return "";
+    return installedTemplates().some((p) => p.spec === cur) ? cur : TEMPLATE_CUSTOM;
+  };
+  function handleTemplateChange(v: string) {
+    if (v === TEMPLATE_CUSTOM) {
+      setCustomTemplateMode(true);
+    } else {
+      setCustomTemplateMode(false);
+      saveField("typst_template", v || null);
+    }
+  }
 
   function notifySidebar() {
     document.dispatchEvent(new CustomEvent("inkycap:collections-changed"));
@@ -966,33 +989,58 @@ const CollectionCharacteristicsEditor: Component<{
             {t("collection.char.templateHelp")}
           </HelpButton>
         </span>
-        <input
-          type="text"
-          class="settings__text-input"
-          style={{ flex: "1", "min-width": "0" }}
-          value={props.collectionFile.typst_template ?? ""}
-          onInput={(e) => saveField("typst_template", e.currentTarget.value)}
-          placeholder={t("collection.char.templatePlaceholder")}
-        />
+        <div class="collection-meta__control-group">
+          <Show when={templateSelectValue() === TEMPLATE_CUSTOM}>
+            <input
+              type="text"
+              class="settings__text-input"
+              value={props.collectionFile.typst_template ?? ""}
+              onInput={(e) => saveField("typst_template", e.currentTarget.value)}
+              placeholder={t("collection.char.templatePlaceholder")}
+            />
+          </Show>
+          <Dropdown<string>
+            value={templateSelectValue()}
+            options={[
+              { value: "", label: t("collection.char.templateNone") },
+              ...installedTemplates().map((p) => ({
+                value: p.spec,
+                label: `${p.name} ${p.version}`,
+              })),
+              { value: TEMPLATE_CUSTOM, label: t("collection.char.templateCustom") },
+            ]}
+            onChange={handleTemplateChange}
+            ariaLabel={t("collection.char.template")}
+          />
+        </div>
       </div>
+
+      <Show when={(props.collectionFile.typst_template ?? "").trim() !== ""}>
+        <div class="collection-meta__row collection-meta__row--top">
+          <span class="collection-meta__label" />
+          <div class="collection-meta__control-group">
+            <button
+              class="btn btn--secondary btn--sm"
+              onClick={() => props.onSetupTemplate?.()}
+            >
+              {t("collection.char.setUpTemplate")}
+            </button>
+            <span class="collection-meta__hint">
+              {t("collection.char.setUpTemplateHint")}
+            </span>
+          </div>
+        </div>
+      </Show>
 
       <div class="collection-meta__row">
         <label class="collection-meta__label">
           {t("collection.char.bibStyle")}
         </label>
-        <div
-          style={{
-            display: "flex",
-            gap: "6px",
-            "align-items": "center",
-            "flex-wrap": "wrap",
-          }}
-        >
+        <div class="collection-meta__control-group">
           <Show when={bibStyleValue() === "custom"}>
             <input
               type="text"
               class="settings__text-input"
-              style={{ width: "180px", "min-width": "120px" }}
               value={props.collectionFile.bibliography_style ?? ""}
               onInput={(e) =>
                 saveField("bibliography_style", e.currentTarget.value)
@@ -1031,18 +1079,10 @@ const CollectionCharacteristicsEditor: Component<{
             {t("collection.char.bibFileHelp")}
           </HelpButton>
         </span>
-        <div
-          style={{
-            display: "flex",
-            gap: "6px",
-            "align-items": "center",
-            flex: "1",
-          }}
-        >
+        <div class="collection-meta__control-group">
           <input
             type="text"
             class="settings__text-input"
-            style={{ flex: "1" }}
             value={props.collectionFile.bibliography_file ?? ""}
             onInput={(e) =>
               saveField("bibliography_file", e.currentTarget.value)
@@ -1107,6 +1147,14 @@ const CollectionSettings: Component<{
     bumpPropertyVersion();
   };
 
+  // The Custom Typst editor is hosted here, not inside the Style tab, so the
+  // Characteristics tab's "Set up template…" opens the same editor (the tabs
+  // are mutually exclusive, so the Style editor isn't mounted then). `autoInsert`
+  // pre-fills the assigned template's starter `#show:` rule on open.
+  const [customTypstModal, setCustomTypstModal] = createSignal<{
+    autoInsert: boolean;
+  } | null>(null);
+
   async function saveStyle(style: CollectionStyle | null) {
     const cf = loadedFile();
     if (!cf) return;
@@ -1161,6 +1209,7 @@ const CollectionSettings: Component<{
                   collectionFile={cf()}
                   collectionPath={props.collectionPath}
                   onSaved={onSaved}
+                  onSetupTemplate={() => setCustomTypstModal({ autoInsert: true })}
                 />
               </div>
             )}
@@ -1175,8 +1224,8 @@ const CollectionSettings: Component<{
                   style={cf().style ?? null}
                   onSave={saveStyle}
                   customTypst={cf().custom_typst ?? ""}
-                  onSaveCustomTypst={saveCustomTypst}
-                  collectionName={props.collectionName}
+                  onEditCustomTypst={() => setCustomTypstModal({ autoInsert: false })}
+                  templateInUse={!!cf().typst_template}
                 />
               </div>
             )}
@@ -1198,6 +1247,19 @@ const CollectionSettings: Component<{
           </Show>
         </Match>
       </Switch>
+      <Show when={customTypstModal()}>
+        {(m) => (
+          <CustomTypstModal
+            value={loadedFile()?.custom_typst ?? ""}
+            collectionName={props.collectionName}
+            collectionPath={props.collectionPath}
+            templateSpec={loadedFile()?.typst_template ?? undefined}
+            autoInsertStarter={m().autoInsert}
+            onSave={saveCustomTypst}
+            onClose={() => setCustomTypstModal(null)}
+          />
+        )}
+      </Show>
     </Show>
   );
 };

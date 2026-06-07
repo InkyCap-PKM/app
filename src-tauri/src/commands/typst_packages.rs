@@ -278,6 +278,48 @@ pub async fn list_installed_packages(
     Ok(out)
 }
 
+/// Read an installed template package's starter scaffold and return its apply
+/// show rule (`#show: <fn>.with(…)`) so the UI can drop it into a collection's
+/// Custom Typst override. `None` when the spec isn't a package, isn't installed,
+/// isn't a template, or has no everywhere-form show rule — the caller treats
+/// that as "no starter available" rather than an error.
+#[tauri::command]
+pub async fn get_template_starter(
+    state: State<'_, AppState>,
+    spec: String,
+    collection_path: Option<String>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
+    drop(notebox_root);
+
+    let snippet = typst_packages::template_starter_snippet(&root, &spec);
+    // Point the starter's `bibliography("…")` at the hidden, auto-generated
+    // per-collection bib (filled in fresh at export from the works the notes
+    // cite) so the user neither maintains a file nor clutters the notebox root.
+    let snippet = match (snippet, collection_path.as_deref()) {
+        (Some(s), Some(cp)) => {
+            let stem = std::path::Path::new(cp)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned());
+            Some(match stem {
+                Some(stem) => typst_packages::rewrite_show_rule_bibliography(
+                    &s,
+                    &format!("/.inkycap/collection-bibs/{stem}.bib"),
+                ),
+                None => s,
+            })
+        }
+        (s, _) => s,
+    };
+    Ok(snippet)
+}
+
 /// Uninstall a package by spec. Deletes the version directory; if that
 /// leaves the name directory empty, removes it too (and the namespace
 /// directory if *that* is empty). Best-effort tree cleanup so the

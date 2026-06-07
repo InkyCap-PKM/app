@@ -630,9 +630,11 @@ pub fn build_book_source(
         }
     }
 
-    // Title page (skipped when a template is in use — templates own the
-    // title page convention).
-    if options.include_title_page && template_import.is_none() {
+    // Title page. Governed solely by the user's checkbox: a template is applied
+    // via a `#show:` rule the user writes in Custom Typst (which InkyCap can't
+    // detect here), so when a template renders its own title block the user
+    // unchecks this rather than us guessing from the bare import's presence.
+    if options.include_title_page {
         s.push_str(&render_title_page(options));
     }
 
@@ -926,6 +928,31 @@ fn chapter_anchor_call(stem: &str) -> String {
     format!("{}{}\")\n", CHAPTER_ANCHOR_PREFIX, typst_escape(stem))
 }
 
+/// Find the first `bibliography("…")` call (e.g. a template's
+/// `#show: …(bibliography: bibliography("path.bib"))`) and return its string
+/// argument — the path a collection export should materialize fresh. Skips
+/// `//`-commented lines and non-string-argument forms (`bibliography(none)`,
+/// `bibliography(read(...))`). Returns `None` when absent.
+pub fn extract_bibliography_path(source: &str) -> Option<String> {
+    const NEEDLE: &str = "bibliography(";
+    let mut search = 0usize;
+    while let Some(rel) = source[search..].find(NEEDLE) {
+        let at = search + rel;
+        let line_start = source[..at].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let commented = source[line_start..at].trim_start().starts_with("//");
+        let after = source[at + NEEDLE.len()..].trim_start();
+        if !commented {
+            if let Some(rest) = after.strip_prefix('"') {
+                if let Some(path) = read_typst_string_body(rest) {
+                    return Some(path);
+                }
+            }
+        }
+        search = at + NEEDLE.len();
+    }
+    None
+}
+
 /// Read a Typst string-literal body up to its closing `"`, unescaping `\"`
 /// and `\\`. `s` must start at the first character *after* the opening
 /// quote. Returns the unescaped string, or `None` if unterminated.
@@ -969,7 +996,11 @@ pub fn chapter_at_offset(source: &str, offset: usize) -> Option<String> {
 /// (located via [`chapter_at_offset`]); duplicate messages within a chapter
 /// are collapsed. Spans outside the merged source (an imported file, e.g.
 /// the package) and front-matter spans are grouped under their own labels.
-pub fn describe_book_diagnostics(source: &str, diagnostics: &[TypstDiagnostic]) -> String {
+pub fn describe_book_diagnostics(
+    source: &str,
+    diagnostics: &[TypstDiagnostic],
+    bib_path: Option<&str>,
+) -> String {
     // (label, ordered-unique messages), preserving first-seen label order.
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
     for d in diagnostics.iter().filter(|d| d.severity == "error") {
@@ -992,14 +1023,32 @@ pub fn describe_book_diagnostics(source: &str, diagnostics: &[TypstDiagnostic]) 
         }
     }
 
-    if groups.is_empty() {
-        return "compilation failed".to_string();
+    let base = if groups.is_empty() {
+        "compilation failed".to_string()
+    } else {
+        let parts: Vec<String> = groups
+            .iter()
+            .map(|(label, msgs)| format!("In {label}: {}.", msgs.join("; ")))
+            .collect();
+        format!("compilation failed. {}", parts.join(" "))
+    };
+
+    // hayagriva's bibliography parse errors ("expected comma") are cryptic and
+    // name neither the file nor the cause. When one is present, point the author
+    // at the bib file and the usual culprit (a malformed entry / missing key).
+    let has_bib_parse_error = diagnostics.iter().any(|d| {
+        let m = d.message.to_lowercase();
+        m.contains("biblatex") || m.contains("bibtex")
+    });
+    if has_bib_parse_error {
+        let where_ = bib_path.map(|p| format!(" ({p})")).unwrap_or_default();
+        return format!(
+            "{base} The bibliography file{where_} couldn't be parsed — check it for a \
+             malformed entry, for example an `@article{{` line missing its citation key \
+             (it should read `@article{{key,`).",
+        );
     }
-    let parts: Vec<String> = groups
-        .iter()
-        .map(|(label, msgs)| format!("In {label}: {}.", msgs.join("; ")))
-        .collect();
-    format!("compilation failed. {}", parts.join(" "))
+    base
 }
 
 /// The stems of the notes (chapters) whose source produced compile errors, in
@@ -1540,7 +1589,7 @@ After
                 hints: vec![],
             },
         ];
-        let msg = describe_book_diagnostics(&src, &diags);
+        let msg = describe_book_diagnostics(&src, &diags, None);
         assert!(msg.contains("In \"Alpha\": expected expression."), "{msg}");
         assert!(msg.contains("In \"Beta\": unclosed delimiter."), "{msg}");
         assert_eq!(
@@ -1549,6 +1598,47 @@ After
             "deduped: {msg}"
         );
         assert!(!msg.contains("ignored"), "warnings excluded: {msg}");
+    }
+
+    #[test]
+    fn extract_bibliography_path_reads_template_arg() {
+        let custom = "#show: ieee.with(\n  title: [T],\n  bibliography: bibliography(\"/.inkycap/collection-bibs/Foo.bib\"),\n)\n";
+        assert_eq!(
+            extract_bibliography_path(custom).as_deref(),
+            Some("/.inkycap/collection-bibs/Foo.bib")
+        );
+        // No string-arg form, or absent → None.
+        assert_eq!(extract_bibliography_path("#show: ieee\n= H\n"), None);
+        assert_eq!(
+            extract_bibliography_path("#show: foo.with(bibliography: none)"),
+            None
+        );
+        // Commented occurrence is skipped.
+        assert_eq!(
+            extract_bibliography_path("// bibliography(\"x.bib\")\n= H\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn describe_appends_bibliography_hint_with_path() {
+        use crate::typst_pipeline::diagnostic::TypstDiagnostic;
+        let diags = vec![TypstDiagnostic {
+            severity: "error",
+            message: "failed to parse BibLaTeX (expected comma)".to_string(),
+            primary: None,
+            trace: vec![],
+            hints: vec![],
+        }];
+        let msg = describe_book_diagnostics("front\n", &diags, Some("/refs.bib"));
+        assert!(msg.contains("bibliography file (/refs.bib)"), "{msg}");
+        assert!(msg.contains("citation key"), "{msg}");
+        // Without a known path it still hints, just unqualified.
+        let msg2 = describe_book_diagnostics("front\n", &diags, None);
+        assert!(
+            msg2.contains("bibliography file couldn't be parsed"),
+            "{msg2}"
+        );
     }
 
     #[test]

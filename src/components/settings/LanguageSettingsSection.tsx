@@ -6,6 +6,7 @@ import { settings, updateSetting } from "../../stores/settings";
 import { useI18n, AVAILABLE_LOCALES } from "../../lib/i18n";
 import { setUiLocale } from "../../stores/locale";
 import { SettingSelect, SettingToggle } from "./shared";
+import { linkifyTerm } from "../ExternalLink";
 
 /// The Hunspell project, whose dictionary format InkyCap's spellcheck uses.
 /// Linked from the "Install dictionaries" help text.
@@ -70,7 +71,7 @@ export function LanguageSettingsSection() {
       />
       <SettingToggle
         label={trans("settings.spellcheck.label")}
-        description={trans("settings.spellcheck.description")}
+        description={linkifyTerm(trans("settings.spellcheck.description"), "Hunspell", HUNSPELL_URL)}
         value={settings.editor.spellcheck}
         onChange={(v) => updateSetting("editor", "spellcheck", v)}
       />
@@ -100,39 +101,19 @@ export function LanguageSettingsSection() {
           </For>
         </div>
 
-        <div class="settings__section-header">
-          <span class="settings__label">{trans("settings.spellcheck.install")}</span>
+        <div class="settings__row">
+          <div class="settings__row-info">
+            <span class="settings__label">{trans("settings.spellcheck.install")}</span>
+            <span class="settings__description">
+              {linkifyTerm(trans("settings.spellcheck.installHintBefore"), "Hunspell", HUNSPELL_URL)}{" "}
+              {/* i18n-exempt: literal Hunspell file extensions */}
+              <code>.dic</code> + <code>.aff</code> {trans("settings.spellcheck.installHintAfter")}
+            </span>
+          </div>
+          <button class="settings__detect-btn" onClick={openDictionaryFolder}>
+            {trans("settings.spellcheck.openFolder")}
+          </button>
         </div>
-        <p class="settings__field-hint">
-          {(() => {
-            // "Hunspell" links to the project; keep the sentence one
-            // translation unit with a {link} slot.
-            const [before, after] = trans("settings.spellcheck.installHintBefore").split("{link}");
-            return (
-              <>
-                {before}
-                <a
-                  href={HUNSPELL_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  class="inline-link"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void ipc.openUrlExternally(HUNSPELL_URL);
-                  }}
-                >
-                  {trans("settings.spellcheck.installHintLink")}
-                </a>
-                {after}
-              </>
-            );
-          })()}{" "}
-          {/* i18n-exempt: literal Hunspell file extensions */}
-          <code>.dic</code> + <code>.aff</code> {trans("settings.spellcheck.installHintAfter")}
-        </p>
-        <button class="settings__detect-btn" onClick={openDictionaryFolder}>
-          {trans("settings.spellcheck.openFolder")}
-        </button>
       </Show>
 
       <div class="settings__section-header">

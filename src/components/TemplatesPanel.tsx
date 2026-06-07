@@ -29,8 +29,14 @@ import { openTab } from "../stores/tabs";
 import { promptText } from "../stores/prompt";
 import { toastError, showToast } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
+import { linkifyTerm } from "./ExternalLink";
+import { noteboxInfo } from "../stores/notebox";
 
 type SubTab = "scaffolds" | "templates" | "packages";
+
+// The Typst Universe registry, deep-linked to the kind shown in each tab.
+const UNIVERSE_TEMPLATES_URL = "https://typst.app/universe/search/?kind=templates";
+const UNIVERSE_PACKAGES_URL = "https://typst.app/universe/search/?kind=packages";
 
 const TemplatesPanel: Component = () => {
   const t = useI18n();
@@ -38,12 +44,15 @@ const TemplatesPanel: Component = () => {
   const [tab, setTab] = createSignal<SubTab>("scaffolds");
   const [showHelp, setShowHelp] = createSignal(false);
 
+  // Keyed on noteboxInfo() too: scaffolds/templates/packages are notebox-scoped,
+  // so opening or switching noteboxes must refetch — mirrors the file-tree and
+  // collection resources in LeftSidebar.
   const [scaffolds] = createResource(
-    () => refreshKey(),
+    () => ({ info: noteboxInfo(), key: refreshKey() }),
     async () => ipc.listScaffoldEntries(),
   );
   const [packages] = createResource(
-    () => refreshKey(),
+    () => ({ info: noteboxInfo(), key: refreshKey() }),
     async () => ipc.listInstalledPackages(),
   );
 
@@ -293,6 +302,20 @@ const TemplatesPanel: Component = () => {
           >
             <Plus size={12} /> {t("templates.new")}
           </button>
+          <button
+            class="templates-panel__new-btn"
+            onClick={installBySpec}
+            title={t("templates.installBySpecTitle")}
+          >
+            <Download size={12} /> {t("templates.install")}
+          </button>
+          <button
+            class="templates-panel__new-btn"
+            onClick={installFromFile}
+            title={t("templates.installFromFileTitle")}
+          >
+            <FolderInput size={12} /> {t("templates.fromFile")}
+          </button>
         </Show>
         <Show when={tab() === "packages"}>
           <button
@@ -381,7 +404,7 @@ const TemplatesPanel: Component = () => {
             fallback={
               <Show when={!packages.loading}>
                 <p class="sidebar-hint">
-                  {t("templates.empty.templatesBefore")} <code>{"@preview/charged-ieee:0.1.0"}</code>{t("templates.empty.templatesAfter")}
+                  {linkifyTerm(t("templates.empty.templatesBefore"), "Typst Universe", UNIVERSE_TEMPLATES_URL)} <code>{"@preview/charged-ieee:0.1.0"}</code>{t("templates.empty.templatesAfter")}
                 </p>
               </Show>
             }
@@ -437,7 +460,7 @@ const TemplatesPanel: Component = () => {
             fallback={
               <Show when={!packages.loading}>
                 <p class="sidebar-hint">
-                  {t("templates.empty.packages1")}{" "}
+                  {linkifyTerm(t("templates.empty.packages1"), "Typst Universe", UNIVERSE_PACKAGES_URL)}{" "}
                   <code>{"@preview/cetz:0.2.0"}</code> {t("templates.empty.packages2")}{" "}
                   <code>{"@preview/codly:1.0.0"}</code> {t("templates.empty.packages3")}
                 </p>
