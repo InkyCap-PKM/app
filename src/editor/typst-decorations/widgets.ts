@@ -1159,7 +1159,6 @@ export class WikilinkWidget extends WidgetType {
     readonly isItalic: boolean = false,
     readonly isStrike: boolean = false,
     readonly isHighlight: boolean = false,
-    readonly headingLevel: number = 0,
     readonly label: string = "",
     readonly exists: boolean = true,
   ) {
@@ -1170,7 +1169,6 @@ export class WikilinkWidget extends WidgetType {
     return this.target === other.target && this.display === other.display
       && this.isBold === other.isBold && this.isItalic === other.isItalic
       && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight
-      && this.headingLevel === other.headingLevel
       && this.label === other.label
       && this.exists === other.exists;
   }
@@ -1183,7 +1181,11 @@ export class WikilinkWidget extends WidgetType {
     if (this.isItalic) pill.classList.add("cm-typst-italic");
     if (this.isStrike) pill.classList.add("cm-typst-strike");
     if (this.isHighlight) pill.classList.add("cm-typst-highlight");
-    if (this.headingLevel > 0) pill.classList.add(`cm-typst-h${this.headingLevel}`);
+    // Note: when this wikilink sits inside a heading, the heading mark
+    // already wraps this widget in a `cm-typst-h*` span, so it inherits
+    // the heading's font-size and weight. Adding the heading class here
+    // too would compound the `em`-based size (e.g. 1.8em × 1.8em),
+    // rendering the link larger than the surrounding heading text.
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = this.display || this.target;

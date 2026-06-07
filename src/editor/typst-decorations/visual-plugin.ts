@@ -40,7 +40,7 @@ import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { computePreambleImportRanges, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { computePreambleImportRanges, commentHideRange, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -334,7 +334,7 @@ const PREAMBLE_TRANSPARENT_NODES = new Set([
  * and a per-line scan misclassifies its inner/closing lines. The top-level
  * walk sees `note` as a single FuncCall node, so the run boundary is exact.
  */
-function findStylePreamble(state: EditorState): StylePreamble | null {
+export function findStylePreamble(state: EditorState): StylePreamble | null {
   const cur = syntaxTree(state).cursor();
   if (!cur.firstChild()) return null;
   let firstFrom = -1;
@@ -343,7 +343,12 @@ function findStylePreamble(state: EditorState): StylePreamble | null {
   do {
     const name = cur.name;
     if (PREAMBLE_TRANSPARENT_NODES.has(name)) continue;
-    if (name === "SetRule" || name === "ShowRule") {
+    // `#let` bindings join `#set`/`#show` in the collapsible setup run: they're
+    // document setup (helper definitions, e.g. a doc's `#let demo(...) = …`),
+    // not flowing content, so the visual editor folds them into the same
+    // expandable chip rather than showing raw code. They stay fully visible and
+    // editable in the source editor.
+    if (name === "SetRule" || name === "ShowRule" || name === "LetBinding") {
       if (firstFrom < 0) firstFrom = cur.from;
       lastTo = cur.to;
       count++;
@@ -467,7 +472,7 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
 
   const escapeRanges = new Set<string>();
   const escapeDecos: { from: number; backslashEnd: number; charEnd: number }[] = [];
-  const activeFormatting = { bold: false, italic: false, strike: false, highlight: false, headingLevel: 0 };
+  const activeFormatting = { bold: false, italic: false, strike: false, highlight: false };
   let consumedUntil = -1;
 
   // Hide the leading import block — the notebox import plus any package
@@ -496,6 +501,15 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
         const onCursor = isOnCursorLine(state, node.from, node.to, focused);
 
         switch (node.name) {
+          case "LineComment":
+          case "BlockComment": {
+            // Typst comments are source-only — collapse them away entirely in
+            // the visual editor (the `hide` decoration is auto-atomic, and the
+            // protected-range machinery locks + skips the cursor past them).
+            const r = commentHideRange(state, node.from, node.to);
+            decos.push(hide.range(r.from, r.to));
+            return false;
+          }
           case "Strong": {
             if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             if (autoExpand && onCursor) return false;
@@ -530,7 +544,6 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             if (!eqMatch) return false;
             const eqCount = eqMatch[1].length;
             const level = Math.min(eqCount, 6) - 1;
-            activeFormatting.headingLevel = level + 1;
             const contentStart = node.from + eqMatch[0].length;
             if (contentStart > node.from && contentStart <= node.to) {
               if (!onCursor) {
@@ -767,7 +780,6 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
     leave(node) {
       if (node.name === "Strong") activeFormatting.bold = false;
       if (node.name === "Emph") activeFormatting.italic = false;
-      if (node.name === "Heading") activeFormatting.headingLevel = 0;
       if (node.name === "FuncCall") {
         activeFormatting.strike = false;
         activeFormatting.highlight = false;
@@ -927,7 +939,7 @@ function handleFuncCall(
   cursors: Set<number>,
   autoExpand: boolean,
   expandedPos: number | null,
-  formatting: { bold: boolean; italic: boolean; strike: boolean; highlight: boolean; headingLevel: number } = { bold: false, italic: false, strike: false, highlight: false, headingLevel: 0 },
+  formatting: { bold: boolean; italic: boolean; strike: boolean; highlight: boolean } = { bold: false, italic: false, strike: false, highlight: false },
 ): boolean {
   const text = state.doc.sliceString(from, to);
 
@@ -1253,7 +1265,7 @@ function handleFuncCall(
       const exists = files.some(f => f.name.replace(/\.typ$/, "").toLowerCase() === normalizedTarget);
       decos.push(
         Decoration.replace({
-          widget: new WikilinkWidget(target, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight, formatting.headingLevel, label ?? "", exists),
+          widget: new WikilinkWidget(target, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight, label ?? "", exists),
           inclusiveStart: false,
           inclusiveEnd: false,
         }).range(from, to),
@@ -1501,6 +1513,13 @@ function handleFuncCall(
       // case's "first [ is the body" heuristic would mistakenly hide a
       // `caption: [...]`, so figure opts out and exposes the caption
       // through the menu instead (R7).
+      //
+      // When explicitly expanded — right after insertion (the slash
+      // command dispatches `expandFunc`) or via the chip menu's "Edit
+      // source" — drop the chip so the raw multi-line source is visible
+      // and the cursor can land inside the body `[…]`. Re-collapses to
+      // the chip once the cursor leaves, like the bibliography pill.
+      if (expandedPos === from) return false;
       decos.push(Decoration.replace({
         widget: new FuncChipWidget(from, "figure"),
       }).range(from, to));

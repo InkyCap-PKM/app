@@ -293,11 +293,19 @@ h1, h2, h3, h4, h5, h6 {
   margin-top: 1.4em;
   margin-bottom: 0.6em;
   line-height: 1.3;
+  font-weight: 600;
 }
+/* Typst's HTML export emits semantic <h1>–<h6> but no sizing — supply the scale. */
+h1 { font-size: 1.9em; font-weight: 700; }
+h2 { font-size: 1.55em; font-weight: 700; }
+h3 { font-size: 1.3em; }
+h4 { font-size: 1.15em; }
+h5 { font-size: 1.05em; }
+h6 { font-size: 1em; color: var(--fg-muted); }
 
 a { color: var(--accent); text-decoration: underline; }
 a:hover { text-decoration-color: var(--accent); }
-a.wikilink { text-decoration-style: dotted; }
+a.inkycap-wikilink { text-decoration-style: dotted; }
 
 pre {
   background: var(--bg-secondary);
@@ -373,4 +381,50 @@ svg { max-width: 100%; height: auto; }
 .inkycap-annotation__body > :first-child { margin-top: 0; }
 .inkycap-callout__body > :last-child,
 .inkycap-annotation__body > :last-child { margin-bottom: 0; }
+
+/* Term lists (`/ Term: definition`) → <dl><dt><dd>. */
+dl { margin: 0.8em 0; }
+dt { font-weight: 600; margin-top: 0.6em; }
+dd { margin: 0 0 0.4em 1.5em; }
+
+/* Highlight (#highlight) → <mark> with an inline background colour. */
+mark { color: inherit; border-radius: 2px; padding: 0 0.1em; }
+
+/* Strikethrough (#strike). */
+s, del { text-decoration: line-through; }
+
+/* Embedded media (#video / #audio). */
+video, audio { max-width: 100%; }
+
+/* Whitespace-preserving verse (#verse) → <div class="inkycap-verse">. */
+.inkycap-verse { margin: 1em 0; }
+
+/* Horizontal rule (#line(length: 100%)) and any emitted <hr>. */
+hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+/* Bibliography (#bibliography) → <section role="doc-bibliography">. */
+section[role="doc-bibliography"] {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border);
+}
+section[role="doc-bibliography"] > h2 { margin-top: 0; }
+section[role="doc-bibliography"] ul { padding-left: 0; margin: 0; list-style: none; }
+section[role="doc-bibliography"] li { margin: 0.8em 0; line-height: 1.5; }
+section[role="doc-bibliography"].hanging-indent li { padding-left: 2em; text-indent: -2em; }
+
+/* Footnotes (#footnote) → <section role="doc-endnotes">. */
+section[role="doc-endnotes"] {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border);
+  font-size: 0.9em;
+  color: var(--fg-secondary);
+}
+section[role="doc-endnotes"] ol { padding-left: 1em; margin: 0; }
+section[role="doc-endnotes"] li { margin: 0.4em 0; }
+a[role="doc-noteref"] { text-decoration: none; }
+
+/* No top gap above the first block. */
+body > :first-child { margin-top: 0; }
 "#;

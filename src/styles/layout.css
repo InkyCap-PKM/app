@@ -13,6 +13,30 @@
   position: relative;
 }
 
+/* Documentation window: a slim notice pinned to the top of the content area
+   (a non-growing flex child of `.main-content`, above the pane tree). It sits
+   inside the content column — not the window chrome — and stays put while the
+   manual scrolls, because scrolling happens inside the pane below it. */
+.docs-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  text-align: center;
+}
+
+.docs-banner__icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 .app-shell.app-shell--left-collapsed {
   --left-width: 0px;
 }
@@ -9662,7 +9686,19 @@ svg.lucide {
   margin-bottom: 0.6em;
   color: var(--fg-primary);
   line-height: 1.3;
+  font-weight: 600;
 }
+
+/* Typst's HTML export emits semantic <h1>–<h6> but no sizing — the consumer
+   supplies the type scale. Without these the reading view rendered every
+   heading at the body size. Sizes are `em`-relative so the content zoom
+   (Ctrl+= / Ctrl+-, which drives --md-body-size) scales headings with the body. */
+.typst-reading__html-content h1 { font-size: 1.8em; font-weight: 700; }
+.typst-reading__html-content h2 { font-size: 1.5em; font-weight: 700; }
+.typst-reading__html-content h3 { font-size: 1.3em; }
+.typst-reading__html-content h4 { font-size: 1.15em; }
+.typst-reading__html-content h5 { font-size: 1.05em; }
+.typst-reading__html-content h6 { font-size: 1em; color: var(--fg-muted); }
 
 .typst-reading__html-content p {
   margin: 0.8em 0;
@@ -9886,6 +9922,65 @@ svg.lucide {
 .typst-reading__html-content .inkycap-callout__body > :last-child,
 .typst-reading__html-content .inkycap-annotation__body > :last-child {
   margin-bottom: 0;
+}
+
+/* Term lists (`/ Term: definition`) → <dl><dt><dd>. */
+.typst-reading__html-content dl {
+  margin: 0.8em 0;
+}
+.typst-reading__html-content dt {
+  font-weight: 600;
+  margin-top: 0.6em;
+}
+.typst-reading__html-content dd {
+  margin: 0 0 0.4em 1.5em;
+}
+
+/* Highlight (#highlight) → <mark>; the notebox package sets the background
+   colour inline, so here we only keep the text readable (the UA stylesheet
+   forces black) and soften the corners. */
+.typst-reading__html-content mark {
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+/* Inline quote (#quote[…]) → <q>: don't let the UA's auto quotation marks
+   double up with any the writer typed; keep it as plain emphasised text. */
+.typst-reading__html-content q {
+  quotes: "\201C" "\201D" "\2018" "\2019";
+}
+
+/* Embedded media (#video / #audio) → <video controls> / <audio controls>. */
+.typst-reading__html-content video,
+.typst-reading__html-content audio {
+  max-width: 100%;
+}
+
+/* Whitespace-preserving verse (#verse) → <div class="inkycap-verse">; the
+   package sets white-space / alignment / font inline, so this only spaces it. */
+.typst-reading__html-content .inkycap-verse {
+  margin: 1em 0;
+}
+
+/* Horizontal rule (#line(length: 100%)) and any emitted <hr>. */
+.typst-reading__html-content hr {
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  margin: 1.5em 0;
+}
+
+/* Strikethrough (#strike → <s>/<del>) — explicit so a future CSS reset can't
+   silently drop the line. */
+.typst-reading__html-content s,
+.typst-reading__html-content del {
+  text-decoration: line-through;
+}
+
+/* No top gap above the very first block (Typst wraps leading text in <p>,
+   and the first heading carries margin-top). */
+.typst-reading__html-content > :first-child {
+  margin-top: 0;
 }
 
 /* Generic icon-only button in the editor header right group

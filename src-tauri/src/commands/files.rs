@@ -288,6 +288,12 @@ pub async fn write_file_content(
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        // Documentation notebox: keep the edit in the editor for the session
+        // but never persist it. A silent Ok keeps autosave seamless while
+        // nothing reaches disk, so reopening the manual is always pristine.
+        return Ok(());
+    }
     let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
     storage.write_file(&path_buf, &content).await?;
@@ -309,6 +315,11 @@ pub async fn update_property(
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        // Ephemeral like content writes (see write_file_content): the property
+        // panel reflects the change for the session but nothing is saved.
+        return Ok(());
+    }
     let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
@@ -484,6 +495,9 @@ pub async fn create_note(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;

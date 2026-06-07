@@ -38,7 +38,8 @@ import {
   tabReadingFormat,
   setTabReadingFormat,
 } from "../stores/tabs";
-import { navigateWikilink } from "../lib/wikilink-nav";
+import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
+import { isDocumentationWindow } from "../lib/docs-window";
 import { searchHighlights } from "../stores/search";
 import { pathEquals } from "../lib/paths";
 import { onFileChanged } from "../lib/events";
@@ -72,6 +73,7 @@ import {
   Code,
   PenLine,
   Eye,
+  FlaskConical,
 } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
@@ -1049,6 +1051,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       </div>
       </Show>
 
+      <Show when={isDocumentationWindow()}>
+        <div class="docs-banner" role="note">
+          <FlaskConical class="docs-banner__icon" size={15} />
+          <span>{t("docs.ephemeralBanner")}</span>
+        </div>
+      </Show>
+
       <Show when={isScrollEnabled(props.tabId)}>
         <JournalScrollView tabId={props.tabId} />
       </Show>
@@ -1138,10 +1147,40 @@ interface TypstReadingViewProps {
 }
 
 const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
+  // The SVG reading view renders Typst's own paged output, where a wikilink is a
+  // plain `link("<name>.typ")` — an `<a>` with no class/data-target (unlike the
+  // HTML target). Without interception the webview follows that href and
+  // navigates away from the app (notebox reopens / open-notebox dialog). Detect
+  // wikilinks by their `.typ` destination and route them through the same in-app
+  // navigation the visual editor uses; external links (no `.typ`) pass through.
+  const onWikilinkClick = (e: MouseEvent) => {
+    const a = (e.target as Element | null)?.closest("a");
+    if (!a) return;
+    const href = a.getAttribute("href") ?? a.getAttribute("xlink:href") ?? "";
+    const [pathPart, hash] = href.split("#");
+    if (!/\.typ$/i.test(pathPart)) return; // not a wikilink — let it through
+    e.preventDefault();
+    const baseName = decodeURIComponent(pathPart)
+      .replace(/^.*[/\\]/, "")
+      .replace(/\.typ$/i, "")
+      .trim();
+    if (!baseName) return;
+    const label = hash ? decodeURIComponent(hash) : undefined;
+    if (e.type === "contextmenu") {
+      showWikilinkContextMenu(e.clientX, e.clientY, baseName, label);
+      return;
+    }
+    const newTab = e.ctrlKey || e.metaKey || e.button === 1;
+    void navigateWikilink(baseName, label, newTab);
+  };
+
   return (
     <div
       class="typst-reading"
       ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result)}
+      onClick={onWikilinkClick}
+      onAuxClick={onWikilinkClick}
+      onContextMenu={onWikilinkClick}
     >
       <Show when={props.loading && !props.result}>
         <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
@@ -1239,10 +1278,39 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
     return s;
   };
 
+  // Wikilinks compile to plain `<a class="inkycap-wikilink" href="<name>.typ"
+  // data-target="<name>">`. Without interception the browser would follow that
+  // href and navigate the webview away from the app (which manifests as the
+  // notebox reopening or the open-notebox dialog). Delegate clicks on the
+  // container and route them through the same in-app navigation the visual
+  // editor uses, so reading view browses the notebox like every other mode.
+  const onWikilinkClick = (e: MouseEvent) => {
+    const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+      "a.inkycap-wikilink",
+    );
+    if (!a) return;
+    e.preventDefault();
+    const rawName = a.dataset.target ?? "";
+    const baseName = rawName.split("::")[0].split("#")[0].trim();
+    if (!baseName) return;
+    const label = rawName.includes("::")
+      ? rawName.split("::")[1].trim() || undefined
+      : undefined;
+    if (e.type === "contextmenu") {
+      showWikilinkContextMenu(e.clientX, e.clientY, baseName, label);
+      return;
+    }
+    const newTab = e.ctrlKey || e.metaKey || e.button === 1;
+    void navigateWikilink(baseName, label, newTab);
+  };
+
   return (
     <div
       class="typst-reading typst-reading--html"
       ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result?.html)}
+      onClick={onWikilinkClick}
+      onAuxClick={onWikilinkClick}
+      onContextMenu={onWikilinkClick}
     >
       <Show when={props.loading && !props.result}>
         <div class="typst-reading__status">{t("editor.reading.compiling")}</div>
