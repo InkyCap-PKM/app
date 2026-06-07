@@ -32,7 +32,7 @@ Type `/`, choose *Style* (or start typing the name), and pick a setting. InkyCap
   columns: (auto, 1fr),
   inset: 8pt,
   stroke: 0.5pt + luma(85%),
-  table.header([*Menu item*], [*What it inserts*]),
+  table.header([Menu item], [What it inserts]),
   [Page size], [`#set page(paper: "a4")`],
   [Page margins], [`#set page(margin: (top: 2cm, bottom: 2cm, left: 2cm, right: 2cm))`],
   [Page numbering], [`#set page(numbering: "1")`],
