@@ -44,6 +44,21 @@ function arraysEqual(a: string[] | null, b: string[] | null): boolean {
   return true;
 }
 
+/** Equality for the preserved-styling arg list (`stroke`, `inset`, …),
+ *  order-sensitive on both key and verbatim value. */
+function extraArgsEqual(
+  a: TableData["extraArgs"],
+  b: TableData["extraArgs"],
+): boolean {
+  const aa = a ?? [];
+  const bb = b ?? [];
+  if (aa.length !== bb.length) return false;
+  for (let i = 0; i < aa.length; i++) {
+    if (aa[i].key !== bb[i].key || aa[i].value !== bb[i].value) return false;
+  }
+  return true;
+}
+
 /**
  * Cross-rebuild focus target.
  *
@@ -105,6 +120,10 @@ export class TableWidget extends WidgetType {
     // Likewise for explicit row heights (`rows:` drag-resize).
     if (!arraysEqual(this.data.rowSizes, other.data.rowSizes)) return false;
     if (!arraysEqual(this.data.align, other.data.align)) return false;
+    // Preserved styling args don't change the widget DOM, but they DO ride
+    // through `replaceTable` on a cell edit — so a reused stale instance would
+    // re-emit old styling over an external source change. Rebuild if they differ.
+    if (!extraArgsEqual(this.data.extraArgs, other.data.extraArgs)) return false;
     const thisRows = this.getAllRows();
     const otherRows = other.getAllRows();
     if (thisRows.length !== otherRows.length) return false;
