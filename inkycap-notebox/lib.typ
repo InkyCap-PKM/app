@@ -563,10 +563,44 @@
   bug: rgb("#ff5252"),
 )
 
+// Localized heading labels per callout kind. The `kind` argument stays the
+// stable English key (it selects the colour, the HTML class, and is the public
+// `#callout("warning")` API); only the *rendered* heading is localized, chosen
+// from the document language (`text.lang`) at render time. Add a language entry
+// to extend coverage; any language not listed falls back to English, and any
+// kind not listed falls back to a capitalized form of its key.
+#let _callout-labels = (
+  note: (en: "Note", fr: "Note"),
+  tip: (en: "Tip", fr: "Astuce"),
+  warning: (en: "Warning", fr: "Avertissement"),
+  important: (en: "Important", fr: "Important"),
+  caution: (en: "Caution", fr: "Mise en garde"),
+  example: (en: "Example", fr: "Exemple"),
+  quote: (en: "Quote", fr: "Citation"),
+  abstract: (en: "Abstract", fr: "Résumé"),
+  info: (en: "Info", fr: "Information"),
+  todo: (en: "Todo", fr: "À faire"),
+  success: (en: "Success", fr: "Succès"),
+  question: (en: "Question", fr: "Question"),
+  failure: (en: "Failure", fr: "Échec"),
+  danger: (en: "Danger", fr: "Danger"),
+  bug: (en: "Bug", fr: "Bogue"),
+)
+
+// Resolve the heading label for `kind` in language `lang` (a 2-letter code such
+// as "en" or "fr", as returned by `text.lang`).
+#let _callout-label(kind, lang) = {
+  let entry = _callout-labels.at(kind, default: none)
+  if entry == none {
+    upper(kind.first()) + kind.slice(1)
+  } else {
+    entry.at(lang, default: entry.en)
+  }
+}
+
 #let callout(kind, title: none, body) = {
   assert(type(kind) == str, message: "callout: kind must be a string")
   let color = _callout-colors.at(kind, default: rgb("#448aff"))
-  let heading-text = if title != none { title } else { upper(kind.first()) + kind.slice(1) }
 
   // Typst's `typst-html` emitter drops `block(fill:/stroke:/inset:/radius:)`
   // box styling — it would emit only the title + body text with no admonition
@@ -575,6 +609,9 @@
   // mirroring the `<mark>` treatment in `highlight`. The paged/SVG path keeps
   // the native `block` so PDF/reading-view output is unchanged.
   context {
+    // Localize the heading from the document language now that we're in a
+    // context where `text.lang` is known. An explicit `title:` always wins.
+    let heading-text = if title != none { title } else { _callout-label(kind, text.lang) }
     if target() == "html" {
       html.elem(
         "div",

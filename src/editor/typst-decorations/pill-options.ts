@@ -17,6 +17,7 @@ import {
   upsertNamedArg,
   type PillMenuSection,
 } from "./pill";
+import { t } from "../../lib/i18n";
 
 // Callout kinds come straight from inkycap-notebox/lib.typ's
 // `_callout-colors` dict. Keeping this list in lockstep with the notebox
@@ -28,29 +29,43 @@ const CALLOUT_KINDS = [
   "failure", "danger", "bug",
 ] as const;
 
+/** Heading shown for a callout of `kind`: an explicit `title` wins, otherwise
+ *  the localized kind label (falling back to a capitalized kind for any kind
+ *  not in the known set). Shared by the visual-editor callout widgets and the
+ *  kind menu so the editor decoration and the pill menu always agree on the
+ *  wording, and both follow the UI language. The compiled reading view / export
+ *  localizes from the document language in inkycap-notebox/lib.typ. */
+export function calloutKindLabel(kind: string, title?: string | null): string {
+  if (title) return title;
+  return (CALLOUT_KINDS as readonly string[]).includes(kind)
+    ? t("callout.kind." + kind)
+    : kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
 // Five-color highlighter palette per the user-confirmed Stage 2 design.
 // Each entry has a Typst-source representation (used in `fill: rgb(...)`)
 // and a label. Keeping the rgb literal stable lets the round-trip detect
 // "this is the yellow preset" reliably across re-saves.
 interface HighlightColor {
-  label: string;
+  /** i18n key for the user-visible colour name. */
+  labelKey: string;
   /** Typst expression that goes after `fill:`. */
   fill: string;
   /** Hex used to compare the current source value back to a preset. */
   hex: string;
 }
 const HIGHLIGHT_COLORS: HighlightColor[] = [
-  { label: "Yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61" },
-  { label: "Green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
-  { label: "Blue",   fill: 'rgb("#c8dcff")', hex: "#c8dcff" },
-  { label: "Pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
-  { label: "Orange", fill: 'rgb("#ffd6a8")', hex: "#ffd6a8" },
+  { labelKey: "pill.highlight.color.yellow", fill: 'rgb("#f2ed61")', hex: "#f2ed61" },
+  { labelKey: "pill.highlight.color.green",  fill: 'rgb("#c8f0c8")', hex: "#c8f0c8" },
+  { labelKey: "pill.highlight.color.blue",   fill: 'rgb("#c8dcff")', hex: "#c8dcff" },
+  { labelKey: "pill.highlight.color.pink",   fill: 'rgb("#ffd1e0")', hex: "#ffd1e0" },
+  { labelKey: "pill.highlight.color.orange", fill: 'rgb("#ffd6a8")', hex: "#ffd6a8" },
 ];
 
-const LINE_STROKES: { label: string; literal: string; defaultMatch: boolean }[] = [
-  { label: "Thin",   literal: "0.5pt", defaultMatch: false },
-  { label: "Medium", literal: "1pt",   defaultMatch: true  },
-  { label: "Thick",  literal: "2pt",   defaultMatch: false },
+const LINE_STROKES: { labelKey: string; literal: string; defaultMatch: boolean }[] = [
+  { labelKey: "pill.stroke.thin",   literal: "0.5pt", defaultMatch: false },
+  { labelKey: "pill.stroke.medium", literal: "1pt",   defaultMatch: true  },
+  { labelKey: "pill.stroke.thick",  literal: "2pt",   defaultMatch: false },
 ];
 
 // Common `delimiter:` choices for `#csv(…)`. Each is the Typst string
@@ -58,19 +73,19 @@ const LINE_STROKES: { label: string; literal: string; defaultMatch: boolean }[] 
 // an explicit literal rather than dropping the arg, because the comma
 // literal `","` contains a comma that the shared drop-path regex in
 // `upsertNamedArg` can't safely excise.
-const CSV_DELIMITERS: { label: string; literal: string; isDefault: boolean }[] = [
-  { label: "Comma",     literal: '","',  isDefault: true  },
-  { label: "Semicolon", literal: '";"',  isDefault: false },
-  { label: "Tab",       literal: '"\\t"', isDefault: false },
+const CSV_DELIMITERS: { labelKey: string; literal: string; isDefault: boolean }[] = [
+  { labelKey: "pill.csv.delimiter.comma",     literal: '","',  isDefault: true  },
+  { labelKey: "pill.csv.delimiter.semicolon", literal: '";"',  isDefault: false },
+  { labelKey: "pill.csv.delimiter.tab",       literal: '"\\t"', isDefault: false },
 ];
 
 // `row-type:` choices for `#csv(…)`. Array is Typst's default (cleared from
 // source); dictionary keys each row by the header row's column names.
-const CSV_ROW_TYPES: { label: string; value: string | null; help?: string }[] = [
-  { label: "Array",      value: null,
-    help: "Each row is a list of cell strings (the default)." },
-  { label: "Dictionary", value: "dictionary",
-    help: "Each row is keyed by the first row's column headers." },
+const CSV_ROW_TYPES: { labelKey: string; value: string | null; helpKey?: string }[] = [
+  { labelKey: "pill.csv.rowType.array",      value: null,
+    helpKey: "pill.csv.rowType.array.help" },
+  { labelKey: "pill.csv.rowType.dictionary", value: "dictionary",
+    helpKey: "pill.csv.rowType.dictionary.help" },
 ];
 
 // ── Lookup ──────────────────────────────────────────────────────────
@@ -166,10 +181,10 @@ function genericArgsOptions(view: EditorView, from: number, to: number): PillMen
   const named = parseNamedArgs(src);
   if (named.length === 0) return [];
   return [{
-    heading: "Parameters",
+    heading: t("pill.params.heading"),
     items: named.map((arg) => ({
       label: arg.name,
-      title: `Typst argument “${arg.name}” — edit the raw value`,
+      title: t("pill.params.argTitle", { name: arg.name }),
       input: {
         value: arg.value,
         placeholder: arg.name,
@@ -279,9 +294,9 @@ function calloutOptions(view: EditorView, from: number, to: number): PillMenuSec
   const src = readCallSource(view, from, to);
   const currentKind = readFirstPositionalString(src) ?? "note";
   return [{
-    heading: "Kind",
+    heading: t("callout.kind.heading"),
     items: CALLOUT_KINDS.map((kind) => ({
-      label: kind,
+      label: t("callout.kind." + kind),
       isActive: kind === currentKind,
       onSelect: () => applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, kind)),
     })),
@@ -303,31 +318,31 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
   // the precedence rather than typing into a no-op input.
   const urlDisabled = attr.kind === "bibkey";
   return [{
-    heading: "Style",
+    heading: t("pill.quote.style"),
     items: [
       {
-        label: "Block",
+        label: t("pill.quote.block"),
         isActive: isBlock,
         onSelect: () => applyCallTransform(view, from, (s) =>
           upsertNamedArg(s, "block", "true")),
       },
       {
-        label: "Inline",
+        label: t("pill.quote.inline"),
         isActive: !isBlock,
-        title: "Attribution renders only in block mode",
+        title: t("pill.quote.inline.title"),
         onSelect: () => applyCallTransform(view, from, (s) =>
           upsertNamedArg(s, "block", null)),
       },
     ],
   }, {
     items: [{
-      label: "Attribution",
+      label: t("pill.quote.attribution"),
       title: !isBlock
-        ? "Attribution is stored but renders only when Block is selected"
-        : "Plain text, or a bibliography key as <key>",
+        ? t("pill.quote.attribution.title.inline")
+        : t("pill.quote.attribution.title.block"),
       input: {
         value: attr.text,
-        placeholder: "e.g. Albert Camus, or <camus1942>",
+        placeholder: t("pill.quote.attribution.placeholder"),
         onCommit: (v) => applyCallTransform(view, from, (s) => {
           // Re-read URL from the *just-edited* source so we don't clobber
           // a URL the user set in the same menu session. Reading from the
@@ -338,14 +353,14 @@ function quoteOptions(view: EditorView, from: number, to: number): PillMenuSecti
         }),
       },
     }, {
-      label: "Link URL",
+      label: t("pill.quote.linkUrl"),
       title: urlDisabled
-        ? "Disabled: bibkey attribution links to the bibliography entry already"
-        : "Wraps attribution text in a link (e.g. license URL)",
+        ? t("pill.quote.linkUrl.title.disabled")
+        : t("pill.quote.linkUrl.title"),
       disabled: urlDisabled,
       input: {
         value: attr.kind === "link" ? attr.url : "",
-        placeholder: "e.g. https://creativecommons.org/licenses/by-sa/4.0/",
+        placeholder: t("pill.quote.linkUrl.placeholder"),
         onCommit: (v) => applyCallTransform(view, from, (s) => {
           const cur = parseAttribution(readNamedArg(s, "attribution"));
           if (cur.kind === "bibkey") return s; // disabled in UI; defensive
@@ -487,11 +502,11 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
   // routine swap. Path is first so it's the auto-focused input.
   return [{
     items: [{
-      label: "File",
-      title: "Path to the image file, relative to the note",
+      label: t("pill.image.file"),
+      title: t("pill.image.file.title"),
       input: {
         value: path,
-        placeholder: "e.g. images/diagram.png",
+        placeholder: t("pill.image.file.placeholder"),
         onCommit: (v) => {
           const trimmed = v.trim();
           if (trimmed === "") return;
@@ -499,21 +514,21 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
         },
       },
     }, {
-      label: "Alt text",
+      label: t("pill.image.alt"),
       input: {
         value: alt,
-        placeholder: "Describe the image",
+        placeholder: t("pill.image.alt.placeholder"),
         onCommit: (v) => applyCallTransform(view, imgFrom, (s) =>
           upsertNamedArg(s, "alt", v.trim() === "" ? null : quote(v))),
       },
     }, {
-      label: "Width",
+      label: t("pill.image.width"),
       // Typst's length units only. `px` is deliberately omitted — Typst has no
       // pixel unit, so it compiles cleanly in the preview but breaks the PDF.
-      help: "A percentage scales to the page's text width — 50% is half the column. Absolute units set a fixed size: pt, cm, mm, in, or em (font-relative). Typst has no pixel unit, so px isn't supported.",
+      help: t("pill.image.width.help"),
       input: {
         value: width,
-        placeholder: "e.g. 50% or 8cm",
+        placeholder: t("pill.image.width.placeholder"),
         onCommit: (v) => {
           const t = v.trim();
           applyCallTransform(view, imgFrom, (s) =>
@@ -522,12 +537,12 @@ function imageOptions(view: EditorView, from: number, to: number): PillMenuSecti
       },
     }],
   }, {
-    heading: "Alignment",
+    heading: t("pill.align.heading"),
     // Typst has no alignment argument on `image`; horizontal placement is
     // `#align(left|center|right)[…]` (CLAUDE.md Typst-first). The visual
     // editor mirrors the wrapper so the choice is reflected while authoring.
     items: ALIGNMENTS.map((a) => ({
-      label: a.label,
+      label: t(a.labelKey),
       isActive: currentAlign === a.keyword,
       onSelect: () => applyImageAlignment(view, from, wrapped, a.keyword),
     })),
@@ -545,12 +560,12 @@ function csvOptions(view: EditorView, from: number, to: number): PillMenuSection
   // the auto-focused input.
   return [{
     items: [{
-      label: "File",
-      title: "Path to the CSV file",
-      help: "Paths are resolved from the notebox root, so a leading-slash path like /data/scores.csv is the most portable. A bare name resolves relative to the note.",
+      label: t("pill.csv.file"),
+      title: t("pill.csv.file.title"),
+      help: t("pill.csv.file.help"),
       input: {
         value: path,
-        placeholder: "e.g. /data/scores.csv",
+        placeholder: t("pill.csv.file.placeholder"),
         onCommit: (v) => {
           const trimmed = v.trim();
           if (trimmed === "") return;
@@ -559,18 +574,18 @@ function csvOptions(view: EditorView, from: number, to: number): PillMenuSection
       },
     }],
   }, {
-    heading: "Delimiter",
+    heading: t("pill.csv.delimiter.heading"),
     items: CSV_DELIMITERS.map((opt) => ({
-      label: opt.label,
+      label: t(opt.labelKey),
       isActive: delimiter === opt.literal || (delimiter == null && opt.isDefault),
       onSelect: () => applyCallTransform(view, from, (s) =>
         upsertNamedArg(s, "delimiter", opt.literal)),
     })),
   }, {
-    heading: "Row type",
+    heading: t("pill.csv.rowType.heading"),
     items: CSV_ROW_TYPES.map((opt) => ({
-      label: opt.label,
-      help: opt.help,
+      label: t(opt.labelKey),
+      help: opt.helpKey ? t(opt.helpKey) : undefined,
       isActive: rowType === opt.value || (rowType == null && opt.value == null),
       onSelect: () => applyCallTransform(view, from, (s) =>
         upsertNamedArg(s, "row-type", opt.value)),
@@ -584,22 +599,22 @@ function lineOptions(view: EditorView, from: number, to: number): PillMenuSectio
   const stroke = readNamedArg(src, "stroke");
   return [{
     items: [{
-      label: "Length",
-      title: "Accepts percentages (100%) or absolute units (5cm, 200pt)",
+      label: t("pill.line.length"),
+      title: t("pill.line.length.title"),
       input: {
         value: length,
-        placeholder: "e.g. 100% or 5cm",
+        placeholder: t("pill.line.length.placeholder"),
         onCommit: (v) => {
-          const t = v.trim();
+          const val = v.trim();
           applyCallTransform(view, from, (s) =>
-            upsertNamedArg(s, "length", t === "" ? null : t));
+            upsertNamedArg(s, "length", val === "" ? null : val));
         },
       },
     }],
   }, {
-    heading: "Stroke",
+    heading: t("pill.line.stroke.heading"),
     items: LINE_STROKES.map((opt) => ({
-      label: opt.label,
+      label: t(opt.labelKey),
       isActive: stroke === opt.literal || (stroke == null && opt.defaultMatch),
       onSelect: () => applyCallTransform(view, from, (s) =>
         upsertNamedArg(s, "stroke", opt.literal, { defaultValue: "1pt" })),
@@ -614,9 +629,9 @@ function lineOptions(view: EditorView, from: number, to: number): PillMenuSectio
 // `center + horizon`) fall back to "Edit source" via the simple/complex
 // classifier.
 const ALIGNMENTS = [
-  { label: "Left",   keyword: "left"   },
-  { label: "Center", keyword: "center" },
-  { label: "Right",  keyword: "right"  },
+  { labelKey: "pill.align.left",   keyword: "left"   },
+  { labelKey: "pill.align.center", keyword: "center" },
+  { labelKey: "pill.align.right",  keyword: "right"  },
 ];
 
 function alignOptions(view: EditorView, from: number, to: number): PillMenuSection[] {
@@ -629,9 +644,9 @@ function alignOptions(view: EditorView, from: number, to: number): PillMenuSecti
   const argList = findArgListInSource(src);
   const current = argList ? (argList.match(/^\s*([a-z]+)/)?.[1] ?? null) : null;
   return [{
-    heading: "Alignment",
+    heading: t("pill.align.heading"),
     items: ALIGNMENTS.map((a) => ({
-      label: a.label,
+      label: t(a.labelKey),
       isActive: current === a.keyword,
       onSelect: () => applyCallTransform(view, from, (s) => replaceFirstPositionalKeyword(s, a.keyword)),
     })),
@@ -647,10 +662,10 @@ function figureOptions(view: EditorView, from: number, to: number): PillMenuSect
     : "";
   return [{
     items: [{
-      label: "Caption",
+      label: t("pill.figure.caption"),
       input: {
         value: caption,
-        placeholder: "Figure caption",
+        placeholder: t("pill.figure.caption.placeholder"),
         onCommit: (v) => {
           const t = v.trim();
           const literal = t === "" ? null : "[" + t.replace(/\\/g, "\\\\").replace(/\]/g, "\\]") + "]";
@@ -668,9 +683,9 @@ function citeOptions(view: EditorView, from: number, to: number): PillMenuSectio
     const form = readNamedArg(src, "form");
     const currentForm = form ?? "normal";
     return [{
-      heading: "Form",
+      heading: t("pill.cite.form"),
       items: (["normal", "prose", "full", "author", "year"] as const).map((f) => ({
-        label: f,
+        label: t("pill.cite.form." + f),
         isActive: currentForm === f,
         onSelect: () => applyCallTransform(view, from, (s) =>
           upsertNamedArg(s, "form", f === "normal" ? null : `"${f}"`)),
@@ -679,10 +694,10 @@ function citeOptions(view: EditorView, from: number, to: number): PillMenuSectio
   }
   const key = src.slice(1);
   return [{
-    heading: "Citation",
+    heading: t("pill.cite.citation"),
     items: [{
-      label: "Convert to #cite()",
-      title: "Convert to function form for supplement, form, and other options",
+      label: t("pill.cite.convert"),
+      title: t("pill.cite.convert.title"),
       onSelect: () => {
         view.dispatch({
           changes: { from, to, insert: `#cite(<${key}>)` },
@@ -698,14 +713,14 @@ function highlightOptions(view: EditorView, from: number, to: number): PillMenuS
   const src = readCallSource(view, from, to);
   const fill = readNamedArg(src, "fill");
   return [{
-    heading: "Colour",
+    heading: t("pill.highlight.colour"),
     items: HIGHLIGHT_COLORS.map((c, idx) => {
       // Active when the current `fill:` matches this preset's literal,
       // OR when there's no fill arg AND this is the default (yellow).
       const isDefault = idx === 0;
       const isActive = fill === c.fill || (fill == null && isDefault);
       return {
-        label: c.label,
+        label: t(c.labelKey),
         isActive,
         onSelect: () => applyCallTransform(view, from, (s) =>
           // Drop the arg entirely when picking yellow (the default), so
@@ -762,21 +777,21 @@ function taskOptions(view: EditorView, from: number, to: number): PillMenuSectio
 
   return [
     {
-      heading: "Task",
+      heading: t("pill.task.heading"),
       items: [{
-        label: "Task",
+        label: t("pill.task.label"),
         input: {
           value: body,
-          placeholder: "What needs doing?",
+          placeholder: t("pill.task.placeholder"),
           onCommit: (v) =>
             applyCallTransform(view, from, (s) => replaceFirstPositionalString(s, v)),
         },
       }],
     },
     {
-      heading: "Due date",
+      heading: t("pill.due.heading"),
       items: [{
-        label: "Due",
+        label: t("pill.task.due.label"),
         input: {
           value: dueIso,
           placeholder: "YYYY-MM-DD",
@@ -792,7 +807,7 @@ function taskOptions(view: EditorView, from: number, to: number): PillMenuSectio
     },
     {
       items: [{
-        label: isDone ? "Mark as not done" : "Mark as done",
+        label: isDone ? t("pill.task.markNotDone") : t("pill.task.markDone"),
         isActive: isDone,
         onSelect: () =>
           applyCallTransform(view, from, (s) =>
@@ -838,9 +853,9 @@ function dueOptions(view: EditorView, from: number, to: number): PillMenuSection
 
   return [
     {
-      heading: "Due date",
+      heading: t("pill.due.heading"),
       items: [{
-        label: "Date",
+        label: t("pill.due.date"),
         input: {
           value: dateIso,
           placeholder: "YYYY-MM-DD",
@@ -855,12 +870,12 @@ function dueOptions(view: EditorView, from: number, to: number): PillMenuSection
       }],
     },
     {
-      heading: "Description",
+      heading: t("pill.due.description"),
       items: [{
-        label: "Description",
+        label: t("pill.due.description.label"),
         input: {
           value: labelArg,
-          placeholder: "Optional caption",
+          placeholder: t("pill.due.description.placeholder"),
           onCommit: (v) =>
             applyCallTransform(view, from, (s) =>
               upsertNamedArg(s, "label", v.trim() === "" ? null : quote(v)),
@@ -898,10 +913,10 @@ function symOptions(view: EditorView, from: number, to: number): PillMenuSection
   const path = src.replace(/^#?sym\./, "");
   return [
     {
-      heading: "Symbol",
+      heading: t("pill.sym.heading"),
       items: [{
-        label: "Name",
-        title: "Symbol name after #sym. (e.g. arrow.r, copyright, cc.by)",
+        label: t("pill.sym.name"),
+        title: t("pill.sym.name.title"),
         input: {
           value: path,
           placeholder: "arrow.r",

@@ -11,7 +11,7 @@ import {
 import { theme, toggleTheme } from "../stores/theme";
 import { leftCollapsed, toggleLeftCollapsed, setLeftCollapsed } from "../stores/layout";
 import type { CreationRule } from "../lib/types";
-import { openTab } from "../stores/tabs";
+import { openCreatedNote } from "../stores/tabs";
 import { toolbarRules, triggerCreationRule } from "../stores/creation-rules";
 import { useI18n } from "../lib/i18n";
 import RuleIcon from "./RuleIcon";
@@ -52,9 +52,9 @@ const VerticalToolbar: Component<VerticalToolbarProps> = (props) => {
       if (!result) return;
       if (rule.creation_mode === "create_and_open") {
         const name = result.path.split("/").pop() ?? t("verticalToolbar.newNoteFallback");
-        openTab(
+        openCreatedNote(
           { type: "file", title: name, path: result.path },
-          { forceNewTab: true, cursorOffset: result.cursor_offset ?? undefined },
+          { cursorOffset: result.cursor_offset ?? undefined },
         );
       }
     } catch (e) {

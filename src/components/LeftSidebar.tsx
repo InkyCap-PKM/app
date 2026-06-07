@@ -43,7 +43,7 @@ import { createOverflowWatcher } from "../lib/overflow";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
-import { openTab, closeTab, tabs, getActiveTab } from "../stores/tabs";
+import { openTab, openCreatedNote, closeTab, tabs, getActiveTab } from "../stores/tabs";
 import {
   isEnabled as isScrollEnabled,
   updateAnchor as updateScrollAnchor,
@@ -1230,12 +1230,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       if (!result) return;
       refresh();
       const title = result.path.split(/[/\\]/).pop() ?? t("leftSidebar.newNoteFallback");
-      openTab(
+      openCreatedNote(
         { type: "file", title, path: result.path },
-        {
-          forceNewTab: true,
-          cursorOffset: result.cursor_offset ?? undefined,
-        },
+        { cursorOffset: result.cursor_offset ?? undefined },
       );
     } catch (e) {
       toastError(t("rightPanel.toast.createNoteFailed"), e);

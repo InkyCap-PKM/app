@@ -9,6 +9,7 @@
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { expandFunc } from "./effects";
 import { setTabEditingMode, getActiveTab } from "../../stores/tabs";
+import { t } from "../../lib/i18n";
 
 // ── Menu model ──────────────────────────────────────────────────────
 
@@ -439,8 +440,8 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
       || isSimpleCall(view, model.callFrom, model.callTo);
     if (expandable) {
       items.push({
-        label: "Edit source",
-        title: "Reveal raw Typst source for inline editing",
+        label: t("pill.editSource"),
+        title: t("pill.editSource.title"),
         onSelect: () => runEditSource(view, model),
       });
     }
@@ -449,16 +450,16 @@ function buildSourceSection(view: EditorView, model: PillModel): PillMenuSection
   const isSource = tab?.editingMode === "source";
   if (isSource) {
     items.push({
-      label: "Open in visual editor",
-      title: "Switch this tab to visual mode",
+      label: t("pill.openInVisualEditor"),
+      title: t("pill.openInVisualEditor.title"),
       onSelect: () => {
         if (tab) setTabEditingMode(tab.id, "live");
       },
     });
   } else {
     items.push({
-      label: "Open in source editor",
-      title: "Switch this tab to source mode and select the call",
+      label: t("pill.openInSourceEditor"),
+      title: t("pill.openInSourceEditor.title"),
       onSelect: () => {
         if (tab) setTabEditingMode(tab.id, "source");
         requestAnimationFrame(() => {
@@ -488,8 +489,8 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
   return {
     items: [
       {
-        label: "Copy",
-        title: "Copy the function call to the clipboard",
+        label: t("pill.copy"),
+        title: t("pill.copy.title"),
         onSelect: () => {
           void navigator.clipboard.writeText(callSource).catch((err) => {
             console.error("Pill copy failed:", err);
@@ -497,8 +498,8 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
         },
       },
       {
-        label: "Duplicate",
-        title: "Insert a copy of this call after the current one",
+        label: t("pill.duplicate"),
+        title: t("pill.duplicate.title"),
         onSelect: () => {
           // Block calls (their own line) duplicate on a new line; inline
           // calls duplicate inline with a separating space.
@@ -516,8 +517,8 @@ function buildUniversalSection(view: EditorView, model: PillModel): PillMenuSect
       },
       ...buildUnwrapItem(view, callSource, safeFrom, safeTo),
       {
-        label: "Delete",
-        title: "Remove this call and its content from the document",
+        label: t("common.delete"),
+        title: t("pill.delete.title"),
         onSelect: () => {
           // If the call occupies its own line, also drop the trailing
           // newline so we don't leave a blank line behind.
@@ -567,8 +568,8 @@ function buildUnwrapItem(
   const content = extractContentBracket(callSource);
   if (content === null) return [];
   return [{
-    label: "Remove style",
-    title: "Remove the function wrapper but keep the content",
+    label: t("pill.removeStyle"),
+    title: t("pill.removeStyle.title"),
     onSelect: () => {
       view.dispatch({
         changes: { from, to, insert: content },
