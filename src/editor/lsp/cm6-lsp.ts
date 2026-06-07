@@ -251,6 +251,12 @@ function renderMarkdownSimple(container: HTMLElement, md: string): void {
 // cross-reference. The captured group is the bare label name.
 const UNRESOLVED_LABEL_RE = /^label `<([^>]+)>` does not exist in the document/;
 
+// Typst markup delimiters whose closing marker is subject to the word-boundary
+// rule (it can't be directly followed by a letter or number). Used to attach a
+// friendly hint to "unclosed delimiter" diagnostics for `*`/`_`. Other unclosed
+// delimiters ($, `, brackets) don't have this rule, so they keep the bare message.
+const EMPHASIS_DELIMITERS = new Set(["*", "_"]);
+
 // Bibliography keys, cached so the synchronous diagnostic conversion can decide
 // whether an unresolved label is actually a citation. The set is the exact
 // discriminator the backend uses: `maybe_inject_preview_bibliography` only
@@ -293,6 +299,18 @@ function convertDiagnostics(
     const labelMatch = UNRESOLVED_LABEL_RE.exec(d.message);
     if (labelMatch && bibKeys.has(labelMatch[1])) {
       message = `${d.message} — ${t("diagnostic.citationResolvesInPreview")}`;
+    } else if (
+      /unclosed delimiter/i.test(d.message) &&
+      EMPHASIS_DELIMITERS.has(doc.sliceString(from, Math.min(from + 1, doc.length)))
+    ) {
+      // Typst's `*` (strong) and `_` (emph) only *close* at a word boundary —
+      // a closing marker directly followed by a letter or number is not
+      // recognized, so the emphasis is left unterminated (e.g. `*testi*ng`).
+      // This trips up users with a Markdown mental model, where intraword
+      // emphasis is allowed. Explain the rule instead of leaving a bare
+      // "unclosed delimiter". (The diagnostic range starts on the opening
+      // marker, so the char at `from` is the `*` or `_`.)
+      message = `${d.message} — ${t("diagnostic.unclosedEmphasis")}`;
     }
 
     return {

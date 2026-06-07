@@ -134,7 +134,7 @@ import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { citationSuggest } from "./typst-decorations/citation-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
-import { autoPairTypstInput, autoPairTypstBackspace } from "./typst-decorations/auto-pair-typst";
+import { autoPairTypstInput } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
 import { headingTracker } from "./typst-decorations/heading-tracker";
 import { annotationTracker } from "./typst-decorations/annotation-tracker";
@@ -611,7 +611,6 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     autoPairTypstInput,
     markdownShortcuts,
     keymap.of([
-      autoPairTypstBackspace,
       ...typstKeymap,
       ...closeBracketsKeymap,
       ...defaultKeymap,
