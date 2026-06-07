@@ -69,6 +69,16 @@ export function LanguageSettingsSection() {
         options={AVAILABLE_LOCALES.map((l) => ({ value: l.code, label: l.nativeName }))}
         onChange={setUiLocale}
       />
+      {/* Only meaningful for a non-English UI language: English is Typst's
+          default, so there is nothing to inject. */}
+      <Show when={settings.appearance.ui_locale !== "en"}>
+        <SettingToggle
+          label={trans("settings.language.typesetting.label")}
+          description={trans("settings.language.typesetting.description")}
+          value={settings.appearance.use_locale_typesetting}
+          onChange={(v) => updateSetting("appearance", "use_locale_typesetting", v)}
+        />
+      </Show>
       <SettingToggle
         label={trans("settings.spellcheck.label")}
         description={linkifyTerm(trans("settings.spellcheck.description"), "Hunspell", HUNSPELL_URL)}

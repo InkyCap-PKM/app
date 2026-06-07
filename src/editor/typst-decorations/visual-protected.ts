@@ -17,15 +17,41 @@ export function isImportLine(text: string): boolean {
 }
 
 /**
+ * True for a document-language directive line — a `#set text(...)` whose
+ * arguments are *exclusively* `lang:` and/or `region:`, e.g.
+ * `#set text(lang: "fr", region: "CA")`.
+ *
+ * This is locale typesetting machinery: a note whose prose is French (German,
+ * …) carries it so Typst applies the right hyphenation, punctuation spacing,
+ * and smart quotes. It is boilerplate the author rarely edits — analogous to
+ * the notebox `#import` — so the visual editor folds it into the hidden,
+ * locked leading-preamble block rather than surfacing it as raw source or a
+ * "document setup" chip. (It stays fully visible and editable in source mode.)
+ *
+ * A `#set text(font: …)` — or any other key alongside lang/region — is genuine
+ * document setup and deliberately does NOT match: it belongs in the visible
+ * setup chip. The leading `#` is optional so this also matches a bare `SetRule`
+ * syntax node (whose `#` is a separate token).
+ */
+export function isLeadingLocaleDirective(text: string): boolean {
+  const m = /^#?set\s+text\s*\((.*)\)\s*$/.exec(text.trim());
+  if (!m) return false;
+  const parts = m[1].split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (parts.length === 0) return false;
+  return parts.every((arg) => /^(lang|region)\s*:/.test(arg));
+}
+
+/**
  * Byte ranges (line + trailing newline) of the leading run of `#import`
  * lines at the very top of the note — the notebox import plus any package
- * imports a user or a template added. Blank lines inside the run are
- * tolerated; the run ends at the first line that is neither blank nor an
- * import (typically the `#note(...)` properties call or the first body
- * line). These are hidden and locked in the visual editor so the preamble
- * reads as a clean document, while the source editor leaves them fully
- * visible and editable (only the notebox import is also locked in source,
- * via `importLineGuard`).
+ * imports a user or a template added, and a leading document-language
+ * directive (`#set text(lang: …, region: …)`) when present. Blank lines
+ * inside the run are tolerated; the run ends at the first line that is
+ * neither blank, an import, nor a locale directive (typically the
+ * `#note(...)` properties call or the first body line). These are hidden
+ * and locked in the visual editor so the preamble reads as a clean
+ * document, while the source editor leaves them fully visible and editable
+ * (only the notebox import is also locked in source, via `importLineGuard`).
  */
 export function computePreambleImportRanges(state: EditorState): ProtectedRange[] {
   const ranges: ProtectedRange[] = [];
@@ -33,7 +59,10 @@ export function computePreambleImportRanges(state: EditorState): ProtectedRange[
   for (let i = 1; i <= state.doc.lines; i++) {
     const line = state.doc.line(i);
     if (line.text.trim() === "") continue; // blank gap within the preamble
-    if (!isImportLine(line.text)) break;   // first real content ends the run
+    // The run ends at the first line that is neither an import nor the
+    // document-language directive (`#set text(lang/region)`) — i.e. real
+    // content such as `#note(...)`.
+    if (!isImportLine(line.text) && !isLeadingLocaleDirective(line.text)) break;
     const to = line.to < docLen ? Math.min(line.to + 1, docLen) : line.to;
     ranges.push({ from: line.from, to });
   }

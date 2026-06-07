@@ -53,6 +53,48 @@ pub fn import_line() -> String {
     "#import \"/.inkycap/notebox.typ\": *".to_string()
 }
 
+/// Build the document-language typesetting directive for a UI locale, or
+/// `None` when none is warranted (English — Typst's default needs no directive
+/// — or an unparseable code).
+///
+/// `ui_locale` is a BCP-47 code: the first subtag is the language, and a
+/// trailing two-letter subtag is taken as the ISO 3166-1 region (script
+/// subtags like `Hant` are skipped). So `"fr-CA"` → `#set text(lang: "fr",
+/// region: "CA")`, `"de"` → `#set text(lang: "de")`, `"zh-Hant-TW"` →
+/// `lang: "zh", region: "TW"`.
+///
+/// Emitted into a newly created note (after the `#import` line) when the user
+/// has "Use corresponding language typesetting" enabled for a non-English UI
+/// locale, so French/German/… prose hyphenates and spaces correctly. The
+/// visual editor folds this line into the hidden leading-preamble machinery,
+/// so a localized note reads like an English one there.
+pub fn locale_typesetting_directive(ui_locale: &str) -> Option<String> {
+    let subtags: Vec<&str> = ui_locale
+        .trim()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let lang = subtags.first()?.to_ascii_lowercase();
+    if lang.is_empty() || lang == "en" {
+        return None;
+    }
+    // Region: a trailing two-letter subtag (alpha-2). Searching from the end
+    // skips an intervening script subtag (e.g. `zh-Hant-TW` → `TW`, not `Hant`).
+    let region = subtags
+        .iter()
+        .skip(1)
+        .rev()
+        .find(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()));
+    Some(match region {
+        Some(r) => format!(
+            "#set text(lang: \"{}\", region: \"{}\")",
+            lang,
+            r.to_ascii_uppercase()
+        ),
+        None => format!("#set text(lang: \"{}\")", lang),
+    })
+}
+
 /// The relative path of the embedded library inside a notebox.
 pub fn library_relpath() -> &'static str {
     ".inkycap/notebox.typ"
@@ -325,6 +367,41 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn locale_directive_derives_lang_and_region() {
+        assert_eq!(
+            locale_typesetting_directive("fr-CA").as_deref(),
+            Some("#set text(lang: \"fr\", region: \"CA\")"),
+        );
+    }
+
+    #[test]
+    fn locale_directive_handles_lang_only_and_script_subtag() {
+        assert_eq!(
+            locale_typesetting_directive("de").as_deref(),
+            Some("#set text(lang: \"de\")"),
+        );
+        // A script subtag (`Hant`) is skipped; the trailing alpha-2 is the region.
+        assert_eq!(
+            locale_typesetting_directive("zh-Hant-TW").as_deref(),
+            Some("#set text(lang: \"zh\", region: \"TW\")"),
+        );
+        // A non-alpha-2 trailing subtag (UN M.49 region code) yields lang only.
+        assert_eq!(
+            locale_typesetting_directive("es-419").as_deref(),
+            Some("#set text(lang: \"es\")"),
+        );
+    }
+
+    #[test]
+    fn locale_directive_is_none_for_english_or_empty() {
+        // English is Typst's default — no directive needed.
+        assert_eq!(locale_typesetting_directive("en"), None);
+        assert_eq!(locale_typesetting_directive("en-US"), None);
+        assert_eq!(locale_typesetting_directive(""), None);
+        assert_eq!(locale_typesetting_directive("   "), None);
+    }
 
     #[test]
     fn scaffold_writes_canonical_file() {

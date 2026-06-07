@@ -335,6 +335,14 @@ export interface AppearanceSettings {
    * does not affect note content.
    */
   ui_locale: string;
+  /**
+   * When true, a note created under a non-English UI locale gets a
+   * `#set text(lang: …, region: …)` directive injected after its `#import`
+   * line (derived from `ui_locale`) for correct hyphenation, punctuation
+   * spacing, and smart quotes. The one place the UI locale touches note
+   * content; no effect when `ui_locale` is "en". Default true.
+   */
+  use_locale_typesetting: boolean;
 }
 
 /** Typst-facing document defaults — text size and page size. User-global

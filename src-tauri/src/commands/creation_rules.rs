@@ -138,12 +138,21 @@ pub async fn execute_creation_rule(
     // auto-property, plus this notebox's "New note location" preference —
     // that's the fallback when the rule itself has no target folder set
     // (e.g. the built-in New Note).
-    let (zid_enabled, zid_pattern, locale) = {
+    let (zid_enabled, zid_pattern, locale, locale_typesetting) = {
         let settings = state.settings.read().await;
+        // A note authored under a non-English UI locale gets a document-language
+        // directive when the user has opted in — derived once here so the
+        // settings lock isn't reacquired mid-assembly.
+        let locale_typesetting = if settings.appearance.use_locale_typesetting {
+            crate::notebox_package::locale_typesetting_directive(&settings.appearance.ui_locale)
+        } else {
+            None
+        };
         (
             settings.files.zettelkasten_enabled,
             settings.files.zid_pattern.clone(),
             scaffolds::chrono_locale(&settings.appearance.ui_locale),
+            locale_typesetting,
         )
     };
     let fallback_folder = {
@@ -226,6 +235,24 @@ pub async fn execute_creation_rule(
         }
         if cursor_offset.is_none() {
             cursor_offset = Some(prefix_len);
+        }
+    }
+
+    // Inject the document-language directive (`#set text(lang/region)`) right
+    // after the notebox import, so prose in the UI language is typeset with the
+    // correct hyphenation, punctuation spacing, and smart quotes. `None` for an
+    // English locale or when the user disabled locale typesetting. It sits in
+    // the leading import machinery, which the visual editor hides.
+    if let Some(directive) = &locale_typesetting {
+        if let Some(pos) = content.find('\n') {
+            let insert_pos = pos + 1;
+            let line = format!("{directive}\n");
+            content.insert_str(insert_pos, &line);
+            if let Some(ref mut offset) = cursor_offset {
+                if *offset >= insert_pos {
+                    *offset += line.len();
+                }
+            }
         }
     }
 

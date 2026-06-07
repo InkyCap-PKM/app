@@ -40,7 +40,7 @@ import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
-import { computePreambleImportRanges, commentHideRange, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
+import { computePreambleImportRanges, isLeadingLocaleDirective, commentHideRange, createProtectedRangesField, createProtectedCursorFilter, createProtectedChangeFilter, externalReload } from "./visual-protected";
 export { externalReload } from "./visual-protected";
 import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
@@ -340,6 +340,7 @@ export function findStylePreamble(state: EditorState): StylePreamble | null {
   let firstFrom = -1;
   let lastTo = -1;
   let count = 0;
+  let sawNote = false;
   do {
     const name = cur.name;
     if (PREAMBLE_TRANSPARENT_NODES.has(name)) continue;
@@ -349,6 +350,17 @@ export function findStylePreamble(state: EditorState): StylePreamble | null {
     // expandable chip rather than showing raw code. They stay fully visible and
     // editable in the source editor.
     if (name === "SetRule" || name === "ShowRule" || name === "LetBinding") {
+      // A leading document-language directive (`#set text(lang/region)`) before
+      // the `#note(...)` is locale typesetting machinery, not document setup:
+      // it's hidden with the imports (see `computePreambleImportRanges`), so it
+      // must neither start nor join this collapsible chip — otherwise it forms a
+      // lone chip ahead of the note and strands the real setup block that
+      // follows it. After the note (or once a real rule has anchored the run) a
+      // lang change is ordinary setup and folds normally.
+      if (firstFrom < 0 && !sawNote && name === "SetRule"
+          && isLeadingLocaleDirective(state.doc.sliceString(cur.from, cur.to))) {
+        continue;
+      }
       if (firstFrom < 0) firstFrom = cur.from;
       lastTo = cur.to;
       count++;
@@ -359,7 +371,7 @@ export function findStylePreamble(state: EditorState): StylePreamble | null {
       if (name === "ModuleImport") continue;
       if (name === "FuncCall") {
         const head = state.doc.sliceString(cur.from, Math.min(cur.from + 8, cur.to));
-        if (/^note\b/.test(head)) continue;
+        if (/^note\b/.test(head)) { sawNote = true; continue; }
       }
       return null; // some other leading construct — no collapsible preamble
     }

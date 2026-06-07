@@ -135,6 +135,15 @@ pub struct AppearanceSettings {
     /// fallback for any code without a shipped translation. Affects UI chrome
     /// only, not note content or how anything is stored.
     pub ui_locale: String,
+    /// When true, a newly created note authored under a non-English UI locale
+    /// gets a `#set text(lang: …, region: …)` directive injected after its
+    /// `#import` line, derived from `ui_locale` (e.g. "fr-CA" → lang "fr",
+    /// region "CA"). This gives correct hyphenation, French punctuation
+    /// spacing, and smart quotes for prose in that language. It is the only
+    /// place the UI locale touches note *content*; disable it to keep new
+    /// notes language-neutral (English / Typst default) regardless of UI
+    /// language. No effect when `ui_locale` is "en". Default true.
+    pub use_locale_typesetting: bool,
 }
 
 impl Default for AppearanceSettings {
@@ -149,6 +158,7 @@ impl Default for AppearanceSettings {
             file_tree_sort: "name-asc".to_string(),
             date_format: "D MMM YYYY".to_string(),
             ui_locale: "en".to_string(),
+            use_locale_typesetting: true,
         }
     }
 }

@@ -6,6 +6,8 @@
   "settings.appearance.theme.option.system": "Follow system",
   "settings.language.ui.label": "Interface language",
   "settings.language.ui.description": "Language used for InkyCap's menus, buttons, and panels. Your note content is unaffected.",
+  "settings.language.typesetting.label": "Use corresponding language typesetting",
+  "settings.language.typesetting.description": "Set new notes to the interface language so prose is hyphenated, spaced, and quoted by that language's typographic rules. Adds a #set text(lang, region) line after the import. Existing notes are unchanged; turn this off to keep new notes language-neutral.",
   "sort.label": "Sort",
   "sort.name.asc": "Name (A – Z)",
   "sort.name.desc": "Name (Z – A)",
