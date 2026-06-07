@@ -63,6 +63,7 @@ const tablePasteHandler = EditorView.domEventHandlers({
       columns: Array(colCount).fill("auto"),
       align: null,
       rowSizes: null,
+      extraArgs: [],
       header: null,
       rows: grid.map(r => {
         const cells: TableCell[] = [];

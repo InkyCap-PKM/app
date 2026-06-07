@@ -21,6 +21,14 @@ export interface TableData {
    * row edge. `null` when the table has no `rows:` argument at all.
    */
   rowSizes: string[] | null;
+  /**
+   * Named arguments the widget doesn't model structurally (`stroke`, `inset`,
+   * `fill`, `gutter`, a non-array `align`/`rows`, …), kept verbatim in source
+   * order. They are opaque — InkyCap never interprets the value, only preserves
+   * and re-emits it — so a styled table renders as an editable widget and still
+   * round-trips losslessly through the visual editor. Empty when there are none.
+   */
+  extraArgs: { key: string; value: string }[];
   header: TableCell[] | null;
   rows: TableCell[][];
   /** Full source text of the #table(...) call */
@@ -36,8 +44,9 @@ export interface TableData {
  * - Optional `align:` as an explicit array
  * - Optional `table.header(...)` as the first positional arg
  * - All remaining positional args are `[...]` content blocks
- * - No other named args (no `fill:`, `stroke:`, `inset:`, etc. — those
- *   are not blocking for v1, we'll relax later if needed)
+ * - Any other named arg (`stroke`, `inset`, `fill`, `gutter`, a non-array
+ *   `align`/`rows`, …) is preserved verbatim on `extraArgs` rather than
+ *   blocking the widget — see `TableData.extraArgs`.
  * - No `table.cell(...)`, `table.hline(...)`, spreads, or computed content
  */
 export function parseCanonicalTable(text: string): TableData | null {
@@ -61,27 +70,34 @@ export function parseCanonicalTable(text: string): TableData | null {
   let columns: string[] | null = null;
   let align: string[] | null = null;
   let rowSizes: string[] | null = null;
+  const extraArgs: { key: string; value: string }[] = [];
   let header: TableCell[] | null = null;
   const rows: TableCell[][] = [];
   let currentRow: TableCell[] = [];
 
   for (const arg of args) {
     if (arg.type === "named") {
-      if (arg.key === "columns") {
+      const key = arg.key as string;
+      if (key === "columns") {
         columns = parseColumnsArg(arg.value);
+        // `columns` defines the grid; if it isn't an array/integer we can't
+        // build cells, so this one genuinely blocks the widget.
         if (!columns) return null;
-      } else if (arg.key === "align") {
+      } else if (key === "align") {
+        // Model an explicit `(…)` array per-column; preserve anything else
+        // (a bare `center`, a function, …) verbatim so it still round-trips.
         align = parseArrayLiteral(arg.value);
-        if (!align) return null;
-      } else if (arg.key === "rows") {
-        // Accept an explicit `(…)` array of row heights. A bare length or
-        // integer shorthand applies cyclically in Typst and can't be mapped
-        // to per-row handles, so treat those as non-canonical.
+        if (!align) extraArgs.push({ key, value: arg.value });
+      } else if (key === "rows") {
+        // Accept an explicit `(…)` array of row heights for per-row drag
+        // handles; a bare length or integer applies cyclically in Typst and
+        // can't be mapped to handles, so preserve it verbatim instead.
         rowSizes = parseArrayLiteral(arg.value);
-        if (!rowSizes) return null;
+        if (!rowSizes) extraArgs.push({ key, value: arg.value });
       } else {
-        // Unknown named arg — non-canonical
-        return null;
+        // Any other named arg (stroke, inset, fill, gutter, …) is opaque
+        // styling we keep verbatim and re-emit on serialize.
+        extraArgs.push({ key, value: arg.value });
       }
     } else {
       // Positional arg
@@ -130,6 +146,7 @@ export function parseCanonicalTable(text: string): TableData | null {
     columns,
     align,
     rowSizes,
+    extraArgs,
     header,
     rows: properRows,
     sourceText: text,
@@ -143,6 +160,13 @@ export function serializeTable(data: TableData): string {
   const lines: string[] = [];
   lines.push("#table(");
   lines.push(`  columns: (${data.columns.join(", ")}),`);
+
+  // Re-emit preserved styling args (stroke, inset, fill, …) right after
+  // `columns`, near the top where they conventionally sit, so styled tables
+  // round-trip losslessly through an edit.
+  for (const { key, value } of data.extraArgs ?? []) {
+    lines.push(`  ${key}: ${value},`);
+  }
 
   // Only emit `rows:` when at least one row carries an explicit override —
   // an all-`auto` array is redundant noise in the source.
