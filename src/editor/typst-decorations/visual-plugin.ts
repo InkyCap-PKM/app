@@ -1266,7 +1266,7 @@ function handleFuncCall(
       if (url) {
         decos.push(
           Decoration.replace({
-            widget: new LinkWidget(url, display ?? ""),
+            widget: new LinkWidget(url, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight),
             inclusiveStart: false,
             inclusiveEnd: false,
           }).range(from, to),
@@ -1280,7 +1280,7 @@ function handleFuncCall(
       if (label) {
         decos.push(
           Decoration.replace({
-            widget: new LabelLinkWidget(label, display ?? ""),
+            widget: new LabelLinkWidget(label, display ?? "", formatting.bold, formatting.italic, formatting.strike, formatting.highlight),
             inclusiveStart: false,
             inclusiveEnd: false,
           }).range(from, to),
