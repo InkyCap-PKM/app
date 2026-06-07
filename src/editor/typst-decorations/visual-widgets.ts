@@ -86,6 +86,46 @@ export class StylePreambleWidget extends WidgetType {
 }
 
 /**
+ * Pill for a standalone `#set` / `#show` rule that appears *after* content. A
+ * contiguous *leading* run of such rules is the document style preamble and
+ * collapses into {@link StylePreambleWidget} instead; this widget is for the
+ * local configuration a writer drops mid-document — typically the `#set text(…)`
+ * / `#set par(…)` / `#set page(…)` calls inserted from the `/` Style menu.
+ * Without it those rules render as raw markup; here they get the same pill
+ * affordance as every other Typst call: a labelled chip (the rule keyword plus
+ * its target, e.g. `set text`), left-click to reveal the source for editing
+ * (simple single-line rules) or open the menu, and right-click / Enter for the
+ * standard super-menu (Edit source / Open in source editor / Copy / Duplicate /
+ * Delete). `from`/`to` bound the rule including its leading `#`; `raw` is the
+ * rule's source, shown on hover.
+ */
+export class SetRuleWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly label: string,
+    readonly raw: string,
+  ) { super(); }
+  eq(other: SetRuleWidget) {
+    return this.from === other.from && this.to === other.to
+      && this.label === other.label && this.raw === other.raw;
+  }
+  toDOM(view: EditorView) {
+    return buildPillButton(
+      this.label,
+      view,
+      () => ({
+        funcName: this.label,
+        callFrom: this.from,
+        callTo: this.to,
+      }),
+      { label: this.label, title: this.raw },
+    );
+  }
+  ignoreEvent() { return true; }
+}
+
+/**
  * Pill for a `#sym.*` named-symbol reference (a `FieldAccess` code expression,
  * e.g. `#sym.arrow.r`). Renders the resolved glyph when the symbol is in the
  * curated set, otherwise the raw dotted name — either way clearer than the raw
