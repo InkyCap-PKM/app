@@ -559,7 +559,8 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   // They stay visible/editable in the source editor; here they're collapsed
   // away so the visual editor opens on the document body. (Locking is handled
   // by computeProtectedRanges, which covers the same ranges.)
-  for (const r of computePreambleImportRanges(state)) {
+  const preambleImportRanges = computePreambleImportRanges(state);
+  for (const r of preambleImportRanges) {
     if (!onlyRanges || nodeOverlapsRanges(r.from, r.to, onlyRanges)) {
       decos.push(hide.range(r.from, r.to));
     }
@@ -814,6 +815,13 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             // menu — reaches here and gets the same pill affordance as every
             // other Typst call instead of rendering as raw markup.
             if (stylePreamble && posWithinPreamble(node.from, stylePreamble)) return false;
+            // A leading document-language directive (`#set text(lang/region)`)
+            // is already collapsed with the imports above (see
+            // computePreambleImportRanges) — it's preamble machinery, not a
+            // body style change, so it must not also surface as a pill here. A
+            // `#set text(lang: …)` placed later in the body is genuine style and
+            // falls outside these ranges, so it still gets its pill.
+            if (preambleImportRanges.some((r) => node.from >= r.from && node.from < r.to)) return false;
             const ruleFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")
               ? node.from - 1 : node.from;
             // Reveal raw source when the cursor is on the rule's line or the
