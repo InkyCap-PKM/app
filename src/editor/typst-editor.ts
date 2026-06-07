@@ -120,7 +120,7 @@ function typstLanguage(): Extension {
   );
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
-import { typstVisualMode, autoExpandFacet, protectedRangesField, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
+import { typstVisualMode, autoExpandFacet, protectedRangesField, findStylePreamble, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
 import { verseFocusRouter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
 import { commandPalette } from "./typst-decorations/command-palette";
@@ -939,13 +939,24 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       view.focus();
     },
     focusAtContent() {
+      const doc = view.state.doc;
       const ranges = view.state.field(protectedRangesField, false);
       let pos = 0;
       if (ranges && ranges.length > 0) {
         pos = Math.max(...ranges.map((r) => r.to));
       }
-      pos = Math.min(pos, view.state.doc.length);
-      view.dispatch({ selection: { anchor: pos } });
+      // Also skip past the collapsible style/code preamble (#set/#show/#let),
+      // whose range isn't in protectedRangesField. Otherwise the cursor lands on
+      // it and the preamble chip auto-expands the moment a note opens. (`.to` is
+      // a line end, so +1 steps onto the next line.)
+      const preamble = findStylePreamble(view.state);
+      if (preamble) pos = Math.max(pos, Math.min(preamble.to + 1, doc.length));
+      pos = Math.min(pos, doc.length);
+      // Snap to the first non-blank line at/after `pos` so the cursor never sits
+      // on the (now-hidden) preamble or a leading blank line.
+      let lineNo = doc.lineAt(pos).number;
+      while (lineNo < doc.lines && doc.line(lineNo).text.trim() === "") lineNo++;
+      view.dispatch({ selection: { anchor: doc.line(lineNo).from } });
       view.focus();
     },
     setCursor(offset: number) {

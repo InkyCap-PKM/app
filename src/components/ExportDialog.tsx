@@ -429,7 +429,7 @@ const ExportDialog: Component = () => {
 
           <div class="export-dialog__footer">
             <button class="btn btn--secondary" onClick={close}>
-              {t("common.cancel")}
+              {success() ? t("common.close") : t("common.cancel")}
             </button>
             <button
               class="btn btn--primary"

@@ -136,7 +136,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Page break", labelKey: "slash.pageBreak", category: "Insert", insert: '#pagebreak()', cursorOffset: 12 },
   { label: "Line break", labelKey: "slash.lineBreak", category: "Insert", insert: '#linebreak()', cursorOffset: 12 },
   { label: "Lorem ipsum", labelKey: "slash.loremIpsum", category: "Insert", insert: '#lorem(50)', cursorOffset: 7 },
-  { label: "Figure", labelKey: "slash.figure", category: "Insert", insert: '#figure(\n  ${sel},\n  caption: [],\n)', cursorOffset: 11 },
+  { label: "Figure", labelKey: "slash.figure", category: "Insert", insert: '#figure(\n  [${sel}],\n  caption: [],\n)', cursorOffset: 12, expandOnInsert: true },
   { label: "Align", labelKey: "slash.align", category: "Insert", insert: '#align(center)[${sel}]', cursorOffset: 15 },
   { label: "Box", labelKey: "slash.box", category: "Insert", insert: '#box[${sel}]', cursorOffset: 5 },
   { label: "Rect", labelKey: "slash.rect", category: "Insert", insert: '#rect[${sel}]', cursorOffset: 6 },

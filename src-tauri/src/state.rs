@@ -94,6 +94,12 @@ pub struct NoteboxSession {
     /// Unix timestamp of the last corpus-stats save. Same debounce as the
     /// search index — both are caches reconciled against file mtimes on open.
     last_corpus_save: AtomicI64,
+    /// True when this session's open notebox is the bundled documentation
+    /// notebox — a special, help-only notebox. Drives ephemeral editing
+    /// (content writes are no-ops, structural mutations are refused) and the
+    /// documentation-specific font cascade. Set on every `open_notebox` so it
+    /// reflects the currently-open notebox, not a previous one.
+    is_documentation: AtomicBool,
 }
 
 impl NoteboxSession {
@@ -115,7 +121,25 @@ impl NoteboxSession {
             metadata_cache,
             last_search_save: AtomicI64::new(0),
             last_corpus_save: AtomicI64::new(0),
+            is_documentation: AtomicBool::new(false),
         }
+    }
+
+    /// Mark (or unmark) this session as serving the bundled documentation
+    /// notebox. Called by `open_notebox` once it knows which notebox the window
+    /// is opening.
+    pub fn set_documentation(&self, value: bool) {
+        self.is_documentation
+            .store(value, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// True when this session's open notebox is the bundled documentation
+    /// notebox. Mutating commands consult this: content writes become no-ops
+    /// (edits are kept in the editor for the session but never persisted) and
+    /// structural mutations are refused with [`InkyCapError::DocumentationReadOnly`].
+    pub fn is_documentation(&self) -> bool {
+        self.is_documentation
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Fast notebox open: sets `notebox_root`, `storage`, lists collection files, clears

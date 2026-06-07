@@ -40,6 +40,32 @@ export function computePreambleImportRanges(state: EditorState): ProtectedRange[
   return ranges;
 }
 
+/**
+ * The range to collapse for a Typst comment node. When the comment is the only
+ * thing on its line(s) it swallows the whole line including leading indentation
+ * and the trailing newline, so a full-line comment leaves no blank gap in the
+ * visual editor; a trailing comment (`code // note`) collapses only the comment
+ * span. Used for both hiding (visual-plugin) and locking (here) so the two agree.
+ */
+export function commentHideRange(
+  state: EditorState,
+  from: number,
+  to: number,
+): ProtectedRange {
+  const docLen = state.doc.length;
+  const startLine = state.doc.lineAt(from);
+  const endLine = state.doc.lineAt(to);
+  const beforeBlank = state.doc.sliceString(startLine.from, from).trim() === "";
+  const afterBlank = state.doc.sliceString(to, endLine.to).trim() === "";
+  let f = from;
+  let t = to;
+  if (beforeBlank) f = startLine.from;
+  if (beforeBlank && afterBlank) {
+    t = endLine.to < docLen ? Math.min(endLine.to + 1, docLen) : endLine.to;
+  }
+  return { from: f, to: t };
+}
+
 export function computeProtectedRanges(
   state: EditorState,
   expandedPos: number | null,
@@ -101,6 +127,15 @@ export function computeProtectedRanges(
     from: 0,
     to: docLen,
     enter(node) {
+      // Typst comments are source-only — hidden and locked in the visual
+      // editor. (These protected-range extensions are visual-mode-only, so the
+      // source editor still shows and edits comments normally.) Syntax-tree
+      // based, so a `//` line inside a raw/code block — not a comment node —
+      // stays visible as example content.
+      if (node.name === "LineComment" || node.name === "BlockComment") {
+        ranges.push(commentHideRange(state, node.from, node.to));
+        return;
+      }
       if (node.name !== "FuncCall") return;
       if (node.from > docLen || node.to > docLen) return;
       const text = state.doc.sliceString(node.from, node.to);

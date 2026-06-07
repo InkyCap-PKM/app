@@ -24,6 +24,9 @@ pub async fn copy_to_attachments(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     use base64::Engine;
 
     let data = base64::engine::general_purpose::STANDARD
@@ -114,6 +117,9 @@ pub async fn paste_clipboard_to_attachments(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     // 1. File references — "copy a file in the file manager, then paste".
     let uris = read_clipboard_file_paths(app.clone()).await?;
     if !uris.is_empty() {
@@ -425,6 +431,9 @@ pub async fn copy_path_to_attachments(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let src = PathBuf::from(&source_path);
     // SEC-1 gate (audit 2026-05-10): the path must come from a recent OS
     // drop event registered by the run-loop listener in `lib.rs` (which
@@ -473,6 +482,9 @@ pub async fn pick_and_upload_to_attachments(
     window: tauri::WebviewWindow,
 ) -> Result<Vec<String>, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     use tauri_plugin_dialog::DialogExt;
 
     let app_for_picker = app.clone();
@@ -617,6 +629,9 @@ pub async fn create_folder(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
@@ -649,6 +664,36 @@ fn is_note_file(path: &std::path::Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("typ")
 }
 
+/// Resolve the on-disk file name for a rename while preserving the original
+/// extension.
+///
+/// The previous heuristic re-appended the old extension only when the new name
+/// contained no dot. That mis-fired for note names that legitimately carry a
+/// dot — renaming to "3.1 - Plan" looked like the user had typed their own
+/// extension, so `.typ` was dropped, the file became extensionless, and it
+/// vanished from the (`.typ`-filtered) tree. Re-append the original extension
+/// unless the new name already ends with that exact extension. A deliberate
+/// side effect: you can no longer change a file's extension by renaming, which
+/// is the right call for a notes app — the on-disk type must not silently
+/// change out from under the content.
+fn preserve_extension(new_name: String, old: &std::path::Path, is_dir: bool) -> String {
+    if is_dir {
+        return new_name;
+    }
+    let Some(ext) = old.extension().and_then(|e| e.to_str()) else {
+        return new_name;
+    };
+    let suffix = format!(".{ext}");
+    if new_name
+        .to_ascii_lowercase()
+        .ends_with(&suffix.to_ascii_lowercase())
+    {
+        new_name
+    } else {
+        format!("{new_name}{suffix}")
+    }
+}
+
 /// Rename a file (simple rename, no link updates).
 #[tauri::command]
 pub async fn rename_file(
@@ -658,6 +703,9 @@ pub async fn rename_file(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
@@ -665,15 +713,7 @@ pub async fn rename_file(
         .parent()
         .ok_or_else(|| InkyCapError::InvalidPath("No parent directory".to_string()))?;
 
-    let new_name_with_ext = if !is_dir && old.extension().is_some() && !new_name.contains('.') {
-        format!(
-            "{}.{}",
-            new_name,
-            old.extension().unwrap().to_string_lossy()
-        )
-    } else {
-        new_name
-    };
+    let new_name_with_ext = preserve_extension(new_name, &old, is_dir);
 
     let new_path = parent.join(&new_name_with_ext);
     if storage.exists(&new_path).await {
@@ -712,6 +752,9 @@ pub async fn rename_and_update_links(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let old = sanitize_notebox_arg(&old_path)?;
     let is_dir = storage.resolve_path(&old)?.is_dir();
@@ -720,15 +763,7 @@ pub async fn rename_and_update_links(
         .parent()
         .ok_or_else(|| InkyCapError::InvalidPath("No parent directory".to_string()))?;
 
-    let new_name_with_ext = if !is_dir && old.extension().is_some() && !new_name.contains('.') {
-        format!(
-            "{}.{}",
-            new_name,
-            old.extension().unwrap().to_string_lossy()
-        )
-    } else {
-        new_name.clone()
-    };
+    let new_name_with_ext = preserve_extension(new_name, &old, is_dir);
 
     let new_path = parent.join(&new_name_with_ext);
     if storage.exists(&new_path).await {
@@ -786,6 +821,9 @@ pub async fn move_file(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
@@ -847,6 +885,9 @@ pub async fn move_folder(
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
@@ -914,6 +955,9 @@ pub async fn delete_file(
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
@@ -931,6 +975,9 @@ pub async fn delete_folder(
     window: tauri::WebviewWindow,
 ) -> Result<(), InkyCapError> {
     let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
     let storage = session.get_storage().await?;
     let path_buf = sanitize_notebox_arg(&path)?;
 
@@ -1186,14 +1233,14 @@ pub(crate) async fn rewrite_backlinks_for_rename(
     storage: &std::sync::Arc<crate::storage::local::LocalNoteboxStorage>,
     session: &NoteboxSession,
 ) -> Result<(), InkyCapError> {
-    let old_stem = match old_path.file_stem() {
-        Some(s) => s.to_string_lossy().into_owned(),
-        None => return Ok(()),
-    };
-    let new_stem = match new_path.file_stem() {
-        Some(s) => s.to_string_lossy().into_owned(),
-        None => return Ok(()),
-    };
+    // `note_stem`, not `file_stem()`: the latter truncates "3.5 - Name.typ" at
+    // the first dot to "3", which both fails to match real backlinks and, when
+    // used as the replacement, rewrites every wikilink to a bogus "3".
+    let old_stem = crate::link_index::note_stem(old_path);
+    let new_stem = crate::link_index::note_stem(new_path);
+    if old_stem.is_empty() || new_stem.is_empty() {
+        return Ok(());
+    }
     if old_stem.eq_ignore_ascii_case(&new_stem) {
         return Ok(());
     }

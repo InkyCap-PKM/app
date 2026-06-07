@@ -52,6 +52,14 @@ pub enum InkyCapError {
     /// failure to report).
     #[error("Cancelled")]
     Cancelled,
+
+    /// A structural mutation (create / rename / move / delete / attach) was
+    /// attempted in the bundled documentation notebox, which is read-only on
+    /// disk. Content edits don't error — they're silently kept for the session
+    /// but never persisted — but file-structure changes are refused outright so
+    /// the shipped manual stays intact.
+    #[error("The documentation notebox is read-only; changes are not saved")]
+    DocumentationReadOnly,
 }
 
 impl InkyCapError {
@@ -77,6 +85,7 @@ impl InkyCapError {
             InkyCapError::BadRequest(_) => "bad-request",
             InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
+            InkyCapError::DocumentationReadOnly => "documentation-read-only",
         }
     }
 
@@ -98,7 +107,9 @@ impl InkyCapError {
             | InkyCapError::Git(s)
             | InkyCapError::BadRequest(s)
             | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),
-            InkyCapError::NoteboxNotOpen | InkyCapError::Cancelled => None,
+            InkyCapError::NoteboxNotOpen
+            | InkyCapError::Cancelled
+            | InkyCapError::DocumentationReadOnly => None,
         }
     }
 }

@@ -224,7 +224,13 @@ const App: Component = () => {
         // (the "open in a new window" actions pass both notebox + path).
         if (fileParam) {
           const title = fileParam.split(/[/\\]/).pop() ?? fileParam;
-          openTab({ type: "file", title, path: fileParam }, { forceNewTab: true });
+          // Reuse the window's initial empty tab rather than forcing a second
+          // one (which left a stray "New tab" beside the opened file). Only
+          // force a new tab if the active tab already holds content.
+          openTab(
+            { type: "file", title, path: fileParam },
+            { forceNewTab: getActiveTab()?.type !== "empty" },
+          );
         }
       } catch (e) {
         console.warn("Window failed to open its requested notebox:", e);

@@ -150,6 +150,17 @@ pub async fn open_notebox(
     // shape the rest of the backend stores.
     let canonical = crate::storage::path::canonicalize_root(&notebox_path)?;
 
+    // Flag the bundled documentation notebox as a special, help-only session:
+    // content edits are kept for the session but never written to disk, and
+    // structural mutations are refused (see the mutating commands). Set on every
+    // open so a window reused for a different notebox reverts to a normal,
+    // writable session.
+    let is_docs = is_docs_notebox(&path);
+    if is_docs {
+        log::info!("documentation notebox opened: ephemeral edits + docs fonts active");
+    }
+    session.set_documentation(is_docs);
+
     // One notebox per window: a notebox open in two windows would let two
     // editors over the same file silently overwrite each other. If it's
     // already open elsewhere, refuse — the frontend focuses that window
@@ -781,23 +792,23 @@ pub async fn get_notebox_info(
     }))
 }
 
-/// Absolute path of the bundled system documentation notebox. Excluded from
-/// the registry menus — it's reachable only from the F1 Help panel.
-fn docs_notebox_root() -> std::path::PathBuf {
-    crate::app_paths::config_dir().join("InkyCap-Documentation")
-}
-
-/// True if `path` refers to the system documentation notebox (compared
-/// canonically when both resolve, else by raw path).
+/// True if `path` refers to a system documentation notebox — the English
+/// `InkyCap-Documentation` or any locale variant (`InkyCap-Documentation-fr-CA`,
+/// …). Matched structurally: a directory sitting directly under the config dir
+/// whose name is (or is prefixed by) `InkyCap-Documentation`. This recognizes
+/// every shipped manual, not just the English one, so the special-case
+/// behaviour (ephemeral edits, docs fonts) applies to the localized docs too.
 fn is_docs_notebox(path: &str) -> bool {
     let candidate = std::path::PathBuf::from(path);
-    let docs = docs_notebox_root();
-    match (
-        std::fs::canonicalize(&candidate),
-        std::fs::canonicalize(&docs),
-    ) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => candidate == docs,
+    let canon = std::fs::canonicalize(&candidate).unwrap_or(candidate);
+    let config_dir = crate::app_paths::config_dir();
+    let config = std::fs::canonicalize(&config_dir).unwrap_or(config_dir);
+    match (canon.parent(), canon.file_name().and_then(|n| n.to_str())) {
+        (Some(parent), Some(name)) => {
+            parent == config
+                && (name == "InkyCap-Documentation" || name.starts_with("InkyCap-Documentation-"))
+        }
+        _ => false,
     }
 }
 

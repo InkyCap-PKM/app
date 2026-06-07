@@ -1,9 +1,27 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as ipc from "./ipc";
 
 /** The fixed window label for the documentation window — reused so a second
  *  open focuses the existing window rather than spawning a duplicate. */
 const DOCS_WINDOW_LABEL = "note-docs";
+
+/** True when the current webview *is* the documentation window. Used to give the
+ *  bundled manual a distinct, read-only-feeling experience: notes open in
+ *  reading mode (HTML) by default and an "edits aren't saved" banner shows.
+ *  Computed once — a window's label never changes. Returns false outside Tauri
+ *  (e.g. in unit tests) where `getCurrentWindow` is unavailable. */
+let _isDocsWindow: boolean | undefined;
+export function isDocumentationWindow(): boolean {
+  if (_isDocsWindow === undefined) {
+    try {
+      _isDocsWindow = getCurrentWindow().label === DOCS_WINDOW_LABEL;
+    } catch {
+      _isDocsWindow = false;
+    }
+  }
+  return _isDocsWindow;
+}
 
 /**
  * Open (or focus) the bundled InkyCap documentation notebox in its own window.
