@@ -2220,17 +2220,30 @@ export class LinkWidget extends WidgetType {
   constructor(
     readonly url: string,
     readonly display: string,
+    readonly isBold: boolean = false,
+    readonly isItalic: boolean = false,
+    readonly isStrike: boolean = false,
+    readonly isHighlight: boolean = false,
   ) {
     super();
   }
 
   eq(other: LinkWidget) {
-    return this.url === other.url && this.display === other.display;
+    return this.url === other.url && this.display === other.display
+      && this.isBold === other.isBold && this.isItalic === other.isItalic
+      && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight;
   }
 
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-typst-link";
+    // A replace widget is rendered outside any surrounding mark decoration, so
+    // bold/italic/etc. wrapping the call (`*#link(...)[…]*`) would be lost. Carry
+    // the formatting flags and apply the same classes the marks would have.
+    if (this.isBold) el.classList.add("cm-typst-bold");
+    if (this.isItalic) el.classList.add("cm-typst-italic");
+    if (this.isStrike) el.classList.add("cm-typst-strike");
+    if (this.isHighlight) el.classList.add("cm-typst-highlight");
     el.style.cursor = "pointer";
     el.title = this.url;
 
@@ -2275,17 +2288,29 @@ export class LabelLinkWidget extends WidgetType {
   constructor(
     readonly label: string,
     readonly display: string,
+    readonly isBold: boolean = false,
+    readonly isItalic: boolean = false,
+    readonly isStrike: boolean = false,
+    readonly isHighlight: boolean = false,
   ) {
     super();
   }
 
   eq(other: LabelLinkWidget) {
-    return this.label === other.label && this.display === other.display;
+    return this.label === other.label && this.display === other.display
+      && this.isBold === other.isBold && this.isItalic === other.isItalic
+      && this.isStrike === other.isStrike && this.isHighlight === other.isHighlight;
   }
 
   toDOM(view: EditorView) {
     const el = document.createElement("span");
     el.className = "cm-typst-link cm-typst-link--internal";
+    // See LinkWidget: replace widgets fall outside surrounding mark decorations,
+    // so apply the wrapping formatting directly.
+    if (this.isBold) el.classList.add("cm-typst-bold");
+    if (this.isItalic) el.classList.add("cm-typst-italic");
+    if (this.isStrike) el.classList.add("cm-typst-strike");
+    if (this.isHighlight) el.classList.add("cm-typst-highlight");
     el.style.cursor = "pointer";
     el.title = t("visual.link.jumpToLabel", { label: this.label });
 
