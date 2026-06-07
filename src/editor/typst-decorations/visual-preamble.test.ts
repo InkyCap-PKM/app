@@ -69,6 +69,24 @@ describe("computePreambleImportRanges", () => {
     expect(doc.slice(ranges[0].from, ranges[0].to)).toContain("#import");
   });
 
+  it("covers the SetRule keyword position so the body builder skips its pill", () => {
+    // The visual builder guards the standalone `#set`/`#show` pill against the
+    // leading locale directive by testing whether the SetRule node's start
+    // (`node.from`) falls inside a preamble range. The `#` is a separate token,
+    // so that node starts at `set` — one byte past the `#`. This pins that the
+    // range spans the keyword, not just the `#`; otherwise the directive would
+    // resurface as a `set text: lang, region` pill in a French note.
+    const doc =
+      '#import "/.inkycap/notebox.typ": *\n' +
+      '#set text(lang: "fr", region: "CA")\n' +
+      "\n#note(\n  title: \"V\",\n)\n";
+    const ranges = rangesFor(doc);
+    const directiveLineStart = doc.indexOf("#set text");
+    const keywordPos = directiveLineStart + 1; // node.from for the SetRule node
+    const covering = ranges.find((r) => keywordPos >= r.from && keywordPos < r.to);
+    expect(covering).toBeDefined();
+  });
+
   it("does not consume a `#set text(font: …)` setup line", () => {
     const doc =
       '#import "/.inkycap/notebox.typ": *\n' +
