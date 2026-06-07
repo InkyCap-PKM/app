@@ -55,6 +55,7 @@ const DEFAULTS: UserSettings = {
     file_tree_sort: "name-asc",
     date_format: "D MMM YYYY",
     ui_locale: "en",
+    use_locale_typesetting: true,
   },
   files: {
     auto_update_links_on_rename: true,

@@ -6,6 +6,8 @@
   "settings.appearance.theme.option.system": "Suivre le système",
   "settings.language.ui.label": "Langue de l'interface",
   "settings.language.ui.description": "Langue utilisée pour les menus, les boutons et les volets d'InkyCap. Le contenu de vos notes n'est pas affecté.",
+  "settings.language.typesetting.label": "Utiliser la composition typographique de la langue",
+  "settings.language.typesetting.description": "Règle les nouvelles notes selon la langue de l'interface, pour que le texte soit coupé, espacé et mis entre guillemets selon les règles typographiques de cette langue. Ajoute une ligne #set text(lang, region) après l'importation. Les notes existantes ne sont pas modifiées; désactivez cette option pour garder les nouvelles notes neutres sur le plan linguistique.",
   "sort.label": "Trier",
   "sort.name.asc": "Nom (A – Z)",
   "sort.name.desc": "Nom (Z – A)",
