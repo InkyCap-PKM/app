@@ -15,22 +15,6 @@ pub async fn get_saved_notebox_path() -> Result<Option<String>, InkyCapError> {
     Ok(cfg.notebox_path)
 }
 
-/// Placeholder note seeded into a fresh documentation notebox. Replaced by the
-/// real, bundled user manual once it's authored; until then it's a valid note
-/// that opens cleanly. Write-once — see [`open_documentation_notebox`].
-const DOCS_PLACEHOLDER_NOTE: &str = r#"#import "/.inkycap/notebox.typ": *
-
-#note(
-  title: "InkyCap Documentation",
-  description: "The InkyCap user manual.",
-)
-= InkyCap Documentation
-
-The documentation is being written. This system notebox will hold the InkyCap
-user manual — authored in Typst markup so you can read it inside InkyCap and
-see the markup at work.
-"#;
-
 /// Where the documentation window should boot: the system notebox root plus the
 /// landing note to open first (so the window doesn't start on a blank "no file
 /// selected" pane). `index` is `None` only if the notebox somehow has no
@@ -63,9 +47,9 @@ fn docs_notebox_dir_name(ui_locale: &str) -> &'static str {
 /// exists for it (falling back to the English manual otherwise), so a
 /// French-language user gets the French documentation window.
 ///
-/// The `.inkycap/` scaffold is reapplied on every call (idempotent); the
-/// placeholder index note is written only when the notebox has no `.typ` file
-/// yet, so the eventual bundled manual won't be clobbered here.
+/// The working copy is seeded (and refreshed on app updates / content changes)
+/// from the manual bundled into the binary — see [`crate::docs_manual`]. The
+/// `.inkycap/` scaffold is reapplied on every call (idempotent).
 #[tauri::command]
 pub async fn open_documentation_notebox(
     state: State<'_, AppState>,
@@ -84,24 +68,17 @@ pub async fn open_documentation_notebox(
     };
 
     let config_dir = crate::app_paths::config_dir();
-    let en_root = config_dir.join("InkyCap-Documentation");
     let ui_locale = state.settings.read().await.appearance.ui_locale.clone();
 
-    // Prefer the locale-specific manual when one has actually been authored
-    // (its folder exists and holds at least one note); otherwise serve English.
-    let localized = config_dir.join(docs_notebox_dir_name(&ui_locale));
-    let root = if localized != en_root && !top_level_typ(&localized).is_empty() {
-        localized
-    } else {
-        en_root
-    };
+    // Serve the manual matching the UI locale. `docs_notebox_dir_name` already
+    // falls back to the English folder for any locale without a bundled manual,
+    // and `seed_if_stale` is a no-op for a folder we don't bundle.
+    let dir_name = docs_notebox_dir_name(&ui_locale);
+    let root = config_dir.join(dir_name);
 
     std::fs::create_dir_all(&root)?;
+    crate::docs_manual::seed_if_stale(dir_name, &root)?;
     crate::notebox_package::scaffold(&root);
-
-    if top_level_typ(&root).is_empty() {
-        std::fs::write(root.join("index.typ"), DOCS_PLACEHOLDER_NOTE)?;
-    }
 
     // Pick the landing note: a top-level `.typ` whose stem contains "index"
     // (case-insensitive — matches both the seeded `index.typ` and a renamed
