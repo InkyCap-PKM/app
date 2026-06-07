@@ -12,6 +12,7 @@ import { buildSuggestionCall } from "./annotation-insert";
 import { parseInlineBody, type BodySegment } from "./block-body-parse";
 import { findLabelDefinition } from "./label-nav";
 import { t } from "../../lib/i18n";
+import { calloutKindLabel } from "./pill-options";
 
 /** Convert a Typst length value (e.g. `40%`, `200pt`, `3cm`) to a CSS value.
  *  Typst percentages and common units map directly; unknown units pass through. */
@@ -431,7 +432,7 @@ export class CalloutWidget extends WidgetType {
     const heading = document.createElement("div");
     heading.className = "cm-typst-callout-heading";
     heading.style.color = color;
-    heading.textContent = this.title || this.kind.charAt(0).toUpperCase() + this.kind.slice(1);
+    heading.textContent = calloutKindLabel(this.kind, this.title);
     wrap.appendChild(heading);
 
     if (this.bodyText) {
@@ -2045,7 +2046,7 @@ export class CalloutBlockWidget extends WidgetType {
     const heading = document.createElement("div");
     heading.className = "cm-typst-callout-heading";
     heading.style.color = color;
-    heading.textContent = this.title || this.kind.charAt(0).toUpperCase() + this.kind.slice(1);
+    heading.textContent = calloutKindLabel(this.kind, this.title);
     inner.appendChild(heading);
 
     if (this.bodyText) {

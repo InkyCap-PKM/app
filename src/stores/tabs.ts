@@ -339,6 +339,22 @@ export function openTab(
   return id;
 }
 
+/**
+ * Open a freshly created note from a creation rule (toolbar button, command
+ * palette, hotkey, file-tree "new note", startup). Reuses the active tab when
+ * it's an empty placeholder ("New tab") so a creation doesn't strand a blank
+ * tab beside the new note; otherwise opens a fresh tab so a note the user is
+ * already working on isn't replaced. All creation-rule entry points share this
+ * so the behaviour stays uniform.
+ */
+export function openCreatedNote(
+  tab: Omit<Tab, "id">,
+  opts?: Omit<OpenTabOptions, "forceNewTab">,
+): string {
+  const reuseEmpty = getActiveTab()?.type === "empty";
+  return openTab(tab, { ...opts, forceNewTab: !reuseEmpty });
+}
+
 /** Open (or update) a read-only version-compare tab for `notePath`. If one is
  *  already open for this note, retarget it to the new version in place — so
  *  clicking through a note's history reuses one compare view rather than

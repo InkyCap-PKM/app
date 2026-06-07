@@ -63,12 +63,19 @@ export async function openNotebox(path: string): Promise<NoteboxInfo> {
   return invoke<NoteboxInfo>("open_notebox", { path });
 }
 
+/** Where the documentation window should boot: notebox root + landing note. */
+export interface DocsNoteboxLocation {
+  root: string;
+  index: string | null;
+}
+
 /**
  * Resolve (seeding on first use) the bundled "InkyCap Documentation" system
- * notebox and return its path. The caller opens it in its own window.
+ * notebox. Returns its root path plus the landing note to open first, so the
+ * caller can boot the window straight onto the manual's home page.
  */
-export async function openDocumentationNotebox(): Promise<string> {
-  return invoke<string>("open_documentation_notebox");
+export async function openDocumentationNotebox(): Promise<DocsNoteboxLocation> {
+  return invoke<DocsNoteboxLocation>("open_documentation_notebox");
 }
 
 /** A notebox currently open in some window: its path + the owning window label. */

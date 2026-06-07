@@ -7,6 +7,7 @@ import { t } from "./i18n";
 import { errorText, errorCode } from "./errors";
 import {
   openTab,
+  openCreatedNote,
   closeTab,
   reopenClosedTab,
   getActiveTab,
@@ -904,17 +905,9 @@ export async function registerCreationRuleCommands(): Promise<void> {
             if (!result) return;
             if (rule.creation_mode === "create_and_open") {
               const name = result.path.split("/").pop() ?? "New Note";
-              // Reuse the active tab when it's an empty placeholder ("New
-              // tab") so a creation doesn't strand a blank tab beside the new
-              // note; otherwise open in a fresh tab so an existing note the
-              // user is working on isn't replaced.
-              const reuseEmpty = getActiveTab()?.type === "empty";
-              openTab(
+              openCreatedNote(
                 { type: "file", title: name, path: result.path },
-                {
-                  forceNewTab: !reuseEmpty,
-                  cursorOffset: result.cursor_offset ?? undefined,
-                },
+                { cursorOffset: result.cursor_offset ?? undefined },
               );
             }
           } catch (e) {

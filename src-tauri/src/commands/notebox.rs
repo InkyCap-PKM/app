@@ -31,31 +31,98 @@ user manual — authored in Typst markup so you can read it inside InkyCap and
 see the markup at work.
 "#;
 
+/// Where the documentation window should boot: the system notebox root plus the
+/// landing note to open first (so the window doesn't start on a blank "no file
+/// selected" pane). `index` is `None` only if the notebox somehow has no
+/// top-level `.typ` at all.
+#[derive(serde::Serialize)]
+pub struct DocsNoteboxLocation {
+    pub root: String,
+    pub index: Option<String>,
+}
+
+/// Config-dir folder name for the documentation notebox in a given UI locale.
+/// English is the base manual and the universal fallback; other locales live in
+/// a suffixed sibling (e.g. `InkyCap-Documentation-fr-CA`). A locale only earns
+/// its own notebox once that manual has actually been authored — until then the
+/// caller falls back to English.
+fn docs_notebox_dir_name(ui_locale: &str) -> &'static str {
+    match ui_locale {
+        "fr-CA" => "InkyCap-Documentation-fr-CA",
+        _ => "InkyCap-Documentation",
+    }
+}
+
 /// Resolve (and lazily seed) the bundled "InkyCap Documentation" system
-/// notebox, returning its path for the frontend to open in a window.
+/// notebox, returning its path plus the landing note for the frontend to open
+/// in a window.
 ///
 /// It lives under the per-platform config dir (alongside the notebox registry),
 /// so it survives notebox switches and is never confused with a user notebox.
+/// The notebox served matches the user's UI locale when a translated manual
+/// exists for it (falling back to the English manual otherwise), so a
+/// French-language user gets the French documentation window.
+///
 /// The `.inkycap/` scaffold is reapplied on every call (idempotent); the
 /// placeholder index note is written only when the notebox has no `.typ` file
 /// yet, so the eventual bundled manual won't be clobbered here.
 #[tauri::command]
-pub async fn open_documentation_notebox() -> Result<String, InkyCapError> {
-    let root = crate::app_paths::config_dir().join("InkyCap-Documentation");
+pub async fn open_documentation_notebox(
+    state: State<'_, AppState>,
+) -> Result<DocsNoteboxLocation, InkyCapError> {
+    let top_level_typ = |dir: &std::path::Path| -> Vec<std::path::PathBuf> {
+        let mut v: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("typ"))
+                    .collect()
+            })
+            .unwrap_or_default();
+        v.sort();
+        v
+    };
+
+    let config_dir = crate::app_paths::config_dir();
+    let en_root = config_dir.join("InkyCap-Documentation");
+    let ui_locale = state.settings.read().await.appearance.ui_locale.clone();
+
+    // Prefer the locale-specific manual when one has actually been authored
+    // (its folder exists and holds at least one note); otherwise serve English.
+    let localized = config_dir.join(docs_notebox_dir_name(&ui_locale));
+    let root = if localized != en_root && !top_level_typ(&localized).is_empty() {
+        localized
+    } else {
+        en_root
+    };
+
     std::fs::create_dir_all(&root)?;
     crate::notebox_package::scaffold(&root);
 
-    let has_note = std::fs::read_dir(&root)
-        .map(|rd| {
-            rd.flatten()
-                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("typ"))
-        })
-        .unwrap_or(false);
-    if !has_note {
+    if top_level_typ(&root).is_empty() {
         std::fs::write(root.join("index.typ"), DOCS_PLACEHOLDER_NOTE)?;
     }
 
-    Ok(to_frontend_string(&root))
+    // Pick the landing note: a top-level `.typ` whose stem contains "index"
+    // (case-insensitive — matches both the seeded `index.typ` and a renamed
+    // "0 - Index.typ" in the authored manual), falling back to the first note
+    // when sorted by name.
+    let files = top_level_typ(&root);
+    let index = files
+        .iter()
+        .find(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase().contains("index"))
+                .unwrap_or(false)
+        })
+        .or_else(|| files.first())
+        .map(|p| to_frontend_string(p));
+
+    Ok(DocsNoteboxLocation {
+        root: to_frontend_string(&root),
+        index,
+    })
 }
 
 /// Open a notebox at the given directory path: initialize storage, start the file watcher, and spawn background index build.
