@@ -36,7 +36,7 @@ import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
 import { getCachedBibKeys } from "./citation-suggest";
-import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SymWidget } from "./visual-widgets";
+import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
 import { visualTheme } from "./visual-theme";
@@ -390,6 +390,73 @@ function posWithinPreamble(pos: number, preamble: StylePreamble): boolean {
 }
 
 /**
+ * Top-level named-argument keys of a function-call argument list, starting at
+ * the `(` at `openParen`. Returns only depth-1 `name:` keys — nested keys
+ * (`margin: (top: …)`) and positional args are skipped — so the set-rule label
+ * names the property being configured, not the values. String literals are
+ * treated as opaque so a `:` or `(` inside `"…"` never registers.
+ */
+function topLevelArgKeys(text: string, openParen: number): string[] {
+  if (openParen < 0 || text[openParen] !== "(") return [];
+  const keys: string[] = [];
+  let depth = 0;
+  let inStr = false;
+  let atArgStart = false; // at the start of a fresh top-level argument
+  for (let i = openParen; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (ch === '"' && text[i - 1] !== "\\") inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      if (depth === 1) atArgStart = true; // just opened the arg list
+      continue;
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      if (depth === 0) break;
+      continue;
+    }
+    if (depth === 1 && ch === ",") { atArgStart = true; continue; }
+    if (depth === 1 && atArgStart) {
+      if (/\s/.test(ch)) continue;
+      const m = text.slice(i).match(/^([A-Za-z_][\w-]*)\s*:/);
+      if (m) keys.push(m[1]);
+      atArgStart = false; // value chars (incl. nested calls) skipped until next `,`
+    }
+  }
+  return keys;
+}
+
+/**
+ * Friendly chip label for a standalone `#set` / `#show` rule, derived from its
+ * source: the rule keyword, its target, and — for set rules — the property
+ * being configured, so two `#set text(…)` rules read distinctly:
+ * `#set text(size: 12pt)` → `set text: size`, `#set text(font: …)` → `set text:
+ * font`. Up to two keys are shown (`…` beyond that); a rule with no recognizable
+ * key, a `#show heading: …`, or a bare `#show: …` falls back to keyword+target
+ * (or just the keyword). Kept literal — Typst identifiers aren't translatable,
+ * matching how every other pill shows its raw `funcName`.
+ */
+export function setRuleLabel(raw: string): string {
+  const body = raw.startsWith("#") ? raw.slice(1) : raw;
+  const setRule = body.match(/^set\s+([A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)*)\s*(\()/);
+  if (setRule) {
+    const target = setRule[1];
+    const keys = topLevelArgKeys(body, body.indexOf("(", setRule.index! + setRule[0].length - 1));
+    if (keys.length === 0) return `set ${target}`;
+    const shown = keys.slice(0, 2).join(", ") + (keys.length > 2 ? "…" : "");
+    return `set ${target}: ${shown}`;
+  }
+  const withTarget = body.match(/^(set|show)\s+([A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)*)/);
+  if (withTarget) return `${withTarget[1]} ${withTarget[2]}`;
+  const keyword = body.match(/^(set|show)\b/);
+  return keyword ? keyword[1] : "set";
+}
+
+/**
  * Display number for an ordered-list (`EnumMarker`) item, computed purely
  * from the document text so it is identical whether the whole document or a
  * single slice is being re-decorated.
@@ -735,6 +802,32 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
               }
             }
             return;
+          }
+          case "SetRule":
+          case "ShowRule": {
+            // A contiguous *leading* run of set/show rules is the document
+            // style preamble, collapsed into a single StylePreambleWidget
+            // above — skip those here (when that preamble is expanded for
+            // editing we also want raw source, so returning false is correct
+            // either way). A set/show rule that appears *after* content — e.g.
+            // a local `#set text(…)` / `#set par(…)` inserted from the `/` Style
+            // menu — reaches here and gets the same pill affordance as every
+            // other Typst call instead of rendering as raw markup.
+            if (stylePreamble && posWithinPreamble(node.from, stylePreamble)) return false;
+            const ruleFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")
+              ? node.from - 1 : node.from;
+            // Reveal raw source when the cursor is on the rule's line or the
+            // pill was clicked open — the standard collapse decision the other
+            // block pills use, so the rule stays directly editable in place.
+            if (onCursor) return false;
+            if (expandedPos === ruleFrom) return false;
+            const raw = state.doc.sliceString(ruleFrom, node.to);
+            decos.push(
+              Decoration.replace({
+                widget: new SetRuleWidget(ruleFrom, node.to, setRuleLabel(raw), raw),
+              }).range(ruleFrom, node.to),
+            );
+            return false;
           }
           case "FuncCall": {
             const funcFrom = (node.from > 0 && state.doc.sliceString(node.from - 1, node.from) === "#")
