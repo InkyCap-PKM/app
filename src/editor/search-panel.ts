@@ -19,6 +19,7 @@ import {
   type ViewUpdate,
   EditorView,
 } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
 import {
   closeSearchPanel,
   findNext,
@@ -77,6 +78,10 @@ class InkycapSearchPanel implements Panel {
   private readonly caseField: HTMLInputElement;
   private readonly reField: HTMLInputElement;
   private readonly wordField: HTMLInputElement;
+  /** "{current} of {total}" position indicator shown inside the search field.
+   *  `total` is the live count of remaining matches, so as the user replaces,
+   *  it ticks down — reaching "No results" once none are left. */
+  private readonly countLabel: HTMLElement;
   /** Last query the panel published, so `commit` can skip no-op dispatches. */
   private query: SearchQuery;
 
@@ -86,6 +91,8 @@ class InkycapSearchPanel implements Panel {
 
     this.searchField = textField("search", this.query.search, t("search.find"));
     this.searchField.setAttribute("main-field", "true");
+    this.countLabel = element("span", "cm-search__count");
+    this.countLabel.hidden = true;
     this.replaceField = textField("replace", this.query.replace, t("search.replace"));
     for (const field of [this.searchField, this.replaceField]) {
       field.addEventListener("input", this.commit);
@@ -127,7 +134,7 @@ class InkycapSearchPanel implements Panel {
 
     const searchRow = element("div", "cm-search__row");
     searchRow.append(
-      this.wrapField(this.searchField),
+      this.wrapField(this.searchField, this.countLabel),
       group(
         iconButton("next", ARROW_DOWN_SVG, t("search.next"), () => findNext(view)),
         iconButton("prev", ARROW_UP_SVG, t("search.previous"), () => findPrevious(view)),
@@ -151,7 +158,7 @@ class InkycapSearchPanel implements Panel {
       replaceRow.append(
         this.wrapField(this.replaceField),
         group(
-          button("replace", t("search.replaceNext"), () => replaceNext(view)),
+          button("replace", t("search.replaceNext"), () => this.replaceAndAdvance()),
           button("replaceAll", t("search.replaceAll"), () => replaceAll(view)),
         ),
       );
@@ -182,14 +189,63 @@ class InkycapSearchPanel implements Panel {
     });
     if (query.eq(this.query)) return;
     this.query = query;
+    // Remember exactly where the caret sits. Dispatching the query and
+    // advancing to the first match can re-select the whole search field;
+    // restoring the caret to where the user was typing (rather than forcing
+    // it to the end) keeps mid-word edits — backspacing inside a word —
+    // behaving normally.
+    const caret = this.searchField.selectionStart;
     this.view.dispatch({ effects: setSearchQuery.of(query) });
     if (query.search) {
       findNext(this.view);
-      // findNext re-selects the whole search field (handy after the Next
-      // button, but here it would make the next keystroke overwrite what was
-      // typed). Collapse the selection back to the caret at the field's end.
-      const end = this.searchField.value.length;
-      this.searchField.setSelectionRange(end, end);
+    }
+    if (caret != null) this.searchField.setSelectionRange(caret, caret);
+  }
+
+  /**
+   * Replace the current match, then move to the nearest remaining match so
+   * repeated clicks step through the file.
+   *
+   * CodeMirror's `replaceNext` leaves the selection on the inserted
+   * replacement (not a query match), which would both strand the highlight on
+   * the replaced word and read as "0 of N" in the counter. We reposition onto
+   * a real match afterwards — but deliberately WITHOUT wrapping: the next
+   * match after the replacement if one exists, otherwise the last match
+   * before it. So replacing the final match lands on the new final match
+   * ("2 of 2") instead of jumping back to the top, while replacing top-down
+   * reads "1 of 2", "1 of 1", … as matches are consumed.
+   *
+   * The reposition runs only when a replacement actually happened (the doc
+   * changed). When `replaceNext` merely moved to the next match — because the
+   * selection wasn't on one — we leave its result alone.
+   */
+  private replaceAndAdvance() {
+    const prevDoc = this.view.state.doc;
+    replaceNext(this.view);
+    const state = this.view.state;
+    if (state.doc === prevDoc) return;
+
+    const query = getSearchQuery(state);
+    if (!query.search || !query.valid) return;
+
+    // `replaceNext` selected the inserted replacement; its end is where we
+    // resume looking. Matches starting before this point are "behind" us
+    // (track the last one); the first at or after it is the one to land on.
+    const pos = state.selection.main.to;
+    let after: { from: number; to: number } | null = null;
+    let lastBefore: { from: number; to: number } | null = null;
+    const cursor = query.getCursor(state);
+    for (let n = cursor.next(); !n.done; n = cursor.next()) {
+      if (n.value.from >= pos) { after = n.value; break; }
+      lastBefore = { from: n.value.from, to: n.value.to };
+    }
+
+    const target = after ?? lastBefore;
+    if (target) {
+      this.view.dispatch({
+        selection: EditorSelection.single(target.from, target.to),
+        effects: EditorView.scrollIntoView(target.from),
+      });
     }
   }
 
@@ -201,14 +257,16 @@ class InkycapSearchPanel implements Panel {
       (e.shiftKey ? findPrevious : findNext)(this.view);
     } else if (e.key === "Enter" && e.target === this.replaceField) {
       e.preventDefault();
-      replaceNext(this.view);
+      this.replaceAndAdvance();
     }
   }
 
   /** Sync the fields when the query is changed from outside the panel. */
   update(update: ViewUpdate) {
+    let queryChanged = false;
     for (const tr of update.transactions) {
       for (const effect of tr.effects) {
+        if (effect.is(setSearchQuery)) queryChanged = true;
         if (effect.is(setSearchQuery) && !effect.value.eq(this.query)) {
           this.query = effect.value;
           this.searchField.value = this.query.search;
@@ -227,10 +285,17 @@ class InkycapSearchPanel implements Panel {
         }
       }
     }
+    // The count depends on the query and on which match the selection sits on,
+    // so refresh it when either changes (query edits here or in the field's
+    // `input` handler; Next/Previous/Enter move the selection).
+    if (queryChanged || update.selectionSet || update.docChanged) {
+      this.updateCount();
+    }
   }
 
   mount() {
     this.searchField.select();
+    this.updateCount();
   }
 
   /** Drop the "All" highlight state so the next search opens current-only. */
@@ -241,9 +306,11 @@ class InkycapSearchPanel implements Panel {
   /**
    * Wrap a text field with a clear button at its right edge — the same
    * affordance as the app's other search/filter inputs. The button shows
-   * only while the field has content and clears it on click.
+   * only while the field has content and clears it on click. An optional
+   * `inline` element (the match-count indicator) is placed inside the field,
+   * just left of the clear button.
    */
-  private wrapField(input: HTMLInputElement): HTMLElement {
+  private wrapField(input: HTMLInputElement, inline?: HTMLElement): HTMLElement {
     const wrap = element("div", "cm-search__field");
 
     const clear = element("button", "cm-search__clear") as HTMLButtonElement;
@@ -265,10 +332,59 @@ class InkycapSearchPanel implements Panel {
       clear.hidden = input.value.length === 0;
     });
 
-    wrap.append(input, clear);
+    wrap.append(input, ...(inline ? [inline] : []), clear);
     return wrap;
   }
+
+  /**
+   * Refresh the "{n} of {m}" indicator from the live query and selection.
+   * Counts every match via the query's own cursor (the same matcher CM uses,
+   * so case/regexp/word options are honoured) and finds which one the current
+   * selection sits on. Hidden when the field is empty or the regexp is
+   * invalid. Counting is capped so a pathological query on a huge document
+   * can't stall the keystroke; the cap is surfaced as "{cap}+".
+   */
+  private updateCount() {
+    const query = getSearchQuery(this.view.state);
+    if (!query.search || !query.valid) {
+      this.countLabel.hidden = true;
+      this.countLabel.textContent = "";
+      this.searchField.style.paddingRight = "";
+      return;
+    }
+
+    const sel = this.view.state.selection.main;
+    let total = 0;
+    let current = 0;
+    const cursor = query.getCursor(this.view.state);
+    for (let next = cursor.next(); !next.done; next = cursor.next()) {
+      total++;
+      if (next.value.from === sel.from && next.value.to === sel.to) {
+        current = total;
+      }
+      if (total >= MATCH_COUNT_CAP) break;
+    }
+
+    this.countLabel.hidden = false;
+    this.countLabel.textContent =
+      total === 0
+        ? t("search.noMatches")
+        : t("search.matchCount", {
+            current: String(current),
+            total: total >= MATCH_COUNT_CAP ? `${MATCH_COUNT_CAP}+` : String(total),
+          });
+    // Reserve room inside the field so the count never sits under the typed
+    // text or the clear button. Measured from the label's rendered width
+    // rather than hard-coded, so it adapts to the digit count and the user's
+    // font. CLEAR_ZONE_PX is the clear button's right-edge footprint.
+    this.searchField.style.paddingRight = `${CLEAR_ZONE_PX + this.countLabel.offsetWidth + 8}px`;
+  }
 }
+
+/** Upper bound on match counting per keystroke (see `updateCount`). */
+const MATCH_COUNT_CAP = 1000;
+/** Horizontal space the in-field clear button occupies at the right edge. */
+const CLEAR_ZONE_PX = 28;
 
 // --- small DOM helpers -----------------------------------------------------
 

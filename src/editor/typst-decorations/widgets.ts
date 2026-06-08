@@ -1,4 +1,5 @@
 import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
 import { loadMediaObjectUrl, revokeMediaBlobs } from "../../lib/media-src";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -1718,6 +1719,10 @@ export class VerseWidget extends WidgetType {
 
     canvas.addEventListener("mousedown", (e) => {
       e.stopPropagation();
+      // Drop any search-match highlight before the click places the caret, so
+      // the user starts editing on clean DOM (the spans are pass-through and
+      // never corrupt source, but clearing first keeps the caret honest).
+      clearVerseHits(canvas);
     });
 
     // Stop input-family events from bubbling to CM's `contentDOM`
@@ -1789,12 +1794,24 @@ export class VerseWidget extends WidgetType {
     // and land adjacent to the widget — producing scrambled output.
     // Transfer focus to the canvas and place the caret at the end
     // of its content so typing flows into the canvas naturally.
+    // `view.hasFocus` gate: only pull focus into the canvas when the editor
+    // content itself is focused. When a panel owns focus — most notably the
+    // Ctrl+F search field, whose `findNext` moves the selection into matches
+    // anywhere in the doc — stealing focus here would route the user's typing
+    // into the verse and overwrite it. The panel input is in `view.dom` but
+    // not `contentDOM`, so `hasFocus` is false while it's active.
     const sel = view.state.selection.main;
-    if (sel.empty && sel.head >= this.opts.bodyFrom && sel.head <= this.opts.bodyTo) {
+    if (
+      view.hasFocus &&
+      sel.empty &&
+      sel.head >= this.opts.bodyFrom &&
+      sel.head <= this.opts.bodyTo
+    ) {
       queueMicrotask(() => {
         // Re-check after the microtask in case focus already moved
         // somewhere intentional (e.g. the user clicked elsewhere).
         if (!document.body.contains(canvas)) return;
+        if (!view.hasFocus) return;
         canvas.focus({ preventScroll: true });
         const range = document.createRange();
         range.selectNodeContents(canvas);
@@ -2480,6 +2497,13 @@ export const verseFocusRouter = ViewPlugin.fromClass(
       // after the current task finishes (including CM's DOM write) but
       // before paint.
       queueMicrotask(() => {
+        // Only route focus into a verse canvas when the editor content has
+        // focus. The Ctrl+F search field's `findNext` fires `selectionSet`
+        // as it walks matches; without this gate, a match inside a verse
+        // body would steal focus from the search input and the user's typing
+        // would overwrite the verse. The search panel lives in `view.dom`
+        // but outside `contentDOM`, so `hasFocus` is false while it's active.
+        if (!view.hasFocus) return;
         const wraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse");
         for (const wrap of wraps) {
           const from = Number(wrap.dataset.bodyFrom);
@@ -2509,3 +2533,194 @@ export const verseFocusRouter = ViewPlugin.fromClass(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// verseSearchHighlighter: paints the current Ctrl+F match inside a verse
+// canvas.
+//
+// A verse renders as an atomic widget whose canvas replaces the underlying
+// `#verse("…")` source. CM's own search-match decoration is applied to that
+// hidden source range, so a match inside a verse is found and selected but
+// stays invisible — the user steps onto it with no visual cue. This plugin
+// re-paints the current match (CM's selection) directly in the canvas.
+//
+// Mapping doc offsets through the decode + inline-markup render pipeline
+// precisely would be costly; instead we locate the match by *occurrence*:
+// the matched text and how many earlier matches sit before it in the same
+// verse uniquely identify which rendered occurrence to highlight. This is
+// exact for plain verse (the common case) and for case-insensitive substring
+// search (the default). Markup/escapes or whole-word/regexp queries can in
+// rare cases shift the occurrence count; the highlight then lands on a
+// nearby same-text occurrence — never crashes, never corrupts source (the
+// highlight is a pass-through `<span>`; see `encodeVerseDOM`'s SPAN case).
+// ---------------------------------------------------------------------------
+
+const VERSE_HIT_CLASS = "cm-verse-search-hit";
+
+export const verseSearchHighlighter = ViewPlugin.fromClass(
+  class {
+    update(update: ViewUpdate) {
+      const queryChanged = update.transactions.some((tr) =>
+        tr.effects.some((e) => e.is(setSearchQuery)),
+      );
+      if (
+        !update.selectionSet &&
+        !update.docChanged &&
+        !update.focusChanged &&
+        !queryChanged
+      ) {
+        return;
+      }
+      const view = update.view;
+      // Defer the DOM work until after CM flushes any widget DOM rebuild this
+      // selection change triggered, so the canvas we paint into is current.
+      queueMicrotask(() => refreshVerseSearchHits(view));
+    }
+  },
+);
+
+/** Remove every search-hit span from a canvas, restoring the original text
+ *  nodes. Pass-through spans never alter encoded source, but stale ones would
+ *  leave a misleading highlight, so each refresh clears before re-painting. */
+function clearVerseHits(canvas: HTMLElement): void {
+  const hits = canvas.querySelectorAll<HTMLElement>("." + VERSE_HIT_CLASS);
+  if (hits.length === 0) return;
+  for (const span of hits) {
+    const parent = span.parentNode;
+    if (!parent) continue;
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+  }
+  // Merge the text nodes we just split so the canvas DOM (and the next
+  // occurrence search over it) sees contiguous text again.
+  canvas.normalize();
+}
+
+/** Re-paint the current search match inside whichever verse canvas contains
+ *  it. Clears all verse canvases first so a moved/cleared match leaves none
+ *  behind. */
+function refreshVerseSearchHits(view: EditorView): void {
+  for (const canvas of view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse-canvas")) {
+    clearVerseHits(canvas);
+  }
+
+  const query = getSearchQuery(view.state);
+  if (!query.search) return;
+  const sel = view.state.selection.main;
+  if (sel.empty) return;
+
+  for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse")) {
+    const from = Number(wrap.dataset.bodyFrom);
+    const to = Number(wrap.dataset.bodyTo);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+    if (sel.from < from || sel.to > to) continue;
+
+    const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
+    if (!canvas) return;
+    // While the user is editing inside the canvas there is no search caret to
+    // honour, and mutating the DOM under their cursor would be disruptive.
+    if (document.activeElement === canvas) return;
+
+    // Decode the source slices to their canvas-visible form so the text we
+    // search for (and count) matches what the canvas actually renders.
+    const needle = decodeVerseLiteral(view.state.doc.sliceString(sel.from, sel.to));
+    if (!needle) return;
+    const prefix = decodeVerseLiteral(view.state.doc.sliceString(from, sel.from));
+    const occurrence = countOccurrences(prefix, needle, query.caseSensitive);
+    paintVerseHit(canvas, needle, occurrence, query.caseSensitive);
+    return;
+  }
+}
+
+/** Count non-overlapping occurrences of `needle` in `hay`. */
+function countOccurrences(hay: string, needle: string, caseSensitive: boolean): number {
+  if (!needle) return 0;
+  const h = caseSensitive ? hay : hay.toLowerCase();
+  const n = caseSensitive ? needle : needle.toLowerCase();
+  let count = 0;
+  let pos = 0;
+  for (;;) {
+    const f = h.indexOf(n, pos);
+    if (f < 0) break;
+    count++;
+    pos = f + n.length;
+  }
+  return count;
+}
+
+/** Wrap the `occurrence`-th (0-based) appearance of `needle` in the canvas's
+ *  visible text in a hit span, then scroll it into view. */
+function paintVerseHit(
+  canvas: HTMLElement,
+  needle: string,
+  occurrence: number,
+  caseSensitive: boolean,
+): void {
+  // Flatten the canvas to a string while recording each text node's span in
+  // that flat coordinate. `<br>` contributes a newline so multi-line matches
+  // line up with the decoded source.
+  const segs: { node: Text; start: number; len: number }[] = [];
+  let flat = "";
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.textContent ?? "";
+        segs.push({ node: child as Text, start: flat.length, len: text.length });
+        flat += text;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        if ((child as HTMLElement).tagName === "BR") flat += "\n";
+        else walk(child);
+      }
+    }
+  };
+  walk(canvas);
+
+  const hay = caseSensitive ? flat : flat.toLowerCase();
+  const ndl = caseSensitive ? needle : needle.toLowerCase();
+  let idx = -1;
+  let count = 0;
+  let pos = 0;
+  for (;;) {
+    const f = hay.indexOf(ndl, pos);
+    if (f < 0) break;
+    if (count === occurrence) { idx = f; break; }
+    count++;
+    pos = f + ndl.length;
+  }
+  if (idx < 0) return;
+  const end = idx + ndl.length;
+
+  // Collect the covered portion of each overlapping text node up front: the
+  // offsets are in the pre-mutation flat space, and splitting one text node
+  // never shifts another's, so wrapping them afterwards is safe.
+  const portions = segs
+    .map((s) => {
+      const a = Math.max(idx, s.start);
+      const b = Math.min(end, s.start + s.len);
+      return a < b ? { node: s.node, from: a - s.start, to: b - s.start } : null;
+    })
+    .filter((p): p is { node: Text; from: number; to: number } => p !== null);
+
+  let firstSpan: HTMLElement | null = null;
+  for (const p of portions) {
+    const span = wrapTextPortion(p.node, p.from, p.to);
+    if (span && !firstSpan) firstSpan = span;
+  }
+  firstSpan?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/** Split `node` so that `[from, to)` is its own text node, wrap that node in a
+ *  hit span (inserted in place, preserving any surrounding markup element),
+ *  and return the span. */
+function wrapTextPortion(node: Text, from: number, to: number): HTMLElement | null {
+  let target = node;
+  if (from > 0) target = target.splitText(from);
+  if (to - from < (target.textContent ?? "").length) target.splitText(to - from);
+  const parent = target.parentNode;
+  if (!parent) return null;
+  const span = document.createElement("span");
+  span.className = VERSE_HIT_CLASS;
+  parent.insertBefore(span, target);
+  span.appendChild(target);
+  return span;
+}

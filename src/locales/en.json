@@ -397,6 +397,8 @@
   "search.byWord": "By word",
   "search.close": "Close",
   "search.clear": "Clear",
+  "search.matchCount": "{current} of {total}",
+  "search.noMatches": "No results",
   "search.toggleReplace": "Find and replace",
   "search.tip.matchCase": "Match the search term's exact upper- and lower-case letters",
   "search.tip.regexp": "Treat the search term as a regular expression",
