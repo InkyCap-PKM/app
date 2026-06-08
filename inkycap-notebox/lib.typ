@@ -777,7 +777,16 @@
   ..rest,
 ) = context {
   if target() == "html" {
-    let parts = ("background-color: " + fill.to-hex() + ";",)
+    // Pin near-black text on the mark. The highlighter palette is
+    // fixed-light in both themes, so without an explicit colour the
+    // reading view's dark-mode light foreground inherits onto the light
+    // fill and the highlighted text becomes unreadable. This mirrors the
+    // `color: #1a1a1a` the visual editor pins on highlighted spans
+    // (visual-colors.ts / visual-theme.ts).
+    let parts = (
+      "background-color: " + fill.to-hex() + ";",
+      "color: #1a1a1a;",
+    )
     if radius != 0pt and radius != none {
       parts.push("border-radius: " + repr(radius) + ";")
     }
