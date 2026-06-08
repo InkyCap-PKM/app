@@ -666,51 +666,6 @@ const SearchPanel: Component = () => {
         </button>
       </div>
 
-      <Show when={!searchQuery().trim() && !showTips()}>
-        <div class="search-panel__tip">
-          {t("search.reminderTip")}{" "}
-          <button
-            type="button"
-            class="inline-link search-panel__tip-link"
-            onClick={() => setShowTips(true)}
-          >
-            {t("search.reminderTipLink")}
-          </button>
-        </div>
-      </Show>
-
-      <Show when={showReplace()}>
-        <div class="search-panel__replace-row">
-          <input
-            class="search-panel__input"
-            type="text"
-            placeholder={t("search.replaceWith")}
-            value={replacement()}
-            onInput={(e) => setReplacement(e.currentTarget.value)}
-          />
-          <button
-            class="search-panel__replace-btn"
-            onClick={replaceAll}
-            title={t("search.replaceAll")}
-            disabled={!searchQuery().trim() || loading()}
-          >
-            {t("search.replaceAll")}
-          </button>
-          <button
-            class="icon-btn"
-            onClick={() => {
-              setShowReplace(false);
-              setReplacement("");
-              setReplaceResults(null);
-            }}
-            title={t("search.closeReplace")}
-            aria-label={t("search.closeReplace")}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      </Show>
-
       <Show when={showSettings()}>
         <div class="search-panel__options-row">
           <button
@@ -793,6 +748,51 @@ const SearchPanel: Component = () => {
               </div>
             </Show>
           </div>
+        </div>
+      </Show>
+
+      <Show when={!searchQuery().trim() && !showTips()}>
+        <div class="search-panel__tip">
+          {t("search.reminderTip")}{" "}
+          <button
+            type="button"
+            class="inline-link search-panel__tip-link"
+            onClick={() => setShowTips(true)}
+          >
+            {t("search.reminderTipLink")}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={showReplace()}>
+        <div class="search-panel__replace-row">
+          <input
+            class="search-panel__input"
+            type="text"
+            placeholder={t("search.replaceWith")}
+            value={replacement()}
+            onInput={(e) => setReplacement(e.currentTarget.value)}
+          />
+          <button
+            class="search-panel__replace-btn"
+            onClick={replaceAll}
+            title={t("search.replaceAll")}
+            disabled={!searchQuery().trim() || loading()}
+          >
+            {t("search.replaceAll")}
+          </button>
+          <button
+            class="icon-btn"
+            onClick={() => {
+              setShowReplace(false);
+              setReplacement("");
+              setReplaceResults(null);
+            }}
+            title={t("search.closeReplace")}
+            aria-label={t("search.closeReplace")}
+          >
+            <X size={18} />
+          </button>
         </div>
       </Show>
 
