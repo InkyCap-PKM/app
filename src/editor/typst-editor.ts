@@ -121,7 +121,7 @@ function typstLanguage(): Extension {
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
 import { typstVisualMode, autoExpandFacet, protectedRangesField, findStylePreamble, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
-import { verseFocusRouter } from "./typst-decorations/widgets";
+import { verseFocusRouter, verseSearchHighlighter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
 import { commandPalette } from "./typst-decorations/command-palette";
 import { sourceRawHighlight } from "./typst-decorations/source-raw-highlight";
@@ -291,6 +291,17 @@ const inkycapTheme = EditorView.theme({
   "&.cm-search-highlight-all .cm-searchMatch": {
     backgroundColor: "var(--bg-search-match)",
   },
+  // Current Ctrl+F match painted inside a verse canvas (see
+  // verseSearchHighlighter in widgets.ts). CM's own match highlight can't
+  // reach into the atomic verse widget, so this mirrors the selected-match
+  // colour there. `box-decoration-break` keeps the background continuous if
+  // the match wraps across a line within the canvas.
+  ".cm-typst-verse-canvas .cm-verse-search-hit": {
+    backgroundColor: "var(--bg-search-match)",
+    borderRadius: "2px",
+    "-webkit-box-decoration-break": "clone",
+    boxDecorationBreak: "clone",
+  },
   ".cm-matchingBracket": {
     backgroundColor: "var(--bg-matching-bracket)",
     outline: "1px solid var(--border-subtle)",
@@ -433,6 +444,26 @@ const inkycapTheme = EditorView.theme({
     color: "var(--fg-primary)",
   },
   ".cm-panel.cm-search .cm-search__clear[hidden]": {
+    display: "none",
+  },
+  // "{n} of {m}" indicator, absolutely positioned inside the field just left
+  // of the clear button (which sits at right:6px, ~22px wide). Out of normal
+  // flow like the clear button, so showing/hiding it never reflows the row.
+  // `updateCount` reserves matching right-padding on the input so typed text
+  // never slides under it. Dim hint colour, tabular figures so the width
+  // doesn't jitter as the digits change while stepping through matches.
+  ".cm-panel.cm-search .cm-search__count": {
+    position: "absolute",
+    right: "28px",
+    top: "50%",
+    transform: "translateY(-50%)",
+    fontSize: "var(--text-sm)",
+    color: "var(--fg-dim)",
+    pointerEvents: "none",
+    whiteSpace: "nowrap",
+    fontVariantNumeric: "tabular-nums",
+  },
+  ".cm-panel.cm-search .cm-search__count[hidden]": {
     display: "none",
   },
   ".cm-panel.cm-search .cm-textfield:focus": {
@@ -725,7 +756,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true)] : [];
+  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, verseSearchHighlighter, wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true)] : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)
