@@ -1,0 +1,42 @@
+# Toolchain image for building portable InkyCap Linux artifacts.
+#
+# Why Ubuntu 22.04: glibc is forward- but not backward-compatible, so a binary
+# links against the glibc it was BUILT on and then needs that version or newer
+# at runtime. Building on a bleeding-edge host (e.g. glibc 2.43) yields debs and
+# AppImages that install fine but crash on every current LTS. Building here,
+# against 22.04's glibc 2.35, produces artifacts that run on Ubuntu 22.04+,
+# Debian 12+, and all newer distros. See documentation note in
+# scripts/build-linux-docker.sh.
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Tauri v2 Linux prerequisites (WebKitGTK 4.1) + build/packaging tooling.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential curl wget file ca-certificates git pkg-config \
+      libwebkit2gtk-4.1-dev librsvg2-dev libssl-dev \
+      libxdo-dev libayatana-appindicator3-dev libgtk-3-dev \
+      xdg-utils patchelf \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 — runs the Vite frontend build (beforeBuildCommand).
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+# Rust: install rustup with no default toolchain, then pre-install the exact
+# toolchain pinned by rust-toolchain.toml. Doing this here (image-build time)
+# means the run container never downloads the toolchain on demand — that fetch
+# isn't cached across `--rm` runs and is a fragile network dependency (a
+# transient DNS failure there aborts the whole build). rustup treats "1.94.1"
+# and "stable" as distinct toolchains, so installing the pinned name is what
+# makes the run-time `cargo` find it already present.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+ENV PATH="/root/.cargo/bin:${PATH}"
+COPY rust-toolchain.toml /tmp/rust-toolchain.toml
+RUN cd /tmp && rustup show && rm rust-toolchain.toml
+
+# The AppImage packaging tools are themselves AppImages and need FUSE, which
+# containers don't provide. This makes them extract-and-run instead.
+ENV APPIMAGE_EXTRACT_AND_RUN=1
+
+WORKDIR /app

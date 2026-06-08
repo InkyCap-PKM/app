@@ -1,0 +1,21 @@
+#!/bin/sh
+# Refresh the GTK icon cache and desktop database after the package is removed,
+# so the now-deleted app icon stops lingering in the cache. Mirrors the work
+# done in `postinst`; see that script for the full rationale.
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ] || [ "$1" = "upgrade" ] || [ "$1" = "abort-install" ]; then
+    if command -v update-icon-caches >/dev/null 2>&1; then
+        update-icon-caches /usr/share/icons/hicolor || true
+    elif command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        if [ -f /usr/share/icons/hicolor/icon-theme.cache ]; then
+            gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor || true
+        fi
+    fi
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database --quiet /usr/share/applications || true
+    fi
+fi
+
+exit 0

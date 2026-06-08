@@ -162,7 +162,11 @@ pub fn apply<R: Runtime>(window: &WebviewWindow<R>, saved: Option<&WindowState>)
         height: target_h,
     });
 
-    if saved.map(|s| s.maximized).unwrap_or(false) {
+    // Maximize when the user left it maximized last session, and also on a
+    // fresh install (no saved state) so the very first launch fills the
+    // screen — `unwrap_or(true)` covers the no-saved-state case. Once the
+    // window has been saved, the user's own choice is honoured thereafter.
+    if saved.map(|s| s.maximized).unwrap_or(true) {
         let _ = window.maximize();
     }
 }

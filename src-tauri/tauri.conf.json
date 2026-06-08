@@ -64,6 +64,24 @@
     ],
     "resources": [
       "licenses/*"
-    ]
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-libav"
+        ],
+        "files": {
+          "/usr/share/icons/hicolor/scalable/apps/inkycap.svg": "icons/icon.svg"
+        },
+        "postInstallScript": "deb/postinst",
+        "postRemoveScript": "deb/postrm"
+      }
+    }
   }
 }
