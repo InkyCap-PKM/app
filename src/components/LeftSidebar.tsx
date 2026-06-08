@@ -32,7 +32,6 @@ import {
 import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
 import type { CollectionInfo, FileTreeNode, PropertyType } from "../lib/types";
-import { ask, message } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../lib/ipc";
 import { pathEquals, pathStartsWith } from "../lib/paths";
 import { isLinux } from "../lib/platform";
@@ -62,7 +61,7 @@ import AgendaPanel from "./AgendaPanel";
 import HelpPanel from "./HelpPanel";
 import type { SidebarMode } from "./VerticalToolbar";
 import { toastError, toastSuccess } from "../stores/toasts";
-import { promptText } from "../stores/prompt";
+import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
 import { useI18n } from "../lib/i18n";
@@ -844,10 +843,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
     const existing = noteboxIndex()?.tags.find(([tg]) => tg === newTag);
     if (existing) {
-      const ok = await ask(
-        t("leftSidebar.mergeTagsBody", { newTag, oldTag }),
-        { title: t("leftSidebar.mergeTagsTitle"), kind: "warning" },
-      );
+      const ok = await promptConfirm({
+        title: t("leftSidebar.mergeTagsTitle"),
+        message: t("leftSidebar.mergeTagsBody", { newTag, oldTag }),
+        cancelLabel: t("common.cancel"),
+      });
       if (!ok) return;
     }
 
@@ -885,7 +885,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
             oldType: propertyTypeLabel(oldType),
           })
         : t("leftSidebar.mergePropsBody", { newKey, oldKey });
-      const ok = await ask(msg, { title: t("leftSidebar.mergePropsTitle"), kind: "warning" });
+      const ok = await promptConfirm({
+        title: t("leftSidebar.mergePropsTitle"),
+        message: msg,
+        cancelLabel: t("common.cancel"),
+      });
       if (!ok) return;
     }
 
@@ -902,10 +906,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function handleDeleteProperty(key: string) {
     setPropMenu(null);
-    const ok = await ask(
-      t("leftSidebar.deletePropBody", { key }),
-      { title: t("leftSidebar.deletePropTitle"), kind: "warning" },
-    );
+    const ok = await promptConfirm({
+      title: t("leftSidebar.deletePropTitle"),
+      message: t("leftSidebar.deletePropBody", { key }),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+    });
     if (!ok) return;
     try {
       await ipc.deletePropertyKey(key);
@@ -1135,7 +1141,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
 
   async function deleteCollection(col: CollectionInfo) {
     setContextMenu(null);
-    const confirmed = await ask(t("leftSidebar.deleteCollectionBody", { name: col.name }), { title: t("leftSidebar.deleteCollectionTitle"), kind: "warning" });
+    const confirmed = await promptConfirm({
+      title: t("leftSidebar.deleteCollectionTitle"),
+      message: t("leftSidebar.deleteCollectionBody", { name: col.name }),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+    });
     if (!confirmed) return;
     try {
       await ipc.deleteCollectionFile(col.path);
@@ -1296,7 +1307,12 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         items.length === 1
           ? t("leftSidebar.deleteOneBody", { name: items[0].path.split("/").pop() ?? "" })
           : t("leftSidebar.deleteManyBody", { count: items.length });
-      const confirmed = await ask(message, { title: t("leftSidebar.deleteTitle"), kind: "warning" });
+      const confirmed = await promptConfirm({
+        title: t("leftSidebar.deleteTitle"),
+        message,
+        confirmLabel: t("common.delete"),
+        cancelLabel: t("common.cancel"),
+      });
       if (!confirmed) return;
     }
     let deleted = false;
