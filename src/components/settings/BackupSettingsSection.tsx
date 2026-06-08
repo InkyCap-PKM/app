@@ -10,6 +10,7 @@ import { modifierKey } from "../../lib/platform";
 import { formatUserDateTime } from "../../lib/dates";
 import { useI18n } from "../../lib/i18n";
 import { backupDefault } from "../../lib/dialog-defaults";
+import { promptConfirm } from "../../stores/prompt";
 import { open } from "@tauri-apps/plugin-dialog";
 import { showToast, dismissToast } from "../../stores/toasts";
 import BackupBrowser from "../BackupBrowser";
@@ -82,9 +83,11 @@ export function BackupSettingsSection() {
     // First-time setup (hasPassword() === false) skips the prompt: there
     // are no prior archives to invalidate.
     if (hasPassword()) {
-      const ok = window.confirm(
-        `${t("backup.password.confirmChangeTitle")}\n\n${t("backup.password.confirmChangeBody")}`,
-      );
+      const ok = await promptConfirm({
+        title: t("backup.password.confirmChangeTitle"),
+        message: t("backup.password.confirmChangeBody"),
+        cancelLabel: t("common.cancel"),
+      });
       if (!ok) return;
     }
     try {
@@ -105,9 +108,12 @@ export function BackupSettingsSection() {
   async function clearPassword() {
     // Clearing wipes the keychain only — it does NOT decrypt existing
     // archives. Confirm so the user doesn't conflate the two.
-    const ok = window.confirm(
-      `${t("backup.password.confirmClearTitle")}\n\n${t("backup.password.confirmClearBody")}`,
-    );
+    const ok = await promptConfirm({
+      title: t("backup.password.confirmClearTitle"),
+      message: t("backup.password.confirmClearBody"),
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+    });
     if (!ok) return;
     setPwStatus(null);
     try {

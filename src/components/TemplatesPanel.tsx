@@ -26,7 +26,7 @@ import {
 } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
-import { promptText } from "../stores/prompt";
+import { promptText, promptConfirm } from "../stores/prompt";
 import { toastError, showToast } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
 import { linkifyTerm } from "./ExternalLink";
@@ -190,13 +190,13 @@ const TemplatesPanel: Component = () => {
   }
 
   async function uninstall(pkg: ipc.InstalledPackageEntry) {
-    if (
-      !window.confirm(
-        t("templates.uninstallConfirm", { spec: pkg.spec }),
-      )
-    ) {
-      return;
-    }
+    const ok = await promptConfirm({
+      title: t("templates.uninstallTitle", { spec: pkg.spec }),
+      message: t("templates.uninstallConfirm", { spec: pkg.spec }),
+      confirmLabel: t("common.uninstall"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!ok) return;
     try {
       await ipc.uninstallTypstPackage(pkg.spec);
       showToast("success", t("templates.uninstalled", { spec: pkg.spec }));

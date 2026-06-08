@@ -16,6 +16,7 @@ import { fileList } from "../stores/filelist";
 import { findCommandByKeybinding } from "../lib/command-registry";
 import { formatKeyCombo } from "../lib/keybindings";
 import { loadCreationRules } from "../stores/creation-rules";
+import { promptConfirm } from "../stores/prompt";
 import { noteboxSettings } from "../stores/settings";
 import LucideIconPicker from "./LucideIconPicker";
 import RuleIcon from "./RuleIcon";
@@ -209,7 +210,12 @@ const CreationRuleEditor: Component = () => {
   }
 
   async function deleteRule(id: string) {
-    const confirmed = confirm(t("creationRules.deleteConfirm"));
+    const confirmed = await promptConfirm({
+      title: t("creationRules.deleteTitle"),
+      message: t("creationRules.deleteConfirm"),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+    });
     if (!confirmed) return;
     try {
       await ipc.deleteCreationRule(id);
