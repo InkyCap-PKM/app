@@ -1,0 +1,15 @@
+# Pins the Rust toolchain for BOTH local development and the Dockerised Linux
+# build (scripts/build-linux-docker.sh), so the host and container always
+# compile InkyCap with the same compiler — instead of each picking up "whatever
+# stable happened to be current." rustup reads this file (searching up from the
+# crate, so repo-root placement covers cargo invoked from src-tauri too) and
+# fetches the named channel on demand; no image rebuild is needed to adopt a
+# bump here.
+#
+# This makes the Rust compiler a repo-pinned input (Layer 1) rather than
+# something that silently drifts whenever the build image is rebuilt. Bump
+# `channel` deliberately when you want a newer compiler, and commit it.
+[toolchain]
+channel = "1.94.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

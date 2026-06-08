@@ -34,3 +34,16 @@ InkyCap.code-workspace
 
 # Sidecar binaries (downloaded per-platform, ~30MB each)
 src-tauri/binaries/
+
+# Dockerised Linux build (scripts/build-linux-docker.sh): the container's
+# separate Cargo target dir and the collected deb/AppImage/rpm artifacts.
+target-docker/
+dist-linux/
+
+# Flatpak build (scripts/build-flatpak.sh): builder cache, local repo, build
+# tree, and the .deb staged for the manifest. The .flatpak output lands in
+# dist-linux/ (already ignored above).
+.flatpak-builder/
+flatpak/.build/
+flatpak/.repo/
+flatpak/inkycap.deb

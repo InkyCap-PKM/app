@@ -1,0 +1,18 @@
+# Build-context excludes for `docker build` (Dockerfile.build).
+#
+# Dockerfile.build installs a toolchain and COPYs nothing from the repo, so the
+# build context is unused — but without this file Docker uploads the ENTIRE
+# folder to the daemon, including src-tauri/target/ (tens to hundreds of GB of
+# Rust build artifacts). Excluding the heavy, irrelevant paths keeps the context
+# tiny and `docker build` fast.
+.git/
+node_modules/
+dist/
+dist-linux/
+target-docker/
+src-tauri/target/
+src-tauri/binaries/
+**/*.deb
+**/*.AppImage
+**/*.rpm
+**/*.log

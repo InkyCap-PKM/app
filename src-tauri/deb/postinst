@@ -1,0 +1,34 @@
+#!/bin/sh
+# Refresh the GTK icon cache and the desktop database after the package is
+# unpacked, so the freshly-installed hicolor icons (including the 512x512
+# launcher icon) are picked up immediately.
+#
+# Why this is needed: Tauri's deb bundler installs the icons into
+# /usr/share/icons/hicolor/<size>/apps/ but does NOT generate a maintainer
+# script to rebuild the icon cache. On any system that already has a
+# /usr/share/icons/hicolor/icon-theme.cache, GTK/GNOME trust that cache and
+# keep serving a stale, low-resolution entry for our app icon. The launcher,
+# dash, and task-switcher icon then look blurry on HiDPI displays (the small
+# cached bitmap is scaled up), and a reboot does NOT fix it because nothing
+# rebuilds the cache. This script closes that gap.
+set -e
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remove" ]; then
+    # Debian/Ubuntu ship `update-icon-caches`, which refreshes a theme's cache
+    # only when one already exists — the correct behaviour (never create a
+    # cache where the distro chose not to have one).
+    if command -v update-icon-caches >/dev/null 2>&1; then
+        update-icon-caches /usr/share/icons/hicolor || true
+    elif command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        # Fallback for distros without that helper: only touch an existing cache.
+        if [ -f /usr/share/icons/hicolor/icon-theme.cache ]; then
+            gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor || true
+        fi
+    fi
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database --quiet /usr/share/applications || true
+    fi
+fi
+
+exit 0

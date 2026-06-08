@@ -1,0 +1,81 @@
+# Flatpak manifest for InkyCap.
+#
+# Strategy: package the Docker-built .deb into a Flatpak that runs against the
+# GNOME runtime. The runtime supplies a version-matched WebKitGTK/GTK/GLib/Mesa
+# stack and mediates GPU access, which avoids the host-library collisions that
+# make the bundled AppImage fragile (e.g. bundled GLib 2.72 vs host 2.88, EGL
+# mismatch). Built into a downloadable single-file bundle by
+# scripts/build-flatpak.sh.
+#
+# The app-id matches the Tauri identifier in src-tauri/tauri.conf.json.
+id: com.inkycap.editor
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: inkycap
+
+finish-args:
+  # Display + GPU.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Audio output (embedded #video / #audio playback). Works for both
+  # PulseAudio and PipeWire hosts.
+  - --socket=pulseaudio
+  # OS keychain access (backup-archive passwords are stored via the Secret
+  # Service; without this the backup settings can't reach the keyring).
+  - --talk-name=org.freedesktop.secrets
+  # Network: Zotero connector (localhost), @preview Typst package downloads,
+  # git remotes, updater endpoint.
+  - --share=network
+  # ssh-agent, for git collaboration over SSH remotes. (Key files in ~/.ssh
+  # are already readable via --filesystem=home for libgit2's direct path.)
+  - --socket=ssh-auth
+  # Noteboxes can live anywhere the user keeps files — external drives and
+  # OS-mounted network/university shares (/mnt, /media, NFS/CIFS mountpoints,
+  # network home directories), so grant the full host filesystem read-write.
+  # This is the standard choice for a local-first editor; it trades sandbox
+  # tightness for the freedom to open a notebox from any location.
+  - --filesystem=host
+  # Desktop-mounted network shares (GNOME "Connect to Server" / gvfs, e.g.
+  # smb://, sftp://) live under the runtime dir, which `host` does not cover.
+  - --filesystem=xdg-run/gvfs
+
+# Full ffmpeg for audio/video playback (#video / #audio) via the runtime's
+# GStreamer libav plugin. Version tracks the freedesktop base of the GNOME
+# runtime above (GNOME 48 -> freedesktop 24.08).
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    version: '24.08'
+    add-ld-path: .
+    autodelete: false
+
+modules:
+  - name: inkycap
+    buildsystem: simple
+    build-commands:
+      # Mount point for the ffmpeg-full extension declared above.
+      - mkdir -p /app/lib/ffmpeg
+      # Unpack the Debian package staged next to this manifest.
+      - ar x inkycap.deb
+      - tar -xf data.tar.gz
+      # Binaries (main app + tinymist sidecar) -> /app/bin.
+      - install -Dm755 usr/bin/inkycap /app/bin/inkycap
+      - install -Dm755 usr/bin/tinymist /app/bin/tinymist
+      # Bundled resources (licenses, etc.) -> /app/lib/InkyCap, preserving the
+      # ../lib/InkyCap layout the binary resolves relative to /app/bin.
+      - cp -r usr/lib/InkyCap /app/lib/InkyCap
+      # Desktop file -> renamed to the app-id; Icon= pointed at the app-id icon.
+      - install -Dm644 usr/share/applications/InkyCap.desktop /app/share/applications/com.inkycap.editor.desktop
+      - sed -i 's/^Icon=.*/Icon=com.inkycap.editor/' /app/share/applications/com.inkycap.editor.desktop
+      # Icons -> renamed to the app-id (Flatpak requires icon name == app-id).
+      - |
+        for s in 32x32 64x64 128x128 512x512; do
+          src="usr/share/icons/hicolor/$s/apps/inkycap.png"
+          [ -f "$src" ] && install -Dm644 "$src" "/app/share/icons/hicolor/$s/apps/com.inkycap.editor.png"
+        done
+    sources:
+      - type: file
+        path: inkycap.deb
