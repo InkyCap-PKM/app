@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "InkyCap",
-  "version": "26.6.1",
+  "version": "26.6.2",
   "identifier": "com.inkycap.editor",
   "build": {
     "frontendDist": "../dist",
@@ -37,7 +37,7 @@
       "open": "(mailto:\\w+|tel:\\w+|https?://\\w+|[a-zA-Z][a-zA-Z0-9+.-]+://).+"
     },
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGQTI0NkM3RUNBMTY0QTUKUldTbFpLSHN4MGFpYjBKbHlhYUp6Z05EM0hVMkNpUGRhQVp3TVBQOW1xNStxUVl6WXJrb3cxdjUK",
       "endpoints": [
         "https://updates.inkycap.org/stable/latest.json"
       ]
@@ -46,7 +46,14 @@
   "bundle": {
     "active": true,
     "category": "Productivity",
-    "targets": "all",
+    "targets": [
+      "deb",
+      "rpm",
+      "nsis",
+      "msi",
+      "app",
+      "dmg"
+    ],
     "createUpdaterArtifacts": true,
     "publisher": "Joshua Chalifour",
     "copyright": "© 2026 Joshua Chalifour",
@@ -65,9 +72,6 @@
       "licenses/*"
     ],
     "linux": {
-      "appimage": {
-        "bundleMediaFramework": true
-      },
       "deb": {
         "depends": [
           "gstreamer1.0-plugins-base",

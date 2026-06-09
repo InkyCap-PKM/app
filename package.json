@@ -1,6 +1,6 @@
 {
   "name": "inkycap",
-  "version": "26.6.1",
+  "version": "26.6.2",
   "description": "A Tauri-based Typst editor for academic and research note-taking",
   "private": true,
   "scripts": {

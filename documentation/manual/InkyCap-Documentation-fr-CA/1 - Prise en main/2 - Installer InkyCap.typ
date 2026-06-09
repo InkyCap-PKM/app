@@ -19,11 +19,11 @@ InkyCap vise à fonctionner sous Linux, MacOS et Windows. Le fichier que vous t�
 
 Sous Linux, vous aurez le choix entre plusieurs formats de package :
 
-- Un *AppImage* (un fichier autonome unique que vous pouvez lancer directement, et le format qui prend en charge les mises à jour automatiques).
 - Un package *.deb*, pour les systèmes basés sur Debian et Ubuntu, installé au moyen de vos outils de package habituels.
 - Un package *.rpm*, pour les systèmes basés sur Fedora et openSUSE.
+- Un bundle *Flatpak*, qui fonctionne sur la plupart des distributions. Vous installez directement le fichier `.flatpak` téléchargé (il n'est pas sur Flathub); il apparaît ensuite dans votre menu d'applications.
 
-L'AppImage est le plus simple si vous voulez que les mises à jour soient gérées dans l'application. Les packages `.deb` et `.rpm` passent par le gestionnaire de packages de votre système et suivent l'apparence native de votre bureau, mais pour l'instant vous devrez télécharger et installer ces mises à jour manuellement.
+Ces trois formats passent par les outils de package de votre système et suivent l'apparence native de votre bureau. Leurs mises à jour se font à la main : InkyCap vous indique lorsqu'une version plus récente est disponible, mais l'installation elle-même passe par votre gestionnaire de packages ou par le téléchargement du nouveau fichier, de sorte que l'application ne se remplace jamais à votre insu.
 
 
 === MacOS
@@ -60,8 +60,8 @@ Si vous êtes à jour, vous verrez « Vous utilisez la dernière version. » Si 
 
 === Installations automatiques ou manuelles
 
-- Sous *Windows*, *macOS* et l'*AppImage Linux*, InkyCap peut télécharger et installer une mise à jour stable sur place. Vous verrez un bouton *Télécharger et installer*, un indicateur de progression pendant le téléchargement, puis « Mise à jour installée. Redémarrez pour terminer. » avec un bouton *Redémarrer maintenant*.
-- Sous *Linux .deb / .rpm* (et les installations gérées par package similaires), InkyCap se contente de vous *signaler* qu'une version plus récente existe et propose un bouton *Voir les versions* pour ouvrir la page de téléchargement. La mise à jour proprement dite est laissée au gestionnaire de packages de votre système. L'application ne se remplace jamais à votre insu.
+- Sous *Windows* et *macOS*, InkyCap peut télécharger et installer une mise à jour stable sur place. Vous verrez un bouton *Télécharger et installer*, un indicateur de progression pendant le téléchargement, puis « Mise à jour installée. Redémarrez pour terminer. » avec un bouton *Redémarrer maintenant*.
+- Sous *Linux* (que ce soit `.deb`, `.rpm` ou Flatpak), InkyCap se contente de vous *signaler* qu'une version plus récente existe et propose un bouton *Voir les versions* pour ouvrir la page de téléchargement. La mise à jour proprement dite est laissée au gestionnaire de packages de votre système. L'application ne se remplace jamais à votre insu.
 
 #callout("note")[
   Les versions de développement (bêta) s'installent toujours à la main, même sur les plateformes qui se mettent à jour automatiquement par ailleurs. Si vous adhérez aux bêtas, InkyCap vous dirigera vers la page des versions plutôt que d'en installer une pour vous.

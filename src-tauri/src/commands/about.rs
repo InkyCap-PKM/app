@@ -13,11 +13,12 @@ use crate::errors::InkyCapError;
 
 /// Whether this installation can install updates in place.
 ///
-/// Returns `"auto"` on Windows/macOS and on Linux when running as an AppImage
-/// (the `APPIMAGE` env var is set by the AppImage runtime). Returns `"manual"`
-/// for other Linux installs (`.deb`/`.rpm`/Flatpak/Snap) — those are owned by a
-/// package manager, so the UI links to the releases page instead of attempting
-/// a self-replacing install.
+/// Returns `"auto"` on Windows/macOS. Returns `"manual"` on Linux: InkyCap
+/// ships as `.deb`/`.rpm`/Flatpak, all owned by a package manager, so the UI
+/// links to the releases page instead of attempting a self-replacing install.
+/// (AppImage — the one self-updating Linux format — was dropped; see
+/// documentation/developer/releasing.md. The `APPIMAGE` env-var check is kept so
+/// a hand-built AppImage would still self-update, but none is published.)
 #[tauri::command]
 pub fn update_install_kind() -> String {
     if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {

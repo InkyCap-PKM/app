@@ -11,12 +11,25 @@ compares its `version` to the running app, and — if newer — downloads the
 platform artifact, verifies its **minisign signature** against the public key
 baked into the build, installs it, and (on Windows/macOS) relaunches.
 
-- **Auto-install**: Windows (NSIS `*-setup.exe`), macOS (`*.app.tar.gz`), and
-  **Linux AppImage**. On Linux the AppImage is replaced in place and the user
-  restarts.
-- **Manual**: non-AppImage Linux (`.deb`/`.rpm`/Flatpak/Snap) is package-manager
-  territory — the app detects this (`update_install_kind` → `manual`) and links
-  to the releases page instead of self-installing.
+- **Auto-install**: Windows (NSIS `*-setup.exe`) and macOS (`*.app.tar.gz`).
+  The app downloads the signed artifact, verifies it, installs, and relaunches.
+- **Manual**: **all Linux** (`.deb`/`.rpm`/Flatpak). InkyCap no longer ships an
+  AppImage — the one self-updating Linux format — so every Linux install is
+  package-manager territory: the app detects this (`update_install_kind` →
+  `manual`) and links to the releases page instead of self-installing. The "a
+  newer version exists" notice still works because the frontend reads only the
+  manifest's top-level `version` (`src/stores/updater.ts`), which needs no
+  per-platform signature.
+
+### Why no AppImage
+
+AppImage was dropped: bundling a self-contained GUI/GPU stack into it pulled in
+dependencies that became fragile on hosts much newer than the 22.04 build base,
+for more trouble than it was worth. **Flatpak** is the "runs anywhere" Linux
+option instead (it runs against the GNOME runtime, which supplies a
+version-matched WebKitGTK/GTK/Mesa stack), alongside native **`.deb`/`.rpm`**.
+None of these can self-update from inside the app — that capability was unique to
+AppImage — so Linux is manual-update across the board, by design.
 - **Privacy**: a check runs only on an explicit click, or on startup if the user
   opted in (`Settings → Behaviour → Software updates`). No silent network calls.
 
@@ -30,7 +43,9 @@ The moving parts:
 | In-app UI | `src/components/UpdateChecker.tsx`, `src/stores/updater.ts` |
 | Endpoint URLs (must match config) | `src/stores/updater.ts` constants |
 | Manifest generator | `scripts/gen-update-manifest.mjs` (`npm run manifest:gen`) |
-| Release CI | `.forgejo/workflows/release.yml` |
+| Linux `.deb`/`.rpm` build (CI) | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
+| Linux `.deb`/`.rpm` build (local) | `scripts/build-linux-docker.sh` |
+| Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
 | Manifest hosting | `pages` branch → `<channel>/latest.json`, served at `https://updates.inkycap.org/` |
 
 The repo lives at `codeberg.org/InkyCap/app` (org-owned). The update channel is
@@ -167,59 +182,105 @@ cd - && rm -rf /tmp/inkycap-pages    # CI maintains the branch from here
 (No need to pre-create `stable/`/`beta/` — git doesn't track empty directories,
 and CI creates them on the first release.)
 
-Then add the DNS record at your `inkycap.org` provider:
+Then add the DNS record at your `inkycap.org` provider. Codeberg routes a custom
+domain to a repo by the **`<repo>.<owner>.codeberg.page`** subdomain scheme, and
+the `pages` branch lives in the repo **`app`** under the **`InkyCap`** org — so
+the CNAME target carries *both* the repo and owner:
 
 ```
-updates.inkycap.org.   CNAME   inkycap.codeberg.page.
+updates.inkycap.org.   CNAME   app.inkycap.codeberg.page.
 ```
 
-(Codeberg also wants the domain verified — see Codeberg's "Custom domains" Pages
-docs.) Confirm the endpoint in `src-tauri/tauri.conf.json` and the constants in
-`src/stores/updater.ts` both read `https://updates.inkycap.org/...` — **they must
+(Pointing at the bare `inkycap.codeberg.page` instead makes Codeberg look for a
+repo literally named `pages`, fail to match, and never issue a TLS cert — the
+symptom is a `tlsv1 alert internal error`.) There is **no separate verification
+step or web-UI button**: Codeberg verifies ownership purely via this CNAME (the
+fact that it resolves into `codeberg.page` is the proof), then auto-issues a
+Let's Encrypt certificate. Confirm the endpoint in `src-tauri/tauri.conf.json`
+and the constants in `src/stores/updater.ts` both read
+`https://updates.inkycap.org/...` — **they must
 agree**, and changing them after the first public release strands existing
 installs on the old URL.
 
 ## Cutting a release
 
-1. Bump the version (see above) and commit.
-2. Tag and push: `git tag v26.6.2 && git push origin v26.6.2`.
-3. CI (`.forgejo/workflows/release.yml`) builds the signed Linux AppImage,
-   attaches it (+`.sig`) to the release, regenerates the manifest for the right
-   channel, and pushes it to the `pages` branch.
-4. Verify: visit the published `updates/<channel>/latest.json` and click
-   **Check for updates** in an installed older build.
+A release is built across three machines: CI builds the portable Linux packages,
+and you build Flatpak and Windows locally. The **manifest is published last,
+locally**, because it needs the signed Windows artifact (`.deb`/`.rpm`/Flatpak
+carry no signature, and `gen-update-manifest.mjs` requires at least one `.sig`).
 
-### Windows & macOS artifacts
+**1. Bump and tag.**
 
-Codeberg's shared runners are **Linux-only**, so CI builds only the AppImage.
-For the other platforms, until you add self-hosted runners with matching labels:
+```sh
+npm run version:stable          # or version:beta — see "Bumping the version"
+git commit -am "release: vXX.YY.Z"
+git tag vXX.YY.Z && git push origin main vXX.YY.Z
+```
 
-1. On a Windows / macOS machine, set the same signing env vars and run
-   `npm run tauri build`.
-2. Upload the produced installer **and its `.sig`** to the same release.
-3. Re-fold them into the manifest and re-publish:
+**2. CI builds Linux `.deb` + `.rpm`** (`.forgejo/workflows/release.yml`, fired
+by the `v*` tag): inside an Ubuntu 22.04 container it runs
+`tauri build --bundles deb rpm`, creates the release for the tag, and attaches
+the two packages. It marks the release a *prerelease* when the RELEASE component
+is odd (beta). It publishes **no manifest** — see step 5.
 
-   ```sh
-   # with every platform's artifacts collected under one dir:
-   npm run manifest:gen -- \
-     --base-url https://codeberg.org/InkyCap/app/releases/download/v26.6.2 \
-     --artifacts ./collected-artifacts \
-     --out latest.json
-   # then copy latest.json to pages/updates/<channel>/ and push
-   ```
+**3. Build the Flatpak locally** and attach it to the release:
 
-The generator is platform-set agnostic — it emits entries only for the `.sig`
-files it finds, so partial and complete manifests are both valid.
+```sh
+scripts/build-linux-docker.sh                 # produces the .deb the Flatpak packages
+scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>.flatpak
+```
 
-> **macOS note:** code-signing / notarization is intentionally **not** set up
-> yet. The updater signature is separate from Apple's Gatekeeper; without an
-> Apple Developer identity, macOS users will see "unidentified developer"
-> warnings on install. Revisit before promoting macOS to a first-class target.
+Upload the `.flatpak` to the release (web UI: drag it onto the release, or the
+API). It needs no `.sig`.
+
+**4. Build Windows locally** (on a Windows machine), signed:
+
+```sh
+set TAURI_SIGNING_PRIVATE_KEY=<contents of your private key>
+set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<its password>
+npm run tauri build                            # NSIS -setup.exe + .sig (and .msi)
+```
+
+Upload the `*-setup.exe` **and its `.sig`** to the same release.
+
+**5. Generate and publish the manifest** (locally, once the Windows `.sig`
+exists). Collect the signed Windows artifacts under one directory, then:
+
+```sh
+npm run manifest:gen -- \
+  --base-url https://codeberg.org/InkyCap/app/releases/download/vXX.YY.Z \
+  --version XX.YY.Z \
+  --artifacts ./collected-artifacts \
+  --out latest.json
+```
+
+The generator emits a `windows-x86_64` entry from the `.sig` it finds, plus the
+top-level `version` that drives the Linux "new version" notice. Copy it to the
+right channel on the `pages` branch (even RELEASE → `stable/`, odd → `beta/`)
+and push:
+
+```sh
+git clone --branch pages git@codeberg.org:InkyCap/app.git /tmp/pages
+mkdir -p /tmp/pages/stable        # or beta/
+cp latest.json /tmp/pages/stable/latest.json
+cd /tmp/pages && git add stable/latest.json \
+  && git commit -m "release: stable manifest for vXX.YY.Z" && git push
+```
+
+**6. Verify.** Visit `https://updates.inkycap.org/<channel>/latest.json`, then
+click **Check for updates** in an installed older build (Windows auto-installs;
+Linux shows the manual "View releases" path).
+
+> **macOS note:** macOS is not yet a first-class target. Code-signing /
+> notarization isn't set up, so macOS users see "unidentified developer"
+> warnings; when you do build a macOS bundle, attach the `*.app.tar.gz` + `.sig`
+> and re-run step 5 so the generator adds the `darwin-*` entry too.
 
 ## Testing the updater locally
 
-The updater only runs in a packaged build (not `tauri dev`). To smoke-test:
-build version N, install it, publish a manifest for N+1 pointing at a real
-signed artifact, then click **Check for updates**. The `manual`/non-AppImage and
-error paths can be exercised by running a non-AppImage Linux build or pointing
-the endpoint at an unreachable URL.
+The updater only runs in a packaged build (not `tauri dev`). To smoke-test the
+**auto** path: build a Windows version N, install it, publish a manifest for N+1
+pointing at a real signed Windows artifact, then click **Check for updates**. The
+**manual** path is whatever you get on Linux (any `.deb`/`.rpm`/Flatpak install
+shows "View releases"); the **error** path can be exercised by pointing the
+endpoint at an unreachable URL.
