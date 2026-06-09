@@ -71,11 +71,15 @@ modules:
       - install -Dm644 usr/share/applications/InkyCap.desktop /app/share/applications/com.inkycap.editor.desktop
       - sed -i 's/^Icon=.*/Icon=com.inkycap.editor/' /app/share/applications/com.inkycap.editor.desktop
       # Icons -> renamed to the app-id (Flatpak requires icon name == app-id).
+      # PNG sizes 32/64/128/512 only — deliberately NOT the deb's @2 dir, which
+      # GNOME misreads as a half-resolution slot and renders blurry.
       - |
         for s in 32x32 64x64 128x128 512x512; do
           src="usr/share/icons/hicolor/$s/apps/inkycap.png"
           [ -f "$src" ] && install -Dm644 "$src" "/app/share/icons/hicolor/$s/apps/com.inkycap.editor.png"
         done
+      # Scalable icon too — GNOME renders it crisp at any fractional scale.
+      - install -Dm644 usr/share/icons/hicolor/scalable/apps/inkycap.svg /app/share/icons/hicolor/scalable/apps/com.inkycap.editor.svg
     sources:
       - type: file
         path: inkycap.deb
