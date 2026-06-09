@@ -1,9 +1,18 @@
 # In-app updates & release pipeline — remaining work
 
-Status checkpoint (2026-06-04). The full how-to lives in
-[`releasing.md`](releasing.md); this file is the punch list to take the update
-system from **built** to **live**, plus the repo/org changes that go with it.
-Safe to copy elsewhere and to hand to a future session as the starting point.
+Status checkpoint (2026-06-09). **First public release `v26.6.2` is LIVE** —
+manually built and published (deb/rpm/Flatpak built locally, Windows installer
+signed on Windows), with the signed updater manifest serving at
+`https://updates.inkycap.org/stable/latest.json` and all asset URLs verified.
+The full update loop is functional. The full how-to lives in
+[`releasing.md`](releasing.md); this file is the punch list, now mostly done.
+
+**One open follow-up — CI runners.** The `v26.6.2` push did not produce CI
+builds: every run sat at `0s`/pending with no runner picking it up (Codeberg
+shared Actions runners need to be enabled/requested for the repo — repo Settings
+→ Actions, and Codeberg's CI docs). Until that's sorted, releases are cut by hand
+per releasing.md. The `release.yml` workflow itself is fixed and ready once a
+runner is available.
 
 ## Already done (in the codebase)
 
