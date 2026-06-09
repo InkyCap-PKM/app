@@ -1438,7 +1438,16 @@ pub async fn show_in_explorer(path: String) -> Result<(), InkyCapError> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer").arg(&dir).spawn()?;
+        // `explorer.exe` only navigates to backslash-separated paths. Paths
+        // reaching this command have typically been round-tripped through
+        // `to_frontend_string`, which normalizes to forward slashes; handing
+        // those to Explorer makes it silently fall back to opening Documents.
+        // Flip back to native separators for the argv. (path-stringification-ok:
+        // subprocess argument, not an IPC payload.)
+        let native = dir.to_string_lossy().replace('/', "\\");
+        std::process::Command::new("explorer")
+            .arg(&native)
+            .spawn()?;
     }
     Ok(())
 }

@@ -5,7 +5,7 @@ import { createSignal, createResource, Show, For } from "solid-js";
 import * as ipc from "../../lib/ipc";
 import { openDocumentationWindow } from "../../lib/docs-window";
 import { errorText } from "../../lib/errors";
-import { pathEquals } from "../../lib/paths";
+import { pathEquals, normalizePath } from "../../lib/paths";
 import {
   noteboxInfo,
   noteboxRegistry,
@@ -295,9 +295,12 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     if (!selected) return;
 
     const dirName = entry.path.split("/").pop() ?? entry.display_name;
-    const newPath = selected.endsWith("/")
-      ? selected + dirName
-      : selected + "/" + dirName;
+    // `selected` is the raw dialog path — native separators on Windows. Normalize
+    // before joining so the basename lands behind a single forward slash rather
+    // than producing a mixed-separator string (the backend tolerates either, but
+    // a consistent shape keeps display and any later comparison honest).
+    const base = normalizePath(selected).replace(/\/+$/, "");
+    const newPath = `${base}/${dirName}`;
 
     try {
       const result = await ipc.moveNotebox(entry.path, newPath);
@@ -323,7 +326,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     });
     if (!selected) return;
     setAddPath(selected);
-    const dirName = selected.split("/").pop() ?? "Notebox";
+    // Dialog paths carry native separators on Windows; normalize before pulling
+    // the basename so the suggested name isn't the whole path.
+    const dirName = normalizePath(selected).split("/").pop() ?? "Notebox";
     if (!addName()) setAddName(dirName);
     void validateAddPath(selected);
   }
@@ -459,7 +464,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
     const remote = hasCredentials ? toHttpsRemote(entered) : entered;
     // Display name defaults to the destination folder's basename (the backend
     // applies the same default when none is passed), matching New notebox.
-    const name = dest.split("/").pop() || "Notebox";
+    // `dest` came from a folder dialog (native separators on Windows); normalize
+    // before extracting the basename so the default name isn't the full path.
+    const name = normalizePath(dest).split("/").pop() || "Notebox";
     setCloning(true);
     try {
       const path = await ipc.gitCloneNotebox({
@@ -557,7 +564,9 @@ export function NoteboxManagementSection(props: { onClose: () => void }) {
       showToast("error", t("settings.notebox.importFolderRequired"));
       return;
     }
-    const name = dest.split("/").pop() || "Notebox";
+    // `dest` came from a folder dialog (native separators on Windows); normalize
+    // before extracting the basename so the default name isn't the full path.
+    const name = normalizePath(dest).split("/").pop() || "Notebox";
     setImporting(true);
     try {
       const path = await ipc.gitImportPackageAsNotebox({
