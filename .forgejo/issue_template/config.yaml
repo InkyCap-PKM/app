@@ -1,0 +1,11 @@
+# Controls the "New Issue" chooser. Blank issues stay enabled so people can
+# still file something that fits neither template. The contact links appear as
+# buttons alongside the templates.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://codeberg.org/InkyCap/app/src/branch/main/SECURITY.md
+    about: Do not report security issues publicly. Follow the security policy to disclose privately.
+  - name: Development question
+    url: https://codeberg.org/InkyCap/app/src/branch/main/CONTRIBUTING.md
+    about: For development questions not tied to a specific bug, see CONTRIBUTING or email dev@inkycap.org.

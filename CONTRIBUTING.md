@@ -2,7 +2,7 @@
 
 Thank you for your interest in improving InkyCap. This guide covers the dev
 environment, the conventions that matter, and the workflow. The short version:
-read [`CLAUDE.md`](CLAUDE.md), keep the gates green, and prefer the choice that
+read [`CLAUDE.md`](CLAUDE.md) and prefer the choice that
 is correct for the long term over the one that looks finished sooner.
 
 ## Ground rules
@@ -18,8 +18,7 @@ its history. Two principles govern almost every decision:
   `inkycap-notebox` package, then thin Rust glue, then custom code as a last
   resort) is in [`CLAUDE.md`](CLAUDE.md). If you reach for the last resort,
   leave a comment naming what you considered and why it did not work.
-- **No stopgaps.** InkyCap has no users to placate yet, so there is no reason to
-  fill a gap with a shim. Prefer the design that minimizes total rework, even if
+- **No stopgaps.** Prefer the design that minimizes total rework, even if
   the current task looks less complete on its own.
 
 [`CLAUDE.md`](CLAUDE.md) is the normative reference for engineering standards. It
@@ -42,10 +41,9 @@ The architecture map in
 explains how the pieces fit together and where each responsibility lives. Read it
 before making structural changes.
 
-## The conventions that bite
+## Important Conventions
 
-These are the ones a newcomer is most likely to trip over. All are enforced by
-tests or CI.
+These conventions are enforced by tests or CI.
 
 - **Path safety across IPC.** Every path crossing Rust to the frontend goes
   through `to_frontend_string`; the frontend compares paths through
@@ -71,7 +69,7 @@ tests or CI.
 - **CM6 editable widgets** follow a specific recipe (atomic wrap, focus routing,
   dispatch on blur). Read the CM6 widget section of `CLAUDE.md` and use
   `VerseWidget` as the reference, or you will reintroduce the reverse-typing bug.
-- **Canadian English** spellings in user-facing text and docs.
+- **Canadian English** default spellings in user-facing text and docs.
 
 ## Tests and gates
 
