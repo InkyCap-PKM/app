@@ -58,7 +58,13 @@ jobs:
         run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
 
       - name: Build Linux packages (.deb + .rpm)
-        run: npm run tauri build -- --bundles deb rpm
+        # createUpdaterArtifacts + a configured pubkey makes Tauri demand a
+        # signing key on every build; the --config override disables updater
+        # artifacts for these manual-install packages so the unsigned CI build
+        # succeeds (the signed Windows build keeps updater artifacts on).
+        run: |
+          npm run tauri build -- --bundles deb rpm \
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Attach .deb and .rpm to the release
         env:

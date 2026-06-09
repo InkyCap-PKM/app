@@ -81,6 +81,31 @@ fi
 mkdir -p "$REPO_ROOT/dist-linux"
 BUILD_LOG="$REPO_ROOT/dist-linux/build.log"
 echo "==> Building InkyCap ($BUNDLES) for $TARGET…  (full log: $BUILD_LOG)"
+# Pass the updater signing key into the container ONLY when it's actually set on
+# the host. Passing `-e VAR=""` makes the var present-but-empty inside, which
+# Tauri (with createUpdaterArtifacts on) then tries to decode and rejects with
+# "Missing comment in secret key". deb/rpm are not updater artifacts and need no
+# signing, so for them these stay unset; only an AppImage build would want them.
+# The `${arr[@]+...}` form expands to nothing on an empty array, safe under set -u.
+SIGN_ENV=()
+[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && \
+  SIGN_ENV+=(-e "TAURI_SIGNING_PRIVATE_KEY=$TAURI_SIGNING_PRIVATE_KEY")
+[ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ] && \
+  SIGN_ENV+=(-e "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD")
+
+# Without a signing key, turn OFF updater-artifact generation for this build.
+# tauri.conf.json sets `createUpdaterArtifacts: true` + a `pubkey` (needed for
+# the signed Windows build), and that combination makes Tauri DEMAND a private
+# key on every build — it errors "a public key has been found, but no private
+# key" even for .deb/.rpm, which are manual installs that never get an updater
+# artifact. The `--config` override merges over the base config to disable it.
+# (When a key IS present, leave the config untouched so an AppImage build could
+# still produce a signed updater artifact.) Expanded UNQUOTED in the container
+# so it splits into two args; the JSON's quotes survive as literals.
+NOUPDATER=""
+[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && \
+  NOUPDATER='--config {"bundle":{"createUpdaterArtifacts":false}}'
+
 docker run --rm -i \
   -v "$REPO_ROOT":/app \
   -v inkycap-cargo:/root/.cargo/registry \
@@ -88,8 +113,8 @@ docker run --rm -i \
   -e CARGO_TARGET_DIR=/app/target-docker \
   -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
   -e TARGET="$TARGET" -e BUNDLES="$BUNDLES" -e VERBOSE="$VERBOSE" \
-  -e TAURI_SIGNING_PRIVATE_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}" \
-  -e TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
+  -e NOUPDATER="$NOUPDATER" \
+  ${SIGN_ENV[@]+"${SIGN_ENV[@]}"} \
   "$IMAGE" \
   bash -lc '
     set -euo pipefail
@@ -98,7 +123,7 @@ docker run --rm -i \
     npm ci
     VERBOSE_FLAG=""
     [ "$VERBOSE" = "1" ] && VERBOSE_FLAG="--verbose"
-    npm run tauri build -- $VERBOSE_FLAG --bundles "$BUNDLES"
+    npm run tauri build -- $VERBOSE_FLAG --bundles "$BUNDLES" $NOUPDATER
     # The container runs as root; hand the build outputs back to the host user.
     chown -R "$HOST_UID:$HOST_GID" /app/target-docker
   ' 2>&1 | tee "$BUILD_LOG"

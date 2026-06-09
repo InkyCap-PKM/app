@@ -45,5 +45,10 @@ dist-linux/
 # dist-linux/ (already ignored above).
 .flatpak-builder/
 flatpak/.build/
+
+# Release manifest staging (scripts/publish-manifest.sh): the signed artifacts'
+# .sig files copied off the build machines, plus the generated latest.json.
+release-artifacts/
+/latest.json
 flatpak/.repo/
 flatpak/inkycap.deb
