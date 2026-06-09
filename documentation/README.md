@@ -46,8 +46,8 @@ Editor, UI, and extension surfaces:
   add new pills.
 - [UI styling](developer/ui-styling.md): the token system (radius, spacing,
   colour, surfaces), buttons, badges, and inputs.
-- [Releasing InkyCap](developer/releasing.md): the release pipeline and the
-  in-app updater.
+- [Releasing InkyCap](developer/releasing.md): the `YY.MM.RELEASE` versioning
+  scheme and channels, the release pipeline, and the in-app updater.
 - [Extending InkyCap](developer/extending/README.md): the four ways to extend
   InkyCap without modifying it:
   - [The open notebox format](developer/extending/notebox-format.md): read/write notes & metadata from any program.

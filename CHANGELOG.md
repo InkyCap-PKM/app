@@ -5,10 +5,10 @@ All notable changes to InkyCap are recorded here. The format is based on
 
 ## Versioning
 
-InkyCap uses date-based versions, `YYYYMM.RELEASE.PATCH` (see
+InkyCap uses date-based versions, `YY.MM.RELEASE` (see
 [documentation/developer/releasing.md](documentation/developer/releasing.md)).
-The middle `RELEASE` number selects the channel: **odd** is a user-facing stable
-release, **even** is a development (beta) release. Add a new heading below for
+The last `RELEASE` number selects the channel: **even** is a user-facing stable
+release, **odd** is a development (beta) release. Add a new heading below for
 each tagged release, newest first, grouping entries under **Added**, **Changed**,
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 

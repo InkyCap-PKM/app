@@ -10,10 +10,11 @@ Safe to copy elsewhere and to hand to a future session as the starting point.
 - In-app **Check for updates** (Settings → Overview): check → download → install
   → restart, with up-to-date / manual / error states and a progress bar.
   (`src/components/UpdateChecker.tsx`, `src/stores/updater.ts`)
-- **Channels** wired to the version scheme (odd = stable auto-install, even =
-  beta/manual) and an opt-in **"Include development releases"** + **"Check on
-  startup"** toggle (Settings → Behaviour). Privacy: no check without user
-  action unless opted in.
+- **Channels** wired to the version scheme — versions are `YY.MM.RELEASE` and
+  the last (RELEASE) component selects the channel: even = stable auto-install,
+  odd = beta/manual — and an opt-in **"Include development releases"** +
+  **"Check on startup"** toggle (Settings → Behaviour). Privacy: no check
+  without user action unless opted in.
 - Platform handling: Windows/macOS/Linux-AppImage auto-install; non-AppImage
   Linux detected and routed to the releases page. (`update_install_kind`)
 - Updater + process **plugins** registered; **capabilities** granted.
@@ -22,7 +23,7 @@ Safe to copy elsewhere and to hand to a future session as the starting point.
 - **Manifest generator** `scripts/gen-update-manifest.mjs` (`npm run manifest:gen`).
 - **Release CI** `.forgejo/workflows/release.yml` (Linux AppImage build → sign →
   attach to release → publish manifest to the `pages` branch).
-- **Versioning** `scripts/version.mjs` + `npm run version:*`; app is `202606.1.1`.
+- **Versioning** `scripts/version.mjs` + `npm run version:*`; app is `26.6.1`.
 - **Licence**: LiLiQ-P 1.1 in `LICENSE` (EN) + `LICENSE.fr` (FR).
 - Repo moved to **`InkyCap/app`**; all in-repo URLs updated.
 - **`pages` branch** pushed with `.domains` = `updates.inkycap.org`.
