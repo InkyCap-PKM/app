@@ -6,6 +6,7 @@ import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "
 import { noteboxInfo } from "../../stores/notebox";
 import { useI18n } from "../../lib/i18n";
 import { noteboxRootDefault } from "../../lib/dialog-defaults";
+import { normalizePath, pathStartsWith } from "../../lib/paths";
 import { open } from "@tauri-apps/plugin-dialog";
 import { SettingSelect, SettingLabel, CITATION_STYLES } from "./shared";
 
@@ -86,12 +87,17 @@ export function CitationsSettingsSection() {
                   defaultPath: await noteboxRootDefault(),
                 });
                 if (typeof selected === "string" && selected) {
+                  // The dialog returns a native path (backslashes on Windows);
+                  // the notebox root is already forward-slash normalized. Compare
+                  // and slice in the same canonical shape so an in-notebox bib
+                  // file is stored as a clean relative (Typst-style) path.
+                  const sel = normalizePath(selected);
                   const root = noteboxInfo()?.path;
-                  if (root && selected.startsWith(root)) {
-                    const rel = selected.slice(root.length).replace(/^[/\\]/, "");
+                  if (root && pathStartsWith(sel, root)) {
+                    const rel = sel.slice(normalizePath(root).length).replace(/^\//, "");
                     updateNoteboxSetting("citations", "bibliography_path", rel);
                   } else {
-                    updateNoteboxSetting("citations", "bibliography_path", selected);
+                    updateNoteboxSetting("citations", "bibliography_path", sel);
                   }
                 }
               }}
