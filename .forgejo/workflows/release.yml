@@ -74,8 +74,13 @@ jobs:
           if [ $((RELEASE % 2)) -eq 0 ]; then PRERELEASE=false; else PRERELEASE=true; fi
           REL_ID=$(curl -fsSL -H "Authorization: token ${TOKEN}" "${API}/releases/tags/${TAG}" | jq -r '.id // empty')
           if [ -z "${REL_ID}" ]; then
+            # Created as a DRAFT: the maintainer attaches the Windows installer
+            # (+.sig) and the Flatpak, then publishes the release by hand, then
+            # publishes the manifest (scripts/publish-manifest.sh). Draft asset
+            # download URLs only resolve once published — so the manifest, which
+            # points at them, must be published last.
             REL_ID=$(curl -fsSL -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":${PRERELEASE}}" \
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":true,\"prerelease\":${PRERELEASE}}" \
               "${API}/releases" | jq -r '.id')
           fi
           # Upload the .deb and .rpm. These are package-manager installs (manual

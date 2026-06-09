@@ -204,10 +204,12 @@ installs on the old URL.
 
 ## Cutting a release
 
-A release is built across three machines: CI builds the portable Linux packages,
-and you build Flatpak and Windows locally. The **manifest is published last,
-locally**, because it needs the signed Windows artifact (`.deb`/`.rpm`/Flatpak
-carry no signature, and `gen-update-manifest.mjs` requires at least one `.sig`).
+A release is built across machines: CI builds the portable Linux packages, and
+you build Flatpak and Windows locally. CI creates the release as a **draft**; you
+attach the remaining artifacts, **publish it by hand**, and only then publish the
+manifest — it points at release-asset download URLs that 404 until the release is
+public, and `gen-update-manifest.mjs` needs the signed Windows artifact (which
+the `.deb`/`.rpm`/Flatpak don't have).
 
 **1. Bump and tag.**
 
@@ -219,55 +221,47 @@ git tag vXX.YY.Z && git push origin main vXX.YY.Z
 
 **2. CI builds Linux `.deb` + `.rpm`** (`.forgejo/workflows/release.yml`, fired
 by the `v*` tag): inside an Ubuntu 22.04 container it runs
-`tauri build --bundles deb rpm`, creates the release for the tag, and attaches
-the two packages. It marks the release a *prerelease* when the RELEASE component
-is odd (beta). It publishes **no manifest** — see step 5.
+`tauri build --bundles deb rpm`, creates a **draft** release for the tag
+(`prerelease` when the RELEASE component is odd / beta), and attaches the two
+packages. It publishes **no manifest**.
 
-**3. Build the Flatpak locally** and attach it to the release:
+**3. Build the Flatpak locally** and attach it to the draft release:
 
 ```sh
 scripts/build-linux-docker.sh                 # produces the .deb the Flatpak packages
 scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>.flatpak
 ```
 
-Upload the `.flatpak` to the release (web UI: drag it onto the release, or the
-API). It needs no `.sig`.
+Upload the `.flatpak` to the draft (web UI: drag it onto the release). No `.sig`.
 
 **4. Build Windows locally** (on a Windows machine), signed:
 
-```sh
+```bat
 set TAURI_SIGNING_PRIVATE_KEY=<contents of your private key>
 set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<its password>
-npm run tauri build                            # NSIS -setup.exe + .sig (and .msi)
+npm run tauri build                            :: NSIS -setup.exe + .sig (and .msi)
 ```
 
-Upload the `*-setup.exe` **and its `.sig`** to the same release.
+Upload the `*-setup.exe` **and its `.sig`** to the same draft.
 
-**5. Generate and publish the manifest** (locally, once the Windows `.sig`
-exists). Collect the signed Windows artifacts under one directory, then:
+**5. Publish the release.** In the web UI, edit the draft and publish it (this is
+the deliberate "go public" moment). Now the asset download URLs resolve.
+
+**6. Publish the manifest.** Copy the Windows `*-setup.exe.sig` off the Windows
+box into `./release-artifacts/`, then run the helper (it reads the version,
+picks the channel by parity, generates the manifest, and pushes it to the
+`pages` branch):
 
 ```sh
-npm run manifest:gen -- \
-  --base-url https://codeberg.org/InkyCap/app/releases/download/vXX.YY.Z \
-  --version XX.YY.Z \
-  --artifacts ./collected-artifacts \
-  --out latest.json
+mkdir -p release-artifacts
+cp /path/to/InkyCap_XX.YY.Z_x64-setup.exe.sig release-artifacts/
+scripts/publish-manifest.sh                    # -> pages:<channel>/latest.json
 ```
 
-The generator emits a `windows-x86_64` entry from the `.sig` it finds, plus the
-top-level `version` that drives the Linux "new version" notice. Copy it to the
-right channel on the `pages` branch (even RELEASE → `stable/`, odd → `beta/`)
-and push:
+(The script wraps `npm run manifest:gen` + the `pages`-branch push; see its
+header for the manual equivalent.)
 
-```sh
-git clone --branch pages git@codeberg.org:InkyCap/app.git /tmp/pages
-mkdir -p /tmp/pages/stable        # or beta/
-cp latest.json /tmp/pages/stable/latest.json
-cd /tmp/pages && git add stable/latest.json \
-  && git commit -m "release: stable manifest for vXX.YY.Z" && git push
-```
-
-**6. Verify.** Visit `https://updates.inkycap.org/<channel>/latest.json`, then
+**7. Verify.** Visit `https://updates.inkycap.org/<channel>/latest.json`, then
 click **Check for updates** in an installed older build (Windows auto-installs;
 Linux shows the manual "View releases" path).
 
