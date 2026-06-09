@@ -5,18 +5,16 @@
 <h1 align="center">InkyCap</h1>
 
 <p align="center">
-  A Typst editor for writing, academic, and research note-taking, built around
-  reciprocal links, portable metadata, and local-first ownership of your work.
+  A personal knowledge management (PKM) application for writing, academic, and research note-taking. InkyCap builds upon Typst markup, principles of reciprocal linking, portable metadata, and long-term, local-first ownership of your work.
 </p>
 
 ---
 
-InkyCap is a desktop knowledge-management editor whose documents are plain
-[Typst](https://typst.app) files. It is built for people who write seriously:
-researchers, academics, and anyone who wants their notes to stay legible,
-linkable, and theirs. Notes are not trapped in a proprietary format; they are
-real Typst source that compiles anywhere, and every piece of metadata is
-queryable with the `typst` command-line tool, with or without InkyCap.
+InkyCap is a new project from _one individual_ that cares about it and will make best efforts to continue it but I am not a professional developer and there are no guarantees here (it is not my career). **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**.
+
+InkyCap is a desktop knowledge-management tool whose documents are plain
+[Typst](https://typst.app) files. It was created for people who write seriously:
+researchers, academics, and anyone who wants a tool with organizational flexibility, discoverability, and advanced recall functionality for their notes. Notes are not trapped in a proprietary format; they are real Typst source that compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
 ## Why InkyCap
 
@@ -25,25 +23,23 @@ queryable with the `typst` command-line tool, with or without InkyCap.
 - **Portable, typed metadata.** Note properties are typed arguments to a Typst
   `#note(...)` call, queryable by any Typst tool through the bundled
   `inkycap-notebox` package. Your structure travels with your files.
-- **Three editor modes.** Source (full Typst), visual (write-what-you-mean over
+- **Three editor modes.** Source (full Typst), visual (write-what-you-mean convenience over
   live Typst markup), and reading (the rendered document).
 - **First-class bibliography.** Native Typst BibTeX/Hayagriva citations and a
   dedicated References sidebar, with Zotero integration.
-- **The Mycelial View.** A graph that surfaces *latent links* (notes you mention
-  but never linked) and *emergent concepts* (recurring ideas you have not yet
-  named a page for), using classical corpus statistics rather than guesswork.
-- **Local-first and private.** No telemetry, no analytics, no remote logging.
-  Your notebox never leaves your device unless you opt into sync.
+- **The Mycelial View.** A graph that surfaces *emergent concepts* (recurring ideas you have not yet
+  named a page for) and *latent links* (notes you mention
+  but never linked), using corpus statistics.
+- **Local-first and private.** No telemetry, no analytics, no remote logging, no built-in gen AI consumption.
+  Your notebox never leaves your device unless you opt into sync or manually share your files.
 - **Collaboration when you want it.** Optional whole-notebox git sync with a
-  calm, merge-first model that never blocks your writing on a conflict.
-- **Open formats in and out.** Import from Markdown/Obsidian; export to PDF
-  (including PDF/A and PDF/UA), HTML, Markdown, and DOCX/ODT/LaTeX via Pandoc.
+  calm, merge-first model that does not block writing on a conflict.
+- **Open formats in and out.** Import from regular Markdown or an Obsidian-flavoured vault; export to PDF
+  (including PDF/A and PDF/UA), HTML, Markdown, and ODT/DOCX/LaTeX via Pandoc.
 
 ## Status
 
-InkyCap is in active development, working toward its first public release. The
-feature set is broad and the core is stable, but expect rough edges. Issues and
-contributions are welcome.
+InkyCap is new (June 2026) and in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.
 
 ## Installing
 
@@ -51,10 +47,9 @@ Pre-built packages are published on the
 [releases page](https://codeberg.org/InkyCap/app/releases). Pick the artifact for
 your platform:
 
-- **Linux:** AppImage (self-updating), or `.deb` / `.rpm` / Flatpak.
+- **Linux:** `.deb` / `.rpm` / Flatpak (download and install from the Flatpak file, not currently available on FlatHub).
 - **Windows:** the `*-setup.exe` installer.
-- **macOS:** the `.app` bundle. (macOS builds are not yet code-signed, so
-  Gatekeeper will warn on first launch.)
+- **macOS:** the `.app` bundle. (macOS builds would be nice to include but I don't have access to a Mac so need help from someone else. Feel free to build from the source yourself, there's a decent chance it might work). 
 
 The app has an in-app updater (Settings, Overview). See
 [documentation/developer/releasing.md](documentation/developer/releasing.md) for
@@ -120,7 +115,7 @@ inkycap/
 - **[Architecture overview](documentation/developer/architecture.md)** is the
   starting point for contributors: how the backend, frontend, and Typst pipeline
   fit together.
-- **Subsystem deep-dives:**
+- **Subsystem info:**
   [Mycelial View](documentation/developer/subsystems/mycelial-view.md) ·
   [Journal Scroll](documentation/developer/subsystems/journal-scroll.md) ·
   [Collections](documentation/developer/subsystems/collections.md) ·
@@ -134,12 +129,13 @@ inkycap/
 - **[CLAUDE.md](CLAUDE.md)** holds the project's governing engineering
   principles (the Typst-first rule, UTF-8/path-safety invariants, i18n, the UI
   token system). Read it before contributing code.
+- **User documentation:** is visible on the [InkyCap website](https://inkycap.org/documentation/user-manual) or from within the application. F1, then click the InkyCap icon at the top. Depending your app language setting (English / Français) the documentation will appear in that language. 
 
 ## Contributing
 
-Contributions are welcome. Please read
+Contributions are welcome! Please read
 [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[Code of Conduct](CODE_OF_CONDUCT.md) first. Translations have their own short
+[Code of Conduct](CODE_OF_CONDUCT.md). Translations have their own short
 guide: [CONTRIBUTING-translations.md](documentation/developer/CONTRIBUTING-translations.md).
 
 ## Technology
@@ -150,11 +146,9 @@ sidecar for language-server features.
 
 ## Security and privacy
 
-InkyCap is local-first and collects nothing. To report a vulnerability, see
-[SECURITY.md](SECURITY.md).
+InkyCap is local-first and does not transmit information about your use, setup, or your data itself to me (the sole person working on it at the moment). I am aiming to maintain and improve InkyCap on a best-effort, voluntary basis. To report a vulnerability, see [SECURITY.md](SECURITY.md). 
 
 ## Licence
 
 InkyCap is released under the Québec Free and Open-Source Licence, Permissive
-(**LiLiQ-P 1.1**). See [LICENSE](LICENSE) (English) and [LICENSE.fr](LICENSE.fr)
-(French).
+(**LiLiQ-P 1.1**). See [LICENSE](https://codeberg.org/InkyCap/app/src/branch/main/LICENSE) (English) and [LICENSE.fr](https://codeberg.org/InkyCap/app/src/branch/main/LICENSE.fr) (French). This is similar to many other open source licences and is approved by both the Open Source Initiative and Free Software Foundation. It essentially gives you rights to see, copy, modify, redistribute the code. 
