@@ -1,14 +1,15 @@
 # Release pipeline for InkyCap on Codeberg (Forgejo Actions).
 #
-# Trigger: pushing a tag like `v202606.1.1`. The job builds the signed,
+# Trigger: pushing a tag like `v26.6.1`. The job builds the signed,
 # self-updating bundle, attaches it to the Forgejo release, regenerates the
 # updater manifest, and publishes it to the Codeberg Pages branch so the
 # in-app "Check for updates" can find it.
 #
 # Channel routing follows InkyCap's versioning scheme (see
-# documentation/developer/releasing.md): an ODD middle component is a
-# user-facing/stable release (published to updates/stable/), an EVEN one is a
-# development/beta release (updates/beta/).
+# documentation/developer/releasing.md): versions are YY.MM.RELEASE and the
+# last (RELEASE) component selects the channel — EVEN is a user-facing/stable
+# release (published to updates/stable/), ODD is a development/beta release
+# (updates/beta/).
 #
 # Required repository secrets (Settings → Actions → Secrets):
 #   TAURI_SIGNING_PRIVATE_KEY           minisign private key (from `tauri signer generate`)
@@ -87,9 +88,9 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          # Channel from the middle component: odd = stable, even = beta.
-          MINOR=$(echo "${VERSION}" | cut -d. -f2)
-          if [ $((MINOR % 2)) -eq 1 ]; then CHANNEL="stable"; else CHANNEL="beta"; fi
+          # Channel from the last (RELEASE) component: even = stable, odd = beta.
+          RELEASE=$(echo "${VERSION}" | cut -d. -f3)
+          if [ $((RELEASE % 2)) -eq 0 ]; then CHANNEL="stable"; else CHANNEL="beta"; fi
           BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           node scripts/gen-update-manifest.mjs \
             --base-url "${BASE}" \

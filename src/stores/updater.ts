@@ -3,9 +3,10 @@
 // The Tauri updater plugin handles the signed, auto-installing path for the
 // STABLE channel (the endpoint configured in tauri.conf.json). Two cases are
 // layered on top here:
-//   - Development/beta releases (even release numbers) are opt-in and install
-//     MANUALLY — we fetch the beta manifest directly and, if newer, point the
-//     user at the releases page rather than auto-installing.
+//   - Development/beta releases (odd RELEASE numbers — the last version
+//     component) are opt-in and install MANUALLY — we fetch the beta manifest
+//     directly and, if newer, point the user at the releases page rather than
+//     auto-installing.
 //   - Package-managed Linux installs (non-AppImage) can't self-replace, so we
 //     only *report* a newer version and link to releases.
 //

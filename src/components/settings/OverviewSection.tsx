@@ -36,14 +36,15 @@ const SITE_URL = "https://inkycap.org";
 
 export function OverviewSection(props: { onClose: () => void }) {
   const t = useI18n();
-  // Version comes from the build (see scripts/version.mjs). The middle
-  // component is odd for user-facing releases, even for development builds.
+  // Version comes from the build (see scripts/version.mjs). The version is
+  // YY.MM.RELEASE; the last (RELEASE) component is odd for development builds,
+  // even for user-facing releases.
   const [version] = createResource(() => ipc.appVersion());
   const isDevChannel = () => {
     const v = version();
     if (!v) return false;
-    const minor = Number(v.split(".")[1]);
-    return Number.isFinite(minor) && minor % 2 === 0;
+    const release = Number(v.split(".")[2]);
+    return Number.isFinite(release) && release % 2 === 1;
   };
 
   async function openDocs() {

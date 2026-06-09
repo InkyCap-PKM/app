@@ -14,7 +14,7 @@
 //
 // Usage:
 //   node scripts/gen-update-manifest.mjs \
-//     --base-url https://codeberg.org/joch/InkyCap-Notes/releases/download/v202606.1.1 \
+//     --base-url https://codeberg.org/InkyCap/app/releases/download/v26.6.1 \
 //     --artifacts src-tauri/target/release/bundle \
 //     --notes "See the release page." \
 //     --out latest.json

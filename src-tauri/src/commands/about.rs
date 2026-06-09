@@ -27,12 +27,13 @@ pub fn update_install_kind() -> String {
     }
 }
 
-/// Return the running app's version string (e.g. `202606.1.1`).
+/// Return the running app's version string (e.g. `26.6.1`).
 ///
 /// Sourced from the version Tauri was built with (`tauri.conf.json` →
 /// `Cargo.toml`), kept in lockstep across manifests by `scripts/version.mjs`.
-/// The frontend formats/interprets it (Settings → Overview): the middle
-/// component is odd for user-facing releases and even for development builds.
+/// The version is `YY.MM.RELEASE`; the frontend formats/interprets it
+/// (Settings → Overview): the last (RELEASE) component is even for user-facing
+/// releases and odd for development builds.
 #[tauri::command]
 pub fn app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()

@@ -1,22 +1,29 @@
 // InkyCap version manager.
 //
-// Versioning scheme:  YYYYMM.RELEASE.PATCH
-//   YYYYMM   — year+month of the release (the "major"); bumped per monthly cycle
-//   RELEASE  — release type / increment: ODD = user-facing/stable,
-//              EVEN = development/beta work
-//   PATCH    — bugfixes, patches, iterations within that release
+// Versioning scheme:  YY.MM.RELEASE
+//   YY       — two-digit year of the release (the "major")
+//   MM       — month of the release (the "minor"), 1–12
+//   RELEASE  — release counter for that month AND the channel selector:
+//              ODD  = development / beta work
+//              EVEN = user-facing / stable distribution
 //
-// Stored as plain semver (e.g. 202606.1.1 — no leading zeros, so cargo/npm/
-// tauri accept it) and kept in lockstep across package.json, src-tauri/
-// Cargo.toml, and src-tauri/tauri.conf.json. The app reads it at runtime via
-// the `app_version` command and shows it in Settings → Overview.
+// The channel parity lives in the LAST component so that major.minor stay a
+// clean calendar stamp. This also keeps every component within the Windows
+// MSI ProductVersion limits (major ≤ 255, minor ≤ 255, build ≤ 65535) — a
+// YYYYMM-style major (e.g. 202606) overflows MSI and the WiX bundler refuses
+// it, which is why the scheme is YY.MM rather than YYYYMM.
+//
+// Stored as plain semver (e.g. 26.6.1) and kept in lockstep across
+// package.json, src-tauri/Cargo.toml, and src-tauri/tauri.conf.json. The app
+// reads it at runtime via the `app_version` command and shows it in
+// Settings → Overview.
 //
 // Usage:
 //   node scripts/version.mjs show
-//   node scripts/version.mjs release [YYYYMM]   # new monthly release -> <ym>.1.1
-//   node scripts/version.mjs stable             # advance to next user-facing (odd)
-//   node scripts/version.mjs beta               # advance to next development (even)
-//   node scripts/version.mjs patch              # increment the patch component
+//   node scripts/version.mjs release [YYYYMM]   # new monthly release -> YY.MM.1 (beta)
+//   node scripts/version.mjs stable             # advance to next user-facing (even)
+//   node scripts/version.mjs beta               # advance to next development (odd)
+//   node scripts/version.mjs patch              # next release in the current channel (+2)
 //
 // npm aliases: version:show / version:release / version:stable / version:beta /
 // version:patch  (pass a YYYYMM to release with `-- 202607`).
@@ -37,7 +44,17 @@ function parse(v) {
 }
 
 const fmt = ({ major, minor, patch }) => `${major}.${minor}.${patch}`;
-const channel = (minor) => (minor % 2 === 0 ? "development / beta" : "user-facing / stable");
+// The RELEASE (patch) component carries the channel: odd = dev/beta, even = stable.
+const channel = (patch) => (patch % 2 === 1 ? "development / beta" : "user-facing / stable");
+
+// Split a 6-digit YYYYMM into the scheme's calendar components: a two-digit
+// year (the major) and a 1–12 month (the minor).
+function splitYearMonth(ym) {
+  if (!/^\d{6}$/.test(String(ym))) {
+    throw new Error(`expected a 6-digit YYYYMM (got "${ym}")`);
+  }
+  return { major: Math.trunc(ym / 100) % 100, minor: ym % 100 };
+}
 
 function currentYearMonth() {
   const d = new Date();
@@ -48,20 +65,20 @@ function compute(cmd, arg, cur) {
   switch (cmd) {
     case "release": {
       const ym = arg !== undefined ? Number(arg) : currentYearMonth();
-      if (!/^\d{6}$/.test(String(ym))) {
-        throw new Error(`release expects a 6-digit YYYYMM (got "${arg}")`);
-      }
-      return { major: ym, minor: 1, patch: 1 };
+      // A fresh monthly cycle starts in development: release 1 (odd → beta).
+      return { ...splitYearMonth(ym), patch: 1 };
     }
-    // To the next ODD release number (stable). From an even, that's +1; from an
-    // odd, +2. Patch resets.
+    // To the next EVEN release number (user-facing/stable). From an odd, that's
+    // +1; from an even, +2 (a further stable iteration in the same month).
     case "stable":
-      return { major: cur.major, minor: cur.minor + (cur.minor % 2 === 1 ? 2 : 1), patch: 1 };
-    // To the next EVEN release number (development/beta).
+      return { major: cur.major, minor: cur.minor, patch: cur.patch + (cur.patch % 2 === 0 ? 2 : 1) };
+    // To the next ODD release number (development/beta).
     case "beta":
-      return { major: cur.major, minor: cur.minor + (cur.minor % 2 === 0 ? 2 : 1), patch: 1 };
+      return { major: cur.major, minor: cur.minor, patch: cur.patch + (cur.patch % 2 === 1 ? 2 : 1) };
+    // Next release in the WHATEVER channel we're already in: +2 preserves the
+    // odd/even parity (e.g. a bugfix to a stable build stays stable).
     case "patch":
-      return { major: cur.major, minor: cur.minor, patch: cur.patch + 1 };
+      return { major: cur.major, minor: cur.minor, patch: cur.patch + 2 };
     default:
       return null;
   }
@@ -89,7 +106,7 @@ const [cmd, arg] = process.argv.slice(2);
 const current = parse(JSON.parse(readFileSync(PKG, "utf8")).version);
 
 if (!cmd || cmd === "show") {
-  console.log(`Current version: ${fmt(current)}  (${channel(current.minor)})`);
+  console.log(`Current version: ${fmt(current)}  (${channel(current.patch)})`);
   if (!cmd) {
     console.log("\nCommands: show | release [YYYYMM] | stable | beta | patch");
   }
@@ -103,5 +120,5 @@ if (!next) {
 }
 
 writeAll(next);
-console.log(`${fmt(current)}  ->  ${fmt(next)}   (${channel(next.minor)})`);
+console.log(`${fmt(current)}  ->  ${fmt(next)}   (${channel(next.patch)})`);
 console.log("Updated package.json, src-tauri/Cargo.toml, src-tauri/tauri.conf.json.");

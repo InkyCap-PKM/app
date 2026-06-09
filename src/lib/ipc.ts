@@ -1045,7 +1045,7 @@ export async function readThirdPartyNotices(kind: "rust" | "js"): Promise<string
   return invoke<string>("read_third_party_notices", { kind });
 }
 
-/** The running app's version string, e.g. `202606.1.1`. */
+/** The running app's version string, e.g. `26.6.1`. */
 export async function appVersion(): Promise<string> {
   return invoke<string>("app_version");
 }
