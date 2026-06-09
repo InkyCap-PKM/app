@@ -18,11 +18,11 @@ InkyCap aims to run on Linux, MacOS, and Windows. The file you download depends 
 
 On Linux you'll have a choice of package formats:
 
-- An *AppImage* (a single self-contained file you can run directly, and the format that supports automatic updates).
 - A *.deb* package, for Debian- and Ubuntu-based systems, installed through your usual package tools.
 - A *.rpm* package, for Fedora- and openSUSE-based systems.
+- A *Flatpak* bundle, which runs on most distributions. You install the downloaded `.flatpak` file directly (it isn't on Flathub); it then appears in your application menu.
 
-The AppImage is the simplest if you want updates handled inside the app. The `.deb` and `.rpm` packages work through your system's package manager and follow your desktop's native appearance but for the time-being you will need to download and install those updates manually.
+All three work through your system's package tools and follow your desktop's native appearance. Updates to them are handled by hand: InkyCap tells you when a newer version is available, but the install itself goes through your package manager or by downloading the new file, so the app never replaces itself behind your back.
 
 
 === MacOS
@@ -59,8 +59,8 @@ If you're current, you'll see "You're running the latest version." If a new vers
 
 === Automatic versus manual installs
 
-- On *Windows*, *macOS*, and the *Linux AppImage*, InkyCap can download and install a stable update in place. You'll see a *Download & install* button, a progress indicator while it downloads, and then "Update installed. Restart to finish." with a *Restart now* button.
-- On *Linux .deb / .rpm* (and similar package-managed installs), InkyCap only *tells* you that a newer version exists and offers a *View releases* button to open the downloads page. Updating itself is left to your system's package manager. The app never replaces itself behind your back.
+- On *Windows* and *macOS*, InkyCap can download and install a stable update in place. You'll see a *Download & install* button, a progress indicator while it downloads, and then "Update installed. Restart to finish." with a *Restart now* button.
+- On *Linux* (`.deb`, `.rpm`, and Flatpak alike), InkyCap only *tells* you that a newer version exists and offers a *View releases* button to open the downloads page. Updating itself is left to your system's package manager. The app never replaces itself behind your back.
 
 #callout("note")[
   Development (beta) releases are always installed by hand, even on platforms that otherwise update automatically. If you opt into betas, InkyCap will point you to the releases page rather than installing one for you.

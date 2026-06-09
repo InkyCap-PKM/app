@@ -15,29 +15,35 @@ Safe to copy elsewhere and to hand to a future session as the starting point.
   odd = beta/manual — and an opt-in **"Include development releases"** +
   **"Check on startup"** toggle (Settings → Behaviour). Privacy: no check
   without user action unless opted in.
-- Platform handling: Windows/macOS/Linux-AppImage auto-install; non-AppImage
-  Linux detected and routed to the releases page. (`update_install_kind`)
+- Platform handling: Windows/macOS auto-install; **all Linux**
+  (`.deb`/`.rpm`/Flatpak — AppImage dropped) routed to the releases page.
+  (`update_install_kind`)
 - Updater + process **plugins** registered; **capabilities** granted.
 - `tauri.conf.json`: `plugins.updater` endpoint = `https://updates.inkycap.org/stable/latest.json`,
-  `createUpdaterArtifacts: true`. **`pubkey` is still an empty placeholder.**
+  `createUpdaterArtifacts: true`. **`pubkey` is set** (keypair generated
+  2026-06-09 at `~/.inkycap-updater.key` / `.pub`, both backed up).
 - **Manifest generator** `scripts/gen-update-manifest.mjs` (`npm run manifest:gen`).
-- **Release CI** `.forgejo/workflows/release.yml` (Linux AppImage build → sign →
-  attach to release → publish manifest to the `pages` branch).
-- **Versioning** `scripts/version.mjs` + `npm run version:*`; app is `26.6.1`.
+- **Release CI** `.forgejo/workflows/release.yml` (builds Linux `.deb`+`.rpm` in
+  an Ubuntu 22.04 container → attaches to the release). Flatpak, the signed
+  Windows installer, and the manifest are produced/published **locally** after
+  CI — see releasing.md.
+- **Versioning** `scripts/version.mjs` + `npm run version:*`; app is `26.6.2`
+  (first stable; bumped from beta `26.6.1` for the public launch).
 - **Licence**: LiLiQ-P 1.1 in `LICENSE` (EN) + `LICENSE.fr` (FR).
 - Repo moved to **`InkyCap/app`**; all in-repo URLs updated.
 - **`pages` branch** pushed with `.domains` = `updates.inkycap.org`.
-- **DNS**: `updates.inkycap.org CNAME inkycap.codeberg.page` — verified resolving.
+- **DNS**: `updates.inkycap.org CNAME app.inkycap.codeberg.page` — the
+  `<repo>.<owner>` scheme routes to the `pages` branch of `InkyCap/app`. (NOT
+  bare `inkycap.codeberg.page`, which looks for a repo named `pages` and yields a
+  TLS `internal error`.) No separate verify step — DNS is the proof.
 
 ## Remaining — owner actions (roughly in order)
 
-1. **Generate the updater signing key** (on a trusted machine, *not* CI):
-   `npx tauri signer generate -w ~/.tauri/inkycap.key`
-   - Paste the **public key** into `src-tauri/tauri.conf.json` →
-     `plugins.updater.pubkey`. (Builds won't produce updater artifacts until
-     this is set.)
-   - Keep the **private key + password** secret; back them up with a second
-     maintainer (continuity). Losing it = can't ship accepted updates.
+1. ~~**Generate the updater signing key**~~ **DONE 2026-06-09.** Keypair at
+   `~/.inkycap-updater.key` (private) / `~/.inkycap-updater.key.pub` (public),
+   both backed up by owner. Public key pasted into `src-tauri/tauri.conf.json`
+   → `plugins.updater.pubkey`. (Key custody with a second maintainer still a
+   nice-to-have for bus-factor.)
 
 2. **Add CI secrets** (Codeberg → Settings → Actions → Secrets; prefer
    **org-level** so future repos share them):
@@ -56,20 +62,25 @@ Safe to copy elsewhere and to hand to a future session as the starting point.
    Pages → verify `updates.inkycap.org` (may want a TXT token). Then
    `https://updates.inkycap.org/stable/latest.json` serves once a release runs.
 
-5. **Windows & macOS artifacts.** Codeberg's shared runners are Linux-only, so
-   CI builds only the AppImage. For the others: build on each OS (self-hosted
-   runner or local `npm run tauri build` with the signing env vars), attach the
-   installer **and its `.sig`** to the release, then re-run `npm run manifest:gen`
-   to fold them into the manifest.
-   - **macOS notarization is deferred** — without an Apple Developer identity,
-     macOS users get Gatekeeper "unidentified developer" warnings. Decide before
-     promoting macOS to a first-class target.
+5. **Local release artifacts + manifest.** CI builds only Linux `.deb`+`.rpm`.
+   You build the rest locally and publish the manifest last (full recipe in
+   releasing.md → "Cutting a release"):
+   - **Flatpak**: `scripts/build-linux-docker.sh` then `scripts/build-flatpak.sh`;
+     attach the `.flatpak` to the release (no `.sig`).
+   - **Windows**: `npm run tauri build` with the signing env vars; attach the
+     `*-setup.exe` **and its `.sig`**.
+   - **Manifest**: run `npm run manifest:gen` over the signed Windows artifact
+     (deb/rpm/Flatpak are unsigned manual installs, so the manifest carries the
+     top-level `version` + a `windows-x86_64` entry), then push `latest.json` to
+     the `pages` branch under `stable/` or `beta/`.
+   - **macOS deferred** — without an Apple Developer identity, macOS users get
+     Gatekeeper "unidentified developer" warnings. Decide before promoting macOS.
 
 6. **First-release dry run.** The updater only works in a packaged build (not
-   `tauri dev`). Build vN, install it, publish a manifest for vN+1 pointing at a
-   real signed artifact, and click **Check for updates**. Confirm: stable
-   auto-installs; beta shows the manual/releases path; non-AppImage Linux shows
-   "manual".
+   `tauri dev`). For the auto path: build a Windows vN, install it, publish a
+   manifest for vN+1 pointing at a real signed Windows artifact, and click
+   **Check for updates**. Confirm: Windows stable auto-installs; beta shows the
+   manual/releases path; every Linux install shows "manual".
 
 ## Don't-forget constraints
 

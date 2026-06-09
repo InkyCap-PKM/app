@@ -1,9 +1,11 @@
 # Release pipeline for InkyCap on Codeberg (Forgejo Actions).
 #
-# Trigger: pushing a tag like `v26.6.1`. The job builds the signed,
-# self-updating bundle, attaches it to the Forgejo release, regenerates the
-# updater manifest, and publishes it to the Codeberg Pages branch so the
-# in-app "Check for updates" can find it.
+# Trigger: pushing a tag like `v26.6.1`. The job builds the portable Linux
+# packages (.deb + .rpm) and attaches them to the Forgejo release. The Windows
+# installer, the Flatpak bundle, and the updater manifest are added locally
+# afterwards (see documentation/developer/releasing.md) — they can't be built or
+# published here (Windows is a different OS; Flatpak needs flatpak-builder + the
+# GNOME runtime; and the manifest needs the signed Windows artifact).
 #
 # Channel routing follows InkyCap's versioning scheme (see
 # documentation/developer/releasing.md): versions are YY.MM.RELEASE and the
@@ -12,16 +14,15 @@
 # (updates/beta/).
 #
 # Required repository secrets (Settings → Actions → Secrets):
-#   TAURI_SIGNING_PRIVATE_KEY           minisign private key (from `tauri signer generate`)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password ("" if you generated without one)
-#   PAGES_PUSH_TOKEN                    a token with write access to the pages branch
+#   PAGES_PUSH_TOKEN  a token with write access to the repo (to create the
+#                     release and upload assets). The signing-key secrets aren't
+#                     used here — .deb/.rpm are unsigned manual-update packages —
+#                     but they're still needed for the local Windows build.
 #
-# IMPORTANT — platform coverage: Codeberg's shared runners are Linux-only, so
-# this workflow builds the Linux AppImage. Windows/macOS artifacts must be
-# produced on their own platforms (a self-hosted runner with the matching label,
-# or a local `npm run tauri build`) and attached to the same release; re-run the
-# "manifest" step afterwards (or `npm run manifest:gen` locally) to fold their
-# signatures in. The manifest generator is platform-set agnostic.
+# The .deb/.rpm built here are package-manager installs and update manually, so
+# they carry no minisign signature and no updater-manifest entry. Linux users
+# see only the "a newer version is available → View releases" notice (the
+# in-app updater reads the manifest's top-level `version`).
 
 on:
   push:
@@ -40,8 +41,10 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
-            patchelf libfuse2 file build-essential curl wget jq perl
+            build-essential curl wget file ca-certificates git pkg-config jq \
+            libwebkit2gtk-4.1-dev librsvg2-dev libssl-dev \
+            libxdo-dev libayatana-appindicator3-dev libgtk-3-dev \
+            xdg-utils patchelf
 
       - uses: actions/setup-node@v4
         with:
@@ -54,62 +57,35 @@ jobs:
       - name: Fetch Tinymist sidecar
         run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
 
-      - name: Build signed bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --bundles appimage
+      - name: Build Linux packages (.deb + .rpm)
+        run: npm run tauri build -- --bundles deb rpm
 
-      - name: Attach artifacts to the release
+      - name: Attach .deb and .rpm to the release
         env:
           TOKEN: ${{ secrets.PAGES_PUSH_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           API="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
-          # Resolve (or create) the release for this tag.
+          # Resolve (or create) the release for this tag. Beta = odd RELEASE
+          # (last version component) → mark it a prerelease.
+          VERSION="${TAG#v}"
+          RELEASE=$(echo "${VERSION}" | cut -d. -f3)
+          if [ $((RELEASE % 2)) -eq 0 ]; then PRERELEASE=false; else PRERELEASE=true; fi
           REL_ID=$(curl -fsSL -H "Authorization: token ${TOKEN}" "${API}/releases/tags/${TAG}" | jq -r '.id // empty')
           if [ -z "${REL_ID}" ]; then
             REL_ID=$(curl -fsSL -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":false}" \
+              -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":${PRERELEASE}}" \
               "${API}/releases" | jq -r '.id')
           fi
-          # Upload each AppImage and its detached signature.
-          for f in $(find src-tauri/target/release/bundle/appimage -type f \( -name '*.AppImage' -o -name '*.AppImage.sig' \)); do
+          # Upload the .deb and .rpm. These are package-manager installs (manual
+          # updates), so they carry no .sig and no updater-manifest entry.
+          for f in $(find src-tauri/target/release/bundle/deb src-tauri/target/release/bundle/rpm -type f \( -name '*.deb' -o -name '*.rpm' \)); do
             curl -fsSL -X POST -H "Authorization: token ${TOKEN}" \
               -F "attachment=@${f}" \
               "${API}/releases/${REL_ID}/assets?name=$(basename "$f")"
           done
 
-      - name: Generate and publish updater manifest
-        env:
-          TOKEN: ${{ secrets.PAGES_PUSH_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-          # Channel from the last (RELEASE) component: even = stable, odd = beta.
-          RELEASE=$(echo "${VERSION}" | cut -d. -f3)
-          if [ $((RELEASE % 2)) -eq 0 ]; then CHANNEL="stable"; else CHANNEL="beta"; fi
-          BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          node scripts/gen-update-manifest.mjs \
-            --base-url "${BASE}" \
-            --version "${VERSION}" \
-            --artifacts src-tauri/target/release/bundle \
-            --notes "See ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
-            --out latest.json
-
-          # Publish to the `pages` branch at <channel>/latest.json. That branch
-          # is served at https://updates.inkycap.org/ via a Codeberg Pages custom
-          # domain (a `.domains` file on the branch + a DNS CNAME), so the public
-          # URL is https://updates.inkycap.org/<channel>/latest.json.
-          git clone --depth 1 --branch pages \
-            "https://x-access-token:${TOKEN}@codeberg.org/${GITHUB_REPOSITORY}.git" pages
-          mkdir -p "pages/${CHANNEL}"
-          cp latest.json "pages/${CHANNEL}/latest.json"
-          cd pages
-          git config user.name "InkyCap Release Bot"
-          git config user.email "release@inkycap.org"
-          git add "${CHANNEL}/latest.json"
-          git commit -m "release: ${CHANNEL} manifest for ${TAG}" || echo "no changes"
-          git push origin pages
+      # The Windows installer (+.sig), the Flatpak bundle, and the updater
+      # manifest are produced and published LOCALLY after this job — see the
+      # "Cutting a release" section of documentation/developer/releasing.md.
