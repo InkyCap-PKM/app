@@ -20,7 +20,7 @@
 // The macOS/.icns, Windows/.ico and Store tiles `tauri icon` makes are left
 // untouched.
 import { execFileSync } from "node:child_process";
-import { copyFileSync } from "node:fs";
+import { copyFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -60,3 +60,16 @@ for (const [name, px] of PNG_SIZES) {
 const svgOut = resolve(ICONS, "icon.svg");
 copyFileSync(MASTER, svgOut);
 console.log("[sharpen-linux-icons] icon.svg written (scalable hicolor icon)");
+
+// Guard: gdk-pixbuf's SVG loader (GNOME's app-grid/dash/switcher rasterizer)
+// sniffs only the first ~256 bytes for the `<svg>` tag. If anything (e.g. a
+// leading comment) pushes it past that window the loader rejects the file and
+// GNOME renders a blurry fallback. Fail the build rather than ship that.
+const svgHead = readFileSync(svgOut).subarray(0, 256).indexOf(Buffer.from("<svg"));
+if (svgHead < 0) {
+  throw new Error(
+    `[sharpen-linux-icons] icon.svg has no <svg> tag within the first 256 bytes ` +
+      `— gdk-pixbuf would reject it and GNOME would show a blurry icon. Keep ` +
+      `<svg> at the top of the file (no leading comment).`,
+  );
+}
