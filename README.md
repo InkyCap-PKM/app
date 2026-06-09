@@ -10,11 +10,9 @@
 
 ---
 
-InkyCap is a new project from _one individual_ that cares about it and will make best efforts to continue it but I am not a professional developer and there are no guarantees here (it is not my career). **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**.
+InkyCap is a new project from _one_ person that cares about it and will make best efforts to continue it but I am not a professional developer and there are no guarantees here (it is not my career). **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**.
 
-InkyCap is a desktop knowledge-management tool whose documents are plain
-[Typst](https://typst.app) files. It was created for people who write seriously:
-researchers, academics, and anyone who wants a tool with organizational flexibility, discoverability, and advanced recall functionality for their notes. Notes are not trapped in a proprietary format; they are real Typst source that compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
+InkyCap is a desktop knowledge-management and writing tool whose documents are plain text [Typst](https://typst.app) files. It provides organizational flexibility, discoverability, and advanced recall functionality for notes. Notes are not trapped in a proprietary format; they are real Typst source, which compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
 ## Why InkyCap
 
@@ -39,17 +37,18 @@ researchers, academics, and anyone who wants a tool with organizational flexibil
 
 ## Status
 
-InkyCap is new (June 2026) and in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.
+InkyCap is new (June 2026) and in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.  
+
+Mostly developed on a Linux system (Ubuntu), it has also been partially tested and seems to work reasonably well on Windows. In theory, it should work on a Mac but I have not tried.
 
 ## Installing
 
 Pre-built packages are published on the
-[releases page](https://codeberg.org/InkyCap/app/releases). Pick the artifact for
-your platform:
+[releases page](https://codeberg.org/InkyCap/app/releases). Pick the artifact for your platform:
 
 - **Linux:** `.deb` / `.rpm` / Flatpak (download and install from the Flatpak file, not currently available on FlatHub).
 - **Windows:** the `*-setup.exe` installer.
-- **macOS:** the `.app` bundle. (macOS builds would be nice to include but I don't have access to a Mac so need help from someone else. Feel free to build from the source yourself, there's a decent chance it might work). 
+- **macOS:** the `.app` bundle. (macOS builds would be nice to include but I don't have access to a Mac so need help from someone else. Feel free to build from the source yourself). 
 
 The app has an in-app updater (Settings, Overview). See
 [documentation/developer/releasing.md](documentation/developer/releasing.md) for
