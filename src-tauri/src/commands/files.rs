@@ -373,27 +373,28 @@ pub async fn read_media_bytes(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// Resolve an embed target (e.g. "image.png") to an absolute file path.
-/// Searches all files in the notebox by filename (case-insensitive, shortest path).
-#[tauri::command]
-pub async fn resolve_embed_path(
-    target: String,
-    state: State<'_, AppState>,
-    window: tauri::WebviewWindow,
-) -> Result<Option<String>, InkyCapError> {
-    let session = state.session(window.label()).await;
-    let storage = session.get_storage().await?;
-    let notebox_root = session.notebox_root.read().await;
-    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
-
+/// Resolve an embed target to an absolute notebox file path, or `None` when
+/// nothing matches. Two forms, mirroring how notes reference attachments:
+///
+/// - **Path form** (`/Assets/foo.png`, `Assets/foo.png`): a notebox-root-
+///   relative path with the leading slash optional, matching Typst's own
+///   `#image("/Assets/foo.png")` semantics. Resolved directly; `..` traversal
+///   is rejected by `validate_notebox_path`.
+/// - **Bare filename** (`foo.png`): searched across the whole notebox by name
+///   (case-insensitive, shortest path wins).
+///
+/// Shared by [`resolve_embed_path`] (hands the path string to the frontend) and
+/// [`read_embed_bytes`] (streams the bytes to the webview) so both honour the
+/// exact same resolution rules.
+async fn resolve_embed_target(
+    target: &str,
+    storage: &crate::storage::local::LocalNoteboxStorage,
+    root: &std::path::Path,
+) -> Result<Option<PathBuf>, InkyCapError> {
     // Strip any size suffix (e.g. "image.png|400" -> "image.png")
-    let clean_target = target.split('|').next().unwrap_or(&target).trim();
+    let clean_target = target.split('|').next().unwrap_or(target).trim();
 
-    // If the target contains a path separator, treat it as a notebox-root-
-    // relative path (with or without a leading slash, matching Typst's own
-    // `#image("/assets/foo.png")` semantics). Resolve directly and skip
-    // the filename search. Defends against `..` traversal via
-    // validate_notebox_path.
+    // Path form: resolve directly, skipping the filename search.
     if clean_target.contains('/') || clean_target.contains('\\') {
         let stripped = clean_target
             .trim_start_matches('/')
@@ -401,7 +402,7 @@ pub async fn resolve_embed_path(
         let candidate = root.join(stripped);
         if let Ok(resolved) = crate::storage::path::validate_notebox_path(root, &candidate) {
             if resolved.is_file() {
-                return Ok(Some(to_frontend_string(&resolved)));
+                return Ok(Some(resolved));
             }
         }
         return Ok(None);
@@ -440,7 +441,61 @@ pub async fn resolve_embed_path(
         }
     }
 
-    Ok(best.map(|p: PathBuf| to_frontend_string(&p)))
+    Ok(best)
+}
+
+/// Resolve an embed target (e.g. "image.png") to an absolute file path string
+/// for the frontend. See [`resolve_embed_target`] for the resolution rules.
+#[tauri::command]
+pub async fn resolve_embed_path(
+    target: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let resolved = resolve_embed_target(&target, &storage, root).await?;
+    Ok(resolved.map(|p| to_frontend_string(&p)))
+}
+
+/// Read an embedded image as raw bytes, returned to the webview as an
+/// ArrayBuffer the visual editor wraps in a `blob:` URL.
+///
+/// The visual-editor image widgets load attachments this way rather than via
+/// `convertFileSrc`: Tauri's custom asset protocol is unreliable across
+/// platforms for embedded files (media silently fails on WebKitGTK — see
+/// [`read_media_bytes`] — and images fail on Windows, where the canonicalized
+/// `\\?\` path is matched against the scope glob and the load is denied). A
+/// blob URL sidesteps the asset protocol, its scope check, and its
+/// separator/verbatim-prefix matching entirely, so it renders identically on
+/// every OS. `target` accepts the same path / bare-filename forms as
+/// [`resolve_embed_path`]; traversal is blocked by `validate_notebox_path`.
+#[tauri::command]
+pub async fn read_embed_bytes(
+    target: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<tauri::ipc::Response, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    // Clone the root and drop the lock before the read so a large attachment
+    // doesn't hold the notebox_root lock across filesystem I/O.
+    let root = session
+        .notebox_root
+        .read()
+        .await
+        .clone()
+        .ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let resolved = resolve_embed_target(&target, &storage, &root)
+        .await?
+        .ok_or_else(|| InkyCapError::InvalidPath(format!("Embed not found: {target}")))?;
+
+    let bytes = tokio::fs::read(&resolved).await?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Resolve a wikilink target string to a file path.
