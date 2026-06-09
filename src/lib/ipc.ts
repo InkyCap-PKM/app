@@ -1019,6 +1019,17 @@ export async function readMediaBytes(path: string): Promise<ArrayBuffer> {
   return invoke<ArrayBuffer>("read_media_bytes", { target: path });
 }
 
+/**
+ * Read an embedded image's bytes as an ArrayBuffer. Backs the visual editor's
+ * `#image` widgets via a `blob:` URL — the asset protocol fails for images on
+ * Windows (the canonicalized `\\?\` path is denied by the scope glob), so the
+ * blob path renders reliably on every OS. `path` accepts the same forms as
+ * {@link resolveEmbedPath} (notebox-root-absolute, relative, or bare filename).
+ */
+export async function readEmbedBytes(path: string): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("read_embed_bytes", { target: path });
+}
+
 export async function showInExplorer(path: string): Promise<void> {
   return invoke<void>("show_in_explorer", { path });
 }

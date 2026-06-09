@@ -1,9 +1,7 @@
 import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
-import { loadMediaObjectUrl, revokeMediaBlobs } from "../../lib/media-src";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import * as ipc from "../../lib/ipc";
+import { loadImageObjectUrl, loadMediaObjectUrl, revokeBlobUrls } from "../../lib/media-src";
 import { highlightCodeInto } from "./code-highlight";
 import { buildPillButton, findCallEnd, applyCallTransform, upsertNamedArg, type PillMenuSection } from "./pill";
 import { getPillOptions } from "./pill-options";
@@ -570,12 +568,17 @@ export class ImageWidget extends WidgetType {
     wrap.appendChild(label);
 
     const imgPath = this.path;
-    ipc.resolveEmbedPath(imgPath).then((absPath) => {
-      if (!absPath) return;
+    loadImageObjectUrl(imgPath).then((url) => {
+      // The widget may have been torn down while the bytes were in flight;
+      // don't leak the blob URL or touch a detached DOM.
+      if (!url || !document.body.contains(wrap)) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
       const img = document.createElement("img");
       img.className = "cm-typst-image-img";
       img.alt = this.alt ?? imgPath;
-      img.src = convertFileSrc(absPath);
+      img.src = url;
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
       // Preserve aspect ratio when only one axis is constrained — Typst scales
@@ -594,6 +597,10 @@ export class ImageWidget extends WidgetType {
     });
 
     return wrap;
+  }
+
+  destroy(dom: HTMLElement) {
+    revokeBlobUrls(dom);
   }
 
   ignoreEvent() { return false; }
@@ -635,9 +642,14 @@ export class ImageBlockWidget extends WidgetType {
   }
 
   updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    revokeBlobUrls(dom);
     dom.innerHTML = "";
     this.renderContent(dom, view);
     return true;
+  }
+
+  destroy(dom: HTMLElement) {
+    revokeBlobUrls(dom);
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
@@ -652,8 +664,13 @@ export class ImageBlockWidget extends WidgetType {
     inner.appendChild(label);
 
     const imgPath = this.path;
-    ipc.resolveEmbedPath(imgPath).then((absPath) => {
-      if (!absPath) return;
+    loadImageObjectUrl(imgPath).then((url) => {
+      // Bail (and free the blob) if the widget was replaced while the bytes
+      // were loading.
+      if (!url || !document.body.contains(wrap)) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
       // The holder is an inline-block wrapper so (a) the resize handle can be
       // absolutely positioned over the image's corner and (b) `inner`'s
       // text-align governs left/centre/right placement of the whole image
@@ -664,7 +681,7 @@ export class ImageBlockWidget extends WidgetType {
       const img = document.createElement("img");
       img.className = "cm-typst-image-img";
       img.alt = this.alt ?? imgPath;
-      img.src = convertFileSrc(absPath);
+      img.src = url;
       if (this.width) img.style.width = typstLengthToCss(this.width);
       if (this.height) img.style.height = typstLengthToCss(this.height);
       // Preserve aspect ratio when only one axis is constrained — Typst scales
@@ -723,14 +740,14 @@ export class MediaBlockWidget extends WidgetType {
   }
 
   updateDOM(dom: HTMLElement, view: EditorView): boolean {
-    revokeMediaBlobs(dom);
+    revokeBlobUrls(dom);
     dom.innerHTML = "";
     this.renderContent(dom, view);
     return true;
   }
 
   destroy(dom: HTMLElement) {
-    revokeMediaBlobs(dom);
+    revokeBlobUrls(dom);
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {

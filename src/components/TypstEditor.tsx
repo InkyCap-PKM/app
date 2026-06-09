@@ -13,7 +13,7 @@ import {
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { buildChecker } from "../lib/spellchecker";
-import { loadMediaObjectUrl, revokeMediaBlobs } from "../lib/media-src";
+import { loadMediaObjectUrl, revokeBlobUrls } from "../lib/media-src";
 import { t } from "../lib/i18n";
 import { settings } from "../stores/settings";
 import { localeVersion } from "../lib/i18n";
@@ -1341,7 +1341,7 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
                   const body = doc.body;
                   if (body) {
                     // Release any object URLs from the previous render first.
-                    revokeMediaBlobs(el);
+                    revokeBlobUrls(el);
                     while (el.firstChild) el.removeChild(el.firstChild);
                     while (body.firstChild) el.appendChild(body.firstChild);
                     void resolveMediaSources(el);
