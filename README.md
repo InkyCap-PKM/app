@@ -5,12 +5,12 @@
 <h1 align="center">InkyCap</h1>
 
 <p align="center">
-  A personal knowledge management (PKM) application for writing, academic, and research note-taking. InkyCap builds upon Typst markup, principles of reciprocal linking, portable metadata, and long-term, local-first ownership of your work.
+  A personal knowledge management (PKM) application for writing, academic, and research note-taking. InkyCap builds upon Typst markup, principles of reciprocal linking, portable metadata, and long-term, local-first ownership of your work. More at [inkycap.org](https://inkycap.org)
 </p>
 
 ---
 
-InkyCap is a new project from _one_ person that cares about it and will make best efforts to continue it but I am not a professional developer and there are no guarantees here (it is not my career). **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**.
+InkyCap is a new project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**. 
 
 InkyCap is a desktop knowledge-management and writing tool whose documents are plain text [Typst](https://typst.app) files. It provides organizational flexibility, discoverability, and advanced recall functionality for notes. Notes are not trapped in a proprietary format; they are real Typst source, which compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
