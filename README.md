@@ -5,7 +5,7 @@
 <h1 align="center">InkyCap</h1>
 
 <p align="center">
-  A personal knowledge management (PKM) application for writing, academic, and research note-taking. InkyCap builds upon Typst markup, principles of reciprocal linking, portable metadata, and long-term, local-first ownership of your work. More at [inkycap.org](https://inkycap.org)
+  A personal knowledge management (PKM) application for writing, academic, and research note-taking. InkyCap builds upon Typst markup, principles of reciprocal linking, portable metadata, and long-term, local-first ownership of your work. More at https://inkycap.org
 </p>
 
 ---
