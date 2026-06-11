@@ -900,7 +900,7 @@ pub async fn get_notebox_registry() -> Result<Vec<NoteboxRegistryItem>, InkyCapE
     // The system documentation notebox is reachable only from the F1 Help
     // panel — never list it among the user's noteboxes.
     entries.retain(|e| !is_docs_notebox(&e.path));
-    entries.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.last_opened));
     Ok(entries
         .into_iter()
         .map(|e| {

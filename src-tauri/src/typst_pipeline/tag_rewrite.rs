@@ -48,7 +48,7 @@ fn rewrite_tag_calls(content: &str, old: &str, new: &str) -> String {
     }
 
     // Apply edits from the back so earlier byte offsets stay valid.
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    edits.sort_by_key(|b| std::cmp::Reverse(b.0.start));
     let mut out = content.to_string();
     for (range, replacement) in edits {
         out.replace_range(range, &replacement);

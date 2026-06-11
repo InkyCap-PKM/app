@@ -90,7 +90,7 @@ fn strip_block_review(source: &str) -> String {
     let bytes = source.as_bytes();
     let mut out = source.to_string();
     let mut sorted = spans;
-    sorted.sort_by(|a, b| b.start.cmp(&a.start));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.start));
     for span in &sorted {
         let mut range = span.clone();
         // Standalone-on-its-line: line starts at the call and a newline follows.
