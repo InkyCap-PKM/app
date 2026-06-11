@@ -94,19 +94,9 @@ async fn read_clipboard_text(app: &tauri::AppHandle) -> Result<Option<String>, S
     {
         let _ = app;
         return Ok(tokio::task::spawn_blocking(|| {
-            use cocoa::base::{id, nil};
-            use objc::{class, msg_send, sel, sel_impl};
-            unsafe {
-                let pb: id = msg_send![class!(NSPasteboard), generalPasteboard];
-                let nsstring: id = msg_send![class!(NSString), stringWithUTF8String: b"public.utf8-plain-text\0".as_ptr()];
-                let text: id = msg_send![pb, stringForType: nsstring];
-                if text == nil {
-                    None
-                } else {
-                    let cstr: *const std::os::raw::c_char = msg_send![text, UTF8String];
-                    Some(std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned())
-                }
-            }
+            let pb = objc2_app_kit::NSPasteboard::generalPasteboard();
+            let text = pb.stringForType(unsafe { objc2_app_kit::NSPasteboardTypeString })?;
+            Some(text.to_string())
         })
         .await
         .map_err(|e| format!("clipboard task panicked: {}", e))?);

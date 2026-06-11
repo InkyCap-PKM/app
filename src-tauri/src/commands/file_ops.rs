@@ -227,52 +227,33 @@ mod macos {
     //! can dispatch this onto a tokio blocking task without the
     //! main-thread marshalling that the Linux/GTK path needs.
 
-    use cocoa::base::{id, nil};
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc2::ClassType;
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSURL};
 
     pub fn read_clipboard_uris_blocking() -> Vec<String> {
-        unsafe {
-            let pb: id = msg_send![class!(NSPasteboard), generalPasteboard];
-            if pb == nil {
-                return Vec::new();
-            }
-            // `readObjectsForClasses:options:` wants an NSArray of
-            // Class objects. In the Objective-C runtime, classes
-            // are first-class objects, so we cast `class!(NSURL)`
-            // to `id` and stuff it into a 1-element NSArray.
-            let url_class: id = class!(NSURL) as *const _ as id;
-            let classes: id = msg_send![class!(NSArray), arrayWithObject: url_class];
-            let urls: id = msg_send![pb, readObjectsForClasses: classes options: nil];
-            if urls == nil {
-                return Vec::new();
-            }
-            let count: usize = msg_send![urls, count];
-            log::debug!("[clipboard] NSPasteboard returned {} NSURLs", count);
-            let mut out = Vec::with_capacity(count);
-            for i in 0..count {
-                let url: id = msg_send![urls, objectAtIndex: i];
-                if url == nil {
-                    continue;
-                }
-                // `-[NSURL path]` returns the absolute filesystem
-                // path for file URLs, or nil for non-file URLs.
-                let path: id = msg_send![url, path];
-                if path == nil {
-                    continue;
-                }
-                let c_str: *const std::os::raw::c_char = msg_send![path, UTF8String];
-                if c_str.is_null() {
-                    continue;
-                }
-                let s = std::ffi::CStr::from_ptr(c_str)
-                    .to_string_lossy()
-                    .into_owned();
+        let pb = NSPasteboard::generalPasteboard();
+
+        // `readObjectsForClasses:options:` wants an NSArray of Class objects.
+        let classes = NSArray::from_slice(&[NSURL::class()]);
+        let urls = unsafe { pb.readObjectsForClasses_options(&classes, None) };
+        let Some(urls) = urls else { return Vec::new() };
+
+        // SAFETY: readObjectsForClasses_options is constrained to NSURL::class()
+        let urls = unsafe { urls.cast_unchecked::<NSURL>() };
+        let count = urls.count();
+        log::debug!("[clipboard] NSPasteboard returned {} NSURLs", count);
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let url = urls.objectAtIndex(i);
+            if let Some(path) = url.path() {
+                let s = path.to_string();
                 if !s.is_empty() {
                     out.push(s);
                 }
             }
-            out
         }
+        out
     }
 }
 
