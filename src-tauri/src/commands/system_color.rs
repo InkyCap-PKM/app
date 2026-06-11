@@ -57,14 +57,13 @@ fn windows_accent() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn macos_accent() -> Option<String> {
-    use cocoa::appkit::NSColor;
-    use cocoa::base::nil;
-    use objc::runtime::Class;
-    use objc::{msg_send, sel, sel_impl};
+    use objc2::runtime::AnyClass;
+    use objc2::{msg_send, sel};
+    use objc2_app_kit::{NSColor, NSColorSpace};
 
     // `NSColor.controlAccentColor` was added in 10.14. Probe at runtime so
     // older macOS doesn't crash; respond `None` if it isn't there.
-    let cls = Class::get("NSColor")?;
+    let cls = AnyClass::get(c"NSColor")?;
     let has_method: bool = unsafe {
         let sel = sel!(controlAccentColor);
         msg_send![cls, respondsToSelector: sel]
@@ -72,31 +71,24 @@ fn macos_accent() -> Option<String> {
     if !has_method {
         return None;
     }
-    unsafe {
-        let accent: cocoa::base::id = NSColor::controlAccentColor(nil);
-        // Convert into a device-RGB space so the channel getters return
-        // sRGB-ish values; the system color may be in a named space that
-        // raises if we read components directly.
-        let rgb_space = {
-            let cls = Class::get("NSColorSpace")?;
-            let space: cocoa::base::id = msg_send![cls, deviceRGBColorSpace];
-            space
-        };
-        let color: cocoa::base::id = msg_send![accent, colorUsingColorSpace: rgb_space];
-        if color == nil {
-            return None;
-        }
-        let r: f64 = msg_send![color, redComponent];
-        let g: f64 = msg_send![color, greenComponent];
-        let b: f64 = msg_send![color, blueComponent];
-        let to_byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
-        Some(format!(
-            "#{:02X}{:02X}{:02X}",
-            to_byte(r),
-            to_byte(g),
-            to_byte(b)
-        ))
-    }
+
+    let accent = NSColor::controlAccentColor();
+    // Convert into a device-RGB space so the channel getters return
+    // sRGB-ish values; the system color may be in a named space that
+    // raises if we read components directly.
+    let rgb_space = NSColorSpace::deviceRGBColorSpace();
+    let color = accent.colorUsingColorSpace(&rgb_space)?;
+
+    let r = color.redComponent();
+    let g = color.greenComponent();
+    let b = color.blueComponent();
+    let to_byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+    Some(format!(
+        "#{:02X}{:02X}{:02X}",
+        to_byte(r),
+        to_byte(g),
+        to_byte(b)
+    ))
 }
 
 #[cfg(target_os = "linux")]

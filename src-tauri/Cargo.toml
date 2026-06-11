@@ -109,8 +109,9 @@ gtk = "0.18"
 # webview can't see because of WebKit's cross-origin clipboard
 # policy. Same role as the `gtk` dep above, just a different OS.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2"
-cocoa = "0.26"
+objc2 = "0.6.4"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
 
 # Native clipboard reader for Windows (CF_HDROP via Win32). Same
 # role as the Linux/macOS deps above.
