@@ -93,21 +93,21 @@ async fn read_clipboard_text(app: &tauri::AppHandle) -> Result<Option<String>, S
     #[cfg(target_os = "macos")]
     {
         let _ = app;
-        return Ok(tokio::task::spawn_blocking(|| {
+        tokio::task::spawn_blocking(|| {
             let pb = objc2_app_kit::NSPasteboard::generalPasteboard();
             let text = pb.stringForType(unsafe { objc2_app_kit::NSPasteboardTypeString })?;
             Some(text.to_string())
         })
         .await
-        .map_err(|e| format!("clipboard task panicked: {}", e))?);
+        .map_err(|e| format!("clipboard task panicked: {}", e))
     }
 
     #[cfg(target_os = "windows")]
     {
         let _ = app;
-        return Ok(tokio::task::spawn_blocking(read_clipboard_text_win32)
+        tokio::task::spawn_blocking(read_clipboard_text_win32)
             .await
-            .map_err(|e| format!("clipboard task panicked: {}", e))?);
+            .map_err(|e| format!("clipboard task panicked: {}", e))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

@@ -82,7 +82,7 @@ pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<Stri
         let paths = tokio::task::spawn_blocking(macos::read_clipboard_uris_blocking)
             .await
             .map_err(|e| InkyCapError::InvalidPath(format!("clipboard task panicked: {}", e)))?;
-        return Ok(paths);
+        Ok(paths)
     }
     #[cfg(target_os = "windows")]
     {
@@ -90,7 +90,7 @@ pub async fn read_clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<Stri
         let paths = tokio::task::spawn_blocking(win32::read_clipboard_uris_blocking)
             .await
             .map_err(|e| InkyCapError::InvalidPath(format!("clipboard task panicked: {}", e)))?;
-        return Ok(paths);
+        Ok(paths)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
@@ -340,6 +340,12 @@ mod win32 {
 
 /// Parse a single `file://...` line from a clipboard payload into
 /// an absolute filesystem path. Returns None for non-file URIs.
+///
+/// Linux-only: the GTK clipboard path ([`linux::read_clipboard_uris_blocking`])
+/// is the sole caller. macOS reads native `NSURL` objects and Windows reads
+/// `CF_HDROP` directly, so on those targets this (and its `percent_decode` /
+/// `hex_val` helpers) would be dead code.
+#[cfg(target_os = "linux")]
 fn parse_file_uri_line(line: &str) -> Option<String> {
     let line = line.trim();
     if line.is_empty() {
@@ -360,6 +366,7 @@ fn parse_file_uri_line(line: &str) -> Option<String> {
 /// Decode `%XX` escapes in a URI path. We don't pull in a URL
 /// library for this — the only characters we care about in practice
 /// are spaces (`%20`) and a handful of other ASCII punctuation.
+#[cfg(target_os = "linux")]
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -380,6 +387,7 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+#[cfg(target_os = "linux")]
 fn hex_val(c: u8) -> Option<u8> {
     match c {
         b'0'..=b'9' => Some(c - b'0'),

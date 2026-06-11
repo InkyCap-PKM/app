@@ -51,7 +51,7 @@ pub fn rebase_relative_paths(source: &str, note_dir: &Path) -> String {
     }
 
     // Apply edits from the back so earlier byte offsets remain valid.
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    edits.sort_by_key(|b| std::cmp::Reverse(b.0.start));
     let mut out = source.to_string();
     for (range, replacement) in edits {
         out.replace_range(range, &replacement);
@@ -295,7 +295,7 @@ pub fn replace_absolute_prefix(source: &str, old_segment: &str, new_segment: &st
         return source.to_string();
     }
 
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    edits.sort_by_key(|b| std::cmp::Reverse(b.0.start));
     let mut out = source.to_string();
     for (range, replacement) in edits {
         out.replace_range(range, &replacement);
@@ -350,7 +350,7 @@ pub fn rewrite_referenced_path(
     if edits.is_empty() {
         return source.to_string();
     }
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+    edits.sort_by_key(|b| std::cmp::Reverse(b.0.start));
     let mut out = source.to_string();
     for (range, replacement) in edits {
         out.replace_range(range, &replacement);

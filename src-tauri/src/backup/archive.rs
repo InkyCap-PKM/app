@@ -288,6 +288,6 @@ pub fn list_matching_archives(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>>
             .unwrap_or(std::time::UNIX_EPOCH);
         out.push((mtime, entry.path()));
     }
-    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.sort_by_key(|b| std::cmp::Reverse(b.0));
     Ok(out.into_iter().map(|(_, p)| p).collect())
 }

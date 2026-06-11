@@ -154,7 +154,7 @@ pub fn resolve_all_suggestions(source: &str, accept: bool) -> String {
     if calls.is_empty() {
         return source.to_string();
     }
-    calls.sort_by(|a, b| b.full_span.start.cmp(&a.full_span.start));
+    calls.sort_by_key(|b| std::cmp::Reverse(b.full_span.start));
     let mut out = source.to_string();
     for p in &calls {
         let replacement = resolution_text(p, source, accept);
