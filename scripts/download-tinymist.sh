@@ -10,7 +10,12 @@
 set -euo pipefail
 
 TINYMIST_VERSION="0.14.16"
-BINARIES_DIR="$(cd "$(dirname "$0")/../src-tauri/binaries" && pwd)"
+# Create the target dir before resolving its absolute path: it is gitignored,
+# so on a fresh clone it doesn't exist yet and a bare `cd` would abort under
+# `set -e`.
+BINARIES_DIR="$(dirname "$0")/../src-tauri/binaries"
+mkdir -p "$BINARIES_DIR"
+BINARIES_DIR="$(cd "$BINARIES_DIR" && pwd)"
 
 # Pinned SHA-256 of each release archive, keyed by Tauri target triple. These
 # are committed to the repo (copied from the release's `sha256.sum`), so they
