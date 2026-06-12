@@ -151,6 +151,22 @@ fn install_gtk_headerbar(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `--version` / `-V`: print the compiled-in version and exit before any GUI
+    // or logger init. This is the same version Settings → Overview shows (kept
+    // in lockstep with tauri.conf.json by scripts/version.mjs) and is baked in
+    // at COMPILE time — so release tooling can read it headlessly to confirm a
+    // build actually recompiled with the bumped version, catching a stale
+    // incremental binary whose package metadata says one thing while the
+    // binary reports another. See scripts/build-linux-docker.sh,
+    // scripts/build-flatpak.sh, and .forgejo/workflows/release.yml.
+    if std::env::args()
+        .skip(1)
+        .any(|a| a == "--version" || a == "-V")
+    {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
         .format_timestamp_millis()
         .init();
