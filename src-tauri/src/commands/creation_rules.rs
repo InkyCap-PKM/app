@@ -103,10 +103,12 @@ pub async fn delete_creation_rule(
 /// Execute a creation rule: create the file and return its path + cursor offset.
 /// If the file already exists (e.g. daily note), returns existing path.
 ///
-/// `title_override` is supplied by the frontend when the rule's
-/// `filename_pattern` is empty — in that case the frontend opens a prompt
-/// dialog first and passes the user-entered name through. When the
-/// pattern is non-empty, this argument is ignored.
+/// `title_override` is the user-entered filename the frontend supplies
+/// after prompting: proactively when the rule's `filename_pattern` is
+/// blank, or on retry after this command returned
+/// [`InkyCapError::FilenameRequired`] (a non-empty pattern that expanded
+/// to nothing). It's used as the whole filename only when the pattern
+/// itself yields no name; an expandable pattern wins.
 ///
 /// `target_folder_override` is supplied by callers that need to redirect
 /// the rule into a specific folder regardless of its own `target_folder`
@@ -594,11 +596,32 @@ fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
     Ok(trimmed.to_string())
 }
 
-/// Create a new scaffold file with starter content. Returns the absolute path.
+/// Starter content for a new scaffold — demonstrates the `{{var}}` substitution
+/// surface and the `#note(...)` properties pattern. Shared by `create_scaffold`
+/// (the default when no content is supplied) and `get_scaffold_starter` (which
+/// prefills the in-Settings scaffold editor), so the two never drift.
+const STARTER_SCAFFOLD: &str = "// Scaffold: see https://typst.app/docs for Typst syntax.\n\
+    // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
+    //            {{time}} {{zid}} {{cursor}}\n\
+    #note(\n  \
+        // Properties go here. Any user-defined key is preserved.\n  \
+        // tags: (\"draft\",),\n\
+    )\n\n\
+    = {{title}}\n\n\
+    {{cursor}}\n";
+
+/// Create a new scaffold file. Returns the absolute path.
+///
+/// When `content` is `None` the file is seeded with [`STARTER_SCAFFOLD`]; when
+/// `Some`, the caller's content is written verbatim. Keeping create+write in a
+/// single command makes the in-Settings editor's save atomic — a separate
+/// create-then-write pair could leave a starter-only file behind on a failed
+/// second call.
 #[tauri::command]
 pub async fn create_scaffold(
     state: State<'_, AppState>,
     name: String,
+    content: Option<String>,
     window: tauri::WebviewWindow,
 ) -> Result<String, InkyCapError> {
     let session = state.session(window.label()).await;
@@ -606,7 +629,21 @@ pub async fn create_scaffold(
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
 
-    let safe = sanitize_template_name(&name)?;
+    write_new_scaffold(storage.as_ref(), root, &name, content.as_deref()).await
+}
+
+/// Core of [`create_scaffold`], decoupled from the Tauri/session layer so it can
+/// be unit-tested against a real storage backend. Validates the name, ensures
+/// the scaffold directory, refuses to clobber an existing file, and writes the
+/// supplied content (or [`STARTER_SCAFFOLD`] when `None`). Returns the new
+/// file's frontend path string.
+async fn write_new_scaffold(
+    storage: &dyn NoteboxStorage,
+    root: &std::path::Path,
+    name: &str,
+    content: Option<&str>,
+) -> Result<String, InkyCapError> {
+    let safe = sanitize_template_name(name)?;
     let filename = if safe.ends_with(".typ") {
         safe
     } else {
@@ -624,20 +661,19 @@ pub async fn create_scaffold(
         )));
     }
 
-    // Starter content — demonstrates the `{{var}}` substitution surface and
-    // the `#note(...)` properties pattern. User can replace freely.
-    let starter = "// Scaffold: see https://typst.app/docs for Typst syntax.\n\
-        // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
-        //            {{time}} {{zid}} {{cursor}}\n\
-        #note(\n  \
-            // Properties go here. Any user-defined key is preserved.\n  \
-            // tags: (\"draft\",),\n\
-        )\n\n\
-        = {{title}}\n\n\
-        {{cursor}}\n";
-    storage.write_file(&file_path, starter).await?;
+    storage
+        .write_file(&file_path, content.unwrap_or(STARTER_SCAFFOLD))
+        .await?;
 
     Ok(to_frontend_string(&file_path))
+}
+
+/// Return the starter scaffold content used to prefill a brand-new scaffold in
+/// the in-Settings editor. Read-only; mirrors the default `create_scaffold`
+/// writes so the editor doesn't duplicate the template string.
+#[tauri::command]
+pub async fn get_scaffold_starter() -> Result<String, InkyCapError> {
+    Ok(STARTER_SCAFFOLD.to_string())
 }
 
 #[cfg(test)]
@@ -730,5 +766,86 @@ mod scaffold_insert_tests {
         let r = assemble_scaffold_insert(&current, &scaffold);
         assert_eq!(r.new_cursor_offset, r.new_source.len());
         assert!(r.new_source.ends_with("= Meeting\n"), "{}", r.new_source);
+    }
+}
+
+#[cfg(test)]
+mod create_scaffold_tests {
+    use super::*;
+    use crate::storage::traits::NoteboxStorage;
+
+    /// Real storage over a tempdir so `write_new_scaffold` exercises the actual
+    /// create-dir / exists / write-file path.
+    fn storage_for(root: &std::path::Path) -> crate::storage::local::LocalNoteboxStorage {
+        crate::storage::local::LocalNoteboxStorage::new(root.to_path_buf())
+            .expect("open temp notebox")
+    }
+
+    #[tokio::test]
+    async fn writes_supplied_content_verbatim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = storage_for(tmp.path());
+        let body = "#note()\n\n= Custom body\n";
+
+        let path = write_new_scaffold(&storage, tmp.path(), "meeting", Some(body))
+            .await
+            .unwrap();
+
+        let written = storage
+            .read_file(std::path::Path::new(&path))
+            .await
+            .unwrap();
+        assert_eq!(written, body);
+    }
+
+    #[tokio::test]
+    async fn defaults_to_starter_when_no_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = storage_for(tmp.path());
+
+        let path = write_new_scaffold(&storage, tmp.path(), "blank", None)
+            .await
+            .unwrap();
+
+        let written = storage
+            .read_file(std::path::Path::new(&path))
+            .await
+            .unwrap();
+        assert_eq!(written, STARTER_SCAFFOLD);
+    }
+
+    #[tokio::test]
+    async fn refuses_duplicate_regardless_of_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = storage_for(tmp.path());
+
+        write_new_scaffold(&storage, tmp.path(), "dup", Some("first"))
+            .await
+            .unwrap();
+        let err = write_new_scaffold(&storage, tmp.path(), "dup", Some("second"))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, InkyCapError::BadRequest(_)),
+            "expected BadRequest, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn appends_typ_suffix_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = storage_for(tmp.path());
+
+        let path = write_new_scaffold(&storage, tmp.path(), "noext", None)
+            .await
+            .unwrap();
+        assert!(path.ends_with("noext.typ"), "{path}");
+    }
+
+    /// Drift guard: the editor prefills from `get_scaffold_starter`, which must
+    /// return exactly what `create_scaffold` writes by default.
+    #[tokio::test]
+    async fn starter_command_matches_default_write() {
+        assert_eq!(get_scaffold_starter().await.unwrap(), STARTER_SCAFFOLD);
     }
 }

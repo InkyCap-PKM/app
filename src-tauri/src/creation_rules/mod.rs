@@ -209,9 +209,9 @@ pub fn sanitize_filename(name: &str) -> Option<String> {
 ///
 /// `title_override` is the user-supplied filename when the rule's pattern
 /// is empty (the UI prompts for one in that case). When the pattern is
-/// empty AND no override is provided, returns
-/// [`InkyCapError::BadRequest`] — the caller is expected to prompt the
-/// user and retry.
+/// empty — or reduces to nothing once expanded — AND no override is
+/// provided, returns [`InkyCapError::FilenameRequired`]; the caller is
+/// expected to prompt the user and retry.
 ///
 /// `fallback_folder` is consulted only when the rule's own
 /// `target_folder` is empty. See [`resolve_target_dir`].
@@ -228,7 +228,7 @@ pub fn execute_rule(
         match title_override.and_then(sanitize_filename) {
             Some(name) => name,
             None => {
-                return Err(InkyCapError::BadRequest("filename-required".to_string()));
+                return Err(InkyCapError::FilenameRequired);
             }
         }
     } else {
@@ -241,7 +241,7 @@ pub fn execute_rule(
             match title_override.and_then(sanitize_filename) {
                 Some(name) => name,
                 None => {
-                    return Err(InkyCapError::BadRequest("filename-required".to_string()));
+                    return Err(InkyCapError::FilenameRequired);
                 }
             }
         } else {
@@ -284,8 +284,8 @@ mod tests {
         )
         .expect_err("empty pattern with no override must signal");
         match err {
-            InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
-            other => panic!("expected BadRequest, got {other:?}"),
+            InkyCapError::FilenameRequired => {}
+            other => panic!("expected FilenameRequired, got {other:?}"),
         }
 
         let (path, content, cursor) = execute_rule(
@@ -364,8 +364,8 @@ mod tests {
         )
         .expect_err("empty pattern with no override must signal");
         match err {
-            InkyCapError::BadRequest(msg) => assert_eq!(msg, "filename-required"),
-            other => panic!("expected BadRequest, got {other:?}"),
+            InkyCapError::FilenameRequired => {}
+            other => panic!("expected FilenameRequired, got {other:?}"),
         }
     }
 

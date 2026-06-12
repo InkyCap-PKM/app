@@ -3050,6 +3050,14 @@ svg.lucide {
   flex: 1;
 }
 
+/* Inline label paired with a HelpButton (the circled "?"), so the detail
+   lives one click away and the row stays terse. */
+.settings__label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .settings__label {
   font-size: var(--text-md);
   color: var(--fg-primary);
@@ -4749,6 +4757,13 @@ svg.lucide {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+
+/* Scaffold dropdown paired with its create/edit icon buttons. */
+.creation-rules__scaffold-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .creation-rules__add-btn {

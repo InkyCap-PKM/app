@@ -19,10 +19,13 @@ import { loadCreationRules } from "../stores/creation-rules";
 import { promptConfirm } from "../stores/prompt";
 import { noteboxSettings } from "../stores/settings";
 import LucideIconPicker from "./LucideIconPicker";
+import HelpButton from "./HelpButton";
 import RuleIcon from "./RuleIcon";
 import { Dropdown } from "./Dropdown";
+import ScaffoldEditorModal from "./ScaffoldEditorModal";
 import { toastError, toastWarning } from "../stores/toasts";
 import { useI18n } from "../lib/i18n";
+import { Plus, Pencil } from "lucide-solid";
 
 // ── Hotkey conflict detection ──────────────────────────────────
 
@@ -80,6 +83,36 @@ const CreationRuleEditor: Component = () => {
     },
   );
 
+  // Full entries (with paths) so the in-Settings "Edit scaffold" button can
+  // resolve the selected scaffold's file. `listScaffolds` only returns names.
+  const [scaffoldEntries] = createResource(
+    () => refreshTick(),
+    async () => {
+      try {
+        return await ipc.listScaffoldEntries();
+      } catch {
+        return [] as ipc.TemplateEntry[];
+      }
+    },
+  );
+
+  // Gates the create/edit scaffold sub-modal overlaid on Settings.
+  const [scaffoldEditor, setScaffoldEditor] = createSignal<{
+    mode: "create" | "edit";
+    name?: string;
+    path?: string;
+  } | null>(null);
+
+  /** Open the editor for the scaffold currently selected on the given rule. */
+  function openScaffoldEdit(rule: CreationRule) {
+    const value = rule.scaffold_path; // e.g. "meeting.typ"
+    const entry = (scaffoldEntries() ?? []).find(
+      (e) => e.name === value.replace(/\.typ$/, ""),
+    );
+    if (!entry) return;
+    setScaffoldEditor({ mode: "edit", name: entry.name, path: entry.path });
+  }
+
   const [rules, { refetch }] = createResource(
     () => refreshTick(),
     async () => ipc.listCreationRules(),
@@ -124,7 +157,11 @@ const CreationRuleEditor: Component = () => {
       icon_emoji: "",
       scaffold_path: "",
       target_folder: defaultTargetFolder(),
-      filename_pattern: "{{title}}",
+      // Blank by default: the user is prompted for a filename on each creation.
+      // (A pattern of date/time/zid tokens is the alternative — see the field
+      // hint. `{{title}}`/`{{slug}}` are scaffold-content variables, not
+      // filename variables, and would expand to nothing here.)
+      filename_pattern: "",
       creation_mode: "create_and_open",
       hotkey: null,
       show_in_toolbar: false,
@@ -359,7 +396,7 @@ const CreationRuleEditor: Component = () => {
                 <label class="settings__label">{t("creationRules.filenamePattern")}</label>
                 <span class="settings__description">
                   {t("creationRules.filenamePatternDescription", {
-                    vars: "{{title}}, {{slug}}, {{date}}, {{date:FORMAT}}, {{time}}, {{zid}}",
+                    vars: "{{date}}, {{date:FORMAT}}, {{time}}, {{zid}}",
                   })}
                 </span>
               </div>
@@ -434,19 +471,47 @@ const CreationRuleEditor: Component = () => {
                   })}
                 </span>
               </div>
-              <Dropdown<string>
-                value={rule().scaffold_path}
-                options={[
-                  { value: "", label: t("common.none") },
-                  ...(scaffolds() ?? []).map((s) => ({ value: s, label: s })),
-                ]}
-                onChange={(v) => updateField("scaffold_path", v)}
-                ariaLabel={t("creationRules.scaffold")}
-              />
+              <div class="creation-rules__scaffold-field">
+                <Dropdown<string>
+                  value={rule().scaffold_path}
+                  options={[
+                    { value: "", label: t("common.none") },
+                    ...(scaffolds() ?? []).map((s) => ({ value: s, label: s })),
+                  ]}
+                  onChange={(v) => updateField("scaffold_path", v)}
+                  ariaLabel={t("creationRules.scaffold")}
+                />
+                <button
+                  class="ui-icon-btn"
+                  title={t("creationRules.scaffoldCreateTooltip")}
+                  aria-label={t("creationRules.scaffoldCreateTooltip")}
+                  onClick={() => setScaffoldEditor({ mode: "create" })}
+                >
+                  <Plus size={16} />
+                </button>
+                <button
+                  class="ui-icon-btn"
+                  title={
+                    rule().scaffold_path
+                      ? t("creationRules.scaffoldEditTooltip")
+                      : t("creationRules.scaffoldEditDisabledTooltip")
+                  }
+                  aria-label={t("creationRules.scaffoldEditTooltip")}
+                  disabled={!rule().scaffold_path}
+                  onClick={() => openScaffoldEdit(rule())}
+                >
+                  <Pencil size={16} />
+                </button>
+              </div>
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">{t("creationRules.typstTemplate")}</label>
+                <span class="settings__label-group">
+                  <label class="settings__label">{t("creationRules.typstTemplate")}</label>
+                  <HelpButton label={t("creationRules.typstTemplateHelpLabel")}>
+                    {t("creationRules.typstTemplateHelp")}
+                  </HelpButton>
+                </span>
                 <span class="settings__description">
                   {t("creationRules.typstTemplateDescription")}
                 </span>
@@ -646,6 +711,28 @@ const CreationRuleEditor: Component = () => {
             )}
           </For>
         </div>
+      </Show>
+
+      {/* Create/edit a scaffold without leaving Settings. Overlaid here (a later
+          DOM sibling at the same modal z-index) so it paints over the Settings
+          modal while this form stays mounted underneath — Cancel returns the
+          user to their in-progress rule edits untouched. */}
+      <Show when={scaffoldEditor()}>
+        {(editor) => (
+          <ScaffoldEditorModal
+            mode={editor().mode}
+            initialName={editor().name}
+            scaffoldPath={editor().path}
+            existingNames={scaffolds() ?? []}
+            onSave={(selectedValue) => {
+              refresh();
+              if (editor().mode === "create" && editingRule()) {
+                updateField("scaffold_path", selectedValue);
+              }
+            }}
+            onClose={() => setScaffoldEditor(null)}
+          />
+        )}
       </Show>
     </div>
   );

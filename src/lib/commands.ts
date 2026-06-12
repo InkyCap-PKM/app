@@ -1,7 +1,8 @@
 // Registers all built-in commands into the command registry.
 // Called once on app startup after other systems are initialized.
 
-import { registerCommand } from "./command-registry";
+import { createEffect } from "solid-js";
+import { registerCommand, unregisterCommand } from "./command-registry";
 import { openNoteboxWindow } from "./new-window";
 import { t } from "./i18n";
 import { errorText, errorCode } from "./errors";
@@ -32,7 +33,7 @@ import { activeEditorView } from "../stores/editor";
 import { insertAnnotationMarkup } from "../editor/typst-decorations/annotation-insert";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
-import { triggerCreationRule } from "../stores/creation-rules";
+import { triggerCreationRule, activeRules } from "../stores/creation-rules";
 import { showToast } from "../stores/toasts";
 import {
   collaborative,
@@ -886,16 +887,28 @@ async function insertAttachmentViaPicker(func: "image" | "video" | "audio") {
   await pickAndInsertAttachments(view, sel.from, sel.to, func);
 }
 
-/** Register creation rules as commands. Call after rules are loaded.
- *  Disabled rules are skipped — they shouldn't surface in the palette or
- *  bind a global hotkey. */
-export async function registerCreationRuleCommands(): Promise<void> {
-  try {
-    const rules = await ipc.listCreationRules();
-    for (const rule of rules) {
-      if (rule.disabled) continue;
+/** Keep the command registry in sync with the user's creation rules, so each
+ *  rule's palette entry and global hotkey reflect edits without a relaunch.
+ *
+ *  Driven reactively off the `creationRules` store (the same signal the toolbar
+ *  reads), this re-runs whenever a rule is saved, toggled, or deleted —
+ *  registering the current active set and unregistering rules that disappeared
+ *  or were disabled. This is what makes a newly-assigned hotkey live
+ *  immediately: the global keydown dispatcher reads `keybinding` live from the
+ *  registry, but only sees it once the command is (re-)registered here.
+ *
+ *  Mirrors `registerExternalToolCommands`. Call once at startup inside a
+ *  reactive owner (App's onMount). Disabled rules are excluded by
+ *  `activeRules()`. */
+export function registerCreationRuleCommands(): void {
+  let registered = new Set<string>();
+  createEffect(() => {
+    const next = new Set<string>();
+    for (const rule of activeRules()) {
+      const id = `creation-rule:${rule.id}`;
+      next.add(id);
       registerCommand({
-        id: `creation-rule:${rule.id}`,
+        id,
         title: rule.name,
         category: "Creation Rules",
         keybinding: rule.hotkey ?? undefined,
@@ -916,7 +929,10 @@ export async function registerCreationRuleCommands(): Promise<void> {
         },
       });
     }
-  } catch (e) {
-    console.error("Failed to load creation rules for command palette:", e);
-  }
+    // Drop commands for rules that were deleted or disabled since the last run.
+    for (const id of registered) {
+      if (!next.has(id)) unregisterCommand(id);
+    }
+    registered = next;
+  });
 }
