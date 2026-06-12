@@ -65,6 +65,7 @@ import { promptText, promptConfirm } from "../stores/prompt";
 import { pickFolder } from "../stores/folderPicker";
 import { triggerCreationRule, creationRules } from "../stores/creation-rules";
 import { useI18n } from "../lib/i18n";
+import { askMarkdownImport } from "../lib/markdown-import-prompt";
 
 interface LeftSidebarProps {
   mode: () => SidebarMode;
@@ -1348,13 +1349,50 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   async function uploadIntoNotebox() {
     setShowNewMenu(false);
     try {
-      const saved = await ipc.pickAndUploadToAttachments();
-      if (saved.length > 0) {
-        refresh();
+      const picked = await ipc.pickFilesForImport();
+      if (picked.length === 0) return; // cancelled
+
+      // Markdown files are notes, not attachments. If any were selected, ask
+      // once whether to convert them to Typst or keep them as-is.
+      const mdFiles = picked.filter((f) => f.is_markdown);
+      let convertMarkdown = false;
+      if (mdFiles.length > 0) {
+        const names = mdFiles.map((f) => f.path.split(/[/\\]/).pop() ?? f.path);
+        const choice = await askMarkdownImport(names);
+        if (choice === "cancel") return;
+        convertMarkdown = choice === "convert";
+      }
+
+      let attachments = 0;
+      let notes = 0;
+      let lastName = "";
+      for (const file of picked) {
+        if (file.is_markdown && convertMarkdown) {
+          const rel = await ipc.importMarkdownFile(file.path);
+          notes += 1;
+          lastName = rel.split(/[/\\]/).pop() ?? rel;
+        } else {
+          const rel = await ipc.copyPathToAttachments(file.path);
+          attachments += 1;
+          lastName = rel;
+        }
+      }
+
+      refresh();
+      // Summarize: prefer the note phrasing when notes were imported, else the
+      // attachment phrasing. (A mixed selection reports the note count, since
+      // that's the gesture's headline outcome.)
+      if (notes > 0) {
         toastSuccess(
-          saved.length === 1
-            ? t("leftSidebar.uploadedOne", { name: saved[0] })
-            : t("leftSidebar.uploadedMany", { count: saved.length }),
+          notes === 1
+            ? t("leftSidebar.importedNoteOne", { name: lastName })
+            : t("leftSidebar.importedNoteMany", { count: notes }),
+        );
+      } else if (attachments > 0) {
+        toastSuccess(
+          attachments === 1
+            ? t("leftSidebar.uploadedOne", { name: lastName })
+            : t("leftSidebar.uploadedMany", { count: attachments }),
         );
       }
     } catch (e) {

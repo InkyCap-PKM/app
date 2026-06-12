@@ -17,7 +17,7 @@ import {
   settings,
   updateNoteboxSetting,
 } from "./settings";
-import { triggerCreationRule } from "./creation-rules";
+import { triggerCreationRule, loadCreationRules } from "./creation-rules";
 import { refreshAliases, bumpAliasGeneration } from "./aliases";
 import { startLsp, stopLsp } from "./lsp";
 import { maybeSeedNotebox } from "./notebox-seed";
@@ -344,6 +344,15 @@ export async function openNotebox(path: string) {
     // journal-scroll prefs, etc.). Awaited so subsequent components
     // render against the new notebox's settings, not the previous one.
     await loadNoteboxSettings();
+    // Creation rules are per-notebox (list_creation_rules is notebox-scoped),
+    // so reload them for the notebox we just opened. Without this the toolbar
+    // and command palette keep showing the *previous* notebox's rules — and on
+    // a fresh install, where the startup load ran before any notebox existed,
+    // the store stays empty: the Daily Note button never appears and "New Note"
+    // can't find its (empty-pattern) rule to raise the filename prompt. Awaited
+    // so toolbarRules()/triggerCreationRule see this notebox's rules from the
+    // first render and first click.
+    await loadCreationRules();
     // The new notebox's settings are now in their stores: bump the UI key so
     // mount-snapshot components (the collaboration panel's forms) remount and
     // re-seed from *this* notebox rather than keeping the previous one's values.

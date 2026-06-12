@@ -20,13 +20,37 @@ import { getLastDragPos } from "../editor/typst-decorations/drag-drop";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { fileToBase64 } from "./file-bytes";
+import { askMarkdownImport } from "./markdown-import-prompt";
 import * as ipc from "./ipc";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]);
+const MARKDOWN_EXTS = new Set(["md", "markdown"]);
 
 function getExtension(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+/** A dropped name is markdown when its extension is `.md` / `.markdown`. */
+function isMarkdown(name: string): boolean {
+  return MARKDOWN_EXTS.has(getExtension(name));
+}
+
+/**
+ * For a batch of dropped names, decide how to handle any markdown among them.
+ * Returns `"convert"`/`"keep"` (the user's choice when markdown is present),
+ * `"none"` when no markdown was dropped (nothing to ask), or `"cancel"` when
+ * the user dismissed the modal — in which case the caller aborts the drop.
+ */
+async function decideMarkdownHandling(
+  names: string[],
+): Promise<"convert" | "keep" | "none" | "cancel"> {
+  const mdNames = names.filter(isMarkdown);
+  if (mdNames.length === 0) return "none";
+  const choice = await askMarkdownImport(
+    mdNames.map((n) => n.split(/[/\\]/).pop() ?? n),
+  );
+  return choice;
 }
 
 /** Scan the document text to find the end of the prelude (the #import,
@@ -210,12 +234,21 @@ async function handleTauriDrop(
   }
   let { view, dropPos } = target;
 
+  const md = await decideMarkdownHandling(paths);
+  if (md === "cancel") return;
+  const convertMarkdown = md === "convert";
+
   for (const absPath of paths) {
     try {
-      const savedName = await ipc.copyPathToAttachments(absPath);
+      // Markdown → convert to a Typst note (unless the user chose "keep");
+      // everything else copies into the attachment folder as before.
+      const savedName =
+        isMarkdown(absPath) && convertMarkdown
+          ? await ipc.importMarkdownFile(absPath)
+          : await ipc.copyPathToAttachments(absPath);
       ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
     } catch (err) {
-      console.error("[tauri-drop] failed to copy", absPath, err);
+      console.error("[tauri-drop] failed to import", absPath, err);
     }
   }
 }
@@ -238,13 +271,23 @@ async function handleHtml5Drop(event: DragEvent): Promise<void> {
   }
   let { view, dropPos } = target;
 
-  for (const file of Array.from(files)) {
+  const fileArr = Array.from(files);
+  const md = await decideMarkdownHandling(fileArr.map((f) => f.name));
+  if (md === "cancel") return;
+  const convertMarkdown = md === "convert";
+
+  for (const file of fileArr) {
     try {
       const base64 = await fileToBase64(file);
-      const savedName = await ipc.copyToAttachments(file.name, base64);
+      // Markdown → convert to a Typst note (unless the user chose "keep");
+      // everything else copies into the attachment folder as before.
+      const savedName =
+        isMarkdown(file.name) && convertMarkdown
+          ? await ipc.importMarkdownText(file.name, base64)
+          : await ipc.copyToAttachments(file.name, base64);
       ({ newDropPos: dropPos } = insertSavedAttachment(view, dropPos, savedName));
     } catch (err) {
-      console.error("[html5-drop] failed to save", file.name, err);
+      console.error("[html5-drop] failed to import", file.name, err);
     }
   }
 }

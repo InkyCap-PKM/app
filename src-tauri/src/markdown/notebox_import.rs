@@ -182,6 +182,103 @@ pub fn import_from_directory(
     result
 }
 
+/// Import a single markdown file's text into the open notebox as one `.typ`
+/// note placed at the notebox root. This is the single-file analogue of
+/// [`import_from_directory`]: it runs the exact same markdown→Typst conversion
+/// (frontmatter → `#note(...)`, wikilinks, image rebasing, math handling)
+/// rather than copying the `.md` in verbatim. Used by the file tree's "Copy
+/// into notebox" action so a selected `.md` becomes a real note.
+///
+/// The note name is derived from `file_stem` and made collision-free against
+/// the notebox root (`<stem>.typ`, `<stem> 1.typ`, …). When `sibling_dir` is
+/// `Some`, any image/embed the note references that exists alongside the source
+/// file is routed into the attachment folder, matching the directory importer;
+/// the bytes-only case (no source directory) passes `None`, leaving referenced
+/// images as rewritten paths the user can fix.
+///
+/// Returns the notebox-relative path of the created note (forward-slash) and
+/// the import stats. Errors only on a failed write of the note itself; asset
+/// copy problems are surfaced via `ImportResult::errors`.
+pub fn import_single_markdown(
+    text: &str,
+    file_stem: &str,
+    notebox_root: &Path,
+    sibling_dir: Option<&Path>,
+    dialect: MarkdownDialect,
+    attachment_folder: String,
+) -> Result<(String, ImportResult), String> {
+    let options = MarkdownToTypstOptions {
+        attachment_folder: attachment_folder.clone(),
+        dialect,
+        frontmatter_mapping: None,
+        math: detect_math_mode(notebox_root),
+        ..MarkdownToTypstOptions::default()
+    };
+    let mut result = ImportResult {
+        notes_converted: 0,
+        files_copied: 0,
+        errors: Vec::new(),
+        math_as_code: 0,
+    };
+
+    // Scaffold the inkycap-notebox package so the note's auto-import resolves
+    // (a fresh notebox may not have it yet). No-op when already present.
+    notebox_package::scaffold(notebox_root);
+
+    // Collision-free destination name at the notebox root.
+    let stem = {
+        let s = file_stem.trim();
+        if s.is_empty() {
+            "Imported note"
+        } else {
+            s
+        }
+    };
+    let mut rel = format!("{stem}.typ");
+    let mut counter = 1;
+    while notebox_root.join(&rel).exists() {
+        rel = format!("{stem} {counter}.typ");
+        counter += 1;
+    }
+    let relative = PathBuf::from(&rel);
+
+    // Route referenced sibling images into the attachment folder so the
+    // emitted `#image("/<attachment_folder>/name")` paths resolve. Best-effort
+    // by basename, as the single-file case has no notebox tree to walk.
+    if let Some(src_dir) = sibling_dir {
+        let mut targets: HashSet<String> = HashSet::new();
+        for name in extract_embed_filenames(text) {
+            targets.insert(name);
+        }
+        for name in extract_image_filenames(text) {
+            targets.insert(name);
+        }
+        for name in targets {
+            let candidate = src_dir.join(&name);
+            if candidate.is_file() {
+                copy_asset_to_attachment_folder(
+                    &candidate,
+                    &name,
+                    notebox_root,
+                    &attachment_folder,
+                    &mut result,
+                );
+            }
+        }
+    }
+
+    let (typst_content, stats) = markdown_to_typst_with_stats(text, &options);
+    let typst_content = rebase_for_note(&typst_content, &relative);
+    let target_path = notebox_root.join(&relative);
+
+    fs::write(&target_path, &typst_content)
+        .map_err(|e| format!("Failed to write {}: {}", target_path.display(), e))?;
+    result.notes_converted += 1;
+    result.math_as_code += stats.latex_math_as_code;
+
+    Ok((rel, result))
+}
+
 /// Walk every `.md` file under `source` and collect the filenames referenced
 /// by either Obsidian embed syntax `![[…]]` or standard markdown images
 /// `![](path)`. Every referenced image is routed into the attachment folder,
@@ -1196,6 +1293,62 @@ mod tests {
                 .exists(),
             "file should NOT also be copied to the original location"
         );
+    }
+
+    #[test]
+    fn import_single_markdown_converts_and_routes_assets() {
+        let src = TempDir::new().unwrap();
+        let target = TempDir::new().unwrap();
+
+        // A standalone markdown file with frontmatter, a wikilink, and an
+        // embedded image that lives alongside it.
+        fs::write(
+            src.path().join("My Note.md"),
+            "---\ntitle: My Note\ntags: [foo]\n---\n\n# Hello\n\nSee [[Other]] and ![[pic.png]].",
+        )
+        .unwrap();
+        fs::write(src.path().join("pic.png"), b"fake png").unwrap();
+
+        let (rel, result) = import_single_markdown(
+            &fs::read_to_string(src.path().join("My Note.md")).unwrap(),
+            "My Note",
+            target.path(),
+            Some(src.path()),
+            MarkdownDialect::Obsidian,
+            "Assets".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(rel, "My Note.typ");
+        assert_eq!(result.notes_converted, 1);
+        assert_eq!(result.files_copied, 1);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        let note = fs::read_to_string(target.path().join("My Note.typ")).unwrap();
+        assert!(note.contains("#import"));
+        assert!(note.contains("#note("));
+        assert!(note.contains("= Hello"));
+        assert!(note.contains("#wikilink(\"Other\")"));
+        assert!(note.contains("#image(\"/Assets/pic.png\")"));
+        // The referenced image landed in the attachment folder.
+        assert!(target.path().join("Assets/pic.png").exists());
+        // Package scaffolded so the note's auto-import resolves.
+        assert!(target.path().join(".inkycap/notebox.typ").exists());
+
+        // A second import of the same stem must not overwrite the first.
+        let (rel2, _) = import_single_markdown(
+            "# Second",
+            "My Note",
+            target.path(),
+            None,
+            MarkdownDialect::Standard,
+            "Assets".to_string(),
+        )
+        .unwrap();
+        assert_eq!(rel2, "My Note 1.typ");
+        assert!(target.path().join("My Note 1.typ").exists());
+        // Original is untouched.
+        assert!(target.path().join("My Note.typ").exists());
     }
 
     #[test]

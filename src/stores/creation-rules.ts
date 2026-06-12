@@ -43,9 +43,18 @@ export async function triggerCreationRule(
   options?: { targetFolder?: string },
 ): Promise<CreationResult | null> {
   const folderOverride = options?.targetFolder;
-  const rule = creationRules().find((r) => r.id === ruleId);
-  // If we don't have the rule cached (rare; the store may be empty before
-  // first load), just call through — the backend will resolve it.
+  let rule = creationRules().find((r) => r.id === ruleId);
+  // If the rule isn't cached yet, the store hasn't loaded for this notebox
+  // (e.g. a fresh install where the startup load ran before a notebox was
+  // open). Load it now and retry, so we can read the real `filename_pattern`
+  // and decide whether to prompt — rather than calling the backend blind and
+  // having it reject an empty-pattern rule with "filename-required".
+  if (!rule) {
+    await loadCreationRules();
+    rule = creationRules().find((r) => r.id === ruleId);
+  }
+  // If it's still missing, fall through to the backend, which resolves the
+  // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
   if (pattern === "") {
     // Blank pattern: fall back to ZID if enabled, otherwise prompt
