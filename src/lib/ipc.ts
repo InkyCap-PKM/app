@@ -278,6 +278,14 @@ export async function updateViewColumns(
   return invoke<void>("update_view_columns", { collectionPath, viewName, columns });
 }
 
+export async function updateViewColumnWidths(
+  collectionPath: string,
+  viewName: string,
+  widths: Record<string, number>,
+): Promise<void> {
+  return invoke<void>("update_view_column_widths", { collectionPath, viewName, widths });
+}
+
 export async function updateCollectionFilters(
   collectionPath: string,
   viewName: string | null,

@@ -263,6 +263,7 @@ pub fn run() {
             commands::collections::get_collection_file,
             commands::collections::update_view_sort,
             commands::collections::update_view_columns,
+            commands::collections::update_view_column_widths,
             commands::collections::update_collection_filters,
             commands::collections::add_view,
             commands::collections::remove_view,

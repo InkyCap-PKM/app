@@ -876,6 +876,29 @@ const CollectionBookEditor: Component<{
   );
 };
 
+// ── Shared partial-save helper ─────────────────────────────────────
+
+/// Apply a partial change to a `.collection` file without clobbering fields
+/// edited elsewhere.
+///
+/// The collection's filters and columns are saved from `CollectionTable` on a
+/// *separate* refresh signal from the settings panel's loaded copy, so the
+/// snapshot a settings editor holds (`props.collectionFile` / `loadedFile()`)
+/// can be stale by the time the user changes an icon, contributor, or style.
+/// Writing that stale whole-file snapshot back is what silently wiped freshly
+/// applied filters/columns. Re-reading the current file straight from disk
+/// immediately before merging the single-field change preserves whatever the
+/// table just wrote. Every collection write still goes through the full-file
+/// `saveCollectionFile` command, so on-disk fields the frontend type doesn't
+/// model round-trip untouched.
+async function patchCollectionFile(
+  path: string,
+  patch: Partial<CollectionFile>,
+): Promise<void> {
+  const fresh = await ipc.getCollectionFile(path);
+  await ipc.saveCollectionFile(path, { ...fresh, ...patch });
+}
+
 // ── Characteristics editor (the former "Common" tab) ───────────────
 
 /// General collection settings: icon, Typst template, bibliography style/file,
@@ -924,15 +947,15 @@ const CollectionCharacteristicsEditor: Component<{
   }
 
   async function saveField(field: keyof CollectionFile, value: string | null) {
-    const updated = { ...props.collectionFile, [field]: value || null };
-    await ipc.saveCollectionFile(props.collectionPath, updated);
+    await patchCollectionFile(props.collectionPath, {
+      [field]: value || null,
+    } as Partial<CollectionFile>);
     props.onSaved();
     notifySidebar();
   }
 
   async function saveIcon(value: string) {
-    const updated = { ...props.collectionFile, icon: value || null };
-    await ipc.saveCollectionFile(props.collectionPath, updated);
+    await patchCollectionFile(props.collectionPath, { icon: value || null });
     props.onSaved();
     notifySidebar();
   }
@@ -1156,13 +1179,13 @@ const CollectionSettings: Component<{
   } | null>(null);
 
   async function saveStyle(style: CollectionStyle | null) {
-    const cf = loadedFile();
-    if (!cf) return;
+    if (!loadedFile()) return;
     const hasValues =
       style && (style.page || style.text || style.paragraph || style.heading);
-    const updated = { ...cf, style: hasValues ? style : undefined };
     try {
-      await ipc.saveCollectionFile(props.collectionPath, updated);
+      await patchCollectionFile(props.collectionPath, {
+        style: hasValues ? style : null,
+      });
       onSaved();
     } catch (e) {
       toastError(t("collection.toast.saveStyleFailed"), e);
@@ -1170,12 +1193,12 @@ const CollectionSettings: Component<{
   }
 
   async function saveCustomTypst(value: string) {
-    const cf = loadedFile();
-    if (!cf) return;
+    if (!loadedFile()) return;
     const trimmed = value.trim();
-    const updated = { ...cf, custom_typst: trimmed === "" ? undefined : value };
     try {
-      await ipc.saveCollectionFile(props.collectionPath, updated);
+      await patchCollectionFile(props.collectionPath, {
+        custom_typst: trimmed === "" ? null : value,
+      });
       onSaved();
     } catch (e) {
       toastError(t("collection.toast.saveCustomTypstFailed"), e);
@@ -1183,11 +1206,9 @@ const CollectionSettings: Component<{
   }
 
   async function saveBook(book: BookExportConfig | null) {
-    const cf = loadedFile();
-    if (!cf) return;
-    const updated = { ...cf, book: book ?? null };
+    if (!loadedFile()) return;
     try {
-      await ipc.saveCollectionFile(props.collectionPath, updated);
+      await patchCollectionFile(props.collectionPath, { book: book ?? null });
       onSaved();
     } catch (e) {
       toastError(t("collection.toast.saveBookFailed"), e);

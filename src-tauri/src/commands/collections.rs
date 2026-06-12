@@ -508,6 +508,36 @@ pub async fn update_view_columns(
     Ok(())
 }
 
+/// Update the per-column pixel widths for a specific view. The frontend sends
+/// the full map of columns the user has explicitly sized; columns absent from
+/// the map fall back to their natural (content) width at render time. An empty
+/// map clears the override entirely (back to all-natural widths).
+#[tauri::command]
+pub async fn update_view_column_widths(
+    collection_path: String,
+    view_name: String,
+    widths: std::collections::HashMap<String, f64>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&collection_path)?;
+    let content = storage.read_file(&path).await?;
+    let mut base = parse_collection_file(&content)?;
+
+    let view = find_view_mut(&mut base, &view_name)?;
+    view.column_size = if widths.is_empty() {
+        None
+    } else {
+        Some(widths)
+    };
+
+    let updated = serialize_collection_file(&base)?;
+    storage.write_file(&path, &updated).await?;
+    Ok(())
+}
+
 /// Update the filters for a .collection file (global or view-specific).
 #[tauri::command]
 pub async fn update_collection_filters(
