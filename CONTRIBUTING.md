@@ -100,6 +100,28 @@ for byte for untouched fields), and `typst query` label stability.
 - Make sure every gate above passes.
 - Write a clear PR description: what changed, why, and how you verified it.
 
+## Branching and releases
+
+InkyCap is trunk-based: a single long-lived branch, `main`, with no separate
+`develop` branch. The rules that keep that workable:
+
+- **`main` stays green.** Every commit on `main` should build and pass the gates
+  above. Land work through pull requests so CI runs before merge; reserve direct
+  commits to `main` for trivial, obviously-safe fixes.
+- **Work happens on short-lived branches.** Branch from `main`, keep the branch
+  to one logical change, open a PR, merge when green, then delete the branch.
+  This applies to maintainers too, not only outside contributors.
+- **Releases are tags, not branches.** A release is a `vYY.MM.RELEASE` tag on
+  `main` (e.g. `v26.6.4`) that triggers the release pipeline. The last version
+  component selects the channel: **even = stable, odd = beta/development**. So
+  `main` can carry unreleased work freely; users only ever receive what is
+  tagged and published. The runbook is
+  [documentation/developer/releasing.md](documentation/developer/releasing.md).
+- **Maintenance branches are created only when needed.** If a shipped release
+  needs a fix while `main` has already moved on, branch `release/YY.MM.x` from
+  the release tag, fix and tag the patch there, then bring the fix back to
+  `main`. There is no standing release branch to maintain.
+
 ## Reporting bugs and proposing features
 
 Open an issue on the [Codeberg tracker](https://codeberg.org/InkyCap/app/issues).
