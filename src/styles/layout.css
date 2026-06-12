@@ -1391,6 +1391,7 @@ svg.lucide {
 }
 
 .collection-table__th--sortable {
+  position: relative;
   text-align: left;
   padding: 6px 10px;
   border-bottom: 2px solid var(--border-primary);
@@ -1405,6 +1406,35 @@ svg.lucide {
 
 .collection-table__th--sortable:hover {
   color: var(--fg-primary);
+}
+
+/* Column-width resize grip: a thin hit area straddling the header's right
+   edge. Invisible until the header (or grip) is hovered, then a faint rule
+   hints at the draggable boundary. */
+.collection-table__col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.collection-table__col-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.collection-table__th--sortable:hover .collection-table__col-resize::after,
+.collection-table__col-resize:hover::after {
+  background: var(--border-primary);
 }
 
 /* Column reorder drag-and-drop feedback. The dragged header dims; the hovered

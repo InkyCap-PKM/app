@@ -479,6 +479,60 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     refresh();
   }
 
+  // ── Column width resizing (drag the right edge of a header) ──
+  //
+  // Effective widths live in a local signal so a drag updates the layout
+  // live (no round-trip per pointer move); they're reconciled from the
+  // active view's persisted `columnSize` map whenever the collection file or
+  // view changes, and written back through `updateViewColumnWidths` on
+  // pointer-up. A sized column is clamped (width + min/max on the header,
+  // max-width on its cells) so it holds its width instead of growing to fit
+  // content; unsized columns keep their natural width.
+  const MIN_COL_WIDTH = 60;
+  const [colWidths, setColWidths] = createSignal<Record<string, number>>({});
+
+  createEffect(() => {
+    const bf = collectionFile();
+    const vn = activeView();
+    const view = vn ? bf?.views.find((v) => v.name === vn) : bf?.views[0];
+    setColWidths({ ...(view?.columnSize ?? {}) });
+  });
+
+  const widthOf = (col: string): number | undefined => colWidths()[col];
+
+  async function persistColWidths() {
+    await ipc.updateViewColumnWidths(props.path, activeView(), colWidths());
+    refresh();
+  }
+
+  function startColResize(e: MouseEvent, col: string) {
+    // Resizing must not also trigger the header's sort click or start a
+    // column-reorder drag. Stop the event here and disable native dragging on
+    // the parent header for the duration of the gesture (restored on release).
+    e.preventDefault();
+    e.stopPropagation();
+    const handle = e.currentTarget as HTMLElement;
+    const th = handle.closest("th") as HTMLElement | null;
+    if (!th) return;
+    const prevDraggable = th.draggable;
+    th.draggable = false;
+    const startX = e.clientX;
+    const startWidth = th.getBoundingClientRect().width;
+
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(MIN_COL_WIDTH, Math.round(startWidth + (ev.clientX - startX)));
+      setColWidths((prev) => ({ ...prev, [col]: next }));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      th.draggable = prevDraggable;
+      void persistColWidths();
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
   // ── View drag-reorder (mirrors the column reorder above) ──
   const [draggingView, setDraggingView] = createSignal<string | null>(null);
   const [dragOverView, setDragOverView] = createSignal<string | null>(null);
@@ -1132,6 +1186,15 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                             "collection-table__th--drop-after":
                               dragOverCol() === col && colDropSide() === "after",
                           }}
+                          style={
+                            widthOf(col)
+                              ? {
+                                  width: `${widthOf(col)}px`,
+                                  "min-width": `${widthOf(col)}px`,
+                                  "max-width": `${widthOf(col)}px`,
+                                }
+                              : undefined
+                          }
                           draggable={true}
                           onDragStart={(e) => handleColDragStart(e, col)}
                           onDragEnd={handleColDragEnd}
@@ -1147,6 +1210,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                           <span class="collection-table__sort-indicator">
                             {sortIndicator(col, currentSortRules())}
                           </span>
+                          <div
+                            class="collection-table__col-resize"
+                            onMouseDown={(e) => startColResize(e, col)}
+                            onClick={(e) => e.stopPropagation()}
+                            title={t("collection.table.resizeColumn")}
+                          />
                         </th>
                       )}
                     </For>
@@ -1158,7 +1227,17 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                       <tr onContextMenu={(e) => handleRowContext(e, row.file_path, row.file_name)}>
                         <For each={d().columns}>
                           {(col) => (
-                            <td>
+                            <td
+                              style={
+                                widthOf(col)
+                                  ? {
+                                      width: `${widthOf(col)}px`,
+                                      "min-width": `${widthOf(col)}px`,
+                                      "max-width": `${widthOf(col)}px`,
+                                    }
+                                  : undefined
+                              }
+                            >
                               <InlineCell
                                 value={row.cells[col]}
                                 filePath={row.file_path}
