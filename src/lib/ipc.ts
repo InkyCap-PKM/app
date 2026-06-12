@@ -1176,8 +1176,22 @@ export async function listScaffoldEntries(): Promise<TemplateEntry[]> {
   return invoke<TemplateEntry[]>("list_scaffold_entries");
 }
 
-export async function createScaffold(name: string): Promise<string> {
-  return invoke<string>("create_scaffold", { name });
+/**
+ * Create a new scaffold file, returning its absolute path. When `content` is
+ * omitted the backend seeds the file with the starter template (see
+ * {@link getScaffoldStarter}); when supplied, it's written verbatim. Passing
+ * the edited content here keeps create+write atomic in a single command.
+ */
+export async function createScaffold(
+  name: string,
+  content?: string,
+): Promise<string> {
+  return invoke<string>("create_scaffold", { name, content: content ?? null });
+}
+
+/** Starter content used to prefill a brand-new scaffold in the editor. */
+export async function getScaffoldStarter(): Promise<string> {
+  return invoke<string>("get_scaffold_starter");
 }
 
 export interface ScaffoldInsertResult {

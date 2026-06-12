@@ -38,6 +38,16 @@ pub enum InkyCapError {
     #[error("{0}")]
     BadRequest(String),
 
+    /// A creation rule could not resolve a filename on its own — its pattern is
+    /// blank, or reduced to nothing once expanded (e.g. `{{zid}}` with
+    /// Zettelkasten off, or content-only `{{title}}`/`{{slug}}` tokens that
+    /// have no meaning in a filename). Not a failure to report: the frontend
+    /// matches this code, prompts the user for a name, and retries with a
+    /// `title_override`. Distinct from `BadRequest` so that branch keys off a
+    /// stable code rather than a magic message string.
+    #[error("A filename is required")]
+    FilenameRequired,
+
     /// The requested notebox is already open in another window. Carries that
     /// window's label (in `detail`) so the frontend can focus it instead of
     /// opening a duplicate — a notebox is exclusive to one window. Not a
@@ -83,6 +93,7 @@ impl InkyCapError {
             InkyCapError::ExportFailed(_) => "export-failed",
             InkyCapError::Git(_) => "git",
             InkyCapError::BadRequest(_) => "bad-request",
+            InkyCapError::FilenameRequired => "filename-required",
             InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
             InkyCapError::DocumentationReadOnly => "documentation-read-only",
@@ -108,6 +119,7 @@ impl InkyCapError {
             | InkyCapError::BadRequest(s)
             | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
+            | InkyCapError::FilenameRequired
             | InkyCapError::Cancelled
             | InkyCapError::DocumentationReadOnly => None,
         }

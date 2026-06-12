@@ -338,6 +338,7 @@ pub fn run() {
             commands::creation_rules::list_scaffolds,
             commands::creation_rules::list_scaffold_entries,
             commands::creation_rules::create_scaffold,
+            commands::creation_rules::get_scaffold_starter,
             commands::creation_rules::prepare_scaffold_insert,
             commands::typst_packages::install_typst_package_by_spec,
             commands::typst_packages::install_typst_package_from_file,

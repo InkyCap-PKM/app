@@ -7,6 +7,8 @@ import type { CreationRule, CreationResult } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { promptText } from "./prompt";
 import { settings } from "./settings";
+import { t } from "../lib/i18n";
+import { errorCode } from "../lib/errors";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -30,10 +32,32 @@ export function activeRules(): CreationRule[] {
 }
 
 /**
+ * Prompt the user for a filename when a rule can't resolve one on its own
+ * (blank pattern, or a pattern that expanded to nothing). Returns the trimmed
+ * name, or `null` if the user cancelled.
+ */
+async function promptFilename(rule: CreationRule | undefined): Promise<string | null> {
+  const name = await promptText({
+    title: t("creationRules.prompt.title", { name: rule?.name ?? t("creationRules.prompt.ruleFallback") }),
+    label: t("creationRules.prompt.label"),
+    placeholder: t("creationRules.prompt.placeholder"),
+    hint: t("creationRules.prompt.hint"),
+    confirmLabel: t("creationRules.prompt.confirm"),
+    validate: (v) => (v.trim() === "" ? t("creationRules.prompt.emptyError") : null),
+  });
+  return name === null ? null : name.trim();
+}
+
+/**
  * Trigger a creation rule from anywhere in the app (toolbar, command
- * palette, hotkey, deep link). Handles the "blank filename pattern"
- * affordance: if the rule has no pattern, the user is prompted for a
- * filename before the backend creates the file.
+ * palette, hotkey, deep link). Handles the "needs a filename" affordance: a
+ * blank pattern prompts up front; a non-empty pattern that the backend can't
+ * resolve to a name (it returns `filename-required`) prompts and retries. In
+ * both cases the user-entered name is passed as the title override.
+ *
+ * `{{title}}`/`{{slug}}` are scaffold-content variables, not filename
+ * variables — a pattern made only of them expands to nothing and lands on the
+ * same prompt path rather than erroring.
  *
  * Returns the backend result on success, or `null` if the user cancelled
  * the filename prompt. Other errors propagate.
@@ -57,24 +81,26 @@ export async function triggerCreationRule(
   // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
   if (pattern === "") {
-    // Blank pattern: fall back to ZID if enabled, otherwise prompt
+    // Blank pattern: fall back to ZID if enabled, otherwise prompt up front.
     if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
       const zidName = await ipc.generateZid();
       return ipc.executeCreationRule(ruleId, zidName, folderOverride);
     }
-    const name = await promptText({
-      title: `New note from "${rule?.name ?? "rule"}"`,
-      label: "Filename",
-      placeholder: "untitled",
-      hint: "No extension needed — `.typ` is added automatically.",
-      confirmLabel: "Create",
-      validate: (v) =>
-        v.trim() === "" ? "Filename cannot be empty" : null,
-    });
+    const name = await promptFilename(rule);
     if (name === null) return null;
-    return ipc.executeCreationRule(ruleId, name.trim(), folderOverride);
+    return ipc.executeCreationRule(ruleId, name, folderOverride);
   }
-  return ipc.executeCreationRule(ruleId, undefined, folderOverride);
+  // Non-empty pattern: try it. If it expanded to nothing (e.g. `{{zid}}` with
+  // Zettelkasten off, or stray content-only `{{title}}`/`{{slug}}` tokens) the
+  // backend signals `filename-required` — prompt and retry with the name.
+  try {
+    return await ipc.executeCreationRule(ruleId, undefined, folderOverride);
+  } catch (e) {
+    if (errorCode(e) !== "filename-required") throw e;
+    const name = await promptFilename(rule);
+    if (name === null) return null;
+    return ipc.executeCreationRule(ruleId, name, folderOverride);
+  }
 }
 
 export { creationRules };

@@ -257,6 +257,23 @@ const UNRESOLVED_LABEL_RE = /^label `<([^>]+)>` does not exist in the document/;
 // delimiters ($, `, brackets) don't have this rule, so they keep the bare message.
 const EMPHASIS_DELIMITERS = new Set(["*", "_"]);
 
+// Typst's "unknown variable: <name>" error. Suppressed on scaffold fragment
+// files — see `isScaffoldFragmentUri`.
+const UNKNOWN_VARIABLE_RE = /^unknown variable\b/i;
+
+// Scaffold files (`.inkycap/scaffolds/*.typ`) are template FRAGMENTS, not
+// standalone documents: they call notebox primitives (`#note`, `#tag`,
+// `#wikilink`, …) but omit the `#import` that defines them, because the host
+// note they're merged into already has it. Tinymist compiles each open file on
+// its own, so it flags every such call as "unknown variable" — pure noise for a
+// fragment, whose free symbols are resolved by its host context. We drop the
+// unknown-variable family for these files while keeping syntax errors and every
+// other diagnostic. (Templates under `.inkycap/templates/` are self-contained
+// packages, so they're intentionally not included.)
+function isScaffoldFragmentUri(uri: string): boolean {
+  return decodeURIComponent(uri).includes("/.inkycap/scaffolds/");
+}
+
 // Bibliography keys, cached so the synchronous diagnostic conversion can decide
 // whether an unresolved label is actually a citation. The set is the exact
 // discriminator the backend uses: `maybe_inject_preview_bibliography` only
@@ -284,8 +301,12 @@ function convertDiagnostics(
   doc: EditorView["state"]["doc"],
   diagnostics: LspDiagnostic[],
   bibKeys: Set<string>,
+  suppressUnknownVars: boolean,
 ): Diagnostic[] {
-  return diagnostics.map((d) => {
+  const relevant = suppressUnknownVars
+    ? diagnostics.filter((d) => !UNKNOWN_VARIABLE_RE.test(d.message))
+    : diagnostics;
+  return relevant.map((d) => {
     const from = lspPositionToOffset(doc, d.range.start);
     const to = lspPositionToOffset(doc, d.range.end);
     const severity = d.severity === 1 ? "error"
@@ -330,6 +351,7 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
 
   const normalizeUri = (u: string) => decodeURIComponent(u);
   const normalizedUri = normalizeUri(uri);
+  const suppressUnknownVars = isScaffoldFragmentUri(uri);
 
   let disposed = false;
   const handler = (diagUri: string, diagnostics: LspDiagnostic[]) => {
@@ -339,7 +361,7 @@ export function createLspDiagnosticsUpdater(view: EditorView) {
     // land a few ms later, which is imperceptible for a transient lint underline.
     void refreshBibKeys().then((bibKeys) => {
       if (disposed) return;
-      const converted = convertDiagnostics(view.state.doc, diagnostics, bibKeys);
+      const converted = convertDiagnostics(view.state.doc, diagnostics, bibKeys, suppressUnknownVars);
       view.dispatch(setDiagnostics(view.state, converted));
     });
   };

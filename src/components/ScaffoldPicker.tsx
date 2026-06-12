@@ -114,12 +114,14 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+      // Wrap to the top after the last entry.
+      if (list.length > 0) setSelectedIndex((i) => (i + 1) % list.length);
       return;
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
+      // Wrap to the bottom before the first entry.
+      if (list.length > 0) setSelectedIndex((i) => (i - 1 + list.length) % list.length);
       return;
     }
     if (e.key === "Enter") {
