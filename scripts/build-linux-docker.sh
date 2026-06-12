@@ -121,9 +121,28 @@ docker run --rm -i \
     git config --global --add safe.directory /app
     ./scripts/download-tinymist.sh "$TARGET"
     npm ci
+    # Force the app crate to recompile so the version in tauri.conf.json is
+    # re-baked into the binary. Without this, an incremental build against the
+    # persistent target-docker cache can reuse a binary compiled under the
+    # PREVIOUS version — yielding packages whose metadata says the new version
+    # while the binary (and Settings -> Overview) still reports the old one.
+    # Cleaning just this package keeps every dependency crate cached, so the
+    # rebuild stays fast. (CARGO_TARGET_DIR points at target-docker.)
+    cargo clean -p inkycap --manifest-path src-tauri/Cargo.toml || true
     VERBOSE_FLAG=""
     [ "$VERBOSE" = "1" ] && VERBOSE_FLAG="--verbose"
     npm run tauri build -- $VERBOSE_FLAG --bundles "$BUNDLES" $NOUPDATER
+    # Guard against a stale binary slipping through: the version the binary
+    # reports at runtime must match tauri.conf.json. --version exits before any
+    # GUI init, so this runs safely headless.
+    EXPECT="$(node -p "require(\"./src-tauri/tauri.conf.json\").version")"
+    GOT="$(/app/target-docker/release/inkycap --version)"
+    if [ "$GOT" != "$EXPECT" ]; then
+      echo "ERROR: built binary reports $GOT but tauri.conf.json is $EXPECT." >&2
+      echo "       The compile reused a stale cached binary; clean and rebuild." >&2
+      exit 1
+    fi
+    echo "==> Verified: built binary reports version $EXPECT"
     # The container runs as root; hand the build outputs back to the host user.
     chown -R "$HOST_UID:$HOST_GID" /app/target-docker
   ' 2>&1 | tee "$BUILD_LOG"

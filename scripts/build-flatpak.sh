@@ -32,13 +32,24 @@ command -v flatpak >/dev/null 2>&1 || {
 command -v flatpak-builder >/dev/null 2>&1 || {
   echo "flatpak-builder not found. Install it:  sudo apt install flatpak-builder" >&2; exit 1; }
 
-# Locate the .deb to package: prefer the collected dist-linux/, fall back to the
-# Docker target dir.
-DEB="$(ls -t dist-linux/InkyCap_*_amd64.deb \
-                target-docker/release/bundle/deb/InkyCap_*_amd64.deb 2>/dev/null | head -1 || true)"
+# Select the .deb by EXACT version (the single source of truth is
+# tauri.conf.json), not "newest mtime". The old mtime approach could grab the
+# wrong build when several .debs share a timestamp (a `cp` stamps them together)
+# or when stale versions linger — while still NAMING the output from
+# tauri.conf.json, yielding a bundle whose filename lies about its contents.
+# build-linux-docker.sh verifies the binary's reported version at build time, so
+# a .deb of the matching name is trusted to contain the matching binary.
+VERSION="$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
+DEB_NAME="InkyCap_${VERSION}_amd64.deb"
+DEB=""
+for cand in "dist-linux/$DEB_NAME" "target-docker/release/bundle/deb/$DEB_NAME"; do
+  [ -f "$cand" ] && { DEB="$cand"; break; }
+done
 [ -n "$DEB" ] || {
-  echo "No .deb found. Run ./scripts/build-linux-docker.sh first." >&2; exit 1; }
-echo "==> Packaging from: $DEB"
+  echo "No $DEB_NAME found for version $VERSION." >&2
+  echo "Build it first:  ./scripts/build-linux-docker.sh --bundles deb" >&2
+  exit 1; }
+echo "==> Packaging version $VERSION from: $DEB"
 
 # Ensure the Flathub remote and the runtime/SDK/codecs are present (user
 # install, no sudo). Harmless if already installed.
@@ -53,7 +64,6 @@ flatpak install --user --noninteractive flathub \
 cp "$DEB" flatpak/inkycap.deb
 trap 'rm -f flatpak/inkycap.deb' EXIT
 
-VERSION="$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
 BUILD_DIR="flatpak/.build"
 REPO_DIR="flatpak/.repo"
 OUT="dist-linux/InkyCap-${VERSION}.flatpak"

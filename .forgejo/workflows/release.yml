@@ -66,6 +66,22 @@ jobs:
           npm run tauri build -- --bundles deb rpm \
             --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
+      - name: Verify the built binary's version matches the tag
+        # Catches a stale build (or a tag/version-bump mismatch): the version
+        # the binary reports at runtime — what Settings -> Overview shows — must
+        # equal the pushed tag. `--version` exits before any GUI init, so it
+        # runs headless. A mismatch fails the release before anything is
+        # published.
+        run: |
+          set -euo pipefail
+          EXPECT="${GITHUB_REF_NAME#v}"
+          GOT="$(src-tauri/target/release/inkycap --version)"
+          if [ "$GOT" != "$EXPECT" ]; then
+            echo "::error::Built binary reports $GOT but the tag is v$EXPECT (stale build or unbumped version?)."
+            exit 1
+          fi
+          echo "Verified: built binary reports version $EXPECT (matches tag)."
+
       - name: Attach .deb and .rpm to the release
         env:
           TOKEN: ${{ secrets.PAGES_PUSH_TOKEN }}

@@ -240,7 +240,15 @@ Upload the `.flatpak` to the draft (web UI: drag it onto the release). No `.sig`
 set TAURI_SIGNING_PRIVATE_KEY=<contents of your private key>
 set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<its password>
 npm run tauri build                            :: NSIS -setup.exe + .sig (and .msi)
+src-tauri\target\release\inkycap.exe --version :: MUST print the version you tagged
 ```
+
+Verify the printed version matches the tag before uploading. A reused local
+`target/` can otherwise bake the *previous* version into the installer while the
+filename still reads the new one — the same stale-binary class the Linux build
+(`scripts/build-linux-docker.sh`) and CI (`release.yml`) now guard against
+automatically. If it prints the wrong version, delete `src-tauri/target/release`
+(or run `cargo clean -p inkycap`) and rebuild.
 
 Upload the `*-setup.exe` **and its `.sig`** to the same draft.
 
