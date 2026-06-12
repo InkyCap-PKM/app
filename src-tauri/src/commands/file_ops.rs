@@ -520,6 +520,214 @@ pub async fn pick_and_upload_to_attachments(
     Ok(saved)
 }
 
+/// One file offered by [`pick_files_for_import`]: its frontend path string and
+/// whether it's a markdown source (so the UI can ask "convert to Typst?" only
+/// for those). Non-markdown files are always copied in as attachments.
+#[derive(serde::Serialize)]
+pub struct PickedImportFile {
+    pub path: String,
+    pub is_markdown: bool,
+}
+
+/// True when `path` has a markdown extension (`.md` / `.markdown`).
+fn is_markdown_file(path: &std::path::Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("md") | Some("markdown")
+    )
+}
+
+/// Open the native multi-file picker and return a manifest of the chosen files
+/// (frontend path + markdown flag) **without** copying anything. Each chosen
+/// path is registered on the drop allowlist so the follow-up per-file command
+/// the frontend issues — [`copy_path_to_attachments`] (keep) or
+/// [`import_markdown_file`] (convert) — is authorized for exactly that path.
+///
+/// This splits picking from acting so the frontend can ask the user, per
+/// operation, whether to convert markdown to Typst or keep it as-is. The pick
+/// is still Rust-mediated (the renderer can't forge the dialog), and the
+/// allowlist entry is single-use and TTL-bounded, so the two-step flow keeps
+/// the same trust model as the one-shot [`pick_and_upload_to_attachments`].
+#[tauri::command]
+pub async fn pick_files_for_import(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<PickedImportFile>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
+    use tauri_plugin_dialog::DialogExt;
+
+    let app_for_picker = app.clone();
+    let home_dir = app.path().home_dir().ok();
+    let picked = tokio::task::spawn_blocking(move || {
+        let mut builder = app_for_picker.dialog().file();
+        if let Some(home) = home_dir {
+            builder = builder.set_directory(home);
+        }
+        builder.blocking_pick_files()
+    })
+    .await
+    .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("dialog join error: {e}"))))?;
+
+    let Some(picked) = picked else {
+        return Ok(Vec::new()); // user cancelled
+    };
+
+    let mut out = Vec::with_capacity(picked.len());
+    for fp in picked {
+        let pb: PathBuf = fp
+            .into_path()
+            .map_err(|e| InkyCapError::InvalidPath(format!("invalid file path: {e}")))?;
+        if !pb.is_file() {
+            return Err(InkyCapError::InvalidPath(format!(
+                "selection is not a regular file: {}",
+                pb.display()
+            )));
+        }
+        let is_markdown = is_markdown_file(&pb);
+        // The frontend round-trips the normalized string form back to the
+        // copy/convert command, so authorize *that* exact form on the allowlist
+        // (not the raw `pb`) — otherwise the Windows verbatim-prefix/separator
+        // normalization in `to_frontend_string` would make the consumed path
+        // unequal to the registered one and the follow-up call would be
+        // rejected. Both `consume_drop_path` and `fs::read` accept this form.
+        let frontend_path = to_frontend_string(&pb);
+        state.register_drop_paths(std::iter::once(PathBuf::from(&frontend_path)));
+        out.push(PickedImportFile {
+            path: frontend_path,
+            is_markdown,
+        });
+    }
+    Ok(out)
+}
+
+/// Convert a single markdown file (given by absolute path) into a `.typ` note
+/// at the notebox root, returning the note's notebox-relative path. The
+/// markdown→Typst conversion is the same one the archive importer runs
+/// (frontmatter → `#note(...)`, wikilinks, image rebasing); images referenced
+/// alongside the source are routed into the attachment folder.
+///
+/// **Security.** Like [`copy_path_to_attachments`], the path must be on the
+/// drop allowlist — populated either by an OS drag-drop (drag-drop import) or
+/// by [`pick_files_for_import`] (the "Copy into notebox" picker). A
+/// frontend-supplied path that wasn't recently authorized is rejected.
+#[tauri::command]
+pub async fn import_markdown_file(
+    source_path: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
+    let src = PathBuf::from(&source_path);
+    if !state.consume_drop_path(&src) {
+        return Err(InkyCapError::InvalidPath(format!(
+            "path was not part of a recent drag-drop or import and cannot be imported: {}",
+            source_path
+        )));
+    }
+    if !src.is_file() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "Source file does not exist: {}",
+            source_path
+        )));
+    }
+    let text = tokio::fs::read_to_string(&src).await?;
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Imported note".to_string());
+    convert_markdown_into_notebox(&text, &stem, src.parent(), &app, &session).await
+}
+
+/// Convert markdown text (base64-encoded UTF-8) into a `.typ` note at the
+/// notebox root, returning its notebox-relative path. The bytes-only sibling of
+/// [`import_markdown_file`] for the HTML5 drag-drop path (Windows), where the
+/// webview hands us file *bytes* rather than a path. No drop allowlist applies
+/// — the content comes from the webview's own `dataTransfer`, not a path the
+/// renderer could forge. Referenced images can't be routed (no source
+/// directory); their rewritten paths are left for the user to fix.
+#[tauri::command]
+pub async fn import_markdown_text(
+    filename: String,
+    content_base64: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&content_base64)
+        .map_err(|e| InkyCapError::InvalidPath(format!("Invalid base64: {}", e)))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|e| InkyCapError::InvalidPath(format!("markdown file is not valid UTF-8: {e}")))?;
+    let stem = std::path::Path::new(&filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Imported note".to_string());
+    convert_markdown_into_notebox(&text, &stem, None, &app, &session).await
+}
+
+/// Shared core: convert markdown `text` into a `.typ` note named after `stem`
+/// at the notebox root, emit a tree-refresh event, and return the note's
+/// notebox-relative path. `sibling_dir`, when given, is the directory scanned
+/// for referenced images to route into the attachment folder.
+async fn convert_markdown_into_notebox(
+    text: &str,
+    stem: &str,
+    sibling_dir: Option<&std::path::Path>,
+    app: &tauri::AppHandle,
+    session: &NoteboxSession,
+) -> Result<String, InkyCapError> {
+    let root = {
+        let g = session.notebox_root.read().await;
+        g.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?.clone()
+    };
+    let attachment_folder = session
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
+
+    let (rel, result) = crate::markdown::notebox_import::import_single_markdown(
+        text,
+        stem,
+        &root,
+        sibling_dir,
+        crate::markdown::md_to_typst::MarkdownDialect::Standard,
+        attachment_folder,
+    )
+    .map_err(|e| InkyCapError::Io(std::io::Error::other(e)))?;
+
+    for err in &result.errors {
+        log::warn!("[import-markdown] asset issue: {err}");
+    }
+
+    // The file watcher indexes new `.typ` files, but emit explicitly so the
+    // tree updates immediately — same reasoning as `write_to_attachments`.
+    let abs = root.join(&rel);
+    let _ = app.emit(
+        "notebox:file-created",
+        serde_json::json!({ "path": to_frontend_string(&abs) }),
+    );
+    Ok(rel)
+}
+
 /// Write `data` into the notebox's attachment folder under `filename`.
 /// Finds a collision-free name and returns the saved name.
 async fn write_to_attachments(

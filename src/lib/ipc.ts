@@ -926,6 +926,45 @@ export async function pickAndUploadToAttachments(): Promise<string[]> {
   return invoke<string[]>("pick_and_upload_to_attachments");
 }
 
+/** One file chosen in {@link pickFilesForImport}: its path and whether it's a
+ *  markdown source (so the UI can offer "convert to Typst?" only for those). */
+export interface PickedImportFile {
+  path: string;
+  is_markdown: boolean;
+}
+
+/**
+ * Open a native multi-file picker and return the chosen files' paths plus a
+ * markdown flag — WITHOUT copying anything. Each path is authorized for a
+ * follow-up {@link copyPathToAttachments} (keep) or {@link importMarkdownFile}
+ * (convert) call. Empty array if the user cancelled. Backs "Copy into notebox",
+ * which asks per-operation whether to convert markdown to Typst.
+ */
+export async function pickFilesForImport(): Promise<PickedImportFile[]> {
+  return invoke<PickedImportFile[]>("pick_files_for_import");
+}
+
+/**
+ * Convert a markdown file (by absolute path) into a `.typ` note at the notebox
+ * root, returning the new note's notebox-relative path. The path must have been
+ * authorized by a recent OS drag-drop or {@link pickFilesForImport}.
+ */
+export async function importMarkdownFile(sourcePath: string): Promise<string> {
+  return invoke<string>("import_markdown_file", { sourcePath });
+}
+
+/**
+ * Convert markdown bytes (base64 UTF-8) into a `.typ` note at the notebox root,
+ * returning its notebox-relative path. The bytes-only sibling of
+ * {@link importMarkdownFile} for the Windows HTML5 drag-drop path.
+ */
+export async function importMarkdownText(
+  filename: string,
+  contentBase64: string,
+): Promise<string> {
+  return invoke<string>("import_markdown_text", { filename, contentBase64 });
+}
+
 export interface AttachmentMigrationPreview {
   current_folder: string;
   files_to_move: number;

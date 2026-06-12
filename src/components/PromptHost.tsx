@@ -2,15 +2,20 @@
 // Mounted once at the app root; driven by the activePrompt signal in
 // stores/prompt.ts. See that file for the call-site contract.
 
-import { Component, Show, createSignal, createEffect } from "solid-js";
+import { Component, Show, For, createSignal, createEffect } from "solid-js";
+import { X } from "lucide-solid";
 import {
   activePrompt,
   resolvePrompt,
   activeConfirm,
   resolveConfirm,
+  activeChoice,
+  resolveChoice,
 } from "../stores/prompt";
+import { useI18n } from "../lib/i18n";
 
 const PromptHost: Component = () => {
+  const t = useI18n();
   const [value, setValue] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   // State of the confirm dialog's optional opt-in checkbox. Reset whenever a
@@ -78,8 +83,64 @@ const PromptHost: Component = () => {
     }
   }
 
+  function onChoiceKeyDown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      resolveChoice(null);
+    }
+  }
+
   return (
     <>
+    {/* Multi-action chooser — title, message, N action buttons + a header ✕. */}
+    <Show when={activeChoice()}>
+      {(c) => (
+        <div
+          class="app-modal__backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) resolveChoice(null);
+          }}
+          onKeyDown={onChoiceKeyDown}
+          tabindex={-1}
+          ref={(el) => queueMicrotask(() => el.focus())}
+        >
+          <div
+            class="app-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-choice-title"
+          >
+            <div class="app-modal__header">
+              <h3 id="app-choice-title">{c().title}</h3>
+              <button
+                class="ui-icon-btn"
+                onClick={() => resolveChoice(null)}
+                aria-label={t("common.close")}
+                title={t("common.close")}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div class="app-modal__body">
+              <p class="app-modal__message">{c().message}</p>
+            </div>
+            <div class="app-modal__footer">
+              <For each={c().options}>
+                {(opt) => (
+                  <button
+                    class={`btn btn--${opt.variant ?? "secondary"}`}
+                    onClick={() => resolveChoice(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+      )}
+    </Show>
+
     {/* Yes/no confirmation — same chrome as the text prompt, no input. */}
     <Show when={activeConfirm()}>
       {(c) => (

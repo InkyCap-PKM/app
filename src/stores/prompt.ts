@@ -130,3 +130,55 @@ export function resolveConfirm(ok: boolean, checked = false) {
   setActiveConfirm(null);
   cur.resolve({ confirmed: ok, checked });
 }
+
+/** One selectable action in a [`promptChoice`] modal. */
+export interface ChoiceOption {
+  /** Stable id returned when this option is chosen. */
+  id: string;
+  /** Button label (already localized by the caller). */
+  label: string;
+  /** Button styling. Defaults to `secondary`. */
+  variant?: "primary" | "secondary" | "danger";
+}
+
+/** A multi-action chooser modal: a title, a message, and 2+ action buttons,
+ *  plus an always-present close affordance (the header ✕, Esc, and backdrop
+ *  click) that cancels. Use when a yes/no confirm isn't enough — e.g. "Convert
+ *  to Typst?" / "Keep as Markdown" / cancel. */
+export interface ChoiceOptions {
+  /** Heading text shown in the modal header. */
+  title: string;
+  /** Body text. Newlines preserved (`white-space: pre-wrap`). */
+  message: string;
+  /** The action buttons, rendered left-to-right. */
+  options: ChoiceOption[];
+}
+
+interface ChoiceState extends ChoiceOptions {
+  resolve: (id: string | null) => void;
+}
+
+const [activeChoice, setActiveChoice] = createSignal<ChoiceState | null>(null);
+
+export { activeChoice };
+
+/**
+ * Open the chooser modal. Resolves with the chosen option's `id`, or `null` if
+ * the user cancelled (the header ✕, Esc, or a backdrop click). If a chooser is
+ * already open, the previous one is cancelled (`null`) before the new one opens.
+ */
+export function promptChoice(opts: ChoiceOptions): Promise<string | null> {
+  const existing = activeChoice();
+  if (existing) existing.resolve(null);
+  return new Promise<string | null>((resolve) => {
+    setActiveChoice({ ...opts, resolve });
+  });
+}
+
+/** Internal: used by PromptHost to settle the active chooser. */
+export function resolveChoice(id: string | null) {
+  const cur = activeChoice();
+  if (!cur) return;
+  setActiveChoice(null);
+  cur.resolve(id);
+}

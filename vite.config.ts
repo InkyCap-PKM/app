@@ -20,7 +20,24 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      // Don't watch the Rust crate or the packaging build trees. The flatpak
+      // builder (scripts/build-flatpak.sh) leaves `flatpak/.build` and
+      // `.flatpak-builder/` in the repo — both gitignored, but vite's watcher
+      // doesn't read .gitignore. Those trees contain sandbox artifacts with
+      // symlink loops (e.g. `flatpak/.build/var/run/udev/watch/`); chokidar's
+      // `stat` hits ELOOP, throws an uncaught exception, and kills the dev
+      // server — leaving the Tauri window blank because `beforeDevCommand`
+      // never serves.
+      //
+      // A predicate (not a glob) is deliberate: picomatch's `**` does not
+      // match dot-prefixed segments, so `**/flatpak/**` would silently fail to
+      // exclude the `.build` dot-directory and the loop would still bite. This
+      // matches any path with one of these dirs as a segment, on either
+      // separator.
+      ignored: (filePath) =>
+        /(?:^|[/\\])(?:src-tauri|flatpak|\.flatpak-builder)(?:[/\\]|$)/.test(
+          filePath,
+        ),
     },
   },
   test: {
