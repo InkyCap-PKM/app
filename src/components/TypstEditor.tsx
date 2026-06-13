@@ -298,7 +298,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       currentPath = props.path;
       setDocText(editorHandle.getText());
       if (currentMode() === "live") {
-        editorHandle.ensureParsed();
+        // Parse-aware full rebuild, not a bare ensureParsed(). The restored
+        // state re-runs visualField.create() against a tree the (just-started)
+        // parser hasn't finished, so the decorations can latch onto a stale or
+        // partial structure — e.g. a note left mid-edit with an unterminated
+        // code fence stays stuck as raw red source, the wikilinks dead, even
+        // after the source on disk is correct. rebuildVisual() waits for the
+        // tree to span the doc, then forces a clean rebuild. (Mirrors
+        // reloadFromDisk.)
+        editorHandle.rebuildVisual();
       }
     }
     registerEditorView(props.tabId, editorHandle);
@@ -601,7 +609,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           if (editorHandle) {
             editorHandle.setText(doc);
             if (currentMode() === "live") {
-              editorHandle.ensureParsed();
+              // Parse-aware rebuild after setText (see reloadFromDisk): a bare
+              // ensureParsed() leaves visualField anchored to the pre-setText
+              // tree, so stale Replace widgets mask the freshly-loaded content
+              // and a note that was saved in a broken-parse state never
+              // recovers on reopen. rebuildVisual() reparses, then rebuilds.
+              editorHandle.rebuildVisual();
             }
           }
         } finally {

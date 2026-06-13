@@ -56,6 +56,15 @@ pub enum InkyCapError {
     #[error("Notebox is already open in another window")]
     NoteboxAlreadyOpen(String),
 
+    /// A note with the requested filename already exists elsewhere in the
+    /// notebox. Filenames are notebox-globally unique (wikilinks resolve by
+    /// stem), so creation can't silently make a second one. Carries the
+    /// existing note's path (in `detail`) so the frontend can offer to open it
+    /// or let the user pick a different name. Not a failure to report: the UI
+    /// matches this code and prompts, the same way `FilenameRequired` does.
+    #[error("A note with that name already exists elsewhere in the notebox")]
+    NoteNameConflict(String),
+
     /// A long-running operation was cancelled cooperatively. Distinct
     /// from `BadRequest` so the UI can suppress an "error" toast on
     /// the success path (the user asked for the cancel, it isn't a
@@ -94,6 +103,7 @@ impl InkyCapError {
             InkyCapError::Git(_) => "git",
             InkyCapError::BadRequest(_) => "bad-request",
             InkyCapError::FilenameRequired => "filename-required",
+            InkyCapError::NoteNameConflict(_) => "note-name-conflict",
             InkyCapError::NoteboxAlreadyOpen(_) => "notebox-already-open",
             InkyCapError::Cancelled => "cancelled",
             InkyCapError::DocumentationReadOnly => "documentation-read-only",
@@ -117,6 +127,7 @@ impl InkyCapError {
             | InkyCapError::ExportFailed(s)
             | InkyCapError::Git(s)
             | InkyCapError::BadRequest(s)
+            | InkyCapError::NoteNameConflict(s)
             | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),
             InkyCapError::NoteboxNotOpen
             | InkyCapError::FilenameRequired

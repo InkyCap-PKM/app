@@ -53,6 +53,16 @@ export function errorCode(value: unknown): string | undefined {
 }
 
 /**
+ * The backend's `detail` value for a caught IPC error (a path, a name, a
+ * tool message), or `undefined` if absent or the value isn't an IPC error.
+ * Use to read structured data a variant carries — e.g. the existing note's
+ * path on a `note-name-conflict` — without parsing the localized message.
+ */
+export function errorDetail(value: unknown): string | undefined {
+  return isIpcError(value) ? (value.detail ?? undefined) : undefined;
+}
+
+/**
  * A user-facing, localized string for any caught value. For backend IPC errors
  * it resolves `errors.<code>` in the active locale (filling `{detail}`), falling
  * back to the backend's English `message` when the key is absent. For plain JS

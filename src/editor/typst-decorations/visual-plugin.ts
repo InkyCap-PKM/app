@@ -6,7 +6,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { type ChangeSet, EditorState, Facet, type Line, Prec, type Range, RangeSet, RangeValue, StateEffect, StateField } from "@codemirror/state";
+import { type ChangeSet, EditorState, Facet, type Line, Prec, type Range, RangeSet, RangeValue, StateEffect, StateField, type Transaction } from "@codemirror/state";
 import { expandFunc } from "./effects";
 import { inVerbatimLineContext, lineIsNonProse } from "./keymaps";
 import { findCallEnd } from "./pill";
@@ -2274,48 +2274,81 @@ function rebuildDocChange(
 // content, producing a blank-looking editor).
 export const rebuildVisualDecorations = StateEffect.define<null>();
 
+/**
+ * The visual-field decoration update, factored out so the field wrapper can
+ * guard it (see below). Returns the decoration set for `tr.state`, choosing a
+ * full rebuild or an incremental one depending on what changed.
+ */
+function computeVisualDecorations(decos: DecorationSet, tr: Transaction): DecorationSet {
+  for (const e of tr.effects) {
+    if (e.is(rebuildVisualDecorations)) {
+      return buildDecorations(tr.state);
+    }
+  }
+  if (tr.docChanged) {
+    const ep = tr.state.field(expandedFuncField, false) ?? null;
+    if (ep !== null) return buildDecorations(tr.state);
+    // Document edits (including newline/paste/undo/redo) carry change sets we
+    // can map decoration ranges against — handle them incrementally.
+    return rebuildDocChange(decos, tr);
+  }
+  if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
+    // Tree identity changed WITHOUT a doc change: the async (WASM) parser
+    // finished re-parsing in a later transaction. There is no change set to
+    // map old decoration ranges against, so an incremental update can't be
+    // applied safely — a full rebuild against the freshly-available tree is
+    // the correct (and only sound) response. Doc-driven edits never reach
+    // here; they took the incremental `rebuildDocChange` path above.
+    return buildDecorations(tr.state);
+  }
+  if (tr.startState.facet(autoExpandFacet) !== tr.state.facet(autoExpandFacet)) {
+    return buildDecorations(tr.state);
+  }
+  const startExpanded = tr.startState.field(expandedFuncField, false) ?? null;
+  const newExpanded = tr.state.field(expandedFuncField, false) ?? null;
+  if (startExpanded !== newExpanded) {
+    return buildDecorations(tr.state);
+  }
+  if (tr.selection) {
+    const oldLines = cursorLines(tr.startState);
+    const newLines = cursorLines(tr.state);
+    if (!setsEqual(oldLines, newLines) || cursorNearDecoTrigger(tr.startState) || cursorNearDecoTrigger(tr.state)) {
+      return rebuildDirtyLines(decos, tr.state, oldLines, newLines);
+    }
+  }
+  return decos;
+}
+
 const visualField = StateField.define<DecorationSet>({
   create(state) {
-    return buildDecorations(state);
+    // A malformed/partial parse tree must never abort the field's creation —
+    // that would throw out of the whole editor setup. Fall back to no
+    // decorations; the next clean reparse rebuilds everything.
+    try {
+      return buildDecorations(state);
+    } catch (err) {
+      console.error("visual-plugin: initial decoration build failed; starting with no decorations", err);
+      return Decoration.none;
+    }
   },
   update(decos, tr) {
-    for (const e of tr.effects) {
-      if (e.is(rebuildVisualDecorations)) {
-        return buildDecorations(tr.state);
-      }
+    // The decoration set is provided by this StateField, so a throw here would
+    // tear down the ENTIRE visual layer — every wikilink, pill, and widget —
+    // until the EditorView is recreated (i.e. the note is reopened). That is
+    // exactly the "wikilinks stop working until I leave and come back" symptom
+    // a transient parse error (e.g. a half-typed/corrupted table) can trigger.
+    // The per-FuncCall guard in buildDecorations covers most of it, but a throw
+    // anywhere else in the build (escape/angle-bracket scans, range math,
+    // RangeSet assembly) would still escape. Catch at the field boundary and
+    // keep the previous decorations — mapped through any doc change so their
+    // positions stay valid — so the layer survives and the next successful
+    // rebuild (a cursor move or async reparse) restores everything in place.
+    try {
+      return computeVisualDecorations(decos, tr);
+    } catch (err) {
+      console.error("visual-plugin: decoration rebuild failed; preserving previous decorations until the next clean parse", err);
+      return tr.docChanged ? decos.map(tr.changes) : decos;
     }
-    if (tr.docChanged) {
-      const ep = tr.state.field(expandedFuncField, false) ?? null;
-      if (ep !== null) return buildDecorations(tr.state);
-      // Document edits (including newline/paste/undo/redo) carry change sets we
-      // can map decoration ranges against — handle them incrementally.
-      return rebuildDocChange(decos, tr);
-    }
-    if (syntaxTree(tr.state) !== syntaxTree(tr.startState)) {
-      // Tree identity changed WITHOUT a doc change: the async (WASM) parser
-      // finished re-parsing in a later transaction. There is no change set to
-      // map old decoration ranges against, so an incremental update can't be
-      // applied safely — a full rebuild against the freshly-available tree is
-      // the correct (and only sound) response. Doc-driven edits never reach
-      // here; they took the incremental `rebuildDocChange` path above.
-      return buildDecorations(tr.state);
-    }
-    if (tr.startState.facet(autoExpandFacet) !== tr.state.facet(autoExpandFacet)) {
-      return buildDecorations(tr.state);
-    }
-    const startExpanded = tr.startState.field(expandedFuncField, false) ?? null;
-    const newExpanded = tr.state.field(expandedFuncField, false) ?? null;
-    if (startExpanded !== newExpanded) {
-      return buildDecorations(tr.state);
-    }
-    if (tr.selection) {
-      const oldLines = cursorLines(tr.startState);
-      const newLines = cursorLines(tr.state);
-      if (!setsEqual(oldLines, newLines) || cursorNearDecoTrigger(tr.startState) || cursorNearDecoTrigger(tr.state)) {
-        return rebuildDirtyLines(decos, tr.state, oldLines, newLines);
-      }
-    }
-    return decos;
   },
   provide(field) {
     return EditorView.decorations.from(field);

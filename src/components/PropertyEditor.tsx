@@ -186,6 +186,22 @@ function renderStringWithWikilinks(text: string): (string | HTMLSpanElement)[] {
   return parts;
 }
 
+/**
+ * Let the property-row kebab menu's "Edit" action open an editor's edit mode.
+ * When a value renders as a navigable wikilink, clicking it follows the link
+ * instead of starting an edit, so there's otherwise no in-row way to change it.
+ * RightPanel dispatches `inkycap:edit-property` with the row's key; the matching
+ * editor enters edit mode. Auto-cleans up on unmount.
+ */
+function useEditRequest(propKey: () => string, startEdit: () => void) {
+  const handler = (e: Event) => {
+    const detail = (e as CustomEvent<{ propKey: string }>).detail;
+    if (detail?.propKey === propKey()) startEdit();
+  };
+  document.addEventListener("inkycap:edit-property", handler);
+  onCleanup(() => document.removeEventListener("inkycap:edit-property", handler));
+}
+
 const StringEditor: Component<PropertyEditorProps> = (props) => {
   const t = useI18n();
   const [editing, setEditing] = createSignal(false);
@@ -211,6 +227,7 @@ const StringEditor: Component<PropertyEditorProps> = (props) => {
     setDraft(displayValue());
     setEditing(true);
   }
+  useEditRequest(() => props.propKey, startEdit);
 
   function commit() {
     setEditing(false);
@@ -295,6 +312,7 @@ const NumberEditor: Component<PropertyEditorProps> = (props) => {
     setError(null);
     setEditing(true);
   }
+  useEditRequest(() => props.propKey, startEdit);
 
   function commit() {
     const raw = draft().trim();
@@ -566,6 +584,7 @@ const NullEditor: Component<PropertyEditorProps> = (props) => {
   const t = useI18n();
   const [editing, setEditing] = createSignal(false);
   const [draft, setDraft] = createSignal("");
+  useEditRequest(() => props.propKey, () => setEditing(true));
 
   function commit() {
     setEditing(false);

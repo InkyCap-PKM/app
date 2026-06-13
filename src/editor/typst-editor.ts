@@ -41,6 +41,14 @@ const typstLanguageFacet = defineLanguageFacet({ commentTokens: { block: { open:
 // Pairs with the `Prec.high` wrapper below: this state field must run before
 // `@codemirror/language`'s `Language.state` so that, when LanguageState.apply
 // asks for `parser.tree()`, the cache is already cleared.
+// Characters whose insertion/deletion can open or close a parse region much
+// larger than the edit itself: raw/inline-code fences (`` ` ``), math (`$`),
+// and the bracket/brace/paren delimiters of content blocks, code, and function
+// calls. A single-character edit to one of these forces a full reparse (see
+// the call site) because the incremental parser doesn't reliably restructure
+// the affected region — most visibly when re-closing an unterminated fence.
+const STRUCTURAL_DELIMITER = /[`$()[\]{}]/;
+
 function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Extension {
   const wasm = parser as unknown as {
     parser: { edit(from: number, to: number, text: string): { full_update?: boolean; edits?: unknown[] } } | null;
@@ -73,15 +81,30 @@ function typstUpdateListenerForcingFreshParseOnHistory(parser: TypstParser): Ext
       // as dangerous.
       let changeCount = 0;
       let crossesLine = false;
+      let structural = false;
       tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
         changeCount++;
         const removed = tr.startState.doc.sliceString(fromA, toA);
-        if (removed.includes("\n") || inserted.toString().includes("\n")) {
+        const ins = inserted.toString();
+        if (removed.includes("\n") || ins.includes("\n")) {
           crossesLine = true;
+        }
+        // Editing a structural delimiter — a raw-block / inline-code backtick,
+        // a math `$`, or a bracket/brace/paren — can open or close a region
+        // that spans far beyond the edit. Closing a previously-unterminated
+        // code fence, for instance, must turn a Raw node that swallowed the
+        // rest of the document back into normal markup. The WASM parser's
+        // *incremental* tree edit doesn't restructure that reliably: the fence
+        // stays "open", everything below stays raw red source, and wikilinks
+        // there die — and don't come back when the user re-adds the backtick.
+        // A from-scratch reparse (clearParser, below) always recovers, so we
+        // treat any delimiter edit like a multi-region change.
+        if (STRUCTURAL_DELIMITER.test(removed) || STRUCTURAL_DELIMITER.test(ins)) {
+          structural = true;
         }
       });
 
-      if (isHistory || changeCount > 1 || crossesLine) {
+      if (isHistory || changeCount > 1 || crossesLine || structural) {
         wasm.clearParser();
         return null;
       }

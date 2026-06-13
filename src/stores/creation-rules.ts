@@ -8,7 +8,8 @@ import * as ipc from "../lib/ipc";
 import { promptText } from "./prompt";
 import { settings } from "./settings";
 import { t } from "../lib/i18n";
-import { errorCode } from "../lib/errors";
+import { errorCode, errorDetail } from "../lib/errors";
+import { resolveNoteNameConflict } from "../lib/note-name-conflict";
 
 const [creationRules, setCreationRules] = createSignal<CreationRule[]>([]);
 
@@ -80,26 +81,50 @@ export async function triggerCreationRule(
   // If it's still missing, fall through to the backend, which resolves the
   // rule from disk and returns a clear error if it truly doesn't exist.
   const pattern = rule?.filename_pattern.trim() ?? "?";
+
+  // Decide the initial filename override. A blank pattern can't produce one, so
+  // fall back to a ZID (when enabled) or prompt up front; a non-empty pattern
+  // starts with no override and lets the backend expand it (which may still
+  // come back `filename-required` if it expands to nothing).
+  let nameOverride: string | undefined;
   if (pattern === "") {
-    // Blank pattern: fall back to ZID if enabled, otherwise prompt up front.
     if (settings.files.zettelkasten_enabled && settings.files.auto_title_as_zid) {
-      const zidName = await ipc.generateZid();
-      return ipc.executeCreationRule(ruleId, zidName, folderOverride);
+      nameOverride = await ipc.generateZid();
+    } else {
+      const name = await promptFilename(rule);
+      if (name === null) return null;
+      nameOverride = name;
     }
-    const name = await promptFilename(rule);
-    if (name === null) return null;
-    return ipc.executeCreationRule(ruleId, name, folderOverride);
   }
-  // Non-empty pattern: try it. If it expanded to nothing (e.g. `{{zid}}` with
-  // Zettelkasten off, or stray content-only `{{title}}`/`{{slug}}` tokens) the
-  // backend signals `filename-required` — prompt and retry with the name.
-  try {
-    return await ipc.executeCreationRule(ruleId, undefined, folderOverride);
-  } catch (e) {
-    if (errorCode(e) !== "filename-required") throw e;
-    const name = await promptFilename(rule);
-    if (name === null) return null;
-    return ipc.executeCreationRule(ruleId, name, folderOverride);
+
+  // Create, resolving the two "needs your input" outcomes by prompting and
+  // retrying. The loop lets a user-chosen name that ALSO collides re-prompt:
+  //  - `filename-required`: the pattern expanded to nothing — ask for a name.
+  //  - `note-name-conflict`: the name already exists in another folder
+  //    (filenames are notebox-globally unique) — open that note, rename, or
+  //    cancel. Other errors propagate.
+  for (;;) {
+    try {
+      return await ipc.executeCreationRule(ruleId, nameOverride, folderOverride);
+    } catch (e) {
+      const code = errorCode(e);
+      if (code === "filename-required") {
+        const name = await promptFilename(rule);
+        if (name === null) return null;
+        nameOverride = name;
+        continue;
+      }
+      if (code === "note-name-conflict") {
+        const existing = errorDetail(e);
+        if (!existing) throw e;
+        const res = await resolveNoteNameConflict(existing, nameOverride);
+        if (res.action === "cancel") return null;
+        if (res.action === "open") return { path: existing, cursor_offset: null };
+        nameOverride = res.name;
+        continue;
+      }
+      throw e;
+    }
   }
 }
 
