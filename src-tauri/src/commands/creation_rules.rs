@@ -417,7 +417,9 @@ pub async fn list_scaffold_entries(
 pub struct ScaffoldInsertResult {
     /// New full source for the editor to replace its document with.
     pub new_source: String,
-    /// New cursor offset within `new_source` (where the inserted body ends).
+    /// New cursor offset within `new_source` (where the inserted body ends),
+    /// in **UTF-16 code units** — the coordinate space CodeMirror uses for
+    /// document offsets, not UTF-8 byte length.
     pub new_cursor_offset: usize,
 }
 
@@ -537,7 +539,7 @@ fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> Sca
 
     if body.is_empty() {
         // Note-only scaffold: nothing to append. Cursor stays at end.
-        let cur = working.len();
+        let cur = utf16_len(&working);
         return ScaffoldInsertResult {
             new_source: working,
             new_cursor_offset: cur,
@@ -547,15 +549,28 @@ fn assemble_scaffold_insert(current_source: &str, expanded_content: &str) -> Sca
     // Append at the end of the document, separated by one blank line, and put
     // the caret on a fresh line *after* the inserted content so the user can
     // start typing immediately below it. new_source ends with a newline, so
-    // new_source.len() is the start of that fresh empty line.
+    // its end is the start of that fresh empty line.
     let base = working.trim_end_matches('\n');
     let new_source = format!("{base}\n\n{body}\n");
-    let new_cursor_offset = new_source.len();
+    let new_cursor_offset = utf16_len(&new_source);
 
     ScaffoldInsertResult {
         new_source,
         new_cursor_offset,
     }
+}
+
+/// Length of `s` in UTF-16 code units.
+///
+/// `new_cursor_offset` crosses the IPC boundary into CodeMirror, whose
+/// document offsets are UTF-16 code units (JavaScript string offsets) — not
+/// UTF-8 bytes. Returning a byte length here lands the caret past the end of
+/// the document the moment the note contains any multi-byte character (smart
+/// quotes, accented Latin, em-dashes, CJK …); CodeMirror then rejects the
+/// out-of-range selection and the whole scaffold insert aborts. Counting
+/// UTF-16 code units keeps the offset in the editor's coordinate space.
+fn utf16_len(s: &str) -> usize {
+    s.encode_utf16().count()
 }
 
 /// Split an expanded scaffold into (note-call kwargs, body-start-offset).
@@ -780,8 +795,41 @@ mod scaffold_insert_tests {
         // this fn) is irrelevant — the caret goes to a fresh line at the end.
         let scaffold = format!("{IMPORT}#note(\n)\n\n= Meeting\n");
         let r = assemble_scaffold_insert(&current, &scaffold);
-        assert_eq!(r.new_cursor_offset, r.new_source.len());
+        // Offset is in UTF-16 code units (CodeMirror's coordinate space).
+        assert_eq!(r.new_cursor_offset, r.new_source.encode_utf16().count());
         assert!(r.new_source.ends_with("= Meeting\n"), "{}", r.new_source);
+    }
+
+    /// Regression: a note full of multi-byte content used to return a byte
+    /// offset that overshot the editor's UTF-16 document length, so CodeMirror
+    /// rejected the selection and the whole insert aborted ("insert failed").
+    /// The cursor offset must stay within the UTF-16 length of `new_source`.
+    #[test]
+    fn cursor_offset_is_utf16_for_multibyte_content() {
+        // Smart quotes, accented Latin, an em-dash, and CJK — each is multiple
+        // UTF-8 bytes but one or two UTF-16 code units.
+        let current = format!(
+            "{IMPORT}#note(\n  title: \"Réunion\",\n)\n\n\u{201c}Café\u{201d} — 会議のメモ here.\n"
+        );
+        let scaffold = format!("{IMPORT}#note(\n  kind: \"meeting\",\n)\n\n= Agenda\n");
+        let r = assemble_scaffold_insert(&current, &scaffold);
+
+        let utf16_len = r.new_source.encode_utf16().count();
+        assert_eq!(r.new_cursor_offset, utf16_len);
+        // The byte length is strictly larger here — proving a byte offset would
+        // have landed past the end of the editor document.
+        assert!(
+            r.new_source.len() > utf16_len,
+            "test should exercise multi-byte content: {}",
+            r.new_source
+        );
+        // Existing multi-byte prose survives untouched.
+        assert!(
+            r.new_source
+                .contains("\u{201c}Café\u{201d} — 会議のメモ here."),
+            "{}",
+            r.new_source
+        );
     }
 }
 
