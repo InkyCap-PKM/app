@@ -189,10 +189,97 @@ const TemplatesPanel: Component = () => {
     return `@${namespace}`;
   }
 
+  // A heading + bulleted list, with an "…and N more" tail when `total`
+  // exceeds the shown items. `promptConfirm` renders message newlines verbatim
+  // (white-space: pre-wrap), so this composes directly into the confirm body.
+  function depsBlock(heading: string, items: string[], total: number): string {
+    const lines = items.map((i) => `• ${i}`);
+    if (total > items.length) {
+      lines.push(t("templates.deps.andMore", { count: total - items.length }));
+    }
+    return `${heading}\n${lines.join("\n")}`;
+  }
+
+  async function deleteScaffold(entry: ipc.TemplateEntry) {
+    // Defense-in-depth: the button is hidden for system scaffolds, and the
+    // backend refuses them too.
+    if (entry.builtin) return;
+
+    // The only thing that depends on a scaffold is a creation rule's
+    // scaffold_path (notes don't, post-creation). The list is always short, so
+    // it's shown in full. A missing scaffold degrades a rule gracefully, hence
+    // warn-and-allow rather than block.
+    let dependentRules: string[] = [];
+    try {
+      const rules = await ipc.listCreationRules();
+      dependentRules = rules
+        .filter((r) => r.scaffold_path.replace(/\.typ$/, "") === entry.name)
+        .map((r) => r.name);
+    } catch {
+      // If rules can't be loaded, fall through to a plain confirm.
+    }
+
+    let message = t("templates.deleteScaffoldConfirm", { name: entry.name });
+    if (dependentRules.length > 0) {
+      message +=
+        "\n\n" +
+        depsBlock(
+          t("templates.deleteScaffoldRulesHeading"),
+          dependentRules,
+          dependentRules.length,
+        ) +
+        "\n\n" +
+        t("templates.deleteScaffoldRulesNote");
+    }
+
+    const ok = await promptConfirm({
+      title: t("templates.deleteScaffoldTitle"),
+      message,
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!ok) return;
+    try {
+      await ipc.deleteScaffold(entry.name);
+      showToast("success", t("templates.scaffoldDeleted", { name: entry.name }));
+      refresh();
+    } catch (e) {
+      toastError(t("templates.scaffoldDeleteFailed"), e);
+    }
+  }
+
   async function uninstall(pkg: ipc.InstalledPackageEntry) {
+    // Warn-and-allow: surface what imports this exact version, but never block.
+    let message = t("templates.uninstallConfirm", { spec: pkg.spec });
+    try {
+      const deps = await ipc.findPackageDependents(pkg.spec);
+      if (deps.rules.length > 0) {
+        message +=
+          "\n\n" +
+          depsBlock(
+            t("templates.uninstallRulesHeading"),
+            deps.rules,
+            deps.rules.length,
+          );
+      }
+      if (deps.note_total > 0) {
+        message +=
+          "\n\n" +
+          depsBlock(
+            t("templates.uninstallNotesHeading"),
+            deps.notes,
+            deps.note_total,
+          ) +
+          "\n\n" +
+          t("templates.uninstallNotesNote");
+      }
+    } catch {
+      // If the scan fails, fall back to the plain confirm message.
+    }
+
     const ok = await promptConfirm({
       title: t("templates.uninstallTitle", { spec: pkg.spec }),
-      message: t("templates.uninstallConfirm", { spec: pkg.spec }),
+      message,
       confirmLabel: t("common.uninstall"),
       cancelLabel: t("common.cancel"),
     });
@@ -384,7 +471,7 @@ const TemplatesPanel: Component = () => {
               {(entry) => (
                 <div
                   data-list-item
-                  class="sidebar-item"
+                  class="sidebar-item templates-pane__item"
                   onClick={() => openScaffold(entry)}
                   title={t("templates.openScaffold")}
                 >
@@ -392,6 +479,19 @@ const TemplatesPanel: Component = () => {
                     <Pyramid size={12} />
                   </span>
                   <span class="sidebar-item__label">{entry.name}</span>
+                  <Show when={!entry.builtin}>
+                    <button
+                      class="templates-panel__item-icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteScaffold(entry);
+                      }}
+                      title={t("templates.deleteScaffoldAria", { name: entry.name })}
+                      aria-label={t("templates.deleteScaffoldAria", { name: entry.name })}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </Show>
                 </div>
               )}
             </For>

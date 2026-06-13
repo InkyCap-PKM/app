@@ -1170,10 +1170,22 @@ export interface TemplateEntry {
   name: string;
   path: string;
   kind: "scaffold" | "template-file" | "template-package";
+  /** True for the system scaffolds (new-note, daily-note), which must not
+   *  offer a delete affordance. Always false for non-scaffold entries. */
+  builtin: boolean;
 }
 
 export async function listScaffoldEntries(): Promise<TemplateEntry[]> {
   return invoke<TemplateEntry[]>("list_scaffold_entries");
+}
+
+/**
+ * Delete a user-created scaffold (moved to the OS trash, recoverable). The
+ * backend refuses to delete the system scaffolds; the panel hides their delete
+ * button so this only fires for user scaffolds.
+ */
+export async function deleteScaffold(scaffoldName: string): Promise<void> {
+  return invoke<void>("delete_scaffold", { scaffoldName });
 }
 
 /**
@@ -1249,6 +1261,25 @@ export async function getTemplateStarter(
 
 export async function uninstallTypstPackage(spec: string): Promise<void> {
   return invoke<void>("uninstall_typst_package", { spec });
+}
+
+/** What depends on a package version, for the uninstall confirmation. */
+export interface PackageDependents {
+  /** Display names of creation rules whose template is this spec. */
+  rules: string[];
+  /** Notebox-root-relative paths of notes importing this exact spec, capped
+   *  for display; `noteTotal` is the full count. */
+  notes: string[];
+  /** Total notes importing the spec (may exceed `notes.length` when capped). */
+  note_total: number;
+}
+
+/** Find creation rules and notes that depend on a package version. Read-only;
+ *  used to warn the user before an uninstall (warn-and-allow). */
+export async function findPackageDependents(
+  spec: string,
+): Promise<PackageDependents> {
+  return invoke<PackageDependents>("find_package_dependents", { spec });
 }
 
 export interface CreatedPackage {

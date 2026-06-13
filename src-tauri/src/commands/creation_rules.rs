@@ -373,6 +373,10 @@ pub struct TemplateEntry {
     pub path: String,
     /// "scaffold" | "template-file" | "template-package".
     pub kind: String,
+    /// True for the two system scaffolds (`new-note.typ`, `daily-note.typ`),
+    /// which the UI must not offer to delete and the backend refuses to
+    /// delete. Always false for non-scaffold entries.
+    pub builtin: bool,
 }
 
 /// List scaffold entries with full path info for the Templates panel.
@@ -400,10 +404,12 @@ pub async fn list_scaffold_entries(
         .iter()
         .filter_map(|p| {
             let name = p.file_stem()?.to_string_lossy().to_string();
+            let builtin = is_builtin_scaffold(&p.file_name()?.to_string_lossy());
             Some(TemplateEntry {
                 name,
                 path: to_frontend_string(p),
                 kind: "scaffold".to_string(),
+                builtin,
             })
         })
         .collect();
@@ -707,6 +713,66 @@ pub async fn get_scaffold_starter() -> Result<String, InkyCapError> {
     Ok(STARTER_SCAFFOLD.to_string())
 }
 
+/// True when `filename` (a basename, e.g. `"new-note.typ"`) is one of the two
+/// system scaffolds seeded for the built-in creation rules. System scaffolds
+/// self-heal via `notebox_health` re-seeding, so deleting them is both
+/// pointless and confusing — they are protected from deletion.
+fn is_builtin_scaffold(filename: &str) -> bool {
+    filename == crate::notebox_package::NEW_NOTE_SCAFFOLD_FILE
+        || filename == crate::notebox_package::DAILY_NOTE_SCAFFOLD_FILE
+}
+
+/// Normalize a user-supplied scaffold name to its `.typ` filename and refuse the
+/// two system scaffolds. Pure, so the protection rule is unit-testable without a
+/// storage backend. Mirrors the name handling in [`write_new_scaffold`].
+fn scaffold_delete_filename(name: &str) -> Result<String, InkyCapError> {
+    let safe = sanitize_template_name(name)?;
+    let filename = if safe.ends_with(".typ") {
+        safe
+    } else {
+        format!("{}.typ", safe)
+    };
+    if is_builtin_scaffold(&filename) {
+        return Err(InkyCapError::InvalidPath(
+            "Cannot delete a built-in scaffold".to_string(),
+        ));
+    }
+    Ok(filename)
+}
+
+/// Delete a user-created scaffold, moving it to the OS trash so the user can
+/// recover it (consistent with note deletion via [`crate::commands::file_ops`]).
+///
+/// The two system scaffolds (`new-note.typ`, `daily-note.typ`) are refused —
+/// defense-in-depth behind the UI, which already hides their delete button.
+/// Mirrors the built-in *creation-rule* guard in [`delete_creation_rule`].
+///
+/// `scaffold_name` may be supplied with or without the `.typ` suffix (the panel
+/// passes the bare stem); it is normalized the same way as `create_scaffold`.
+#[tauri::command]
+pub async fn delete_scaffold(
+    state: State<'_, AppState>,
+    scaffold_name: String,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root.as_ref().ok_or(InkyCapError::NoteboxNotOpen)?;
+
+    let filename = scaffold_delete_filename(&scaffold_name)?;
+
+    let file_path = crate::notebox_package::scaffolds_dir(root).join(&filename);
+    if !storage.exists(&file_path).await {
+        return Err(InkyCapError::FileNotFound(
+            file_path.display().to_string(), // path-stringification-ok: error message, not IPC
+        ));
+    }
+
+    storage.move_to_trash(&file_path).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod scaffold_insert_tests {
     use super::*;
@@ -798,6 +864,25 @@ mod scaffold_insert_tests {
         // Offset is in UTF-16 code units (CodeMirror's coordinate space).
         assert_eq!(r.new_cursor_offset, r.new_source.encode_utf16().count());
         assert!(r.new_source.ends_with("= Meeting\n"), "{}", r.new_source);
+    }
+
+    #[test]
+    fn delete_filename_normalizes_and_protects_builtins() {
+        // Bare name gains the .typ suffix.
+        assert_eq!(scaffold_delete_filename("meeting").unwrap(), "meeting.typ");
+        // Already-suffixed name is left as-is.
+        assert_eq!(
+            scaffold_delete_filename("meeting.typ").unwrap(),
+            "meeting.typ"
+        );
+        // System scaffolds are refused, with or without the suffix.
+        assert!(scaffold_delete_filename("new-note").is_err());
+        assert!(scaffold_delete_filename("new-note.typ").is_err());
+        assert!(scaffold_delete_filename("daily-note").is_err());
+        assert!(scaffold_delete_filename("daily-note.typ").is_err());
+        // Empty and path-escaping names are rejected by sanitization.
+        assert!(scaffold_delete_filename("").is_err());
+        assert!(scaffold_delete_filename("../secrets").is_err());
     }
 
     /// Regression: a note full of multi-byte content used to return a byte

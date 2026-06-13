@@ -358,41 +358,6 @@ const CreationRuleEditor: Component = () => {
             </div>
             <div class="settings__row">
               <div class="settings__row-info">
-                <label class="settings__label">{t("creationRules.icon")}</label>
-                <span class="settings__description">
-                  {t("creationRules.iconDescription")}
-                </span>
-              </div>
-              <div class="creation-rules__icon-field">
-                <span
-                  class="creation-rules__icon-preview"
-                  aria-hidden="true"
-                  title={t("creationRules.iconCurrentTitle")}
-                >
-                  <RuleIcon
-                    iconEmoji={rule().icon_emoji}
-                    name={rule().name}
-                    size={18}
-                  />
-                </span>
-                <input
-                  type="text"
-                  class="settings__text-input"
-                  style={{ width: "60px" }}
-                  value={rule().icon_emoji.startsWith("lucide:") ? "" : rule().icon_emoji}
-                  onInput={(e) =>
-                    updateField("icon_emoji", e.currentTarget.value)
-                  }
-                  placeholder={rule().name.slice(0, 2) || t("creationRules.iconPlaceholderFallback")}
-                />
-                <LucideIconPicker
-                  value={rule().icon_emoji}
-                  onSelect={(v) => updateField("icon_emoji", v)}
-                />
-              </div>
-            </div>
-            <div class="settings__row">
-              <div class="settings__row-info">
                 <label class="settings__label">{t("creationRules.filenamePattern")}</label>
                 <span class="settings__description">
                   {t("creationRules.filenamePatternDescription", {
@@ -597,6 +562,43 @@ const CreationRuleEditor: Component = () => {
                 />
                 <span class="settings__toggle-slider" />
               </label>
+            </div>
+            {/* The icon is the toolbar button's glyph, so it sits directly
+                below the show-in-toolbar toggle to read as a related pair. */}
+            <div class="settings__row">
+              <div class="settings__row-info">
+                <label class="settings__label">{t("creationRules.icon")}</label>
+                <span class="settings__description">
+                  {t("creationRules.iconDescription")}
+                </span>
+              </div>
+              <div class="creation-rules__icon-field">
+                <span
+                  class="creation-rules__icon-preview"
+                  aria-hidden="true"
+                  title={t("creationRules.iconCurrentTitle")}
+                >
+                  <RuleIcon
+                    iconEmoji={rule().icon_emoji}
+                    name={rule().name}
+                    size={18}
+                  />
+                </span>
+                <input
+                  type="text"
+                  class="settings__text-input"
+                  style={{ width: "60px" }}
+                  value={rule().icon_emoji.startsWith("lucide:") ? "" : rule().icon_emoji}
+                  onInput={(e) =>
+                    updateField("icon_emoji", e.currentTarget.value)
+                  }
+                  placeholder={rule().name.slice(0, 2) || t("creationRules.iconPlaceholderFallback")}
+                />
+                <LucideIconPicker
+                  value={rule().icon_emoji}
+                  onSelect={(v) => updateField("icon_emoji", v)}
+                />
+              </div>
             </div>
             <div class="settings__row">
               <div class="settings__row-info">

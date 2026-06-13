@@ -71,6 +71,30 @@ fn collect_from_node(node: &LinkedNode, out: &mut HashSet<PackageSpec>) {
     }
 }
 
+/// Notebox-root-relative paths of every note whose source imports the package
+/// `canonical_spec` (`@ns/name:version`, exact-version match — a note importing
+/// `:0.2.0` is *not* reported for `:0.3.0`). Reuses the same Typst-AST import
+/// detector as vendoring, so commented-out or string-literal mentions never
+/// false-match. Used by the package-uninstall confirmation to warn which notes
+/// would fail to compile if the version is removed (warn-and-allow).
+pub fn notes_importing(notebox_root: &Path, canonical_spec: &str) -> Vec<String> {
+    notebox_typ_files(notebox_root)
+        .into_iter()
+        .filter_map(|p| {
+            let src = std::fs::read_to_string(&p).ok()?;
+            if collect_package_imports(&src)
+                .iter()
+                .any(|s| s.to_string() == canonical_spec)
+            {
+                let rel = p.strip_prefix(notebox_root).unwrap_or(&p);
+                Some(crate::storage::to_frontend_string(rel))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Vendor the full transitive closure of packages the notebox imports into
 /// `<notebox>/.inkycap/packages/`. Idempotent: a package already present there
 /// is left untouched (but still scanned for its own dependencies). Returns what
@@ -172,6 +196,37 @@ fn has_typ_ext(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_importing_matches_exact_version_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("uses-cetz.typ"),
+            "#import \"@preview/cetz:0.2.0\": *\n= Diagram",
+        )
+        .unwrap();
+        // Different version of the same package — must NOT match.
+        std::fs::write(
+            root.join("uses-other-version.typ"),
+            "#import \"@preview/cetz:0.3.0\": *\n= Other",
+        )
+        .unwrap();
+        std::fs::write(root.join("plain.typ"), "= No imports").unwrap();
+        // Reserved tree is skipped, so a vendored copy of the package doesn't
+        // count as a dependent note.
+        let vendored = root.join(".inkycap/packages/preview/cetz/0.2.0");
+        std::fs::create_dir_all(&vendored).unwrap();
+        std::fs::write(
+            vendored.join("lib.typ"),
+            "#import \"@preview/cetz:0.2.0\": *",
+        )
+        .unwrap();
+
+        let deps = notes_importing(root, "@preview/cetz:0.2.0");
+        assert_eq!(deps.len(), 1, "got {deps:?}");
+        assert!(deps[0].ends_with("uses-cetz.typ"), "got {deps:?}");
+    }
 
     #[test]
     fn collects_package_imports_and_ignores_relative() {
