@@ -24,6 +24,12 @@ const headingInnerNonLinkSelector = [1, 2, 3, 4, 5, 6]
 
 export const visualTheme = EditorView.theme({
   ".cm-scroller": { overflowAnchor: "none" },
+  // Shared bullet/number width for list items. The marker widget is this wide,
+  // and list lines hang-indent their wrapped continuation by the same amount
+  // (see `pushListIndent` in visual-plugin) so the two never drift apart. It
+  // also stands in for the marker's now-hidden trailing space, so ~1.5em keeps
+  // the bullet-to-text gap roughly where it was before that space was folded in.
+  ".cm-content": { "--list-bullet-width": "1.5em" },
   // Let the caret follow the natural height of the line it sits on. A fixed
   // cap (previously 1.5em) left the caret stranded short and top-aligned on
   // heading lines, whose font is up to 1.8em — the caret must grow with the
@@ -175,7 +181,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-list-bullet": {
     color: "inherit",
     display: "inline-block",
-    width: "1.2em",
+    width: "var(--list-bullet-width)",
     textAlign: "center",
   },
   ".cm-typst-hr": {
