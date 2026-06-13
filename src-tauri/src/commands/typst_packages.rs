@@ -369,6 +369,69 @@ fn dir_is_empty(p: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// What depends on a package version, so the uninstall confirmation can warn
+/// the user before removing it. Reported, never enforced — uninstall is
+/// warn-and-allow (the user may be intentionally cleaning up).
+#[derive(Debug, Serialize)]
+pub struct PackageDependents {
+    /// Display names of creation rules whose `typst_template` is this spec.
+    pub rules: Vec<String>,
+    /// Notebox-root-relative paths of notes importing this exact spec, capped
+    /// at [`NOTE_DEPENDENT_CAP`] for display. `note_total` is the full count.
+    pub notes: Vec<String>,
+    /// Total notes importing the spec (may exceed `notes.len()` when capped).
+    pub note_total: usize,
+}
+
+/// Cap on the number of dependent notes returned for display. The confirmation
+/// shows "and N more" using `note_total` beyond this.
+const NOTE_DEPENDENT_CAP: usize = 15;
+
+/// Find creation rules and notes that depend on a package version. Used to
+/// populate the uninstall confirmation; it neither blocks nor mutates anything.
+#[tauri::command]
+pub async fn find_package_dependents(
+    state: State<'_, AppState>,
+    spec: String,
+    window: tauri::WebviewWindow,
+) -> Result<PackageDependents, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let parsed = PackageSpec::parse(&spec)
+        .ok_or_else(|| InkyCapError::BadRequest(format!("Invalid package spec '{}'.", spec)))?;
+    let canonical = parsed.canonical();
+
+    let notebox_root = session.notebox_root.read().await;
+    let root = notebox_root
+        .as_ref()
+        .ok_or(InkyCapError::NoteboxNotOpen)?
+        .clone();
+    drop(notebox_root);
+
+    // Creation rules whose template is this package. Compared canonically so a
+    // bare-name or differently-spaced stored spec still matches.
+    let rules: Vec<String> = crate::creation_rules::load_rules(&root)
+        .into_iter()
+        .filter(|r| {
+            PackageSpec::parse(&r.typst_template)
+                .map(|s| s.canonical() == canonical)
+                .unwrap_or(false)
+        })
+        .map(|r| r.name)
+        .collect();
+
+    // Notes that import the exact version (Typst-AST scan).
+    let mut notes = crate::typst_pipeline::package_vendor::notes_importing(&root, &canonical);
+    notes.sort();
+    let note_total = notes.len();
+    notes.truncate(NOTE_DEPENDENT_CAP);
+
+    Ok(PackageDependents {
+        rules,
+        notes,
+        note_total,
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct CreatedPackage {
     pub spec: String,
