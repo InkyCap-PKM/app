@@ -538,9 +538,40 @@ pub async fn resolve_wikilink(
     Ok(Some(to_frontend_string(matches[0])))
 }
 
+/// Find an existing note anywhere in the notebox whose wikilink stem matches
+/// `name` (case-insensitively), returning the shortest-path match.
+///
+/// Note filenames are unique across the whole notebox: wikilinks resolve by
+/// stem (see [`crate::link_index`]), so the same stem in two different folders
+/// makes `[[Name]]` ambiguous and surfaces the note twice. The note-creation
+/// paths use this to open the existing note instead of writing a duplicate.
+/// `name` may carry a trailing `.typ`; it is normalized through `note_stem`.
+pub(crate) async fn existing_note_with_stem(
+    session: &NoteboxSession,
+    name: &str,
+) -> Option<PathBuf> {
+    let want = crate::link_index::note_stem(std::path::Path::new(name)).to_lowercase();
+    if want.is_empty() {
+        return None;
+    }
+    let index = session.property_index.read().await;
+    index
+        .notes
+        .keys()
+        .filter(|p| crate::link_index::note_stem(p).to_lowercase() == want)
+        .min_by_key(|p| p.components().count())
+        .cloned()
+}
+
 /// Create a new note file. Returns the full path of the created file.
 /// If scaffold_content is provided, it is used as the initial content.
 /// Otherwise the file starts with the inkycap-notebox import line.
+///
+/// Filenames are notebox-globally unique (wikilinks resolve by stem; see
+/// [`existing_note_with_stem`]). Re-creating a note at the exact same path
+/// opens it. A name that collides with a note in a *different* folder returns
+/// [`InkyCapError::NoteNameConflict`] (carrying the existing path) instead of
+/// duplicating — the frontend prompts the user to open it or rename.
 #[tauri::command]
 pub async fn create_note(
     name: String,
@@ -573,11 +604,19 @@ pub async fn create_note(
 
     let file_path = dir.join(&filename);
 
-    // Don't overwrite existing files
+    // A note already sitting at this exact path (same folder, same name) is
+    // expected reuse — open it rather than fail or duplicate.
     if file_path.exists() {
-        return Err(InkyCapError::InvalidPath(format!(
-            "File already exists: {}",
-            file_path.display()
+        return Ok(to_frontend_string(&file_path));
+    }
+    // A note with this name living in a *different* folder is a real conflict:
+    // filenames are notebox-globally unique (wikilinks resolve by stem), so a
+    // second one would make `[[Name]]` ambiguous. Don't decide for the user —
+    // signal the conflict with the existing path so the frontend can ask
+    // whether to open it or pick a different name.
+    if let Some(existing) = existing_note_with_stem(&session, &filename).await {
+        return Err(InkyCapError::NoteNameConflict(to_frontend_string(
+            &existing,
         )));
     }
 

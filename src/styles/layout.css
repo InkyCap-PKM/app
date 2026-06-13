@@ -2263,12 +2263,14 @@ svg.lucide {
 .property-editor__wikilink {
   color: var(--syntax-link);
   text-decoration: underline;
-  text-decoration-style: dotted;
+  /* Solid, not dotted: a dotted underline reads as an unresolved/uncreated
+     link. These are real links to existing notes, so the underline is solid. */
+  text-decoration-style: solid;
   cursor: pointer;
 }
 
 .property-editor__wikilink:hover {
-  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
 }
 
 /* Custom calendar date picker (replaces the native <input type=date>). */

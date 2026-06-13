@@ -2280,6 +2280,21 @@ const RightPanel: Component = () => {
               </div>
             </Show>
             <button
+              class="context-menu__item"
+              onClick={() => {
+                const key = menu().key;
+                closeRowMenu();
+                // A value that renders as a wikilink navigates on click, so the
+                // value cell can't be clicked to edit it. Ask the matching
+                // editor (keyed by property name) to enter edit mode instead.
+                document.dispatchEvent(
+                  new CustomEvent("inkycap:edit-property", { detail: { propKey: key } }),
+                );
+              }}
+            >
+              {t("common.edit")}
+            </button>
+            <button
               class="context-menu__item context-menu__item--danger"
               onClick={() => handleRemoveProperty(menu().key)}
             >

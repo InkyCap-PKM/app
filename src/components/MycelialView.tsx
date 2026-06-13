@@ -18,6 +18,8 @@ import {
 import { Info } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
+import { errorCode, errorDetail } from "../lib/errors";
+import { resolveNoteNameConflict } from "../lib/note-name-conflict";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
 import { useI18n } from "../lib/i18n";
@@ -631,6 +633,24 @@ export default function MycelialView(props: MycelialViewProps) {
       const newPath = await ipc.createNote(title, folder, body);
       openTab({ type: "file", title, path: newPath }, { forceNewTab: true });
     } catch (err) {
+      // A note with this name already lives in another folder. Let the user
+      // open it or pick a different name (then rebuild the page under that
+      // name) rather than silently failing.
+      if (errorCode(err) === "note-name-conflict") {
+        const existing = errorDetail(err);
+        if (existing) {
+          const res = await resolveNoteNameConflict(existing, title);
+          if (res.action === "open") {
+            openTab(
+              { type: "file", title: titleCase(concept.term), path: existing },
+              { forceNewTab: true },
+            );
+          } else if (res.action === "rename") {
+            await createEmergentNote(box, res.name);
+          }
+          return;
+        }
+      }
       console.error("Mycelial View: failed to create emergent note", err);
     }
   }

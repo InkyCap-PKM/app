@@ -212,12 +212,28 @@ pub async fn execute_creation_rule(
         }
     }
 
-    // If file already exists (e.g. daily note), just return the path
+    // A note already at this exact path (same folder, same name) is expected
+    // reuse — e.g. re-triggering today's daily note. Just open it.
     if storage.exists(&file_path).await {
         return Ok(CreationResult {
             path: to_frontend_string(&file_path),
             cursor_offset: None,
         });
+    }
+    // A note with this name in a *different* folder is a real conflict:
+    // filenames are notebox-globally unique (wikilinks resolve by stem). Signal
+    // it with the existing path so the frontend can ask whether to open it or
+    // pick a different name, rather than silently duplicating or hijacking.
+    let file_name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if let Some(existing) =
+        crate::commands::files::existing_note_with_stem(&session, &file_name).await
+    {
+        return Err(InkyCapError::NoteNameConflict(to_frontend_string(
+            &existing,
+        )));
     }
 
     // Ensure the import line is present
