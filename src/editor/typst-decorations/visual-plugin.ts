@@ -499,21 +499,57 @@ function enumItemNumber(state: EditorState, markerFrom: number): string {
  * like Obsidian that indents by a fixed, generous step. We add left padding to
  * the list line proportional to its leading whitespace, which roughly doubles
  * the visual step per level without touching the source. The marker and text
- * still sit after the original whitespace, so editing the raw line is
- * unchanged; this is a display-only nicety (visual editor as a friendliness
- * tool — see CLAUDE.md). `LIST_INDENT_CH` is the amount added per leading
- * column, in `ch` units (wider than a proportional space, which is what gives
- * the amplification).
+ * still sit after the marker widget (which replaces the leading whitespace and
+ * the marker together — see the `ListMarker`/`EnumMarker` cases), so editing
+ * the raw line is unchanged; this is a display-only nicety (visual editor as a
+ * friendliness tool — see CLAUDE.md). `LIST_INDENT_CH` is the amount added per
+ * leading column, in `ch` units (wider than a proportional space, which is what
+ * gives the amplification).
+ *
+ * The same line decoration also applies a hanging indent: a negative
+ * `text-indent` of one bullet width pulls the first line back under the marker,
+ * while the matching extra `padding-left` pushes every *wrapped* continuation
+ * line in to align with the item's text rather than collapsing to the far left.
+ * Because the marker widget replaces the leading whitespace (the spaces are not
+ * laid out inline), the first line and its wrapped continuations share one
+ * content-box edge, so the alignment is exact at every nesting level — no
+ * proportional-space-width guesswork.
  */
 const LIST_INDENT_CH = 1.2;
+
+/**
+ * The document range the bullet/number widget replaces for a list marker node.
+ * Spans from the line start — swallowing the leading indentation so the bullet
+ * stands alone at the content-box edge — through the marker's *trailing*
+ * whitespace, so the item's text begins exactly at the bullet box's end.
+ *
+ * Both ends matter for the hanging indent. Leaving the leading whitespace in
+ * the flow would offset the first line from its wrapped continuations; leaving
+ * the marker's trailing space in the flow would push the first line one
+ * space-width right of those continuations (which have no such space). With
+ * both folded into the widget, text starts at exactly `--list-bullet-width`
+ * past the bullet on every visual row, so wrapped lines align precisely.
+ */
+function markerReplaceRange(
+  state: EditorState,
+  node: { from: number; to: number },
+): [number, number] {
+  const line = state.doc.lineAt(node.from);
+  const trailingWs = line.text.slice(node.to - line.from).match(/^[ \t]*/)![0].length;
+  return [line.from, node.to + trailingWs];
+}
 
 function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFrom: number) {
   const line = state.doc.lineAt(markerFrom);
   const cols = markerFrom - line.from; // leading-whitespace width, in chars
-  if (cols <= 0) return;
+  const nest = cols > 0 ? `${(cols * LIST_INDENT_CH).toFixed(2)}ch + ` : "";
   decos.push(
     Decoration.line({
-      attributes: { style: `padding-left: ${(cols * LIST_INDENT_CH).toFixed(2)}ch` },
+      attributes: {
+        style:
+          `padding-left: calc(${nest}var(--list-bullet-width)); ` +
+          `text-indent: calc(-1 * var(--list-bullet-width))`,
+      },
     }).range(line.from),
   );
 }
@@ -636,14 +672,14 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
           case "ListMarker": {
             pushListIndent(decos, state, node.from);
             decos.push(
-              Decoration.replace({ widget: new BulletWidget("•") }).range(node.from, node.to),
+              Decoration.replace({ widget: new BulletWidget("•") }).range(...markerReplaceRange(state, node)),
             );
             return false;
           }
           case "EnumMarker": {
             pushListIndent(decos, state, node.from);
             decos.push(
-              Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(node.from, node.to),
+              Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(...markerReplaceRange(state, node)),
             );
             return false;
           }

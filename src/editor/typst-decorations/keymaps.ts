@@ -1,5 +1,5 @@
 import { type EditorView, type KeyBinding } from "@codemirror/view";
-import { Facet, type EditorState, type ChangeSpec, type Line } from "@codemirror/state";
+import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
 import { toggleWrap } from "./wrap-format";
@@ -162,6 +162,47 @@ function shouldInsertAutoLineBreak(state: EditorState, pos: number): boolean {
   const trailing = state.doc.sliceString(pos, line.to);
   if (trailing.trim().length > 0) return false;
   return !inVerbatimLineContext(state, pos);
+}
+
+/**
+ * Document position where a line's meaningful content begins: just after a list
+ * marker (`- `, `+ `, `1. `) when the line is a list item, otherwise after the
+ * leading indentation. Used by smart Home so the caret lands on the text, not
+ * before the bullet.
+ */
+export function listContentStart(line: Line): number {
+  const listMatch = line.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
+  if (listMatch) return line.from + listMatch[0].length;
+  const ws = line.text.length - line.text.trimStart().length;
+  return line.from + ws;
+}
+
+/**
+ * Smart Home. Moves the caret to the start of the line's content — for a list
+ * item that means just after the bullet/number, so the writer can edit the text
+ * immediately without stepping past the marker. Pressing Home again (caret
+ * already at content start) jumps to the true line start, before the marker — so
+ * a Home-then-Shift-End selection, or an empty-selection line copy, still
+ * carries the marker and the item pastes back as a complete bullet.
+ *
+ * `extend` mirrors the same toggle for Shift-Home, keeping the selection anchor
+ * fixed. Operates on every cursor in a multi-selection.
+ */
+function smartLineStart(view: EditorView, extend: boolean): boolean {
+  const { state } = view;
+  const ranges = state.selection.ranges.map((range) => {
+    const line = state.doc.lineAt(range.head);
+    const cs = listContentStart(line);
+    const target = range.head === cs ? line.from : cs;
+    return extend
+      ? EditorSelection.range(range.anchor, target)
+      : EditorSelection.cursor(target);
+  });
+  view.dispatch({
+    selection: EditorSelection.create(ranges, state.selection.mainIndex),
+    scrollIntoView: true,
+  });
+  return true;
 }
 
 function toggleBold(state: EditorState) {
@@ -420,6 +461,14 @@ function moveListItem(view: EditorView, dir: -1 | 1): boolean {
 }
 
 export const typstKeymap: KeyBinding[] = [
+  {
+    // Smart Home: first press lands on the line's text (after a list marker);
+    // a second press goes to the true line start. Shift-Home extends the
+    // selection along the same toggle.
+    key: "Home",
+    run: (view) => smartLineStart(view, false),
+    shift: (view) => smartLineStart(view, true),
+  },
   {
     key: "Mod-b",
     run(view) {
