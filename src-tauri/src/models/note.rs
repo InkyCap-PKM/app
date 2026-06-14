@@ -55,7 +55,11 @@ impl PropertyValue {
 
     pub fn contains(&self, needle: &str) -> bool {
         match self {
-            PropertyValue::String(s) => s.contains(needle),
+            // Case-insensitive substring, matching every other text filter in
+            // InkyCap (search, the property filters). List membership below
+            // stays an exact element match — it's an identity test, not a text
+            // search.
+            PropertyValue::String(s) => s.to_lowercase().contains(&needle.to_lowercase()),
             PropertyValue::List(items) => items.iter().any(|item| {
                 if let PropertyValue::String(s) = item {
                     s == needle

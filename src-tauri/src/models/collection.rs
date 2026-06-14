@@ -21,6 +21,12 @@ pub struct CollectionData {
     pub columns: Vec<String>,
     pub rows: Vec<CollectionRow>,
     pub views: Vec<ViewInfo>,
+    /// Distinct scalar values present per column across the view's member set
+    /// (before the view's own per-column quick filters narrow it). Powers the
+    /// multi-select checklist in a list/commalist column's header filter.
+    /// Sorted; columns with too many distinct values (or none) are omitted.
+    #[serde(rename = "columnValues")]
+    pub column_values: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

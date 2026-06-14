@@ -34,6 +34,14 @@ pub enum PropertyRef {
 pub enum CompOp {
     Eq,
     Ne,
+    /// `<` — ordered comparison (numeric, or lexical for ISO dates).
+    Lt,
+    /// `<=`
+    Le,
+    /// `>`
+    Gt,
+    /// `>=`
+    Ge,
 }
 
 /// A literal value in a filter expression.
@@ -290,6 +298,25 @@ impl Parser {
             });
         }
 
+        // Relational operators. Two-character forms are checked before the
+        // one-character forms so `<=`/`>=` aren't mis-read as a bare `<`/`>`.
+        for (token, op) in [
+            ("<=", CompOp::Le),
+            (">=", CompOp::Ge),
+            ("<", CompOp::Lt),
+            (">", CompOp::Gt),
+        ] {
+            if self.consume(token) {
+                self.skip_whitespace();
+                let right = self.parse_value()?;
+                return Ok(FilterExpr::Comparison {
+                    left: prop,
+                    op,
+                    right,
+                });
+            }
+        }
+
         Err(InkyCapError::FilterParse(format!(
             "Expected operator at: {}",
             self.remaining()
@@ -375,8 +402,46 @@ fn property_eq(a: &PropertyValue, b: &PropertyValue) -> bool {
     }
 }
 
+/// Ordered comparison for the relational operators (`< <= > >=`).
+///
+/// Compares **numerically** when both operands are numbers (or numeric
+/// strings), otherwise **lexically** — which is chronologically correct for
+/// the ISO-8601 dates the date picker emits (`YYYY-MM-DD` and `…THH:MM` both
+/// sort by calendar order as strings). A `Null` operand, or a list, has no
+/// defined ordering and yields `None`, so the comparison fails closed (matching
+/// the convention that a row that can't be evaluated does not match).
+///
+/// Per CLAUDE.md's Typst-first principle: collection membership is resolved in
+/// Rust over `typst query`-extracted metadata, so ordered comparison belongs in
+/// this filter layer rather than in a Typst query.
+fn property_cmp(a: &PropertyValue, b: &PropertyValue) -> Option<std::cmp::Ordering> {
+    fn as_f64(v: &PropertyValue) -> Option<f64> {
+        match v {
+            PropertyValue::Number(n) => Some(*n),
+            PropertyValue::String(s) => s.trim().parse::<f64>().ok(),
+            _ => None,
+        }
+    }
+    fn as_str(v: &PropertyValue) -> Option<String> {
+        match v {
+            PropertyValue::String(s) => Some(s.clone()),
+            PropertyValue::Number(n) => Some(n.to_string()),
+            PropertyValue::Bool(b) => Some(b.to_string()),
+            PropertyValue::Null | PropertyValue::List(_) => None,
+        }
+    }
+    if let (Some(x), Some(y)) = (as_f64(a), as_f64(b)) {
+        return x.partial_cmp(&y);
+    }
+    match (as_str(a), as_str(b)) {
+        (Some(x), Some(y)) => Some(x.cmp(&y)),
+        _ => None,
+    }
+}
+
 /// Evaluate a filter expression against a note.
 pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> bool {
+    use std::cmp::Ordering;
     match expr {
         FilterExpr::Not(inner) => !evaluate(inner, note, self_path),
 
@@ -386,6 +451,20 @@ pub fn evaluate(expr: &FilterExpr, note: &NoteMetadata, self_path: &Path) -> boo
             match op {
                 CompOp::Eq => property_eq(&left_val, &right_val),
                 CompOp::Ne => !property_eq(&left_val, &right_val),
+                CompOp::Lt => {
+                    matches!(property_cmp(&left_val, &right_val), Some(Ordering::Less))
+                }
+                CompOp::Le => matches!(
+                    property_cmp(&left_val, &right_val),
+                    Some(Ordering::Less | Ordering::Equal)
+                ),
+                CompOp::Gt => {
+                    matches!(property_cmp(&left_val, &right_val), Some(Ordering::Greater))
+                }
+                CompOp::Ge => matches!(
+                    property_cmp(&left_val, &right_val),
+                    Some(Ordering::Greater | Ordering::Equal)
+                ),
             }
         }
 
@@ -725,16 +804,16 @@ mod tests {
     }
 
     #[test]
-    fn test_contains_is_case_sensitive() {
-        // `contains` on a string property is a literal substring
-        // check — `Rust` must not match `rust`. If this behavior ever
-        // needs to change, update the test to match.
+    fn test_contains_is_case_insensitive() {
+        // `contains` on a string property is a case-insensitive substring
+        // check, consistent with InkyCap's other text filters — `Notes` must
+        // match `notes`.
         let expr = parse_filter_expr(r#"file.folder.contains("Notes")"#).unwrap();
         let note = make_note(vec![(
             "file.folder",
             PropertyValue::String("my/notes".to_string()),
         )]);
-        assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+        assert!(evaluate(&expr, &note, Path::new("/notebox/x.collection")));
     }
 
     #[test]
@@ -784,6 +863,142 @@ mod tests {
         let expr = parse_filter_expr(r#"nonexistent == "something""#).unwrap();
         let note = make_note(vec![]);
         assert!(!evaluate(&expr, &note, Path::new("/notebox/x.collection")));
+    }
+
+    // ── Relational operators (< <= > >=) ────────────────────────────
+    //
+    // Power the numeric header filter (= ≠ < ≤ > ≥ between) and every date
+    // operator, which the frontend lowers to day-boundary range expressions.
+
+    fn eval1(expr: &str, key: &str, val: PropertyValue) -> bool {
+        let parsed = parse_filter_expr(expr).expect("valid filter expression");
+        let note = make_note(vec![(key, val)]);
+        evaluate(&parsed, &note, Path::new("/notebox/x.collection"))
+    }
+
+    #[test]
+    fn test_numeric_relational_operators() {
+        // Number property compared against a numeric literal.
+        assert!(eval1(
+            "priority > 2",
+            "priority",
+            PropertyValue::Number(3.0)
+        ));
+        assert!(!eval1(
+            "priority > 2",
+            "priority",
+            PropertyValue::Number(2.0)
+        ));
+        assert!(eval1(
+            "priority >= 2",
+            "priority",
+            PropertyValue::Number(2.0)
+        ));
+        assert!(eval1(
+            "priority < 5",
+            "priority",
+            PropertyValue::Number(4.0)
+        ));
+        assert!(eval1(
+            "priority <= 5",
+            "priority",
+            PropertyValue::Number(5.0)
+        ));
+        assert!(!eval1(
+            "priority <= 5",
+            "priority",
+            PropertyValue::Number(6.0)
+        ));
+    }
+
+    #[test]
+    fn test_numeric_relational_on_numeric_string() {
+        // A number stored as a string (frontmatter quirk) still compares
+        // numerically, not lexically — "10" must be > "9".
+        assert!(eval1(
+            "count > 9",
+            "count",
+            PropertyValue::String("10".into())
+        ));
+        // Lexically "10" < "9"; the numeric path guards against that.
+        assert!(!eval1(
+            "count < 9",
+            "count",
+            PropertyValue::String("10".into())
+        ));
+    }
+
+    #[test]
+    fn test_date_relational_lexical_iso() {
+        // ISO-8601 dates sort chronologically as strings.
+        assert!(eval1(
+            r#"due >= "2025-09-01""#,
+            "due",
+            PropertyValue::String("2025-09-30".into())
+        ));
+        assert!(eval1(
+            r#"due < "2025-10-01""#,
+            "due",
+            PropertyValue::String("2025-09-30".into())
+        ));
+        assert!(!eval1(
+            r#"due < "2025-09-01""#,
+            "due",
+            PropertyValue::String("2025-09-30".into())
+        ));
+    }
+
+    #[test]
+    fn test_date_within_range_as_two_comparisons() {
+        // "is within" lowers to {and: [due >= start, due < nextDay(end)]}.
+        let group = yaml_group(
+            r#"
+and:
+  - due >= "2025-09-01"
+  - due < "2025-10-01"
+"#,
+        );
+        let p = Path::new("/notebox/x.collection");
+        let inside = make_note(vec![("due", PropertyValue::String("2025-09-15".into()))]);
+        assert!(evaluate_filter_group(&group, &inside, p));
+        let after = make_note(vec![("due", PropertyValue::String("2025-10-02".into()))]);
+        assert!(!evaluate_filter_group(&group, &after, p));
+    }
+
+    #[test]
+    fn test_relational_on_null_fails_closed() {
+        // A missing/null operand has no ordering, so every relational
+        // comparison is false (never accidentally matches).
+        assert!(!eval1(
+            "due >= \"2025-01-01\"",
+            "other",
+            PropertyValue::Null
+        ));
+        assert!(!eval1("due < \"2025-01-01\"", "other", PropertyValue::Null));
+    }
+
+    #[test]
+    fn test_list_multiselect_membership_via_or() {
+        // The list/commalist header multi-select emits {or: [col == a, col == b]};
+        // `==` against a list is membership, so a note in either bucket matches.
+        let group = yaml_group(
+            r#"
+or:
+  - status == "draft"
+  - status == "review"
+"#,
+        );
+        let p = Path::new("/notebox/x.collection");
+        let in_review = make_note(vec![(
+            "status",
+            PropertyValue::List(vec![PropertyValue::String("review".into())]),
+        )]);
+        assert!(evaluate_filter_group(&group, &in_review, p));
+        let done = make_note(vec![(
+            "status",
+            PropertyValue::List(vec![PropertyValue::String("done".into())]),
+        )]);
+        assert!(!evaluate_filter_group(&group, &done, p));
     }
 
     // ── Nested filter group evaluation ──────────────────────────────

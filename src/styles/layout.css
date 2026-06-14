@@ -937,6 +937,80 @@ svg.lucide {
   overflow-y: auto;
 }
 
+/* Agenda date-filter menu: an operator dropdown over one or two date pickers,
+   laid out in a column with a little breathing room. Inherits the .context-menu
+   surface tokens. */
+/* Compound selector (not a bare `.agenda__date-menu`) so these win over the
+   shared `.context-menu` base, which is defined later in the file and zeroes
+   the horizontal padding / sets a 120px min-width for its list-of-items use.
+   Mirrors the comfortable edge spacing of the collection `.column-filter`. */
+.context-menu.agenda__date-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 240px;
+  padding: var(--space-3);
+}
+
+/* Align the "Clear date filter" action's text with the dropdown / date field
+   above it (the menu already provides the horizontal inset), while its hover
+   background still spans the full content width. Direct child only — the
+   operator dropdown's options are also `.context-menu__item`s nested deeper,
+   and must keep their own horizontal padding. */
+.context-menu.agenda__date-menu > .context-menu__item {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.agenda__date-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.agenda__date-and {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* The date-value field inside the filter surfaces. The DatePicker's trigger is
+   the inline `property-editor__value` span; here it fills the row and gains a
+   right-aligned calendar icon (no border — the icon alone signals it's a date
+   control to click), keeping the menu light. */
+.agenda__date-row .date-picker,
+.column-filter__row--dates .date-picker {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.agenda__date-row .date-picker > .property-editor__value,
+.column-filter__row--dates .date-picker > .property-editor__value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 28px;
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+/* Themeable calendar icon, right-aligned, so the field reads as a date control
+   even when empty. A mask lets the glyph follow the theme foreground. */
+.agenda__date-row .date-picker > .property-editor__value::after,
+.column-filter__row--dates .date-picker > .property-editor__value::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background-color: var(--fg-dim);
+  -webkit-mask: var(--icon-calendar) center / contain no-repeat;
+  mask: var(--icon-calendar) center / contain no-repeat;
+}
+
 .agenda__tag-check {
   margin-right: 6px;
   vertical-align: middle;
@@ -1456,6 +1530,42 @@ svg.lucide {
   color: var(--accent-text);
 }
 
+/* Per-column filter funnel. Sits inline after the header label; faint until the
+   header is hovered, and shown solid (accent) when the column has an active
+   filter so an applied filter reads at a glance. */
+.collection-table__filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 4px;
+  padding: 2px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.collection-table__th--sortable:hover .collection-table__filter-btn {
+  opacity: 1;
+}
+
+.collection-table__filter-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.collection-table__filter-btn--active {
+  opacity: 1;
+  color: var(--accent);
+}
+
 .collection-table__table td {
   padding: 5px 10px;
   border-bottom: 1px solid var(--border-subtle);
@@ -1888,6 +1998,92 @@ svg.lucide {
 .filter-builder__add:hover {
   border-color: var(--fg-muted);
   color: var(--fg-secondary);
+}
+
+/* ── Column header quick-filter popover ───────────────────────────────────
+   A floating, transient surface (a menu by role), so it uses the --popup-*
+   tokens and sits at the --z-menu tier. Anchored under the header funnel by
+   `anchorPanelMenu`. */
+.column-filter {
+  position: fixed;
+  z-index: var(--z-menu);
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.column-filter__header {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.column-filter__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.column-filter__row--dates {
+  flex-wrap: wrap;
+}
+
+.column-filter__search,
+.column-filter__value {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.column-filter__between {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* Scrollable checklist of the column's distinct values. */
+.column-filter__options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.column-filter__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.column-filter__option:hover {
+  background: var(--bg-hover);
+}
+
+.column-filter__empty {
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.column-filter__footer {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 /* ── Shared panel header pattern ──────────────────────────────────────────

@@ -281,6 +281,8 @@ pub fn run() {
             commands::collections::update_view_columns,
             commands::collections::update_view_column_widths,
             commands::collections::update_collection_filters,
+            commands::collections::set_collection_column_filter,
+            commands::collections::clear_collection_column_filters,
             commands::collections::add_view,
             commands::collections::remove_view,
             commands::collections::rename_view,

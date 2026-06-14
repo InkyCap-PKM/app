@@ -59,6 +59,11 @@ export interface CollectionData {
   columns: string[];
   rows: CollectionRow[];
   views: ViewInfo[];
+  /** Distinct scalar values present per column across the view's member set
+   *  (before per-column header filters narrow it). Powers the multi-select
+   *  checklist in a list/commalist column's header filter. Columns with too
+   *  many distinct values, or none, are omitted. */
+  columnValues: Record<string, string[]>;
 }
 
 export interface CollectionRow {
@@ -114,6 +119,10 @@ export interface ViewDef {
   type: string;
   name: string;
   filters?: FilterGroup | null;
+  /** Per-column quick filters set from a column header, keyed by property name.
+   *  A scope separate from `filters` (the advanced FilterBuilder) so the two
+   *  clear independently. */
+  columnFilters?: Record<string, FilterGroup> | null;
   order?: string[] | null;
   sort?: SortRule[] | null;
   columnSize?: Record<string, number> | null;
