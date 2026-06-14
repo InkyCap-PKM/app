@@ -35,6 +35,9 @@ pub enum InkyCapError {
     #[error("Git error: {0}")]
     Git(String),
 
+    #[error("Network error: {0}")]
+    Network(String),
+
     #[error("{0}")]
     BadRequest(String),
 
@@ -101,6 +104,7 @@ impl InkyCapError {
             InkyCapError::Typst(_) => "typst",
             InkyCapError::ExportFailed(_) => "export-failed",
             InkyCapError::Git(_) => "git",
+            InkyCapError::Network(_) => "network",
             InkyCapError::BadRequest(_) => "bad-request",
             InkyCapError::FilenameRequired => "filename-required",
             InkyCapError::NoteNameConflict(_) => "note-name-conflict",
@@ -126,6 +130,7 @@ impl InkyCapError {
             | InkyCapError::Typst(s)
             | InkyCapError::ExportFailed(s)
             | InkyCapError::Git(s)
+            | InkyCapError::Network(s)
             | InkyCapError::BadRequest(s)
             | InkyCapError::NoteNameConflict(s)
             | InkyCapError::NoteboxAlreadyOpen(s) => Some(s.clone()),

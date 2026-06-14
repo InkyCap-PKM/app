@@ -1132,10 +1132,23 @@ export async function appVersion(): Promise<string> {
   return invoke<string>("app_version");
 }
 
-/** Whether this install self-updates (`"auto"`) or is package-managed
- *  (`"manual"` — non-AppImage Linux). Drives the Check-for-Updates flow. */
-export async function updateInstallKind(): Promise<"auto" | "manual"> {
-  return invoke<"auto" | "manual">("update_install_kind");
+/** The newest release on Codeberg, as returned by `check_latest_release`. */
+export interface LatestRelease {
+  /** Version with any leading `v` stripped, e.g. `26.6.10`. */
+  version: string;
+  /** Release page URL to open in the browser. */
+  url: string;
+  /** Release notes (may be empty). */
+  notes: string;
+  /** Whether this is a pre-release (beta) build. */
+  isPrerelease: boolean;
+}
+
+/** Ask the backend for the latest release from Codeberg's API. With
+ *  `includeBeta`, pre-releases are considered; otherwise stable only. The
+ *  caller compares `version` against `appVersion()`. Throws on network failure. */
+export async function checkLatestRelease(includeBeta: boolean): Promise<LatestRelease> {
+  return invoke<LatestRelease>("check_latest_release", { includeBeta });
 }
 
 // Creation rules

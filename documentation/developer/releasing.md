@@ -1,58 +1,49 @@
-# Releasing InkyCap & the in-app updater
+# Releasing InkyCap & the in-app update check
 
-InkyCap ships an in-app **Check for updates** (Settings → Overview). This
-document is the runbook for cutting a release that the updater can find,
-verify, and install.
+InkyCap has an in-app **Check for updates** (Settings → Overview). This document
+is the runbook for cutting a release and how the check finds it.
 
-## How the updater works
+## How the update check works
 
-The Tauri updater plugin fetches a small JSON **manifest** (`latest.json`),
-compares its `version` to the running app, and — if newer — downloads the
-platform artifact, verifies its **minisign signature** against the public key
-baked into the build, installs it, and (on Windows/macOS) relaunches.
+InkyCap **does not self-update**. The in-app check is notify-only: it asks
+Codeberg's releases API for the latest published release and, if it's newer than
+the running version, shows a *"version X is available"* notice with a **View
+releases** button that opens the releases page. Users download and install the
+new build by hand (every platform — `.deb`/`.rpm`/Flatpak/Windows installer).
 
-- **Auto-install**: Windows (NSIS `*-setup.exe`) and macOS (`*.app.tar.gz`).
-  The app downloads the signed artifact, verifies it, installs, and relaunches.
-- **Manual**: **all Linux** (`.deb`/`.rpm`/Flatpak). InkyCap no longer ships an
-  AppImage — the one self-updating Linux format — so every Linux install is
-  package-manager territory: the app detects this (`update_install_kind` →
-  `manual`) and links to the releases page instead of self-installing. The "a
-  newer version exists" notice still works because the frontend reads only the
-  manifest's top-level `version` (`src/stores/updater.ts`), which needs no
-  per-platform signature.
-
-### Why no AppImage
-
-AppImage was dropped: bundling a self-contained GUI/GPU stack into it pulled in
-dependencies that became fragile on hosts much newer than the 22.04 build base,
-for more trouble than it was worth. **Flatpak** is the "runs anywhere" Linux
-option instead (it runs against the GNOME runtime, which supplies a
-version-matched WebKitGTK/GTK/Mesa stack), alongside native **`.deb`/`.rpm`**.
-None of these can self-update from inside the app — that capability was unique to
-AppImage — so Linux is manual-update across the board, by design.
+- The check runs in Rust (`src-tauri/src/commands/updates.rs`,
+  `check_latest_release`) rather than the webview, because the Codeberg API
+  sends no CORS headers. It hits:
+  - `…/releases/latest` for the **stable** channel (the API excludes drafts and
+    pre-releases here), or
+  - `…/releases?limit=1&draft=false` when the user opted into betas.
 - **Privacy**: a check runs only on an explicit click, or on startup if the user
-  opted in (`Settings → Behaviour → Software updates`). No silent network calls.
+  opted in (`Settings → Behaviour → Software updates`). No silent network calls,
+  no telemetry. Note content and filesystem paths never leave the device.
 
 The moving parts:
 
 | Piece | Where |
 |-------|-------|
-| Updater config (pubkey + endpoint) | `src-tauri/tauri.conf.json` → `plugins.updater` |
-| `createUpdaterArtifacts` | `src-tauri/tauri.conf.json` → `bundle` |
-| Plugin registration | `src-tauri/src/lib.rs` |
+| Release check (Codeberg API) | `src-tauri/src/commands/updates.rs` |
 | In-app UI | `src/components/UpdateChecker.tsx`, `src/stores/updater.ts` |
-| Endpoint URLs (must match config) | `src/stores/updater.ts` constants |
-| Manifest generator | `scripts/gen-update-manifest.mjs` (`npm run manifest:gen`) |
+| Settings toggles | `src/components/settings/BehaviourSettingsSection.tsx` (`updates.check_on_startup`, `updates.include_beta`) |
 | Linux `.deb`/`.rpm` build (CI) | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
 | Linux `.deb`/`.rpm` build (local) | `scripts/build-linux-docker.sh` |
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
-| Manifest hosting | `pages` branch → `<channel>/latest.json`, served at `https://updates.inkycap.org/` |
 
-The repo lives at `codeberg.org/InkyCap/app` (org-owned). The update channel is
-served from the dedicated subdomain **`updates.inkycap.org`** — a Codeberg Pages
-custom domain on the `pages` branch — so the URL baked into every build is
-independent of the repo's name or host. The public manifest URLs are therefore
-`https://updates.inkycap.org/stable/latest.json` and `.../beta/latest.json`.
+The repo lives at `codeberg.org/InkyCap/app` (org-owned). There is no separate
+update server, signed manifest, or Codeberg Pages dependency — the releases API
+*is* the source of truth, and reflects a published release immediately.
+
+> **History:** earlier versions (≤ 26.6.8) used the Tauri updater plugin with a
+> signed `latest.json` manifest hosted on Codeberg Pages at
+> `updates.inkycap.org`. That whole chain (minisign signing,
+> `createUpdaterArtifacts`, the `pages` branch, the manifest generator) was
+> removed in 26.6.10 in favour of this notify-only check. Existing ≤ 26.6.8
+> installs still point at the old manifest endpoint and won't auto-discover newer
+> releases; they upgrade by downloading 26.6.10+ once, after which the API-based
+> check takes over.
 
 ## Versioning & channels
 
@@ -66,38 +57,28 @@ implementation is `scripts/version.mjs`):
 | `RELEASE` | per-month release counter (the semver *patch*) **and** the channel selector | `3` |
 
 The **RELEASE** (last) component does double duty — it counts releases within
-the month *and* its parity selects the distribution channel:
+the month *and* its parity selects the channel:
 
-- **even** → user-facing / **stable** → published to `stable/latest.json`
-- **odd** → development / **beta** → published to `beta/latest.json`
+- **even** → user-facing / **stable**
+- **odd** → development / **beta** (marked a *prerelease* on Codeberg)
 
-So a month's history reads `26.6.1` (first beta), `26.6.2` (first stable),
-`26.6.3` (next beta), `26.6.4` (next stable), and so on — odd and even
-interleave as work alternates between development and shipping.
+So a month reads `26.6.1` (first beta), `26.6.2` (first stable), `26.6.3` (next
+beta), `26.6.4` (next stable), and so on. The stable check uses
+`…/releases/latest`, which the API filters to exclude prereleases — so a beta
+tag never shows up as a stable update. A user who enables "Include development
+(beta) releases" gets notified of the newest release of any kind.
 
 ### Why parity lives in the last component
 
-It would be more natural to put the channel in the middle, but the scheme must
-satisfy the **Windows MSI `ProductVersion`** limits — major ≤ 255, minor ≤ 255,
-build ≤ 65535. A `YYYYMM`-style major (e.g. `202606`) overflows the major field
-and the WiX bundler refuses to package it (`app version major number cannot be
-greater than 255`). Keeping `YY.MM` as a clean two-field calendar stamp fits
-those limits, which leaves the channel parity to ride in the last component.
-
-### How the channel is consumed
-
-- **Release CI** (`.forgejo/workflows/release.yml`) reads the RELEASE component
-  of the pushed tag and publishes the manifest to `stable/` or `beta/`.
-- **The in-app check** uses the **stable** endpoint for the signed
-  auto-install path. If the user enables "Include development (beta) releases",
-  the app also checks the beta manifest and, if newer, points them at the
-  releases page (betas install by hand by design).
-- **Settings → Overview** shows a "development build" badge when the running
-  version's RELEASE component is odd (`src/components/settings/OverviewSection.tsx`).
+The scheme must satisfy the **Windows MSI `ProductVersion`** limits — major ≤
+255, minor ≤ 255, build ≤ 65535. A `YYYYMM`-style major (e.g. `202606`) overflows
+the major field and the WiX bundler refuses it. Keeping `YY.MM` as a clean
+two-field calendar stamp fits those limits, which leaves the channel parity to
+ride in the last component.
 
 ### Bumping the version
 
-Never hand-edit the number — use the npm aliases. Each one keeps `package.json`,
+Never hand-edit the number — use the npm aliases. Each keeps `package.json`,
 `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` in lockstep and prints
 `old -> new (channel)`:
 
@@ -109,107 +90,20 @@ npm run version:patch               # next release in the current channel (+2, k
 npm run version:release -- 202607   # start a new month, resetting to RELEASE 1 (-> 26.7.1)
 ```
 
-Worked from a starting point of `26.6.1` (a beta):
-
-| Command | Result | Channel | Notes |
-|---------|--------|---------|-------|
-| `version:beta` | `26.6.3` | beta | next dev build this month |
-| `version:stable` | `26.6.2` | stable | promote to a stable release |
-| `version:patch` | `26.6.3` | beta | stays beta — `+2` preserves parity |
-| `version:release -- 202607` | `26.7.1` | beta | begin July's cycle |
-
 `stable` / `beta` **cross** channels (jump to the next even / odd); `patch`
 **stays** in the current channel (`+2`). The `release` argument is a 6-digit
-`YYYYMM` — its year is truncated to two digits (`2026 → 26`) and a fresh month
-always starts at RELEASE 1 (beta).
+`YYYYMM` — its year is truncated to two digits and a fresh month starts at
+RELEASE 1 (beta).
 
-The lockfiles (`src-tauri/Cargo.lock`, `package-lock.json`) also carry the
-version; they refresh on the next `cargo` / `npm` build, or run `npm install` /
-`cargo build` to update them before committing.
-
-## One-time setup
-
-### 1. Generate the signing keypair
-
-On a trusted machine (NOT in CI), generate the minisign keypair the updater
-will trust:
-
-```sh
-npx tauri signer generate -w ~/.tauri/inkycap.key
-```
-
-- Put the **public key** it prints into `src-tauri/tauri.conf.json` →
-  `plugins.updater.pubkey`. (It currently holds an empty placeholder; `tauri
-  build` will refuse to produce updater artifacts until it's set.)
-- Keep the **private key** secret. Never commit it. Store it — and its password
-  — as CI secrets (below). If you lose it, users on the old key can't accept
-  updates; if it leaks, rotate immediately.
-
-### 2. Add CI secrets
-
-In the Codeberg repo → Settings → Actions → Secrets:
-
-| Secret | Value |
-|--------|-------|
-| `TAURI_SIGNING_PRIVATE_KEY` | contents of `~/.tauri/inkycap.key` |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password (`""` if none) |
-| `PAGES_PUSH_TOKEN` | a token with write access to the repo's `pages` branch + release assets |
-
-### 3. Set up Codeberg Pages on `updates.inkycap.org`
-
-Codeberg Pages serves any branch literally named `pages` as a static website.
-Seed it **once** (the release CI writes the channel manifests into it from then
-on). The channel directories live at the branch root — the subdomain already
-means "updates" — so the served URLs are
-`https://updates.inkycap.org/stable/latest.json` and `.../beta/latest.json`.
-
-Do this in a throwaway clone — `git switch --orphan` empties the working tree,
-so running it in your main checkout would scrub your dev files out of that
-folder:
-
-```sh
-git clone git@codeberg.org:InkyCap/app.git /tmp/inkycap-pages
-cd /tmp/inkycap-pages
-git switch --orphan pages            # new empty branch, unrelated history
-# Tell Codeberg Pages which custom domain this branch serves:
-printf 'updates.inkycap.org\n' > .domains
-git add .domains
-git commit -m "init pages: updates.inkycap.org"
-git push -u origin pages
-cd - && rm -rf /tmp/inkycap-pages    # CI maintains the branch from here
-```
-
-(No need to pre-create `stable/`/`beta/` — git doesn't track empty directories,
-and CI creates them on the first release.)
-
-Then add the DNS record at your `inkycap.org` provider. Codeberg routes a custom
-domain to a repo by the **`<repo>.<owner>.codeberg.page`** subdomain scheme, and
-the `pages` branch lives in the repo **`app`** under the **`InkyCap`** org — so
-the CNAME target carries *both* the repo and owner:
-
-```
-updates.inkycap.org.   CNAME   app.inkycap.codeberg.page.
-```
-
-(Pointing at the bare `inkycap.codeberg.page` instead makes Codeberg look for a
-repo literally named `pages`, fail to match, and never issue a TLS cert — the
-symptom is a `tlsv1 alert internal error`.) There is **no separate verification
-step or web-UI button**: Codeberg verifies ownership purely via this CNAME (the
-fact that it resolves into `codeberg.page` is the proof), then auto-issues a
-Let's Encrypt certificate. Confirm the endpoint in `src-tauri/tauri.conf.json`
-and the constants in `src/stores/updater.ts` both read
-`https://updates.inkycap.org/...` — **they must
-agree**, and changing them after the first public release strands existing
-installs on the old URL.
+The lockfile `src-tauri/Cargo.lock` also carries the version; it refreshes on
+the next `cargo build`. Commit it alongside the bump so it doesn't drift.
 
 ## Cutting a release
 
 A release is built across machines: CI builds the portable Linux packages, and
 you build Flatpak and Windows locally. CI creates the release as a **draft**; you
-attach the remaining artifacts, **publish it by hand**, and only then publish the
-manifest — it points at release-asset download URLs that 404 until the release is
-public, and `gen-update-manifest.mjs` needs the signed Windows artifact (which
-the `.deb`/`.rpm`/Flatpak don't have).
+attach the remaining artifacts and **publish it by hand**. Once published,
+Codeberg's releases API serves it immediately and the in-app check finds it.
 
 **1. Bump and tag.**
 
@@ -223,7 +117,7 @@ git tag vXX.YY.Z && git push origin main vXX.YY.Z
 by the `v*` tag): inside an Ubuntu 22.04 container it runs
 `tauri build --bundles deb rpm`, creates a **draft** release for the tag
 (`prerelease` when the RELEASE component is odd / beta), and attaches the two
-packages. It publishes **no manifest**.
+packages.
 
 **3. Build the Flatpak locally** and attach it to the draft release:
 
@@ -232,57 +126,25 @@ scripts/build-linux-docker.sh                 # produces the .deb the Flatpak pa
 scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>.flatpak
 ```
 
-Upload the `.flatpak` to the draft (web UI: drag it onto the release). No `.sig`.
+Upload the `.flatpak` to the draft (web UI: drag it onto the release).
 
-**4. Build Windows locally** (on a Windows machine), signed:
+**4. Build Windows locally** (on a Windows machine):
 
-```bat
-set TAURI_SIGNING_PRIVATE_KEY=<contents of your private key>
-set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<its password>
-npm run tauri build                            :: NSIS -setup.exe + .sig (and .msi)
-src-tauri\target\release\inkycap.exe --version :: MUST print the version you tagged
+```powershell
+npm run tauri build                            # NSIS -setup.exe (and .msi)
+src-tauri\target\release\inkycap.exe --version # MUST print the version you tagged
 ```
 
 Verify the printed version matches the tag before uploading. A reused local
 `target/` can otherwise bake the *previous* version into the installer while the
-filename still reads the new one — the same stale-binary class the Linux build
-(`scripts/build-linux-docker.sh`) and CI (`release.yml`) now guard against
-automatically. If it prints the wrong version, delete `src-tauri/target/release`
-(or run `cargo clean -p inkycap`) and rebuild.
+filename reads the new one. If it's wrong, delete `src-tauri\target\release` (or
+run `cargo clean -p inkycap`) and rebuild. Upload the `*-setup.exe` (and the
+`.msi` if you ship it) to the same draft. No signing or `.sig` is needed.
 
-Upload the `*-setup.exe` **and its `.sig`** to the same draft.
-
-**5. Publish the release.** In the web UI, edit the draft and publish it (this is
-the deliberate "go public" moment). Now the asset download URLs resolve.
-
-**6. Publish the manifest.** Copy the Windows `*-setup.exe.sig` off the Windows
-box into `./release-artifacts/`, then run the helper (it reads the version,
-picks the channel by parity, generates the manifest, and pushes it to the
-`pages` branch):
-
-```sh
-mkdir -p release-artifacts
-cp /path/to/InkyCap_XX.YY.Z_x64-setup.exe.sig release-artifacts/
-scripts/publish-manifest.sh                    # -> pages:<channel>/latest.json
-```
-
-(The script wraps `npm run manifest:gen` + the `pages`-branch push; see its
-header for the manual equivalent.)
-
-**7. Verify.** Visit `https://updates.inkycap.org/<channel>/latest.json`, then
-click **Check for updates** in an installed older build (Windows auto-installs;
-Linux shows the manual "View releases" path).
+**5. Publish the release.** In the web UI, edit the draft and publish it. The
+releases API now returns it, and **Check for updates** in older builds (26.6.10+)
+will show the notice with a **View releases** link.
 
 > **macOS note:** macOS is not yet a first-class target. Code-signing /
 > notarization isn't set up, so macOS users see "unidentified developer"
-> warnings; when you do build a macOS bundle, attach the `*.app.tar.gz` + `.sig`
-> and re-run step 5 so the generator adds the `darwin-*` entry too.
-
-## Testing the updater locally
-
-The updater only runs in a packaged build (not `tauri dev`). To smoke-test the
-**auto** path: build a Windows version N, install it, publish a manifest for N+1
-pointing at a real signed Windows artifact, then click **Check for updates**. The
-**manual** path is whatever you get on Linux (any `.deb`/`.rpm`/Flatpak install
-shows "View releases"); the **error** path can be exercised by pointing the
-endpoint at an unreachable URL.
+> warnings; attach the `.dmg`/`.app.tar.gz` to the release when you build one.

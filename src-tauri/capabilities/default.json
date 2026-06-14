@@ -35,9 +35,6 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-ask",
-    "dialog:allow-message",
-    "updater:default",
-    "process:default",
-    "process:allow-restart"
+    "dialog:allow-message"
   ]
 }
