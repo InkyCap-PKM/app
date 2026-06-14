@@ -486,7 +486,7 @@
 [data-palette="warm"]:not([data-theme="dark"]) {
   --bg-primary: #ffffff;
   --bg-editor-toolbar: #f4f2eb;
-  --bg-secondary: #eeece5;
+  --bg-secondary: #F2F0ED;
   --bg-active: #e4e1d8;
   --bg-highlight: #d9d5cb;
   --bg-input: #faf8f5;
@@ -504,7 +504,7 @@
   --fg-gutter: #968f84;
   --fg-separator: #cfc9bb;
 
-  --status-bg: #eeece5;
+  --status-bg: #F2F0ED;
   --status-fg: #1d1915;
 
   --code-block-bg: #f4f2eb;
