@@ -42,22 +42,15 @@ finish-args:
   # smb://, sftp://) live under the runtime dir, which `host` does not cover.
   - --filesystem=xdg-run/gvfs
 
-# Full ffmpeg for audio/video playback (#video / #audio) via the runtime's
-# GStreamer libav plugin. Version tracks the freedesktop base of the GNOME
-# runtime above (GNOME 50 -> freedesktop 25.08).
-add-extensions:
-  org.freedesktop.Platform.ffmpeg-full:
-    directory: lib/ffmpeg
-    version: '25.08'
-    add-ld-path: .
-    autodelete: false
-
+# Audio/video playback (#video / #audio) uses the runtime's GStreamer libav
+# plugin. As of the freedesktop 25.08 base (GNOME 49/50), ffmpeg/libav ships
+# inside the GNOME runtime itself, so no separate codec extension is declared
+# here — the standalone org.freedesktop.Platform.ffmpeg-full was discontinued
+# after 24.08.
 modules:
   - name: inkycap
     buildsystem: simple
     build-commands:
-      # Mount point for the ffmpeg-full extension declared above.
-      - mkdir -p /app/lib/ffmpeg
       # Unpack the Debian package staged next to this manifest.
       - ar x inkycap.deb
       - tar -xf data.tar.gz
@@ -65,7 +58,9 @@ modules:
       - install -Dm755 usr/bin/inkycap /app/bin/inkycap
       - install -Dm755 usr/bin/tinymist /app/bin/tinymist
       # Bundled resources (licenses, etc.) -> /app/lib/InkyCap, preserving the
-      # ../lib/InkyCap layout the binary resolves relative to /app/bin.
+      # ../lib/InkyCap layout the binary resolves relative to /app/bin. cp needs
+      # /app/lib to exist first (`install -D` above only created /app/bin).
+      - mkdir -p /app/lib
       - cp -r usr/lib/InkyCap /app/lib/InkyCap
       # Desktop file -> renamed to the app-id; Icon= pointed at the app-id icon.
       - install -Dm644 usr/share/applications/InkyCap.desktop /app/share/applications/com.inkycap.editor.desktop

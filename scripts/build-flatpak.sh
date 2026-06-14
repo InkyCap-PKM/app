@@ -25,7 +25,6 @@ cd "$REPO_ROOT"
 APP_ID="com.inkycap.editor"
 MANIFEST="flatpak/$APP_ID.yml"
 RUNTIME_VER="50"
-FFMPEG_VER="25.08"
 
 command -v flatpak >/dev/null 2>&1 || {
   echo "flatpak not found. Install it:  sudo apt install flatpak flatpak-builder" >&2; exit 1; }
@@ -51,14 +50,16 @@ done
   exit 1; }
 echo "==> Packaging version $VERSION from: $DEB"
 
-# Ensure the Flathub remote and the runtime/SDK/codecs are present (user
-# install, no sudo). Harmless if already installed.
+# Ensure the Flathub remote and the runtime/SDK are present (user install, no
+# sudo). Harmless if already installed. ffmpeg/libav codecs ship inside the
+# GNOME 50 base runtime (freedesktop 25.08), so no separate codec extension is
+# needed — the standalone org.freedesktop.Platform.ffmpeg-full was discontinued
+# after 24.08.
 flatpak remote-add --if-not-exists --user flathub \
   https://flathub.org/repo/flathub.flatpakrepo
 flatpak install --user --noninteractive flathub \
   "org.gnome.Platform//$RUNTIME_VER" \
-  "org.gnome.Sdk//$RUNTIME_VER" \
-  "org.freedesktop.Platform.ffmpeg-full//$FFMPEG_VER"
+  "org.gnome.Sdk//$RUNTIME_VER"
 
 # Stage the .deb where the manifest's source path expects it.
 cp "$DEB" flatpak/inkycap.deb
