@@ -1116,7 +1116,7 @@ svg.lucide {
 .tab__close {
   background: none;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
   color: var(--fg-dim);
   cursor: pointer;
   /* Slightly larger hit target (and glyph) so the × is easier to click. */
@@ -8889,6 +8889,26 @@ svg.lucide {
 .tab-bar__new:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
+}
+
+/* WebView2 (Windows) draws a default blue text-selection / tap highlight on
+   buttons whose label is a bare text glyph ("+", "×"); WebKitGTK (Linux/macOS)
+   does not, so this only surfaces on Windows. Suppress the platform default on
+   the tab-bar's text-glyph buttons, and give them the shared keyboard-focus
+   affordance they otherwise lack (pointer users never see :focus-visible). */
+.tab-bar__new,
+.tab__close,
+.tab-bar__scroll {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab-bar__new:focus-visible,
+.tab__close:focus-visible,
+.tab-bar__scroll:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* ─── Command palette: category headers for default list ─── */
