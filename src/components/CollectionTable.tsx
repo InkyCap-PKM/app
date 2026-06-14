@@ -9,13 +9,15 @@ import {
   Show,
   onCleanup,
 } from "solid-js";
-import { ChevronLeft, ChevronRight } from "lucide-solid";
+import { ChevronLeft, ChevronRight, Funnel } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
   PropertyValue,
+  PropertyType,
   SortRule,
   FilterGroup,
+  ViewDef,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { openTab } from "../stores/tabs";
@@ -24,9 +26,12 @@ import { promptText, promptConfirm } from "../stores/prompt";
 import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
 import { clickOutside } from "../lib/clickOutside";
+import { propertyType, inferPropertyType } from "../stores/propertyTypes";
+import { columnFilterKind, fileColumnType } from "../lib/column-filter";
 import AgendaList from "./AgendaList";
 import BusyOverlay from "./BusyOverlay";
 import FilterBuilder from "./FilterBuilder";
+import ColumnFilterPopover from "./ColumnFilterPopover";
 import { Dropdown } from "./Dropdown";
 
 // Remember the last active view per collection for the session, so switching
@@ -239,6 +244,12 @@ const CollectionTable: Component<{ path: string }> = (props) => {
   };
   const [showColumnPicker, setShowColumnPicker] = createSignal(false);
   const [showFilterBuilder, setShowFilterBuilder] = createSignal(false);
+  // The column whose header quick-filter popover is open, plus the funnel
+  // button it anchors to. Null when no popover is showing.
+  const [openColumnFilter, setOpenColumnFilter] = createSignal<{
+    column: string;
+    anchor: HTMLElement;
+  } | null>(null);
   const [editingViewName, setEditingViewName] = createSignal<string | null>(null);
   const [newViewNameInput, setNewViewNameInput] = createSignal("");
   const [contextMenu, setContextMenu] = createSignal<{
@@ -339,6 +350,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     activeView();
     setShowFilterBuilder(false);
     setShowColumnPicker(false);
+    setOpenColumnFilter(null);
   });
 
   // ── Filter handling ──
@@ -380,6 +392,62 @@ const CollectionTable: Component<{ path: string }> = (props) => {
       currentFilterScope() === "global" ? null : activeView() || null;
     await ipc.updateCollectionFilters(props.path, viewName, filters);
     setShowFilterBuilder(false);
+    refresh();
+  }
+
+  // ── Per-column header filters ──
+  //
+  // A separate scope from the FilterBuilder (`view.columnFilters`, keyed by
+  // property). Each column's funnel opens a type-aware popover; the popover
+  // emits a `FilterGroup` that ANDs in with the base/view filters backend-side.
+
+  /** The active view's definition from the parsed `.collection` file. */
+  function activeViewDef(): ViewDef | undefined {
+    const bf = collectionFile();
+    if (!bf) return undefined;
+    const viewName = activeView();
+    return viewName ? bf.views.find((v) => v.name === viewName) : bf.views[0];
+  }
+
+  /** The saved header filter for a column, if any. */
+  function columnFilterGroup(col: string): FilterGroup | null {
+    return activeViewDef()?.columnFilters?.[col] ?? null;
+  }
+
+  function anyColumnFilterActive(): boolean {
+    const cf = activeViewDef()?.columnFilters;
+    return !!cf && Object.keys(cf).length > 0;
+  }
+
+  /** Resolve a column's concrete property type for filtering. A `file.*`
+   *  column has a fixed type (never inferred — a date-shaped filename must not
+   *  flip the filter to a date control). Otherwise a declared type wins, and an
+   *  untyped ("auto") column infers from its first non-null cell value. */
+  function resolveColumnType(col: string): PropertyType {
+    const fileType = fileColumnType(col);
+    if (fileType) return fileType;
+    const type = propertyType(col);
+    if (type !== "auto") return type;
+    const rows = data()?.rows ?? [];
+    const sample = rows.find((r) => r.cells[col] != null)?.cells[col];
+    return sample !== undefined ? inferPropertyType(sample) : "text";
+  }
+
+  function columnKind(col: string) {
+    return columnFilterKind(resolveColumnType(col));
+  }
+
+  async function handleColumnFilterApply(col: string, group: FilterGroup | null) {
+    await ipc.setCollectionColumnFilter(props.path, activeView() || "", col, group);
+    setOpenColumnFilter(null);
+    await refetchCollection();
+    refresh();
+  }
+
+  async function clearAllColumnFilters() {
+    await ipc.clearCollectionColumnFilters(props.path, activeView() || "");
+    setOpenColumnFilter(null);
+    await refetchCollection();
     refresh();
   }
 
@@ -1046,6 +1114,15 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                 >
                   {t("collection.table.columns")}
                 </button>
+                <Show when={anyColumnFilterActive()}>
+                  <button
+                    class="collection-table__toolbar-btn"
+                    onClick={clearAllColumnFilters}
+                    title={t("columnFilter.clearAllTitle")}
+                  >
+                    {t("columnFilter.clearAll")}
+                  </button>
+                </Show>
                 <div
                   class="collection-table__export-wrapper"
                   ref={exportWrapperRef}
@@ -1210,6 +1287,28 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                           <span class="collection-table__sort-indicator">
                             {sortIndicator(col, currentSortRules())}
                           </span>
+                          <button
+                            class="collection-table__filter-btn"
+                            classList={{
+                              "collection-table__filter-btn--active":
+                                columnFilterGroup(col) != null,
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const anchor = e.currentTarget;
+                              setOpenColumnFilter((cur) =>
+                                cur?.column === col ? null : { column: col, anchor },
+                              );
+                            }}
+                            title={t("columnFilter.filterColumn", {
+                              label: propertyLabel(col),
+                            })}
+                            aria-label={t("columnFilter.filterColumn", {
+                              label: propertyLabel(col),
+                            })}
+                          >
+                            <Funnel size={13} />
+                          </button>
                           <div
                             class="collection-table__col-resize"
                             onMouseDown={(e) => startColResize(e, col)}
@@ -1259,6 +1358,23 @@ const CollectionTable: Component<{ path: string }> = (props) => {
             <div class="collection-table__footer">
               {tPlural("common.file", d().rows.length)}
             </div>
+            </Show>
+
+            {/* Column header quick-filter popover */}
+            <Show when={openColumnFilter()}>
+              {(of) => (
+                <ColumnFilterPopover
+                  property={of().column}
+                  label={propertyLabel(of().column)}
+                  kind={columnKind(of().column)}
+                  withTime={resolveColumnType(of().column) === "datetime"}
+                  current={columnFilterGroup(of().column)}
+                  availableValues={d().columnValues?.[of().column] ?? []}
+                  anchor={of().anchor}
+                  onApply={(group) => handleColumnFilterApply(of().column, group)}
+                  onClose={() => setOpenColumnFilter(null)}
+                />
+              )}
             </Show>
           </>
         )}

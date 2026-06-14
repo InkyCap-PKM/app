@@ -27,6 +27,12 @@ export interface ClickOutsideOptions {
   onDismiss: () => void;
   /** Element(s) — typically the toggle trigger — whose clicks don't dismiss. */
   ignore?: HTMLElement | undefined | (HTMLElement | undefined)[];
+  /** CSS selector(s) for surfaces that should not count as "outside" even
+   *  though they live elsewhere in the DOM — notably a portaled popup nested
+   *  inside this one (e.g. a DatePicker's calendar). Matched with
+   *  `target.closest(selector)`. Without this, clicking inside such a popup
+   *  would dismiss the parent before the nested interaction completes. */
+  ignoreSelector?: string | string[];
 }
 
 export function clickOutside(
@@ -35,11 +41,18 @@ export function clickOutside(
 ): void {
   const isIgnored = (target: Node, opts: ClickOutsideOptions): boolean => {
     const ignore = opts.ignore;
-    if (!ignore) return false;
-    const list = Array.isArray(ignore) ? ignore : [ignore];
-    return list.some(
-      (node) => !!node && (node === target || node.contains(target)),
-    );
+    const list = ignore ? (Array.isArray(ignore) ? ignore : [ignore]) : [];
+    if (list.some((node) => !!node && (node === target || node.contains(target)))) {
+      return true;
+    }
+    const sel = opts.ignoreSelector;
+    if (sel) {
+      const selectors = Array.isArray(sel) ? sel : [sel];
+      const elem =
+        target instanceof Element ? target : (target as ChildNode).parentElement;
+      if (elem && selectors.some((s) => elem.closest(s))) return true;
+    }
+    return false;
   };
 
   const onMouseDown = (e: MouseEvent) => {

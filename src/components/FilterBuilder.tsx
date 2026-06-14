@@ -3,12 +3,18 @@ import type { FilterGroup, FilterNode } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 import { propertyLabel } from "../lib/property-labels";
 import { useI18n } from "../lib/i18n";
+import { type FilterRow, parseFilterRow, serializeFilterRow } from "../lib/filter-expr";
 
 /** Operators available in the filter builder. Labels resolve through i18n at
- *  render time (see `labelKey`). */
+ *  render time (see `labelKey`). The relational operators (< ≤ > ≥) compare
+ *  numerically or, for ISO dates, chronologically — see the Rust evaluator. */
 const OPERATORS = [
   { value: "==", labelKey: "filter.op.equals" },
   { value: "!=", labelKey: "filter.op.notEquals" },
+  { value: "<", labelKey: "filter.op.lt" },
+  { value: "<=", labelKey: "filter.op.le" },
+  { value: ">", labelKey: "filter.op.gt" },
+  { value: ">=", labelKey: "filter.op.ge" },
   { value: ".contains", labelKey: "filter.op.contains" },
   { value: "!.contains", labelKey: "filter.op.notContains" },
   { value: ".isEmpty", labelKey: "filter.op.isEmpty" },
@@ -30,12 +36,6 @@ const COMBINATORS: { value: Combinator; labelKey: string }[] = [
  *  levels is already more than any realistic collection query needs. */
 const MAX_DEPTH = 3;
 
-interface FilterRow {
-  property: string;
-  operator: string;
-  value: string;
-}
-
 // The editor works on a tree of nodes rather than raw expression strings so
 // that nested groups can be added, edited, and removed in place. A node is
 // either a leaf row (one property/operator/value triple) or a group with its
@@ -44,92 +44,6 @@ interface FilterRow {
 type LeafNode = { kind: "leaf"; row: FilterRow };
 type GroupNode = { kind: "group"; combinator: Combinator; members: BuilderNode[] };
 type BuilderNode = LeafNode | GroupNode;
-
-/** Parse a filter expression string into a FilterRow for the UI. */
-function parseFilterRow(expr: string): FilterRow {
-  const trimmed = expr.trim();
-
-  // Negated isEmpty: !prop.isEmpty()
-  const negIsEmpty = trimmed.match(/^!(.+)\.isEmpty\(\)$/);
-  if (negIsEmpty) {
-    return { property: negIsEmpty[1], operator: "!.isEmpty", value: "" };
-  }
-
-  // isEmpty: prop.isEmpty()
-  const isEmpty = trimmed.match(/^(.+)\.isEmpty\(\)$/);
-  if (isEmpty) {
-    return { property: isEmpty[1], operator: ".isEmpty", value: "" };
-  }
-
-  // Negated contains: !prop.contains("value"). Checked before the plain
-  // contains/isEmpty cases so the leading "!" isn't swallowed into the
-  // property name.
-  const negContains = trimmed.match(/^!(.+)\.contains\("(.*)"\)$/);
-  if (negContains) {
-    return { property: negContains[1], operator: "!.contains", value: negContains[2] };
-  }
-
-  // contains: prop.contains("value")
-  const methodCall = trimmed.match(/^(.+)\.contains\("(.*)"\)$/);
-  if (methodCall) {
-    return {
-      property: methodCall[1],
-      operator: ".contains",
-      value: methodCall[2],
-    };
-  }
-
-  // Comparison: prop == value or prop != value
-  const comparison = trimmed.match(/^(.+?)\s*(==|!=)\s*(.+)$/);
-  if (comparison) {
-    let val = comparison[3].trim();
-    // Strip quotes from string values
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    return { property: comparison[1].trim(), operator: comparison[2], value: val };
-  }
-
-  // Fallback: treat as raw expression
-  return { property: trimmed, operator: "==", value: "" };
-}
-
-/** Serialize a FilterRow back to a filter expression string, or "" when the
- *  row has no property yet (such rows are dropped on save). */
-function serializeFilterRow(row: FilterRow): string {
-  const prop = row.property.trim();
-  if (!prop) return "";
-
-  switch (row.operator) {
-    case ".isEmpty":
-      return `${prop}.isEmpty()`;
-    case "!.isEmpty":
-      return `!${prop}.isEmpty()`;
-    case ".contains":
-      return `${prop}.contains("${row.value}")`;
-    case "!.contains":
-      return `!${prop}.contains("${row.value}")`;
-    case "==":
-    case "!=": {
-      const val = row.value.trim();
-      // Booleans, numbers, and property references (this.*, file.*, note[…])
-      // are emitted unquoted — quoting a reference like `this.file.name`
-      // would compare against that literal string instead of the referenced
-      // value, breaking e.g. the default self-exclusion row.
-      if (
-        val === "true" ||
-        val === "false" ||
-        (val !== "" && !isNaN(Number(val))) ||
-        /^(this\.|file\.|note\[)/.test(val)
-      ) {
-        return `${prop} ${row.operator} ${val}`;
-      }
-      return `${prop} ${row.operator} "${val}"`;
-    }
-    default:
-      return `${prop} ${row.operator} "${row.value}"`;
-  }
-}
 
 // ── Tree ⇄ FilterGroup conversion ─────────────────────────────────────
 

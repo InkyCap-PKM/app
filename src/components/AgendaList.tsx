@@ -21,6 +21,15 @@ import { useI18n } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { formatUserDate } from "../lib/dates";
+import DatePicker from "./DatePicker";
+import { Dropdown } from "./Dropdown";
+import {
+  type DateFilterState,
+  DATE_OPS,
+  DEFAULT_DATE_FILTER,
+  isDateFilterActive,
+  matchesDateFilter,
+} from "../lib/column-filter";
 
 interface AgendaListProps {
   items: AgendaItem[];
@@ -67,9 +76,12 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   const [selectedTags, setSelectedTags] = createSignal<Set<string>>(new Set());
   const [filterText, setFilterText] = createSignal("");
 
+  const [dateFilter, setDateFilter] = createSignal<DateFilterState>({ ...DEFAULT_DATE_FILTER });
   const [showSortMenu, setShowSortMenu] = createSignal(false);
   const [showTaskMenu, setShowTaskMenu] = createSignal(false);
   const [showTagsMenu, setShowTagsMenu] = createSignal(false);
+  const [showDateMenu, setShowDateMenu] = createSignal(false);
+  let dateBtnRef: HTMLButtonElement | undefined;
   const [rowContextMenu, setRowContextMenu] = createSignal<{
     x: number;
     y: number;
@@ -129,13 +141,22 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     return t("agenda.tags.nSelected", { n: sel.size });
   });
 
+  const dateLabel = createMemo(() => {
+    const f = dateFilter();
+    if (!isDateFilterActive(f)) return t("agenda.date.all");
+    const op = DATE_OPS.find((o) => o.value === f.op);
+    return op ? t(op.labelKey) : t("agenda.date.all");
+  });
+
   /** Items after every filter and sort applied. */
   const visible = createMemo(() => {
     const needle = filterText().trim().toLowerCase();
     const tFilter = taskFilter();
     const tagSel = selectedTags();
+    const dFilter = dateFilter();
 
     let list = props.items.filter((it) => {
+      if (!matchesDateFilter(it.date, dFilter)) return false;
       switch (tFilter) {
         case "todo":
           if (!it.is_task || it.done) return false;
@@ -238,6 +259,21 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           >
             <span class="agenda__dropdown-label">{t("agenda.tags.label")}:</span>{" "}
             {tagsLabel()}
+            <ChevronDown size={12} />
+          </button>
+          <button
+            ref={dateBtnRef}
+            class="pane-action-btn agenda__dropdown"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDateMenu((v) => !v);
+              setShowTaskMenu(false);
+              setShowTagsMenu(false);
+              setShowSortMenu(false);
+            }}
+          >
+            <span class="agenda__dropdown-label">{t("agenda.date.label")}:</span>{" "}
+            {dateLabel()}
             <ChevronDown size={12} />
           </button>
         </div>
@@ -369,6 +405,55 @@ const AgendaList: Component<AgendaListProps> = (props) => {
               );
             }}
           </For>
+        </div>
+      </Show>
+
+      <Show when={showDateMenu()}>
+        <div
+          class="context-menu agenda__date-menu"
+          ref={(el) => anchorPanelMenu(dateBtnRef, el)}
+          use:clickOutside={{
+            onDismiss: () => setShowDateMenu(false),
+            ignore: dateBtnRef,
+            // Keep the menu open while interacting with the portaled calendar.
+            ignoreSelector: ".date-picker__popup",
+          }}
+        >
+          <Dropdown<string>
+            class="dropdown--sm dropdown--block"
+            value={dateFilter().op}
+            options={DATE_OPS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
+            onChange={(v) => setDateFilter({ ...dateFilter(), op: v as DateFilterState["op"] })}
+            ariaLabel={t("agenda.date.label")}
+          />
+          <Show when={dateFilter().op !== "empty" && dateFilter().op !== "notEmpty"}>
+            <div class="agenda__date-row">
+              <DatePicker
+                value={dateFilter().date}
+                withTime={false}
+                onSave={(v) => setDateFilter({ ...dateFilter(), date: v })}
+              />
+              <Show when={dateFilter().op === "within"}>
+                <span class="agenda__date-and">{t("columnFilter.and")}</span>
+                <DatePicker
+                  value={dateFilter().date2}
+                  withTime={false}
+                  onSave={(v) => setDateFilter({ ...dateFilter(), date2: v })}
+                />
+              </Show>
+            </div>
+          </Show>
+          <Show when={isDateFilterActive(dateFilter())}>
+            <button
+              class="context-menu__item"
+              onClick={() => {
+                setDateFilter({ ...DEFAULT_DATE_FILTER });
+                setShowDateMenu(false);
+              }}
+            >
+              {t("agenda.date.clear")}
+            </button>
+          </Show>
         </div>
       </Show>
 

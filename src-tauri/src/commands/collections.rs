@@ -233,9 +233,28 @@ pub async fn get_collection_data(
     // Filter notes — membership is resolved through the shared helper so
     // the table and the Agenda view (`get_collection_agenda`) can never
     // disagree about which notes belong to a collection view.
-    let mut matching_rows: Vec<CollectionRow> = Vec::new();
+    let members = resolve_collection_members(&base, view, &index, &collection_path_buf);
 
-    for note in resolve_collection_members(&base, view, &index, &collection_path_buf) {
+    // Facet values are computed across the full member set, *before* this
+    // view's per-column quick filters narrow it — so a column's checklist still
+    // offers values the user can toggle back on (standard faceted-filter
+    // behaviour).
+    let column_values = collect_column_values(&members, &columns);
+
+    let mut matching_rows: Vec<CollectionRow> = Vec::new();
+    for note in members {
+        // Per-column header filters AND together (and with base/view filters).
+        // A separate scope from `view.filters` so they clear independently of
+        // the advanced FilterBuilder.
+        if let Some(col_filters) = &view.column_filters {
+            if !col_filters
+                .values()
+                .all(|g| evaluate_filter_group(g, note, &collection_path_buf))
+            {
+                continue;
+            }
+        }
+
         let file_name = note
             .path
             .file_name()
@@ -297,7 +316,70 @@ pub async fn get_collection_data(
         columns,
         rows: matching_rows,
         views,
+        column_values,
     })
+}
+
+/// Distinct scalar values per column across a view's member set, for the
+/// header filter's multi-select checklist. List cells contribute each element;
+/// scalar cells contribute their stringified value. A `BTreeSet` keeps the
+/// output sorted. Columns whose distinct set exceeds `CAP` are dropped (a
+/// checklist that long is no longer a useful affordance — the user filters such
+/// columns by text/number/date instead), and columns with no values never
+/// appear in the map.
+fn collect_column_values(
+    members: &[&crate::models::note::NoteMetadata],
+    columns: &[String],
+) -> std::collections::HashMap<String, Vec<String>> {
+    const CAP: usize = 200;
+
+    fn scalar_to_string(v: &PropertyValue) -> Option<String> {
+        match v {
+            PropertyValue::String(s) if !s.is_empty() => Some(s.clone()),
+            PropertyValue::Number(n) => Some(n.to_string()),
+            PropertyValue::Bool(b) => Some(b.to_string()),
+            _ => None,
+        }
+    }
+
+    let mut sets: std::collections::HashMap<String, std::collections::BTreeSet<String>> =
+        std::collections::HashMap::new();
+    let mut capped: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for note in members {
+        for col in columns {
+            if capped.contains(col) {
+                continue;
+            }
+            let Some(value) = note.properties.get(col) else {
+                continue;
+            };
+            let set = sets.entry(col.clone()).or_default();
+            match value {
+                PropertyValue::List(items) => {
+                    for item in items {
+                        if let Some(s) = scalar_to_string(item) {
+                            set.insert(s);
+                        }
+                    }
+                }
+                other => {
+                    if let Some(s) = scalar_to_string(other) {
+                        set.insert(s);
+                    }
+                }
+            }
+            if set.len() > CAP {
+                capped.insert(col.clone());
+                sets.remove(col);
+            }
+        }
+    }
+
+    sets.into_iter()
+        .filter(|(_, set)| !set.is_empty())
+        .map(|(col, set)| (col, set.into_iter().collect()))
+        .collect()
 }
 
 /// Create a new .collection file with a default table view. Collections
@@ -568,6 +650,65 @@ pub async fn update_collection_filters(
     Ok(())
 }
 
+/// Set or clear the per-column quick filter for a view. Stored in the view's
+/// `columnFilters` map — a scope separate from the advanced FilterBuilder
+/// (`filters`) so header filters round-trip and clear independently.
+/// `filters: None` removes the column's entry (clearing that header filter).
+#[tauri::command]
+pub async fn set_collection_column_filter(
+    collection_path: String,
+    view_name: String,
+    column: String,
+    filters: Option<FilterGroup>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&collection_path)?;
+    let content = storage.read_file(&path).await?;
+    let mut base = parse_collection_file(&content)?;
+
+    let view = find_view_mut(&mut base, &view_name)?;
+    let mut map = view.column_filters.take().unwrap_or_default();
+    match filters {
+        Some(f) => {
+            map.insert(column, f);
+        }
+        None => {
+            map.remove(&column);
+        }
+    }
+    view.column_filters = if map.is_empty() { None } else { Some(map) };
+
+    let updated = serialize_collection_file(&base)?;
+    storage.write_file(&path, &updated).await?;
+    Ok(())
+}
+
+/// Clear every per-column quick filter on a view in a single write. Backs the
+/// "Clear all column filters" action.
+#[tauri::command]
+pub async fn clear_collection_column_filters(
+    collection_path: String,
+    view_name: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path = sanitize_notebox_arg(&collection_path)?;
+    let content = storage.read_file(&path).await?;
+    let mut base = parse_collection_file(&content)?;
+
+    let view = find_view_mut(&mut base, &view_name)?;
+    view.column_filters = None;
+
+    let updated = serialize_collection_file(&base)?;
+    storage.write_file(&path, &updated).await?;
+    Ok(())
+}
+
 /// Add a new view to a .collection file. `view_type` defaults to `"table"`;
 /// pass `"agenda"` for a task/deadline view.
 #[tauri::command]
@@ -598,6 +739,7 @@ pub async fn add_view(
         view_type,
         name: view_name,
         filters: None,
+        column_filters: None,
         order,
         sort: None,
         column_size: None,
@@ -845,6 +987,10 @@ pub async fn get_collection_data_internal(
         columns,
         rows: matching_rows,
         views,
+        // Export reflects the collection's defined membership (base + view
+        // filters), not the transient per-column header filters, so no facet
+        // values are needed here.
+        column_values: std::collections::HashMap::new(),
     })
 }
 

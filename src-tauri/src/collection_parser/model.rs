@@ -377,6 +377,17 @@ pub struct ViewDef {
     pub name: String,
     #[serde(default)]
     pub filters: Option<FilterGroup>,
+    /// Per-column quick filters set from a column header. Keyed by property
+    /// name; each value is an independent `FilterGroup` that ANDs in on top of
+    /// `base.filters` and this view's `filters`. A separate scope (not merged
+    /// into `filters`) so header filters round-trip and clear independently of
+    /// the advanced FilterBuilder tree.
+    #[serde(
+        rename = "columnFilters",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub column_filters: Option<HashMap<String, FilterGroup>>,
     #[serde(default)]
     pub order: Option<Vec<String>>,
     #[serde(default)]
@@ -479,6 +490,7 @@ pub fn default_collection_file_for(name: &str) -> CollectionFile {
             view_type: "table".to_string(),
             name: "Table".to_string(),
             filters: None,
+            column_filters: None,
             order: Some(vec!["file.name".to_string()]),
             sort: Some(vec![SortRule {
                 property: "file.name".to_string(),
@@ -507,6 +519,7 @@ pub fn default_collection_file() -> CollectionFile {
             view_type: "table".to_string(),
             name: "Table".to_string(),
             filters: None,
+            column_filters: None,
             order: Some(vec!["file.name".to_string()]),
             sort: Some(vec![SortRule {
                 property: "file.name".to_string(),

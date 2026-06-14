@@ -294,6 +294,30 @@ export async function updateCollectionFilters(
   return invoke<void>("update_collection_filters", { collectionPath, viewName, filters });
 }
 
+/** Set or clear a single column's header quick filter. `filters: null` clears
+ *  that column. Stored separately from the advanced FilterBuilder. */
+export async function setCollectionColumnFilter(
+  collectionPath: string,
+  viewName: string,
+  column: string,
+  filters: FilterGroup | null,
+): Promise<void> {
+  return invoke<void>("set_collection_column_filter", {
+    collectionPath,
+    viewName,
+    column,
+    filters,
+  });
+}
+
+/** Clear every column header filter on a view in one write. */
+export async function clearCollectionColumnFilters(
+  collectionPath: string,
+  viewName: string,
+): Promise<void> {
+  return invoke<void>("clear_collection_column_filters", { collectionPath, viewName });
+}
+
 export async function addView(
   collectionPath: string,
   viewName: string,
