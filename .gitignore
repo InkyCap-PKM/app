@@ -5,6 +5,12 @@ node_modules/
 src-tauri/target/
 *.rs.bk
 
+# Tauri-generated capability schemas: regenerated per-platform on every build
+# from src-tauri/capabilities/ + plugin ACLs, so committing them causes
+# cross-machine churn (a build on one OS rewrites them and blocks the next
+# pull on another). They are derived artifacts, not source.
+src-tauri/gen/schemas/
+
 # Frontend build
 dist/
 
