@@ -535,7 +535,7 @@ body.is-resizing-pane .pane-resizer {
   color: var(--status-fg);
   font-size: var(--text-sm);
   padding: 1px 8px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -908,6 +908,9 @@ svg.lucide {
 .pane-action-btn {
   background: none;
   border: 1px solid var(--border-input);
+  /* Small pill controls (agenda Task/Tags/Date/Sort pills, a few sidebar
+     actions) — the small-control radius, shared with the other compact
+     controls via --radius-control. */
   border-radius: var(--radius-control);
   cursor: pointer;
   display: inline-flex;
@@ -1054,7 +1057,7 @@ svg.lucide {
   margin: 4px 2px;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   font-size: var(--text-md);
   white-space: nowrap;
@@ -3342,7 +3345,7 @@ svg.lucide {
   align-items: center;
   gap: 8px;
   padding: 3px 4px;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
@@ -3378,7 +3381,7 @@ svg.lucide {
   justify-content: space-between;
   gap: 8px;
   padding: 3px 4px;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 .settings__userword-row:hover {
@@ -3491,7 +3494,7 @@ svg.lucide {
 .settings__number-input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-input);
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: var(--space-2) var(--space-4);
@@ -3518,7 +3521,7 @@ svg.lucide {
 .settings__text-input {
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-input);
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: var(--space-2) var(--space-4);
@@ -3538,7 +3541,7 @@ svg.lucide {
    theme; no hardcoded colours. */
 .settings__tool-card {
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   padding: 12px;
   margin-bottom: 12px;
   display: flex;
@@ -3698,7 +3701,7 @@ svg.lucide {
   border: 1px solid var(--popup-border-color);
   /* Input-attached dropdown — matches the --radius-sm of the input it
      hangs off rather than the free-floating --popup-radius. */
-  border-radius: var(--radius-input);
+  border-radius: var(--radius-md);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
 }
@@ -3751,7 +3754,7 @@ svg.lucide {
   border: 1px solid var(--border-input);
   /* Left half of a split control — round the left corners only; the
      toggle butts against the square right edge. */
-  border-radius: var(--radius-input) 0 0 var(--radius-input);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
   color: var(--fg-primary);
   font-size: var(--text-md);
   padding: 4px 8px;
@@ -3771,7 +3774,7 @@ svg.lucide {
   justify-content: center;
   background: var(--bg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 0 var(--radius-input) var(--radius-input) 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--fg-muted);
   cursor: pointer;
   padding: 0 6px;
@@ -3787,6 +3790,15 @@ svg.lucide {
   border-color: var(--accent);
 }
 
+/* Large settings form fields keep the medium (7px) corner — at full width a
+   4px radius reads as too tight for a prominent field. This also covers the
+   generic Dropdown used for settings preset selects (page size, citation
+   style, …) so every form control in the Settings panel matches. Compact
+   inputs/dropdowns elsewhere stay on the small --radius-input tier. */
+.settings__panel .dropdown__trigger {
+  border-radius: var(--radius-md);
+}
+
 .settings__combobox-dropdown {
   position: absolute;
   top: 100%;
@@ -3795,8 +3807,8 @@ svg.lucide {
   min-width: 100%;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — keeps the control's 4px radius. */
-  border-radius: var(--radius-input);
+  /* Input-attached — matches the combobox field's medium radius. */
+  border-radius: var(--radius-md);
   box-shadow: var(--popup-shadow);
   z-index: var(--z-menu);
   max-height: 180px;
@@ -3969,7 +3981,7 @@ svg.lucide {
 .settings__detect-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-primary);
   cursor: pointer;
   font-size: var(--text-base);
@@ -4035,7 +4047,7 @@ svg.lucide {
 .cm-fmt-toolbar__block-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-primary);
   cursor: pointer;
   font-size: var(--text-md);
@@ -4057,7 +4069,7 @@ svg.lucide {
 .cm-fmt-toolbar__btn {
   background: none;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--text-lg);
@@ -4232,10 +4244,12 @@ svg.lucide {
   cursor: not-allowed;
 }
 
-/* Compact size — for dense footers/toolbars (filter builder, inline panels). */
+/* Compact size — for dense footers/toolbars (filter builder, inline panels).
+   Takes the small-control radius so its tighter footprint isn't over-rounded. */
 .btn--sm {
   padding: var(--space-2) var(--space-5);
   font-size: var(--text-sm);
+  border-radius: var(--radius-control);
 }
 
 .btn--primary {
@@ -4400,7 +4414,7 @@ svg.lucide {
 .search-panel__replace-btn {
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 5px 10px;
@@ -4530,7 +4544,7 @@ svg.lucide {
   margin-left: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 6px;
@@ -4661,7 +4675,7 @@ svg.lucide {
 .search-panel__page-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 8px;
@@ -4728,7 +4742,7 @@ svg.lucide {
 .search-panel__sort-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 6px;
@@ -4967,7 +4981,7 @@ svg.lucide {
 .creation-rules__add-btn {
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 4px 10px;
@@ -5043,7 +5057,7 @@ svg.lucide {
 .creation-rules__disable-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 2px 8px;
@@ -5098,7 +5112,7 @@ svg.lucide {
 .creation-rules__restore-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 6px 16px;
@@ -5135,7 +5149,7 @@ svg.lucide {
 .creation-rules__save-btn {
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--bg-primary);
   cursor: pointer;
   padding: 6px 16px;
@@ -5150,7 +5164,7 @@ svg.lucide {
 .creation-rules__cancel-btn {
   background: none;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 6px 16px;
@@ -5167,7 +5181,7 @@ svg.lucide {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--bg-secondary);
   color: var(--fg-primary);
   font-family: var(--editor-font-mono, monospace);
@@ -5559,7 +5573,7 @@ svg.lucide {
   justify-content: center;
   padding: 2px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
@@ -6147,7 +6161,7 @@ svg.lucide {
 .right-panel__tab {
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -7643,7 +7657,7 @@ svg.lucide {
   background: var(--accent);
   color: var(--accent-text, #fff);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   padding: 6px 16px;
   font-size: var(--text-md);
   cursor: pointer;
@@ -7698,7 +7712,7 @@ svg.lucide {
   background: var(--bg-secondary);
   color: var(--fg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   padding: 4px 10px;
   font-size: var(--text-base);
   cursor: pointer;
@@ -8432,7 +8446,7 @@ svg.lucide {
   background: var(--bg-input);
   color: var(--fg-primary);
   border: 1px solid var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-input);
   padding: 3px 8px;
   padding-right: 24px;
   font-size: var(--text-sm);
@@ -9391,6 +9405,9 @@ svg.lucide {
   border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
+  /* Match .editor-header__icon-btn exactly (its sibling in the header) — without
+     pinning the font-size it inherits the larger header font and renders taller. */
+  font-size: var(--text-base);
   padding: 4px 8px;
   display: inline-flex;
   align-items: center;
@@ -10403,7 +10420,7 @@ svg.lucide {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--toolbar-float-fg);
   font-size: var(--text-md);
@@ -11248,7 +11265,7 @@ svg.lucide {
   color: var(--fg-primary);
   font-size: var(--text-sm);
   padding: 3px 8px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   cursor: pointer;
   font-family: inherit;
 }
@@ -12182,7 +12199,7 @@ svg.lucide {
   background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   padding: 6px 10px;
   font-size: var(--text-sm);
   font-family: inherit;
