@@ -13,8 +13,8 @@
 # this job marks as a Forgejo prerelease so the stable check skips it.
 #
 # Required repository secrets (Settings → Actions → Secrets):
-#   PAGES_PUSH_TOKEN  a token with write access to the repo (to create the
-#                     release and upload assets).
+#   RELEASE_TOKEN  a token with repo write access, used to create the draft
+#                  release and upload the .deb/.rpm assets via the API.
 
 on:
   push:
@@ -70,7 +70,7 @@ jobs:
 
       - name: Attach .deb and .rpm to the release
         env:
-          TOKEN: ${{ secrets.PAGES_PUSH_TOKEN }}
+          TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
