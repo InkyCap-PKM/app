@@ -6,7 +6,9 @@
 //   #note(...)            document-level metadata
 //   #tag("name")          inline tag
 //   #task("body", ...)    inline checkbox task (emits <inkycap-agenda>)
-//   #due(date, label: ...) inline dated reminder (emits <inkycap-agenda>)
+//   #due(date, label: ..., recurrence: ...) inline dated reminder
+//                         (emits <inkycap-agenda>; recurrence is an optional
+//                         repeat rule, see _fmt-recurrence)
 //   #wikilink("Name", display: ...)
 //   link-ref("Name")      link reference value (use inside note() fields)
 //   #callout("type")[...] styled admonition block
@@ -24,7 +26,7 @@
 //   <inkycap-tag>    — one per #tag(...) call, dict (name:)
 //   <inkycap-link>   — one per outgoing link (body wikilinks + link-refs in metadata)
 //   <inkycap-agenda> — one per #task(...)/#due(...) call, dict
-//                      (kind, body, due, done, tags)
+//                      (kind, body, due, done, tags, recurrence)
 //   <inkycap-annotation> — one per #annotation(...) call, dict (by, on)
 //   <inkycap-suggestion> — one per #suggestion(...) call, dict
 //                      (kind, by, on)
@@ -275,6 +277,77 @@
 }
 
 // ---------------------------------------------------------------------------
+// _fmt-date: normalize a date argument to a stable `[year]-[month]-[day]`
+// string. Accepts a `datetime` (the native, recommended form) or a string
+// (tolerated when hand-authored). Returns `none` for `none`.
+//
+// Defined here, above `note()`, because `note()` calls `_fmt-recurrence`
+// (below) which calls this — Typst `#let` has no forward references, so a
+// helper must precede every function that uses it.
+// ---------------------------------------------------------------------------
+
+#let _fmt-date(v) = {
+  if v == none { none }
+  else if type(v) == datetime { v.display("[year]-[month]-[day]") }
+  else if type(v) == str { v }
+  else { str(v) }
+}
+
+// ---------------------------------------------------------------------------
+// _fmt-recurrence: normalize a recurrence rule to a stable, queryable dict for
+// the `<inkycap-agenda>` / `<inkycap-note>` metadata. A recurrence says how a
+// dated reminder repeats; InkyCap expands occurrences against the current date
+// at view time (the note source is never rewritten), so this only stores the
+// *rule*, never materialized occurrences.
+//
+// The rule is a plain Typst dict so any Typst tool can read or build it:
+//   (freq: "day"|"week"|"month"|"year",   // required; anything else → no rule
+//    interval: 1,                         // optional int ≥ 1, default 1
+//    by-day: ("mo","we"),                 // optional; weekly only (WKST = Mon)
+//    until: datetime | "YYYY-MM-DD",      // optional inclusive end
+//    count: 5)                            // optional occurrence cap
+//
+// Returns `none` for a missing or unrecognized rule (the item just doesn't
+// recur), so a malformed value degrades gracefully instead of breaking the
+// `typst query` that reads the dict back out.
+#let _recur-weekdays = ("mo", "tu", "we", "th", "fr", "sa", "su")
+
+#let _fmt-recurrence(v) = {
+  if v == none or type(v) != dictionary {
+    none
+  } else {
+    let freq = lower(str(v.at("freq", default: "")))
+    if freq not in ("day", "week", "month", "year") {
+      none
+    } else {
+      let out = (freq: freq)
+      let interval = v.at("interval", default: 1)
+      out.insert(
+        "interval",
+        if type(interval) == int and interval >= 1 { interval } else { 1 },
+      )
+      let raw-days = v.at("by-day", default: ())
+      let day-list = if type(raw-days) == str {
+        (raw-days,)
+      } else if type(raw-days) == array {
+        raw-days
+      } else {
+        ()
+      }
+      let days = day-list
+        .map(d => lower(str(d)))
+        .filter(d => d in _recur-weekdays)
+      if days.len() > 0 { out.insert("by-day", days) }
+      let until-str = _fmt-date(v.at("until", default: none))
+      if until-str != none { out.insert("until", until-str) }
+      let count = v.at("count", default: none)
+      if type(count) == int and count >= 1 { out.insert("count", count) }
+      out
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // note: document-level metadata. Strict typing on known fields; user-defined
 // fields pass through unchanged.
 // ---------------------------------------------------------------------------
@@ -300,7 +373,13 @@
   let comma_list_fields = ("aliases",)
   let data = (:)
   for (k, v) in args.named() {
-    let coerced = if k in list_fields {
+    let coerced = if k == "recurrence" {
+      // Document-level recurrence on `#note(due: …, recurrence: (…))`.
+      // Normalize to the same queryable dict `#due` emits so the host reads
+      // both surfaces through one path. `none` (invalid/empty) still emits the
+      // key — InkyCap reads it back as "no recurrence" and the panel hides it.
+      _fmt-recurrence(v)
+    } else if k in list_fields {
       if type(v) == array { v }
       else if type(v) == str and v != "" {
         if k in comma_list_fields {
@@ -348,19 +427,6 @@
 }
 
 // ---------------------------------------------------------------------------
-// _fmt-date: normalize a date argument to a stable `[year]-[month]-[day]`
-// string. Accepts a `datetime` (the native, recommended form) or a string
-// (tolerated when hand-authored). Returns `none` for `none`.
-// ---------------------------------------------------------------------------
-
-#let _fmt-date(v) = {
-  if v == none { none }
-  else if type(v) == datetime { v.display("[year]-[month]-[day]") }
-  else if type(v) == str { v }
-  else { str(v) }
-}
-
-// ---------------------------------------------------------------------------
 // task: an inline checkbox item. Always emits <inkycap-agenda> (kind "task")
 // so the Agenda pane can aggregate it; always renders (a task is real
 // content, unlike a tag). `due` accepts a datetime or string; `done` toggles
@@ -389,19 +455,23 @@
 // captured); without it the Agenda falls back to the note title.
 // ---------------------------------------------------------------------------
 
-#let due(date, label: none) = {
+#let due(date, label: none, recurrence: none) = {
+  let rec = _fmt-recurrence(recurrence)
   [#metadata((
     kind: "date",
     body: label,
     due: _fmt-date(date),
     done: false,
     tags: (),
+    recurrence: rec,
   )) <inkycap-agenda>]
   box(
     fill: rgb("#eef2ff"),
     inset: (x: 4pt, y: 1pt),
     radius: 2pt,
-    text(size: 0.85em, _fmt-date(date)),
+    // A trailing ↻ marks a recurring reminder so the badge reads as repeating
+    // even in compiled output, not just in the Agenda.
+    text(size: 0.85em, _fmt-date(date) + (if rec != none { " \u{21BB}" } else { "" })),
   )
 }
 

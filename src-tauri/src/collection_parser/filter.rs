@@ -580,6 +580,7 @@ mod tests {
             tags: vec![],
             agenda_markers: vec![],
             unresolved_suggestions: 0,
+            recurrence: None,
         }
     }
 

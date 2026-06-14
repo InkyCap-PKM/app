@@ -405,6 +405,41 @@ pub async fn update_property(
     Ok(())
 }
 
+/// Set (or clear) a note's document-level recurrence rule
+/// (`#note(recurrence: (…))`). Passing `None` removes the argument. The rule is
+/// structured, not a generic scalar property, so it bypasses `update_property`
+/// and writes the Typst dict directly via the raw-argument upsert — keeping it
+/// out of the generic property surfaces while sharing the same round-trip-safe
+/// rewriter.
+#[tauri::command]
+pub async fn set_note_recurrence(
+    path: String,
+    recurrence: Option<crate::models::recurrence::Recurrence>,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Ok(());
+    }
+    let storage = session.get_storage().await?;
+    let path_buf = sanitize_notebox_arg(&path)?;
+
+    let content = storage.read_file(&path_buf).await?;
+    let content = crate::notebox_package::ensure_import(&content);
+    let updated = match recurrence {
+        Some(rule) => {
+            note_rewriter::set_note_property_raw(&content, "recurrence", &rule.to_typst_source())
+        }
+        None => note_rewriter::remove_note_property(&content, "recurrence"),
+    };
+    storage.write_file(&path_buf, &updated).await?;
+
+    reindex_note(&path_buf, &updated, &session).await;
+
+    Ok(())
+}
+
 /// Read a notebox media file as raw bytes, returned to the webview as an
 /// ArrayBuffer (no base64 inflation). The frontend wraps these in a `blob:`
 /// URL to play `#video` / `#audio`: WebKitGTK doesn't reliably stream media

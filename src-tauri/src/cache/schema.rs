@@ -7,7 +7,7 @@
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 pub const CREATE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
@@ -29,6 +29,7 @@ pub const CREATE_STATEMENTS: &[&str] = &[
         content TEXT,
         agenda_json TEXT NOT NULL DEFAULT '[]',
         unresolved_suggestions INTEGER NOT NULL DEFAULT 0,
+        recurrence_json TEXT NOT NULL DEFAULT 'null',
         PRIMARY KEY (notebox_id, path)
     )",
     "CREATE TABLE IF NOT EXISTS file_tags (

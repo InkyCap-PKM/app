@@ -8,7 +8,7 @@ import {
   hoveredGraphNode,
   setHoveredContextNote,
 } from "../stores/mycelial";
-import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
+import type { LinkInfo, PropertyType, PropertyValue, Recurrence } from "../lib/types";
 import { normalizePath } from "../lib/paths";
 import { compareZid } from "../lib/sort";
 import { createNoteForTarget } from "../lib/wikilink-nav";
@@ -28,6 +28,7 @@ import {
   inferPropertyType,
 } from "../stores/propertyTypes";
 import PropertyEditor from "./PropertyEditor";
+import RecurrenceEditor from "./RecurrenceEditor";
 import OutlinePanel from "./OutlinePanel";
 import AnnotationsPanel from "./AnnotationsPanel";
 import {
@@ -876,6 +877,52 @@ const RightPanel: Component = () => {
     }
   }
 
+  // Serialize recurrence writes: each edit is a read-modify-write of the same
+  // `#note(...)` call, so overlapping in-flight writes would race and drop one
+  // another. Chaining makes every write read the file only after the previous
+  // one has fully landed and reindexed — and the final write's
+  // `bumpPropertyVersion` then refreshes the Agenda / Collection agenda against
+  // the settled state.
+  let recurrenceWriteChain: Promise<unknown> = Promise.resolve();
+  function handleRecurrenceChange(recurrence: Recurrence | null) {
+    const tab = activeFileTab();
+    if (!tab) return;
+    recurrenceWriteChain = recurrenceWriteChain
+      .catch(() => {})
+      .then(async () => {
+        try {
+          // Flush pending editor writes first, mirroring handlePropertySave —
+          // the backend reads and rewrites the file.
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 200);
+            document.dispatchEvent(
+              new CustomEvent("inkycap:flush-editor", {
+                detail: { path: tab.path, done: () => { clearTimeout(timeout); resolve(); } },
+              }),
+            );
+          });
+
+          await ipc.setNoteRecurrence(tab.path, recurrence);
+          await refetchMetadata();
+          bumpPropertyVersion();
+          document.dispatchEvent(
+            new CustomEvent("inkycap:note-property-changed", { detail: { path: tab.path } }),
+          );
+        } catch (err) {
+          toastError(t("rightPanel.toast.updatePropFailed"), err);
+        }
+      });
+  }
+
+  /** The note recurs on its own `due` date when it carries a `due` property and
+   *  is not a checkbox task (recurrence is reminder-only). */
+  const noteDueRecurs = () => {
+    const props = metadata()?.properties ?? {};
+    const due = props["due"];
+    const hasDue = due !== undefined && due !== null && due !== "";
+    return hasDue && !("task" in props) && !activeFileIsScaffold();
+  };
+
   async function handleRemoveProperty(key: string) {
     const tab = activeFileTab();
     if (!tab) return;
@@ -1610,6 +1657,7 @@ const RightPanel: Component = () => {
                         const dropBelow = () =>
                           dragOverKey() === key && dropPosition() === "after";
                         return (
+                          <>
                           <div
                             class={
                               `property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}` +
@@ -1652,6 +1700,18 @@ const RightPanel: Component = () => {
                               {"\u22EE"}
                             </button>
                           </div>
+                          {/* Recurrence is a subsection of the `due` date \u2014 it
+                              repeats that date, so it reads as nested under it
+                              rather than as a free-standing panel. */}
+                          <Show when={key === "due" && noteDueRecurs()}>
+                            <div class="property-recurrence">
+                              <RecurrenceEditor
+                                value={meta().recurrence ?? null}
+                                onChange={handleRecurrenceChange}
+                              />
+                            </div>
+                          </Show>
+                          </>
                         );
                       }}
                     </For>

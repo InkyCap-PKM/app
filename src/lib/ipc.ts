@@ -28,6 +28,7 @@ import type {
   MycelialData,
   PropertyType,
   AgendaItem,
+  Recurrence,
   ConnectionFlags,
   ScrollEntry,
   ScrollFilter,
@@ -221,6 +222,16 @@ export async function updateProperty(
   value: PropertyValue,
 ): Promise<void> {
   return invoke<void>("update_property", { path, key, value });
+}
+
+/** Set (or clear, with `null`) a note's document-level recurrence rule
+ *  (`#note(recurrence: …)`). Written as a Typst dict via the round-trip-safe
+ *  rewriter, separate from the generic property path. */
+export async function setNoteRecurrence(
+  path: string,
+  recurrence: Recurrence | null,
+): Promise<void> {
+  return invoke<void>("set_note_recurrence", { path, recurrence });
 }
 
 // Collection CRUD

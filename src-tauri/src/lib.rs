@@ -294,6 +294,7 @@ pub fn run() {
             commands::files::get_forward_links,
             commands::files::write_file_content,
             commands::files::update_property,
+            commands::files::set_note_recurrence,
             commands::files::resolve_embed_path,
             commands::files::read_media_bytes,
             commands::files::read_embed_bytes,
