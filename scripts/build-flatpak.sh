@@ -24,8 +24,8 @@ cd "$REPO_ROOT"
 
 APP_ID="com.inkycap.editor"
 MANIFEST="flatpak/$APP_ID.yml"
-RUNTIME_VER="48"
-FFMPEG_VER="24.08"
+RUNTIME_VER="50"
+FFMPEG_VER="25.08"
 
 command -v flatpak >/dev/null 2>&1 || {
   echo "flatpak not found. Install it:  sudo apt install flatpak flatpak-builder" >&2; exit 1; }
