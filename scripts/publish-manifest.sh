@@ -50,7 +50,26 @@ fi
 VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version)")"
 RELEASE="${VERSION##*.}"
 if [ $((RELEASE % 2)) -eq 0 ]; then CHANNEL="stable"; else CHANNEL="beta"; fi
-TAG="v${VERSION}"
+
+# Resolve the tag the release ACTUALLY lives under on the remote rather than
+# assuming a `v` prefix. Releases have historically been cut both ways
+# (`v26.6.2` but `26.6.6`), and the manifest's download URLs must match the
+# tag the assets live under — a mismatch yields 404s the in-app updater can't
+# recover from. Prefer the `v`-prefixed tag when both exist.
+resolve_tag() {
+  local v="$1" cand
+  for cand in "v${v}" "${v}"; do
+    if git ls-remote --tags "$REMOTE" "refs/tags/${cand}" | grep -q .; then
+      printf '%s' "$cand"; return 0
+    fi
+  done
+  return 1
+}
+TAG="$(resolve_tag "$VERSION")" || {
+  echo "No release tag for ${VERSION} on ${REMOTE} (looked for v${VERSION} and ${VERSION})." >&2
+  echo "Push the tag and publish the release before publishing the manifest." >&2
+  exit 1; }
+echo "==> Using release tag: ${TAG}"
 BASE="https://codeberg.org/InkyCap/app/releases/download/${TAG}"
 OUT="${REPO_ROOT}/latest.json"
 
@@ -61,6 +80,27 @@ npm run manifest:gen -- \
   --artifacts "${ARTIFACTS_DIR}" \
   --notes "See https://codeberg.org/InkyCap/app/releases/tag/${TAG}" \
   --out "${OUT}"
+
+# Refuse to publish a manifest that points at URLs which 404. This catches the
+# two ways a release goes wrong silently: assets still on a DRAFT release (not
+# public yet), and a tag/URL mismatch. Without this guard the manifest looks
+# fine but every client that tries to update hits a dead link.
+echo "==> Verifying release assets resolve before publishing"
+mapfile -t URLS < <(node -e '
+  const fs = require("fs");
+  const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  for (const p of Object.values(m.platforms || {})) console.log(p.url);
+' "$OUT")
+[ "${#URLS[@]}" -gt 0 ] || { echo "Generated manifest has no platform URLs." >&2; exit 1; }
+for url in "${URLS[@]}"; do
+  code="$(curl -sIL -o /dev/null -w '%{http_code}' "$url")"
+  if [ "$code" != "200" ]; then
+    echo "Asset does not resolve (HTTP ${code}): ${url}" >&2
+    echo "The release may still be a draft, or the tag/URL is wrong. Aborting." >&2
+    exit 1
+  fi
+  echo "    ok ${code}  ${url}"
+done
 
 echo "==> Publishing to pages:${CHANNEL}/latest.json"
 WORK="$(mktemp -d)"
