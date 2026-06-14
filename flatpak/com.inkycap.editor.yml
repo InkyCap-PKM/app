@@ -10,7 +10,7 @@
 # The app-id matches the Tauri identifier in src-tauri/tauri.conf.json.
 id: com.inkycap.editor
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 command: inkycap
 
@@ -27,7 +27,7 @@ finish-args:
   # Service; without this the backup settings can't reach the keyring).
   - --talk-name=org.freedesktop.secrets
   # Network: Zotero connector (localhost), @preview Typst package downloads,
-  # git remotes, updater endpoint.
+  # git remotes, and the release-update check (Codeberg API).
   - --share=network
   # ssh-agent, for git collaboration over SSH remotes. (Key files in ~/.ssh
   # are already readable via --filesystem=home for libgit2's direct path.)
@@ -44,11 +44,11 @@ finish-args:
 
 # Full ffmpeg for audio/video playback (#video / #audio) via the runtime's
 # GStreamer libav plugin. Version tracks the freedesktop base of the GNOME
-# runtime above (GNOME 48 -> freedesktop 24.08).
+# runtime above (GNOME 50 -> freedesktop 25.08).
 add-extensions:
   org.freedesktop.Platform.ffmpeg-full:
     directory: lib/ffmpeg
-    version: '24.08'
+    version: '25.08'
     add-ld-path: .
     autodelete: false
 
