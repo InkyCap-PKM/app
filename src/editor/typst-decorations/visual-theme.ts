@@ -106,6 +106,33 @@ export const visualTheme = EditorView.theme({
     overflowX: "auto",
     lineHeight: "1.4",
   },
+  // Selection visibility over inline content that paints its own opaque
+  // background. The editor draws selection with CM's `drawSelection` layer,
+  // which sits *behind* `.cm-content` and is hidden anywhere an opaque
+  // background is stacked on top — highlight fills, code spans, tag/due chips,
+  // wikilink/pill styling. The result is a drag-select that visibly skips over
+  // those spans. Re-enable the native `::selection` paint for them so the
+  // selection band shows on top of their own background, the same fix table
+  // cells use below. WebKitGTK honours only `background-color` (not the
+  // `background` shorthand) inside `::selection`.
+  [[
+    ".cm-typst-highlight",
+    ".cm-typst-raw-inline",
+    ".cm-typst-raw-block",
+    ".cm-typst-tag",
+    ".cm-typst-due",
+    ".cm-typst-task__due",
+    ".cm-typst-wikilink",
+    ".cm-typst-pill",
+    ".cm-typst-func-chip",
+  ]
+    // Match both the element itself and any nested spans (chips wrap their
+    // label/value in inner spans), so the selection paints across all of it.
+    .flatMap((s) => [`${s}::selection`, `${s} *::selection`])
+    .join(", ")]: {
+    backgroundColor: "var(--bg-selection, Highlight)",
+    color: "inherit",
+  },
   ".cm-typst-link": {
     color: "var(--syntax-link)",
     textDecoration: "underline",

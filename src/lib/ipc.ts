@@ -502,6 +502,8 @@ export interface OutboundLink {
   resolved: boolean;
   modified_time: number;
   created_time: number;
+  /** The resolved note's `#note(zid:)`, or null (always null when unresolved). */
+  zid?: string | null;
 }
 
 export async function getOutboundLinks(path: string): Promise<OutboundLink[]> {
@@ -516,6 +518,8 @@ export interface PotentialLink {
   context_after: string[];
   modified_time: number;
   created_time: number;
+  /** The mentioning note's `#note(zid:)`, or null when absent. */
+  zid?: string | null;
 }
 
 /// Find notes that mention the current note's name in plain text but

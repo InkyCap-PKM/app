@@ -20,7 +20,9 @@ export type LinksSortMode =
   | "modified-desc"
   | "modified-asc"
   | "created-desc"
-  | "created-asc";
+  | "created-asc"
+  | "zid-asc"
+  | "zid-desc";
 
 // `labelKey` (not a resolved string) so the label is translated at the render
 // site and these modes share one vocabulary with the file-tree sort menu —
@@ -32,6 +34,8 @@ export const LINKS_SORT_OPTIONS: { value: LinksSortMode; labelKey: string }[] = 
   { value: "modified-asc", labelKey: "sort.modified.asc" },
   { value: "created-desc", labelKey: "sort.created.desc" },
   { value: "created-asc", labelKey: "sort.created.asc" },
+  { value: "zid-asc", labelKey: "sort.zid.asc" },
+  { value: "zid-desc", labelKey: "sort.zid.desc" },
 ];
 
 export type LinksSection = "inbound" | "outbound" | "potential";

@@ -277,6 +277,9 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileTreeNode>> {
             children: if is_dir { Some(Vec::new()) } else { None },
             modified_time,
             created_time,
+            // The storage layer doesn't parse note metadata; the
+            // `get_file_tree` command fills zid from the property index.
+            zid: None,
         };
 
         children_map.entry(parent).or_default().push(node);

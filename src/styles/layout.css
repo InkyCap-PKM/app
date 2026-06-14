@@ -572,7 +572,7 @@ body.is-resizing-pane .pane-resizer {
   padding: 0 6px;
   height: 100%;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .status-bar__count:hover,
@@ -598,7 +598,7 @@ body.is-resizing-pane .pane-resizer {
   padding: 0 6px;
   height: 100%;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .status-bar__spell:hover {
@@ -667,7 +667,7 @@ body.is-resizing-pane .pane-resizer {
   justify-content: center;
   background: none;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   color: var(--fg-dim);
   cursor: pointer;
   padding: 1px;

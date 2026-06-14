@@ -18,12 +18,26 @@ interface ResolvedWikilink {
   name: string;
 }
 
+/**
+ * Create a brand-new note for an unresolved wikilink/link target, named after
+ * the target. Runs the built-in "New Note" creation rule rather than writing a
+ * blank file, so a note born from a wikilink gets the same scaffold — title,
+ * date, zid, heading — and folder placement as one made from Ctrl+N or the New
+ * Note button. The target is forced as the filename so `[[target]]` resolves
+ * to it afterwards (the rule's own filename pattern / ZID auto-title is
+ * bypassed). Returns the created note's path.
+ */
+export async function createNoteForTarget(target: string): Promise<string> {
+  const result = await ipc.executeCreationRule("new-note", target);
+  return result.path;
+}
+
 /** Resolve a wikilink target to a note path, creating the note if it does
  *  not yet exist. Mirrors the resolution the editor performs on plain
  *  left-click so every entry point behaves identically. */
 async function resolveOrCreateWikilink(target: string): Promise<ResolvedWikilink> {
   const resolved = await ipc.resolveWikilink(target);
-  const path = resolved ?? (await ipc.createNote(target, ""));
+  const path = resolved ?? (await createNoteForTarget(target));
   const name = path.replace(/\.typ$/, "").split("/").pop() ?? target;
   return { path, name };
 }

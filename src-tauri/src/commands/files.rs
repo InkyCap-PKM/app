@@ -20,6 +20,9 @@ pub struct LinkInfo {
     /// sort treats 0 as "unknown" and pushes the entry to the bottom.
     pub modified_time: u64,
     pub created_time: u64,
+    /// The linked note's `#note(zid:)`, when present. `None` for notes
+    /// without a zid — the Links pane's zid sort pushes those to the end.
+    pub zid: Option<String>,
 }
 
 fn file_times(path: &std::path::Path) -> (u64, u64) {
@@ -63,7 +66,35 @@ pub async fn get_file_tree(
 ) -> Result<Vec<FileTreeNode>, InkyCapError> {
     let session = state.session(window.label()).await;
     let storage = session.get_storage().await?;
-    storage.get_file_tree().await
+    let mut tree = storage.get_file_tree().await?;
+
+    // Enrich note nodes with their `zid` so the file tree can sort by it.
+    // The storage walk doesn't read note metadata; join against the property
+    // index here under a single brief read lock (a hashmap lookup per node,
+    // no extra file I/O).
+    {
+        let index = session.property_index.read().await;
+        enrich_tree_zids(&mut tree, &index);
+    }
+    Ok(tree)
+}
+
+/// Recursively fill each file node's `zid` from the property index. Directory
+/// nodes never carry a zid; their children are walked instead.
+fn enrich_tree_zids(
+    nodes: &mut [FileTreeNode],
+    index: &crate::scanner::property_index::PropertyIndex,
+) {
+    for node in nodes.iter_mut() {
+        if let Some(children) = node.children.as_mut() {
+            enrich_tree_zids(children, index);
+        } else {
+            node.zid = index
+                .notes
+                .get(&PathBuf::from(&node.path))
+                .and_then(|m| m.zid());
+        }
+    }
 }
 
 /// Return parsed `#note(...)` metadata for a file, falling back to on-demand reindex if not yet cached.
@@ -99,15 +130,17 @@ pub async fn get_file_metadata(
         .ok_or(InkyCapError::FileNotFound(path))
 }
 
-/// Stat a list of linked note paths into [`LinkInfo`] rows. The filesystem
-/// stats run on a blocking pool — never on the async worker, and never while
-/// holding the `link_index` read lock (a concurrent reindex needs the write
-/// lock). Callers snapshot the path list off the index first, then call this.
-async fn link_infos_for(paths: Vec<PathBuf>) -> Vec<LinkInfo> {
+/// Stat a list of linked notes into [`LinkInfo`] rows. The filesystem stats
+/// run on a blocking pool — never on the async worker, and never while holding
+/// the `link_index` / `property_index` read lock (a concurrent reindex needs
+/// the write lock). Callers snapshot the `(path, zid)` pairs off the indexes
+/// first, then call this; `zid` is read from the property index because it
+/// lives in the note's `#note(...)` metadata, not on the filesystem.
+async fn link_infos_for(paths: Vec<(PathBuf, Option<String>)>) -> Vec<LinkInfo> {
     tauri::async_runtime::spawn_blocking(move || {
         paths
             .into_iter()
-            .map(|p| {
+            .map(|(p, zid)| {
                 let name = p
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -118,12 +151,30 @@ async fn link_infos_for(paths: Vec<PathBuf>) -> Vec<LinkInfo> {
                     name,
                     modified_time: mtime,
                     created_time: ctime,
+                    zid,
                 }
             })
             .collect()
     })
     .await
     .unwrap_or_default()
+}
+
+/// Pair each path with the `zid` recorded in the property index, snapshotting
+/// under a brief read lock so no lock is held across the stat I/O that
+/// [`link_infos_for`] performs.
+async fn paths_with_zid(
+    session: &NoteboxSession,
+    paths: Vec<PathBuf>,
+) -> Vec<(PathBuf, Option<String>)> {
+    let index = session.property_index.read().await;
+    paths
+        .into_iter()
+        .map(|p| {
+            let zid = index.notes.get(&p).and_then(|m| m.zid());
+            (p, zid)
+        })
+        .collect()
 }
 
 /// Return all notes that link to the given file path via wikilinks.
@@ -141,7 +192,7 @@ pub async fn get_backlinks(
         let link_index = session.link_index.read().await;
         link_index.get_backlinks(&path_buf)
     };
-    Ok(link_infos_for(backlinks).await)
+    Ok(link_infos_for(paths_with_zid(&session, backlinks).await).await)
 }
 
 /// Return all notes that the given file links to via wikilinks.
@@ -159,7 +210,7 @@ pub async fn get_forward_links(
         let link_index = session.link_index.read().await;
         link_index.get_forward_links(&path_buf)
     };
-    Ok(link_infos_for(links).await)
+    Ok(link_infos_for(paths_with_zid(&session, links).await).await)
 }
 
 /// One entry in the Outbound Links section of the right-panel Links tab.
@@ -181,6 +232,9 @@ pub struct OutboundLink {
     pub resolved: bool,
     pub modified_time: u64,
     pub created_time: u64,
+    /// The resolved note's `#note(zid:)`, when present. Always `None` for
+    /// unresolved targets (no note to read it from).
+    pub zid: Option<String>,
 }
 
 /// Return every wikilink target from the note's `#note(...)` metadata,
@@ -217,11 +271,20 @@ pub async fn get_outbound_links(
         }
     };
 
-    // Snapshot all known note paths once to feed the stem resolver in a
-    // single allocation rather than re-snapping per-target.
-    let all_paths: Vec<PathBuf> = {
+    // Snapshot all known note paths plus their zids once to feed the stem
+    // resolver in a single allocation rather than re-snapping per-target.
+    let (all_paths, zid_by_path): (
+        Vec<PathBuf>,
+        std::collections::HashMap<PathBuf, Option<String>>,
+    ) = {
         let prop_index = session.property_index.read().await;
-        prop_index.notes.keys().cloned().collect()
+        let paths: Vec<PathBuf> = prop_index.notes.keys().cloned().collect();
+        let zids = prop_index
+            .notes
+            .iter()
+            .map(|(p, m)| (p.clone(), m.zid()))
+            .collect();
+        (paths, zids)
     };
 
     // Dedup raw targets — a note may wikilink to the same target several
@@ -256,6 +319,7 @@ pub async fn get_outbound_links(
                 resolved: false,
                 modified_time: 0,
                 created_time: 0,
+                zid: None,
             });
             continue;
         }
@@ -267,6 +331,7 @@ pub async fn get_outbound_links(
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
         let (mtime, ctime) = file_times(&resolved_path);
+        let zid = zid_by_path.get(&resolved_path).cloned().flatten();
         out.push(OutboundLink {
             target: raw,
             path: to_frontend_string(&resolved_path),
@@ -274,6 +339,7 @@ pub async fn get_outbound_links(
             resolved: true,
             modified_time: mtime,
             created_time: ctime,
+            zid,
         });
     }
     Ok(out)
@@ -926,6 +992,9 @@ pub struct PotentialLink {
     pub context_after: Vec<String>,
     pub modified_time: u64,
     pub created_time: u64,
+    /// The mentioning note's `#note(zid:)`, when present. `None` pushes the
+    /// row to the end of the Links pane's zid sort.
+    pub zid: Option<String>,
 }
 
 /// Find notes that mention the current note's filename stem as a phrase but
@@ -970,6 +1039,17 @@ pub async fn get_potential_links(
     let results = {
         let engine = session.search_engine.read().await;
         engine.search(&parsed, 300)
+    };
+
+    // Snapshot zids for the mentioning notes once so the loop below — which
+    // has no await points — never holds a lock across its work.
+    let zid_by_path: std::collections::HashMap<PathBuf, Option<String>> = {
+        let prop_index = session.property_index.read().await;
+        prop_index
+            .notes
+            .iter()
+            .map(|(p, m)| (p.clone(), m.zid()))
+            .collect()
     };
 
     let stem_lower = stem.to_lowercase();
@@ -1022,6 +1102,7 @@ pub async fn get_potential_links(
             // values, which we never see for notebox files.
             modified_time: r.modified_time.max(0) as u64,
             created_time: r.created_time.max(0) as u64,
+            zid: zid_by_path.get(&p).cloned().flatten(),
         });
     }
     Ok(out)
