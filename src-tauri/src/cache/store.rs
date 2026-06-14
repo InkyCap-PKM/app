@@ -29,6 +29,8 @@ pub struct CachedFile {
     pub links: Vec<String>,
     /// Inline `#task` / `#due` markers from the note body.
     pub agenda_markers: Vec<crate::models::note::AgendaMarker>,
+    /// Document-level `#note(recurrence: …)` repeat rule, if any.
+    pub recurrence: Option<crate::models::recurrence::Recurrence>,
     /// Count of unresolved `#suggestion(...)` tracked changes — the notebox-wide
     /// "still awaiting accept/reject" signal, cached so the indicator survives
     /// app restarts without recompiling every note.
@@ -128,7 +130,7 @@ impl MetadataCache {
         // Pull all `files` rows for this notebox.
         {
             let mut stmt = conn.prepare(
-                "SELECT path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions \
+                "SELECT path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions, recurrence_json \
                  FROM files WHERE notebox_id = ?1",
             )?;
             let rows = stmt.query_map(params![notebox_id], |row| {
@@ -140,6 +142,7 @@ impl MetadataCache {
                 let content: Option<String> = row.get(5)?;
                 let agenda_json: String = row.get(6)?;
                 let unresolved_suggestions: i64 = row.get(7)?;
+                let recurrence_json: String = row.get(8)?;
                 Ok((
                     path,
                     mtime,
@@ -149,6 +152,7 @@ impl MetadataCache {
                     content,
                     agenda_json,
                     unresolved_suggestions,
+                    recurrence_json,
                 ))
             })?;
 
@@ -162,6 +166,7 @@ impl MetadataCache {
                     content,
                     agenda_json,
                     unresolved_suggestions,
+                    recurrence_json,
                 ) = row?;
                 let properties: HashMap<String, PropertyValue> =
                     serde_json::from_str(&properties_json).map_err(|e| {
@@ -171,6 +176,8 @@ impl MetadataCache {
                 // failing the whole cache read — the markers are rebuilt on
                 // the next compile of that file anyway.
                 let agenda_markers = serde_json::from_str(&agenda_json).unwrap_or_default();
+                // Same degrade-to-default policy for the recurrence rule.
+                let recurrence = serde_json::from_str(&recurrence_json).unwrap_or_default();
                 files.insert(
                     PathBuf::from(&path),
                     CachedFile {
@@ -182,6 +189,7 @@ impl MetadataCache {
                         tags: Vec::new(),
                         links: Vec::new(),
                         agenda_markers,
+                        recurrence,
                         unresolved_suggestions: unresolved_suggestions.max(0) as u32,
                         content,
                     },
@@ -244,8 +252,8 @@ impl MetadataCache {
         let tx = conn.transaction()?;
         {
             let mut upsert_file = tx.prepare(
-                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                "INSERT INTO files (notebox_id, path, mtime, size, properties_json, title, content, agenda_json, unresolved_suggestions, recurrence_json) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
                  ON CONFLICT(notebox_id, path) DO UPDATE SET \
                     mtime = excluded.mtime, \
                     size = excluded.size, \
@@ -253,7 +261,8 @@ impl MetadataCache {
                     title = excluded.title, \
                     content = excluded.content, \
                     agenda_json = excluded.agenda_json, \
-                    unresolved_suggestions = excluded.unresolved_suggestions",
+                    unresolved_suggestions = excluded.unresolved_suggestions, \
+                    recurrence_json = excluded.recurrence_json",
             )?;
             let mut delete_tags =
                 tx.prepare("DELETE FROM file_tags WHERE notebox_id = ?1 AND path = ?2")?;
@@ -271,6 +280,7 @@ impl MetadataCache {
                 let path_str = file.path.to_string_lossy().to_string();
                 let properties_json = serde_json::to_string(&file.properties)?;
                 let agenda_json = serde_json::to_string(&file.agenda_markers)?;
+                let recurrence_json = serde_json::to_string(&file.recurrence)?;
 
                 upsert_file.execute(params![
                     notebox_id,
@@ -282,6 +292,7 @@ impl MetadataCache {
                     file.content,
                     agenda_json,
                     file.unresolved_suggestions as i64,
+                    recurrence_json,
                 ])?;
 
                 delete_tags.execute(params![notebox_id, &path_str])?;

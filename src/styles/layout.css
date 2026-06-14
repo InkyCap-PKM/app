@@ -899,6 +899,12 @@ svg.lucide {
   gap: 4px;
 }
 
+.agenda__controls-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 /* Shared chrome for action buttons that live inside sidebar panes
    (file tree, collections, agenda): a subtle outline at rest that lights
    up with the same colour highlight as the sidebar mode buttons on hover.
@@ -1023,10 +1029,28 @@ svg.lucide {
   visibility: hidden;
 }
 
+.agenda__item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
 .agenda__item-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Cadence/end-date line under a recurring item's current occurrence — quiet,
+   single-line, so it informs without competing with the title. */
+.agenda__recur-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
 }
 
 .agenda__item--done .agenda__item-text {
@@ -1044,6 +1068,144 @@ svg.lucide {
 .agenda__date--overdue {
   color: var(--accent-danger);
   font-weight: 500;
+}
+
+.agenda__recur-icon {
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  color: var(--fg-dim);
+}
+
+.agenda__recur-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.agenda__recur-caret:hover {
+  color: var(--fg-primary);
+  background: var(--surface-1);
+}
+
+/* Revealed child occurrences indent under their series' current-occurrence
+   row so the group reads as nested. */
+.agenda__item--recurrence-future {
+  padding-left: 28px;
+}
+
+/* Later occurrences of a recurring series read as quieter echoes of the
+   current one, so a frequent reminder is visible without crowding out one-off
+   items. The current (next) occurrence keeps full strength. */
+.agenda__item--recurrence-future .agenda__item-text {
+  color: var(--fg-muted);
+}
+
+.agenda__item--recurrence-future .agenda__date,
+.agenda__item--recurrence-future .agenda__recur-icon {
+  color: var(--fg-dim);
+}
+
+/* Recurrence editor (the "Repeat" control in the property panel).
+   Rendered as an indented subsection beneath the `due` property row, so it
+   reads as belonging to that date rather than as a free-standing panel. */
+.property-recurrence {
+  padding: var(--space-1) 0 var(--space-3) var(--space-5);
+}
+
+.recurrence-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recurrence-editor--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.recurrence-editor__toggle,
+.recurrence-editor__until-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+
+.recurrence-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-1);
+}
+
+.recurrence-editor__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.recurrence-editor__label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.recurrence-editor__interval {
+  width: 3rem;
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: center;
+}
+
+.recurrence-editor__weekdays {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.recurrence-editor__weekday {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-input);
+  background: var(--surface-1);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.recurrence-editor__weekday--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.recurrence-editor__summary {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
 }
 
 /* Tabs */

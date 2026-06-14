@@ -17,12 +17,14 @@
 // grouping and filtering that operate on the same flat payload.
 // ---------------------------------------------------------------------------
 
+use chrono::{Duration, Local, NaiveDate};
 use tauri::State;
 
 use crate::collection_parser::model::parse_collection_file;
 use crate::commands::collections::resolve_collection_members;
 use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
+use crate::models::recurrence::Recurrence;
 use crate::state::AppState;
 use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
@@ -58,6 +60,16 @@ pub struct AgendaItem {
     pub tags: Vec<String>,
     /// The host note's `zid`, when present.
     pub zid: Option<String>,
+    /// True when this row is one occurrence of a recurring reminder. The Agenda
+    /// de-emphasizes later occurrences and shows a repeat affordance.
+    pub recurring: bool,
+    /// For a recurring series: `0` for the current/next occurrence (shown at
+    /// full emphasis), `1, 2, …` for subsequent upcoming ones (muted). `None`
+    /// for non-recurring items.
+    pub occurrence_index: Option<u32>,
+    /// The repeat rule, attached to every occurrence row so the frontend can
+    /// render a human summary ("Every 2 weeks"). `None` for non-recurring items.
+    pub recurrence: Option<Recurrence>,
 }
 
 fn prop_str(note: &NoteMetadata, key: &str) -> Option<String> {
@@ -91,9 +103,99 @@ fn note_task_state(note: &NoteMetadata) -> Option<bool> {
     }
 }
 
+/// How far ahead the Agenda materializes recurring occurrences. A reminder is
+/// a glanceable list, not a full calendar, so an unbounded rule is expanded
+/// only across roughly a year.
+const RECUR_HORIZON_DAYS: i64 = 366;
+
+/// Safety cap on occurrence rows emitted per recurring series. The real bound
+/// is the rule's `until`/`count` or [`RECUR_HORIZON_DAYS`]; this only guards
+/// against a pathological daily-unbounded rule producing an unbounded list. The
+/// Agenda collapses recurring series to a single row by default (the user can
+/// expand them), so the full series is emitted here and filtered frontend-side.
+const MAX_OCCURRENCES_PER_SERIES: usize = 366;
+
+fn parse_iso_date(s: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok()
+}
+
+/// One agenda row's fields before recurrence is applied. Threaded into
+/// [`push_dated_item`] so the recurring and non-recurring paths share a shape.
+struct DatedRow<'a> {
+    base_id: String,
+    source: &'a str,
+    is_task: bool,
+    note_path: &'a str,
+    note_title: &'a str,
+    text: String,
+    /// The anchor due date (ISO `YYYY-MM-DD`), or `None`.
+    date: Option<String>,
+    created: Option<String>,
+    done: bool,
+    tags: Vec<String>,
+    zid: Option<String>,
+}
+
+/// Append a dated row to `items`, expanding a recurrence rule into upcoming
+/// occurrences when present. Recurrence is virtual: each occurrence is computed
+/// against `today`, the note source is never touched. When a rule yields no
+/// upcoming occurrence (series ended, or anchor beyond the horizon) the row
+/// falls back to a single plain item at its anchor date, so an authored item
+/// never silently disappears from the Agenda.
+fn push_dated_item(
+    items: &mut Vec<AgendaItem>,
+    row: DatedRow<'_>,
+    recurrence: Option<&Recurrence>,
+    today: NaiveDate,
+) {
+    if let (Some(rule), Some(anchor)) = (recurrence, row.date.as_deref().and_then(parse_iso_date)) {
+        let horizon = today + Duration::days(RECUR_HORIZON_DAYS);
+        let occ = rule.occurrences(anchor, today, horizon, MAX_OCCURRENCES_PER_SERIES);
+        if !occ.is_empty() {
+            for (i, date) in occ.iter().enumerate() {
+                items.push(AgendaItem {
+                    id: format!("{}#r{i}", row.base_id),
+                    source: row.source.to_string(),
+                    is_task: row.is_task,
+                    note_path: row.note_path.to_string(),
+                    note_title: row.note_title.to_string(),
+                    text: row.text.clone(),
+                    date: Some(date.format("%Y-%m-%d").to_string()),
+                    created: row.created.clone(),
+                    done: row.done,
+                    tags: row.tags.clone(),
+                    zid: row.zid.clone(),
+                    recurring: true,
+                    occurrence_index: Some(i as u32),
+                    recurrence: Some(rule.clone()),
+                });
+            }
+            return;
+        }
+    }
+
+    items.push(AgendaItem {
+        id: row.base_id,
+        source: row.source.to_string(),
+        is_task: row.is_task,
+        note_path: row.note_path.to_string(),
+        note_title: row.note_title.to_string(),
+        text: row.text,
+        date: row.date,
+        created: row.created,
+        done: row.done,
+        tags: row.tags,
+        zid: row.zid,
+        recurring: false,
+        occurrence_index: None,
+        recurrence: None,
+    });
+}
+
 /// The shared aggregation core: turn a set of notes into a flat list of
-/// agenda items. Pure — no locking, no I/O — so both commands can reuse it.
-fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
+/// agenda items, expanding recurring reminders against `today`. Pure — no
+/// locking, no I/O — so both commands can reuse it (and tests pin `today`).
+fn agenda_items_for_notes(notes: &[&NoteMetadata], today: NaiveDate) -> Vec<AgendaItem> {
     let mut items = Vec::new();
 
     for note in notes {
@@ -119,19 +221,31 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
         let is_task = task_state.is_some();
         let note_date = prop_str(note, "due");
         if is_task || note_date.is_some() {
-            items.push(AgendaItem {
-                id: format!("{path}#note"),
-                source: "note".to_string(),
-                is_task,
-                note_path: path.clone(),
-                note_title: title.clone(),
-                text: title.clone(),
-                date: note_date,
-                created: created.clone(),
-                done: task_state.unwrap_or(false),
-                tags: note.tags.clone(),
-                zid: zid.clone(),
-            });
+            // Recurrence is reminder-only — a note that is a task ignores any
+            // document-level rule.
+            let recurrence = if is_task {
+                None
+            } else {
+                note.recurrence.as_ref()
+            };
+            push_dated_item(
+                &mut items,
+                DatedRow {
+                    base_id: format!("{path}#note"),
+                    source: "note",
+                    is_task,
+                    note_path: &path,
+                    note_title: &title,
+                    text: title.clone(),
+                    date: note_date,
+                    created: created.clone(),
+                    done: task_state.unwrap_or(false),
+                    tags: note.tags.clone(),
+                    zid: zid.clone(),
+                },
+                recurrence,
+                today,
+            );
         }
 
         // 2. Inline markers — one item per #task / #due call.
@@ -148,23 +262,39 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| title.clone());
             let marker_is_task = marker.kind == "task";
-            items.push(AgendaItem {
-                id: format!("{path}#m{idx}"),
-                source: marker.kind.clone(),
-                is_task: marker_is_task,
-                note_path: path.clone(),
-                note_title: title.clone(),
-                text,
-                date: marker.due.clone(),
-                created: created.clone(),
-                done: marker.done,
-                tags,
-                zid: zid.clone(),
-            });
+            let recurrence = if marker_is_task {
+                None
+            } else {
+                marker.recurrence.as_ref()
+            };
+            push_dated_item(
+                &mut items,
+                DatedRow {
+                    base_id: format!("{path}#m{idx}"),
+                    source: &marker.kind,
+                    is_task: marker_is_task,
+                    note_path: &path,
+                    note_title: &title,
+                    text,
+                    date: marker.due.clone(),
+                    created: created.clone(),
+                    done: marker.done,
+                    tags,
+                    zid: zid.clone(),
+                },
+                recurrence,
+                today,
+            );
         }
     }
 
     items
+}
+
+/// Today in the user's local time zone — the reference point recurring
+/// reminders expand against.
+fn local_today() -> NaiveDate {
+    Local::now().date_naive()
 }
 
 /// Notebox-wide agenda — feeds the left-sidebar Agenda pane.
@@ -176,7 +306,7 @@ pub async fn get_agenda_items(
     let session = state.session(window.label()).await;
     let index = session.property_index.read().await;
     let notes: Vec<&NoteMetadata> = index.notes.values().collect();
-    Ok(agenda_items_for_notes(&notes))
+    Ok(agenda_items_for_notes(&notes, local_today()))
 }
 
 /// Collection-scoped agenda — feeds the Collection "Agenda" view. Membership
@@ -206,7 +336,7 @@ pub async fn get_collection_agenda(
 
     let index = session.property_index.read().await;
     let members = resolve_collection_members(&base, view, &index, &collection_path_buf);
-    Ok(agenda_items_for_notes(&members))
+    Ok(agenda_items_for_notes(&members, local_today()))
 }
 
 #[cfg(test)]
@@ -215,6 +345,11 @@ mod tests {
     use crate::models::note::AgendaMarker;
     use std::collections::HashMap;
     use std::path::PathBuf;
+
+    /// Fixed "today" so recurrence expansion is deterministic in tests.
+    fn today() -> NaiveDate {
+        parse_iso_date("2026-06-15").unwrap()
+    }
 
     fn note(
         path: &str,
@@ -233,6 +368,7 @@ mod tests {
             tags: tags.iter().map(|t| (*t).to_string()).collect(),
             agenda_markers: markers,
             unresolved_suggestions: 0,
+            recurrence: None,
         }
     }
 
@@ -251,7 +387,7 @@ mod tests {
             &["work"],
             Vec::new(),
         );
-        let items = agenda_items_for_notes(&[&n]);
+        let items = agenda_items_for_notes(&[&n], today());
         assert_eq!(items.len(), 1);
         assert!(items[0].is_task);
         assert!(items[0].done);
@@ -268,7 +404,7 @@ mod tests {
             &[],
             Vec::new(),
         );
-        let items = agenda_items_for_notes(&[&n]);
+        let items = agenda_items_for_notes(&[&n], today());
         assert_eq!(items.len(), 1);
         assert!(items[0].is_task);
         assert!(!items[0].done);
@@ -291,7 +427,7 @@ mod tests {
             &[],
             Vec::new(),
         );
-        let items = agenda_items_for_notes(&[&done_n, &todo_n]);
+        let items = agenda_items_for_notes(&[&done_n, &todo_n], today());
         assert_eq!(items.len(), 2);
         let done_item = items
             .iter()
@@ -316,7 +452,7 @@ mod tests {
             &[],
             Vec::new(),
         );
-        assert!(agenda_items_for_notes(&[&n]).is_empty());
+        assert!(agenda_items_for_notes(&[&n], today()).is_empty());
     }
 
     #[test]
@@ -327,7 +463,7 @@ mod tests {
             &[],
             Vec::new(),
         );
-        assert!(agenda_items_for_notes(&[&n]).is_empty());
+        assert!(agenda_items_for_notes(&[&n], today()).is_empty());
     }
 
     #[test]
@@ -343,6 +479,7 @@ mod tests {
                     due: Some("2026-05-01".into()),
                     done: false,
                     tags: vec!["urgent".into()],
+                    recurrence: None,
                 },
                 AgendaMarker {
                     kind: "date".into(),
@@ -350,10 +487,11 @@ mod tests {
                     due: Some("2026-07-01".into()),
                     done: false,
                     tags: Vec::new(),
+                    recurrence: None,
                 },
             ],
         );
-        let items = agenda_items_for_notes(&[&n]);
+        let items = agenda_items_for_notes(&[&n], today());
         assert_eq!(items.len(), 2);
         let task = items.iter().find(|i| i.source == "task").unwrap();
         assert_eq!(task.text, "Draft abstract");
@@ -374,9 +512,96 @@ mod tests {
             &[],
             Vec::new(),
         );
-        let items = agenda_items_for_notes(&[&n]);
+        let items = agenda_items_for_notes(&[&n], today());
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].text, "Submit grant proposal");
         assert_eq!(items[0].note_title, "Submit grant proposal");
+    }
+
+    #[test]
+    fn document_level_recurrence_expands_into_muted_occurrences() {
+        // A note-level dated reminder that repeats weekly expands into the
+        // current occurrence plus muted upcoming ones (capped per series).
+        let mut n = note(
+            "/notebox/standup.typ",
+            &[
+                ("title", PropertyValue::String("Team standup".into())),
+                ("due", PropertyValue::String("2026-06-15".into())),
+            ],
+            &["work"],
+            Vec::new(),
+        );
+        n.recurrence = Some(Recurrence {
+            freq: "week".into(),
+            interval: 1,
+            by_day: Vec::new(),
+            // Bound the series so the whole thing is emitted deterministically
+            // (the cap is only a pathological-case guard now).
+            until: Some("2026-07-06".into()),
+            count: None,
+        });
+        let items = agenda_items_for_notes(&[&n], today());
+        assert_eq!(items.len(), 4);
+        assert!(items.iter().all(|i| i.recurring));
+        assert_eq!(items[0].occurrence_index, Some(0));
+        assert_eq!(items[0].date.as_deref(), Some("2026-06-15"));
+        assert_eq!(items[3].occurrence_index, Some(3));
+        assert_eq!(items[3].date.as_deref(), Some("2026-07-06"));
+        // Ids stay unique and stable per occurrence.
+        assert!(items[0].id.ends_with("#note#r0"));
+    }
+
+    #[test]
+    fn recurrence_ignored_on_a_task_note() {
+        // Reminder-only: a recurrence rule on a note that is also a task does
+        // not expand — the task remains a single row.
+        let mut n = note(
+            "/notebox/chore.typ",
+            &[
+                ("task", PropertyValue::Bool(false)),
+                ("due", PropertyValue::String("2026-06-15".into())),
+            ],
+            &[],
+            Vec::new(),
+        );
+        n.recurrence = Some(Recurrence {
+            freq: "week".into(),
+            interval: 1,
+            by_day: Vec::new(),
+            until: None,
+            count: None,
+        });
+        let items = agenda_items_for_notes(&[&n], today());
+        assert_eq!(items.len(), 1);
+        assert!(!items[0].recurring);
+    }
+
+    #[test]
+    fn inline_due_recurrence_expands() {
+        let n = note(
+            "/notebox/expenses.typ",
+            &[("title", PropertyValue::String("Expenses".into()))],
+            &[],
+            vec![AgendaMarker {
+                kind: "date".into(),
+                body: Some("Submit expense report".into()),
+                due: Some("2026-06-01".into()),
+                done: false,
+                tags: Vec::new(),
+                recurrence: Some(Recurrence {
+                    freq: "month".into(),
+                    interval: 2,
+                    by_day: Vec::new(),
+                    until: None,
+                    count: None,
+                }),
+            }],
+        );
+        let items = agenda_items_for_notes(&[&n], today());
+        // Anchor 2026-06-01 is before today (2026-06-15); first upcoming is the
+        // next every-other-month occurrence.
+        assert!(items.iter().all(|i| i.recurring && !i.is_task));
+        assert_eq!(items[0].date.as_deref(), Some("2026-08-01"));
+        assert_eq!(items[0].text, "Submit expense report");
     }
 }

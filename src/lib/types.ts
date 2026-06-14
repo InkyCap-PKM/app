@@ -11,6 +11,27 @@ export interface NoteMetadata {
   properties: Record<string, PropertyValue>;
   links: string[];
   tags: string[];
+  /** Document-level repeat rule from `#note(recurrence: …)`, kept out of
+   *  `properties` (it's structured, not a scalar). `null` when the note's date
+   *  doesn't recur. Mirrors the Rust `NoteMetadata.recurrence`. */
+  recurrence?: Recurrence | null;
+}
+
+/** A repeat rule for a dated reminder. Mirrors the Rust `Recurrence`, which in
+ *  turn mirrors the queryable Typst `recurrence: (…)` dict. Reminder-only:
+ *  recurrence attaches to dates, never to checkbox tasks. */
+export interface Recurrence {
+  /** How often it repeats. */
+  freq: "day" | "week" | "month" | "year";
+  /** Repeat every N periods (>= 1). */
+  interval: number;
+  /** Weekly only: weekday codes (`"mo".."su"`) the rule lands on. Empty means
+   *  "the anchor's own weekday". */
+  by_day: string[];
+  /** Inclusive end date (`YYYY-MM-DD`), or `null` when unbounded by a date. */
+  until: string | null;
+  /** Maximum occurrences from the anchor, or `null` when unbounded by a count. */
+  count: number | null;
 }
 
 export interface FileMetadata {
@@ -879,13 +900,21 @@ export interface AgendaItem {
   note_title: string;
   /** Marker body, or the note title for a document-level item. */
   text: string;
-  /** ISO `YYYY-MM-DD` due date, when known. */
+  /** ISO `YYYY-MM-DD` due date, when known. For a recurring item this is the
+   *  occurrence's own date, not the rule's anchor. */
   date: string | null;
   /** ISO `YYYY-MM-DD` file creation date. */
   created: string | null;
   done: boolean;
   tags: string[];
   zid: string | null;
+  /** True when this row is one occurrence of a recurring reminder. */
+  recurring: boolean;
+  /** `0` for the current/next occurrence (full emphasis), `1, 2, …` for
+   *  subsequent upcoming ones (de-emphasized). `null` for non-recurring rows. */
+  occurrence_index: number | null;
+  /** The repeat rule, for rendering a human summary. `null` when not recurring. */
+  recurrence: Recurrence | null;
 }
 
 // Search types

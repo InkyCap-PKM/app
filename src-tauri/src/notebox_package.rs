@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 /// Library version. Used for diagnostics and as a hint for future migrations
 /// of notebox content. Not part of the import path.
-pub const VERSION: &str = "0.2.0";
+pub const VERSION: &str = "0.3.0";
 
 /// External, file-readable notebox **format contract** version. Distinct from
 /// [`VERSION`] (the embedded library's build version): this is the number an

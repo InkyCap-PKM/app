@@ -15,6 +15,7 @@ use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 use typst::utils::PicoStr;
 
 use crate::models::note::{AgendaMarker, PropertyValue};
+use crate::models::recurrence::Recurrence;
 use crate::typst_pipeline::compiler::TypstCompiler;
 
 /// Extracted metadata from a single `.typ` file.
@@ -30,6 +31,10 @@ pub struct QueryResult {
     pub heading_labels: Vec<String>,
     /// Inline `#task` / `#due` markers from `<inkycap-agenda>`.
     pub agenda: Vec<AgendaMarker>,
+    /// Document-level recurrence rule from `#note(recurrence: (…))`. Extracted
+    /// out of the note dict separately from `properties` so the structured rule
+    /// never reaches the generic property surfaces as a stringified dict.
+    pub recurrence: Option<Recurrence>,
     /// Count of unresolved `#suggestion(...)` tracked changes (`<inkycap-
     /// suggestion>`). Accepting/rejecting a suggestion unwraps the call so its
     /// label vanishes from the compiled document — so this is a true "still
@@ -243,6 +248,7 @@ fn walk_for_body_calls(
                                 due: None,
                                 done: false,
                                 tags: Vec::new(),
+                                recurrence: None,
                             });
                         }
                     }
@@ -333,6 +339,17 @@ fn extract_note_metadata(introspector: &Introspector, result: &mut QueryResult) 
 
         for (key, value) in dict.iter() {
             let key_str = key.as_str().to_string();
+
+            if key_str == "recurrence" {
+                // Structured rule — parsed into its own field, deliberately not
+                // mirrored into `properties` (it would otherwise show up as a
+                // raw dict row in the property panel and as a column in
+                // collection tables).
+                if let Value::Dict(rec) = value {
+                    result.recurrence = Recurrence::from_typst_dict(rec);
+                }
+                continue;
+            }
 
             if key_str == "tags" {
                 if let Value::Array(arr) = value {
@@ -466,6 +483,15 @@ fn extract_agenda_markers(
                 .collect(),
             _ => Vec::new(),
         };
+        // Recurrence is reminder-only — ignore any rule on a `#task` marker.
+        let recurrence = if kind == "date" {
+            match dict_get(dict, "recurrence") {
+                Some(Value::Dict(rec)) => Recurrence::from_typst_dict(rec),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         result.agenda.push(AgendaMarker {
             kind,
@@ -473,6 +499,7 @@ fn extract_agenda_markers(
             due,
             done,
             tags,
+            recurrence,
         });
     }
 }
@@ -572,6 +599,50 @@ mod tests {
         );
         assert!(result.tags.contains(&"research".to_string()));
         assert!(result.tags.contains(&"typst".to_string()));
+    }
+
+    #[test]
+    fn extracts_inline_due_recurrence() {
+        // End-to-end: a `#due(..., recurrence: (…))` compiles through the
+        // package and the rule round-trips out of the `<inkycap-agenda>` dict,
+        // exercising lib.typ's `_fmt-recurrence` normalizer.
+        let (_dir, root) = setup_notebox_with_package(
+            r#"Reminder #due(datetime(year: 2026, month: 6, day: 15), label: "Standup", recurrence: (freq: "week", interval: 2, by-day: ("mo", "we"), until: datetime(year: 2026, month: 12, day: 7)))."#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        assert_eq!(result.agenda.len(), 1);
+        let marker = &result.agenda[0];
+        assert_eq!(marker.kind, "date");
+        assert_eq!(marker.due.as_deref(), Some("2026-06-15"));
+        let rec = marker.recurrence.as_ref().expect("recurrence parsed");
+        assert_eq!(rec.freq, "week");
+        assert_eq!(rec.interval, 2);
+        assert_eq!(rec.by_day, vec!["mo".to_string(), "we".to_string()]);
+        assert_eq!(rec.until.as_deref(), Some("2026-12-07"));
+    }
+
+    #[test]
+    fn extracts_document_level_recurrence_out_of_properties() {
+        // A `#note(recurrence: …)` rule is parsed into its own field and kept
+        // out of the generic `properties` map.
+        let (_dir, root) = setup_notebox_with_package(
+            r#"#note(title: "Fall term", due: "2026-09-01", recurrence: (freq: "year"))"#,
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        assert!(!result.properties.contains_key("recurrence"));
+        let rec = result.recurrence.as_ref().expect("recurrence parsed");
+        assert_eq!(rec.freq, "year");
+        assert_eq!(rec.interval, 1);
     }
 
     #[test]

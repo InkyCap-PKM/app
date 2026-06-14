@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::models::recurrence::Recurrence;
+
 pub type NoteId = PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +90,11 @@ pub struct AgendaMarker {
     /// Tags attached directly to a `#task` call (note tags are unioned in
     /// later by the aggregator).
     pub tags: Vec<String>,
+    /// Repeat rule for a `#due(...)` reminder, when it recurs. Always `None`
+    /// for `kind == "task"` (recurrence is reminder-only). The Agenda expands
+    /// this into upcoming occurrences; the note source is never rewritten.
+    #[serde(default)]
+    pub recurrence: Option<Recurrence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +107,13 @@ pub struct NoteMetadata {
     /// Inline `#task` / `#due` markers found in the note body.
     #[serde(default)]
     pub agenda_markers: Vec<AgendaMarker>,
+    /// Document-level repeat rule from `#note(due: …, recurrence: (…))`. Applies
+    /// to the note's own `due` date when the note is a dated reminder (not a
+    /// task). Kept out of the generic `properties` map (it's structured, like
+    /// `agenda_markers`) so the property panel and collection tables don't have
+    /// to render a raw dict.
+    #[serde(default)]
+    pub recurrence: Option<Recurrence>,
     /// Count of unresolved `#suggestion(...)` tracked changes in the body — the
     /// notebox-wide "still awaiting accept/reject" signal. See
     /// [`crate::typst_pipeline::query::QueryResult::suggestions`].

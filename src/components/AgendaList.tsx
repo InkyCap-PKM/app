@@ -15,9 +15,14 @@ import {
   Square,
   Check,
   ChevronDown,
+  ChevronRight,
+  Repeat,
+  ListChevronsUpDown,
+  ListChevronsDownUp,
 } from "lucide-solid";
 import type { AgendaItem } from "../lib/types";
 import { useI18n } from "../lib/i18n";
+import { formatRecurrence } from "../lib/recurrence";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { formatUserDate } from "../lib/dates";
@@ -55,6 +60,33 @@ type SortMode =
 
 type TaskListFilter = "all" | "todo" | "done" | "dates";
 
+// Whether recurring series collapse to a single row (their next occurrence) or
+// expand to show every upcoming occurrence. A global, device-persisted
+// preference shared by every Agenda surface (sidebar + Collection views), so
+// the user's Expand/Collapse-all choice survives restarts and stays consistent.
+// Defaults to collapsed so a busy recurrence doesn't flood the list.
+const COLLAPSE_RECURRING_KEY = "inkycap.agenda.collapseRecurring";
+
+function loadCollapseRecurring(): boolean {
+  try {
+    const v = localStorage.getItem(COLLAPSE_RECURRING_KEY);
+    return v === null ? true : v === "true";
+  } catch {
+    return true;
+  }
+}
+
+const [collapseRecurring, setCollapseRecurringSignal] = createSignal(loadCollapseRecurring());
+
+function setCollapseRecurring(v: boolean) {
+  setCollapseRecurringSignal(v);
+  try {
+    localStorage.setItem(COLLAPSE_RECURRING_KEY, String(v));
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+}
+
 /** Human-friendly short date, formatted with the user's configured pattern
  *  (Settings > Appearance > Date format). Returns the raw string unchanged
  *  when it isn't a parseable ISO date. */
@@ -73,7 +105,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   const t = useI18n();
   const [sortMode, setSortMode] = createSignal<SortMode>("due-asc");
   const [taskFilter, setTaskFilter] = createSignal<TaskListFilter>("all");
-  const [selectedTags, setSelectedTags] = createSignal<Set<string>>(new Set());
+  const [selectedTags, setSelectedTags] = createSignal<Set<string>>(new Set<string>());
   const [filterText, setFilterText] = createSignal("");
 
   const [dateFilter, setDateFilter] = createSignal<DateFilterState>({ ...DEFAULT_DATE_FILTER });
@@ -148,6 +180,48 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     return op ? t(op.labelKey) : t("agenda.date.all");
   });
 
+  /** True when any item is a recurring occurrence — gates the expand/collapse
+   *  control so it only appears when there's something to act on. */
+  const hasRecurring = createMemo(() => props.items.some((it) => it.recurring));
+
+  // Per-series expansion that overrides the global mode for a single recurring
+  // item, so the user can reveal one series' occurrences without expanding the
+  // whole list (and vice-versa). A series is identified by the shared id prefix
+  // its occurrences carry (`<base>#r0`, `#r1`, …). The set holds the series that
+  // are in the *opposite* state from the global default; flipping the global
+  // toggle clears it (the global action is set-all, not a per-item toggle).
+  const [seriesOverrides, setSeriesOverrides] = createSignal<Set<string>>(new Set<string>());
+
+  const seriesKey = (it: AgendaItem) => it.id.replace(/#r\d+$/, "");
+
+  /** Series that actually have more than one occurrence in the payload — only
+   *  these get a caret (there's nothing to reveal otherwise). */
+  const seriesWithMore = createMemo(() => {
+    const s = new Set<string>();
+    for (const it of props.items) {
+      if (it.recurring && (it.occurrence_index ?? 0) > 0) s.add(seriesKey(it));
+    }
+    return s;
+  });
+
+  const isSeriesExpanded = (key: string) => {
+    const overridden = seriesOverrides().has(key);
+    return collapseRecurring() ? overridden : !overridden;
+  };
+
+  function toggleSeries(key: string) {
+    const next = new Set<string>(seriesOverrides());
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setSeriesOverrides(next);
+  }
+
+  function setGlobalCollapse(v: boolean) {
+    setCollapseRecurring(v);
+    // Set-all clears any per-series overrides so the action is unambiguous.
+    setSeriesOverrides(new Set<string>());
+  }
+
   /** Items after every filter and sort applied. */
   const visible = createMemo(() => {
     const needle = filterText().trim().toLowerCase();
@@ -156,6 +230,12 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     const dFilter = dateFilter();
 
     let list = props.items.filter((it) => {
+      // A recurring series' later occurrences show only when that series is
+      // expanded (per-item caret, falling back to the global mode). Its current
+      // occurrence always shows; the summary line conveys the rest when hidden.
+      if (it.recurring && (it.occurrence_index ?? 0) > 0 && !isSeriesExpanded(seriesKey(it))) {
+        return false;
+      }
       if (!matchesDateFilter(it.date, dFilter)) return false;
       switch (tFilter) {
         case "todo":
@@ -277,20 +357,48 @@ const AgendaList: Component<AgendaListProps> = (props) => {
             <ChevronDown size={12} />
           </button>
         </div>
-        <button
-          ref={sortBtnRef}
-          class="left-sidebar__icon-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowSortMenu((v) => !v);
-            setShowTaskMenu(false);
-            setShowTagsMenu(false);
-          }}
-          title={t("agenda.sort.label")}
-          aria-label={t("agenda.sort.label")}
-        >
-          <ArrowDownNarrowWide size={14} />
-        </button>
+        <div class="agenda__controls-actions">
+          <Show when={hasRecurring()}>
+            <button
+              class="left-sidebar__icon-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setGlobalCollapse(!collapseRecurring());
+              }}
+              title={
+                collapseRecurring()
+                  ? t("agenda.recurring.expandAll")
+                  : t("agenda.recurring.collapseAll")
+              }
+              aria-label={
+                collapseRecurring()
+                  ? t("agenda.recurring.expandAll")
+                  : t("agenda.recurring.collapseAll")
+              }
+            >
+              <Show
+                when={collapseRecurring()}
+                fallback={<ListChevronsDownUp size={14} />}
+              >
+                <ListChevronsUpDown size={14} />
+              </Show>
+            </button>
+          </Show>
+          <button
+            ref={sortBtnRef}
+            class="left-sidebar__icon-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSortMenu((v) => !v);
+              setShowTaskMenu(false);
+              setShowTagsMenu(false);
+            }}
+            title={t("agenda.sort.label")}
+            aria-label={t("agenda.sort.label")}
+          >
+            <ArrowDownNarrowWide size={14} />
+          </button>
+        </div>
       </div>
 
       <Show when={showSortMenu()}>
@@ -481,7 +589,14 @@ const AgendaList: Component<AgendaListProps> = (props) => {
               <div
                 data-list-item
                 class="sidebar-item agenda__item"
-                classList={{ "agenda__item--done": it.done }}
+                classList={{
+                  "agenda__item--done": it.done,
+                  // Later occurrences of a recurring series are de-emphasized so
+                  // a frequent reminder doesn't take over the list — the current
+                  // (next) occurrence stays at full strength.
+                  "agenda__item--recurrence-future":
+                    it.recurring && (it.occurrence_index ?? 0) > 0,
+                }}
                 onClick={(e) => props.onOpen(it, { newTab: e.ctrlKey || e.metaKey })}
                 onAuxClick={(e) => {
                   if (e.button !== 1) return; // middle-click → new tab
@@ -492,8 +607,47 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                   e.preventDefault();
                   setRowContextMenu({ x: e.clientX, y: e.clientY, item: it });
                 }}
-                title={it.note_title}
+                title={
+                  it.recurring && it.recurrence
+                    ? `${it.note_title} · ${formatRecurrence(it.recurrence)}`
+                    : it.note_title
+                }
               >
+                {/* Per-series caret: reveal/hide just this recurrence's upcoming
+                    occurrences, independent of the global Expand/Collapse all. */}
+                <Show
+                  when={
+                    it.recurring &&
+                    (it.occurrence_index ?? 0) === 0 &&
+                    seriesWithMore().has(seriesKey(it))
+                  }
+                >
+                  <button
+                    class="agenda__recur-caret"
+                    aria-expanded={isSeriesExpanded(seriesKey(it))}
+                    title={
+                      isSeriesExpanded(seriesKey(it))
+                        ? t("agenda.recurring.collapseOne")
+                        : t("agenda.recurring.expandOne")
+                    }
+                    aria-label={
+                      isSeriesExpanded(seriesKey(it))
+                        ? t("agenda.recurring.collapseOne")
+                        : t("agenda.recurring.expandOne")
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSeries(seriesKey(it));
+                    }}
+                  >
+                    <Show
+                      when={isSeriesExpanded(seriesKey(it))}
+                      fallback={<ChevronRight size={12} />}
+                    >
+                      <ChevronDown size={12} />
+                    </Show>
+                  </button>
+                </Show>
                 <span class="sidebar-item__icon">
                   <Show
                     when={it.is_task}
@@ -502,9 +656,25 @@ const AgendaList: Component<AgendaListProps> = (props) => {
                     {it.done ? <CheckSquare size={14} /> : <Square size={14} />}
                   </Show>
                 </span>
-                <span class="sidebar-item__label agenda__item-text">
-                  {it.text}
+                <span class="agenda__item-body">
+                  <span class="agenda__item-text">{it.text}</span>
+                  {/* The rule summary on the current occurrence surfaces the
+                      cadence and end date in the list itself — so changing
+                      "until", interval, or weekdays is visibly reflected even
+                      when later occurrences fall past the displayed window. */}
+                  <Show
+                    when={
+                      it.recurring && (it.occurrence_index ?? 0) === 0 && it.recurrence
+                    }
+                  >
+                    <span class="agenda__recur-summary">
+                      {formatRecurrence(it.recurrence!)}
+                    </span>
+                  </Show>
                 </span>
+                <Show when={it.recurring}>
+                  <Repeat size={11} class="agenda__recur-icon" aria-hidden="true" />
+                </Show>
                 <Show when={it.date}>
                   <span
                     class="agenda__date"
