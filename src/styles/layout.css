@@ -3302,6 +3302,14 @@ svg.lucide {
   text-align: right;
 }
 
+/* Button row of the update control: a single "Check" button most of the time,
+   but "Download" + "View releases" once an update is available. */
+.settings__update-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .settings__update-status {
   text-align: right;
 }

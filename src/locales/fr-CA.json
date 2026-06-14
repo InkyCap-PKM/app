@@ -1335,6 +1335,7 @@
   "settings.updates.uptodate": "Vous utilisez la dernière version.",
   "settings.updates.available": "La version {version} est disponible au téléchargement.",
   "settings.updates.viewReleases": "Voir les versions",
+  "settings.updates.download": "Télécharger",
   "settings.updates.errorIntro": "Impossible de rechercher des mises à jour.",
   "settings.updates.startupAvailable": "InkyCap {version} est disponible — voir Paramètres › Aperçu.",
   "settings.updates.checkOnStartup.label": "Rechercher des mises à jour au démarrage",

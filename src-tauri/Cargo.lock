@@ -2614,7 +2614,7 @@ dependencies = [
 
 [[package]]
 name = "inkycap"
-version = "26.6.10"
+version = "26.6.12"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

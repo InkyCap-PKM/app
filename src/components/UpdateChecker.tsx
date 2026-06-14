@@ -15,6 +15,10 @@ import {
   checkForUpdates,
 } from "../stores/updater";
 
+// Where to download a new release. Held as a constant (not translatable copy)
+// so the domain isn't treated as localizable text.
+const DOWNLOAD_URL = "https://inkycap.org/download";
+
 export default function UpdateChecker() {
   const t = useI18n();
   const status = updateStatus;
@@ -52,6 +56,13 @@ export default function UpdateChecker() {
             <button
               type="button"
               class="btn btn--primary btn--sm"
+              onClick={() => ipc.openUrlExternally(DOWNLOAD_URL)}
+            >
+              {t("settings.updates.download")}
+            </button>
+            <button
+              type="button"
+              class="btn btn--secondary btn--sm"
               onClick={() => ipc.openUrlExternally(updateLatestUrl())}
             >
               {t("settings.updates.viewReleases")}
@@ -72,9 +83,18 @@ export default function UpdateChecker() {
       <Show when={status() === "error" && updateError()}>
         <span class="settings__description settings__update-error">{updateError()}</span>
       </Show>
-      <Show when={status() === "available" && updateNotes()}>
-        <pre class="settings__notices settings__update-notes">{updateNotes()}</pre>
-      </Show>
     </div>
+  );
+}
+
+// Release notes for an available update. Rendered as a full-width block in the
+// Overview's left column — kept out of the right-aligned `UpdateChecker` cluster
+// so the notes wrap as ordinary text rather than stretching to one long line
+// behind the logo.
+export function UpdateReleaseNotes() {
+  return (
+    <Show when={updateStatus() === "available" && updateNotes()}>
+      <pre class="settings__notices settings__update-notes">{updateNotes()}</pre>
+    </Show>
   );
 }

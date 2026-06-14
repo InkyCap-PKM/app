@@ -1335,6 +1335,7 @@
   "settings.updates.uptodate": "You're running the latest version.",
   "settings.updates.available": "Version {version} is available to download.",
   "settings.updates.viewReleases": "View releases",
+  "settings.updates.download": "Download",
   "settings.updates.errorIntro": "Couldn't check for updates.",
   "settings.updates.startupAvailable": "InkyCap {version} is available — see Settings › Overview.",
   "settings.updates.checkOnStartup.label": "Check for updates on startup",
