@@ -80,6 +80,55 @@ La note apparaîtra alors dans l'Agenda comme un seul élément, en utilisant so
   Une simple propriété *date* ne place _pas_ une note dans l'Agenda. Bien des notes portent une `date` comme date de création ou de rédaction, et les inclure inonderait votre liste. Seule une propriété de date *due* ou une propriété *task* fait d'une note un élément d'agenda.
 ]
 
+== Répéter une date
+
+Un rappel daté peut se répéter selon un horaire. Servez-vous-en pour tout ce qui revient : une réunion hebdomadaire, un rapport mensuel, un renouvellement annuel. InkyCap appelle cela la *récurrence*.
+
+#callout("note")[
+  La récurrence s'applique aux *dates*, pas aux tâches à cocher. Une tâche se termine une seule fois, elle n'a donc pas d'horaire de répétition. Si vous voulez une échéance récurrente, donnez à une note une date *due* et configurez sa récurrence (ci-dessous) plutôt que de la marquer comme tâche.
+]
+
+Vous configurez la récurrence au *niveau de la note*, sur la propre date *due* de la note. Ouvrez l'éditeur de *Propriétés* du panneau de droite de la note (voir #wikilink("6 - Propriétés des notes")) et donnez à la note une date *due*. Un contrôle *Répéter* apparaît alors juste sous cette date. (Il ne s'affiche que lorsque la note a une date d'échéance et n'est pas une tâche à cocher.)
+
+=== Vos options
+
+Activez *Répéter* et choisissez à quelle fréquence la date revient :
+
+- *Tous les N jour / semaine / mois / an.* Tapez l'intervalle (par exemple, « toutes les 2 semaines ») et choisissez l'unité.
+- *Jours de la semaine* (hebdomadaire seulement). Quand l'unité est la semaine, choisissez un ou plusieurs jours où tombe le rappel, de sorte que « toutes les semaines le lun et le mer » soit une seule règle.
+- *Jusqu'au* (facultatif). Activez ceci pour donner une date de fin à la série. Laissé inactif, la série continue simplement.
+
+Un résumé en langage clair vous relit la règle à mesure que vous la construisez, par exemple « Toutes les 2 semaines le lun, mer jusqu'au 7 déc. 2026 ».
+
+#callout("note")[
+  Votre note conserve une seule date plus la règle de répétition. InkyCap ne réécrit jamais votre note avec une longue liste de dates ; il calcule pour vous les occasions à venir chaque fois que vous regardez. Votre date d'origine et votre historique restent intacts, et vous pouvez modifier ou retirer la règle à tout moment.
+]
+
+=== Voir les occurrences
+
+Les rappels récurrents apparaissent dans le panneau *Agenda* comme tout autre élément daté, mais développés en leurs dates à venir (InkyCap regarde environ un an à l'avance).
+
+Pour éviter qu'un horaire chargé n'inonde la liste, les séries récurrentes sont *réduites* par défaut : vous ne voyez que la prochaine occurrence, avec un petit marqueur de répétition et le résumé de la règle.
+
+- Utilisez le contrôle de développement ou de réduction au-dessus de la liste pour afficher ou masquer toutes les occurrences de toutes les séries d'un coup.
+- Ou révélez une seule série avec son propre contrôle *Afficher les occurrences* / *Masquer les occurrences* sur la rangée.
+
+Il en va de même dans la vue agenda d'une #wikilink("2 - Collections", display: "collection") : un rappel récurrent sur une note membre s'y développe aussi, limité à cette collection.
+
+#callout("tip", title: "Pour les utilisateurs de Typst")[
+  Une règle de répétition est un simple dictionnaire Typst stocké directement dans votre note, donc n'importe quel outil Typst peut le lire ou l'écrire :
+
+  ```typ
+  #note(
+    due: "2026-09-01",
+    recurrence: (freq: "week", interval: 2, by-day: ("mo", "we")),
+  )
+  #due("2026-07-01", recurrence: (freq: "month", until: datetime(year: 2026, month: 12, day: 1)))
+  ```
+
+  `freq` vaut `"day"`, `"week"`, `"month"` ou `"year"` ; `interval` est le nombre de ces unités entre les occurrences (par défaut `1`) ; `by-day` liste les jours de semaine pour une règle hebdomadaire (`"mo"` à `"su"`) ; `until` borne la série par une date, et `count` la borne par un nombre d'occurrences. La règle voyage sur les mêmes étiquettes interrogeables `<inkycap-agenda>` / `<inkycap-note>` que le reste de vos données d'agenda, donc elle reste portable vers n'importe quel environnement Typst. InkyCap développe les occurrences pour l'affichage ; la règle stockée n'est jamais matérialisée dans la source.
+]
+
 == Le panneau Agenda
 
 L'Agenda rassemble chaque tâche et chaque rappel daté de toute votre boîte de notes pour les afficher dans une seule liste. Ouvrez-le à partir des boutons de la barre latérale gauche. Cherchez l'icône du calendrier avec un crochet (*Agenda*), qui se trouve juste après Collections.

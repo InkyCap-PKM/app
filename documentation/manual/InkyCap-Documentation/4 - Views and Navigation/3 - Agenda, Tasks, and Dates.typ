@@ -79,6 +79,55 @@ The note will then appear in the Agenda as a single item, using its title as the
   A plain *date* property does _not_ put a note on the Agenda. Many notes carry a `date` as their creation or authoring date, and including those would flood your list. Only a *due* date property or a *task* property makes a note an agenda item.
 ]
 
+== Repeating a date
+
+A dated reminder can repeat on a schedule. Use this for anything that comes back: a weekly meeting, a monthly report, a yearly renewal. InkyCap calls this *recurrence*.
+
+#callout("note")[
+  Recurrence works on *dates*, not on checkbox tasks. A task is something you finish once, so it has no repeat schedule. If you want a recurring deadline, give a note a *due* date and set its recurrence (below) rather than marking it a task.
+]
+
+You set recurrence at the *note level*, on the note's own *due* date. Open the note's right-panel *Properties* editor (see #wikilink("6 - Note Properties")) and give the note a *due* date. A *Repeat* control then appears just under that date. (It shows only when the note has a due date and is not a checkbox task.)
+
+=== Your options
+
+Turn on *Repeat* and choose how often the date comes back:
+
+- *Every N day / week / month / year.* Type the interval (for example, "every 2 weeks") and pick the unit.
+- *Days of the week* (weekly only). When the unit is week, pick one or more weekdays the reminder lands on, so "every week on Mon and Wed" is a single rule.
+- *Until* (optional). Turn this on to give the series an end date. Left off, the series simply keeps going.
+
+A plain-language summary reads the rule back to you as you build it, for example "Every 2 weeks on Mon, Wed until Dec 7, 2026".
+
+#callout("note")[
+  Your note keeps a single date plus the repeat rule. InkyCap never rewrites your note with a long list of dates; it works out the upcoming occurrences for you each time you look. Your original date and your history stay intact, and you can change or remove the rule at any time.
+]
+
+=== Seeing the occurrences
+
+Recurring reminders appear in the *Agenda* panel like any other dated item, but expanded into their upcoming dates (InkyCap looks roughly a year ahead).
+
+To keep a busy schedule from flooding the list, recurring series are *collapsed* by default: you see only the next occurrence, with a small repeat marker and the rule's summary.
+
+- Use the expand or collapse control above the list to show or hide every occurrence of every series at once.
+- Or reveal just one series with its own *Show occurrences* / *Hide occurrences* control on the row.
+
+The same applies inside a #wikilink("2 - Collections", display: "collection")'s agenda view: a recurring reminder on a member note expands there too, scoped to that collection.
+
+#callout("tip", title: "For Typst users")[
+  A repeat rule is a plain Typst dictionary stored right in your note, so any Typst tool can read or write it:
+
+  ```typ
+  #note(
+    due: "2026-09-01",
+    recurrence: (freq: "week", interval: 2, by-day: ("mo", "we")),
+  )
+  #due("2026-07-01", recurrence: (freq: "month", until: datetime(year: 2026, month: 12, day: 1)))
+  ```
+
+  `freq` is one of `"day"`, `"week"`, `"month"`, `"year"`; `interval` is how many of those between occurrences (default `1`); `by-day` lists weekdays for a weekly rule (`"mo"` to `"su"`); `until` bounds the series by date, and `count` bounds it by number of occurrences. The rule travels on the same queryable `<inkycap-agenda>` / `<inkycap-note>` labels as the rest of your agenda data, so it stays portable to any Typst environment. InkyCap expands the occurrences for the view; the stored rule is never materialized into the source.
+]
+
 == The Agenda panel
 
 The Agenda gathers every task and dated reminder across your whole notebox to display in one list. Open it from the left-sidebar buttons. Look for the calendar-with-a-check icon (*Agenda*), which sits just after Collections.
