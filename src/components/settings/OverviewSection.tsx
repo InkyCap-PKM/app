@@ -26,7 +26,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Pencil, Check, X, Handshake } from "lucide-solid";
 import HelpButton from "../HelpButton";
 import ExperimentalNotice from "../ExperimentalNotice";
-import UpdateChecker from "../UpdateChecker";
+import UpdateChecker, { UpdateReleaseNotes } from "../UpdateChecker";
 import inkycapLogo from "../../assets/inkycap-logo.svg";
 
 // InkyCap's website, shown as a clickable link in the Overview. Held as
@@ -81,6 +81,11 @@ export function OverviewSection(props: { onClose: () => void }) {
                 "Software updates" heading or hint row is needed. */}
             <UpdateChecker />
           </div>
+
+          {/* Release notes for an available update span the full column width
+              below the brand row, so they wrap as ordinary text instead of
+              trailing off behind the logo. */}
+          <UpdateReleaseNotes />
 
           {/* Help */}
           <div class="settings__section-header">
