@@ -86,6 +86,9 @@ export interface FileTreeNode {
    *  the stat field). Used by the file-tree sort. */
   modified_time: number;
   created_time: number;
+  /** The note's `#note(zid:)`, or null when absent (folders and notes
+   *  without a zid). Used by the file-tree zid sort. */
+  zid?: string | null;
 }
 
 export interface LinkInfo {
@@ -94,6 +97,8 @@ export interface LinkInfo {
   /** Unix epoch seconds. Zero if the backend couldn't stat the file. */
   modified_time: number;
   created_time: number;
+  /** The linked note's `#note(zid:)`, or null when absent. */
+  zid?: string | null;
 }
 
 // .collection file editing types (mirror Rust structs)
@@ -298,7 +303,9 @@ export type FileSortMode =
   | "modified-desc"
   | "modified-asc"
   | "created-desc"
-  | "created-asc";
+  | "created-asc"
+  | "zid-asc"
+  | "zid-desc";
 
 export interface AppearanceSettings {
   theme: "dark" | "light" | "system";

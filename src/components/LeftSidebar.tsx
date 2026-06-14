@@ -39,6 +39,7 @@ import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
+import { compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
@@ -129,6 +130,15 @@ const FILE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
   { value: "created-asc", labelKey: "sort.created.asc" },
 ];
 
+// The file tree adds zid (Zettelkasten id) ordering on top of the shared
+// options. Collections reuse FILE_SORT_OPTIONS without it — a `.collection`
+// file has no zid, so offering the mode there would be a dead choice.
+const FILE_TREE_SORT_OPTIONS: { value: FileSortMode; labelKey: string }[] = [
+  ...FILE_SORT_OPTIONS,
+  { value: "zid-asc", labelKey: "sort.zid.asc" },
+  { value: "zid-desc", labelKey: "sort.zid.desc" },
+];
+
 const LIST_SORT_OPTIONS: { value: ListSortMode; labelKey: string }[] = [
   { value: "name-asc", labelKey: "sort.alpha.asc" },
   { value: "name-desc", labelKey: "sort.alpha.desc" },
@@ -162,6 +172,11 @@ function sortFileTree(
         return b.created_time - a.created_time;
       case "created-asc":
         return a.created_time - b.created_time;
+      case "zid-asc":
+      case "zid-desc": {
+        const c = compareZid(a.zid, b.zid, mode === "zid-asc" ? "asc" : "desc");
+        return c !== 0 ? c : a.name.localeCompare(b.name);
+      }
     }
   };
   return nodes
@@ -350,6 +365,11 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           return b.created_time - a.created_time;
         case "created-asc":
           return a.created_time - b.created_time;
+        case "zid-asc":
+        case "zid-desc":
+          // Collections have no zid; the collection dropdown never offers
+          // these modes, but the shared FileSortMode type requires them.
+          return a.name.localeCompare(b.name);
       }
     });
   });
@@ -1649,7 +1669,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       ignore: fileSortBtnRef,
                     }}
                   >
-                    <For each={FILE_SORT_OPTIONS}>
+                    <For each={FILE_TREE_SORT_OPTIONS}>
                       {(opt) => (
                         <button
                           classList={{

@@ -10,6 +10,8 @@ import {
 } from "../stores/mycelial";
 import type { LinkInfo, PropertyType, PropertyValue } from "../lib/types";
 import { normalizePath } from "../lib/paths";
+import { compareZid } from "../lib/sort";
+import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
 import type { SearchResult } from "../lib/types";
@@ -579,7 +581,12 @@ const RightPanel: Component = () => {
   /// outbound entries (path = "", mtime/ctime = 0) sort to the end of
   /// time-based orderings instead of pretending to be ancient.
   function compareByMode<
-    T extends { name: string; modified_time: number; created_time: number },
+    T extends {
+      name: string;
+      modified_time: number;
+      created_time: number;
+      zid?: string | null;
+    },
   >(a: T, b: T, mode: LinksSortMode): number {
     switch (mode) {
       case "name-asc":
@@ -594,6 +601,11 @@ const RightPanel: Component = () => {
         return cmpEpoch(b.created_time, a.created_time) || a.name.localeCompare(b.name);
       case "created-asc":
         return cmpEpoch(a.created_time, b.created_time) || a.name.localeCompare(b.name);
+      case "zid-asc":
+      case "zid-desc": {
+        const c = compareZid(a.zid, b.zid, mode === "zid-asc" ? "asc" : "desc");
+        return c !== 0 ? c : a.name.localeCompare(b.name);
+      }
     }
   }
 
@@ -827,7 +839,9 @@ const RightPanel: Component = () => {
 
   async function createUnresolvedNote(target: string) {
     try {
-      const path = await ipc.createNote(target, "", undefined);
+      // Use the New Note creation rule so the note gets the standard scaffold
+      // (title/date/zid/heading), identical to a wikilink-created note.
+      const path = await createNoteForTarget(target);
       openTab({ type: "file", title: target, path }, { forceNewTab: true });
     } catch (e) {
       toastError(t("rightPanel.toast.createNoteFailed"), e);

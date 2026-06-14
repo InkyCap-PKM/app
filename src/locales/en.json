@@ -15,6 +15,8 @@
   "sort.modified.asc": "Modified (old – new)",
   "sort.created.desc": "Created (new – old)",
   "sort.created.asc": "Created (old – new)",
+  "sort.zid.asc": "ZID (ascending)",
+  "sort.zid.desc": "ZID (descending)",
   "sort.alpha.asc": "Alphabetical (A – Z)",
   "sort.alpha.desc": "Alphabetical (Z – A)",
   "sort.quantity.desc": "Quantity (high – low)",

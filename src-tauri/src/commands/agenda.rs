@@ -60,14 +60,6 @@ pub struct AgendaItem {
     pub zid: Option<String>,
 }
 
-fn note_zid(note: &NoteMetadata) -> Option<String> {
-    match note.properties.get("zid") {
-        Some(PropertyValue::String(s)) if !s.is_empty() => Some(s.clone()),
-        Some(PropertyValue::Number(n)) => Some(format!("{:.0}", n)),
-        _ => None,
-    }
-}
-
 fn prop_str(note: &NoteMetadata, key: &str) -> Option<String> {
     note.properties
         .get(key)
@@ -107,7 +99,7 @@ fn agenda_items_for_notes(notes: &[&NoteMetadata]) -> Vec<AgendaItem> {
     for note in notes {
         let path = to_frontend_string(&note.path);
         let title = note.display_title();
-        let zid = note_zid(note);
+        let zid = note.zid();
 
         // File creation date — surfaced as `file.ctime` (RFC3339) by the
         // walker. Sliced to `YYYY-MM-DD` for the Agenda's date-only axis.

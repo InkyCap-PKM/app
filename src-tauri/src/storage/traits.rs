@@ -16,6 +16,11 @@ pub struct FileTreeNode {
     /// stat field (rare) — frontend treats zero as "unknown" for sort.
     pub modified_time: u64,
     pub created_time: u64,
+    /// The note's `#note(zid:)`, when present. The storage layer leaves this
+    /// `None` (it does not parse note metadata); the `get_file_tree` command
+    /// enriches it from the property index so the file tree can sort by zid.
+    #[serde(default)]
+    pub zid: Option<String>,
 }
 
 /// The sole interface for all file I/O in InkyCap.

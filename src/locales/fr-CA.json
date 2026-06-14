@@ -15,6 +15,8 @@
   "sort.modified.asc": "Modifié (ancien – récent)",
   "sort.created.desc": "Créé (récent – ancien)",
   "sort.created.asc": "Créé (ancien – récent)",
+  "sort.zid.asc": "ZID (croissant)",
+  "sort.zid.desc": "ZID (décroissant)",
   "sort.alpha.asc": "Alphabétique (A – Z)",
   "sort.alpha.desc": "Alphabétique (Z – A)",
   "sort.quantity.desc": "Quantité (élevée – faible)",

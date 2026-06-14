@@ -127,6 +127,20 @@ impl NoteMetadata {
                 .unwrap_or_default()
         })
     }
+
+    /// The note's Zettelkasten id (`#note(zid:)`), when present and non-empty.
+    /// A `zid` is user-definable and therefore may be alphanumeric, not just
+    /// digits — it's returned verbatim as a string so callers sort it
+    /// lexically. A numeric `zid:` literal is formatted without a fractional
+    /// part. Shared by every surface that lists or sorts notes by id (Agenda,
+    /// Links pane, file tree).
+    pub fn zid(&self) -> Option<String> {
+        match self.properties.get("zid") {
+            Some(PropertyValue::String(s)) if !s.is_empty() => Some(s.clone()),
+            Some(PropertyValue::Number(n)) => Some(format!("{:.0}", n)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
