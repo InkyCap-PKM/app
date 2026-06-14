@@ -46,20 +46,23 @@
 
   /* ── Corner-radius scale ────────────────────────────────────────
      One scale for the whole UI. Reach for a step, never a literal px.
-       --radius-sm  inputs, badges, chips, small controls
-       --radius-md  buttons, panel controls, dropdowns, popups
+       --radius-sm  inputs, badges, chips
+       --radius-md  full/primary buttons, tabs, cards, dropdowns, popups
        --radius-lg  modals / dialogs
-     --radius-control is kept as a back-compat alias of --radius-md so
-     existing rules keep resolving; new code should use the scale. */
+     --radius-control is the SMALL-control radius: icon buttons, small
+     pills/toggles, compact (.btn--sm) buttons, and chips. It resolves to
+     --radius-sm because a 7px corner reads as over-rounded at that small
+     footprint (size-proportional radius). Larger surfaces (tabs, cards,
+     full buttons) stay on --radius-md. */
   --radius-sm: 4px;
   --radius-md: 7px;
   --radius-lg: 8px;
-  --radius-control: var(--radius-md);
-  /* Radius for text inputs, textareas, and select/combobox triggers.
-     Currently unified with the control radius so every interactive
-     element shares one roundedness. Flip to --radius-sm to make form
-     fields a touch tighter than buttons again. */
-  --radius-input: var(--radius-md);
+  --radius-control: var(--radius-sm);
+  /* Radius for text inputs, textareas, and select/combobox triggers. Unified
+     with --radius-control so form controls share the small-control roundedness
+     — an input or Dropdown sits next to icon buttons and small pills, and a
+     7px field beside a 4px button reads as inconsistent. */
+  --radius-input: var(--radius-control);
 
   /* ── Spacing scale ──────────────────────────────────────────────
      Geometric-ish step scale for padding/gap. The recurring ad-hoc
