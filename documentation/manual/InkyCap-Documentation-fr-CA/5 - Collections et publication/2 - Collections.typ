@@ -110,6 +110,20 @@ La table est le cœur d'une collection : une ligne par note correspondante, une 
   Des étiquettes conviviales gardent les en-têtes lisibles. Les détails de fichier s'affichent comme « Nom du dossier », « Date de modification », « Extension de fichier », et ainsi de suite, même si InkyCap stocke leurs clés techniques précises en coulisses.
 ]
 
+*Filtrer une colonne.* Chaque en-tête de colonne porte une petite icône d'entonnoir. Cliquez dessus pour filtrer la table selon cette seule colonne, sans ouvrir l'éditeur de filtre complet. Les contrôles s'adaptent au type de la colonne :
+
+- Les colonnes *texte* offrent une boîte « contient ».
+- Les colonnes *nombre* offrent des opérateurs comme égal à, au moins, au plus ou entre.
+- Les colonnes *date* offrent est, avant, après, le ou avant, le ou après, dans une plage, et vide / non vide.
+- Les colonnes *liste* (comme `tags` ou `collection`) offrent une liste à cocher des valeurs réellement présentes, de sorte que vous cochez celles que vous voulez.
+- Les colonnes *case à cocher* offrent tous / coché / non coché.
+
+Appuyez sur *Appliquer* pour poser le filtre, ou sur *Effacer* pour le retirer de cette colonne. Un filtre de colonne actif met en surbrillance son entonnoir pour que vous voyiez d'un coup d'œil quelles colonnes sont filtrées, et un bouton *Effacer les filtres de colonne* apparaît pour tous les réinitialiser d'un coup.
+
+#callout("note")[
+  Les filtres de colonne sont des affinages rapides superposés à ce que la vue affiche déjà. Ils restreignent les rangées devant vous ; ils ne changent pas quelles notes appartiennent à la collection (c'est le rôle de l'éditeur de *Filtre* décrit plus haut). Ils sont enregistrés avec la vue, et chaque vue garde son propre ensemble.
+]
+
 == La vue agenda
 
 Une vue *agenda* troque la grille pour une #highlight[liste ciblée de tâches et d'éléments datés tirés des notes membres de la collection (un tableau d'échéances limité exactement à cet ensemble de notes)]. Elle utilise les mêmes règles d'appartenance que la table, de sorte que les deux ne se contredisent jamais, et elle ne nécessite aucune activation particulière : l'appartenance par filtres suffit.

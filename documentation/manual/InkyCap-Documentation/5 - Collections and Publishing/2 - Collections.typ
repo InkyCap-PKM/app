@@ -109,6 +109,20 @@ The table is the heart of a collection: one row per matching note, one column pe
   Friendly labels keep headers readable. File details show as "Folder Name", "Modified Date", "File Extension", and so on, even though InkyCap stores their precise technical keys behind the scenes.
 ]
 
+*Filtering a column.* Each column header carries a small funnel icon. Click it to filter the table by that one column, without opening the full filter editor. The controls match the column's type:
+
+- *Text* columns offer a "contains" box.
+- *Number* columns offer operators like equals, at least, at most, or between.
+- *Date* columns offer is, before, after, on or before, on or after, within a range, and empty / not empty.
+- *List* columns (such as `tags` or `collection`) offer a checklist of the values actually present, so you tick the ones you want.
+- *Checkbox* columns offer any / checked / unchecked.
+
+Press *Apply* to set the filter, or *Clear* to remove it from that column. An active column filter highlights its funnel so you can see at a glance which columns are filtered, and a *Clear column filters* button appears to reset them all at once.
+
+#callout("note")[
+  Column filters are quick refinements layered on top of what the view already shows. They narrow the rows in front of you; they do not change which notes belong to the collection (that is the job of the *Filter* editor described above). They are saved with the view, and each view keeps its own set.
+]
+
 == The agenda view
 
 An *agenda* view trades the grid for a #highlight[focused list of tasks and dated items pulled from the collection's member notes (a deadline board scoped to exactly this set of notes)]. It uses the same membership rules as the table, so the two never disagree, and it needs no special opt-in: filter-based membership is enough.
