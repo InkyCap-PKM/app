@@ -1,30 +1,23 @@
-// "Check for updates" control for Settings → Overview. Drives the updater
-// store's state machine: check → (available → download → restart) | up-to-date
-// | manual (package-managed / beta) | error. A check only runs on click.
+// "Check for updates" control for Settings → Overview. InkyCap does not
+// self-update: a check asks the backend whether a newer release exists and, if
+// so, offers a link to the releases page to download it by hand. A check only
+// runs on click. State machine: check → (available → View releases) | up-to-date
+// | error.
 import { Show, Switch, Match } from "solid-js";
 import { useI18n } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import {
   updateStatus,
   updateLatestVersion,
+  updateLatestUrl,
   updateNotes,
   updateError,
-  updateProgress,
   checkForUpdates,
-  downloadAndInstall,
-  restartToUpdate,
-  RELEASES_URL,
 } from "../stores/updater";
 
 export default function UpdateChecker() {
   const t = useI18n();
   const status = updateStatus;
-
-  const percent = () => {
-    const { downloaded, total } = updateProgress();
-    if (!total) return null;
-    return Math.min(100, Math.round((downloaded / total) * 100));
-  };
 
   const statusText = () => {
     switch (status()) {
@@ -34,16 +27,6 @@ export default function UpdateChecker() {
         return t("settings.updates.uptodate");
       case "available":
         return t("settings.updates.available", { version: updateLatestVersion() ?? "" });
-      case "downloading": {
-        const p = percent();
-        return p == null
-          ? t("settings.updates.downloading")
-          : t("settings.updates.downloadingPct", { pct: String(p) });
-      }
-      case "ready":
-        return t("settings.updates.ready");
-      case "manual":
-        return t("settings.updates.manual", { version: updateLatestVersion() ?? "" });
       case "error":
         return t("settings.updates.errorIntro");
       default:
@@ -65,24 +48,11 @@ export default function UpdateChecker() {
               {t("settings.updates.checkingShort")}
             </button>
           </Match>
-          <Match when={status() === "downloading"}>
-            <span class="settings__description">{percent() == null ? "…" : `${percent()}%`}</span>
-          </Match>
           <Match when={status() === "available"}>
-            <button type="button" class="btn btn--primary btn--sm" onClick={() => downloadAndInstall()}>
-              {t("settings.updates.install")}
-            </button>
-          </Match>
-          <Match when={status() === "ready"}>
-            <button type="button" class="btn btn--primary btn--sm" onClick={() => restartToUpdate()}>
-              {t("settings.updates.restart")}
-            </button>
-          </Match>
-          <Match when={status() === "manual"}>
             <button
               type="button"
-              class="btn btn--secondary btn--sm"
-              onClick={() => ipc.openUrlExternally(RELEASES_URL)}
+              class="btn btn--primary btn--sm"
+              onClick={() => ipc.openUrlExternally(updateLatestUrl())}
             >
               {t("settings.updates.viewReleases")}
             </button>

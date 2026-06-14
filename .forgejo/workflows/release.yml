@@ -2,27 +2,19 @@
 #
 # Trigger: pushing a tag like `v26.6.1`. The job builds the portable Linux
 # packages (.deb + .rpm) and attaches them to the Forgejo release. The Windows
-# installer, the Flatpak bundle, and the updater manifest are added locally
-# afterwards (see documentation/developer/releasing.md) — they can't be built or
-# published here (Windows is a different OS; Flatpak needs flatpak-builder + the
-# GNOME runtime; and the manifest needs the signed Windows artifact).
+# installer and the Flatpak bundle are added locally afterwards (see
+# documentation/developer/releasing.md) — they can't be built here (Windows is a
+# different OS; Flatpak needs flatpak-builder + the GNOME runtime).
 #
-# Channel routing follows InkyCap's versioning scheme (see
-# documentation/developer/releasing.md): versions are YY.MM.RELEASE and the
-# last (RELEASE) component selects the channel — EVEN is a user-facing/stable
-# release (published to updates/stable/), ODD is a development/beta release
-# (updates/beta/).
+# InkyCap does not self-update: the in-app check queries Codeberg's releases API
+# and links to the releases page (see src-tauri/src/commands/updates.rs). The
+# RELEASE (last) version component still selects the channel for the *notice*:
+# EVEN is a user-facing/stable release; ODD is a development/beta release, which
+# this job marks as a Forgejo prerelease so the stable check skips it.
 #
 # Required repository secrets (Settings → Actions → Secrets):
 #   PAGES_PUSH_TOKEN  a token with write access to the repo (to create the
-#                     release and upload assets). The signing-key secrets aren't
-#                     used here — .deb/.rpm are unsigned manual-update packages —
-#                     but they're still needed for the local Windows build.
-#
-# The .deb/.rpm built here are package-manager installs and update manually, so
-# they carry no minisign signature and no updater-manifest entry. Linux users
-# see only the "a newer version is available → View releases" notice (the
-# in-app updater reads the manifest's top-level `version`).
+#                     release and upload assets).
 
 on:
   push:
@@ -58,13 +50,7 @@ jobs:
         run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
 
       - name: Build Linux packages (.deb + .rpm)
-        # createUpdaterArtifacts + a configured pubkey makes Tauri demand a
-        # signing key on every build; the --config override disables updater
-        # artifacts for these manual-install packages so the unsigned CI build
-        # succeeds (the signed Windows build keeps updater artifacts on).
-        run: |
-          npm run tauri build -- --bundles deb rpm \
-            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npm run tauri build -- --bundles deb rpm
 
       - name: Verify the built binary's version matches the tag
         # Catches a stale build (or a tag/version-bump mismatch): the version
@@ -97,22 +83,20 @@ jobs:
           REL_ID=$(curl -fsSL -H "Authorization: token ${TOKEN}" "${API}/releases/tags/${TAG}" | jq -r '.id // empty')
           if [ -z "${REL_ID}" ]; then
             # Created as a DRAFT: the maintainer attaches the Windows installer
-            # (+.sig) and the Flatpak, then publishes the release by hand, then
-            # publishes the manifest (scripts/publish-manifest.sh). Draft asset
-            # download URLs only resolve once published — so the manifest, which
-            # points at them, must be published last.
+            # and the Flatpak, then publishes the release by hand. Codeberg's
+            # releases API reflects it immediately — there is no manifest to
+            # publish.
             REL_ID=$(curl -fsSL -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" \
               -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":true,\"prerelease\":${PRERELEASE}}" \
               "${API}/releases" | jq -r '.id')
           fi
-          # Upload the .deb and .rpm. These are package-manager installs (manual
-          # updates), so they carry no .sig and no updater-manifest entry.
+          # Upload the .deb and .rpm. All installs are download-by-hand.
           for f in $(find src-tauri/target/release/bundle/deb src-tauri/target/release/bundle/rpm -type f \( -name '*.deb' -o -name '*.rpm' \)); do
             curl -fsSL -X POST -H "Authorization: token ${TOKEN}" \
               -F "attachment=@${f}" \
               "${API}/releases/${REL_ID}/assets?name=$(basename "$f")"
           done
 
-      # The Windows installer (+.sig), the Flatpak bundle, and the updater
-      # manifest are produced and published LOCALLY after this job — see the
-      # "Cutting a release" section of documentation/developer/releasing.md.
+      # The Windows installer and the Flatpak bundle are produced and attached
+      # LOCALLY after this job — see the "Cutting a release" section of
+      # documentation/developer/releasing.md.

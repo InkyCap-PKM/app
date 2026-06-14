@@ -35,12 +35,6 @@
   "plugins": {
     "shell": {
       "open": "(mailto:\\w+|tel:\\w+|https?://\\w+|[a-zA-Z][a-zA-Z0-9+.-]+://).+"
-    },
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGQTI0NkM3RUNBMTY0QTUKUldTbFpLSHN4MGFpYjBKbHlhYUp6Z05EM0hVMkNpUGRhQVp3TVBQOW1xNStxUVl6WXJrb3cxdjUK",
-      "endpoints": [
-        "https://updates.inkycap.org/stable/latest.json"
-      ]
     }
   },
   "bundle": {
@@ -54,7 +48,6 @@
       "app",
       "dmg"
     ],
-    "createUpdaterArtifacts": true,
     "publisher": "Joshua Chalifour",
     "copyright": "© 2026 Joshua Chalifour",
     "icon": [
