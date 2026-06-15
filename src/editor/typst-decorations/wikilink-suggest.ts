@@ -475,6 +475,76 @@ const wikilinkBracketHandler = Prec.high(EditorView.inputHandler.of((view, from,
   return true;
 }));
 
+// Hand-typing the closing `]]` of a `[[Name]]` (or `[[Note::Heading]]`) should
+// seal it into a `#wikilink(...)` call — exactly as if the user had chosen the
+// matching entry or the "Create new page" row in the picker. Without this, a
+// manually closed `[[Name]]` stayed inert literal text: detectWikilinkContext
+// hides the picker the moment a `]` appears before the cursor, so nothing ever
+// rewrote it. Users who know they're making a new page (and don't want to scan
+// a long suggestion list) reasonably expect the `]]` they typed to complete the
+// link. We fire on the *second* `]`, consuming it so the brackets collapse into
+// the call rather than being left behind.
+const wikilinkCloseHandler = Prec.high(EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== "]") return false;
+  if (from !== to) return false;
+
+  const line = view.state.doc.lineAt(from);
+  const before = view.state.doc.sliceString(line.from, from);
+  // Only act on the second `]`: the first closing bracket must already sit
+  // immediately before the cursor.
+  if (!before.endsWith("]")) return false;
+
+  const inner = before.slice(0, -1);
+  const openIdx = inner.lastIndexOf("[[");
+  if (openIdx < 0) return false;
+
+  const content = inner.slice(openIdx + 2);
+  // A stray `[` or `]` inside means this isn't the clean `[[Name]]` shorthand;
+  // an empty body is nothing to link. Leave those as literal text.
+  if (content.trim() === "" || content.includes("[") || content.includes("]")) return false;
+  // A `[[` inside an inline raw span (`` `[[` ``) is literal documentation text,
+  // not a link shortcut — mirror the guard in detectWikilinkContext.
+  if (inVerbatimLineContext(view.state, line.from + openIdx + 1)) return false;
+
+  const fromPos = line.from + openIdx;
+  const replaceTo = from; // consumes `[[content]`; the typed `]` is dropped.
+
+  const sepIdx = content.indexOf("::");
+  const headingText = sepIdx >= 0 ? content.slice(sepIdx + 2) : "";
+  if (sepIdx >= 0 && headingText.trim() !== "") {
+    // Heading form: `[[Note::Heading]]` → `#wikilink("Note", label: "…")`,
+    // resolving the heading's stable label asynchronously (mirrors acceptItem).
+    const noteName = content.slice(0, sepIdx);
+    void (async () => {
+      let label: string | undefined;
+      const path = resolveNotePath(noteName);
+      if (path) {
+        try {
+          label = (await ipc.ensureHeadingLabel(path, headingText)) ?? undefined;
+        } catch { /* fall through to the heading text */ }
+      }
+      const labelVal = label ?? headingText;
+      const insert = `#wikilink("${typstStringEscape(noteName)}", label: "${typstStringEscape(labelVal)}")`;
+      view.dispatch({
+        changes: { from: fromPos, to: replaceTo, insert } as ChangeSpec,
+        selection: { anchor: fromPos + insert.length },
+      });
+      hidePopup();
+    })();
+    return true;
+  }
+
+  // Plain note form (`[[Name]]`, or `[[Note::]]` with no heading typed yet).
+  const noteName = sepIdx >= 0 ? content.slice(0, sepIdx) : content;
+  const insert = `#wikilink("${typstStringEscape(noteName)}")`;
+  view.dispatch({
+    changes: { from: fromPos, to: replaceTo, insert } as ChangeSpec,
+    selection: { anchor: fromPos + insert.length },
+  });
+  hidePopup();
+  return true;
+}));
+
 const suggestKeyHandler = Prec.highest(keymap.of([
   {
     key: "ArrowDown",
@@ -578,4 +648,4 @@ const suggestTracker = ViewPlugin.fromClass(
   },
 );
 
-export const wikilinkSuggest: Extension = [wikilinkBracketHandler, suggestKeyHandler, suggestTracker];
+export const wikilinkSuggest: Extension = [wikilinkBracketHandler, wikilinkCloseHandler, suggestKeyHandler, suggestTracker];

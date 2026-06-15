@@ -63,3 +63,35 @@ describe("[[ wikilink bracket input", () => {
     v.destroy();
   });
 });
+
+// A user who hand-types the closing `]]` (instead of picking from the popup)
+// should still get a `#wikilink(...)` call — including for brand-new pages that
+// aren't in the suggestion list yet.
+describe("[[ wikilink manual close (]])", () => {
+  function typeAll(v: EditorView, s: string) {
+    for (const ch of s) typeChar(v, ch);
+  }
+
+  it("sealing [[Name]] with a typed ]] yields #wikilink(\"Name\")", () => {
+    const v = mk();
+    typeAll(v, "[[Name]]");
+    expect(v.state.doc.toString()).toBe('#wikilink("Name")');
+    // Caret lands just after the call so typing continues outside the link.
+    expect(v.state.selection.main.head).toBe('#wikilink("Name")'.length);
+    v.destroy();
+  });
+
+  it("does not fire on the first ] (only the closing pair completes the link)", () => {
+    const v = mk();
+    typeAll(v, "[[Name]");
+    expect(v.state.doc.toString()).toBe("[[Name]");
+    v.destroy();
+  });
+
+  it("leaves an empty [[]] as literal text", () => {
+    const v = mk();
+    typeAll(v, "[[]]");
+    expect(v.state.doc.toString()).toBe("[[]]");
+    v.destroy();
+  });
+});
