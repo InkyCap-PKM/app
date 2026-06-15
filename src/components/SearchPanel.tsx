@@ -103,7 +103,6 @@ const SYNTAX_TIPS: { label: string; descKey: string }[] = [
   { label: "word*", descKey: "search.syntaxTip.truncation" },
   { label: '"…"', descKey: "search.syntaxTip.phrase" },
   { label: "AND OR NOT", descKey: "search.syntaxTip.boolean" },
-  { label: "-term", descKey: "search.syntaxTip.exclude" },
   { label: "a W/5 b", descKey: "search.syntaxTip.proximity" },
 ];
 
