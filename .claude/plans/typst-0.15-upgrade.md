@@ -152,17 +152,31 @@ new snapshot corpus), `tsc`, vitest, vite build, `i18n:check`.
 
 ## Phase 2 — PDF/A + PDF/UA combined standards
 
-0.15 lifts the validation that rejected `[A_*, Ua_1]` together. Follow
-the TODO already written at `compiler.rs:64-69`:
+0.15 lifts the *single-substandard* restriction (one PDF/A + one PDF/UA
+at once), but **NOT** version compatibility. Follow the TODO at
+`compiler.rs:60-68`.
 
-- DECIDED (2026-06-15): expose **PDF/A-4 + PDF/UA-1** combined (the newer
-  PDF-2.0-based archival level). Keep the existing standalone `PdfA4` and
-  `PdfUa1` presets; add one combined variant, e.g. `PdfA4Ua1` →
-  `&[PdfStandard::A_4, PdfStandard::Ua_1]`. Confirm it compiles cleanly
-  on representative tagged docs.
-- Wire the new variant through: `ipc.ts` type, `ExportDialog.tsx`
-  select options, `CollectionTable.tsx` select options.
-- Add i18n keys (en.json source of truth; fr-CA mirror).
+- ⚠ CORRECTION (2026-06-15, impl): the original decision — **PDF/A-4 +
+  PDF/UA-1** — is **impossible**. typst-pdf 0.15 rejects it: "PDF/A-4 and
+  PDF/UA-1 are mutually incompatible because they do not have any
+  overlapping PDF versions" (A-4 requires PDF 2.0; UA-1 requires PDF
+  1.4–1.7). Empirically, UA-1 pairs only with A-1 / A-2 / A-3 (all PDF
+  ≤1.7). UA-2 (PDF 2.0, the natural A-4 partner) is "future" in typst-pdf
+  0.15 — not yet exposed.
+- IMPLEMENTED: combined variant `PdfA2aUa1` → `&[A_2a, Ua_1]`. PDF/A-2a is
+  the PDF-1.7 archival level whose **Level-A** conformance mandates the
+  same full document tagging UA-1 needs — the coherent archival+accessible
+  pairing. (A-2b/A-3b are "basic", visual-only; Level A is the accessible
+  one. A-3a would also work and additionally permits file attachments;
+  A-2a chosen as the cleaner baseline for a notes tool.) Standalone `PdfA4`
+  and `PdfUa1` unchanged. Compiles cleanly (unit test
+  `combined_pdf_a2a_ua1_standard_compiles`).
+- Wired through: `ipc.ts` type (`"pdf-a2a-ua1"`), `ExportDialog.tsx` +
+  `CollectionTable.tsx` select options, i18n keys
+  `collection.table.pdfStandard.pdfa2aua1` + `export.pdfDesc.pdfa2aua1`
+  (en + fr-CA). `includes_ua1()` / `label()` helpers centralize the UA-1
+  branching (alt-text/heading checks, heading normalization, doc date).
+- OPEN for user: keep A-2a, or switch to A-3a? One-line change.
 
 ---
 

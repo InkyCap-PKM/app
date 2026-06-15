@@ -1478,7 +1478,7 @@ export async function exportNotePdf(
 
 /// PDF standard presets for native Typst PDF export. Mirrors `PdfStandardPreset`
 /// on the Rust side (kebab-case serde).
-export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1";
+export type PdfStandardPreset = "standard" | "pdf-a4" | "pdf-ua1" | "pdf-a2a-ua1";
 
 /// How an export should treat the collaboration review layer (inline
 /// `#suggestion` tracked changes plus `#annotation` notes). Mirrors

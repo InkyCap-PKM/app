@@ -694,7 +694,7 @@ pub async fn export_collection_book_pdf(
         .and_then(|s| s.heading.as_ref())
         .and_then(|h| h.numbering.clone());
 
-    let normalize_headings = book_pdf_standard == PdfStandardPreset::PdfUa1;
+    let normalize_headings = book_pdf_standard.includes_ua1();
     let source = book_wrapper::build_book_source(
         &notes,
         &options,
@@ -815,7 +815,7 @@ pub fn check_pdf_standard_requirements(
 
     let mut issues: Vec<String> = Vec::new();
 
-    if standard == PdfStandardPreset::PdfUa1 {
+    if standard.includes_ua1() {
         let alt_offenders = images_missing_alt(source);
         if !alt_offenders.is_empty() {
             let mut block =
@@ -848,11 +848,7 @@ pub fn check_pdf_standard_requirements(
         return Ok(());
     }
 
-    let label = match standard {
-        PdfStandardPreset::PdfUa1 => "PDF/UA-1",
-        PdfStandardPreset::PdfA4 => "PDF/A-4",
-        PdfStandardPreset::Standard => "PDF",
-    };
+    let label = standard.label();
     Err(InkyCapError::ExportFailed(format!(
         "{label} export blocked by the following issue(s):\n\n{}",
         issues.join("\n\n")
