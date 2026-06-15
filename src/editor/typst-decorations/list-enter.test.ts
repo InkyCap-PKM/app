@@ -63,6 +63,21 @@ describe("list Enter behaviour", () => {
     v.destroy();
   });
 
+  // Visual-mode tolerance: the bullet's atomic widget spans [line.from,
+  // afterMarker], so a click at the start of an item's text can round the caret
+  // to the line start. Enter must still split cleanly at the content start
+  // rather than inserting a newline ahead of the marker (which would double the
+  // bullet). Splitting at line start pushes the text down under a fresh marker.
+  it("splits at content start when the caret is rounded to the line start", () => {
+    const v = mk("- apple");
+    v.dispatch({ selection: { anchor: 0 } }); // line.from, before the marker
+    pressEnter(v);
+    expect(v.state.doc.toString()).toBe("- \n- apple");
+    // Caret lands before "apple" on the new bulleted line.
+    expect(v.state.selection.main.head).toBe("- \n- ".length);
+    v.destroy();
+  });
+
   // Visual-mode tolerance: if the caret lands back on the previous (non-empty)
   // item after the empty bullet was inserted below, the second Enter still
   // exits by clearing that trailing empty marker.

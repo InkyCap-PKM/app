@@ -210,6 +210,13 @@ export const visualTheme = EditorView.theme({
     display: "inline-block",
     width: "var(--list-bullet-width)",
     textAlign: "center",
+    // Hanging indent: the list line carries `padding-left` of one bullet width
+    // (plus nesting); this negative margin pulls the marker back to the column
+    // edge so the bullet sits at the left margin while the item's text — and any
+    // wrapped continuation — stays one bullet-width in. Done with margin (not the
+    // line's `text-indent`) because WebKitGTK doesn't reliably offset a leading
+    // inline-block via text-indent, which left the bullet hanging in the margin.
+    marginLeft: "calc(-1 * var(--list-bullet-width))",
   },
   ".cm-typst-hr": {
     border: "none",

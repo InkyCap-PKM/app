@@ -329,10 +329,20 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   const numMatch = marker.match(/^(\d+)\.$/);
   const nextMarker = numMatch ? `${Number(numMatch[1]) + 1}.` : marker;
 
+  // The marker (`indent + marker + space`) must stay at the head of the line —
+  // never split ahead of it. The cursor can legitimately sit at `line.from`:
+  // the bullet's atomic replace range spans [line.from, afterMarker], so a
+  // click at the start of the item's text rounds the caret to the line start.
+  // Splitting there would insert the newline before the marker and leave a
+  // doubled/empty bullet. Clamp to the item's content start, which makes that
+  // case behave exactly like an Enter pressed at the start of the text.
+  const contentStart = line.from + listMatch[0].length;
+  const pos = Math.max(from, contentStart);
+
   const insert = `\n${indent}${nextMarker} `;
   return {
-    changes: { from, insert },
-    selection: { anchor: from + insert.length },
+    changes: { from: pos, insert },
+    selection: { anchor: pos + insert.length },
   };
 }
 
