@@ -637,7 +637,14 @@ fn sanitize_template_name(name: &str) -> Result<String, InkyCapError> {
 /// surface and the `#note(...)` properties pattern. Shared by `create_scaffold`
 /// (the default when no content is supplied) and `get_scaffold_starter` (which
 /// prefills the in-Settings scaffold editor), so the two never drift.
-const STARTER_SCAFFOLD: &str = "// Scaffold: see https://typst.app/docs for Typst syntax.\n\
+///
+/// Leads with the canonical inkycap-notebox import so a brand-new scaffold
+/// matches the built-in `new-note`/`daily-note` scaffolds and shows authors the
+/// preamble their notes carry. Note creation injects this line anyway when a
+/// scaffold omits it (see `create_note_from_rule`), so its presence here is for
+/// consistency and discoverability, not correctness.
+const STARTER_SCAFFOLD: &str = "#import \"/.inkycap/notebox.typ\": *\n\n\
+    // Scaffold: see https://typst.app/docs for Typst syntax.\n\
     // Variables: {{title}} {{slug}} {{date}} {{date:YYYY-MM-DD}}\n\
     //            {{time}} {{zid}} {{cursor}}\n\
     #note(\n  \
