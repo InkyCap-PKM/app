@@ -30,11 +30,8 @@ export const visualTheme = EditorView.theme({
   // also stands in for the marker's now-hidden trailing space, so ~1.5em keeps
   // the bullet-to-text gap roughly where it was before that space was folded in.
   ".cm-content": { "--list-bullet-width": "1.5em" },
-  // Let the caret follow the natural height of the line it sits on. A fixed
-  // cap (previously 1.5em) left the caret stranded short and top-aligned on
-  // heading lines, whose font is up to 1.8em — the caret must grow with the
-  // text so it reads as belonging to the heading.
-  ".cm-cursor": { maxHeight: "none" },
+  // (No `.cm-cursor` rule: the editor uses the native caret, which already
+  // follows each line's font height — including tall heading lines.)
   ".cm-gutters": {
     display: "none !important",
   },
@@ -107,14 +104,13 @@ export const visualTheme = EditorView.theme({
     lineHeight: "1.4",
   },
   // Selection visibility over inline content that paints its own opaque
-  // background. The editor draws selection with CM's `drawSelection` layer,
-  // which sits *behind* `.cm-content` and is hidden anywhere an opaque
-  // background is stacked on top — highlight fills, code spans, tag/due chips,
-  // wikilink/pill styling. The result is a drag-select that visibly skips over
-  // those spans. Re-enable the native `::selection` paint for them so the
-  // selection band shows on top of their own background, the same fix table
-  // cells use below. WebKitGTK honours only `background-color` (not the
-  // `background` shorthand) inside `::selection`.
+  // background — highlight fills, code spans, tag/due chips, wikilink/pill
+  // styling. The editor uses native `::selection` (see inkycapTheme), and the
+  // base rule there already tints descendant text; these per-element rules pin
+  // the same tint while keeping the span's own text `color: inherit`, and the
+  // `*::selection` variant reaches the inner label/value spans chips wrap their
+  // content in. WebKitGTK honours only `background-color` (not the `background`
+  // shorthand) inside `::selection`.
   [[
     ".cm-typst-highlight",
     ".cm-typst-raw-inline",

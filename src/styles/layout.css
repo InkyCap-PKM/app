@@ -9142,9 +9142,8 @@ svg.lucide {
   color: var(--fg-primary);
 }
 
-/* Selection background is set by `.cm-selectionBackground` in theme.ts.
- * No competing `::selection { transparent }` rule and no specificity
- * gymnastics — a single selector is enough. */
+/* Editor selection is the native browser `::selection`, tinted with
+ * `--bg-selection` in inkycapTheme (typst-editor.ts). No drawn-selection layer. */
 
 /* ─── Vertical Toolbar (persistent left edge) ─── */
 
