@@ -60,12 +60,17 @@ impl CompileTimer {
 /// PDF standard presets exposed to the frontend. Each variant maps to a
 /// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
 ///
-/// As of typst-pdf 0.14, only one PDF substandard (validator) can be active at
-/// a time — `PdfStandards::new` rejects e.g. `[A_4, Ua_1]` together. If a
-/// future typst-pdf release lifts this restriction, add a combined variant
-/// like `PdfA4Ua` here and pass `&[PdfStandard::A_4, PdfStandard::Ua_1]` in
-/// `to_pdf_standards`. The frontend type in `ipc.ts` and the select options in
-/// `ExportDialog.tsx` / `CollectionTable.tsx` would each need one new entry.
+/// typst-pdf 0.15 lifted the 0.14 restriction that only one PDF substandard
+/// could be active at a time, so [`PdfStandardPreset::PdfA2aUa1`] can now request
+/// archival *and* accessibility conformance in a single file. The pairing is
+/// PDF/A-2a, not the standalone `PdfA4`: PDF/UA-1 is locked to PDF 1.7, while
+/// PDF/A-4 requires PDF 2.0, so the two share no common PDF version and typst-pdf
+/// rejects them together. PDF/A-2a is the PDF-1.7-based archival level whose
+/// Level-A conformance mandates the same full document tagging PDF/UA-1 needs —
+/// the natural archival+accessible combination. The standalone variants stay for
+/// users who want exactly one conformance level. Adding a preset means one new
+/// entry here plus the frontend type in `ipc.ts` and the select options in
+/// `ExportDialog.tsx` / `CollectionTable.tsx`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PdfStandardPreset {
@@ -76,6 +81,10 @@ pub enum PdfStandardPreset {
     PdfA4,
     /// PDF/UA-1 — Universal Accessibility with full tagged structure.
     PdfUa1,
+    /// PDF/A-2a + PDF/UA-1 — archival *and* accessibility in one file. PDF/A-2a's
+    /// Level-A tagging is the PDF-1.7 base PDF/UA-1 shares; A-4 (PDF 2.0) can't
+    /// pair with UA-1.
+    PdfA2aUa1,
 }
 
 impl PdfStandardPreset {
@@ -88,6 +97,26 @@ impl PdfStandardPreset {
             Self::PdfUa1 => {
                 PdfStandards::new(&[PdfStandard::Ua_1]).expect("PDF/UA-1 is a valid standard")
             }
+            Self::PdfA2aUa1 => PdfStandards::new(&[PdfStandard::A_2a, PdfStandard::Ua_1])
+                .expect("PDF/A-2a + PDF/UA-1 is a valid combination in typst-pdf 0.15"),
+        }
+    }
+
+    /// True when the preset includes PDF/UA-1 accessibility conformance, so the
+    /// accessibility requirements (alt text, gap-free headings, tagged
+    /// structure, heading normalization) apply. Covers both the standalone
+    /// `PdfUa1` and the combined `PdfA2aUa1`.
+    pub fn includes_ua1(self) -> bool {
+        matches!(self, Self::PdfUa1 | Self::PdfA2aUa1)
+    }
+
+    /// Human-readable label for diagnostics and UI fallback text.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "PDF",
+            Self::PdfA4 => "PDF/A-4",
+            Self::PdfUa1 => "PDF/UA-1",
+            Self::PdfA2aUa1 => "PDF/A-2a + PDF/UA-1",
         }
     }
 }
@@ -568,6 +597,35 @@ mod tests {
         );
         assert!(frame.width_pt > 0.0);
         assert!(frame.height_pt > 0.0);
+    }
+
+    #[test]
+    fn combined_pdf_a2a_ua1_standard_compiles() {
+        // typst-pdf 0.15 lifted the 0.14 single-substandard restriction, so the
+        // archival+accessible pair must both construct without panicking (the
+        // `.expect` in `to_pdf_standards`) and produce a real PDF. The pairing is
+        // PDF/A-2a, not A-4: UA-1 is PDF 1.7, A-4 is PDF 2.0, and typst-pdf
+        // rejects version-incompatible standards together. Regression guard: if
+        // a future bump re-tightens the validation, this fails loudly here rather
+        // than at a user's export. A conformant doc carries title, language, and
+        // a document date (all PDF/A + PDF/UA prerequisites).
+        let (_dir, root) = canonical_tempdir();
+        let note_path = root.join("combined.typ");
+        let source = "#set document(title: \"Combined standards\", \
+            date: datetime(year: 2026, month: 6, day: 15))\n\
+            #set text(lang: \"en\")\n\n= Heading\n\nAccessible, archival body text.\n"
+            .to_string();
+        fs::write(&note_path, &source).expect("write note");
+
+        let mut compiler = TypstCompiler::new(root);
+        let pdf = compiler
+            .compile_pdf(&note_path, source, PdfStandardPreset::PdfA2aUa1)
+            .expect("combined PDF/A-2a + PDF/UA-1 compiles");
+        assert!(
+            pdf.starts_with(b"%PDF-"),
+            "expected a PDF header, got {} bytes",
+            pdf.len()
+        );
     }
 
     /// A note that `#include`s a syntactically broken file should still render

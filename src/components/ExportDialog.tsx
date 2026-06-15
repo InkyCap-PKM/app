@@ -50,6 +50,7 @@ const PDF_STANDARD_OPTIONS: { value: PdfStandardPreset; labelKey: string; descKe
   { value: "standard", labelKey: "collection.table.pdfStandard.standard", descKey: "export.pdfDesc.standard" },
   { value: "pdf-a4", labelKey: "collection.table.pdfStandard.pdfa4", descKey: "export.pdfDesc.pdfa4" },
   { value: "pdf-ua1", labelKey: "collection.table.pdfStandard.pdfua1", descKey: "export.pdfDesc.pdfua1" },
+  { value: "pdf-a2a-ua1", labelKey: "collection.table.pdfStandard.pdfa2aua1", descKey: "export.pdfDesc.pdfa2aua1" },
 ];
 
 function supportsMetadataMode(fmt: ExportFormat): boolean {

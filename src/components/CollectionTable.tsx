@@ -1158,6 +1158,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                             { value: "standard", label: t("collection.table.pdfStandard.standard") },
                             { value: "pdf-a4", label: t("collection.table.pdfStandard.pdfa4") },
                             { value: "pdf-ua1", label: t("collection.table.pdfStandard.pdfua1") },
+                            { value: "pdf-a2a-ua1", label: t("collection.table.pdfStandard.pdfa2aua1") },
                           ]}
                           onChange={setExportPdfStandard}
                           ariaLabel={t("collection.table.pdfStandard")}
