@@ -40,24 +40,28 @@ const UNIVERSE_PACKAGES_URL = "https://typst.app/universe/search/?kind=packages"
 
 const TemplatesPanel: Component = () => {
   const t = useI18n();
-  const [refreshKey, setRefreshKey] = createSignal(0);
   const [tab, setTab] = createSignal<SubTab>("scaffolds");
   const [showHelp, setShowHelp] = createSignal(false);
 
-  // Keyed on noteboxInfo() too: scaffolds/templates/packages are notebox-scoped,
-  // so opening or switching noteboxes must refetch — mirrors the file-tree and
-  // collection resources in LeftSidebar.
-  const [scaffolds] = createResource(
-    () => ({ info: noteboxInfo(), key: refreshKey() }),
+  // Notebox-scoped: opening or switching noteboxes refetches via the
+  // noteboxInfo() source. Mutations (new/delete a scaffold, install/uninstall a
+  // package) call refresh(), which invokes each resource's explicit refetch() —
+  // the reliable, idiomatic trigger, mirroring LeftSidebar's
+  // refetchCollections/refetchFileTree. (An earlier bump-a-key-in-the-source
+  // trick left a deleted scaffold lingering in the list until the panel
+  // remounted.)
+  const [scaffolds, { refetch: refetchScaffolds }] = createResource(
+    () => noteboxInfo(),
     async () => ipc.listScaffoldEntries(),
   );
-  const [packages] = createResource(
-    () => ({ info: noteboxInfo(), key: refreshKey() }),
+  const [packages, { refetch: refetchPackages }] = createResource(
+    () => noteboxInfo(),
     async () => ipc.listInstalledPackages(),
   );
 
   function refresh() {
-    setRefreshKey((k) => k + 1);
+    void refetchScaffolds();
+    void refetchPackages();
   }
 
   function templatePackages(): ipc.InstalledPackageEntry[] {
