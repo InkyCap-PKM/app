@@ -98,12 +98,16 @@ const SYMBOL_ITEMS: PaletteItem[] = CURATED_SYMBOLS.map((s) => ({
 const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Bold", labelKey: "slash.bold", category: "Format", insert: '*${sel}*', cursorOffset: 1, shortcut: "*…*" },
   { label: "Italic", labelKey: "slash.italic", category: "Format", insert: '_${sel}_', cursorOffset: 1, shortcut: "_…_" },
-  { label: "Strikethrough", labelKey: "slash.strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8 },
-  { label: "Highlight", labelKey: "slash.highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11 },
-  { label: "Underline", labelKey: "slash.underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11 },
-  { label: "Overline", labelKey: "slash.overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10 },
-  { label: "Subscript", labelKey: "slash.subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5 },
-  { label: "Superscript", labelKey: "slash.superscript", category: "Format", insert: '#super[${sel}]', cursorOffset: 7 },
+  // `#func[…]` formatting collapses to a pill the moment the visual plugin runs.
+  // expandOnInsert keeps the source brackets visible right after insertion so the
+  // caret lands inside `[…]` and typing goes into the body — without it the pill
+  // is atomic and CM rounds the caret to its outer edge, so text lands after `]`.
+  { label: "Strikethrough", labelKey: "slash.strikethrough", category: "Format", insert: '#strike[${sel}]', cursorOffset: 8, expandOnInsert: true },
+  { label: "Highlight", labelKey: "slash.highlight", category: "Format", insert: '#highlight[${sel}]', cursorOffset: 11, expandOnInsert: true },
+  { label: "Underline", labelKey: "slash.underline", category: "Format", insert: '#underline[${sel}]', cursorOffset: 11, expandOnInsert: true },
+  { label: "Overline", labelKey: "slash.overline", category: "Format", insert: '#overline[${sel}]', cursorOffset: 10, expandOnInsert: true },
+  { label: "Subscript", labelKey: "slash.subscript", category: "Format", insert: '#sub[${sel}]', cursorOffset: 5, expandOnInsert: true },
+  { label: "Superscript", labelKey: "slash.superscript", category: "Format", insert: '#super[${sel}]', cursorOffset: 7, expandOnInsert: true },
   { label: "Inline code", labelKey: "slash.inlineCode", category: "Format", insert: '`${sel}`', cursorOffset: 1, shortcut: "`…`" },
   { label: "Inline math", labelKey: "slash.inlineMath", category: "Format", insert: '$${sel}$', cursorOffset: 1, shortcut: "$…$" },
 

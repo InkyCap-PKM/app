@@ -1,5 +1,5 @@
 import { Compartment, EditorState, Prec, StateField, Transaction, type Extension, type StateEffect } from "@codemirror/state";
-import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, highlightSpecialChars, tooltips } from "@codemirror/view";
+import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import {
@@ -251,20 +251,21 @@ const inkycapTheme = EditorView.theme({
   "&": {
     height: "100%",
   },
-  // Selection: opaque rectangles inside a translucent layer. CodeMirror draws
-  // the selection as multiple `.cm-selectionBackground` rects, and around an
-  // atomic widget (e.g. a wikilink) those rects can overlap; a translucent
-  // per-rect colour would then compound into a darker band on the overlap.
-  // Painting the rects opaque and moving the translucency onto the layer keeps
-  // the selection one flat colour no matter how the pieces overlap.
-  "& > .cm-scroller > .cm-selectionLayer": {
-    opacity: "var(--editor-selection-alpha, 0.2)",
+  // Selection: native browser selection (no `drawSelection` layer). CodeMirror's
+  // drawn selection measures each endpoint with `coordsAtPos`, which is
+  // unreliable on WebKitGTK for lines with non-trivial inline structure — a
+  // large-font heading span, or a leading pill widget — so a partial selection
+  // could paint the whole row. The browser's own `::selection` paints directly
+  // on the selected glyphs with no measurement, so it is always exact. We tint
+  // it with `--bg-selection` (the same translucent colour the opaque-span
+  // `::selection` overrides in visual-theme use, so the whole selection reads as
+  // one colour). WebKitGTK honours only `background-color` inside `::selection`,
+  // not the `background` shorthand.
+  "& .cm-content ::selection": {
+    backgroundColor: "var(--bg-selection)",
   },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    backgroundColor: "var(--editor-selection-fill) !important",
-  },
-  "& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-    backgroundColor: "var(--editor-selection-fill) !important",
+  "& .cm-line::selection": {
+    backgroundColor: "var(--bg-selection)",
   },
   ".cm-scroller": {
     overflow: "auto",
@@ -297,9 +298,8 @@ const inkycapTheme = EditorView.theme({
   ".cm-activeLine": {
     backgroundColor: "color-mix(in srgb, var(--bg-hover) 60%, transparent)",
   },
-  "&.cm-focused .cm-cursor": {
-    borderLeftColor: "var(--fg-primary)",
-  },
+  // No `.cm-cursor` rule: the editor uses the native caret (no `drawSelection`
+  // layer), coloured via `caret-color` on `.cm-content` above.
   // Only the current match is highlighted while searching — the always-on
   // all-match highlight is suppressed so it can't be confused with the
   // "All" (select-all-matches) action. See search-panel.ts.
@@ -679,7 +679,6 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
     typstLanguage(),
     inkycapSearch,
     searchMatchHighlight,
-    drawSelection(),
     syntaxHighlighting(inkycapHighlight),
     sourceRawHighlight(),
     importLineGuard(),
@@ -749,9 +748,6 @@ export function editableTypstExtensions(): Extension[] {
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),
-    // CM's own drawn cursor/selection, same as the main editor — renders the
-    // caret reliably on focus instead of leaning on the native one.
-    drawSelection(),
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,

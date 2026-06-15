@@ -109,6 +109,13 @@ const blockquoteBodyMark = Decoration.mark({ class: "cm-typst-blockquote-body" }
 // the heading span and inherits its font size. Without it, CM closes the
 // heading span before that trailing widget, so it renders at base size while
 // the rest of the heading stays large.
+//
+// NB: a line decoration (class on `.cm-line`) was tried here to fix a selection
+// measurement glitch, but it broke the first body heading: the preamble's
+// multi-line `Decoration.replace` swallows the line break just before it, so the
+// heading's line decoration had no line of its own to attach to and was dropped.
+// The mark has no such dependency on a real line break, so we keep it. The
+// selection glitch is addressed at the selection-rendering layer instead.
 const headingMarks = [
   Decoration.mark({ class: "cm-typst-h1", inclusiveEnd: true }),
   Decoration.mark({ class: "cm-typst-h2", inclusiveEnd: true }),
