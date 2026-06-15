@@ -1,0 +1,27 @@
+---
+source: tests/fidelity.rs
+expression: meta
+input_file: tests/fixtures/fidelity/note-properties.typ
+---
+{
+  "properties": {
+    "pinned": true,
+    "priority": 3.0,
+    "status": "draft",
+    "tags": [
+      "research",
+      "fieldwork"
+    ],
+    "title": "Quarterly Field Report",
+    "zid": "20260615T0900"
+  },
+  "tags": [
+    "research",
+    "fieldwork"
+  ],
+  "links": [],
+  "heading_labels": [],
+  "agenda": [],
+  "recurrence": null,
+  "suggestions": 0
+}

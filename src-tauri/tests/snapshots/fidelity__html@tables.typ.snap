@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/tables.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Tables</h2><table><tr><td>Site</td><td>Visits</td><td>Status</td></tr><tr><td>North</td><td>12</td><td>active</td></tr><tr><td>South</td><td>7</td><td>paused</td></tr><tr><td>East</td><td>19</td><td>active</td></tr></table></body></html>

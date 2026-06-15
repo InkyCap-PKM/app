@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/formatting.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Inline formatting</h2><p>This sentence has <strong>bold</strong>, <em>italic</em>, and <code>monospace</code> runs, plus a <s>struck phrase</s> and a <mark style="background-color: #f2ed61; color: #1a1a1a;">highlighted phrase</mark>. A <span style="text-decoration: underline">underlined run</span> closes the set.</p><p>An em dash substitute, smart “quotes”, and an accented résumé café ensure UTF-8 text survives layout.</p></body></html>

@@ -1,0 +1,24 @@
+---
+source: tests/fidelity.rs
+expression: meta
+input_file: tests/fixtures/fidelity/wikilinks-tags.typ
+---
+{
+  "properties": {
+    "title": "Wikilinks and tags"
+  },
+  "tags": [
+    "fieldwork",
+    "research"
+  ],
+  "links": [
+    "Daisy Dog",
+    "Field Report"
+  ],
+  "heading_labels": [
+    "results"
+  ],
+  "agenda": [],
+  "recurrence": null,
+  "suggestions": 0
+}

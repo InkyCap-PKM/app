@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 
-use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
+use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
 
 /// A single tokenizable word along with where it appeared in the source.
 ///

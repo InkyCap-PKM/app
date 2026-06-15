@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/callouts-verse.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Callouts, quotes, and verse</h2><div class="inkycap-callout inkycap-callout--note" style="--inkycap-callout-color: #448aff;"><div class="inkycap-callout__title">Heads up</div><div class="inkycap-callout__body">Body with <strong>bold</strong> and <em>italic</em> text.</div></div><div class="inkycap-callout inkycap-callout--warning" style="--inkycap-callout-color: #ff9100;"><div class="inkycap-callout__title">Warning</div><div class="inkycap-callout__body">Careful now.</div></div><p>“The Analytical Engine weaves algebraic patterns.”</p><div class="inkycap-verse" style="white-space: pre-wrap; text-align: left; line-height: 1.4;">Line one keeps its    spacing<br>    and its indentation<br>  across the stanza.</div></body></html>

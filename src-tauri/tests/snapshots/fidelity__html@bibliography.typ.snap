@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/bibliography.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Citations and bibliography</h2><p>Typst’s native citation handling resolves <a id="loc-1" href="#loc-3" role="doc-biblioref">[1]</a> and <a id="loc-2" href="#loc-4" role="doc-biblioref">[2]</a> against the notebox bibliography.</p><section role="doc-bibliography"><h2>Bibliography</h2><ul style="list-style-type: none"><li id="loc-3"><span class="prefix"><a href="#loc-1" role="doc-backlink">[1]</a></span> A. Lovelace, “Notes on the Analytical Engine,” <em>Taylor's Scientific Memoirs</em>, 1843.</li><li id="loc-4"><span class="prefix"><a href="#loc-2" role="doc-backlink">[2]</a></span> A. Turing, “Computing Machinery and Intelligence,” <em>Mind</em>, 1950.</li></ul></section></body></html>

@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/wikilinks-tags.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Wikilinks and tags</h2><p>This note links to <a class="inkycap-wikilink" href="Daisy Dog.typ" data-target="Daisy Dog">Daisy Dog</a> and to a labelled section via <a class="inkycap-wikilink" href="Field Report.typ#results" data-target="Field Report">Field Report</a>. It carries <span style="display: inline-block">#fieldwork</span> and <span style="display: inline-block">#research</span> inline.</p><p>An external <a href="https://typst.app">reference</a> closes it out.</p></body></html>

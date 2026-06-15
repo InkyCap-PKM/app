@@ -1,0 +1,16 @@
+---
+source: tests/fidelity.rs
+expression: meta
+input_file: tests/fixtures/fidelity/callouts-verse.typ
+---
+{
+  "properties": {
+    "title": "Callouts, quotes, and verse"
+  },
+  "tags": [],
+  "links": [],
+  "heading_labels": [],
+  "agenda": [],
+  "recurrence": null,
+  "suggestions": 0
+}

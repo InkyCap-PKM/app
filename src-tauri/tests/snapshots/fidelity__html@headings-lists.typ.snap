@@ -1,0 +1,6 @@
+---
+source: tests/fidelity.rs
+expression: html.html
+input_file: tests/fixtures/fidelity/headings-lists.typ
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h2>Top-level heading</h2><p>Intro paragraph under the title.</p><h3>Second level</h3><ul><li>First bullet</li><li><p>Second bullet</p><ul><li>Nested bullet</li><li>Another nested bullet</li></ul></li><li>Third bullet</li></ul><h4>Ordered</h4><ol><li>Step one</li><li>Step two</li><li>Step three</li></ol><h3>Terms</h3><dl><dt>Term A</dt><dd>its definition</dd><dt>Term B</dt><dd>another definition</dd></dl></body></html>
