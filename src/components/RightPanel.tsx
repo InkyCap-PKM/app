@@ -383,6 +383,18 @@ const RightPanel: Component = () => {
     });
   }
 
+  // Just the keys, in display order. The property list `<For>` iterates these
+  // primitive strings rather than `[key, value]` tuples so its reconciliation
+  // keys on the (stable) key: editing a value yields a fresh metadata object —
+  // and thus fresh tuples — but the same key strings, so `<For>` reuses each
+  // row's DOM instead of tearing it down and rebuilding it. That keeps an open
+  // value picker (and its scroll position) alive across a save, and avoids a
+  // needless `getPropertyValues` refetch on every selection. The row reads its
+  // value reactively from `metadata()` by key.
+  function sortedPropertyKeys(): string[] {
+    return sortedPropertyEntries().map(([k]) => k);
+  }
+
   async function commitReorder(newOrder: string[]) {
     const tab = activeFileTab();
     if (!tab) return;
@@ -1641,15 +1653,19 @@ const RightPanel: Component = () => {
               <Show when={metadata()}>
                 {(meta) => (
                   <div class="properties-list">
-                    <For each={sortedPropertyEntries()}>
-                      {([key, value]) => {
+                    <For each={sortedPropertyKeys()}>
+                      {(key) => {
+                        // Read reactively by key so a value edit updates the row
+                        // in place rather than remounting it (see
+                        // sortedPropertyKeys).
+                        const value = () => meta().properties[key];
                         const ty = () => {
                           const declared = getPropertyType(key);
                           if (declared !== "auto") return declared;
                           // Untyped key: resolve to a concrete type (system
                           // default, else inferred from the value) so the row
                           // never shows the ambiguous "Automatic".
-                          return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value);
+                          return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value());
                         };
                         const isDragging = () => draggingKey() === key;
                         const dropAbove = () =>
@@ -1686,7 +1702,7 @@ const RightPanel: Component = () => {
                             <div class="property-row__value-cell">
                               <PropertyEditor
                                 propKey={key}
-                                value={value}
+                                value={value()}
                                 onSave={handlePropertySave}
                                 typeHint={ty()}
                                 scaffoldContext={activeFileIsScaffold()}
