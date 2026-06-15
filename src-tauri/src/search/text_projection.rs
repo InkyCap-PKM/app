@@ -541,7 +541,7 @@ fn collect_text_within(node: &LinkedNode<'_>) -> String {
             if !out.is_empty() && !out.ends_with(' ') {
                 out.push(' ');
             }
-            out.push_str(node.text());
+            out.push_str(node.leaf_text());
             return;
         }
         // Skip the heading marker itself.

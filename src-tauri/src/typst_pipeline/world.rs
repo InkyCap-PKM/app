@@ -14,7 +14,7 @@ use chrono::{DateTime, Datelike, Local};
 use typst::diag::{FileError, FileResult, PackageError};
 use typst::foundations::{Bytes, Datetime};
 use typst::syntax::package::PackageSpec;
-use typst::syntax::{FileId, Source, VirtualPath};
+use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
@@ -134,7 +134,12 @@ impl NoteboxWorld {
     pub fn new(canonical_notebox_root: PathBuf) -> Self {
         let (book, fonts) = fonts::load_embedded();
         // Placeholder main; set_main replaces it before the first compile.
-        let placeholder = FileId::new(None, VirtualPath::new("/__placeholder__.typ"));
+        // 0.15: FileId wraps a RootedPath (root + vpath); VirtualPath::new now
+        // validates (forward-slashes only) and returns a Result.
+        let placeholder = FileId::new(RootedPath::new(
+            VirtualRoot::Project,
+            VirtualPath::new("/__placeholder__.typ").expect("static placeholder path is valid"),
+        ));
         Self {
             canonical_notebox_root,
             library: LazyHash::new(
@@ -214,7 +219,8 @@ impl NoteboxWorld {
             }
             vpath.push_str(&comp.as_os_str().to_string_lossy());
         }
-        Some(FileId::new(None, VirtualPath::new(vpath)))
+        let vpath = VirtualPath::new(vpath).ok()?;
+        Some(FileId::new(RootedPath::new(VirtualRoot::Project, vpath)))
     }
 
     /// Replace the main-file source and mark its FileId as the compile entry.
@@ -259,10 +265,10 @@ impl NoteboxWorld {
     /// pointing at `/etc/passwd` (or anywhere outside the canonical root)
     /// fails before bytes leave disk.
     fn fs_path(&self, id: FileId) -> FileResult<PathBuf> {
-        if let Some(spec) = id.package() {
+        if let VirtualRoot::Package(spec) = id.root() {
             return self.resolve_package_path(spec, id.vpath());
         }
-        let rel = id.vpath().as_rootless_path();
+        let rel = id.vpath().get_without_slash();
         let joined = self.canonical_notebox_root.join(rel);
         validate_notebox_path(&self.canonical_notebox_root, &joined)
             .map_err(|_err| FileError::AccessDenied)
@@ -288,7 +294,7 @@ impl NoteboxWorld {
     /// the compile command layer can download it and recompile (tier-B
     /// on-demand resolution), then `NotFound` is returned for this attempt.
     fn resolve_package_path(&self, spec: &PackageSpec, vpath: &VirtualPath) -> FileResult<PathBuf> {
-        let rel_file = vpath.as_rootless_path();
+        let rel_file = vpath.get_without_slash();
         let roots = package_search_dirs(
             &self.canonical_notebox_root,
             spec.namespace.as_str(),
@@ -366,11 +372,13 @@ impl World for NoteboxWorld {
         self.fonts.get(index).and_then(|slot| slot.get())
     }
 
-    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+    fn today(&self, offset: Option<typst::foundations::Duration>) -> Option<Datetime> {
         let mut guard = self.now.lock().ok()?;
         let now = *guard.get_or_insert_with(Local::now);
+        // 0.15: the offset is a Typst `Duration` (was a bare hour count `i64`).
+        // Apply it at second granularity to preserve sub-hour offsets.
         let adjusted = match offset {
-            Some(hours) => now + chrono::Duration::hours(hours),
+            Some(d) => now + chrono::Duration::seconds(d.seconds().round() as i64),
             None => now,
         };
         Datetime::from_ymd(
@@ -435,7 +443,10 @@ mod tests {
 
         let world = NoteboxWorld::new(root.clone());
         // FileId with a notebox-relative path that traverses the symlink.
-        let id = FileId::new(None, VirtualPath::new("/escape/secret.txt"));
+        let id = FileId::new(RootedPath::new(
+            VirtualRoot::Project,
+            VirtualPath::new("/escape/secret.txt").expect("valid test path"),
+        ));
         let err = world
             .fs_path(id)
             .expect_err("symlink escape must be rejected");
@@ -486,7 +497,10 @@ mod tests {
 
         let world = NoteboxWorld::new(root);
         let resolved = world
-            .resolve_package_path(&spec("@preview/foo:1.0.0"), &VirtualPath::new("/lib.typ"))
+            .resolve_package_path(
+                &spec("@preview/foo:1.0.0"),
+                &VirtualPath::new("/lib.typ").expect("valid test path"),
+            )
             .expect("vendored package should resolve");
         assert!(resolved.ends_with("preview/foo/1.0.0/lib.typ"));
         // A hit must not be recorded as missing.
@@ -500,7 +514,10 @@ mod tests {
         let world = NoteboxWorld::new(root);
 
         let err = world
-            .resolve_package_path(&spec("@preview/nope:9.9.9"), &VirtualPath::new("/lib.typ"))
+            .resolve_package_path(
+                &spec("@preview/nope:9.9.9"),
+                &VirtualPath::new("/lib.typ").expect("valid test path"),
+            )
             .expect_err("absent package must not resolve");
         assert!(matches!(err, FileError::Package(PackageError::NotFound(_))));
 
@@ -519,8 +536,10 @@ mod tests {
         let root = canonicalize_root(tmp.path()).expect("canonicalize");
         let world = NoteboxWorld::new(root);
 
-        let _ =
-            world.resolve_package_path(&spec("@local/mylib:0.1.0"), &VirtualPath::new("/lib.typ"));
+        let _ = world.resolve_package_path(
+            &spec("@local/mylib:0.1.0"),
+            &VirtualPath::new("/lib.typ").expect("valid test path"),
+        );
         assert!(
             world.take_missing_packages().is_empty(),
             "@local misses must not be queued for auto-download"

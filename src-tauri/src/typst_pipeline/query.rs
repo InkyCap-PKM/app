@@ -10,9 +10,9 @@ use std::path::Path;
 
 use typst::foundations::{Content, Dict, Label, Selector, Value};
 use typst::introspection::{Introspector, MetadataElem};
-use typst::layout::PagedDocument;
 use typst::syntax::{ast, parse, LinkedNode, SyntaxKind};
 use typst::utils::PicoStr;
+use typst_layout::PagedDocument;
 
 use crate::models::note::{AgendaMarker, PropertyValue};
 use crate::models::recurrence::Recurrence;
@@ -52,7 +52,10 @@ type PosKey = (usize, f64, f64);
 
 /// Query a compiled document for all InkyCap metadata.
 pub fn query_document(document: &PagedDocument) -> QueryResult {
-    let introspector = &document.introspector;
+    // 0.15: `introspector` is a private field behind an accessor returning
+    // `&Arc<PagedIntrospector>`; `.as_ref()` yields `&PagedIntrospector`, which
+    // coerces to the `&dyn Introspector` our helpers take.
+    let introspector = document.introspector().as_ref();
     let mut result = QueryResult::default();
 
     // Transclusion guard. A note that does `#include "other.typ"` compiles the
@@ -80,16 +83,19 @@ pub fn query_document(document: &PagedDocument) -> QueryResult {
 
 /// Reading-order position of a located element, or `None` if it has no
 /// location (an unplaced/detached element).
-fn pos_key(introspector: &Introspector, elem: &Content) -> Option<PosKey> {
+fn pos_key(introspector: &dyn Introspector, elem: &Content) -> Option<PosKey> {
     let loc = elem.location()?;
-    let pos = introspector.position(loc);
+    // 0.15: `position` returns `Option<DocumentPosition>` (an element may have
+    // no resolved position) and `DocumentPosition` abstracts over paged/HTML;
+    // we only ever query paged documents, so resolve to the paged variant.
+    let pos = introspector.position(loc)?.as_paged_or_default();
     Some((pos.page.get(), pos.point.y.to_raw(), pos.point.x.to_raw()))
 }
 
 /// Position of the second `<inkycap-note>`, marking the start of `#include`d
 /// content. `None` when the document has at most one note (the common case),
 /// so nothing is filtered.
-fn transclusion_boundary(introspector: &Introspector) -> Option<PosKey> {
+fn transclusion_boundary(introspector: &dyn Introspector) -> Option<PosKey> {
     let selector = label_selector("inkycap-note")?;
     let notes = introspector.query(&selector);
     if notes.len() < 2 {
@@ -321,7 +327,7 @@ fn label_selector(name: &str) -> Option<Selector> {
 // <inkycap-note> — document-level metadata dict
 // ---------------------------------------------------------------------------
 
-fn extract_note_metadata(introspector: &Introspector, result: &mut QueryResult) {
+fn extract_note_metadata(introspector: &dyn Introspector, result: &mut QueryResult) {
     let Some(selector) = label_selector("inkycap-note") else {
         return;
     };
@@ -379,7 +385,11 @@ fn extract_note_metadata(introspector: &Introspector, result: &mut QueryResult) 
 // <inkycap-tag> — inline tags
 // ---------------------------------------------------------------------------
 
-fn extract_tags(introspector: &Introspector, result: &mut QueryResult, boundary: Option<PosKey>) {
+fn extract_tags(
+    introspector: &dyn Introspector,
+    result: &mut QueryResult,
+    boundary: Option<PosKey>,
+) {
     let Some(selector) = label_selector("inkycap-tag") else {
         return;
     };
@@ -409,7 +419,11 @@ fn extract_tags(introspector: &Introspector, result: &mut QueryResult, boundary:
 // <inkycap-link> — wikilinks and link-refs
 // ---------------------------------------------------------------------------
 
-fn extract_links(introspector: &Introspector, result: &mut QueryResult, boundary: Option<PosKey>) {
+fn extract_links(
+    introspector: &dyn Introspector,
+    result: &mut QueryResult,
+    boundary: Option<PosKey>,
+) {
     let Some(selector) = label_selector("inkycap-link") else {
         return;
     };
@@ -440,7 +454,7 @@ fn extract_links(introspector: &Introspector, result: &mut QueryResult, boundary
 // ---------------------------------------------------------------------------
 
 fn extract_agenda_markers(
-    introspector: &Introspector,
+    introspector: &dyn Introspector,
     result: &mut QueryResult,
     boundary: Option<PosKey>,
 ) {
@@ -515,7 +529,7 @@ fn extract_agenda_markers(
 /// transclusion guard as the other extractors keeps an `#include`d note's open
 /// suggestions from inflating the host's count.
 fn extract_review_markup(
-    introspector: &Introspector,
+    introspector: &dyn Introspector,
     result: &mut QueryResult,
     boundary: Option<PosKey>,
 ) {
@@ -992,7 +1006,7 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
             .expect("host should compile");
 
         let mut text = String::new();
-        for page in &doc.pages {
+        for page in doc.pages() {
             collect_frame_text(&page.frame, &mut text);
         }
 

@@ -23,7 +23,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use typst::diag::SourceDiagnostic;
-use typst::syntax::{FileId, LinkedNode, Source, Span, SyntaxKind};
+use typst::syntax::{DiagSpan, FileId, LinkedNode, Source, SyntaxKind};
 use typst::World;
 
 use crate::typst_pipeline::world::NoteboxWorld;
@@ -67,7 +67,8 @@ fn patch_first_recoverable(world: &NoteboxWorld, errors: &[SourceDiagnostic]) ->
         // Otherwise the error is inside an imported/included module — follow
         // the trace back to the statement in the main file that pulled it in.
         for tp in &diag.trace {
-            if let Some(patched) = patch_main_for_span(world, main_id, tp.span) {
+            // Trace-point spans are plain `Span`s; lift to `DiagSpan`.
+            if let Some(patched) = patch_main_for_span(world, main_id, tp.span.into()) {
                 return Some(patched);
             }
         }
@@ -81,12 +82,12 @@ fn patch_first_recoverable(world: &NoteboxWorld, errors: &[SourceDiagnostic]) ->
 /// rather than just the span, so a failed transclusion doesn't leave a
 /// dangling `#include <marker>` behind. `None` when the span is in another
 /// file or has no location.
-fn patch_main_for_span(world: &NoteboxWorld, main_id: FileId, span: Span) -> Option<String> {
+fn patch_main_for_span(world: &NoteboxWorld, main_id: FileId, span: DiagSpan) -> Option<String> {
     if span.id()? != main_id {
         return None;
     }
     let source = world.source(main_id).ok()?;
-    let direct = source.range(span)?;
+    let direct = super::diagnostic::diag_span_range(span, &source)?;
     // A trace span from a failed import points at the module-source *string*
     // (e.g. `"/broken.typ"`). Expand to the whole `#import` / `#include`
     // statement so the patch doesn't leave `#include <marker>` — itself a
@@ -139,7 +140,7 @@ fn enclosing_import_range(source: &Source, target: &Range<usize>) -> Option<Rang
 ///
 /// Returns `Some(doc)` once a (possibly degraded) document builds, or `None`
 /// if recovery could not make progress within [`MAX_RECOVERY_PASSES`].
-pub fn recover<D: typst::Document>(
+pub fn recover<D: typst::foundations::Output>(
     world: &NoteboxWorld,
     main_path: &Path,
     first_errors: &[SourceDiagnostic],

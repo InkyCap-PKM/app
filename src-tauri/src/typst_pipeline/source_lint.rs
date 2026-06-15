@@ -24,7 +24,7 @@ use std::sync::LazyLock;
 
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
-use typst::syntax::{FileId, Source, VirtualPath};
+use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 
 // ── Markdown leftovers ─────────────────────────────────────────────────────
 
@@ -249,16 +249,21 @@ pub struct SyntaxIssue {
 /// `#wikilink(...)` etc. are not flagged (those parse fine); only genuine
 /// structural errors (unclosed brackets, stray tokens) surface here.
 pub fn detect_syntax_errors(content: &str) -> Vec<SyntaxIssue> {
-    let id = FileId::new(None, VirtualPath::new("/audit.typ"));
+    let id = FileId::new(RootedPath::new(
+        VirtualRoot::Project,
+        VirtualPath::new("/audit.typ").expect("static audit path is valid"),
+    ));
     let source = Source::new(id, content.to_string());
+    // 0.15: `errors()` became `errors_and_warnings()` returning `(errors,
+    // warnings)`; we only surface the errors here.
     source
         .root()
-        .errors()
+        .errors_and_warnings()
+        .0
         .into_iter()
         .map(|err| {
             let lines = source.lines();
-            let (line, column) = source
-                .range(err.span)
+            let (line, column) = super::diagnostic::diag_span_range(err.span, &source)
                 .map(|r| {
                     (
                         lines.byte_to_line(r.start).map(|l| l + 1).unwrap_or(0),

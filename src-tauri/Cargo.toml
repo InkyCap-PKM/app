@@ -85,16 +85,20 @@ git2 = { version = "0.21", default-features = false, features = [
 # (the diff engine behind `insta`). Only the default `text` feature is needed.
 similar = "2"
 
-# Typst compile pipeline. Pinned to 0.14.x to match the toolchain validated
-# in the Phase 0 spike (typst-cli v0.14.2). Bumping the minor requires
-# re-running spike-bench/bench-napi.mjs against the new pin.
+# Typst compile pipeline. Pinned to 0.15.x (typst 0.15.0). Bumping the minor
+# requires re-running spike-bench/bench-napi.mjs against the new pin and
+# regenerating the fidelity snapshot corpus (src-tauri/tests/fixtures/fidelity).
+# See documentation/developer/typst-upgrade.md for the full runbook.
 fontdb = "0.23"
-typst = "0.14"
-typst-library = "0.14"
-typst-svg = "0.14"
-typst-pdf = "0.14"
-typst-html = "0.14"
-typst-assets = { version = "0.14", features = ["fonts"] }
+typst = "0.15"
+typst-library = "0.15"
+# The layout engine was split into its own crate in 0.15; `PagedDocument`
+# (and the layout routine) now live here rather than under `typst::layout`.
+typst-layout = "0.15"
+typst-svg = "0.15"
+typst-pdf = "0.15"
+typst-html = "0.15"
+typst-assets = { version = "0.15", features = ["fonts"] }
 hayagriva = "0.9"
 biblatex = "0.11"
 
