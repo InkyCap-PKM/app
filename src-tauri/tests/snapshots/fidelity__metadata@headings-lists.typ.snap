@@ -1,0 +1,16 @@
+---
+source: tests/fidelity.rs
+expression: meta
+input_file: tests/fixtures/fidelity/headings-lists.typ
+---
+{
+  "properties": {
+    "title": "Headings and lists"
+  },
+  "tags": [],
+  "links": [],
+  "heading_labels": [],
+  "agenda": [],
+  "recurrence": null,
+  "suggestions": 0
+}

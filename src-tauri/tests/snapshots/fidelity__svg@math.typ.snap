@@ -1,0 +1,15 @@
+---
+source: tests/fidelity.rs
+expression: digest
+input_file: tests/fixtures/fidelity/math.typ
+---
+{
+  "page_count": 1,
+  "pages": [
+    {
+      "width_pt": 595,
+      "height_pt": 842,
+      "svg_len": 65584
+    }
+  ]
+}

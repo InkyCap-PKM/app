@@ -86,8 +86,10 @@ git2 = { version = "0.21", default-features = false, features = [
 similar = "2"
 
 # Typst compile pipeline. Pinned to 0.15.x (typst 0.15.0). Bumping the minor
-# requires re-running spike-bench/bench-napi.mjs against the new pin and
-# regenerating the fidelity snapshot corpus (src-tauri/tests/fixtures/fidelity).
+# requires re-running the pin benchmark and reviewing the fidelity snapshot
+# corpus against the new pin:
+#   cargo test --test fidelity                         # output didn't shift
+#   cargo test --release --test fidelity -- --ignored --nocapture pin_benchmark
 # See documentation/developer/typst-upgrade.md for the full runbook.
 fontdb = "0.23"
 typst = "0.15"
@@ -127,3 +129,7 @@ windows-sys = { version = "0.59", features = [
 
 [dev-dependencies]
 tempfile = "3"
+# Snapshot testing for the Typst-output fidelity corpus (tests/fidelity.rs).
+# Backed by `similar` (already a runtime dep). The `glob` feature drives one
+# snapshot set per `.typ` fixture; see documentation/developer/typst-upgrade.md.
+insta = { version = "1", features = ["glob", "json"] }

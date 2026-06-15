@@ -1,0 +1,16 @@
+---
+source: tests/fidelity.rs
+expression: meta
+input_file: tests/fixtures/fidelity/bibliography.typ
+---
+{
+  "properties": {
+    "title": "Citations and bibliography"
+  },
+  "tags": [],
+  "links": [],
+  "heading_labels": [],
+  "agenda": [],
+  "recurrence": null,
+  "suggestions": 0
+}

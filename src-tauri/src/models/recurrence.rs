@@ -18,9 +18,9 @@
 //! view. The *rule* stays Typst-native (stored, queried, portable); only the
 //! windowed expansion is Rust glue threading per-view date state.
 
+use crate::typst_pipeline::syntax::{Dict, Value};
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
-use typst::foundations::{Dict, Value};
 
 /// Hard ceiling on internal occurrence stepping — a safety net against a
 /// pathological rule, never reached by real agenda windows (which pass a small

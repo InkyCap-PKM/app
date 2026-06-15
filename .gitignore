@@ -5,6 +5,11 @@ node_modules/
 src-tauri/target/
 *.rs.bk
 
+# insta pending snapshots (the Typst fidelity corpus, tests/fidelity.rs). The
+# accepted `.snap` files are committed; `.snap.new` are transient review
+# artifacts written by a failing/updating run.
+*.snap.new
+
 # Tauri-generated capability schemas: regenerated per-platform on every build
 # from src-tauri/capabilities/ + plugin ACLs, so committing them causes
 # cross-machine churn (a build on one OS rewrites them and blocks the next
