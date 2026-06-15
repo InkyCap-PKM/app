@@ -61,7 +61,7 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
         // while `Parbreak` (a blank line) becomes a real paragraph break, so
         // the tool sees the same paragraph structure the reader does.
         SyntaxKind::Text => {
-            out.push_str(node.text());
+            out.push_str(node.leaf_text());
             return;
         }
         SyntaxKind::Space => {
@@ -77,13 +77,13 @@ fn walk(node: &LinkedNode<'_>, out: &mut String) {
             return;
         }
         SyntaxKind::SmartQuote => {
-            out.push_str(node.text());
+            out.push_str(node.leaf_text());
             return;
         }
         SyntaxKind::Escape => {
             // `\#`, `\*`, `\_`, … — emit the escaped character, not the
             // backslash, so the tool sees the literal the reader sees.
-            let text = node.text();
+            let text = node.leaf_text().as_str();
             out.push_str(text.strip_prefix('\\').unwrap_or(text));
             return;
         }

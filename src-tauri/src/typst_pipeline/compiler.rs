@@ -12,8 +12,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use typst::layout::PagedDocument;
-use typst_html::HtmlDocument;
+use typst_html::{HtmlDocument, HtmlOptions};
+use typst_layout::PagedDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
@@ -424,7 +424,7 @@ impl TypstCompiler {
 
         match warned.output {
             Ok(document) => {
-                match typst_html::html(&document) {
+                match typst_html::html(&document, &HtmlOptions::default()) {
                     Ok(html) => Ok(TypstHtmlResult {
                         ok: true,
                         recovered: false,
@@ -460,7 +460,7 @@ impl TypstCompiler {
                 // Error-tolerant fallback for the Journal Scroll: salvage
                 // renderable HTML by dropping the errored spans.
                 let recovered = recovery::recover::<HtmlDocument>(&self.world, abs_path, &errors)
-                    .and_then(|document| typst_html::html(&document).ok());
+                    .and_then(|document| typst_html::html(&document, &HtmlOptions::default()).ok());
                 let _ = self.world.set_main(abs_path, source);
                 match recovered {
                     Some(html) => Ok(TypstHtmlResult {
@@ -484,10 +484,10 @@ impl TypstCompiler {
 /// Render a compiled `PagedDocument` to per-page SVG frames for IPC.
 fn render_frames(document: &PagedDocument) -> Vec<TypstFrame> {
     document
-        .pages
+        .pages()
         .iter()
         .map(|page| TypstFrame {
-            svg: typst_svg::svg(page),
+            svg: typst_svg::svg(page, &typst_svg::SvgOptions::default()),
             width_pt: page.frame.width().to_pt(),
             height_pt: page.frame.height().to_pt(),
         })
