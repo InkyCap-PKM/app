@@ -1263,6 +1263,15 @@ function handleFuncCall(
       if (!kind) return false;
       const bodyRange = bracketRangeAfterArgs(text, from);
       if (bodyRange === null) return false;
+      // "Edit source": callout is an ALWAYS_EXPAND_PILL, so clicking its pill
+      // (or the menu's "Edit source") dispatches expandFunc against `from`. The
+      // in-place body editing below only exposes the body text — it can't reach
+      // the kind/title/other args — so honour the expand request the same way
+      // figure/bibliography/annotation do: drop all decorations and reveal the
+      // raw `#callout(...)` markup. Re-collapses once the cursor leaves.
+      // `autoExpand` (the "edit raw source in visual mode" setting) reveals it
+      // on every cursor-line entry, like the other funcs.
+      if (expandedPos === from || (autoExpand && onCursor)) return false;
       // Same model as block quote: a single rendered widget when the cursor is
       // away, and an in-place editable body (real text + callout styling, no
       // duplicate, no caret trap) when it's on. Replaces the old
@@ -1574,6 +1583,14 @@ function handleFuncCall(
       if (isBlock) {
         const bodyRange = bracketRangeAfterArgs(text, from);
         if (bodyRange === null) return false;
+        // "Edit source": block quote is an ALWAYS_EXPAND_PILL, so its pill (and
+        // the menu's "Edit source") dispatches expandFunc against `from`. The
+        // in-place body editing below can't reach the attribution/other args, so
+        // honour the expand request by revealing the raw `#quote(...)` markup —
+        // matching callout/figure/bibliography. Re-collapses when the cursor leaves.
+        // `autoExpand` (the "edit raw source" setting) reveals it on every
+        // cursor-line entry, like the other funcs.
+        if (expandedPos === from || (autoExpand && onCursor)) return false;
         // Edit in place when the cursor is on the quote; render a widget when
         // it's away. We deliberately do NOT use the old "raw source + side:1
         // preview widget" pattern: it rendered the quote twice and left a
