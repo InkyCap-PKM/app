@@ -2228,14 +2228,21 @@ svg.lucide {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-md);
+  line-height: 1.4;
   color: var(--fg-secondary);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* The list is a flex column inside a max-height + overflow-y:auto container.
+     Without this the rows keep the default flex-shrink:1 and get compressed to
+     fit the cap instead of overflowing, squashing each row below its text
+     height (the lines overlapped) and leaving nothing to scroll. Holding their
+     natural height lets the container scroll as intended. */
+  flex-shrink: 0;
 }
 
 .column-filter__option:hover {
