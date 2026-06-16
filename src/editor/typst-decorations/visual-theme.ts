@@ -776,7 +776,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-verse": {
     display: "block",
     position: "relative",
-    margin: "10px 0",
+    margin: "4px 0",
     padding: "0",
     // Subtle dotted top/bottom rules demark the verse region without
     // making it feel boxed-in. Pill at top-left identifies it.
@@ -828,7 +828,7 @@ export const visualTheme = EditorView.theme({
   ".cm-typst-table-wrap": {
     display: "block",
     position: "relative",
-    margin: "8px 0",
+    margin: "4px 0",
     outline: "none",
   },
   ".cm-typst-table": {
