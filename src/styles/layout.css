@@ -1478,7 +1478,10 @@ svg.lucide {
 .collection-table__toolbar-btn {
   background: none;
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  /* Compact toolbar control — uses the small-control radius (not --radius-md),
+     matching .btn--sm and the other dense toolbar buttons so it isn't
+     over-rounded at this footprint. */
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 3px 10px;
@@ -1801,7 +1804,7 @@ svg.lucide {
 .column-picker {
   background: var(--bg-active);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px;
   margin-bottom: 8px;
   max-height: 250px;
@@ -1845,7 +1848,7 @@ svg.lucide {
   align-items: center;
   gap: 6px;
   padding: 3px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-base);
   color: var(--fg-secondary);
   cursor: pointer;
@@ -2029,7 +2032,7 @@ svg.lucide {
 .filter-builder {
   background: var(--bg-active);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 10px;
   margin-bottom: 8px;
 }
@@ -2066,7 +2069,7 @@ svg.lucide {
   padding: 6px 8px;
   border: 1px solid var(--border-primary);
   border-left: 3px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg-primary);
 }
 
@@ -2152,7 +2155,7 @@ svg.lucide {
 .filter-builder__add {
   background: none;
   border: 1px dashed var(--border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 4px 10px;
@@ -2775,8 +2778,8 @@ svg.lucide {
 .collection-picker__dropdown {
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
-  /* Input-attached — keeps the control's 4px radius. */
-  border-radius: 4px;
+  /* Input-attached — keeps the control's radius. */
+  border-radius: var(--radius-input);
   box-shadow: var(--popup-shadow);
   margin-top: 4px;
   max-height: 180px;
@@ -2792,7 +2795,7 @@ svg.lucide {
   font-size: var(--text-base);
   color: var(--fg-secondary);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .collection-picker__item:hover {
