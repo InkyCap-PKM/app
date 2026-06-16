@@ -162,7 +162,12 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
 ///    exact family — even though the bytes are loaded.
 ///
 /// Pushing one book entry per alias (all backed by the same cheap
-/// `Arc`-wrapped `Font` clone) keeps both views consistent.
+/// `Arc`-wrapped `Font` clone) keeps both views consistent. This also absorbs
+/// typst 0.15's variable-font family normalization (it strips
+/// "Variable"/"VF"/"Var" suffixes from `info.family`): the un-normalized
+/// fontdb name the `FontPicker` displays — and writes into `#set text(font:)` —
+/// is still registered as its own alias, so the lookup resolves regardless of
+/// which form typst settled on.
 fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
