@@ -58,7 +58,10 @@ type SortMode =
   | "name-asc"
   | "name-desc";
 
-type TaskListFilter = "all" | "todo" | "done" | "dates";
+// Kinds of agenda row. The Task List filter is multi-select (like Tags): an
+// empty selection means "show all", otherwise a row shows if it matches ANY
+// selected kind — so combinations like "To do + Dates" work.
+type TaskKind = "todo" | "done" | "dates";
 
 // Whether recurring series collapse to a single row (their next occurrence) or
 // expand to show every upcoming occurrence. A global, device-persisted
@@ -104,7 +107,7 @@ function todayISO(): string {
 const AgendaList: Component<AgendaListProps> = (props) => {
   const t = useI18n();
   const [sortMode, setSortMode] = createSignal<SortMode>("due-asc");
-  const [taskFilter, setTaskFilter] = createSignal<TaskListFilter>("all");
+  const [selectedKinds, setSelectedKinds] = createSignal<Set<TaskKind>>(new Set<TaskKind>());
   const [selectedTags, setSelectedTags] = createSignal<Set<string>>(new Set<string>());
   const [filterText, setFilterText] = createSignal("");
 
@@ -136,12 +139,22 @@ const AgendaList: Component<AgendaListProps> = (props) => {
     { value: "name-desc", labelKey: "agenda.sort.nameDesc" },
   ];
 
-  const TASK_OPTIONS: { value: TaskListFilter; labelKey: string }[] = [
-    { value: "all", labelKey: "agenda.task.all" },
+  const TASK_OPTIONS: { value: TaskKind; labelKey: string }[] = [
     { value: "todo", labelKey: "agenda.task.todo" },
     { value: "done", labelKey: "agenda.task.done" },
     { value: "dates", labelKey: "agenda.task.dates" },
   ];
+
+  function toggleKind(kind: TaskKind) {
+    const next = new Set<TaskKind>(selectedKinds());
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    setSelectedKinds(next);
+  }
+
+  function clearKinds() {
+    setSelectedKinds(new Set<TaskKind>());
+  }
 
   /** Every tag that appears on at least one of the current items. */
   const tagOptions = createMemo(() => {
@@ -162,8 +175,11 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   }
 
   const taskLabel = createMemo(() => {
-    const opt = TASK_OPTIONS.find((o) => o.value === taskFilter());
-    return opt ? t(opt.labelKey) : "";
+    const sel = selectedKinds();
+    if (sel.size === 0) return t("agenda.task.all");
+    // Only three kinds, so list the selected labels (in option order) rather
+    // than an "N selected" count — it stays short and is clearer.
+    return TASK_OPTIONS.filter((o) => sel.has(o.value)).map((o) => t(o.labelKey)).join(", ");
   });
 
   const tagsLabel = createMemo(() => {
@@ -225,7 +241,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   /** Items after every filter and sort applied. */
   const visible = createMemo(() => {
     const needle = filterText().trim().toLowerCase();
-    const tFilter = taskFilter();
+    const kinds = selectedKinds();
     const tagSel = selectedTags();
     const dFilter = dateFilter();
 
@@ -237,20 +253,17 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         return false;
       }
       if (!matchesDateFilter(it.date, dFilter)) return false;
-      switch (tFilter) {
-        case "todo":
-          if (!it.is_task || it.done) return false;
-          break;
-        case "done":
-          if (!it.is_task || !it.done) return false;
-          break;
-        case "dates":
-          // Pure dated reminders only — no tasks at all.
-          if (it.is_task) return false;
-          break;
-        case "all":
-        default:
-          break;
+      // Multi-select kind filter: empty = show all; otherwise the row must match
+      // at least one selected kind (todo / done / pure dated reminder).
+      if (kinds.size > 0) {
+        const isTodo = it.is_task && !it.done;
+        const isDone = it.is_task && it.done;
+        const isDate = !it.is_task;
+        const match =
+          (kinds.has("todo") && isTodo) ||
+          (kinds.has("done") && isDone) ||
+          (kinds.has("dates") && isDate);
+        if (!match) return false;
       }
       // Any-of tag filter (intersect with selection).
       if (tagSel.size > 0 && !it.tags.some((t) => tagSel.has(t))) return false;
@@ -431,28 +444,57 @@ const AgendaList: Component<AgendaListProps> = (props) => {
 
       <Show when={showTaskMenu()}>
         <div
-          class="context-menu"
+          class="context-menu agenda__tag-menu"
           ref={(el) => anchorPanelMenu(taskBtnRef, el)}
           use:clickOutside={{
             onDismiss: () => setShowTaskMenu(false),
             ignore: taskBtnRef,
           }}
         >
+          <button
+            classList={{
+              "context-menu__item": true,
+              "context-menu__item--active": selectedKinds().size === 0,
+            }}
+            onClick={clearKinds}
+          >
+            <Check
+              size={12}
+              class={
+                selectedKinds().size === 0
+                  ? "agenda__tag-check"
+                  : "agenda__tag-check agenda__tag-check--hidden"
+              }
+            />
+            {t("agenda.task.all")}
+          </button>
+          <div class="context-menu__separator" />
           <For each={TASK_OPTIONS}>
-            {(opt) => (
-              <button
-                classList={{
-                  "context-menu__item": true,
-                  "context-menu__item--active": taskFilter() === opt.value,
-                }}
-                onClick={() => {
-                  setTaskFilter(opt.value);
-                  setShowTaskMenu(false);
-                }}
-              >
-                {t(opt.labelKey)}
-              </button>
-            )}
+            {(opt) => {
+              const selected = () => selectedKinds().has(opt.value);
+              return (
+                <button
+                  classList={{
+                    "context-menu__item": true,
+                    "context-menu__item--active": selected(),
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleKind(opt.value);
+                  }}
+                >
+                  <Check
+                    size={12}
+                    class={
+                      selected()
+                        ? "agenda__tag-check"
+                        : "agenda__tag-check agenda__tag-check--hidden"
+                    }
+                  />
+                  {t(opt.labelKey)}
+                </button>
+              );
+            }}
           </For>
         </div>
       </Show>
