@@ -1846,6 +1846,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                         depth={row.depth}
                         focusedPath={focusedTreePath}
                         onNodeClick={handleNodeClick}
+                        onAuxOpen={openFileInNewTab}
                         onContext={handleFileContext}
                         renamingPath={fileRenamingPath()}
                         renameValue={fileRenameValue()}
@@ -2390,6 +2391,9 @@ const TreeNode: Component<{
   /// Click handler: a plain click opens the file / toggles the folder; a
   /// Ctrl/Cmd-click on a file opens it in a new tab.
   onNodeClick: (node: FileTreeNode, e: MouseEvent) => void;
+  /// Middle-click (scroll-wheel) on a file: open it in a new background tab,
+  /// matching the collection table and agenda list.
+  onAuxOpen: (node: FileTreeNode) => void;
   onContext: (e: MouseEvent, node: FileTreeNode) => void;
   renamingPath: string | null;
   renameValue: string;
@@ -2535,6 +2539,11 @@ const TreeNode: Component<{
               }
             }}
             onClick={(e) => props.onNodeClick(props.node, e)}
+            onAuxClick={(e) => {
+              if (e.button !== 1 || props.node.is_dir) return; // middle-click on a file → new tab
+              e.preventDefault();
+              props.onAuxOpen(props.node);
+            }}
             onContextMenu={(e) => props.onContext(e, props.node)}
           >
             <span
