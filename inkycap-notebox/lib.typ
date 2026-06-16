@@ -606,13 +606,17 @@
 }
 
 // ---------------------------------------------------------------------------
-// html-align: typst-html (0.14) has no show rule for `align()`, so an aligned
-// block — most visibly a centred or right-aligned #image — is dropped entirely
-// from the HTML output (only its surrounding paragraph survives). Re-emit it as
-// a <div> carrying the matching CSS `text-align` so it renders in the reading
-// view and HTML export. Installed as `#show align: html-align` only on the HTML
-// compile path (see `inject_html_align_shim` in style_injection.rs); paged
-// output (PDF/SVG) keeps native `align()` and is untouched.
+// html-align: typst-html still (verified on 0.15) has no show rule for
+// `align()`, so an aligned block — most visibly a centred or right-aligned
+// #image — is dropped entirely from the HTML output (only its surrounding
+// paragraph survives). Re-emit it as a <div> carrying the matching CSS
+// `text-align` so it renders in the reading view and HTML export. Installed as
+// `#show align: html-align` only on the HTML compile path (see
+// `inject_html_align_shim` in style_injection.rs); paged output (PDF/SVG) keeps
+// native `align()` and is untouched. (0.15 did align box/block with paged
+// output and auto-exports MathML for equations — neither covers `align()`, so
+// this shim stays. Re-test on the next bump: a one-line `#align(center)[x]` to
+// HTML should contain the text iff upstream now renders it.)
 // ---------------------------------------------------------------------------
 
 #let html-align(it) = {

@@ -453,6 +453,13 @@ impl TypstCompiler {
 
         match warned.output {
             Ok(document) => {
+                // `HtmlOptions::default()` → `pretty: false` (0.15 minifies by
+                // default). Deliberate for every HTML surface we emit: the
+                // reading-view preview is rendered by the webview, and HTML /
+                // site exports are shipped artifacts where a smaller payload
+                // wins. We have no human-edited HTML-source surface that would
+                // want `pretty: true`. Spreading the default also keeps any
+                // future additive `HtmlOptions` field free (CLAUDE.md).
                 match typst_html::html(&document, &HtmlOptions::default()) {
                     Ok(html) => Ok(TypstHtmlResult {
                         ok: true,
