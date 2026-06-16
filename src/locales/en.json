@@ -502,7 +502,7 @@
   "agenda.task.all": "All",
   "agenda.task.todo": "To do",
   "agenda.task.done": "Done",
-  "agenda.task.dates": "Dates only",
+  "agenda.task.dates": "Dates",
   "agenda.tags.label": "Tags",
   "agenda.tags.all": "All",
   "agenda.tags.nSelected": "{n} selected",
