@@ -780,7 +780,15 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const historyCompartment = new Compartment();
   const selectionToolbarCompartment = new Compartment();
   const commandPaletteCompartment = new Compartment();
-  const visualExts = options.visualMode ? [typstVisualMode(), verseFocusRouter, verseSearchHighlighter, wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true)] : [];
+  // Single source of truth for the visual-mode extension set, used both for the
+  // initial config and for setVisualMode()'s compartment reconfigure — so the
+  // two can never drift (a past drift silently dropped headingFold, the suggest
+  // popups, and verse search highlighting when toggling source→visual).
+  const visualModeExtensions = () => [
+    typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
+    wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true),
+  ];
+  const visualExts = options.visualMode ? visualModeExtensions() : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];
   const lspExts = options.lspClient && options.documentUri
     ? lspExtension(options.lspClient, options.documentUri)
@@ -909,7 +917,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       }
       view.dispatch({
         effects: [
-          visualCompartment.reconfigure(enabled ? [typstVisualMode(), verseFocusRouter, visualModeFacet.of(true)] : []),
+          visualCompartment.reconfigure(enabled ? visualModeExtensions() : []),
           activeLineCompartment.reconfigure(enabled ? [] : [highlightActiveLine(), highlightActiveLineGutter()]),
           selectionToolbarCompartment.reconfigure(enabled && toolbarEnabled ? selectionToolbar : []),
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),

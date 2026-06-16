@@ -2549,7 +2549,73 @@ const markupAtomicRanges = EditorView.atomicRanges.of(
   (view) => atomicMarkupRanges(view.state.field(visualField, false)),
 );
 
+// Round the caret OUT of a rendered `#due(...)` pill to just past the call.
+//
+// The pill renders only once the date is a complete `YYYY-MM-DD` (see
+// extractDateLiteral), so when the user finishes typing the date the call
+// collapses to an atomic pill — but the caret, placed by that final keystroke,
+// sits INSIDE the call (before the closing `")`). CM's atomicRanges only skip
+// the caret during arrow-key motion, not after an insertion drops it inside, so
+// it stays there and the next Enter/keystroke corrupts the call (pushing `")`
+// onto the next line). A `#due` value is only ever edited via its pill menu, not
+// by typing in the raw call, so pushing the caret to the call's end is safe.
+//
+// Implemented as a view plugin, NOT a transactionFilter: the WASM parser
+// reparses asynchronously, so the DueWidget appears a frame AFTER the date-
+// completing keystroke, in a later tree-driven decoration rebuild with no doc or
+// selection change — a transactionFilter reading `tr.state` wouldn't see the
+// pill yet. The plugin re-checks whenever the decoration set changes and, if the
+// caret is sitting inside a freshly-rendered due pill, nudges it past the call
+// (deferred out of the update cycle). Other interactive elements don't need
+// this: wikilink/tag/link reveal editable raw markup when the caret is on them,
+// so a caret inside is intentional.
+const dueCursorRoundOut = ViewPlugin.fromClass(class {
+  pending: number | null = null;
+
+  update(u: ViewUpdate) {
+    const decosChanged =
+      u.startState.field(visualField, false) !== u.state.field(visualField, false);
+    if (!u.docChanged && !u.selectionSet && !decosChanged) return;
+
+    const { view } = u;
+    const sel = view.state.selection.main;
+    if (!sel.empty) return;
+    const head = sel.head;
+    const decos = view.state.field(visualField, false);
+    if (!decos) return;
+    const expandedPos = view.state.field(expandedFuncField, false) ?? null;
+
+    let target: number | null = null;
+    decos.between(head, head, (rFrom, rTo, value) => {
+      if (
+        value.spec?.widget instanceof DueWidget &&
+        rFrom < head && head < rTo &&   // strictly inside the pill
+        expandedPos !== rFrom            // not expanded for raw editing
+      ) {
+        target = rTo;
+        return false;
+      }
+    });
+    if (target === null) return;
+
+    const dest = target;
+    if (this.pending !== null) cancelAnimationFrame(this.pending);
+    this.pending = requestAnimationFrame(() => {
+      this.pending = null;
+      const cur = view.state.selection.main;
+      // Only nudge if the caret hasn't moved since (the user didn't type on).
+      if (cur.empty && cur.head === head) {
+        view.dispatch({ selection: { anchor: dest } });
+      }
+    });
+  }
+
+  destroy() {
+    if (this.pending !== null) cancelAnimationFrame(this.pending);
+  }
+});
+
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
 }
 
