@@ -143,6 +143,7 @@ function typstLanguage(): Extension {
   );
   return [Prec.high(typstUpdateListenerForcingFreshParseOnHistory(parser)), support];
 }
+
 import { typstVisualMode, autoExpandFacet, protectedRangesField, findStylePreamble, rebuildVisualDecorations, externalReload } from "./typst-decorations/visual-plugin";
 import { verseFocusRouter, verseSearchHighlighter } from "./typst-decorations/widgets";
 import { selectionToolbar } from "./typst-decorations/selection-toolbar";
@@ -154,6 +155,7 @@ import { typewriterMode } from "./typst-decorations/typewriter-mode";
 import { spellcheck, spellCheckerFacet } from "./typst-decorations/spellcheck";
 import type { SpellChecker } from "../lib/spellchecker";
 import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "./typst-decorations/keymaps";
+import { drawnCaret } from "./typst-decorations/drawn-caret";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
 import { citationSuggest } from "./typst-decorations/citation-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
@@ -677,6 +679,7 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
       indentWithTab,
     ]),
     typstLanguage(),
+    drawnCaret,
     inkycapSearch,
     searchMatchHighlight,
     syntaxHighlighting(inkycapHighlight),
