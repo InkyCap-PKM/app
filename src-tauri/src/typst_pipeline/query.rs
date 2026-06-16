@@ -163,16 +163,22 @@ pub fn compile_and_query(
     source: String,
 ) -> QueryResult {
     let _t = QueryTimer::start(abs_path);
-    // First try compiling the full file. If that fails — typically because of
-    // unresolved citations on a file without an inline `#bibliography(...)`,
-    // a panic-free typst error in the body, etc. — fall
-    // back to compiling just the preamble (import + `#note(...)`). The
-    // metadata pipeline only cares about the labels emitted by `note()`, so
-    // a body-stripped recompile is enough to surface properties to the panel
-    // even when the full document doesn't render.
-    if let Some(document) = compiler.compile_document(abs_path, source.clone()) {
+    // First try compiling the full file *with recovery*. A clean file compiles
+    // on the first pass; a file with a localized error (a stray token, a broken
+    // `#include`) has just those spans dropped and recompiles, so body-derived
+    // metadata — inline `#task` / `#due` Agenda markers, wikilinks, tags —
+    // still surfaces from the salvageable parts. Without recovery here, any
+    // single body error would send the file to the preamble-only fallback
+    // below, which recovers document-level `#note(...)` properties but loses
+    // every inline marker (the bug where adding a `#task`/`#due` to a note with
+    // an unrelated body error never reached the Agenda).
+    if let Some(document) = compiler.compile_document_recovering(abs_path, source.clone()) {
         return query_document(&document);
     }
+    // Recovery couldn't make progress (error budget exhausted, or a non-
+    // localized failure). Fall back to compiling just the preamble (import +
+    // `#note(...)`) so document-level properties still reach the panel, then
+    // recover what body metadata we can from the raw AST below.
     let mut result = QueryResult::default();
     let preamble = extract_note_preamble(&source);
     if preamble.len() < source.len() {
@@ -930,6 +936,51 @@ Keynote confirmed #due(datetime(year: 2026, month: 7, day: 1), label: "Conferenc
             .expect("date marker");
         assert_eq!(date_marker.due.as_deref(), Some("2026-07-01"));
         assert_eq!(date_marker.body.as_deref(), Some("Conference"));
+    }
+
+    #[test]
+    fn inline_markers_survive_a_broken_body_via_recovery() {
+        // Regression: a note carrying inline `#task` / `#due` markers AND a
+        // localized body error (a broken `#include` of a non-existent file)
+        // must still surface its markers to the Agenda. Before recovery was
+        // wired into the metadata pipeline, the failed full compile sent this
+        // file to the preamble-only fallback, which kept document-level
+        // properties but dropped every inline marker — the exact symptom of
+        // "adding a date/task never reaches the Agenda" on a note whose body
+        // happens not to compile.
+        let (_dir, root) = setup_notebox_with_package(
+            "#note(title: \"Daisy\")\n\n\
+             Remember #due(\"2026-06-16\", label: \"get that eye exam\")\n\n\
+             #task(\"make it so\", due: \"2026-06-16\")\n\n\
+             #include \"/deleteme.typ\"\n",
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+
+        // Document-level metadata still present…
+        assert_eq!(
+            result.properties.get("title"),
+            Some(&PropertyValue::String("Daisy".to_string()))
+        );
+        // …and, crucially, both inline markers (with their string-form dates).
+        let date = result
+            .agenda
+            .iter()
+            .find(|m| m.kind == "date")
+            .expect("inline #due marker recovered");
+        assert_eq!(date.due.as_deref(), Some("2026-06-16"));
+        assert_eq!(date.body.as_deref(), Some("get that eye exam"));
+
+        let task = result
+            .agenda
+            .iter()
+            .find(|m| m.kind == "task")
+            .expect("inline #task marker recovered");
+        assert_eq!(task.body.as_deref(), Some("make it so"));
+        assert_eq!(task.due.as_deref(), Some("2026-06-16"));
     }
 
     /// A note that `#include`s another note must not absorb the included
