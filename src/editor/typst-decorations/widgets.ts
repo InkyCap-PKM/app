@@ -857,9 +857,18 @@ export class TaskWidget extends WidgetType {
     box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // Resolve the call's CURRENT start from the DOM, not the `from` captured at
+      // build time. Incremental decoration updates remap a widget's range through
+      // later edits but do NOT rebuild the widget object, so `this.from` goes
+      // stale the moment another task (on a line that wasn't itself rebuilt) is
+      // toggled. Using that stale offset made the transform edit the wrong span
+      // and corrupt the source (`done: true` → `done(done: true): true`), after
+      // which the checkbox became unclickable. posAtDOM always reflects the live
+      // position of this widget.
+      const pos = view.posAtDOM(wrap);
       // Set `done: true` when checking; drop the arg (→ default false)
       // when unchecking, so a freshly-unchecked task reads cleanly.
-      applyCallTransform(view, this.from, (s) =>
+      applyCallTransform(view, pos, (s) =>
         upsertNamedArg(s, "done", this.done ? "false" : "true", {
           defaultValue: "false",
         }),
