@@ -198,6 +198,36 @@ function buildWikilinkSpan(target: string, display: string): HTMLElement {
   return link;
 }
 
+/** Build a tag pill (`<span class="cm-typst-tag">`) prefixed with a Lucide
+ *  `tag` icon rather than a literal `#`. The hash is Typst syntax, not part of
+ *  the tag name, so showing the icon reads as "tag" in InkyCap's context. Shared
+ *  by TagWidget and the block-body renderer so both sites stay identical. */
+function buildTagPill(name: string): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "cm-typst-tag";
+
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("width", "12");
+  icon.setAttribute("height", "12");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.classList.add("cm-typst-tag-icon");
+  icon.innerHTML = // static-only
+    '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>' +
+    '<circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>';
+  pill.appendChild(icon);
+
+  const label = document.createElement("span");
+  label.textContent = name;
+  pill.appendChild(label);
+
+  return pill;
+}
+
 /** Build an interactive external-link span for a rendered block body. Mirrors
  *  LinkWidget's behaviour (pointer cursor, mousedown → openLink) and stops the
  *  event from reaching CM so the click opens the URL instead of dropping the
@@ -294,13 +324,9 @@ function appendBodySegments(segs: BodySegment[], parent: HTMLElement, ctx?: Bloc
       case "wikilink":
         parent.appendChild(buildWikilinkSpan(seg.target, seg.display));
         break;
-      case "tag": {
-        const pill = document.createElement("span");
-        pill.className = "cm-typst-tag";
-        pill.textContent = `#${seg.name}`;
-        parent.appendChild(pill);
+      case "tag":
+        parent.appendChild(buildTagPill(seg.name));
         break;
-      }
       case "link":
         parent.appendChild(buildLinkSpan(seg.url, seg.display));
         break;
@@ -795,10 +821,7 @@ export class TagWidget extends WidgetType {
   }
 
   toDOM() {
-    const pill = document.createElement("span");
-    pill.className = "cm-typst-tag";
-    pill.textContent = `#${this.name}`;
-    return pill;
+    return buildTagPill(this.name);
   }
 
   ignoreEvent() { return false; }

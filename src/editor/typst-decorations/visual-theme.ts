@@ -466,13 +466,19 @@ export const visualTheme = EditorView.theme({
     display: "block",
   },
   ".cm-typst-tag": {
-    display: "inline-block",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "3px",
     backgroundColor: "var(--accent-purple-bg)",
     color: "var(--accent-text)",
     borderRadius: "3px",
     padding: "1px 6px",
     fontSize: "0.85em",
     cursor: "pointer",
+  },
+  ".cm-typst-tag-icon": {
+    flex: "0 0 auto",
+    opacity: "0.8",
   },
   ".cm-typst-task": {
     display: "inline-flex",
