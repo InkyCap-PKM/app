@@ -252,10 +252,11 @@ export type TocPlacement =
   | { kind: "after_chapter"; stem: string };
 
 /// How the merged book sources its bibliography. `unified` consolidates one
-/// list at the back (stripping per-note declarations); `in_place` keeps each
-/// note's own `#bibliography(...)` (capped at one across the whole book by
-/// Typst). Mirrors the Rust `BibliographyMode`.
-export type BibliographyMode = "unified" | "in_place";
+/// list at the back (stripping per-note declarations); `per_chapter` emits one
+/// auto-generated, chapter-scoped list at the end of each chapter; `in_place`
+/// keeps each note's own `#bibliography(...)` (Typst 0.15 allows several).
+/// Mirrors the Rust `BibliographyMode`.
+export type BibliographyMode = "unified" | "per_chapter" | "in_place";
 
 /// Persistent "Export as book" configuration. Mirrors the Rust
 /// `BookExportConfig`. All fields optional; defaults are supplied when

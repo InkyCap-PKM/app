@@ -199,6 +199,22 @@
 // Rust book wrapper emits `#chapter-anchor("<stem>")` at each chapter top.
 #let chapter-anchor(stem) = [#metadata(none)#_make-label("chap-" + stem)]
 
+// chapter-bibliography: a per-chapter reference list for merged-book
+// PerChapter mode. Scopes its entries to the citations between this chapter's
+// `chapter-anchor` and the next chapter's (or the document end, for the last
+// chapter) with a label-bounded `cite` selector, and numbers each chapter's
+// list independently via `group: none`. Keeping the selector construction in
+// `.typ` (CLAUDE.md Typst-first) means the Rust book wrapper only emits a flat
+// `#chapter-bibliography("path", "stem", next-stem: "...")` call; `next-stem`
+// is `none` for the final chapter.
+#let chapter-bibliography(path, stem, next-stem: none, ..opts) = {
+  let scope = selector(cite).after(_make-label("chap-" + stem))
+  if next-stem != none {
+    scope = scope.before(_make-label("chap-" + next-stem))
+  }
+  bibliography(path, target: scope, group: none, ..opts)
+}
+
 #let _show-inline-tags = state("inkycap-show-inline-tags", true)
 #let _show-inline-wikilinks = state("inkycap-show-inline-wikilinks", true)
 // Verse font override. When set (via `set-notebox(verse-font: "...")`), all

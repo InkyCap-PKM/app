@@ -560,23 +560,9 @@ pub async fn export_collection_book_pdf(
     }
 
     // In-place bibliography mode keeps each note's own `#bibliography(...)`.
-    // Typst 0.14 allows only one bibliography per document, so more than one
-    // declaring note can't produce a valid merged book. Catch it here with a
-    // clear message instead of surfacing Typst's cryptic multi-bibliography
-    // error after a full compile.
-    if matches!(
-        options.bibliography_mode,
-        crate::collection_parser::model::BibliographyMode::InPlace
-    ) {
-        let declaring = book_wrapper::notes_declaring_bibliography(&notes);
-        if declaring.len() > 1 {
-            return Err(InkyCapError::ExportFailed(format!(
-                "Multiple bibliographies in a merged book are not supported: {} notes declare their own #bibliography(...) ({}). Typst allows only one bibliography per document. Switch to a unified bibliography to consolidate them, or keep a #bibliography(...) in only one note.",
-                declaring.len(),
-                declaring.join(", ")
-            )));
-        }
-    }
+    // Typst 0.15 permits multiple bibliographies per document (each scoped to a
+    // subset of citations), so more than one declaring note is no longer an
+    // error — the 0.14 pre-flight cap is removed.
 
     let app_settings = state.settings.read().await;
     let defaults_rules = style_injection::build_defaults_show_call_resolved(&app_settings);
