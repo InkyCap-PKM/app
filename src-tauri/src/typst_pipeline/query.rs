@@ -660,6 +660,41 @@ mod tests {
     }
 
     #[test]
+    fn preamble_fallback_keeps_note_after_leading_comments() {
+        // Regression: a `//` comment (or the locale `#set text(...)` directive)
+        // between the import and `#note(...)` once made `extract_note_preamble`
+        // drop the call, so a note whose body fails to compile fell back to a
+        // preamble with no metadata and showed an empty property panel.
+        // `extract_note_preamble` must keep the `#note(...)` call regardless.
+        let src = "#import \"/.inkycap/notebox.typ\": *\n\n// lead\n// more\n\
+                   #set text(lang: \"fr\")\n#note(title: \"Commented\")\n= Body\n";
+        let pre = extract_note_preamble(src);
+        assert!(
+            pre.contains("#note("),
+            "preamble dropped the #note() call: {pre:?}"
+        );
+    }
+
+    #[test]
+    fn extracts_note_metadata_with_leading_comment_via_fallback() {
+        // End-to-end through the preamble fallback: a comment before `#note(...)`
+        // plus a body that fails to compile (an unresolved citation here) must
+        // still surface the note's properties to the panel.
+        let (_dir, root) = setup_notebox_with_package(
+            "// a leading comment\n#note(title: \"Commented\", tags: (\"x\",))\n\
+             = Body\n\nSee @missing-citation for details.\n",
+        );
+        let note_path = root.join("test.typ");
+        let source = fs::read_to_string(&note_path).unwrap();
+        let mut compiler = TypstCompiler::new(root);
+        let result = compile_and_query(&mut compiler, &note_path, source);
+        assert_eq!(
+            result.properties.get("title"),
+            Some(&PropertyValue::String("Commented".to_string()))
+        );
+    }
+
+    #[test]
     fn extracts_inline_tags() {
         let (_dir, root) = setup_notebox_with_package(
             "Some text with #tag(\"important\") and #tag(\"review\") inline.",
