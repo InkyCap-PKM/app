@@ -251,7 +251,7 @@ function buildLinkSpan(url: string, display: string): HTMLElement {
 /** Optional context that makes a block body's inline elements interactive.
  *  `bodyFrom` is the absolute document offset where the body string begins, so
  *  a segment's in-body `start` resolves to a real source position. */
-type BlockBodyContext = { view: EditorView; bodyFrom: number };
+type BlockBodyContext = { view: EditorView; bodyFrom: number; blockFrom: number };
 
 /** Build a task checkbox + body whose checkbox toggles the call's `done:`
  *  argument in source. Mirrors TaskWidget; used inside rendered block bodies so
@@ -270,12 +270,23 @@ function buildTaskSpan(
   box.className = "cm-typst-task__box";
   box.textContent = seg.done ? "☑" : "☐";
   if (ctx) {
-    const callFrom = ctx.bodyFrom + seg.start;
+    // The task's offset from the enclosing block widget's start. ctx.bodyFrom and
+    // ctx.blockFrom are build-time absolutes, but their difference (plus
+    // seg.start within the body) is position-independent and stays valid as the
+    // document shifts. At click time we read the block widget's LIVE start from
+    // the DOM (posAtDOM resolves a node inside a replace widget to that widget's
+    // position) and re-add the offset — so an edit elsewhere that left this
+    // block's captured positions stale can't send the toggle to the wrong span.
+    // Same bug class as the inline TaskWidget: incremental decoration updates
+    // remap a widget's range but not the widget object holding the offset.
+    const offsetInBlock = ctx.bodyFrom + seg.start - ctx.blockFrom;
+    const view = ctx.view;
     box.title = seg.done ? t("task.markNotDone") : t("task.markDone");
     box.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      applyCallTransform(ctx.view, callFrom, (s) =>
+      const callFrom = view.posAtDOM(box) + offsetInBlock;
+      applyCallTransform(view, callFrom, (s) =>
         upsertNamedArg(s, "done", seg.done ? "false" : "true", { defaultValue: "false" }),
       );
     });
@@ -2120,7 +2131,7 @@ export class CalloutBlockWidget extends WidgetType {
     if (this.bodyText) {
       const body = document.createElement("div");
       body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom });
+      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom, blockFrom: this.pos });
       inner.appendChild(body);
     }
 
@@ -2189,7 +2200,7 @@ export class AnnotationBlockWidget extends WidgetType {
     if (this.bodyText) {
       const body = document.createElement("div");
       body.className = "cm-typst-callout-body";
-      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom });
+      renderTypstBody(this.bodyText, body, { view, bodyFrom: this.bodyFrom, blockFrom: this.pos });
       inner.appendChild(body);
     }
 
@@ -2240,7 +2251,7 @@ export class BlockquoteBlockWidget extends WidgetType {
 
     const text = document.createElement("div");
     text.className = "cm-typst-blockquote-text";
-    renderTypstBody(this.content, text, { view, bodyFrom: this.bodyFrom });
+    renderTypstBody(this.content, text, { view, bodyFrom: this.bodyFrom, blockFrom: this.pos });
     inner.appendChild(text);
 
     if (this.attribution) {
