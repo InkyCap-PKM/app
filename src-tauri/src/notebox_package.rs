@@ -264,55 +264,36 @@ pub fn scaffold(notebox_root: &Path) {
 /// from the top of a note, returning the body content. Used for previews
 /// and when merging notes to avoid duplicate preambles.
 pub fn strip_note_preamble(content: &str) -> &str {
+    // Locate the `#note(...)` call through Typst's own parser
+    // (`note_call_span`) and return everything after it. Per CLAUDE.md's
+    // Typst-first principle, the AST is the source of truth for the call's
+    // extent: a hand-rolled "skip imports, then expect `#note(` immediately"
+    // scan tripped over anything the parser tolerates between the import and
+    // the note — `//` line comments, `/* */` block comments, and the
+    // locale `#set text(lang, region)` directive InkyCap injects into
+    // non-English notes. When it tripped, it dropped the `#note(...)` call
+    // from the preamble, which silently emptied the property panel for notes
+    // whose body fails to compile (the query pipeline's body-stripped
+    // fallback then saw no metadata) and leaked the raw call into note
+    // previews and merged book exports.
+    if let Some(span) = crate::typst_pipeline::note_rewriter::note_call_span(content) {
+        return content[span.end..].trim_start();
+    }
+    // No `#note(...)` — skip a leading run of imports, line comments, and
+    // blank lines so a preview/body view starts at real content rather than
+    // at the file's machinery.
     let mut rest = content;
-    // Skip leading whitespace and #import lines
     loop {
         let trimmed = rest.trim_start();
-        if trimmed.starts_with("#import") {
-            if let Some(nl) = trimmed.find('\n') {
-                rest = &trimmed[nl + 1..];
-            } else {
-                return "";
+        if trimmed.starts_with("#import") || trimmed.starts_with("//") {
+            match trimmed.find('\n') {
+                Some(nl) => rest = &trimmed[nl + 1..],
+                None => return "",
             }
         } else {
-            rest = trimmed;
-            break;
+            return trimmed;
         }
     }
-    // Skip #note(...) call if present (may span multiple lines)
-    if rest.starts_with("#note(") {
-        let mut depth: i32 = 0;
-        let mut in_string = false;
-        let mut escape = false;
-        for (i, ch) in rest.char_indices() {
-            if escape {
-                escape = false;
-                continue;
-            }
-            if ch == '\\' && in_string {
-                escape = true;
-                continue;
-            }
-            if ch == '"' {
-                in_string = !in_string;
-                continue;
-            }
-            if in_string {
-                continue;
-            }
-            if ch == '(' {
-                depth += 1;
-            }
-            if ch == ')' {
-                depth -= 1;
-                if depth == 0 {
-                    rest = &rest[i + 1..];
-                    break;
-                }
-            }
-        }
-    }
-    rest.trim_start()
 }
 
 /// Write `bytes` to `path` only if no file exists there. Used to seed
@@ -367,6 +348,34 @@ fn write_if_changed(path: &Path, expected: &[u8]) {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn strip_note_preamble_drops_import_and_note() {
+        let src = "#import \"/.inkycap/notebox.typ\": *\n\n\
+                   #note(title: \"X\")\n= Body\n\nProse.";
+        assert_eq!(strip_note_preamble(src), "= Body\n\nProse.");
+    }
+
+    #[test]
+    fn strip_note_preamble_tolerates_comments_and_set_rules_before_note() {
+        // Regression: `//` line comments, `/* */` block comments, and the
+        // locale `#set text(...)` directive between the import and `#note(...)`
+        // must not prevent the call from being recognized and stripped.
+        let src = "#import \"/.inkycap/notebox.typ\": *\n\n\
+                   // a note about this note\n\
+                   /* block */\n\
+                   #set text(lang: \"fr\", region: \"CA\")\n\
+                   #note(\n  title: \"X\",\n  tags: (\"y\",),\n)\n\
+                   = Body\n\nProse.";
+        assert_eq!(strip_note_preamble(src), "= Body\n\nProse.");
+    }
+
+    #[test]
+    fn strip_note_preamble_without_note_skips_imports_and_comments() {
+        let src = "#import \"/.inkycap/notebox.typ\": *\n// orphan comment\n\n\
+                   = Heading\nText.";
+        assert_eq!(strip_note_preamble(src), "= Heading\nText.");
+    }
 
     #[test]
     fn locale_directive_derives_lang_and_region() {
