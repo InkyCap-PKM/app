@@ -1,7 +1,10 @@
 # Typst 0.14.2 → 0.15.0 upgrade
 
-Status: PLANNED · 2026-06-15 · target branch `typst-0.15` off `main`
-Current pin: `typst* = 0.14` (typst 0.14.2) · App version: 26.6.12
+Status: ALL 4 PHASES IMPLEMENTED + COMMITTED on `typst-0.15` · 2026-06-15 ·
+gates green · NOT yet in-app validated, NOT merged to `main`.
+Commits: `cd75d83` (P1 finish) · `4ed838f` (P2) · `a1725d1` (P3) · `8fec573`
+(P4), atop merge `72709d5`. Pin now `typst* = 0.15` (typst 0.15.0).
+Next: in-app validation → merge to `main` → release as the combined 0.15 version.
 
 ## Why this upgrade
 
