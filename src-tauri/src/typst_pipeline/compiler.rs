@@ -228,6 +228,51 @@ impl TypstCompiler {
         warned.output.ok()
     }
 
+    /// Like [`compile_document`], but on a *localized* failure runs the
+    /// error-tolerant [`recovery`] pass — dropping the errored spans (a stray
+    /// token, a broken `#include`) and recompiling — so body-derived metadata
+    /// can still be queried from the salvageable parts of the document.
+    ///
+    /// Used by the metadata pipeline (`compile_and_query`): without it, a
+    /// single broken span anywhere in the body (e.g. `#include "/missing.typ"`)
+    /// makes the whole compile return `None`, the query falls back to a
+    /// preamble-only recompile, and every inline `#task` / `#due` marker
+    /// vanishes from the Agenda — even though the markers themselves are fine.
+    /// Document-level `#note(...)` metadata survives the preamble fallback,
+    /// which is why properties (and document-level recurrence) kept showing
+    /// while inline markers did not.
+    ///
+    /// The recovery pass rewrites the world's main source in place, so the
+    /// user's original source is restored before returning (matching
+    /// [`compile_svg`]). Returns `None` only when recovery can't make progress
+    /// within its pass budget.
+    ///
+    /// [`compile_document`]: Self::compile_document
+    /// [`compile_svg`]: Self::compile_svg
+    /// [`recovery`]: crate::typst_pipeline::recovery
+    pub fn compile_document_recovering(
+        &mut self,
+        abs_path: &Path,
+        source: String,
+    ) -> Option<PagedDocument> {
+        if self.world.set_main(abs_path, source.clone()).is_err() {
+            return None;
+        }
+        let _t = CompileTimer::start("compile_document_recovering", abs_path);
+        let warned = typst::compile::<PagedDocument>(&self.world);
+        _t.done();
+        match warned.output {
+            Ok(document) => Some(document),
+            Err(errors) => {
+                let recovered = recovery::recover::<PagedDocument>(&self.world, abs_path, &errors);
+                // Restore the user's original source so later queries/compiles
+                // against this path see what they wrote, not the patched variant.
+                let _ = self.world.set_main(abs_path, source);
+                recovered
+            }
+        }
+    }
+
     pub fn set_bibliography_style(&mut self, style: Option<String>) {
         self.bibliography_style = style;
     }
