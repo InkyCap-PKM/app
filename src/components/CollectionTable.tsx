@@ -9,6 +9,7 @@ import {
   Show,
   onCleanup,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { ChevronLeft, ChevronRight, Funnel } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
@@ -26,6 +27,7 @@ import { promptText, promptConfirm } from "../stores/prompt";
 import { useI18n, tPlural } from "../lib/i18n";
 import { propertyLabel } from "../lib/property-labels";
 import { clickOutside } from "../lib/clickOutside";
+import { anchorPanelMenu } from "../lib/uiMenu";
 import { propertyType, inferPropertyType } from "../stores/propertyTypes";
 import { columnFilterKind, fileColumnType } from "../lib/column-filter";
 import AgendaList from "./AgendaList";
@@ -728,15 +730,16 @@ const CollectionTable: Component<{ path: string }> = (props) => {
     setContextMenu({ x: e.clientX, y: e.clientY, viewName });
   }
 
-  let exportWrapperRef: HTMLDivElement | undefined;
+  // The export menu is portaled to <body> (so it escapes `.main-content`'s
+  // `overflow: hidden` and never paints behind the right panel), then anchored
+  // back to this button with `anchorPanelMenu`. Its own `clickOutside`
+  // directive handles dismissal, so handleDocClick below leaves it alone.
+  let exportBtnRef: HTMLButtonElement | undefined;
 
   // Close context menu on click outside
-  function handleDocClick(e: MouseEvent) {
+  function handleDocClick() {
     setContextMenu(null);
     setRowContextMenu(null);
-    if (exportWrapperRef && !exportWrapperRef.contains(e.target as Node)) {
-      setShowExportMenu(false);
-    }
   }
 
   if (typeof document !== "undefined") {
@@ -1123,19 +1126,25 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                     {t("columnFilter.clearAll")}
                   </button>
                 </Show>
-                <div
-                  class="collection-table__export-wrapper"
-                  ref={exportWrapperRef}
-                >
+                <div class="collection-table__export-wrapper">
                   <button
                     class="collection-table__toolbar-btn"
+                    ref={exportBtnRef}
                     onClick={() => setShowExportMenu(!showExportMenu())}
                     title={t("collection.table.exportTitle")}
                   >
                     {t("collection.table.export")}
                   </button>
                   <Show when={showExportMenu()}>
-                    <div class="collection-table__export-menu">
+                    <Portal>
+                    <div
+                      class="collection-table__export-menu"
+                      ref={(el) => anchorPanelMenu(exportBtnRef, el)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowExportMenu(false),
+                        ignore: exportBtnRef,
+                      }}
+                    >
                       <button
                         class="context-menu__item"
                         onClick={() => exportDelimited("comma")}
@@ -1203,6 +1212,7 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                         {t("collection.table.exportMarkdown")}
                       </button>
                     </div>
+                    </Portal>
                   </Show>
                 </div>
               </div>

@@ -1536,10 +1536,11 @@ svg.lucide {
   padding: 8px;
 }
 
+/* Portaled to <body> and placed with `anchorPanelMenu` (which sets
+   `position: fixed` plus inline left/top), so it escapes `.main-content`'s
+   `overflow: hidden` and never paints behind the right panel. No static
+   position/top/right here — those would fight the helper's inline coords. */
 .collection-table__export-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
   z-index: var(--z-menu);
   min-width: 180px;
   background: var(--popup-bg);
@@ -1547,7 +1548,6 @@ svg.lucide {
   border-radius: var(--popup-radius);
   box-shadow: var(--popup-shadow);
   padding: var(--popup-padding-block) 0;
-  margin-top: 2px;
 }
 
 /* The PDF-standard selector stacks its label above a full-width dropdown.
