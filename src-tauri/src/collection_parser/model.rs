@@ -242,10 +242,10 @@ pub enum TocPlacement {
     AfterChapter { stem: String },
 }
 
-/// How the merged book sources its bibliography. Typst 0.14 permits only one
-/// `#bibliography()` per document, so these two modes are mutually exclusive:
-/// either we consolidate (and strip per-note declarations) or we leave the
-/// author's per-note declarations in place (capped at one across the book).
+/// How the merged book sources its bibliography. Typst 0.15 allows multiple
+/// `#bibliography()` per document (each scoped to a subset of citations via a
+/// `target` selector), which is what makes `PerChapter` and an uncapped
+/// `InPlace` possible.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
@@ -255,11 +255,16 @@ pub enum BibliographyMode {
     /// collection's bibliography file. The default.
     #[default]
     Unified,
+    /// Strip every per-note `#bibliography(...)` and emit one auto-generated
+    /// bibliography at the end of each chapter, scoped (via a Typst `target`
+    /// selector bounded by the chapter anchors) to just that chapter's
+    /// citations and numbered independently. Sourced from the collection's
+    /// bibliography file, same as `Unified`.
+    PerChapter,
     /// Leave per-note `#bibliography(...)` declarations untouched and emit no
-    /// consolidated bibliography. The author controls placement by writing
-    /// the call where they want it. The export is rejected before compile if
-    /// more than one note declares a bibliography (Typst's one-bibliography
-    /// limit).
+    /// consolidated bibliography. The author controls placement — and, since
+    /// Typst 0.15, may place more than one (each scoped by proximity or an
+    /// explicit `target`). Covers categorized / custom reference layouts.
     InPlace,
 }
 

@@ -726,13 +726,15 @@ pub fn build_book_source(
             s.push_str("#pagebreak(weak: true)\n");
         }
 
-        // In `Unified` mode every per-note `#bibliography(...)` is stripped so
-        // the book has a single consolidated list. In `InPlace` mode the
-        // author's own declaration is preserved (the export pre-flight has
-        // already ensured at most one note declares one). The preamble import
-        // and `#note(...)` call are stripped either way.
+        // In `Unified` and `PerChapter` modes every per-note `#bibliography(...)`
+        // is stripped — the book emits its own list(s) (one consolidated, or one
+        // scoped per chapter). In `InPlace` mode the author's own declarations
+        // are preserved verbatim (Typst 0.15 permits several). The preamble
+        // import and `#note(...)` call are stripped in every mode.
         let raw_body = match options.bibliography_mode {
-            BibliographyMode::Unified => prepare_note_for_include(&note.content),
+            BibliographyMode::Unified | BibliographyMode::PerChapter => {
+                prepare_note_for_include(&note.content)
+            }
             BibliographyMode::InPlace => strip_note_preamble(&note.content).to_string(),
         };
         let body = if normalize_headings {
@@ -777,6 +779,23 @@ pub fn build_book_source(
             s.push('\n');
         }
 
+        // PerChapter mode: emit this chapter's own bibliography, scoped to the
+        // citations between this chapter's anchor and the next (the package's
+        // `chapter-bibliography` builds the label-bounded `target` selector).
+        // The final chapter passes `next-stem: none` so its scope runs to the
+        // document end.
+        if options.bibliography_mode == BibliographyMode::PerChapter {
+            if let Some(path) = bibliography_path {
+                let next_stem = notes.get(idx + 1).map(|n| n.stem.as_str());
+                s.push_str(&chapter_bibliography_call(
+                    path,
+                    &note.stem,
+                    next_stem,
+                    bibliography_style,
+                ));
+            }
+        }
+
         // ToC anchored after this chapter. A leading pagebreak puts it on its
         // own page; the next chapter supplies its own weak break (or, for the
         // last chapter, the bibliography does).
@@ -817,30 +836,6 @@ pub fn build_book_source(
     }
 
     s
-}
-
-/// Stems of the notes that declare their own top-level `#bibliography(...)`
-/// (or the package wrapper `#apply-bibliography(...)`). Used by the export
-/// pre-flight to reject `InPlace` bibliography mode when more than one note
-/// declares a bibliography — Typst 0.14 permits only one per document, so a
-/// merged book with two would fail to compile with a cryptic error.
-///
-/// The scan mirrors [`strip_bibliography_call`]: a line whose first
-/// non-whitespace content is the call, skipping comment lines. It is
-/// deliberately conservative — a false negative merely defers to Typst's own
-/// error, never a false positive that blocks a valid export.
-pub fn notes_declaring_bibliography(notes: &[BookNote]) -> Vec<String> {
-    notes
-        .iter()
-        .filter(|note| {
-            note.content.lines().any(|line| {
-                let t = line.trim_start();
-                !t.starts_with("//")
-                    && (t.starts_with("#bibliography(") || t.starts_with("#apply-bibliography("))
-            })
-        })
-        .map(|note| note.stem.clone())
-        .collect()
 }
 
 /// Render the default title page used when no template is set.
@@ -926,6 +921,33 @@ const CHAPTER_ANCHOR_PREFIX: &str = "#chapter-anchor(\"";
 /// stem is escaped for a Typst string literal.
 fn chapter_anchor_call(stem: &str) -> String {
     format!("{}{}\")\n", CHAPTER_ANCHOR_PREFIX, typst_escape(stem))
+}
+
+/// The `#chapter-bibliography(...)` call emitted at a chapter's end in
+/// `PerChapter` mode. The package helper builds the label-bounded `target`
+/// selector from the stems; here we only serialize the path, this chapter's
+/// stem, the next chapter's stem (omitted for the final chapter so its scope
+/// runs to the document end), and an optional citation style. Anchored at the
+/// chapter end so the bibliography sits after that chapter's body.
+fn chapter_bibliography_call(
+    path: &str,
+    stem: &str,
+    next_stem: Option<&str>,
+    style: Option<&str>,
+) -> String {
+    let mut call = format!(
+        "#chapter-bibliography(\"{}\", \"{}\"",
+        typst_escape(path),
+        typst_escape(stem)
+    );
+    if let Some(next) = next_stem {
+        call.push_str(&format!(", next-stem: \"{}\"", typst_escape(next)));
+    }
+    if let Some(style) = style {
+        call.push_str(&format!(", style: \"{}\"", typst_escape(style)));
+    }
+    call.push_str(")\n");
+    call
 }
 
 /// Find the first `bibliography("…")` call (e.g. a template's
@@ -1479,15 +1501,46 @@ After
     }
 
     #[test]
-    fn notes_declaring_bibliography_counts_declaring_notes() {
+    fn per_chapter_mode_emits_scoped_bibliography_per_chapter() {
+        let mut opts = options();
+        opts.bibliography_mode = BibliographyMode::PerChapter;
         let notes = vec![
-            note("a", "= A\nbody"),
-            note("b", "= B\n#bibliography(\"refs.bib\")"),
-            note("c", "= C\n#apply-bibliography(\"refs.bib\")"),
-            note("d", "= D\n// #bibliography(\"x\") is only a comment"),
+            note("alpha", "#import \"/x\": *\n#note()\n= Alpha\nSee @aaa.\n"),
+            note("beta", "#import \"/x\": *\n#note()\n= Beta\nSee @bbb.\n"),
         ];
-        let declaring = notes_declaring_bibliography(&notes);
-        assert_eq!(declaring, vec!["b".to_string(), "c".to_string()]);
+        let src = build_book_source(
+            &notes,
+            &opts,
+            None,
+            None,
+            None,
+            Some("/refs.bib"),
+            Some("ieee"),
+            false,
+            None,
+            None,
+        );
+        // One scoped call per chapter; no consolidated bibliography.
+        assert_eq!(
+            src.matches("#chapter-bibliography(").count(),
+            2,
+            "expected one scoped bibliography per chapter; source:\n{src}"
+        );
+        assert_eq!(
+            src.matches("#apply-bibliography(").count(),
+            0,
+            "PerChapter must not emit a consolidated bibliography; source:\n{src}"
+        );
+        // First chapter bounds its scope with the next stem; last chapter omits
+        // next-stem so its scope runs to the document end.
+        assert!(
+            src.contains("#chapter-bibliography(\"/refs.bib\", \"alpha\", next-stem: \"beta\", style: \"ieee\")"),
+            "first chapter's scoped call missing/incorrect; source:\n{src}"
+        );
+        assert!(
+            src.contains("#chapter-bibliography(\"/refs.bib\", \"beta\", style: \"ieee\")"),
+            "last chapter's call should omit next-stem; source:\n{src}"
+        );
     }
 
     #[test]

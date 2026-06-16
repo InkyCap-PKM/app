@@ -513,10 +513,10 @@ const CollectionBookEditor: Component<{
     cfg().toc_placement ?? { kind: "beginning" },
   );
   // Bibliography mode: unified consolidates one list at the back (default);
-  // in-place keeps each note's own `#bibliography(...)`. Surfaced as a single
-  // "unified" checkbox — unchecked means in-place.
-  const [bibUnified, setBibUnified] = createSignal(
-    (cfg().bibliography_mode ?? "unified") === "unified",
+  // per-chapter emits one chapter-scoped list per chapter; in-place keeps each
+  // note's own `#bibliography(...)`. Surfaced as a three-way selector.
+  const [bibMode, setBibMode] = createSignal<BibliographyMode>(
+    cfg().bibliography_mode ?? "unified",
   );
   const [injectMode, setInjectMode] = createSignal<
     "always" | "fallback" | "never"
@@ -558,9 +558,7 @@ const CollectionBookEditor: Component<{
       include_outline: includeOutline(),
       toc_placement: tocPlacement(),
       page_numbering: pageNumbering,
-      bibliography_mode: (bibUnified()
-        ? "unified"
-        : "in_place") as BibliographyMode,
+      bibliography_mode: bibMode(),
       include_credit_statement: includeCreditStatement(),
     };
   }
@@ -745,23 +743,30 @@ const CollectionBookEditor: Component<{
         <label class="collection-meta__label">
           {t("collection.book.bibliography")}
         </label>
-        <label class="collection-meta__inline-check">
-          <input
-            type="checkbox"
-            checked={bibUnified()}
-            onChange={(e) => {
-              setBibUnified(e.currentTarget.checked);
-              flush();
-            }}
-          />
-          {t("collection.book.bibliographyUnified")}
-        </label>
+        <Dropdown<BibliographyMode>
+          value={bibMode()}
+          options={[
+            { value: "unified", label: t("collection.book.bibliographyUnified") },
+            {
+              value: "per_chapter",
+              label: t("collection.book.bibliographyPerChapter"),
+            },
+            { value: "in_place", label: t("collection.book.bibliographyInPlace") },
+          ]}
+          onChange={(v) => {
+            setBibMode(v);
+            flush();
+          }}
+          ariaLabel={t("collection.book.bibliography")}
+        />
       </div>
       <div class="collection-meta__row">
         <span class="collection-meta__hint">
-          {bibUnified()
+          {bibMode() === "unified"
             ? t("collection.book.bibliographyUnifiedHint")
-            : t("collection.book.bibliographyInPlaceHint")}
+            : bibMode() === "per_chapter"
+              ? t("collection.book.bibliographyPerChapterHint")
+              : t("collection.book.bibliographyInPlaceHint")}
         </span>
       </div>
       <div class="collection-meta__row">
