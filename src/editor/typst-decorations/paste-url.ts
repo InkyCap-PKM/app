@@ -1,6 +1,9 @@
-// Paste-as-URL extension — when the user pastes a URL, shows a small
-// popup offering to insert it as a Typst #link() or as plain text.
-// If text is selected, "Link" wraps the selection as the display text.
+// Paste-as-URL extension — when the user pastes a URL *over a selection*,
+// shows a small popup offering to wrap the selection as a Typst #link() or
+// replace it with the URL as plain text. With a collapsed cursor (pasting
+// into blank space) there is no ambiguity — the visual editor already renders
+// bare URLs as clickable — so the URL is inserted as plain text without a
+// prompt.
 
 import { EditorView } from "@codemirror/view";
 
@@ -173,9 +176,23 @@ export function pasteUrlHandler(event: ClipboardEvent, view: EditorView): boolea
     return true;
   }
 
-  // Otherwise offer the choice — including when pasting over a selection, where
-  // "Link" wraps the selected text as the link label.
-  const selectedText = from !== to ? view.state.doc.sliceString(from, to) : "";
+  // Pasting into blank space (collapsed cursor): no selection to turn into a
+  // link label and nothing to replace, so the "Link or plain text?" question
+  // has no meaningful answer — the visual editor renders the bare URL as
+  // clickable either way. Insert it as plain text, no popup.
+  if (from === to) {
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: { anchor: from + text.length },
+    });
+    view.focus();
+    return true;
+  }
+
+  // Pasting over a selection: genuinely ambiguous — "Link" wraps the selected
+  // text as the link label, "Plain text" replaces it with the URL. Offer the
+  // choice.
+  const selectedText = view.state.doc.sliceString(from, to);
   showMenu(view, text, selectedText);
   return true;
 }
