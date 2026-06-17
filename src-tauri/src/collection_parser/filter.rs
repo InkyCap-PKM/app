@@ -1,5 +1,6 @@
 use crate::errors::InkyCapError;
 use crate::models::note::{NoteMetadata, PropertyValue};
+use chrono::Local;
 use std::path::Path;
 
 /// A parsed filter expression.
@@ -374,11 +375,38 @@ fn resolve_property(prop: &PropertyRef, note: &NoteMetadata, self_path: &Path) -
 
 fn value_to_property(val: &Value, note: &NoteMetadata, self_path: &Path) -> PropertyValue {
     match val {
-        Value::String(s) => PropertyValue::String(s.clone()),
+        Value::String(s) => match resolve_relative_date(s) {
+            Some(resolved) => PropertyValue::String(resolved),
+            None => PropertyValue::String(s.clone()),
+        },
         Value::Bool(b) => PropertyValue::Bool(*b),
         Value::Number(n) => PropertyValue::Number(*n),
         Value::PropertyRef(prop) => resolve_property(prop, note, self_path),
     }
+}
+
+/// Resolve a relative-date token of the form `@today`, `@today+N`, or
+/// `@today-N` (N = whole days) to a concrete `YYYY-MM-DD` string in the
+/// machine's local time zone. Returns `None` for anything that is not such a
+/// token, so ordinary string and date literals pass through untouched.
+///
+/// Date filters store relative bounds symbolically (never baked to a fixed
+/// date) so a saved filter like "due within the next 7 days" keeps meaning
+/// *the next 7 days* every time the collection is opened, rather than freezing
+/// to the day it was created. The frontend's in-memory Agenda matcher resolves
+/// the same tokens (see `resolveRelativeDate` in column-filter.ts) so both
+/// evaluation paths agree on what "today" means.
+fn resolve_relative_date(s: &str) -> Option<String> {
+    let rest = s.trim().strip_prefix("@today")?;
+    // `@today` → 0; `@today+N` / `@today-N` → ±N. `i64::from_str` accepts the
+    // leading sign, so "+7" and "-3" parse directly.
+    let offset: i64 = if rest.is_empty() {
+        0
+    } else {
+        rest.parse().ok()?
+    };
+    let date = Local::now().date_naive() + chrono::Duration::days(offset);
+    Some(date.format("%Y-%m-%d").to_string())
 }
 
 fn property_eq(a: &PropertyValue, b: &PropertyValue) -> bool {
@@ -1188,5 +1216,58 @@ and:
         )]);
         assert!(!evaluate(&eq, &non_member, p));
         assert!(evaluate(&ne, &non_member, p)); // kept by "not equals"
+    }
+
+    #[test]
+    fn test_resolve_relative_date_tokens() {
+        let today = Local::now().date_naive();
+        assert_eq!(
+            resolve_relative_date("@today"),
+            Some(today.format("%Y-%m-%d").to_string())
+        );
+        assert_eq!(
+            resolve_relative_date("@today+7"),
+            Some(
+                (today + chrono::Duration::days(7))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            resolve_relative_date("@today-3"),
+            Some(
+                (today - chrono::Duration::days(3))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            )
+        );
+        // Non-tokens pass through untouched.
+        assert_eq!(resolve_relative_date("2026-01-15"), None);
+        assert_eq!(resolve_relative_date("tomorrow"), None);
+        assert_eq!(resolve_relative_date("@today+"), None); // malformed offset
+    }
+
+    #[test]
+    fn test_relative_date_filter_evaluates_dynamically() {
+        let today = Local::now().date_naive();
+        let due_today = today.format("%Y-%m-%d").to_string();
+        let due_next_week = (today + chrono::Duration::days(7))
+            .format("%Y-%m-%d")
+            .to_string();
+        let p = Path::new("/notebox/x.collection");
+
+        // "is today" lowers to `due >= @today AND due < @today+1`.
+        let lower = parse_filter_expr(r#"due >= "@today""#).unwrap();
+        let upper = parse_filter_expr(r#"due < "@today+1""#).unwrap();
+
+        let note_today = make_note(vec![("due", PropertyValue::String(due_today))]);
+        assert!(evaluate(&lower, &note_today, p));
+        assert!(evaluate(&upper, &note_today, p));
+
+        // A note due next week passes the lower bound but not the "is today"
+        // upper bound — proving the token resolves against the current day.
+        let note_next_week = make_note(vec![("due", PropertyValue::String(due_next_week))]);
+        assert!(evaluate(&lower, &note_next_week, p));
+        assert!(!evaluate(&upper, &note_next_week, p));
     }
 }

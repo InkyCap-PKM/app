@@ -33,6 +33,14 @@ pub enum BookmarkKind {
     },
     /// A bookmarked collection (.collection file).
     Collection { path: String, name: String },
+    /// A saved Agenda view: a named filter snapshot, scoped to the notebox it
+    /// was created in. `filter` is a JSON-serialized `AgendaFilterSnapshot`
+    /// (opaque to the backend — the frontend owns its shape).
+    AgendaView {
+        name: String,
+        notebox: String,
+        filter: String,
+    },
 }
 
 /// Load bookmarks from the config file. Returns empty vec if file doesn't exist.

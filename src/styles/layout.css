@@ -981,6 +981,26 @@ svg.lucide {
 .agenda__date-and {
   font-size: var(--text-sm);
   color: var(--fg-muted);
+  /* A little breathing room on both sides of "and", on top of the row gap. */
+  margin-inline: var(--space-1);
+}
+
+/* In a "within" range, each value sizes to its content (no grow/shrink) so the
+   two date fields keep symmetric spacing around "and" and wrap as whole groups
+   to the next line rather than squeezing a date until it breaks. */
+.agenda__date-row--range .date-value,
+.column-filter__row--range .date-value {
+  flex: 0 0 auto;
+}
+
+/* "Due today" toggle: a plain checkbox + label, sitting between the operator
+   dropdown and the value editor in the date menu. */
+.agenda__date-today {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-md);
 }
 
 /* The date-value field inside the filter surfaces. The DatePicker's trigger is
@@ -1004,6 +1024,8 @@ svg.lucide {
   min-height: 28px;
   font-size: var(--text-md);
   cursor: pointer;
+  /* Never break a date across two lines (e.g. "2026-06-22"). */
+  white-space: nowrap;
 }
 
 /* Themeable calendar icon, right-aligned, so the field reads as a date control
@@ -1018,6 +1040,70 @@ svg.lucide {
   background-color: var(--fg-dim);
   -webkit-mask: var(--icon-calendar) center / contain no-repeat;
   mask: var(--icon-calendar) center / contain no-repeat;
+}
+
+/* The date-filter value editor: a mode toggle (fixed calendar vs. relative
+   "today ± N days") followed by either the DatePicker or the relative offset
+   inputs. It fills the row so its inner picker keeps the full-width treatment
+   above; the toggle stays a fixed-size square. */
+.date-value {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.date-value__mode {
+  flex-shrink: 0;
+}
+
+/* Unit + resolved-date preview stacked, so "= <date>" lines up under the
+   "days from today" label instead of under the toggle/input. */
+.date-value__rel-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.date-value__rel-unit {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* Sized to show ~5 characters at once. The element selector outranks
+   `.property-editor__input`'s `width: 100%`; `flex: 0 0 auto` stops it
+   stretching. Width = content (5ch) + the trimmed horizontal padding + borders
+   (box-sizing is border-box). */
+input.date-value__offset {
+  width: calc(5ch + 2 * var(--space-2) + 2px);
+  flex: 0 0 auto;
+  text-align: center;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+/* The resolved-date preview sits under the unit label (in the stacked text
+   column); dimmed because it's derived, not editable. */
+.date-value__preview {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Inline "name this view" row that drops below the Agenda controls when saving
+   a filter set as a bookmark. The name field takes the row; the actions sit
+   beside it. */
+.agenda__save-view {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.agenda__save-view .left-sidebar__filter-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .agenda__tag-check {
@@ -2213,6 +2299,7 @@ svg.lucide {
 .column-filter__between {
   font-size: var(--text-sm);
   color: var(--fg-muted);
+  margin-inline: var(--space-1);
 }
 
 /* Scrollable checklist of the column's distinct values. */

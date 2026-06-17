@@ -314,6 +314,14 @@ const App: Component = () => {
     onCleanup(() => document.removeEventListener("inkycap:open-search", openSearchHandler));
   }
 
+  // Switch to the Agenda panel when a saved-view bookmark is activated. The
+  // pending view is held in the agendaView store; the panel applies it on mount.
+  {
+    const openAgendaHandler = () => selectSidebarMode("agenda");
+    document.addEventListener("inkycap:open-agenda", openAgendaHandler);
+    onCleanup(() => document.removeEventListener("inkycap:open-agenda", openAgendaHandler));
+  }
+
   // Insert citation from References panel browse
   {
     const insertCitationHandler = (e: Event) => {
