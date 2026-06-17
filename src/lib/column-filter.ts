@@ -83,9 +83,10 @@ export type DateOp =
 
 export interface DateFilterState {
   op: DateOp;
-  /** Primary date (`YYYY-MM-DD`). Empty until the user picks one. */
+  /** Primary value: a fixed `YYYY-MM-DD`, a relative `@today±N` token (see
+   *  the relative-date helpers below), or `""` until the user picks one. */
   date: string;
-  /** End date for `within`. */
+  /** End value for `within` (same shape as {@link date}). */
   date2: string;
 }
 
@@ -103,17 +104,79 @@ export const DATE_OPS: { value: DateOp; labelKey: string }[] = [
   { value: "notEmpty", labelKey: "columnFilter.date.notEmpty" },
 ];
 
-// Day arithmetic in UTC so a local timezone never shifts the boundary across
-// midnight. Input/output are bare `YYYY-MM-DD` strings.
-function shiftDay(iso: string, delta: number): string {
+// ── Relative dates ("today ± N days") ─────────────────────────────────
+//
+// A date filter value is either a fixed `YYYY-MM-DD` string or a relative
+// token anchored to the current day: `@today`, `@today+N`, or `@today-N`
+// (N = whole days, so `@today` means today, `@today+7` a week out, `@today-1`
+// yesterday). Relative tokens are stored symbolically and resolved to a
+// concrete date only at evaluation time — by the Rust filter evaluator for
+// collections (filter.rs `resolve_relative_date`) and by `matchesDateFilter`
+// below for the Agenda. Storing them symbolically is what keeps a saved
+// "within the next 7 days" filter meaning the next 7 days every session
+// instead of freezing to the day it was created.
+
+const REL_PREFIX = "@today";
+
+/** True when `v` is a relative `@today±N` token rather than a fixed date. */
+export function isRelativeDate(v: string): boolean {
+  return v.trim().startsWith(REL_PREFIX);
+}
+
+/** The day offset of a relative token (`@today` → 0, `@today+7` → 7,
+ *  `@today-3` → -3), or `null` when `v` is not a relative token. */
+export function relativeOffset(v: string): number | null {
+  if (!isRelativeDate(v)) return null;
+  const rest = v.trim().slice(REL_PREFIX.length);
+  if (rest === "") return 0;
+  const n = Number(rest);
+  return Number.isInteger(n) ? n : null;
+}
+
+/** Canonical token for a day offset: `@today`, `@today+N`, or `@today-N`. */
+export function makeRelativeDate(offset: number): string {
+  if (offset === 0) return REL_PREFIX;
+  return `${REL_PREFIX}${offset > 0 ? "+" : "-"}${Math.abs(offset)}`;
+}
+
+/** Today as a local `YYYY-MM-DD` (matching the backend's `Local::now`), so the
+ *  Agenda's in-memory resolution agrees with the collection evaluator. */
+export function localTodayISO(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(
+    n.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+/** Resolve a filter value to a concrete `YYYY-MM-DD`: relative tokens against
+ *  `today`, fixed dates returned unchanged. */
+export function resolveRelativeDate(v: string, today = localTodayISO()): string {
+  const off = relativeOffset(v);
+  if (off === null) return v;
+  return shiftDayFixed(today, off);
+}
+
+// Day arithmetic on a fixed date, in UTC so a local timezone never shifts the
+// boundary across midnight. Input/output are bare `YYYY-MM-DD` strings.
+function shiftDayFixed(iso: string, delta: number): string {
   const m = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso;
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
-const nextDay = (iso: string) => shiftDay(iso, 1);
-const prevDay = (iso: string) => shiftDay(iso, -1);
+
+// Shift a date filter *value* by whole days, preserving its kind: a relative
+// token shifts its offset (so `nextDay("@today")` is `"@today+1"`) while a
+// fixed date shifts its calendar day. This lets the single lowering in
+// `dateClauses` treat both kinds uniformly.
+function shiftDay(value: string, delta: number): string {
+  const off = relativeOffset(value);
+  if (off !== null) return makeRelativeDate(off + delta);
+  return shiftDayFixed(value, delta);
+}
+const nextDay = (v: string) => shiftDay(v, 1);
+const prevDay = (v: string) => shiftDay(v, -1);
 
 /** A single lowered comparison: an ordered bound, or an emptiness predicate. */
 type DateClause =
@@ -174,11 +237,13 @@ export function matchesDateFilter(value: string | null, f: DateFilterState): boo
   const clauses = dateClauses(f);
   if (clauses.length === 0) return true;
   const v = (value ?? "").trim();
+  const today = localTodayISO();
   return clauses.every((c) => {
     if (c.kind === "empty") return v === "";
     if (c.kind === "notEmpty") return v !== "";
     if (v === "") return false;
-    return c.op === ">=" ? v >= c.bound : v < c.bound;
+    const bound = resolveRelativeDate(c.bound, today);
+    return c.op === ">=" ? v >= bound : v < bound;
   });
 }
 

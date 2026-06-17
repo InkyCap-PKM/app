@@ -14,7 +14,7 @@ import { Portal } from "solid-js/web";
 import type { FilterGroup } from "../lib/types";
 import { useI18n } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
-import DatePicker from "./DatePicker";
+import DateValueInput from "./DateValueInput";
 import { clickOutside } from "../lib/clickOutside";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import {
@@ -222,15 +222,18 @@ const ColumnFilterPopover: Component<ColumnFilterPopoverProps> = (props) => {
             />
           </div>
           <Show when={dateNeedsDate()}>
-            <div class="column-filter__row column-filter__row--dates">
-              <DatePicker
+            <div
+              class="column-filter__row column-filter__row--dates"
+              classList={{ "column-filter__row--range": date().op === "within" }}
+            >
+              <DateValueInput
                 value={date().date}
                 withTime={props.withTime}
                 onSave={(v) => setDate({ ...date(), date: v })}
               />
               <Show when={date().op === "within"}>
                 <span class="column-filter__between">{t("columnFilter.and")}</span>
-                <DatePicker
+                <DateValueInput
                   value={date().date2}
                   withTime={props.withTime}
                   onSave={(v) => setDate({ ...date(), date2: v })}

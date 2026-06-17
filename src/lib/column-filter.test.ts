@@ -12,10 +12,15 @@ import {
   buildNumberFilter,
   buildTextFilter,
   fileColumnType,
+  isRelativeDate,
+  localTodayISO,
+  makeRelativeDate,
   matchesDateFilter,
   multiSelectOptions,
   parseDateFilter,
   parseNumberFilter,
+  relativeOffset,
+  resolveRelativeDate,
   type DateFilterState,
 } from "./column-filter";
 
@@ -207,5 +212,67 @@ describe("matchesDateFilter — Agenda predicate", () => {
     expect(parseDateFilter(buildDateFilter("due", D("within", "2025-09-01", "2025-09-30")))).toEqual(
       D("within", "2025-09-01", "2025-09-30"),
     );
+  });
+});
+
+describe("relative dates — today ± N tokens", () => {
+  const D = (op: DateFilterState["op"], date = "", date2 = ""): DateFilterState => ({
+    op,
+    date,
+    date2,
+  });
+
+  it("recognises and round-trips token offsets", () => {
+    expect(makeRelativeDate(0)).toBe("@today");
+    expect(makeRelativeDate(7)).toBe("@today+7");
+    expect(makeRelativeDate(-3)).toBe("@today-3");
+    expect(relativeOffset("@today")).toBe(0);
+    expect(relativeOffset("@today+7")).toBe(7);
+    expect(relativeOffset("@today-3")).toBe(-3);
+    expect(relativeOffset("2025-09-30")).toBeNull();
+    expect(isRelativeDate("@today+1")).toBe(true);
+    expect(isRelativeDate("2025-09-30")).toBe(false);
+  });
+
+  it("resolves a token to an offset from today, fixed dates unchanged", () => {
+    const today = localTodayISO();
+    expect(resolveRelativeDate("@today", today)).toBe(today);
+    expect(resolveRelativeDate("2025-09-30", today)).toBe("2025-09-30");
+    // +1 day rolls the calendar forward (covers month boundaries).
+    expect(resolveRelativeDate("@today+1", "2025-01-31")).toBe("2025-02-01");
+    expect(resolveRelativeDate("@today-1", "2025-03-01")).toBe("2025-02-28");
+  });
+
+  it("lowers a token filter symbolically (backend resolves it later)", () => {
+    // "is @today" stays a token range so the saved filter never freezes.
+    expect(buildDateFilter("due", D("is", "@today"))).toEqual({
+      and: ['due >= "@today"', 'due < "@today+1"'],
+    });
+    expect(buildDateFilter("due", D("within", "@today", "@today+6"))).toEqual({
+      and: ['due >= "@today"', 'due < "@today+7"'],
+    });
+  });
+
+  it("round-trips token filters through parseDateFilter", () => {
+    expect(parseDateFilter(buildDateFilter("due", D("is", "@today")))).toEqual(D("is", "@today"));
+    expect(parseDateFilter(buildDateFilter("due", D("within", "@today", "@today+6")))).toEqual(
+      D("within", "@today", "@today+6"),
+    );
+    expect(parseDateFilter(buildDateFilter("due", D("onOrAfter", "@today")))).toEqual(
+      D("onOrAfter", "@today"),
+    );
+  });
+
+  it("matches against the current day in the Agenda predicate", () => {
+    const today = localTodayISO();
+    const tomorrow = resolveRelativeDate("@today+1", today);
+    const yesterday = resolveRelativeDate("@today-1", today);
+
+    expect(matchesDateFilter(today, D("is", "@today"))).toBe(true);
+    expect(matchesDateFilter(tomorrow, D("is", "@today"))).toBe(false);
+    // "within today..+1" includes today and tomorrow but not yesterday.
+    expect(matchesDateFilter(today, D("within", "@today", "@today+1"))).toBe(true);
+    expect(matchesDateFilter(tomorrow, D("within", "@today", "@today+1"))).toBe(true);
+    expect(matchesDateFilter(yesterday, D("within", "@today", "@today+1"))).toBe(false);
   });
 });

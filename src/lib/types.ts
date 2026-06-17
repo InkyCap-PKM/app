@@ -981,7 +981,11 @@ export type BookmarkKind =
   | { type: "Note"; data: { path: string; name: string } }
   | { type: "Search"; data: { query: string } }
   | { type: "Heading"; data: { path: string; name: string; heading: string } }
-  | { type: "Collection"; data: { path: string; name: string } };
+  | { type: "Collection"; data: { path: string; name: string } }
+  // A saved Agenda view: a named, JSON-serialized filter snapshot, scoped to
+  // the notebox it was created in (its tag/task-list selections don't apply
+  // elsewhere). `filter` is a JSON `AgendaFilterSnapshot`.
+  | { type: "AgendaView"; data: { name: string; notebox: string; filter: string } };
 
 export interface Bookmark {
   id: string;

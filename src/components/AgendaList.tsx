@@ -6,7 +6,7 @@
 // Used by the left-sidebar Agenda pane and the Collection "Agenda" view
 // so the two surfaces stay consistent.
 
-import { Component, createMemo, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
 import {
   ArrowDownNarrowWide,
@@ -19,14 +19,17 @@ import {
   Repeat,
   ListChevronsUpDown,
   ListChevronsDownUp,
+  BookmarkPlus,
+  FilterX,
 } from "lucide-solid";
 import type { AgendaItem } from "../lib/types";
 import { useI18n } from "../lib/i18n";
 import { formatRecurrence } from "../lib/recurrence";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
+import { requestedAgendaView, setRequestedAgendaView } from "../stores/agendaView";
 import { formatUserDate } from "../lib/dates";
-import DatePicker from "./DatePicker";
+import DateValueInput from "./DateValueInput";
 import { Dropdown } from "./Dropdown";
 import {
   type DateFilterState,
@@ -44,6 +47,14 @@ interface AgendaListProps {
   /** Invoked when a row is activated. `opts.newTab` requests opening the note
    *  in a new tab (ctrl/cmd-click, middle-click, or the context-menu entry). */
   onOpen: (item: AgendaItem, opts?: { newTab?: boolean }) => void;
+  /** When set, the panel restores and persists its filters under this
+   *  localStorage key (see {@link agendaFiltersKey}), and offers to save the
+   *  current filters as a view. Omitted by collection agenda views, whose
+   *  in-panel filters stay ephemeral. */
+  persistKey?: string;
+  /** Persist the current filters as a named saved-view bookmark. Provided only
+   *  alongside {@link persistKey} (the main panel). */
+  onSaveView?: (name: string, snapshot: AgendaFilterSnapshot) => void | Promise<void>;
 }
 
 /** All sort orders the Agenda offers. Each carries its own direction in
@@ -104,6 +115,48 @@ function todayISO(): string {
   ).padStart(2, "0")}`;
 }
 
+// ── Persisted filter state (main Agenda panel only) ───────────────────
+//
+// The sidebar Agenda restores its filters across sessions, keyed per notebox so
+// a tag/task-list selection from one notebox never leaks into another (the
+// tags don't exist there). The Collection Agenda views deliberately pass no
+// key — collections express durable views through their own saved view
+// definitions, so their in-panel filters stay ephemeral.
+
+const AGENDA_FILTERS_PREFIX = "inkycap.agenda.filters";
+
+/** localStorage key under which a notebox's Agenda filters are saved. */
+export function agendaFiltersKey(noteboxPath: string): string {
+  return `${AGENDA_FILTERS_PREFIX}::${noteboxPath}`;
+}
+
+/** The Agenda filter state captured for persistence and for saved-view
+ *  bookmarks. Sets are stored as arrays so it serializes cleanly to JSON. */
+export interface AgendaFilterSnapshot {
+  sortMode: SortMode;
+  kinds: TaskKind[];
+  tags: string[];
+  filterText: string;
+  date: DateFilterState;
+}
+
+function loadAgendaFilters(key: string): AgendaFilterSnapshot | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as AgendaFilterSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAgendaFilters(key: string, snapshot: AgendaFilterSnapshot) {
+  try {
+    localStorage.setItem(key, JSON.stringify(snapshot));
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+}
+
 const AgendaList: Component<AgendaListProps> = (props) => {
   const t = useI18n();
   const [sortMode, setSortMode] = createSignal<SortMode>("due-asc");
@@ -125,6 +178,95 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   let sortBtnRef: HTMLButtonElement | undefined;
   let taskBtnRef: HTMLButtonElement | undefined;
   let tagsBtnRef: HTMLButtonElement | undefined;
+
+  // Write the current filter state into the signals. Shared by the per-notebox
+  // restore and by saved-view bookmarks.
+  function applyFilterSnapshot(s: AgendaFilterSnapshot) {
+    setSortMode(s.sortMode ?? "due-asc");
+    setSelectedKinds(new Set(s.kinds ?? []));
+    setSelectedTags(new Set(s.tags ?? []));
+    setFilterText(s.filterText ?? "");
+    setDateFilter(s.date ?? { ...DEFAULT_DATE_FILTER });
+  }
+
+  // Restore on mount and whenever the notebox (key) changes; reset to defaults
+  // when that notebox has nothing saved, so filters never carry across.
+  createEffect(
+    on(
+      () => props.persistKey,
+      (key) => {
+        if (!key) return;
+        const saved = loadAgendaFilters(key);
+        applyFilterSnapshot(
+          saved ?? { sortMode: "due-asc", kinds: [], tags: [], filterText: "", date: { ...DEFAULT_DATE_FILTER } },
+        );
+      },
+    ),
+  );
+
+  // Persist on any change. Created after the restore effect so a key change
+  // restores first, then writes the restored values back (a harmless no-op).
+  createEffect(() => {
+    const key = props.persistKey;
+    if (!key) return;
+    saveAgendaFilters(key, {
+      sortMode: sortMode(),
+      kinds: [...selectedKinds()],
+      tags: [...selectedTags()],
+      filterText: filterText(),
+      date: dateFilter(),
+    });
+  });
+
+  // Consume a saved-view activation request (a global one-shot signal, so it
+  // survives this panel being mounted as part of the activation). Created after
+  // the restore effect so an explicit view wins over the restored state; gated
+  // to the main panel so a collection agenda view never steals the request.
+  createEffect(() => {
+    const requested = requestedAgendaView();
+    if (!requested || !props.persistKey) return;
+    applyFilterSnapshot(requested);
+    setRequestedAgendaView(null);
+  });
+
+  const currentSnapshot = (): AgendaFilterSnapshot => ({
+    sortMode: sortMode(),
+    kinds: [...selectedKinds()],
+    tags: [...selectedTags()],
+    filterText: filterText(),
+    date: dateFilter(),
+  });
+
+  const [namingView, setNamingView] = createSignal(false);
+  const [viewName, setViewName] = createSignal("");
+
+  async function confirmSaveView() {
+    const name = viewName().trim();
+    if (!name || !props.onSaveView) return;
+    await props.onSaveView(name, currentSnapshot());
+    setNamingView(false);
+    setViewName("");
+  }
+
+  // The "Due today" shortcut is exactly `is @today`.
+  const isDueToday = () => dateFilter().op === "is" && dateFilter().date === "@today";
+
+  // Whether any filter (not sort) is narrowing the list, gating the reset button.
+  const hasActiveFilters = () =>
+    selectedKinds().size > 0 ||
+    selectedTags().size > 0 ||
+    filterText().trim() !== "" ||
+    isDateFilterActive(dateFilter());
+
+  function resetFilters() {
+    setSelectedKinds(new Set<TaskKind>());
+    setSelectedTags(new Set<string>());
+    setFilterText("");
+    setDateFilter({ ...DEFAULT_DATE_FILTER });
+    setShowDateMenu(false);
+    setShowTaskMenu(false);
+    setShowTagsMenu(false);
+  }
 
   // `labelKey` resolved at the render site (not eager `t()` at array build —
   // that snapshotted the launch locale and wouldn't follow a switch).
@@ -411,8 +553,62 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           >
             <ArrowDownNarrowWide size={14} />
           </button>
+          <Show when={props.onSaveView}>
+            <button
+              class="left-sidebar__icon-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setViewName("");
+                setNamingView((v) => !v);
+              }}
+              title={t("agenda.savedViews.save")}
+              aria-label={t("agenda.savedViews.save")}
+            >
+              <BookmarkPlus size={14} />
+            </button>
+          </Show>
+          <Show when={hasActiveFilters()}>
+            <button
+              class="left-sidebar__icon-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                resetFilters();
+              }}
+              title={t("agenda.resetFilters")}
+              aria-label={t("agenda.resetFilters")}
+            >
+              <FilterX size={14} />
+            </button>
+          </Show>
         </div>
       </div>
+
+      <Show when={namingView()}>
+        <div class="agenda__save-view">
+          <input
+            class="left-sidebar__filter-input"
+            type="text"
+            placeholder={t("agenda.savedViews.namePlaceholder")}
+            value={viewName()}
+            onInput={(e) => setViewName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void confirmSaveView();
+              else if (e.key === "Escape") setNamingView(false);
+            }}
+            ref={(el) => queueMicrotask(() => el.focus())}
+          />
+          <button
+            class="btn btn--primary btn--sm"
+            disabled={!viewName().trim()}
+            onClick={() => void confirmSaveView()}
+          >
+            {t("common.save")}
+          </button>
+          <button class="btn btn--secondary btn--sm" onClick={() => setNamingView(false)}>
+            {t("common.cancel")}
+          </button>
+        </div>
+      </Show>
 
       <Show when={showSortMenu()}>
         <div
@@ -570,22 +766,49 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           }}
         >
           <Dropdown<string>
-            class="dropdown--sm dropdown--block"
+            class="dropdown--sm"
             value={dateFilter().op}
             options={DATE_OPS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
             onChange={(v) => setDateFilter({ ...dateFilter(), op: v as DateFilterState["op"] })}
             ariaLabel={t("agenda.date.label")}
           />
-          <Show when={dateFilter().op !== "empty" && dateFilter().op !== "notEmpty"}>
-            <div class="agenda__date-row">
-              <DatePicker
+          {/* "Due today" is the one-tap common case, but only meaningful for the
+              "is" operator. When on it fully specifies the filter (`is @today`),
+              so the value editor below is hidden to avoid the confusing
+              two-fields-at-once layout. */}
+          <Show when={dateFilter().op === "is"}>
+            <label class="agenda__date-today">
+              <input
+                type="checkbox"
+                checked={isDueToday()}
+                onChange={(e) =>
+                  setDateFilter({
+                    op: "is",
+                    date: e.currentTarget.checked ? "@today" : "",
+                    date2: "",
+                  })
+                }
+              />
+              <span>{t("agenda.date.today")}</span>
+            </label>
+          </Show>
+          <Show
+            when={
+              dateFilter().op !== "empty" && dateFilter().op !== "notEmpty" && !isDueToday()
+            }
+          >
+            <div
+              class="agenda__date-row"
+              classList={{ "agenda__date-row--range": dateFilter().op === "within" }}
+            >
+              <DateValueInput
                 value={dateFilter().date}
                 withTime={false}
                 onSave={(v) => setDateFilter({ ...dateFilter(), date: v })}
               />
               <Show when={dateFilter().op === "within"}>
                 <span class="agenda__date-and">{t("columnFilter.and")}</span>
-                <DatePicker
+                <DateValueInput
                   value={dateFilter().date2}
                   withTime={false}
                   onSave={(v) => setDateFilter({ ...dateFilter(), date2: v })}

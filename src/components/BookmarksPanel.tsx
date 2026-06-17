@@ -1,13 +1,16 @@
 // Bookmarks panel: left sidebar mode for quick-access items.
 // Supports Note, Search, Heading, and Collection bookmark types.
 
-import { Component, createResource, createSignal, For, Show, JSX } from "solid-js";
+import { Component, createMemo, createResource, createSignal, For, Show, JSX } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
 import { attachListNav } from "../lib/list-nav";
 import { openTab } from "../stores/tabs";
+import { noteboxInfo } from "../stores/notebox";
+import { setRequestedAgendaView } from "../stores/agendaView";
 import type { Bookmark } from "../lib/types";
-import { FileText, Search } from "lucide-solid";
+import type { AgendaFilterSnapshot } from "./AgendaList";
+import { FileText, Search, CalendarClock } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import { useI18n } from "../lib/i18n";
 
@@ -82,6 +85,17 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
     }
   }
 
+  // Hide saved Agenda views from other noteboxes — their tag/task-list
+  // selections don't apply here. Every other kind is global. Reorder math still
+  // runs against the full `bookmarks()` list, so hidden rows keep stable
+  // backend indices.
+  const visibleBookmarks = createMemo(() => {
+    const path = noteboxInfo()?.path;
+    return (bookmarks() ?? []).filter(
+      (bm) => bm.type !== "AgendaView" || (path != null && pathEquals(bm.data.notebox, path)),
+    );
+  });
+
   const [collections] = createResource(() => ipc.listCollections());
 
   function collectionIcon(path: string): string {
@@ -96,6 +110,8 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         return <FileText size={14} />;
       case "Search":
         return <Search size={14} />;
+      case "AgendaView":
+        return <CalendarClock size={14} />;
       case "Collection":
         return <RuleIcon iconEmoji={collectionIcon(bm.data.path ?? bm.data.name)} name={bm.data.name ?? "Collection"} size={14} />;
       default:
@@ -110,6 +126,8 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
         return bm.data.name ?? bm.data.path ?? t("bookmarks.untitled");
       case "Search":
         return bm.data.query ?? t("bookmarks.searchFallback");
+      case "AgendaView":
+        return bm.data.name ?? t("bookmarks.untitled");
       case "Heading":
         return `${bm.data.name ?? ""} > ${bm.data.heading ?? ""}`;
       default:
@@ -149,6 +167,18 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
           }),
         );
         break;
+      case "AgendaView": {
+        // Hand the snapshot to the (about-to-mount) Agenda panel, then switch
+        // the sidebar to Agenda mode. The signal holds the request across the
+        // mode switch; a corrupt payload is ignored.
+        try {
+          setRequestedAgendaView(JSON.parse(bm.data.filter) as AgendaFilterSnapshot);
+        } catch {
+          /* corrupt bookmark payload — switch anyway */
+        }
+        document.dispatchEvent(new CustomEvent("inkycap:open-agenda"));
+        break;
+      }
     }
   }
 
@@ -165,14 +195,14 @@ const BookmarksPanel: Component<BookmarksPanelProps> = (props) => {
   return (
     <div class="bookmarks-panel" ref={attachListNav} aria-label={t("leftSidebar.bookmarks")}>
       <Show
-        when={bookmarks() && bookmarks()!.length > 0}
+        when={visibleBookmarks().length > 0}
         fallback={
           <div class="bookmarks-panel__empty">
             {t("bookmarks.empty")}
           </div>
         }
       >
-        <For each={bookmarks()}>
+        <For each={visibleBookmarks()}>
           {(bm) => (
             <div
               data-list-item

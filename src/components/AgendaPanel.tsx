@@ -12,7 +12,7 @@ import type { AgendaItem } from "../lib/types";
 import { openTab } from "../stores/tabs";
 import { noteboxInfo, propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { t } from "../lib/i18n";
-import AgendaList from "./AgendaList";
+import AgendaList, { agendaFiltersKey } from "./AgendaList";
 
 interface AgendaPanelProps {
   /** Bumped by the parent to force a refetch (e.g. after an edit). */
@@ -45,6 +45,17 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
         items={items() ?? []}
         loading={items.loading}
         emptyMessage={t("agenda.noItems")}
+        persistKey={noteboxInfo() ? agendaFiltersKey(noteboxInfo()!.path) : undefined}
+        onSaveView={async (name, snapshot) => {
+          const info = noteboxInfo();
+          if (!info) return;
+          await ipc.addBookmark({
+            type: "AgendaView",
+            data: { name, notebox: info.path, filter: JSON.stringify(snapshot) },
+          });
+          // Make the Bookmarks pane re-query (same channel SearchPanel uses).
+          document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
+        }}
         onOpen={(it, opts) =>
           openTab(
             { type: "file", title: it.note_title, path: it.note_path },
