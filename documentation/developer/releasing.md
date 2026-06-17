@@ -100,9 +100,8 @@ the next `cargo build`. Commit it alongside the bump so it doesn't drift.
 
 ## Cutting a release
 
-A release is built across machines: CI builds the portable Linux packages, and
-you build Flatpak and Windows locally. CI creates the release as a **draft**; you
-attach the remaining artifacts and **publish it by hand**. Once published,
+A release is built across machines: you create the draft, attach the Linux,
+Flatpak, and Windows artifacts, and **publish it by hand**. Once published,
 Codeberg's releases API serves it immediately and the in-app check finds it.
 
 **1. Bump and tag.**
@@ -113,13 +112,24 @@ git commit -am "release: vXX.YY.Z"
 git tag vXX.YY.Z && git push origin main vXX.YY.Z
 ```
 
-**2. CI builds Linux `.deb` + `.rpm`** (`.forgejo/workflows/release.yml`, fired
-by the `v*` tag): inside an Ubuntu 22.04 container it runs
-`tauri build --bundles deb rpm`, creates a **draft** release for the tag
-(`prerelease` when the RELEASE component is odd / beta), and attaches the two
-packages.
+**2. Create the draft release by hand.** In the web UI, make a new release for
+the tag `vXX.YY.Z`, leave it a **draft**, and tick **pre-release** when the
+RELEASE component is odd (a beta). Do this yourself — the CI workflow *can*
+create the draft when a runner picks up the tag, but in practice the runners
+have been unreliable, so creating it by hand is the dependable path. (If CI does
+run, it reuses an existing draft rather than making a second one.)
 
-**3. Build the Flatpak locally** and attach it to the draft release:
+**3. Add the Linux `.deb` + `.rpm`.** When a runner is up,
+`.forgejo/workflows/release.yml` (fired by the `v*` tag) builds them in an
+Ubuntu 22.04 container (`tauri build --bundles deb rpm`) and attaches them to
+the draft. Don't count on it — if CI doesn't fire, build them locally and upload
+by hand:
+
+```sh
+scripts/build-linux-docker.sh                  # -> .deb + .rpm
+```
+
+**4. Build the Flatpak locally** and attach it to the draft release:
 
 ```sh
 scripts/build-linux-docker.sh                 # produces the .deb the Flatpak packages
@@ -128,7 +138,7 @@ scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>
 
 Upload the `.flatpak` to the draft (web UI: drag it onto the release).
 
-**4. Build Windows locally** (on a Windows machine):
+**5. Build Windows locally** (on a Windows machine):
 
 ```powershell
 npm run tauri build                            # NSIS -setup.exe (and .msi)
@@ -141,7 +151,7 @@ filename reads the new one. If it's wrong, delete `src-tauri\target\release` (or
 run `cargo clean -p inkycap`) and rebuild. Upload the `*-setup.exe` (and the
 `.msi` if you ship it) to the same draft. No signing or `.sig` is needed.
 
-**5. Publish the release.** In the web UI, edit the draft and publish it. The
+**6. Publish the release.** In the web UI, edit the draft and publish it. The
 releases API now returns it, and **Check for updates** in older builds (26.6.10+)
 will show the notice with a **View releases** link.
 
