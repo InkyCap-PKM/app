@@ -28,7 +28,7 @@ The moving parts:
 | Release check (Codeberg API) | `src-tauri/src/commands/updates.rs` |
 | In-app UI | `src/components/UpdateChecker.tsx`, `src/stores/updater.ts` |
 | Settings toggles | `src/components/settings/BehaviourSettingsSection.tsx` (`updates.check_on_startup`, `updates.include_beta`) |
-| Linux `.deb`/`.rpm` build (CI) | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
+| Linux `.deb`/`.rpm` build (CI, optional — see "Cutting a release") | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
 | Linux `.deb`/`.rpm` build (local) | `scripts/build-linux-docker.sh` |
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
 
@@ -100,60 +100,74 @@ the next `cargo build`. Commit it alongside the bump so it doesn't drift.
 
 ## Cutting a release
 
-A release is built across machines: you create the draft, attach the Linux,
-Flatpak, and Windows artifacts, and **publish it by hand**. Once published,
-Codeberg's releases API serves it immediately and the in-app check finds it.
+Build the artifacts, attach them to a **draft** release, and **publish by hand**.
+The git tag is created *by publishing the draft* — never push it beforehand (see
+the warning below). Once published, Codeberg's releases API serves the release
+immediately and the in-app check finds it.
 
-**1. Bump and tag.**
+> **⚠ Never push the release tag before the draft is ready.** Forgejo treats a
+> draft as *a release whose tag does not exist yet*, and **auto-publishes a draft
+> the instant a matching tag is pushed** — including a force-move of an existing
+> tag ([forgejo#9706](https://codeberg.org/forgejo/forgejo/issues/9706)). So
+> pushing `vXX.YY.Z` while a draft of that name exists flips it live immediately,
+> in whatever half-attached state it's in, no matter that it was created with
+> `draft: true`. The flow below never pushes the tag by hand — **publishing the
+> draft is what creates it.**
+
+**1. Bump and push `main` — no tag.**
 
 ```sh
 npm run version:stable          # or version:beta — see "Bumping the version"
 git commit -am "release: vXX.YY.Z"
-git tag vXX.YY.Z && git push origin main vXX.YY.Z
+git push origin main            # main only — do NOT push a tag
 ```
 
-**2. Create the draft release by hand.** In the web UI, make a new release for
-the tag `vXX.YY.Z`, leave it a **draft**, and tick **pre-release** when the
-RELEASE component is odd (a beta). Do this yourself — the CI workflow *can*
-create the draft when a runner picks up the tag, but in practice the runners
-have been unreliable, so creating it by hand is the dependable path. (If CI does
-run, it reuses an existing draft rather than making a second one.)
+**2. Create the draft release.** In the web UI, make a new release with **Tag =
+`vXX.YY.Z`** and **Target = `main`**. Because that tag doesn't exist yet, Forgejo
+holds it as a genuine draft. Leave it a **draft** and tick **pre-release** when
+the RELEASE component is odd (a beta). Don't push further commits to `main` until
+you've published, or target the exact release commit instead of the branch — the
+tag is created at the target when you publish.
 
-**3. Add the Linux `.deb` + `.rpm`.** When a runner is up,
-`.forgejo/workflows/release.yml` (fired by the `v*` tag) builds them in an
-Ubuntu 22.04 container (`tauri build --bundles deb rpm`) and attaches them to
-the draft. Don't count on it — if CI doesn't fire, build them locally and upload
-by hand:
+**3. Build the Linux `.deb` + `.rpm`** and attach them to the draft:
 
 ```sh
-scripts/build-linux-docker.sh                  # -> .deb + .rpm
+scripts/build-linux-docker.sh                  # -> .deb + .rpm (clean container build)
 ```
 
-**4. Build the Flatpak locally** and attach it to the draft release:
+**4. Build the Flatpak** and attach it to the draft:
 
 ```sh
-scripts/build-linux-docker.sh                 # produces the .deb the Flatpak packages
 scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>.flatpak
 ```
 
-Upload the `.flatpak` to the draft (web UI: drag it onto the release).
+(`build-flatpak.sh` packages the `.deb` from step 3 — run that first.)
 
-**5. Build Windows locally** (on a Windows machine):
+**5. Build Windows** (on a Windows machine) and attach the installer:
 
 ```powershell
 npm run tauri build                            # NSIS -setup.exe (and .msi)
-src-tauri\target\release\inkycap.exe --version # MUST print the version you tagged
+src-tauri\target\release\inkycap.exe --version # MUST print the version you bumped to
 ```
 
-Verify the printed version matches the tag before uploading. A reused local
-`target/` can otherwise bake the *previous* version into the installer while the
-filename reads the new one. If it's wrong, delete `src-tauri\target\release` (or
-run `cargo clean -p inkycap`) and rebuild. Upload the `*-setup.exe` (and the
-`.msi` if you ship it) to the same draft. No signing or `.sig` is needed.
+Verify the printed version matches before uploading. A reused local `target/`
+can otherwise bake the *previous* version into the installer while the filename
+reads the new one. If it's wrong, delete `src-tauri\target\release` (or run
+`cargo clean -p inkycap`) and rebuild. Upload the `*-setup.exe` (and the `.msi`
+if you ship it). No signing or `.sig` is needed.
 
-**6. Publish the release.** In the web UI, edit the draft and publish it. The
-releases API now returns it, and **Check for updates** in older builds (26.6.10+)
-will show the notice with a **View releases** link.
+**6. Publish the draft.** In the web UI, edit the draft and publish it — **this
+is what creates the `vXX.YY.Z` tag** (at the `main` target). The releases API now
+returns it, and **Check for updates** in older builds (26.6.10+) shows the notice
+with a **View releases** link. (`git fetch --tags` to pull the new tag locally.)
+
+> **CI build (`.forgejo/workflows/release.yml`) is optional and off the happy
+> path.** It fires on a `v*` tag push and tries to build the Linux packages into
+> a draft, but two things work against it: the runners have been unreliable, and
+> a tag push is exactly what auto-publishes a draft (above) — so it fights this
+> flow rather than helping it. The dependable path is the local
+> `scripts/build-linux-docker.sh`. The workflow is kept for the day the runners
+> are reliable *and* the ordering is reworked; until then, don't lean on it.
 
 > **macOS note:** macOS is not yet a first-class target. Code-signing /
 > notarization isn't set up, so macOS users see "unidentified developer"
