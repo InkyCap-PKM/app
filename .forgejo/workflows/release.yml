@@ -1,5 +1,14 @@
 # Release pipeline for InkyCap on Codeberg (Forgejo Actions).
 #
+# ⚠ OPTIONAL / OFF THE HAPPY PATH. The documented release flow
+# (documentation/developer/releasing.md) does NOT push the tag by hand — it
+# builds the Linux packages locally with scripts/build-linux-docker.sh and lets
+# *publishing the draft* create the tag. This workflow is kept for the day the
+# runners become reliable, but beware: it triggers on a tag push, and Forgejo
+# auto-publishes any matching draft the instant a tag is pushed (forgejo#9706) —
+# so running it against an existing draft flips that draft live, even though this
+# job creates releases with `draft: true`. Don't rely on it yet.
+#
 # Trigger: pushing a tag like `v26.6.1`. The job builds the portable Linux
 # packages (.deb + .rpm) and attaches them to the Forgejo release. The Windows
 # installer and the Flatpak bundle are added locally afterwards (see
