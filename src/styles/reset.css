@@ -22,6 +22,22 @@ body,
   text-rendering: optimizeLegibility;
 }
 
+/* Form controls don't inherit font-family (or the other typographic shorthand
+   properties) from their ancestors by default — browsers render them in the
+   UA's own control font. Without this, every <button>/<input>/<select>/
+   <textarea> would silently ignore --interface-font and fall back to the
+   platform default, the bug that left the Settings tab labels unstyled. Opt the
+   whole control family in once here so UI chrome is uniform and no component has
+   to remember a per-element `font-family: inherit`. Scoped to font-family only
+   (not the `font` shorthand) so each control keeps its own size/weight. */
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+}
+
 /* Placeholder text in every input and textarea — one dim, uniform colour so
    example/prompt text reads clearly as a hint rather than as content the user
    has already typed. This matters most in dark mode, where the engine default

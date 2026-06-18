@@ -6,7 +6,7 @@
 //! compiles so comemo memoization stays warm — that's what gets us the
 //! sub-millisecond warm-path numbers from the Phase 0 bench.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -24,30 +24,93 @@ use crate::storage::path::validate_notebox_path;
 use crate::typst_packages::package_search_dirs;
 use crate::typst_pipeline::fonts::{self, FontSlot};
 
-/// Per-FileId cached source text. Held under a Mutex so `World::source` can
-/// take `&self` (Typst requires `Sync`).
+/// A `FileId`-keyed cache with a fixed capacity and FIFO eviction. Insertion of
+/// a new key past the cap drops the oldest-inserted entry. Re-inserting an
+/// existing key updates its value in place without changing its position;
+/// callers that want an entry treated as fresh (e.g. the main file each compile)
+/// [`remove`](Self::remove) it first, so the following `put` re-adds it at the
+/// back. Eviction is always safe here because both users are pure read-through
+/// caches of on-disk content.
+struct BoundedCache<V> {
+    map: HashMap<FileId, V>,
+    /// Insertion order; front is oldest. Kept in sync with `map`: every key in
+    /// `order` is in `map` and vice versa (no duplicates).
+    order: VecDeque<FileId>,
+    cap: usize,
+}
+
+impl<V> BoundedCache<V> {
+    fn new(cap: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            cap,
+        }
+    }
+
+    fn get(&self, id: &FileId) -> Option<&V> {
+        self.map.get(id)
+    }
+
+    fn put(&mut self, id: FileId, value: V) {
+        if self.map.insert(id, value).is_none() {
+            // New key: record order and evict the oldest if over capacity.
+            self.order.push_back(id);
+            while self.order.len() > self.cap {
+                if let Some(old) = self.order.pop_front() {
+                    self.map.remove(&old);
+                }
+            }
+        }
+    }
+
+    fn remove(&mut self, id: &FileId) {
+        if self.map.remove(id).is_some() {
+            self.order.retain(|x| x != id);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
+}
+
+/// Max distinct source files retained. The open-time indexing pass compiles
+/// every note in the notebox, which would otherwise leave every note's parsed
+/// `Source` (text + syntax tree) resident for the whole session. This is a pure
+/// read-through cache, so a too-small bound only costs a re-read on the next
+/// compile, never correctness — even a single compile whose include graph
+/// exceeds the cap still succeeds, because typst holds each `Source` it was
+/// handed for the duration of that compile. The cap is comfortably above any
+/// realistic single-document include graph.
+const SOURCE_CACHE_CAP: usize = 512;
+
+/// Per-FileId cached source text with a bounded, FIFO-evicted working set.
+/// Held under a Mutex so `World::source` can take `&self` (Typst requires
+/// `Sync`).
 struct SourceCache {
-    sources: Mutex<HashMap<FileId, Source>>,
+    inner: Mutex<BoundedCache<Source>>,
 }
 
 impl SourceCache {
     fn new() -> Self {
         Self {
-            sources: Mutex::new(HashMap::new()),
+            inner: Mutex::new(BoundedCache::new(SOURCE_CACHE_CAP)),
         }
     }
 
     /// Return the cached source if present without re-reading from disk.
     fn get(&self, id: FileId) -> Option<Source> {
-        self.sources.lock().ok()?.get(&id).cloned()
+        self.inner.lock().ok()?.get(&id).cloned()
     }
 
     /// Insert or replace a source. Returns the inserted clone so the caller
     /// can hand it to typst.
     fn insert(&self, id: FileId, text: String) -> Source {
         let source = Source::new(id, text);
-        if let Ok(mut map) = self.sources.lock() {
-            map.insert(id, source.clone());
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.put(id, source.clone());
         }
         source
     }
@@ -55,45 +118,52 @@ impl SourceCache {
     /// Drop a source from the cache. Use this when the file has been modified
     /// on disk and we want the next compile to pick up the new content.
     fn invalidate(&self, id: FileId) {
-        if let Ok(mut map) = self.sources.lock() {
-            map.remove(&id);
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.remove(&id);
         }
     }
 
     /// Wipe the entire cache. Used on full notebox reload.
     #[allow(dead_code)]
     fn clear(&self) {
-        if let Ok(mut map) = self.sources.lock() {
-            map.clear();
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.clear();
         }
     }
 }
 
-/// Cached binary-file bytes (images, bibliography files, etc.).
+/// Max distinct binary files retained. Binary reads are images and
+/// bibliography files; images can be multi-megabyte, so this cap is lower than
+/// the source cap to bound resident bytes. Like [`SourceCache`], it's a pure
+/// read-through cache: eviction only ever costs a re-read.
+const FILE_CACHE_CAP: usize = 128;
+
+/// Cached binary-file bytes (images, bibliography files, etc.) with a bounded,
+/// FIFO-evicted working set.
 struct FileCache {
-    files: Mutex<HashMap<FileId, Bytes>>,
+    inner: Mutex<BoundedCache<Bytes>>,
 }
 
 impl FileCache {
     fn new() -> Self {
         Self {
-            files: Mutex::new(HashMap::new()),
+            inner: Mutex::new(BoundedCache::new(FILE_CACHE_CAP)),
         }
     }
 
     fn get(&self, id: FileId) -> Option<Bytes> {
-        self.files.lock().ok()?.get(&id).cloned()
+        self.inner.lock().ok()?.get(&id).cloned()
     }
 
     fn insert(&self, id: FileId, bytes: Bytes) {
-        if let Ok(mut map) = self.files.lock() {
-            map.insert(id, bytes);
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.put(id, bytes);
         }
     }
 
     fn invalidate(&self, id: FileId) {
-        if let Ok(mut map) = self.files.lock() {
-            map.remove(&id);
+        if let Ok(mut cache) = self.inner.lock() {
+            cache.remove(&id);
         }
     }
 }
