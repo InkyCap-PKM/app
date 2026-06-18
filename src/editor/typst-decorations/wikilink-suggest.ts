@@ -3,6 +3,7 @@ import { type ChangeSpec, type Extension, Prec } from "@codemirror/state";
 import { fileList } from "../../stores/filelist";
 import { aliases } from "../../stores/aliases";
 import { wikilinkScore } from "./wikilink-match";
+import { positionPopupAtAnchor } from "./popup-position";
 import { inVerbatimLineContext } from "./keymaps";
 import { typstStringEscape } from "../../lib/typst";
 import { t } from "../../lib/i18n";
@@ -377,10 +378,10 @@ async function showPopup(view: EditorView, state: SuggestState) {
 function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
   const coords = view.coordsAtPos(state.from + 2);
   if (coords) {
-    el.style.left = `${coords.left}px`;
-    el.style.top = `${coords.bottom + 4}px`;
+    positionPopupAtAnchor(el, coords);
+  } else {
+    el.style.display = "block";
   }
-  el.style.display = "block";
 }
 
 async function acceptItem(view: EditorView, state: SuggestState, item: SuggestItem) {

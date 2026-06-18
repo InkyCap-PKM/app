@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirror/view";
 import { type Extension, Prec } from "@codemirror/state";
 import { fuzzyMatch } from "../../lib/fuzzy";
+import { positionPopupAtAnchor } from "./popup-position";
 import * as ipc from "../../lib/ipc";
 import type { BibEntry } from "../../lib/types";
 
@@ -231,10 +232,10 @@ async function showPopup(view: EditorView, state: SuggestState) {
 function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
   const coords = view.coordsAtPos(state.from);
   if (coords) {
-    el.style.left = `${coords.left}px`;
-    el.style.top = `${coords.bottom + 4}px`;
+    positionPopupAtAnchor(el, coords);
+  } else {
+    el.style.display = "block";
   }
-  el.style.display = "block";
 }
 
 function acceptItem(view: EditorView, state: SuggestState, entry: BibEntry) {

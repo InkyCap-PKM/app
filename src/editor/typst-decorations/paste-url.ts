@@ -6,6 +6,7 @@
 // prompt.
 
 import { EditorView } from "@codemirror/view";
+import { positionPopupAtAnchor } from "./popup-position";
 
 const URL_RE = /^https?:\/\/\S+$/;
 
@@ -91,14 +92,10 @@ function showMenu(view: EditorView, url: string, selectedText: string) {
 
   const coords = view.coordsAtPos(view.state.selection.main.from);
   if (coords) {
-    const spaceBelow = window.innerHeight - coords.bottom - 8;
-    const placeAbove = spaceBelow < 100 && coords.top > 100;
-    el.style.left = `${Math.min(coords.left, window.innerWidth - 200)}px`;
-    el.style.top = placeAbove
-      ? `${coords.top - 80}px`
-      : `${coords.bottom + 4}px`;
+    positionPopupAtAnchor(el, coords);
+  } else {
+    el.style.display = "block";
   }
-  el.style.display = "block";
 
   // Track selected index for keyboard navigation.
   let selectedIndex = 0;
