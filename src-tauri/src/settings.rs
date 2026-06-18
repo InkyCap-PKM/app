@@ -351,7 +351,14 @@ impl Default for FontSettings {
         Self {
             interface: FontChoice::system(),
             editor: FontChoice::system(),
-            monospace: FontChoice::system(),
+            // Bundled (JuliaMono) rather than system: monospace is injected
+            // into the Typst compile, so a system default would make a fresh
+            // install reference a non-embedded family (Consolas/SF Mono) on the
+            // very first render — forcing system-font loading and diverging
+            // across OSes. Bundled keeps the out-of-box compile all-embedded and
+            // identical everywhere. interface/editor stay system: those are
+            // frontend CSS (the native app UI), where matching the OS is right.
+            monospace: FontChoice::bundled(),
             text: FontChoice::bundled(),
             verse: FontChoice::follow(),
         }

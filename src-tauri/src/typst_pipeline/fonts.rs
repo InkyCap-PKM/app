@@ -1,28 +1,112 @@
 //! Font discovery for the Typst compile pipeline.
 //!
-//! Loads embedded fonts (typst-assets), system fonts (via fontdb), and
-//! notebox-local fonts from `<notebox>/fonts/`. The combined set is used by
-//! NoteboxWorld for compilation and by the `list_system_fonts` command for
-//! the frontend font picker.
+//! Loads embedded fonts (typst-assets + InkyCap-bundled), system fonts (via
+//! fontdb), and notebox-local fonts from `<notebox>/fonts/`. The combined set
+//! is used by NoteboxWorld for compilation and by the `list_system_fonts`
+//! command for the frontend font picker.
+//!
+//! ## Memory model: eager metadata, lazy bytes
+//!
+//! Embedded fonts (Typst's defaults + InkyCap's bundled families) are the
+//! always-resident fallback floor. Their bytes are `'static` (baked into the
+//! binary via typst-assets / `include_bytes!`), so loading them eagerly costs
+//! binary size, not heap.
+//!
+//! System and notebox-local fonts are loaded differently. Reading every
+//! installed font file into memory was the dominant source of the app's
+//! resident set (hundreds of MB on a machine with a normal font collection,
+//! most of it never used by any document). Instead we:
+//!
+//! 1. **Discover eagerly, byte-load lazily.** For every face we build a
+//!    [`FontInfo`] (family + variant + unicode coverage) so the `FontBook` is
+//!    complete. Typst's glyph fallback walks the *whole* book by coverage, so
+//!    the book must list every face or fallback silently breaks (tofu for CJK,
+//!    emoji, exotic scripts). `FontInfo` is small; the parsed `Font` (with its
+//!    full byte buffer) is what's expensive, and that's what we defer.
+//! 2. **Back faces with an mmap, not a heap read.** Each [`FontSlot`] holds a
+//!    shared memory-map of the file plus a face index. The actual `Font` is
+//!    parsed on first access in [`FontSlot::get`] (i.e. only for faces a
+//!    rendered document actually draws with). mmap pages are file-backed and
+//!    reclaimable by the kernel, so even touched faces don't pin heap.
+//!
+//! This mirrors `typst-kit`'s own font-loading strategy (which we don't depend
+//! on directly, so the slot type is reimplemented here). Per CLAUDE.md's
+//! Typst-first principle: font provision is inherently host glue (the `World`
+//! is the host's job), so there's no Typst-native primitive to defer to here.
 
-use std::path::Path;
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use typst::foundations::Bytes;
-use typst::text::{Font, FontBook};
+use typst::text::{Font, FontBook, FontInfo};
 
-/// One slot per face. Embedded fonts are resolved eagerly at construction
-/// time (the bytes are static so the cost is just `Font::iter` parsing). The
-/// `OnceLock` shape exists so a future revision can add lazy filesystem-loaded
-/// fonts without changing this struct.
+/// A shared, reference-counted memory map of a font file. Cloning is cheap (an
+/// `Arc` bump) and lets every alias/face that resolves to the same file share
+/// one mapping. Implements `AsRef<[u8]>` so it can be handed straight to
+/// `Bytes::new` without copying the bytes onto the heap.
+#[derive(Clone)]
+struct SharedMmap(Arc<memmap2::Mmap>);
+
+impl AsRef<[u8]> for SharedMmap {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// One slot per face in the `FontBook` (book index ↔ slot index are parallel;
+/// Typst calls `World::font(index)` against this vec).
+///
+/// Embedded fonts are *eager*: the parsed `Font` is stored directly, since its
+/// bytes are static and parsing is the only (small) cost. System and
+/// notebox-local fonts are *lazy*: the slot keeps a shared mmap + face index
+/// and parses the `Font` on first access, so unused faces never pay the parse
+/// or pin their bytes.
 pub struct FontSlot {
+    /// Source bytes + face index for lazy parsing. `None` for eager slots,
+    /// whose `Font` is already present in `font`.
+    lazy: Option<(SharedMmap, u32)>,
     font: OnceLock<Option<Font>>,
 }
 
 impl FontSlot {
-    pub fn get(&self) -> Option<Font> {
-        self.font.get().cloned().flatten()
+    /// An eagerly-resolved slot whose `Font` is already parsed.
+    fn eager(font: Font) -> Self {
+        Self {
+            lazy: None,
+            font: OnceLock::from(Some(font)),
+        }
     }
+
+    /// A lazy slot that parses its `Font` from `data` at `index` on first use.
+    fn lazy(data: SharedMmap, index: u32) -> Self {
+        Self {
+            lazy: Some((data, index)),
+            font: OnceLock::new(),
+        }
+    }
+
+    pub fn get(&self) -> Option<Font> {
+        self.font
+            .get_or_init(|| {
+                let (data, index) = self.lazy.as_ref()?;
+                Font::new(Bytes::new(data.clone()), *index)
+            })
+            .clone()
+    }
+}
+
+/// Memory-map a font file, returning a shareable handle. `None` if the file
+/// can't be opened or mapped (the caller skips the face, matching the previous
+/// read-into-memory behaviour).
+fn mmap_path(path: &Path) -> Option<SharedMmap> {
+    let file = std::fs::File::open(path).ok()?;
+    // SAFETY: font files are treated as read-only. If a file were truncated out
+    // from under the mapping a later glyph access could fault; this is the same
+    // accepted risk taken by typst-kit's mmap-based loader, and font files do
+    // not change during a session in practice.
+    let mmap = unsafe { memmap2::Mmap::map(&file).ok()? };
+    Some(SharedMmap(Arc::new(mmap)))
 }
 
 /// Load every embedded font from `typst-assets` into a `FontBook` plus a
@@ -31,8 +115,9 @@ impl FontSlot {
 ///
 /// Also includes any TTF/OTF files baked into the binary under
 /// `src-tauri/assets/fonts/` via `include_bytes!`. These are the
-/// InkyCap-bundled fonts (Inter, Iosevka Sans, Junicode, Atkinson
-/// Hyperlegible Next) which the resolver references by family name.
+/// InkyCap-bundled fonts (Inter, Junicode, JuliaMono, iA Writer Duo S) which
+/// the resolver references by family name. Embedded fonts are resolved eagerly:
+/// the bytes are static so the only cost is `Font::iter` parsing.
 pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
     let mut book = FontBook::new();
     let mut slots = Vec::new();
@@ -41,9 +126,7 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
         let buffer = Bytes::new(data);
         for font in Font::iter(buffer) {
             book.push(font.info().clone());
-            slots.push(FontSlot {
-                font: OnceLock::from(Some(font)),
-            });
+            slots.push(FontSlot::eager(font));
         }
     }
 
@@ -62,9 +145,7 @@ pub fn load_embedded() -> (FontBook, Vec<FontSlot>) {
                 info.family = (*name).to_string();
             }
             book.push(info);
-            slots.push(FontSlot {
-                font: OnceLock::from(Some(font)),
-            });
+            slots.push(FontSlot::eager(font));
         }
     }
 
@@ -146,11 +227,16 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
 
 /// Load fonts from the operating system's standard font directories.
 ///
+/// Discovery is eager (every face gets a `FontBook` entry) but byte-loading is
+/// lazy (each slot keeps a shared mmap + index and parses on first use). See
+/// the module docs for why the book must be complete even though the bytes are
+/// deferred.
+///
 /// Each fontdb face is registered into the typst `FontBook` under every
 /// family-name alias that fontdb reports for it (e.g. `"Newsreader"` AND
 /// `"Newsreader 16pt"`). This matters for two reasons:
 ///
-/// 1. Typst's `Font::info().family` reads `nameID 1` from the OpenType
+/// 1. Typst's `FontInfo::family` reads `nameID 1` from the OpenType
 ///    `name` table, which for sub-family-bearing fonts (Newsreader,
 ///    Source Sans 3, many Adobe families) is the *full* family name
 ///    like `"Newsreader 16pt"`, not the user-friendly preferred family
@@ -161,16 +247,18 @@ fn inkycap_bundled_fonts() -> &'static [(&'static [u8], Option<&'static str>)] {
 ///    typst's lookup against the book fails because no entry has that
 ///    exact family — even though the bytes are loaded.
 ///
-/// Pushing one book entry per alias (all backed by the same cheap
-/// `Arc`-wrapped `Font` clone) keeps both views consistent. This also absorbs
-/// typst 0.15's variable-font family normalization (it strips
-/// "Variable"/"VF"/"Var" suffixes from `info.family`): the un-normalized
-/// fontdb name the `FontPicker` displays — and writes into `#set text(font:)` —
-/// is still registered as its own alias, so the lookup resolves regardless of
-/// which form typst settled on.
+/// Pushing one book entry per alias (all backed by the same cheap shared mmap)
+/// keeps both views consistent. This also absorbs typst 0.15's variable-font
+/// family normalization (it strips "Variable"/"VF"/"Var" suffixes from
+/// `info.family`): the un-normalized fontdb name the `FontPicker` displays — and
+/// writes into `#set text(font:)` — is still registered as its own alias, so the
+/// lookup resolves regardless of which form typst settled on.
 fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
+
+    // One mmap per distinct file, shared across that file's faces/aliases.
+    let mut mmaps: HashMap<PathBuf, SharedMmap> = HashMap::new();
 
     for face in db.faces() {
         let path = match &face.source {
@@ -179,15 +267,22 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
         };
 
         let index = face.index;
-        let Ok(data) = std::fs::read(&path) else {
-            continue;
+        let mmap = match mmaps.get(&path) {
+            Some(m) => m.clone(),
+            None => {
+                let Some(m) = mmap_path(&path) else {
+                    continue;
+                };
+                mmaps.insert(path.clone(), m.clone());
+                m
+            }
         };
-        let buffer = Bytes::new(data);
 
-        let Some(font) = Font::iter(buffer).nth(index as usize) else {
+        // Build metadata (family, variant, coverage) without retaining a
+        // parsed `Font` — the bytes stay in the mmap and are parsed lazily.
+        let Some(info) = FontInfo::new(mmap.as_ref(), index) else {
             continue;
         };
-        let info = font.info().clone();
 
         // Collect aliases: typst's own family + every fontdb alias.
         // Dedupe case-insensitively so the same name doesn't get
@@ -209,14 +304,14 @@ fn load_system_fonts(book: &mut FontBook, slots: &mut Vec<FontSlot>) {
             let mut info_for_alias = info.clone();
             info_for_alias.family = alias;
             book.push(info_for_alias);
-            slots.push(FontSlot {
-                font: OnceLock::from(Some(font.clone())),
-            });
+            slots.push(FontSlot::lazy(mmap.clone(), index));
         }
     }
 }
 
 /// Load fonts from `<notebox_root>/fonts/` if the directory exists.
+///
+/// Like system fonts, these are discovered eagerly and byte-loaded lazily.
 fn load_notebox_fonts(notebox_root: &Path, book: &mut FontBook, slots: &mut Vec<FontSlot>) {
     let fonts_dir = notebox_root.join("fonts");
     if !fonts_dir.is_dir() {
@@ -236,15 +331,12 @@ fn load_notebox_fonts(notebox_root: &Path, book: &mut FontBook, slots: &mut Vec<
             continue;
         }
 
-        let Ok(data) = std::fs::read(&path) else {
+        let Some(mmap) = mmap_path(&path) else {
             continue;
         };
-        let buffer = Bytes::new(data);
-        for font in Font::iter(buffer) {
-            book.push(font.info().clone());
-            slots.push(FontSlot {
-                font: OnceLock::from(Some(font)),
-            });
+        for (index, info) in FontInfo::iter(mmap.as_ref()).enumerate() {
+            book.push(info);
+            slots.push(FontSlot::lazy(mmap.clone(), index as u32));
         }
     }
 }
@@ -256,4 +348,100 @@ pub fn load_all(notebox_root: &Path) -> (FontBook, Vec<FontSlot>) {
     load_system_fonts(&mut book, &mut slots);
     load_notebox_fonts(notebox_root, &mut book, &mut slots);
     (book, slots)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod memory_measure {
+    //! A/B resident-memory measurement for the lazy vs eager font strategy.
+    //! Ignored by default (touches the whole system font collection and prints
+    //! to stdout). Run it explicitly to see the win on your own machine:
+    //!
+    //! ```text
+    //! cargo test --release -p inkycap font_memory_ab -- --ignored --nocapture
+    //! ```
+    use super::*;
+    use std::hint::black_box;
+
+    /// Resident set size of this process, in MB. Reads `/proc/self/statm`
+    /// (field 1 = resident pages); assumes the standard 4 KiB page.
+    fn rss_mb() -> f64 {
+        let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
+        let pages: f64 = statm
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+        pages * 4096.0 / (1024.0 * 1024.0)
+    }
+
+    /// Mimics the pre-change loader: read every system font file fully into the
+    /// heap and parse it, keeping the `Font` (and therefore its bytes) resident.
+    fn eager_load_old_style() -> Vec<Font> {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let mut fonts = Vec::new();
+        for face in db.faces() {
+            let path = match &face.source {
+                fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => p.clone(),
+                fontdb::Source::Binary(_) => continue,
+            };
+            let Ok(data) = std::fs::read(&path) else {
+                continue;
+            };
+            let buffer = Bytes::new(data);
+            if let Some(font) = Font::iter(buffer).nth(face.index as usize) {
+                fonts.push(font);
+            }
+        }
+        fonts
+    }
+
+    #[test]
+    #[ignore = "measurement harness; run explicitly with --ignored --nocapture"]
+    fn font_memory_ab() {
+        let base = rss_mb();
+
+        // NEW: lazy discovery + mmap-backed bytes. Bytes are parsed only on
+        // demand, so building the book + slots should add little resident heap.
+        let (book, slots) = load_all(Path::new("/nonexistent-notebox"));
+        let after_lazy = rss_mb();
+        // One slot per book entry (alias), so this is the registered-face count.
+        let faces = slots.len();
+
+        // Parse a handful of *system* faces on demand (the embedded ones at the
+        // front are already parsed), to show the targeted byte-load cost a real
+        // document pays for the few fonts it actually draws with.
+        for slot in slots.iter().rev().take(8) {
+            black_box(slot.get());
+        }
+        let after_some = rss_mb();
+
+        // OLD: eager whole-collection read into the heap.
+        let eager = eager_load_old_style();
+        let after_eager = rss_mb();
+
+        println!("\n=== Font loading resident-memory A/B ===");
+        println!("faces discovered (book entries): {faces}");
+        println!("baseline RSS:                  {base:8.1} MB");
+        println!(
+            "NEW lazy load_all (discovery): {after_lazy:8.1} MB  (+{:.1})",
+            after_lazy - base
+        );
+        println!(
+            "  + parse 8 faces on demand:   {after_some:8.1} MB  (+{:.1})",
+            after_some - after_lazy
+        );
+        println!(
+            "OLD eager whole-collection:    {after_eager:8.1} MB  (+{:.1})",
+            after_eager - after_some
+        );
+        println!(
+            "=> eager cost ~{:.1} MB vs lazy ~{:.1} MB for the same {} faces\n",
+            after_eager - after_some,
+            after_lazy - base,
+            eager.len()
+        );
+
+        black_box((book, slots, eager));
+    }
 }

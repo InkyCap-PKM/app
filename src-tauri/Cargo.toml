@@ -92,6 +92,14 @@ similar = "2"
 #   cargo test --release --test fidelity -- --ignored --nocapture pin_benchmark
 # See documentation/developer/typst-upgrade.md for the full runbook.
 fontdb = "0.23"
+# Typst's memoization cache. Already in the lock graph via `typst`; pinned here
+# as a direct dependency so the compile loop can bound it with `comemo::evict`
+# (same crate version → same global cache typst's memoized functions use).
+comemo = "0.5"
+# System/notebox font files are memory-mapped rather than read into the heap,
+# so unused faces never pin their bytes (see typst_pipeline::fonts). Already in
+# the lock graph transitively; pinned here as a direct dependency.
+memmap2 = "0.9"
 typst = "0.15"
 typst-library = "0.15"
 # The layout engine was split into its own crate in 0.15; `PagedDocument`

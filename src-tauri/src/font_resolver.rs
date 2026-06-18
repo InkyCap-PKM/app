@@ -264,6 +264,31 @@ mod tests {
     }
 
     #[test]
+    fn default_compile_roles_are_all_embedded() {
+        // The out-of-box config must keep every role that's injected into the
+        // Typst compile (text, verse, monospace) on a bundled/embedded family,
+        // so a fresh install renders identically on every OS and never needs the
+        // system font collection just to draw a default note. interface/editor
+        // are frontend CSS and intentionally still system; they're not asserted
+        // here (and resolving them would invoke the OS-dependent defaults).
+        let fonts = FontSettings::default();
+        assert_eq!(
+            resolve_role(FontRole::Text, &fonts).as_deref(),
+            Some(BUNDLED_TEXT)
+        );
+        assert_eq!(
+            resolve_role(FontRole::Monospace, &fonts).as_deref(),
+            Some(BUNDLED_MONO),
+            "default monospace must be bundled, not a system font"
+        );
+        // Verse follows text, so it lands on the bundled text family too.
+        assert_eq!(
+            resolve_role(FontRole::Verse, &fonts).as_deref(),
+            Some(BUNDLED_TEXT)
+        );
+    }
+
+    #[test]
     fn verse_follow_inherits_text() {
         let fonts = FontSettings {
             text: FontChoice::custom("CustomSerif"),

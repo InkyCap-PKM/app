@@ -57,6 +57,32 @@ impl CompileTimer {
     }
 }
 
+/// Generations of `comemo` memoization to retain across compiles.
+///
+/// The compiler is reused for a notebox's lifetime so its memo cache stays
+/// warm (sub-ms recompiles), but without bounding it the cache grows for the
+/// whole session: every note compiled during the open-time indexing pass, plus
+/// every interactive recompile, leaves evaluated-module and layout artifacts
+/// that are otherwise never reclaimed. [`comemo::evict`] drops entries not
+/// touched in the last `N` compile cycles. The active document re-touches its
+/// own entries on each compile, so its warm path survives; only artifacts that
+/// have gone untouched for `N` compiles (stale notes from indexing, abandoned
+/// edits) are freed. typst-cli uses 10 in its watch loop; we keep a more
+/// generous window since interactive editing revisits recent documents.
+const COMEMO_MAX_AGE: usize = 30;
+
+/// Evicts stale `comemo` entries when dropped. Held as a `let _guard` at the
+/// top of each public compile method so eviction runs once the method's work
+/// (including rendering/export, which itself re-enters memoized functions) has
+/// finished, regardless of which return path it takes.
+struct EvictComemoOnDrop;
+
+impl Drop for EvictComemoOnDrop {
+    fn drop(&mut self) {
+        comemo::evict(COMEMO_MAX_AGE);
+    }
+}
+
 /// PDF standard presets exposed to the frontend. Each variant maps to a
 /// combination of [`PdfStandard`] flags passed to the `typst-pdf` crate.
 ///
@@ -218,6 +244,7 @@ impl TypstCompiler {
     /// query module for metadata extraction where we only need the
     /// introspector, not rendered frames.
     pub fn compile_document(&mut self, abs_path: &Path, source: String) -> Option<PagedDocument> {
+        let _evict = EvictComemoOnDrop;
         if self.world.set_main(abs_path, source).is_err() {
             return None;
         }
@@ -255,6 +282,7 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
     ) -> Option<PagedDocument> {
+        let _evict = EvictComemoOnDrop;
         if self.world.set_main(abs_path, source.clone()).is_err() {
             return None;
         }
@@ -306,6 +334,7 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
     ) -> Result<TypstCompileResult, CompileError> {
+        let _evict = EvictComemoOnDrop;
         // Clone so the original source is available to restore in the world
         // after the recovery pass (which rewrites the main file in place).
         self.world
@@ -371,6 +400,7 @@ impl TypstCompiler {
         source: String,
         pdf_standard: PdfStandardPreset,
     ) -> Result<Vec<u8>, CompileError> {
+        let _evict = EvictComemoOnDrop;
         self.world
             .set_main(abs_path, source)
             .map_err(|err| CompileError::SetMain(abs_path.to_path_buf(), format!("{err:?}")))?;
@@ -420,6 +450,7 @@ impl TypstCompiler {
         source: String,
         pdf_standard: PdfStandardPreset,
     ) -> Result<Vec<u8>, Vec<TypstDiagnostic>> {
+        let _evict = EvictComemoOnDrop;
         if let Err(err) = self.world.set_main(abs_path, source) {
             return Err(vec![TypstDiagnostic {
                 severity: "error",
@@ -479,6 +510,7 @@ impl TypstCompiler {
         abs_path: &Path,
         source: String,
     ) -> Result<TypstHtmlResult, CompileError> {
+        let _evict = EvictComemoOnDrop;
         // Clone so the original source can be restored after the recovery
         // pass rewrites the main file in place (see `compile_svg`).
         self.world
