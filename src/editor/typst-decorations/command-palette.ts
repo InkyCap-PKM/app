@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type ChangeSpec, type Extension } from "@codemirror/state";
 import { expandFunc } from "./effects";
+import { positionPopupAtAnchor } from "./popup-position";
 import { pickAndInsertAttachments } from "../../lib/attachment-insert";
 import { buildAnnotationInsert, type InsertKind } from "./annotation-insert";
 import { CURATED_SYMBOLS } from "./symbols";
@@ -339,18 +340,10 @@ function showPopup(view: EditorView, state: PaletteState) {
 
   const coords = view.coordsAtPos(state.from);
   if (coords) {
-    const popupHeight = 300;
-    const spaceBelow = window.innerHeight - coords.bottom - 8;
-    const placeAbove = spaceBelow < popupHeight && coords.top > popupHeight;
-
-    el.style.left = `${Math.min(coords.left, window.innerWidth - 330)}px`;
-    if (placeAbove) {
-      el.style.top = `${coords.top - popupHeight - 4}px`;
-    } else {
-      el.style.top = `${coords.bottom + 4}px`;
-    }
+    positionPopupAtAnchor(el, coords);
+  } else {
+    el.style.display = "block";
   }
-  el.style.display = "block";
 }
 
 function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
