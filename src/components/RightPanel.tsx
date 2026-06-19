@@ -1695,7 +1695,7 @@ const RightPanel: Component = () => {
                                 onDragStart={(e) => handleDragStart(e, key)}
                                 onDragEnd={handleDragEnd}
                               >
-                                <Dynamic component={propertyTypeIcon(ty())} size={14} />
+                                <Dynamic component={propertyTypeIcon(ty(), key)} size={14} />
                               </span>
                               <span class="property-row__key">{key}</span>
                             </div>
@@ -1776,6 +1776,7 @@ const RightPanel: Component = () => {
                               <Dynamic
                                 component={propertyTypeIcon(
                                   KNOWN_FIELD_TYPES[key] ?? getPropertyType(key),
+                                  key,
                                 )}
                                 size={12}
                               />

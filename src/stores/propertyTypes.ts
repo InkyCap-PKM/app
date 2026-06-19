@@ -10,6 +10,7 @@ import { createSignal } from "solid-js";
 import {
   AlignLeft,
   Binary,
+  CalendarCheck,
   CalendarClock,
   CalendarDays,
   CircleDot,
@@ -90,9 +91,19 @@ export function propertyTypeLabel(ty: PropertyType): string {
   }
 }
 
-/// Lucide icon component matching a property type. Used in the properties
-/// panel to show value-shape at a glance (matches Obsidian's affordance).
-export function propertyTypeIcon(ty: PropertyType): Component<LucideProps> {
+/// A handful of well-known property keys read better with a name-specific
+/// icon than the generic type icon — e.g. `due` is a deadline, so a checked
+/// calendar conveys more than a plain date grid. Keyed by property name; falls
+/// through to the type-based icon for everything else.
+const PROPERTY_NAME_ICONS: Record<string, Component<LucideProps>> = {
+  due: CalendarCheck,
+};
+
+/// Lucide icon component matching a property. Used in the properties panel to
+/// show value-shape at a glance (matches Obsidian's affordance). A known
+/// property `name` may override the type icon; otherwise the type decides.
+export function propertyTypeIcon(ty: PropertyType, name?: string): Component<LucideProps> {
+  if (name && PROPERTY_NAME_ICONS[name]) return PROPERTY_NAME_ICONS[name];
   switch (ty) {
     case "checkbox":
       return SquareCheck;
