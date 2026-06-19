@@ -11,7 +11,7 @@
 // date menu and the collection column-header popover).
 
 import { Component, Show, createMemo } from "solid-js";
-import { CalendarDays, CalendarClock } from "lucide-solid";
+import { CalendarDays, CalendarRange } from "lucide-solid";
 import DatePicker from "./DatePicker";
 import { useI18n } from "../lib/i18n";
 import {
@@ -55,7 +55,7 @@ const DateValueInput: Component<DateValueInputProps> = (props) => {
         onClick={() => (relative() ? toFixed() : toRelative())}
       >
         {/* The icon shows the mode you'll switch *to*, matching the tooltip. */}
-        <Show when={relative()} fallback={<CalendarClock size={15} />}>
+        <Show when={relative()} fallback={<CalendarRange size={15} />}>
           <CalendarDays size={15} />
         </Show>
       </button>

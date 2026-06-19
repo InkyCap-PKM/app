@@ -27,7 +27,7 @@ import {
   ArrowDownNarrowWide,
   ListChevronsUpDown,
   ListChevronsDownUp,
-  CalendarCheck,
+  Calendar,
 } from "lucide-solid";
 import RuleIcon from "./RuleIcon";
 import { LibraryPlusIcon } from "./icons";
@@ -1469,7 +1469,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
           title={t("leftSidebar.agenda")}
           aria-label={t("leftSidebar.agenda")}
         >
-          <CalendarCheck size={18} />
+          <Calendar size={18} />
         </button>
         <button
           class={`left-sidebar__mode-btn ${mode() === "properties" ? "left-sidebar__mode-btn--active" : ""}`}
