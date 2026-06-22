@@ -18,7 +18,7 @@ import {
   BookMarked,
   FilePlus2,
   Folder,
-  Upload,
+  Download,
   Tag,
   X,
   ChevronRight,
@@ -1752,7 +1752,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                       role="menuitem"
                       onClick={uploadIntoNotebox}
                     >
-                      <Upload size={14} />
+                      <Download size={14} />
                       <span>{t("leftSidebar.copyIntoNotebox")}</span>
                     </button>
                   </div>
