@@ -37,6 +37,7 @@ import { pathEquals } from "../lib/paths";
 import { useI18n, tPlural } from "../lib/i18n";
 import { onFileChanged } from "../lib/events";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
+import { openLink } from "../lib/open-link";
 import {
   consumeScrollNavRequest,
   findOffsetForTarget,
@@ -438,7 +439,24 @@ const JournalScrollView: Component<JournalScrollViewProps> = (props) => {
     const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
       "a.inkycap-wikilink",
     );
-    if (!a) return;
+    if (!a) {
+      // Any other anchor in the compiled body — an external URL or a notebox
+      // file link authored via `#link(...)` — would otherwise navigate the
+      // webview away from the app (the notebox reopens / open-notebox dialog).
+      // Route it through `openLink` so URLs open in the OS browser and file
+      // links in the system default app. The native context menu is left
+      // alone so "Copy link" etc. still work.
+      if (e.type === "contextmenu") return;
+      const other = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        "a[href]",
+      );
+      const href = other?.getAttribute("href")?.trim();
+      if (href) {
+        e.preventDefault();
+        void openLink(href);
+      }
+      return;
+    }
     e.preventDefault();
     const entryEl = (
       e.target as HTMLElement | null
