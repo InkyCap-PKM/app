@@ -2474,6 +2474,57 @@ export class CitationWidget extends WidgetType {
   }
 }
 
+/**
+ * A pill for a `@label` reference to an in-document element (heading, figure,
+ * equation, table) — Typst's `@` is the universal reference operator, and this
+ * is the non-citation half of it. Unlike {@link CitationWidget} it shows the
+ * *resolved* target text (the heading's words, or the label name) rather than
+ * the raw `@key`, because the visual editor is WYSIWYM: the writer cares about
+ * what they're pointing at, not the anchor's identity. Clicking jumps to the
+ * label's definition. The reading view still renders Typst's real "Section 1"
+ * style output — this is an authoring aid, not a faithful render.
+ */
+export class ReferenceWidget extends WidgetType {
+  constructor(
+    readonly key: string,
+    readonly kind: string,
+    readonly display: string,
+    readonly refFrom: number = 0,
+    readonly refTo: number = 0,
+  ) {
+    super();
+  }
+
+  eq(other: WidgetType) {
+    return other instanceof ReferenceWidget
+      && this.key === other.key
+      && this.kind === other.kind
+      && this.display === other.display
+      && this.refFrom === other.refFrom
+      && this.refTo === other.refTo;
+  }
+
+  toDOM(view: EditorView) {
+    const pill = document.createElement("span");
+    pill.className = `cm-typst-ref-pill cm-typst-ref-pill--${this.kind}`;
+    const shown = this.display.length > 40 ? this.display.slice(0, 37) + "…" : this.display;
+    pill.textContent = shown;
+    pill.title = t("widget.reference.goTo", { target: `@${this.key}` });
+
+    pill.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      jumpToLabel(view, this.key);
+    });
+
+    return pill;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
 function showCiteContextMenu(
   anchor: HTMLElement,
   view: EditorView,

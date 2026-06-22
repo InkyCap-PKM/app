@@ -157,7 +157,7 @@ import type { SpellChecker } from "../lib/spellchecker";
 import { typstKeymap, smartIndentListsFacet, enterInsertsLineBreakFacet } from "./typst-decorations/keymaps";
 import { drawnCaret } from "./typst-decorations/drawn-caret";
 import { wikilinkSuggest } from "./typst-decorations/wikilink-suggest";
-import { citationSuggest } from "./typst-decorations/citation-suggest";
+import { referenceSuggest } from "./typst-decorations/reference-suggest";
 import { dragDropHandler } from "./typst-decorations/drag-drop";
 import { listPasteHandler } from "./typst-decorations/list-paste";
 import { autoPairTypstInput } from "./typst-decorations/auto-pair-typst";
@@ -786,7 +786,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   // popups, and verse search highlighting when toggling source→visual).
   const visualModeExtensions = () => [
     typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
-    wikilinkSuggest, citationSuggest, headingFold(), visualModeFacet.of(true),
+    wikilinkSuggest, referenceSuggest, headingFold(), visualModeFacet.of(true),
   ];
   const visualExts = options.visualMode ? visualModeExtensions() : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];

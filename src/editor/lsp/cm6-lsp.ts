@@ -2,6 +2,7 @@ import { type Extension, EditorState, Facet, StateEffect, StateField } from "@co
 import { EditorView, ViewPlugin, type ViewUpdate, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { type CompletionContext, type CompletionResult, type Completion, startCompletion, snippet } from "@codemirror/autocomplete";
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import { referenceNumberingActions } from "./reference-quickfix";
 import { LspClient, filePathToUri, type LspDiagnostic, type LspPosition, type LspCompletionItem } from "./client";
 import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
@@ -334,12 +335,17 @@ function convertDiagnostics(
       message = `${d.message} — ${t("diagnostic.unclosedEmphasis")}`;
     }
 
+    // Offer one-click fixes for "cannot reference … without numbering": enable
+    // numbering, or (for headings) switch to a text link that needs none.
+    const actions = referenceNumberingActions(d.message);
+
     return {
       from: Math.min(from, doc.length),
       to: Math.min(to, doc.length),
       severity: severity as "error" | "warning" | "info",
       message,
       source: d.source,
+      ...(actions ? { actions } : {}),
     };
   });
 }

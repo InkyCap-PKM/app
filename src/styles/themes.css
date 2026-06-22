@@ -574,6 +574,23 @@
   white-space: nowrap;
 }
 
+/* Group header in the reference (`@`) popup — separates Bibliography from
+   Headings / Figures / Equations / Tables. Mixed-case, distinguished by weight
+   + muted colour per the UI typography rule (no uppercase transforms). */
+.wikilink-suggest__group {
+  padding: 4px 12px 2px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+.wikilink-suggest__group:not(:first-child) {
+  margin-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+
 .wikilink-suggest__match {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: 2px;

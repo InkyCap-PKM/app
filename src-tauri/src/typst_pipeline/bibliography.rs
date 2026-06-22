@@ -18,6 +18,8 @@ use std::time::SystemTime;
 use regex::Regex;
 use serde::Serialize;
 
+use crate::typst_pipeline::syntax::{ast, parse, LinkedNode, SyntaxKind};
+
 /// Names tried in order when no `bibliographyPath` setting is configured.
 /// `.bib` (BibTeX) wins over `.yml` (Hayagriva) when both exist; the caller
 /// is expected to surface a warning in that case.
@@ -733,39 +735,97 @@ fn strip_code_spans(source: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
-/// Escape `@key` patterns in the source that do not match any entry in
-/// `valid_keys`. Replaces `@key` with `\@key` so Typst treats it as
-/// literal text instead of a citation reference. Skips code spans and
-/// already-escaped `\@` (same contexts as `extract_citations`).
+/// Escape references whose target resolves to neither a bibliography entry
+/// nor a label defined in the document, so Typst renders them as literal
+/// text instead of erroring on an unknown reference. The motivating case is
+/// an email address: Typst parses the `@domain` in `user@domain.com` as a
+/// reference, and without a `<domain>` label it would fail to compile.
+///
+/// Per CLAUDE.md's Typst-first principle this walks the real `typst::syntax`
+/// AST rather than scanning with a regex. That matters for correctness, not
+/// just style: only genuine `Ref` nodes are considered, so an `@` inside a
+/// string literal, code span, or comment is never touched — the parser
+/// already excluded it — and, crucially, a legitimate `@intro` pointing at a
+/// `= Heading <intro>` is recognized as a label reference and left alone.
+/// The previous regex compared only against `valid_keys` (bibliography
+/// keys), so it silently rewrote every cross-reference to a heading, figure,
+/// or equation into `\@...` whenever a bibliography was present — breaking
+/// the reference in the rendered output.
 pub fn escape_invalid_citations(
     source: &str,
     valid_keys: &std::collections::HashSet<String>,
 ) -> String {
+    // With no bibliography keys to compare against we can't safely tell a real
+    // (but transiently unresolved) citation from a stray `@`. A failed or
+    // not-yet-loaded bibliography arrives here as an empty set, and escaping
+    // every reference in that window would rewrite legitimate citations to
+    // literal text. Leave the source untouched: a dangling `@label` with no
+    // bibliography either resolves to a real `<label>` or earns a clear Typst
+    // "label does not exist" error — neither worth pre-empting by escaping.
     if valid_keys.is_empty() {
-        // Can't determine what's valid — leave source untouched to avoid
-        // accidentally escaping legitimate citations.
         return source.to_string();
     }
-    let stripped = strip_code_spans(source);
+
+    let root = parse(source);
+    let link = LinkedNode::new(&root);
+
+    // Phase 1: collect every label defined anywhere in the document and the
+    // byte position + target of every reference. A label can be defined *after*
+    // the reference that points at it (`@intro` … `= Heading <intro>`), so the
+    // whole document must be seen before deciding which references are unresolved.
+    let mut labels: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut refs: Vec<(usize, String)> = Vec::new();
+    collect_refs_and_labels(&link, &mut labels, &mut refs);
+    if refs.is_empty() {
+        return source.to_string();
+    }
+
+    // Phase 2: a reference is valid when its target is a bibliography key or a
+    // label defined in this document; anything else (an email's `@domain`, a
+    // typo) is escaped by inserting a backslash before its `@`.
+    refs.sort_by_key(|(pos, _)| *pos);
     let bytes = source.as_bytes();
-    let mut out = Vec::with_capacity(source.len() + 64);
+    let mut out = Vec::with_capacity(source.len() + 16);
     let mut last = 0;
-    for m in at_cite_re().find_iter(&stripped) {
-        let key = &stripped[m.start() + 1..m.end()];
-        if valid_keys.contains(key) {
+    for (pos, target) in &refs {
+        if valid_keys.contains(target) || labels.contains(target) {
             continue;
         }
-        // This @key is not in the bibliography — escape it.
-        out.extend_from_slice(&bytes[last..m.start()]);
+        out.extend_from_slice(&bytes[last..*pos]);
         out.push(b'\\');
-        out.extend_from_slice(&bytes[m.start()..m.end()]);
-        last = m.end();
+        last = *pos;
     }
     if last == 0 {
         return source.to_string();
     }
     out.extend_from_slice(&bytes[last..]);
     String::from_utf8(out).unwrap_or_else(|_| source.to_string())
+}
+
+/// Recursively gather every `<label>` definition and `@target` reference in
+/// the parsed AST. Labels go into `labels`; references are recorded as
+/// `(byte position of the `@`, target string)`.
+fn collect_refs_and_labels(
+    node: &LinkedNode<'_>,
+    labels: &mut std::collections::HashSet<String>,
+    refs: &mut Vec<(usize, String)>,
+) {
+    match node.kind() {
+        SyntaxKind::Label => {
+            if let Some(label) = node.cast::<ast::Label>() {
+                labels.insert(label.get().to_string());
+            }
+        }
+        SyntaxKind::Ref => {
+            if let Some(reference) = node.cast::<ast::Ref>() {
+                refs.push((node.range().start, reference.target().to_string()));
+            }
+        }
+        _ => {}
+    }
+    for child in node.children() {
+        collect_refs_and_labels(&child, labels, refs);
+    }
 }
 
 fn at_cite_re() -> &'static Regex {
@@ -1279,6 +1339,45 @@ mod tests {
         let out = escape_invalid_citations(src, &valid);
         // @smith2020 is valid, @host is inside a string literal — neither should be escaped
         assert_eq!(out, src);
+    }
+
+    #[test]
+    fn escape_keeps_label_reference_when_bibliography_present() {
+        // Regression: a cross-reference to a heading/figure/equation label must
+        // survive even when a bibliography is loaded. Before the AST rewrite,
+        // `@intro` was escaped to `\@intro` because it wasn't a bibliography
+        // key — silently breaking the reference in the rendered document.
+        let valid: std::collections::HashSet<String> =
+            ["smith2020"].iter().map(|s| s.to_string()).collect();
+        let src = "= Introduction <intro>\n\nSee @intro and @smith2020.";
+        let out = escape_invalid_citations(src, &valid);
+        assert_eq!(out, src, "label ref and citation should both survive");
+    }
+
+    #[test]
+    fn escape_keeps_label_reference_defined_after_use() {
+        // The label can be defined further down than the reference; collection
+        // must see the whole document before deciding.
+        let valid: std::collections::HashSet<String> =
+            ["smith2020"].iter().map(|s| s.to_string()).collect();
+        let src = "As shown in @fig-plot below.\n\n#figure(image(\"/p.png\")) <fig-plot>";
+        let out = escape_invalid_citations(src, &valid);
+        assert_eq!(out, src);
+    }
+
+    #[test]
+    fn escape_still_escapes_unresolved_reference_with_bibliography() {
+        // A reference that is neither a citation key nor a defined label (here
+        // an email's `@gmail`) is still escaped so Typst doesn't error.
+        let valid: std::collections::HashSet<String> =
+            ["smith2020"].iter().map(|s| s.to_string()).collect();
+        let src = "Mail me at paulgott9@gmail.com or cite @smith2020.";
+        let out = escape_invalid_citations(src, &valid);
+        assert!(
+            out.contains(r"\@gmail"),
+            "email @gmail should be escaped: {out}"
+        );
+        assert!(out.contains("@smith2020"), "citation should survive");
     }
 
     #[test]

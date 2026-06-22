@@ -3,7 +3,16 @@ import { type Extension, Prec } from "@codemirror/state";
 import { fuzzyMatch } from "../../lib/fuzzy";
 import { positionPopupAtAnchor } from "./popup-position";
 import * as ipc from "../../lib/ipc";
+import { t } from "../../lib/i18n";
 import type { BibEntry } from "../../lib/types";
+import { scanDocumentLabels, type DocLabel, type LabelKind } from "./document-labels";
+
+// The `@` popup. In Typst `@` is the *universal reference* operator — it points
+// at any `<label>` (heading, figure, equation, table) as well as bibliography
+// entries; a citation is just one kind of reference target. So this popup lists
+// citations first (the common academic action, and the historical behaviour),
+// then the document's labelled targets grouped by kind. Inserting either writes
+// the same `@name` shorthand.
 
 interface SuggestState {
   active: boolean;
@@ -13,10 +22,20 @@ interface SuggestState {
 
 const EMPTY: SuggestState = { active: false, from: 0, query: "" };
 
+/** A single selectable row: a bibliography citation or a document label. */
+type RefItem =
+  | { type: "citation"; entry: BibEntry }
+  | { type: "label"; label: DocLabel };
+
+/** The name that `@…` inserts for a given item. */
+function itemName(item: RefItem): string {
+  return item.type === "citation" ? item.entry.key : item.label.name;
+}
+
 let popup: HTMLElement | null = null;
 let selectedIndex = 0;
 let currentState: SuggestState = EMPTY;
-let filteredItems: BibEntry[] = [];
+let filteredItems: RefItem[] = [];
 let cachedEntries: BibEntry[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 30_000;
@@ -49,9 +68,16 @@ function getPreview(): HTMLElement {
   return preview;
 }
 
-function updatePreview(entry: BibEntry | undefined) {
+function updatePreview(item: RefItem | undefined) {
   const el = getPreview();
-  if (!entry) { el.style.display = "none"; return; }
+  // Only citations carry rich metadata worth previewing; labels are
+  // self-describing through their group + display text.
+  if (!item || item.type !== "citation") {
+    el.style.display = "none";
+    getPopup().classList.remove("has-preview");
+    return;
+  }
+  const entry = item.entry;
 
   el.innerHTML = "";
 
@@ -59,7 +85,7 @@ function updatePreview(entry: BibEntry | undefined) {
     ? entry.authors.slice(0, 3).join(", ") + " et al."
     : entry.authors.length > 0
       ? entry.authors.join(", ")
-      : "Unknown author";
+      : t("refSuggest.unknownAuthor");
   const authorsEl = document.createElement("div");
   authorsEl.className = "citation-suggest-preview__authors";
   authorsEl.textContent = authors;
@@ -121,7 +147,7 @@ async function getEntries(): Promise<BibEntry[]> {
   return cachedEntries;
 }
 
-function detectCitationContext(view: EditorView): SuggestState {
+function detectReferenceContext(view: EditorView): SuggestState {
   const { from: cursor } = view.state.selection.main;
   const line = view.state.doc.lineAt(cursor);
   const textBefore = view.state.doc.sliceString(line.from, cursor);
@@ -132,14 +158,14 @@ function detectCitationContext(view: EditorView): SuggestState {
   const query = textBefore.slice(atIdx + 1);
   if (/\s/.test(query)) return EMPTY;
 
-  // Typst (and the backend's `extract_citations`) treat `@key` as a citation
+  // Typst (and the backend's `extract_citations`) treat `@key` as a reference
   // wherever it appears — including right after a letter, digit, or a previous
-  // citation's last character (`@a@b`, `word@key`). The only `@` that is *not*
-  // a citation is an escaped one: a `\` before the `@` is `\@`, a literal
+  // reference's last character (`@a@b`, `word@key`). The only `@` that is *not*
+  // a reference is an escaped one: a `\` before the `@` is `\@`, a literal
   // at-sign. Skipping it keeps us in step with the backend, and avoids the
   // failure mode where an `@` lands just after a line's hidden trailing
-  // soft-break `\` — treating that as a citation would insert `\@key`, escaping
-  // the citation and making the `\` render visibly.
+  // soft-break `\` — treating that as a reference would insert `\@key`, escaping
+  // it and making the `\` render visibly.
   const charBefore = atIdx > 0 ? textBefore[atIdx - 1] : " ";
   if (charBefore === "\\") return EMPTY;
 
@@ -153,42 +179,104 @@ function formatAuthors(authors: string[]): string {
   return `${authors[0]} et al.`;
 }
 
+/** Search text a query is fuzzy-matched against for each item type. */
+function searchText(item: RefItem): string {
+  if (item.type === "citation") {
+    const e = item.entry;
+    return `${e.key} ${e.title} ${e.authors.join(" ")}`;
+  }
+  const l = item.label;
+  return `${l.name} ${l.display}`;
+}
+
+/** Localized header for a group; bibliography is keyed separately. */
+function groupTitle(kind: LabelKind): string {
+  switch (kind) {
+    case "heading": return t("refSuggest.groupHeadings");
+    case "figure": return t("refSuggest.groupFigures");
+    case "equation": return t("refSuggest.groupEquations");
+    case "table": return t("refSuggest.groupTables");
+    default: return t("refSuggest.groupLabels");
+  }
+}
+
+// Render order of label groups beneath the bibliography group.
+const LABEL_KIND_ORDER: LabelKind[] = ["heading", "figure", "equation", "table", "label"];
+
+interface RenderGroup {
+  title: string;
+  items: RefItem[];
+}
+
+/**
+ * Build the ordered, filtered groups: bibliography first, then label kinds.
+ * Each group's items are fuzzy-scored and sorted; an empty query keeps source
+ * order (citations as returned, labels as scanned).
+ */
+function buildGroups(entries: BibEntry[], labels: DocLabel[], query: string): RenderGroup[] {
+  const score = (item: RefItem): number | null => {
+    if (query === "") return 0;
+    const m = fuzzyMatch(query, searchText(item));
+    return m ? m.score : null;
+  };
+  const collect = (items: RefItem[]): RefItem[] => {
+    const scored: { item: RefItem; score: number }[] = [];
+    for (const item of items) {
+      const s = score(item);
+      if (s !== null) scored.push({ item, score: s });
+    }
+    if (query !== "") scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.item);
+  };
+
+  const groups: RenderGroup[] = [];
+
+  const citations = collect(entries.map((entry) => ({ type: "citation", entry }) as RefItem));
+  if (citations.length > 0) {
+    groups.push({ title: t("refSuggest.groupBibliography"), items: citations.slice(0, 30) });
+  }
+
+  for (const kind of LABEL_KIND_ORDER) {
+    const ofKind = labels.filter((l) => l.kind === kind).map((label) => ({ type: "label", label }) as RefItem);
+    const matched = collect(ofKind);
+    if (matched.length > 0) {
+      groups.push({ title: groupTitle(kind), items: matched.slice(0, 30) });
+    }
+  }
+
+  return groups;
+}
+
 async function showPopup(view: EditorView, state: SuggestState) {
   const el = getPopup();
   currentState = state;
 
   const entries = await getEntries();
-  if (entries.length === 0) {
+  const labels = scanDocumentLabels(view.state);
+
+  if (entries.length === 0 && labels.length === 0) {
     el.innerHTML = "";
+    el.classList.remove("has-preview");
     const empty = document.createElement("div");
     empty.className = "wikilink-suggest__empty";
-    empty.textContent = "No bibliography entries found";
+    empty.textContent = t("refSuggest.empty");
     el.appendChild(empty);
+    getPreview().style.display = "none";
     positionPopup(view, state, el);
     return;
   }
 
-  const query = state.query;
-  const scored: { entry: BibEntry; score: number }[] = [];
-  for (const entry of entries) {
-    if (query === "") {
-      scored.push({ entry, score: 0 });
-    } else {
-      const searchText = `${entry.key} ${entry.title} ${entry.authors.join(" ")}`;
-      const m = fuzzyMatch(query, searchText);
-      if (m) scored.push({ entry, score: m.score });
-    }
-  }
-
-  scored.sort((a, b) => b.score - a.score);
-  filteredItems = scored.slice(0, 30).map((s) => s.entry);
+  const groups = buildGroups(entries, labels, state.query);
+  filteredItems = groups.flatMap((g) => g.items);
 
   if (filteredItems.length === 0) {
     el.innerHTML = "";
+    el.classList.remove("has-preview");
     const empty = document.createElement("div");
     empty.className = "wikilink-suggest__empty";
-    empty.textContent = "No matching references";
+    empty.textContent = t("refSuggest.noResults");
     el.appendChild(empty);
+    getPreview().style.display = "none";
     positionPopup(view, state, el);
     return;
   }
@@ -196,37 +284,55 @@ async function showPopup(view: EditorView, state: SuggestState) {
   selectedIndex = 0;
   el.innerHTML = "";
 
-  for (let i = 0; i < filteredItems.length; i++) {
-    const entry = filteredItems[i];
-    const row = document.createElement("div");
-    row.className = "wikilink-suggest__item";
-    if (i === 0) row.classList.add("is-selected");
+  let flatIndex = 0;
+  for (const group of groups) {
+    const header = document.createElement("div");
+    header.className = "wikilink-suggest__group";
+    header.textContent = group.title;
+    el.appendChild(header);
 
-    const titleSpan = document.createElement("span");
-    titleSpan.className = "wikilink-suggest__name";
-    const titleShort = entry.title.length > 60
-      ? entry.title.slice(0, 57) + "..."
-      : entry.title;
-    titleSpan.textContent = titleShort;
-
-    const authorSpan = document.createElement("span");
-    authorSpan.className = "wikilink-suggest__folder";
-    const authors = formatAuthors(entry.authors);
-    const year = entry.year ?? "";
-    authorSpan.textContent = `${authors}${year ? ` (${year})` : ""}`;
-
-    row.appendChild(titleSpan);
-    row.appendChild(authorSpan);
-
-    row.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      acceptItem(view, state, entry);
-    });
-    el.appendChild(row);
+    for (const item of group.items) {
+      el.appendChild(renderRow(view, state, item, flatIndex));
+      flatIndex++;
+    }
   }
 
   positionPopup(view, state, el);
   updatePreview(filteredItems[0]);
+}
+
+function renderRow(view: EditorView, state: SuggestState, item: RefItem, index: number): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "wikilink-suggest__item";
+  if (index === 0) row.classList.add("is-selected");
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "wikilink-suggest__name";
+
+  const metaSpan = document.createElement("span");
+  metaSpan.className = "wikilink-suggest__folder";
+
+  if (item.type === "citation") {
+    const entry = item.entry;
+    nameSpan.textContent = entry.title.length > 60 ? entry.title.slice(0, 57) + "..." : entry.title;
+    const authors = formatAuthors(entry.authors);
+    const year = entry.year ?? "";
+    metaSpan.textContent = `${authors}${year ? ` (${year})` : ""}`;
+  } else {
+    // Show the readable display (heading text, or the label name) up front and
+    // the `@name` that will be inserted as the muted secondary.
+    nameSpan.textContent = item.label.display;
+    metaSpan.textContent = `@${item.label.name}`;
+  }
+
+  row.appendChild(nameSpan);
+  row.appendChild(metaSpan);
+
+  row.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    acceptItem(view, state, item);
+  });
+  return row;
 }
 
 function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
@@ -238,9 +344,9 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
   }
 }
 
-function acceptItem(view: EditorView, state: SuggestState, entry: BibEntry) {
+function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   const cursor = view.state.selection.main.from;
-  const insert = `@${entry.key}`;
+  const insert = `@${itemName(item)}`;
   // Set suppression *before* dispatch: the dispatch synchronously runs the
   // tracker's `update`, which would otherwise re-detect the `@key` context and
   // requeue the popup. With the range already set, that update closes the popup
@@ -309,17 +415,17 @@ const suggestTracker = ViewPlugin.fromClass(
     // popup is opened on the next animation frame (to coalesce bursts of
     // keystrokes); without cancellation, the frame scheduled by the final
     // keystroke before Enter would fire *after* `acceptItem` has already
-    // inserted the citation and hidden the popup — reopening it and forcing
+    // inserted the reference and hidden the popup — reopening it and forcing
     // the user to press Enter a second time to dismiss it.
     private pendingFrame = 0;
 
     constructor(view: EditorView) {
-      this.state = detectCitationContext(view);
+      this.state = detectReferenceContext(view);
     }
 
     update(update: ViewUpdate) {
       if (!update.docChanged && !update.selectionSet) return;
-      this.state = detectCitationContext(update.view);
+      this.state = detectReferenceContext(update.view);
 
       // Clear post-accept suppression once the cursor moves outside the
       // inserted range — that's the unambiguous signal that the user is
@@ -370,4 +476,4 @@ export function getCachedBibKeys(): Set<string> {
   return new Set(cachedEntries.map((e) => e.key));
 }
 
-export const citationSuggest: Extension = [suggestKeyHandler, suggestTracker];
+export const referenceSuggest: Extension = [suggestKeyHandler, suggestTracker];

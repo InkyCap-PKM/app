@@ -26,6 +26,7 @@ import {
   LinkWidget,
   LabelLinkWidget,
   CitationWidget,
+  ReferenceWidget,
   VerseWidget,
   FootnoteWidget,
   SuggestionWidget,
@@ -35,7 +36,8 @@ import {
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
-import { getCachedBibKeys } from "./citation-suggest";
+import { getCachedBibKeys } from "./reference-suggest";
+import { scanDocumentLabels, type DocLabel } from "./document-labels";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
 import { highlight, buildHighlightMark } from "./visual-colors";
@@ -63,6 +65,10 @@ const mathDisplay = Decoration.mark({ class: "cm-typst-math-display" });
 const labelMark = Decoration.mark({ class: "cm-typst-label" });
 const refMark = Decoration.mark({ class: "cm-typst-ref" });
 const refPlainMark = Decoration.mark({ class: "cm-typst-ref-plain" });
+// A standalone `@target` that resolves to neither a bibliography entry nor a
+// document label — a dangling/typo reference. Flagged so the writer notices it
+// won't resolve (the backend escapes it to literal text at compile time).
+const refBrokenMark = Decoration.mark({ class: "cm-typst-ref-broken" });
 // A small atomic widget that renders a fixed glyph in place of hidden markup —
 // e.g. the inline-quote smart quotes over `#quote[` / `]`, or the `[[` `]]` `::`
 // brackets that re-skin an editable `#wikilink(...)`. A widget (rather than CSS
@@ -610,6 +616,18 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
   const activeFormatting = { bold: false, italic: false, strike: false, highlight: false };
   let consumedUntil = -1;
 
+  // Document labels, computed once per pass on first `@reference` encountered.
+  // Must cover the whole document (not just `onlyRanges`): a reference inside an
+  // incrementally-updated range can point at a label defined elsewhere.
+  let docLabelMap: Map<string, DocLabel> | null = null;
+  const getDocLabelMap = (): Map<string, DocLabel> => {
+    if (!docLabelMap) {
+      docLabelMap = new Map();
+      for (const l of scanDocumentLabels(state)) docLabelMap.set(l.name, l);
+    }
+    return docLabelMap;
+  };
+
   // Hide the leading import block — the notebox import plus any package
   // imports (e.g. `#import "@preview/mitex:…": …`) a user or template added.
   // They stay visible/editable in the source editor; here they're collapsed
@@ -773,9 +791,33 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             const refText = state.doc.sliceString(node.from, node.to);
             if (refText.startsWith("@")) {
+              // Typst's `@` is the universal reference operator: it resolves to a
+              // bibliography entry (a citation) OR an in-document `<label>`
+              // (heading, figure, equation, table). Decide which by consulting
+              // both the cached bib keys and the document's labels.
               const key = refText.slice(1);
               const bibKeys = getCachedBibKeys();
-              if (bibKeys.size === 0 || bibKeys.has(key)) {
+              const label = getDocLabelMap().get(key);
+              if (bibKeys.has(key)) {
+                decos.push(
+                  Decoration.replace({
+                    widget: new CitationWidget(key, node.from, node.to),
+                    inclusiveStart: false,
+                    inclusiveEnd: false,
+                  }).range(node.from, node.to),
+                );
+              } else if (label) {
+                decos.push(
+                  Decoration.replace({
+                    widget: new ReferenceWidget(key, label.kind, label.display, node.from, node.to),
+                    inclusiveStart: false,
+                    inclusiveEnd: false,
+                  }).range(node.from, node.to),
+                );
+              } else if (bibKeys.size === 0) {
+                // Bibliography not loaded yet — render optimistically as a
+                // citation so a real `@cite` doesn't flash a broken state before
+                // entries arrive. Flips to its true form once the cache fills.
                 decos.push(
                   Decoration.replace({
                     widget: new CitationWidget(key, node.from, node.to),
@@ -784,9 +826,14 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
                   }).range(node.from, node.to),
                 );
               } else {
-                // Not in bibliography — override syntax highlighting so
-                // email addresses render as plain text, not link-colored.
-                decos.push(refPlainMark.range(node.from, node.to));
+                // Resolves to neither a citation nor a label. Distinguish an
+                // email's `@domain` (preceded by a word character — render as
+                // plain text) from a standalone reference that didn't resolve
+                // (preceded by whitespace/punctuation — flag it so the writer
+                // sees it won't resolve).
+                const before = node.from > 0 ? state.doc.sliceString(node.from - 1, node.from) : "";
+                const attached = /[\p{L}\p{N}]/u.test(before);
+                decos.push((attached ? refPlainMark : refBrokenMark).range(node.from, node.to));
               }
             } else {
               decos.push(refMark.range(node.from, node.to));
