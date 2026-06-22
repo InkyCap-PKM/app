@@ -769,6 +769,29 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.9em",
     fontFamily: "var(--editor-font-mono, monospace)",
   },
+  // Cross-reference pill (`@heading`, `@fig-…`). Visually related to the
+  // citation chip but accent-tinted and in the body font — it shows resolved
+  // target text, not a raw key, so it reads as prose the writer can click.
+  ".cm-typst-ref-pill": {
+    display: "inline-block",
+    backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
+    color: "var(--accent)",
+    borderRadius: "3px",
+    padding: "1px 6px",
+    cursor: "pointer",
+  },
+  ".cm-typst-ref-pill::before": {
+    content: '"→ "',
+    opacity: "0.6",
+  },
+  // Standalone reference that resolves to nothing — a dangling/typo `@target`.
+  // Dotted warning underline; non-intrusive but visible.
+  ".cm-typst-ref-broken": {
+    color: "var(--syntax-type)",
+    textDecoration: "underline dotted var(--danger, #e06c75)",
+    textUnderlineOffset: "2px",
+    cursor: "text",
+  },
   // ── Verse ──
   // First-class verse element: an open canvas, not a code-block. The
   // pill at top-left identifies it and exposes alignment options; the

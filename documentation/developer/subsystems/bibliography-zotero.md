@@ -41,8 +41,16 @@ because Hayagriva has no native reader for it).
 inline code spans, fenced code, and string literals (so a `@` in a code sample
 is not a citation). It is regex-based on purpose: it runs on a hot path over
 mid-edit source that may not parse. `escape_invalid_citations()` rewrites
-unresolved `@key` to literal `\@key` so a missing entry does not spew compile
-errors.
+unresolved references to literal `\@key` so a stray `@` (e.g. the `@domain` in
+an email) does not spew compile errors. It walks the `typst::syntax` AST rather
+than a regex so it only acts on genuine `Ref` nodes, and it treats a `@target`
+as valid when the target is either a bibliography key **or** a `<label>` defined
+anywhere in the document. This is what keeps a cross-reference to a heading,
+figure, or equation (`@intro` → `= Heading <intro>`) from being escaped when a
+bibliography is loaded — in Typst `@` is the universal reference operator, not a
+citation-only sugar, and citations are just one kind of reference target. The
+empty-`valid_keys` guard (no bibliography, or a failed load) leaves the source
+untouched so a transient load failure never rewrites real citations.
 
 **Rendering for "copy bibliography".** `render_cited_bibliography()` runs
 Hayagriva's CSL formatter for the cited keys and converts the formatted tree to
