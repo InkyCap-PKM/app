@@ -39,6 +39,7 @@ import {
   setTabReadingFormat,
 } from "../stores/tabs";
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
+import { openLink } from "../lib/open-link";
 import { isDocumentationWindow } from "../lib/docs-window";
 import { searchHighlights } from "../stores/search";
 import { pathEquals } from "../lib/paths";
@@ -1171,7 +1172,20 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
     if (!a) return;
     const href = a.getAttribute("href") ?? a.getAttribute("xlink:href") ?? "";
     const [pathPart, hash] = href.split("#");
-    if (!/\.typ$/i.test(pathPart)) return; // not a wikilink — let it through
+    if (!/\.typ$/i.test(pathPart)) {
+      // Not a wikilink — an external URL or a notebox file link authored via
+      // `#link(...)`. Without interception the webview would follow the href
+      // and navigate away from the app. Route it through `openLink` so URLs
+      // open in the OS browser and file links in the system default app. The
+      // native context menu is left alone so "Copy link" etc. still work.
+      if (e.type === "contextmenu") return;
+      const target = href.trim();
+      if (target) {
+        e.preventDefault();
+        void openLink(target);
+      }
+      return;
+    }
     e.preventDefault();
     const baseName = decodeURIComponent(pathPart)
       .replace(/^.*[/\\]/, "")
@@ -1301,7 +1315,23 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
     const a = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
       "a.inkycap-wikilink",
     );
-    if (!a) return;
+    if (!a) {
+      // Any other anchor in the compiled body — an external URL or a notebox
+      // file link authored via `#link(...)` — would otherwise navigate the
+      // webview away from the app. Route it through `openLink` so URLs open in
+      // the OS browser and file links in the system default app. The native
+      // context menu is left alone so "Copy link" etc. still work.
+      if (e.type === "contextmenu") return;
+      const other = (e.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+        "a[href]",
+      );
+      const href = other?.getAttribute("href")?.trim();
+      if (href) {
+        e.preventDefault();
+        void openLink(href);
+      }
+      return;
+    }
     e.preventDefault();
     const rawName = a.dataset.target ?? "";
     const baseName = rawName.split("::")[0].split("#")[0].trim();
