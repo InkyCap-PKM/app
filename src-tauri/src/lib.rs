@@ -339,6 +339,7 @@ pub fn run() {
             commands::attachment_migration::preview_attachment_folder_migration,
             commands::attachment_migration::migrate_attachment_folder,
             commands::file_ops::pick_and_upload_to_attachments,
+            commands::file_ops::import_csl_style,
             commands::file_ops::pick_files_for_import,
             commands::file_ops::import_markdown_file,
             commands::file_ops::import_markdown_text,

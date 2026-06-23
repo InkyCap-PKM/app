@@ -36,7 +36,7 @@ import {
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
 import { fileList } from "../../stores/filelist";
-import { getCachedBibKeys } from "./reference-suggest";
+import { getCachedBibKeys, activeReferenceSearchAt } from "./reference-suggest";
 import { scanDocumentLabels, type DocLabel } from "./document-labels";
 import { FuncPillWidget, FuncChipWidget, BulletWidget, ShorthandWidget, HrWidget, AngleBracketWarningWidget, ANGLE_BRACKET_TAGS, StylePreambleWidget, SetRuleWidget, SymWidget } from "./visual-widgets";
 import { symbolGlyph } from "./symbols";
@@ -791,6 +791,11 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
             const refText = state.doc.sliceString(node.from, node.to);
             if (refText.startsWith("@")) {
+              // While this `@…` is the target of a live citation search, leave it
+              // as plain editable text — pilling it mid-search (e.g. `@einstein`
+              // while the writer is still typing `relativity` to find the paper)
+              // would make a multi-word query feel like it had already resolved.
+              if (activeReferenceSearchAt() === node.from) return false;
               // Typst's `@` is the universal reference operator: it resolves to a
               // bibliography entry (a citation) OR an in-document `<label>`
               // (heading, figure, equation, table). Decide which by consulting

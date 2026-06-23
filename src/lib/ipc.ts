@@ -973,6 +973,21 @@ export async function pickAndUploadToAttachments(): Promise<string[]> {
   return invoke<string[]>("pick_and_upload_to_attachments");
 }
 
+/**
+ * Open a native `.csl` picker and bring the chosen citation style into the
+ * notebox, returning the notebox-root-absolute path (`/styles/foo.csl`) to
+ * store in the notebox's `custom_csl_path`, or `null` if the user cancelled.
+ * The style is copied into the notebox (unless already inside it) so it travels
+ * with the notebox and is readable by the sandboxed Typst compiler — a CSL
+ * referenced by an outside-the-notebox OS path cannot be read and breaks export.
+ */
+export async function importCslStyle(
+  title: string,
+  filterName: string,
+): Promise<string | null> {
+  return invoke<string | null>("import_csl_style", { title, filterName });
+}
+
 /** One file chosen in {@link pickFilesForImport}: its path and whether it's a
  *  markdown source (so the UI can offer "convert to Typst?" only for those). */
 export interface PickedImportFile {

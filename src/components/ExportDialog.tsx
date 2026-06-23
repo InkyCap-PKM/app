@@ -5,6 +5,7 @@ import * as ipc from "../lib/ipc";
 import type { PdfStandardPreset, ReviewMarkupMode } from "../lib/ipc";
 import { Dropdown } from "./Dropdown";
 import { t } from "../lib/i18n";
+import { errorText } from "../lib/errors";
 
 export type ExportFormat = "pdf" | "typ" | "typst-html" | "markdown" | "odt" | "docx" | "latex" | "pandoc-pdf";
 export type MetadataMode = "exclude" | "properties";
@@ -232,8 +233,8 @@ const ExportDialog: Component = () => {
           }
         }
       }
-    } catch (e: any) {
-      setError(e?.toString() ?? t("export.exportFailed"));
+    } catch (e: unknown) {
+      setError(errorText(e) || t("export.exportFailed"));
     } finally {
       setExporting(false);
     }
