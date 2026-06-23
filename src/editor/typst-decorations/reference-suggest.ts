@@ -1,6 +1,6 @@
 import { EditorView, ViewPlugin, type ViewUpdate, keymap } from "@codemirror/view";
 import { type Extension, Prec } from "@codemirror/state";
-import { fuzzyMatch } from "../../lib/fuzzy";
+import { substringMatch } from "../../lib/fuzzy";
 import { positionPopupAtAnchor } from "./popup-position";
 import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
@@ -136,6 +136,19 @@ function isPopupVisible(): boolean {
   return !!popup && popup.style.display !== "none";
 }
 
+/**
+ * The `@` position of the live citation search, or null when no search popup is
+ * open. The visual editor consults this to keep its citation/reference pill from
+ * forming over a `@…` that is still being searched (e.g. `@einstein relativity`
+ * mid-typing) — the span should read as plain editable text until the writer
+ * commits a choice. The `@` offset is stable for a session's lifetime, so a
+ * containment check against it is immune to the one-frame lag between a
+ * keystroke and the popup's deferred redraw.
+ */
+export function activeReferenceSearchAt(): number | null {
+  return isPopupVisible() && currentState.active ? currentState.from : null;
+}
+
 async function getEntries(): Promise<BibEntry[]> {
   if (cachedEntries && Date.now() - cacheTime < CACHE_TTL) return cachedEntries;
   try {
@@ -147,6 +160,47 @@ async function getEntries(): Promise<BibEntry[]> {
   return cachedEntries;
 }
 
+// A citation search is allowed to span spaces — most titles and author names
+// contain them ("Smith & Jones 2020"), and the search text is matched against
+// `key + title + authors`. But an unbounded query would let the popup trail
+// through a whole paragraph, so the query is bounded: a leading space ("@ " is
+// a literal at-sign, never a search) is rejected, and the query is capped in
+// length and word count. Whether the writer has *stopped* searching and started
+// prose is decided at match time, not here — when no candidate matches every
+// typed word, `showPopup` closes the popup (see its zero-results branch).
+const QUERY_MAX_CHARS = 48;
+const QUERY_MAX_WORDS = 6;
+
+/** Whitespace-separated, non-empty search terms in a query. */
+function queryTokens(query: string): string[] {
+  return query.split(/\s+/).filter((tok) => tok.length > 0);
+}
+
+/**
+ * Score a candidate's search text against a possibly multi-word `@` query.
+ * Every whitespace-separated token must appear as a contiguous, case-insensitive
+ * *substring* of the text (AND); the score is the sum of per-token scores.
+ *
+ * Substring — not scattered-subsequence — matching is deliberate: a citation
+ * search is a "find the words I typed" filter (the same behaviour as the
+ * wikilink and sidebar filters), so `move` should match titles *containing*
+ * "move", not "**m**assive **o**bjects gra**v**itational **e**ffects". Returns
+ * null when any token misses — the signal, on a multi-word query, that the
+ * writer has typed past the citation into prose. An empty query matches
+ * everything at score 0 (source order preserved).
+ */
+export function scoreReferenceQuery(query: string, text: string): number | null {
+  const tokens = queryTokens(query);
+  if (tokens.length === 0) return 0;
+  let total = 0;
+  for (const token of tokens) {
+    const m = substringMatch(token, text);
+    if (!m) return null;
+    total += m.score;
+  }
+  return total;
+}
+
 function detectReferenceContext(view: EditorView): SuggestState {
   const { from: cursor } = view.state.selection.main;
   const line = view.state.doc.lineAt(cursor);
@@ -156,7 +210,9 @@ function detectReferenceContext(view: EditorView): SuggestState {
   if (atIdx < 0) return EMPTY;
 
   const query = textBefore.slice(atIdx + 1);
-  if (/\s/.test(query)) return EMPTY;
+  if (/^\s/.test(query)) return EMPTY;
+  if (query.length > QUERY_MAX_CHARS) return EMPTY;
+  if (queryTokens(query).length > QUERY_MAX_WORDS) return EMPTY;
 
   // Typst (and the backend's `extract_citations`) treat `@key` as a reference
   // wherever it appears — including right after a letter, digit, or a previous
@@ -183,7 +239,7 @@ function formatAuthors(authors: string[]): string {
 function searchText(item: RefItem): string {
   if (item.type === "citation") {
     const e = item.entry;
-    return `${e.key} ${e.title} ${e.authors.join(" ")}`;
+    return `${e.key} ${e.title} ${e.authors.join(" ")} ${e.year ?? ""}`;
   }
   const l = item.label;
   return `${l.name} ${l.display}`;
@@ -214,11 +270,7 @@ interface RenderGroup {
  * order (citations as returned, labels as scanned).
  */
 function buildGroups(entries: BibEntry[], labels: DocLabel[], query: string): RenderGroup[] {
-  const score = (item: RefItem): number | null => {
-    if (query === "") return 0;
-    const m = fuzzyMatch(query, searchText(item));
-    return m ? m.score : null;
-  };
+  const score = (item: RefItem): number | null => scoreReferenceQuery(query, searchText(item));
   const collect = (items: RefItem[]): RefItem[] => {
     const scored: { item: RefItem; score: number }[] = [];
     for (const item of items) {
@@ -270,6 +322,15 @@ async function showPopup(view: EditorView, state: SuggestState) {
   filteredItems = groups.flatMap((g) => g.items);
 
   if (filteredItems.length === 0) {
+    // A multi-word query that matches nothing means the writer has typed past
+    // the citation into ordinary prose ("@note this is just text") — close
+    // silently rather than nag with a "no results" box. A single-token miss
+    // ("@zzz", no space yet) is still an active search the writer may be mid-
+    // typing or about to correct, so the box stays up.
+    if (/\s/.test(state.query)) {
+      hidePopup();
+      return;
+    }
     el.innerHTML = "";
     el.classList.remove("has-preview");
     const empty = document.createElement("div");

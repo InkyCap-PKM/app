@@ -520,6 +520,91 @@ pub async fn pick_and_upload_to_attachments(
     Ok(saved)
 }
 
+/// Open a native `.csl` file-picker and bring the chosen citation style into
+/// the notebox, returning the notebox-root-absolute path (`/styles/<file>.csl`)
+/// to store in `citations.custom_csl_path`, or `None` if the user cancelled.
+///
+/// CSL styles must live inside the notebox: the Typst compile `World` only
+/// reads files under the notebox root, so a style referenced by an arbitrary
+/// OS path (e.g. `~/Downloads/foo.csl`) is rejected with `AccessDenied` and the
+/// export fails. A file already inside the notebox is referenced in place;
+/// anything outside is copied into the notebox's `styles/` folder so the style
+/// travels with the notebox (the self-contained-notebox principle). This
+/// mirrors how attachments funnel in via [`pick_and_upload_to_attachments`];
+/// running the picker in Rust means a compromised renderer can't forge the
+/// source path.
+#[tauri::command]
+pub async fn import_csl_style(
+    title: String,
+    filter_name: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Option<String>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    if session.is_documentation() {
+        return Err(InkyCapError::DocumentationReadOnly);
+    }
+    use tauri_plugin_dialog::DialogExt;
+
+    // Start the picker in the notebox root (encouraging in-notebox styles),
+    // falling back to the user's home directory.
+    let root = session.notebox_root.read().await.clone();
+    let start_dir = root.clone().or_else(|| app.path().home_dir().ok());
+
+    let app_for_picker = app.clone();
+    let picked = tokio::task::spawn_blocking(move || {
+        let mut builder = app_for_picker
+            .dialog()
+            .file()
+            .set_title(title)
+            .add_filter(filter_name, &["csl"]);
+        if let Some(dir) = start_dir {
+            builder = builder.set_directory(dir);
+        }
+        builder.blocking_pick_file()
+    })
+    .await
+    .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("dialog join error: {e}"))))?;
+
+    let Some(picked) = picked else {
+        return Ok(None); // user cancelled
+    };
+
+    let pb: PathBuf = picked
+        .into_path()
+        .map_err(|e| InkyCapError::InvalidPath(format!("invalid file path: {e}")))?;
+    if !pb.is_file() {
+        return Err(InkyCapError::InvalidPath(format!(
+            "selection is not a regular file: {}",
+            pb.display()
+        )));
+    }
+
+    // If the chosen file already lives inside the notebox, reference it in
+    // place rather than copying — it already travels with the notebox.
+    if let Some(ref root) = root {
+        if let Ok(canonical) = std::fs::canonicalize(&pb) {
+            if let Ok(rel) = canonical.strip_prefix(root) {
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                return Ok(Some(format!("/{rel}")));
+            }
+        }
+    }
+
+    let filename = pb
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            InkyCapError::InvalidPath(format!("source has no filename: {}", pb.display()))
+        })?;
+    let data = tokio::fs::read(&pb).await?;
+    let rel = write_into_notebox_subfolder("styles", &filename, &data, &app, &session).await?;
+    // Stored notebox-root-absolute so it injects as `style: "/styles/foo.csl"`
+    // and resolves against the notebox root in the Typst compile World.
+    Ok(Some(format!("/{rel}")))
+}
+
 /// One file offered by [`pick_files_for_import`]: its frontend path string and
 /// whether it's a markdown source (so the UI can ask "convert to Typst?" only
 /// for those). Non-markdown files are always copied in as attachments.
@@ -736,6 +821,27 @@ async fn write_to_attachments(
     app: &tauri::AppHandle,
     session: &NoteboxSession,
 ) -> Result<String, InkyCapError> {
+    let attachment_folder = session
+        .notebox_settings
+        .read()
+        .await
+        .files
+        .attachment_folder
+        .clone();
+    write_into_notebox_subfolder(&attachment_folder, filename, data, app, session).await
+}
+
+/// Write `data` into `subfolder` (notebox-root-relative) under `filename`,
+/// resolving a collision-free name, and return the notebox-root-relative saved
+/// path with forward slashes. Backs both attachment imports (where `subfolder`
+/// is the configured attachment folder) and CSL-style imports (`styles`).
+async fn write_into_notebox_subfolder(
+    subfolder: &str,
+    filename: &str,
+    data: &[u8],
+    app: &tauri::AppHandle,
+    session: &NoteboxSession,
+) -> Result<String, InkyCapError> {
     let notebox_root = session.notebox_root.read().await;
     let root = notebox_root
         .as_ref()
@@ -743,7 +849,7 @@ async fn write_to_attachments(
         .clone();
     drop(notebox_root);
 
-    // Defense in depth: reject filenames that try to escape the attachment
+    // Defense in depth: reject filenames that try to escape the target
     // folder (e.g. `../../evil.png`). Basename-only enforcement is enough
     // because the webview/drag-drop path only ever gives us a name, but
     // validating explicitly means a future caller can't accidentally bypass.
@@ -752,20 +858,12 @@ async fn write_to_attachments(
         .ok_or_else(|| InkyCapError::InvalidPath(format!("invalid filename: {filename}")))?;
     if basename != std::ffi::OsStr::new(filename) {
         return Err(InkyCapError::InvalidPath(format!(
-            "attachment filename must not contain path separators: {filename}"
+            "filename must not contain path separators: {filename}"
         )));
     }
 
-    let attachment_folder = session
-        .notebox_settings
-        .read()
-        .await
-        .files
-        .attachment_folder
-        .clone();
-
-    let attach_dir = root.join(&attachment_folder);
-    // Validate the attachment folder is inside the notebox — protects against a
+    let attach_dir = root.join(subfolder);
+    // Validate the target folder is inside the notebox — protects against a
     // malicious settings file with an absolute / traversal path.
     let attach_dir = validate_notebox_path(&root, &attach_dir)?;
     tokio::fs::create_dir_all(&attach_dir).await?;

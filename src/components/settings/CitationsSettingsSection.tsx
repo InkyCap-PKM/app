@@ -187,14 +187,16 @@ export function CitationsSettingsSection() {
               type="button"
               class="settings__detect-btn"
               onClick={async () => {
-                const { open } = await import("@tauri-apps/plugin-dialog");
-                const result = await open({
-                  title: t("settings.citations.cslPickerTitle"),
-                  defaultPath: await noteboxRootDefault(),
-                  filters: [{ name: t("settings.citations.cslFilterName"), extensions: ["csl"] }],
-                });
-                if (result) {
-                  updateNoteboxSetting("citations", "custom_csl_path", result as string);
+                // Copy the chosen CSL into the notebox and store the
+                // notebox-root-absolute path it returns (`/styles/foo.csl`).
+                // A raw OS path can't be read by the sandboxed Typst compiler,
+                // so the style is brought inside the notebox here.
+                const stored = await ipc.importCslStyle(
+                  t("settings.citations.cslPickerTitle"),
+                  t("settings.citations.cslFilterName"),
+                );
+                if (stored) {
+                  updateNoteboxSetting("citations", "custom_csl_path", stored);
                 }
               }}
             >

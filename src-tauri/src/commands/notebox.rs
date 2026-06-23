@@ -1181,9 +1181,12 @@ fn seed_notebox_from_source_blocking(
                 nb_settings.citations.bibliography_path = None;
             }
         }
-        // Custom CSL path: same rule.
+        // Custom CSL path: notebox-root-absolute (`/styles/foo.csl`). Resolve
+        // it against the new notebox and clear it if the style file didn't
+        // travel (seeding copies `.inkycap/`, not the notebox's `styles/`
+        // folder), so the new notebox carries no dangling style reference.
         if let Some(ref csl) = nb_settings.citations.custom_csl_path {
-            if std::path::Path::new(csl).is_absolute() && !std::path::Path::new(csl).exists() {
+            if !target.join(csl.trim_start_matches('/')).exists() {
                 warnings.push(format!(
                     "Cleared citations.custom_csl_path (no longer resolves): {csl}"
                 ));
