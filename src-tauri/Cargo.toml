@@ -120,7 +120,15 @@ gtk = "0.18"
 # crate's freedesktop mount-detection is confused by the sandbox's bind mounts
 # and fails with EACCES trying to write /home/.Trash-$uid. The portal performs
 # the operation host-side, matching the behaviour of the non-sandboxed builds.
+# (A home-trash fallback in storage/local.rs covers portal versions where the
+# CVE-2026-40354 fix regressed sandboxed trashing.)
 ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
+
+# Percent-encoding for the FreeDesktop trashinfo `Path=` field, used by the
+# home-trash fallback that runs when the portal itself fails (the CVE-2026-40354
+# fix regressed sandboxed trashing on portal 1.20.4–1.21.1). Already in the tree
+# transitively via `url`; declared directly so the fallback owns its dependency.
+percent-encoding = "2"
 
 # Native clipboard reader for macOS (NSPasteboard via Objective-C
 # runtime). Used by read_clipboard_file_paths to get file URIs the
