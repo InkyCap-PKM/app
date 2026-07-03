@@ -20,6 +20,7 @@ import { getActiveTab } from "../stores/tabs";
 import { toastError, showToast } from "../stores/toasts";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
 import { useI18n } from "../lib/i18n";
+import { createHoverGuard } from "../lib/picker-hover";
 
 interface ScaffoldPickerProps {
   visible: boolean;
@@ -30,6 +31,19 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
   const t = useI18n();
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const hover = createHoverGuard();
+  let resultsEl: HTMLDivElement | undefined;
+
+  // Keep the keyboard-selected scaffold in view (the list nests inside <Show>
+  // fallbacks, so scroll by the selected row's class rather than child index).
+  createEffect(() => {
+    selectedIndex();
+    query();
+    queueMicrotask(() => {
+      (resultsEl?.querySelector(".quick-open__result--selected") as HTMLElement | null)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  });
   const [entries] = createResource(
     () => props.visible,
     async (visible) => (visible ? await ipc.listScaffoldEntries() : []),
@@ -164,7 +178,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
-          <div class="quick-open__results scaffold-picker__results">
+          <div class="quick-open__results scaffold-picker__results" ref={resultsEl}>
             <Show
               when={!entries.loading && filtered().length > 0}
               fallback={
@@ -190,7 +204,7 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
                       e.preventDefault();
                       void insertScaffold(entry);
                     }}
-                    onMouseEnter={() => setSelectedIndex(index())}
+                    onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                   >
                     <span class="quick-open__result-name">{entry.name}</span>
                   </div>

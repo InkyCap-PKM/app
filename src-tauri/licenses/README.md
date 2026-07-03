@@ -40,6 +40,7 @@ licence point at the same file.
 | libgit2 (via `git2`) | git sync transport | GPL-2.0 + linking exception | `GPL-2.0-or-later.txt`, `NOTE-libgit2.txt` |
 | OpenSSL (vendored) | TLS for git | Apache-2.0 | `Apache-2.0.txt` |
 | SQLite (via `rusqlite`) | index/cache database | Public Domain | `NOTE-sqlite.txt` |
+| ashpd (Linux only) | XDG Desktop Portal client (flatpak trash) | MIT | `MIT.txt` |
 | stopwords-iso | Mycelial View stopword lists | MIT | `MIT.txt` |
 
 Licence texts are the verbatim SPDX reference copies

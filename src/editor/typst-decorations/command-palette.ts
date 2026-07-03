@@ -189,6 +189,9 @@ interface PaletteState {
 
 const EMPTY: PaletteState = { active: false, from: 0, query: "" };
 
+/** How many rows PageUp/PageDown jump by. Matches QuickOpen's PAGE_JUMP. */
+const PAGE_JUMP = 10;
+
 let popup: HTMLElement | null = null;
 let selectedIndex = 0;
 let filteredItems: PaletteItem[] = [];
@@ -395,15 +398,31 @@ function acceptItem(view: EditorView, state: PaletteState, item: PaletteItem) {
   });
 }
 
-function updateSelection(delta: number) {
+/** Move the selection to an absolute row index, updating the highlight and
+ *  scrolling it into view. Callers clamp or wrap the index as appropriate. */
+function moveSelection(next: number) {
   const el = getPopup();
   const items = el.querySelectorAll(".command-palette__item");
   if (items.length === 0) return;
 
   items[selectedIndex]?.classList.remove("is-selected");
-  selectedIndex = (selectedIndex + delta + filteredItems.length) % filteredItems.length;
+  selectedIndex = next;
   items[selectedIndex]?.classList.add("is-selected");
   (items[selectedIndex] as HTMLElement)?.scrollIntoView({ block: "nearest" });
+}
+
+/** Arrow-key step: wraps around the ends (down from last → first). */
+function updateSelection(delta: number) {
+  if (filteredItems.length === 0) return;
+  moveSelection((selectedIndex + delta + filteredItems.length) % filteredItems.length);
+}
+
+/** PageUp/PageDown jump: clamps at the ends (wrapping would jump backwards
+ *  near a boundary, which reads as broken for a page key). */
+function pageSelection(delta: number) {
+  if (filteredItems.length === 0) return;
+  const next = Math.min(Math.max(selectedIndex + delta, 0), filteredItems.length - 1);
+  moveSelection(next);
 }
 
 /** Expand or collapse a group row (e.g. "More symbols…") inline: its children
@@ -469,6 +488,22 @@ function handleKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     updateSelection(-1);
+    return;
+  }
+
+  // PageUp/PageDown must be captured here too — otherwise they fall through
+  // to the document and scroll the note behind the open menu.
+  if (e.key === "PageDown") {
+    e.preventDefault();
+    e.stopPropagation();
+    pageSelection(PAGE_JUMP);
+    return;
+  }
+
+  if (e.key === "PageUp") {
+    e.preventDefault();
+    e.stopPropagation();
+    pageSelection(-PAGE_JUMP);
     return;
   }
 

@@ -115,6 +115,13 @@ biblatex = "0.11"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 
+# XDG Desktop Portal client. Used only when running inside a flatpak sandbox,
+# to route "move to trash" through the portal's Trash interface — the `trash`
+# crate's freedesktop mount-detection is confused by the sandbox's bind mounts
+# and fails with EACCES trying to write /home/.Trash-$uid. The portal performs
+# the operation host-side, matching the behaviour of the non-sandboxed builds.
+ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
+
 # Native clipboard reader for macOS (NSPasteboard via Objective-C
 # runtime). Used by read_clipboard_file_paths to get file URIs the
 # webview can't see because of WebKit's cross-origin clipboard

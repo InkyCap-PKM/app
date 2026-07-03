@@ -1,9 +1,10 @@
 import { errorText } from "../lib/errors";
-import { Component, createSignal, createResource, createMemo, For, Show } from "solid-js";
+import { Component, createSignal, createResource, createMemo, createEffect, For, Show } from "solid-js";
 import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
+import { createHoverGuard } from "../lib/picker-hover";
 
 interface CitationPickerProps {
   visible: boolean;
@@ -23,6 +24,16 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   const [loadError, setLoadError] = createSignal<string | null>(null);
+  const hover = createHoverGuard();
+  let resultsEl: HTMLDivElement | undefined;
+
+  // Keep the keyboard-selected row in view (this picker previously had no
+  // scroll-follow, so arrowing past the fold lost the selection off-screen).
+  createEffect(() => {
+    const idx = selectedIndex();
+    query();
+    (resultsEl?.children[idx] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+  });
 
   const [entries] = createResource(
     () => props.visible,
@@ -168,13 +179,13 @@ const CitationPicker: Component<CitationPickerProps> = (props) => {
             onKeyDown={handleKeyDown}
             ref={(el) => setTimeout(() => el.focus(), 0)}
           />
-          <div class="cmd-palette__results" onScroll={handleScroll}>
+          <div class="cmd-palette__results" ref={resultsEl} onScroll={handleScroll}>
             <For each={results()}>
               {(entry, index) => (
                 <div
                   class={`cmd-palette__result citation-picker__entry ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
                   onClick={() => handleSelect(entry)}
-                  onMouseEnter={() => setSelectedIndex(index())}
+                  onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                 >
                   <Show when={entry.title}>
                     <span class="citation-picker__title">{entry.title}</span>

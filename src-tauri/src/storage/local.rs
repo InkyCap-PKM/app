@@ -207,6 +207,21 @@ impl NoteboxStorage for LocalNoteboxStorage {
 
     async fn move_to_trash(&self, path: &Path) -> Result<()> {
         let full = self.resolve(path)?;
+
+        // Inside a flatpak sandbox the `trash` crate's freedesktop
+        // mount-detection is fooled by the sandbox's bind mounts: it decides
+        // the file lives on a different filesystem than ~/.local/share/Trash
+        // and falls back to the mount-level trash dir `/home/.Trash-$uid`,
+        // which isn't writable — so trashing fails with EACCES. Route through
+        // the XDG Desktop Portal instead, which trashes the file host-side and
+        // lands it in the user's normal trash, identical to the deb/rpm builds.
+        // Detected at runtime (not compile time) so one Linux binary behaves
+        // correctly both inside and outside the sandbox.
+        #[cfg(target_os = "linux")]
+        if is_flatpak() {
+            return trash_via_portal(&full).await;
+        }
+
         // trash::delete is blocking, run on spawn_blocking
         let full_clone = full.clone();
         tokio::task::spawn_blocking(move || {
@@ -216,6 +231,32 @@ impl NoteboxStorage for LocalNoteboxStorage {
         .await
         .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Join error: {}", e))))?
     }
+}
+
+/// True when the process is running inside a flatpak sandbox. `/.flatpak-info`
+/// is present in every flatpak sandbox and absent otherwise, making it the
+/// reliable marker (the `FLATPAK_ID` env var is not always propagated).
+#[cfg(target_os = "linux")]
+fn is_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
+/// Move a path to trash via the XDG Desktop Portal's Trash interface. The
+/// portal takes an open file descriptor (which it resolves host-side, outside
+/// the sandbox) rather than a path string. Opening the path read-only yields a
+/// valid fd for both regular files and directories on Linux.
+#[cfg(target_os = "linux")]
+async fn trash_via_portal(full: &Path) -> Result<()> {
+    use std::os::fd::AsFd;
+    let file = std::fs::File::open(full).map_err(|e| {
+        InkyCapError::Io(std::io::Error::other(format!(
+            "Trash error: opening {}: {e}",
+            full.display() // path-stringification-ok: subprocess/portal error message, not IPC
+        )))
+    })?;
+    ashpd::desktop::trash::trash_file(&file.as_fd())
+        .await
+        .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Trash error: {e}"))))
 }
 
 /// Single-pass WalkDir traversal that builds the full directory tree.

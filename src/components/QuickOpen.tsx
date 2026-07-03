@@ -13,6 +13,7 @@ import { fileList, type FileEntry } from "../stores/filelist";
 import { fuzzyMatch, type FuzzyMatch } from "../lib/fuzzy";
 import { openTab } from "../stores/tabs";
 import { useI18n } from "../lib/i18n";
+import { createHoverGuard } from "../lib/picker-hover";
 
 interface QuickOpenProps {
   visible: boolean;
@@ -46,6 +47,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
   // user scrolls or arrows toward the end; reset to one page on every query.
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   let resultsEl: HTMLDivElement | undefined;
+  const hover = createHoverGuard();
 
   // Keep the selected row visible as the selection moves past either edge of
   // the scroll viewport. `block: "nearest"` scrolls the minimum amount. We
@@ -266,7 +268,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
                 <div
                   class={`quick-open__result ${index() === selectedIndex() ? "quick-open__result--selected" : ""}`}
                   onClick={() => selectFile(item.entry)}
-                  onMouseEnter={() => setSelectedIndex(index())}
+                  onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                 >
                   <span class="quick-open__result-name">
                     <HighlightedName

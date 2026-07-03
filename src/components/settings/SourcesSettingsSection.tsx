@@ -75,6 +75,7 @@ const CATEGORIES: { categoryKey: string; items: SourceItem[] }[] = [
       { name: "OpenSSL", license: "Apache-2.0", url: "https://www.openssl.org/" },
       { name: "SQLite", license: "Public Domain", url: "https://www.sqlite.org/" },
       { name: "pulldown-cmark", license: "MIT", url: "https://github.com/raphlinus/pulldown-cmark" },
+      { name: "ashpd", license: "MIT", url: "https://github.com/bilelmoussaoui/ashpd" },
     ],
   },
   {
