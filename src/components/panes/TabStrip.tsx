@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onMount, onCleanup } from "solid-js";
+import { Component, For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import {
   tabs,
   setActiveTabId,
@@ -148,6 +148,35 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
   function scrollTabs(direction: -1 | 1) {
     scrollAreaRef?.scrollBy({ left: direction * 200, behavior: "smooth" });
   }
+
+  /** Scroll the active tab fully into view whenever it changes (or a new tab is
+   *  opened, which activates it). Without this, a tab opened past the right edge
+   *  stays clipped — its close × hidden — until the user manually clicks the ›
+   *  arrow, and the fixed-step arrow may not reveal the whole tab in one press.
+   *  We scroll by exactly the amount the tab overflows either edge, plus a small
+   *  buffer so the × isn't flush against the boundary. */
+  const ACTIVE_TAB_BUFFER = 8;
+  createEffect(() => {
+    const activeId = props.leaf.activeTabId;
+    // Depend on the tab set too: when a brand-new active tab is opened its DOM
+    // node isn't present yet at the moment activeTabId changes, so re-running on
+    // the tab list ensures we scroll once it has mounted.
+    stripTabs();
+    if (!activeId) return;
+    const area = scrollAreaRef;
+    if (!area) return;
+    // rAF so a just-opened tab's node is laid out before we measure it.
+    requestAnimationFrame(() => {
+      const el = area.querySelector<HTMLElement>(".tab--active");
+      if (!el) return;
+      const areaRect = area.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const overRight = elRect.right + ACTIVE_TAB_BUFFER - areaRect.right;
+      const overLeft = elRect.left - ACTIVE_TAB_BUFFER - areaRect.left;
+      if (overRight > 0) area.scrollBy({ left: overRight, behavior: "smooth" });
+      else if (overLeft < 0) area.scrollBy({ left: overLeft, behavior: "smooth" });
+    });
+  });
 
   onMount(() => {
     const el = scrollAreaRef;
