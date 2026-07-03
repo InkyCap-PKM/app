@@ -213,13 +213,13 @@ impl NoteboxStorage for LocalNoteboxStorage {
         // the file lives on a different filesystem than ~/.local/share/Trash
         // and falls back to the mount-level trash dir `/home/.Trash-$uid`,
         // which isn't writable — so trashing fails with EACCES. Route through
-        // the XDG Desktop Portal instead, which trashes the file host-side and
-        // lands it in the user's normal trash, identical to the deb/rpm builds.
-        // Detected at runtime (not compile time) so one Linux binary behaves
-        // correctly both inside and outside the sandbox.
+        // the flatpak-specific path instead, which trashes the file host-side
+        // and lands it in the user's normal trash, identical to the deb/rpm
+        // builds. Detected at runtime (not compile time) so one Linux binary
+        // behaves correctly both inside and outside the sandbox.
         #[cfg(target_os = "linux")]
         if is_flatpak() {
-            return trash_via_portal(&full).await;
+            return trash_in_flatpak(&full).await;
         }
 
         // trash::delete is blocking, run on spawn_blocking
@@ -241,6 +241,33 @@ fn is_flatpak() -> bool {
     Path::new("/.flatpak-info").exists()
 }
 
+/// Move a path to trash from inside a flatpak sandbox.
+///
+/// Prefers the XDG Desktop Portal, which trashes host-side and correctly
+/// handles files on external drives. But a range of widely-deployed portal
+/// versions (1.20.4 through 1.21.1) regressed: the CVE-2026-40354 symlink-race
+/// fix (GHSA-rqr9-jwwf-wxgj) compares the file's mount id as seen inside the
+/// sandbox against the host mount id, which never match under flatpak's bind
+/// mounts, so the portal rejects *every* sandboxed trash request with a generic
+/// "Failed to trash file" (xdg-desktop-portal#1972; fixed in 1.21.2 / 1.22.0 via
+/// PR #1982). When the portal fails, fall back to a spec-compliant move into the
+/// user's home trash — reachable because the flatpak holds `--filesystem=host`,
+/// so `~/.local/share/Trash` is the real host trash and shares a filesystem with
+/// any notebox under `$HOME`.
+#[cfg(target_os = "linux")]
+async fn trash_in_flatpak(full: &Path) -> Result<()> {
+    match trash_via_portal(full).await {
+        Ok(()) => Ok(()),
+        Err(portal_err) => trash_into_home_trash(full).map_err(|home_err| {
+            // Surface both causes: the portal failure explains why we fell back,
+            // the home-trash failure explains why the fallback couldn't recover.
+            InkyCapError::Io(std::io::Error::other(format!(
+                "portal trash failed ({portal_err}); home-trash fallback also failed ({home_err})"
+            )))
+        }),
+    }
+}
+
 /// Move a path to trash via the XDG Desktop Portal's Trash interface. The
 /// portal takes an open file descriptor (which it resolves host-side, outside
 /// the sandbox) rather than a path string. Opening the path read-only yields a
@@ -257,6 +284,103 @@ async fn trash_via_portal(full: &Path) -> Result<()> {
     ashpd::desktop::trash::trash_file(&file.as_fd())
         .await
         .map_err(|e| InkyCapError::Io(std::io::Error::other(format!("Trash error: {e}"))))
+}
+
+/// Move a path into the user's home trash, following the FreeDesktop.org Trash
+/// specification (`$XDG_DATA_HOME/Trash`, default `~/.local/share/Trash`).
+///
+/// This reimplements the small slice of the trash spec we need because the two
+/// off-the-shelf paths both fail inside the sandbox: the `trash` crate mis-detects
+/// the mount and the portal (1.20.4–1.21.1) rejects the request. Per CLAUDE.md's
+/// no-custom-code-unless-unreachable principle, this is the last-resort path.
+///
+/// The file is `rename`d into `Trash/files/<name>` and a matching
+/// `Trash/info/<name>.trashinfo` records its original location so the desktop can
+/// restore it. `rename` requires the file and the trash to share a filesystem;
+/// with `--filesystem=host` that holds for any notebox under `$HOME`. A notebox on
+/// a separate mount (external drive) produces `EXDEV`, which we report rather than
+/// silently copy — its correct home is the drive's own `.Trash-$uid`, which only a
+/// fixed portal can reach.
+#[cfg(target_os = "linux")]
+fn trash_into_home_trash(full: &Path) -> Result<()> {
+    use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
+
+    // The trashinfo `Path` is percent-encoded like a URL path: everything
+    // outside the RFC 3986 unreserved set is escaped, but `/` stays literal
+    // (matching glib's `g_uri_escape_string(path, "/", TRUE)`).
+    const TRASH_PATH: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'#')
+        .add(b'%')
+        .add(b'<')
+        .add(b'>')
+        .add(b'?')
+        .add(b'[')
+        .add(b'\\')
+        .add(b']')
+        .add(b'^')
+        .add(b'`')
+        .add(b'{')
+        .add(b'|')
+        .add(b'}');
+
+    let io_err = |ctx: &str, e: std::io::Error| {
+        // path-stringification-ok: portal/trash error message, not IPC.
+        InkyCapError::Io(std::io::Error::other(format!("home-trash: {ctx}: {e}")))
+    };
+
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .ok_or_else(|| {
+            InkyCapError::Io(std::io::Error::other(
+                "home-trash: neither XDG_DATA_HOME nor HOME is set",
+            ))
+        })?;
+
+    let trash = data_home.join("Trash");
+    let files_dir = trash.join("files");
+    let info_dir = trash.join("info");
+    std::fs::create_dir_all(&files_dir).map_err(|e| io_err("creating Trash/files", e))?;
+    std::fs::create_dir_all(&info_dir).map_err(|e| io_err("creating Trash/info", e))?;
+
+    let base = full.file_name().ok_or_else(|| {
+        InkyCapError::Io(std::io::Error::other("home-trash: path has no filename"))
+    })?;
+
+    // Reserve a unique name across both files/ and info/, disambiguating
+    // collisions with a numeric suffix as the spec prescribes.
+    let mut name = base.to_os_string();
+    let mut counter = 1u32;
+    loop {
+        let dest = files_dir.join(&name);
+        let info = info_dir.join(format!("{}.trashinfo", name.to_string_lossy()));
+        if !dest.exists() && !info.exists() {
+            break;
+        }
+        let mut candidate = base.to_os_string();
+        candidate.push(format!(".{counter}"));
+        name = candidate;
+        counter += 1;
+    }
+
+    // Write the info file *before* moving, so a restorer never sees an
+    // orphaned file with no recorded origin.
+    let encoded = percent_encode(full.as_os_str().as_encoded_bytes(), TRASH_PATH);
+    let deletion_date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+    let info_contents = format!("[Trash Info]\nPath={encoded}\nDeletionDate={deletion_date}\n");
+    let info_path = info_dir.join(format!("{}.trashinfo", name.to_string_lossy()));
+    std::fs::write(&info_path, info_contents).map_err(|e| io_err("writing trashinfo", e))?;
+
+    let dest = files_dir.join(&name);
+    if let Err(e) = std::fs::rename(full, &dest) {
+        // Roll back the info file so it doesn't dangle.
+        let _ = std::fs::remove_file(&info_path);
+        return Err(io_err("moving file into Trash/files", e));
+    }
+    Ok(())
 }
 
 /// Single-pass WalkDir traversal that builds the full directory tree.

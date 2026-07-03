@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "inkycap"
-version = "26.6.18"
+version = "26.7.2"
 dependencies = [
  "ashpd",
  "async-trait",
@@ -2880,6 +2880,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "percent-encoding",
  "pulldown-cmark",
  "rayon",
  "regex",
