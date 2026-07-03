@@ -2,7 +2,7 @@
 // Fuzzy searches all registered commands, shows keybinding hints.
 // Default (empty-query) view groups commands into collapsible categories.
 
-import { Component, createSignal, createMemo, For, Show } from "solid-js";
+import { Component, createSignal, createMemo, createEffect, For, Show } from "solid-js";
 import {
   searchCommands,
   primaryKeybinding,
@@ -10,6 +10,7 @@ import {
   type Command,
 } from "../lib/command-registry";
 import { useI18n } from "../lib/i18n";
+import { createHoverGuard } from "../lib/picker-hover";
 
 interface CommandPaletteProps {
   visible: boolean;
@@ -55,6 +56,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const [query, setQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [expandedCategory, setExpandedCategory] = createSignal<string | null>(null);
+  const hover = createHoverGuard();
 
   /** True when no query is entered. */
   const isDefaultList = () => query().trim().length === 0;
@@ -267,15 +269,21 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
     );
   }
 
-  /** Scroll the selected item into view. */
+  /** Keep the selected row in view. Runs on keyboard navigation (selectedIndex
+   *  changes) and on list rebuilds (query / expansion changes) alike — the
+   *  search-results view previously had no scroll-follow at all. */
   let resultsEl: HTMLDivElement | undefined;
-  function scrollSelectedIntoView() {
-    if (!resultsEl) return;
-    const selected = resultsEl.querySelector(".cmd-palette__result--selected, .cmd-palette__group-header--selected");
-    if (selected) {
-      (selected as HTMLElement).scrollIntoView({ block: "nearest" });
-    }
-  }
+  createEffect(() => {
+    selectedIndex();
+    query();
+    expandedCategory();
+    queueMicrotask(() => {
+      const selected = resultsEl?.querySelector(
+        ".cmd-palette__result--selected, .cmd-palette__group-header--selected",
+      );
+      (selected as HTMLElement | null)?.scrollIntoView({ block: "nearest" });
+    });
+  });
 
   return (
     <Show when={props.visible}>
@@ -309,8 +317,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                           setSelectedIndex(index());
                           toggleCategory(row.category);
                         }}
-                        onMouseEnter={() => setSelectedIndex(index())}
-                        ref={() => queueMicrotask(scrollSelectedIntoView)}
+                        onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                       >
                         <span class="cmd-palette__group-chevron">
                           {isExpanded() ? "▾" : "▸"}
@@ -329,8 +336,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                         close();
                         row.command.execute();
                       }}
-                      onMouseEnter={() => setSelectedIndex(index())}
-                      ref={() => queueMicrotask(scrollSelectedIntoView)}
+                      onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                     >
                       <span class="cmd-palette__result-title">
                         {row.command.title}
@@ -361,7 +367,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                       close();
                       item.command.execute();
                     }}
-                    onMouseEnter={() => setSelectedIndex(index())}
+                    onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                   >
                     <span class="cmd-palette__result-category">
                       {catLabel(item.command.category)}

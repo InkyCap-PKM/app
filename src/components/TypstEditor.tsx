@@ -32,6 +32,7 @@ import {
   getCachedEditorState,
   setCachedEditorState,
   getCachedScroll,
+  setCachedScroll,
   getCachedReadingScroll,
   setCachedReadingScroll,
   closeTab,
@@ -279,6 +280,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     const client = getLspClient();
     const uri = props.path ? buildDocumentUri(props.path) : undefined;
     const cached = getCachedEditorState(props.tabId, props.path);
+    const restoreScroll = getCachedScroll(props.tabId, props.path);
     editorHandle = createTypstEditor({
       parent: editorMountRef,
       doc: docText(),
@@ -292,8 +294,43 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       documentUri: uri,
       onUpdate: onDocUpdate,
       restoreState: cached,
-      restoreScroll: getCachedScroll(props.tabId, props.path),
+      restoreScroll,
     });
+    // Remember the scroll offset continuously (rAF-throttled) so returning to
+    // this editor — from reading mode or another tab — lands where the user left
+    // off. This must be live, not snapshotted at teardown: destroyEditor runs
+    // from a createEffect, which fires after Solid's render effects have already
+    // removed the editor div, so a teardown snapshot reads a detached scroller
+    // and captures the top. Mirrors the reading view's attachReadingScrollMemory.
+    {
+      const scroller = editorHandle.view.scrollDOM;
+      let queued = false;
+      scroller.addEventListener(
+        "scroll",
+        () => {
+          if (queued || !editorHandle) return;
+          queued = true;
+          requestAnimationFrame(() => {
+            queued = false;
+            if (editorHandle) setCachedScroll(props.tabId, props.path, editorHandle.scrollSnapshot());
+          });
+        },
+        { passive: true },
+      );
+    }
+    // Re-assert the restored scroll once layout has settled. The constructor's
+    // `scrollTo` is applied while the editor container is being swapped back in
+    // (e.g. returning from reading mode), before it has a measured height — so
+    // CM scrolls a zero-height scroller and the position is lost. Redispatching
+    // the (document-anchored) snapshot on the next frame, once the container is
+    // laid out, restores the user's place.
+    if (restoreScroll) {
+      const handle = editorHandle;
+      requestAnimationFrame(() => {
+        if (handle !== editorHandle) return; // remounted/destroyed meanwhile
+        handle.view.dispatch({ effects: restoreScroll });
+      });
+    }
     if (cached) {
       usedCachedState = true;
       currentPath = props.path;
@@ -315,17 +352,14 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   function destroyEditor() {
     if (editorHandle) {
-      // Snapshot the editor state before tearing the view down so the next
-      // mount of this tab can restore doc + selection + undo history + scroll
-      // position.
+      // Snapshot doc + selection + undo history before tearing the view down so
+      // the next mount of this tab restores them. Scroll is NOT captured here —
+      // by the time this createEffect-driven teardown runs, Solid's render
+      // effects have already detached the editor div, so the scroller reads 0.
+      // Scroll is tracked live in mountEditor instead (see setCachedScroll).
       if (currentPath) {
         try {
-          setCachedEditorState(
-            props.tabId,
-            currentPath,
-            editorHandle.serializeState(),
-            editorHandle.scrollSnapshot(),
-          );
+          setCachedEditorState(props.tabId, currentPath, editorHandle.serializeState());
         } catch (err) {
           console.error("[TypstEditor] failed to cache editor state:", err);
         }

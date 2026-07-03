@@ -1,10 +1,11 @@
-import { Component, createSignal, createResource, For, Show } from "solid-js";
+import { Component, createSignal, createResource, createEffect, For, Show } from "solid-js";
 import type { BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { activeEditorView } from "../stores/editor";
 import { useI18n } from "../lib/i18n";
 import { ArrowLeft } from "lucide-solid";
 import CitationPicker from "./CitationPicker";
+import { createHoverGuard } from "../lib/picker-hover";
 
 interface RefNotePickerProps {
   visible: boolean;
@@ -16,6 +17,20 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
   const [selectedEntry, setSelectedEntry] = createSignal<BibEntry | null>(null);
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [filter, setFilter] = createSignal("");
+  const hover = createHoverGuard();
+  let resultsEl: HTMLDivElement | undefined;
+
+  // Keep the keyboard-selected note in view. The list sits inside nested
+  // <Show> blocks, so scroll by the selected row's class rather than child
+  // index.
+  createEffect(() => {
+    selectedIndex();
+    filter();
+    queueMicrotask(() => {
+      (resultsEl?.querySelector(".cmd-palette__result--selected") as HTMLElement | null)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  });
 
   const [notes] = createResource(
     () => selectedEntry()?.key,
@@ -131,7 +146,7 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
               autofocus
               ref={(el) => queueMicrotask(() => el.focus())}
             />
-            <div class="cmd-palette__results">
+            <div class="cmd-palette__results" ref={resultsEl}>
               <Show when={notes.loading}>
                 <div class="cmd-palette__empty">{t("refNotes.loadingNotes")}</div>
               </Show>
@@ -150,7 +165,7 @@ const RefNotePicker: Component<RefNotePickerProps> = (props) => {
                       <div
                         class={`cmd-palette__result ref-note-picker__note ${index() === selectedIndex() ? "cmd-palette__result--selected" : ""}`}
                         onClick={() => insertNote(note.content)}
-                        onMouseEnter={() => setSelectedIndex(index())}
+                        onMouseMove={(e) => hover.move(e, () => setSelectedIndex(index()))}
                       >
                         <span class="ref-note-picker__note-preview">
                           {notePreview(note.content)}

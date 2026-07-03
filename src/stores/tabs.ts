@@ -143,13 +143,18 @@ export function getCachedScroll(tabId: string, path: string): StateEffect<unknow
   return entry.scroll;
 }
 
-export function setCachedEditorState(
-  tabId: string,
-  path: string,
-  json: unknown,
-  scroll?: StateEffect<unknown>,
-): void {
-  patchCacheEntry(tabId, path, { json, scroll });
+export function setCachedEditorState(tabId: string, path: string, json: unknown): void {
+  patchCacheEntry(tabId, path, { json });
+}
+
+/** Cache the source/live-mode scroll position. Captured *continuously* while
+ *  the user scrolls (not at teardown): destroyEditor runs from a `createEffect`,
+ *  which fires after Solid's render effects have already removed the editor div,
+ *  so a snapshot taken there reads a detached scroller (scrollTop 0). Tracking
+ *  live avoids that ordering trap. The value is a document-anchored CM6 scroll
+ *  effect so it re-applies correctly regardless of viewport height at restore. */
+export function setCachedScroll(tabId: string, path: string, scroll: StateEffect<unknown>): void {
+  patchCacheEntry(tabId, path, { scroll });
 }
 
 export function getCachedReadingScroll(tabId: string, path: string): number | undefined {
