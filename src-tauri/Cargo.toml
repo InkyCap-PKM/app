@@ -1,6 +1,6 @@
 [package]
 name = "inkycap"
-version = "26.7.2"
+version = "26.7.3"
 edition = "2021"
 description = "A Tauri-based Typst editor for academic note-taking"
 
