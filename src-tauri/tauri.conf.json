@@ -59,7 +59,7 @@
       "icons/128x128.png"
     ],
     "externalBin": [
-      "binaries/tinymist"
+      "binaries/inkycap-tinymist"
     ],
     "resources": [
       "licenses/*"

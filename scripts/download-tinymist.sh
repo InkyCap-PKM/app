@@ -91,7 +91,7 @@ case "$TARGET" in
     ;;
 esac
 
-OUT_PATH="${BINARIES_DIR}/tinymist-${TARGET}${EXT}"
+OUT_PATH="${BINARIES_DIR}/inkycap-tinymist-${TARGET}${EXT}"
 
 if [[ -f "$OUT_PATH" ]]; then
   echo "Tinymist binary already exists at $OUT_PATH"

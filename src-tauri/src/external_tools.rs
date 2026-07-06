@@ -10,7 +10,7 @@
 //! program:
 //!
 //! * **Spawned from Rust**, not via the webview shell allowlist (which stays
-//!   pinned to `binaries/tinymist`). The exec decision lives inside the trust
+//!   pinned to `binaries/inkycap-tinymist`). The exec decision lives inside the trust
 //!   boundary.
 //! * **Resolved by id, never by path.** The frontend invokes a tool by its
 //!   stable `id`; the executable path is read only from persisted settings, so

@@ -45,7 +45,7 @@ export class LspTransport {
     // line-buffering. This is required because LSP response bodies
     // have no trailing newline — string mode would hold the body
     // in Tauri's internal buffer indefinitely.
-    const command = Command.sidecar("binaries/tinymist", args, {
+    const command = Command.sidecar("binaries/inkycap-tinymist", args, {
       encoding: "raw",
     });
 
