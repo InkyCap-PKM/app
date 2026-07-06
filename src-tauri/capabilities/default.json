@@ -12,8 +12,8 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/tinymist",
-          "cmd": "binaries/tinymist",
+          "name": "binaries/inkycap-tinymist",
+          "cmd": "binaries/inkycap-tinymist",
           "sidecar": true,
           "args": true
         }
@@ -23,8 +23,8 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "binaries/tinymist",
-          "cmd": "binaries/tinymist",
+          "name": "binaries/inkycap-tinymist",
+          "cmd": "binaries/inkycap-tinymist",
           "sidecar": true,
           "args": true
         }
