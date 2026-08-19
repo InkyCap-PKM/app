@@ -189,17 +189,26 @@ class InkycapSearchPanel implements Panel {
     });
     if (query.eq(this.query)) return;
     this.query = query;
-    // Remember exactly where the caret sits. Dispatching the query and
-    // advancing to the first match can re-select the whole search field;
-    // restoring the caret to where the user was typing (rather than forcing
-    // it to the end) keeps mid-word edits — backspacing inside a word —
-    // behaving normally.
-    const caret = this.searchField.selectionStart;
+    // Remember exactly where the caret sits so dispatching the query (which
+    // advances to the first match and can re-select the whole search field)
+    // doesn't force the caret to the end — that would break mid-word edits
+    // like backspacing inside a word.
+    //
+    // Guard this to the case where the search field is the one being edited.
+    // Calling `setSelectionRange` on the search field while the *replace*
+    // field has focus steals focus back to the search field on WebKit
+    // (macOS WKWebView), which is why typing in Replace jumped the caret up
+    // to Find. Chromium and Gecko don't focus on setSelectionRange, so Linux
+    // and Windows never exhibited it.
+    const editingSearch = document.activeElement === this.searchField;
+    const caret = editingSearch ? this.searchField.selectionStart : null;
     this.view.dispatch({ effects: setSearchQuery.of(query) });
     if (query.search) {
       findNext(this.view);
     }
-    if (caret != null) this.searchField.setSelectionRange(caret, caret);
+    if (editingSearch && caret != null) {
+      this.searchField.setSelectionRange(caret, caret);
+    }
   }
 
   /**
