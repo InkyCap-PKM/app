@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "inkycap"
-version = "26.7.2"
+version = "26.7.3"
 dependencies = [
  "ashpd",
  "async-trait",
