@@ -47,12 +47,20 @@ export const autoPairTypstInput = EditorView.inputHandler.of(
 
     // Triple backtick: when two backticks already precede the cursor,
     // insert the third backtick plus a code block template.
+    //
+    // The caret lands immediately *after* the opening fence, not on the body
+    // line — the language tag is the next thing a writer types, and it belongs
+    // on the fence (` ```typ `). Dropping into the body first forced a
+    // backspace-and-retype to name the language, which is the whole point of
+    // fencing a block. Enter on the fence line then steps down into the body
+    // rather than adding another blank line (see typstKeymap's Enter binding),
+    // so the full gesture is: ``` → language → Enter → code.
     if (text === "`") {
       const before = state.doc.sliceString(Math.max(0, from - 2), from);
       if (before === "``") {
         view.dispatch({
           changes: { from, to, insert: "`\n\n```" },
-          selection: EditorSelection.cursor(from + 2),
+          selection: EditorSelection.cursor(from + 1),
         });
         return true;
       }

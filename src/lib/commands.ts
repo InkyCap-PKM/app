@@ -18,13 +18,16 @@ import {
   createEmptyTab,
   splitPane,
   closePane,
+  nudgeTabReadingZoom,
+  resetTabReadingZoom,
+  READING_ZOOM_STEP,
 } from "../stores/tabs";
 import { focusedLeaf, focusAdjacentPane, hasMultiplePanes } from "../stores/panes";
 import { moveActiveFileInteractive } from "./move-file";
 import { deleteActiveFileInteractive } from "./delete-file";
 import { toggleTheme } from "../stores/theme";
 import { toggleDistractionFree, toggleLeftCollapsed, toggleRightCollapsed } from "../stores/layout";
-import { toggleScroll } from "../stores/journal-scroll";
+import { toggleScroll, isEnabled as isScrollEnabled } from "../stores/journal-scroll";
 import { cycleRegion, focusEditor } from "./focus-regions";
 import { openEditorReplace } from "../editor/search-panel";
 import { updateSetting, settings } from "../stores/settings";
@@ -66,6 +69,19 @@ export interface BuiltinCommandCallbacks {
 // Retained so `relocalizeCommands()` can re-register built-in commands with
 // fresh translated titles after a UI-language switch — see that function.
 let lastBuiltinCallbacks: BuiltinCommandCallbacks | null = null;
+
+/** Id of the tab whose compiled reading view is currently on screen, or null
+ *  when the active pane is showing something else. Used by the zoom commands
+ *  to decide whether "content" means the preview or the editor body. Journal
+ *  Scroll takes over the pane when enabled, so a reading-mode tab in scroll
+ *  mode isn't showing the reading view and doesn't count. */
+function activeReadingTabId(): string | null {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "file") return null;
+  if (tab.editingMode !== "reading") return null;
+  if (isScrollEnabled(tab.id)) return null;
+  return tab.id;
+}
 
 export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): void {
   lastBuiltinCallbacks = callbacks;
@@ -377,6 +393,12 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
   // the interface chrome, or both. Keeping that branching here (rather
   // than only in the keyboard handler) means the same behaviour applies
   // when zoom is triggered from the command palette.
+  //
+  // The "content" target resolves to whatever content is actually on screen:
+  // in reading mode that's the compiled preview, which zooms as a whole
+  // (page scale for SVG, layout zoom for HTML) rather than by nudging the
+  // editor's body font — a font-size bump wouldn't scale an SVG page at all.
+  // See `activeReadingTabId`.
   // "Ctrl+Plus" is ambiguous across keyboards: pressing the `=` key with
   // Ctrl (no Shift) produces `Ctrl+=`, holding Shift normalizes to `Ctrl+Shift+=`
   // (formatKeyCombo maps the shifted `+` glyph back to `=`), and the numpad
@@ -390,11 +412,15 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     execute: () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {
-        updateSetting(
-          "editor",
-          "body_font_size",
-          Math.min(32, settings.editor.body_font_size + 1),
-        );
+        const reading = activeReadingTabId();
+        if (reading) nudgeTabReadingZoom(reading, READING_ZOOM_STEP);
+        else {
+          updateSetting(
+            "editor",
+            "body_font_size",
+            Math.min(32, settings.editor.body_font_size + 1),
+          );
+        }
       }
       if (target === "interface" || target === "both") {
         updateSetting("editor", "font_size", Math.min(24, settings.editor.font_size + 1));
@@ -410,11 +436,15 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     execute: () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {
-        updateSetting(
-          "editor",
-          "body_font_size",
-          Math.max(8, settings.editor.body_font_size - 1),
-        );
+        const reading = activeReadingTabId();
+        if (reading) nudgeTabReadingZoom(reading, 1 / READING_ZOOM_STEP);
+        else {
+          updateSetting(
+            "editor",
+            "body_font_size",
+            Math.max(8, settings.editor.body_font_size - 1),
+          );
+        }
       }
       if (target === "interface" || target === "both") {
         updateSetting("editor", "font_size", Math.max(10, settings.editor.font_size - 1));
@@ -430,7 +460,9 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     execute: () => {
       const target = settings.appearance.zoom_target;
       if (target === "content" || target === "both") {
-        updateSetting("editor", "body_font_size", 17);
+        const reading = activeReadingTabId();
+        if (reading) resetTabReadingZoom(reading);
+        else updateSetting("editor", "body_font_size", 17);
       }
       if (target === "interface" || target === "both") {
         updateSetting("editor", "font_size", 15);

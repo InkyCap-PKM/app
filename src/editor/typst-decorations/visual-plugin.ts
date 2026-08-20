@@ -317,6 +317,31 @@ function isCursorAdjacentOrInside(_state: EditorState, from: number, to: number,
   return false;
 }
 
+/**
+ * True when collapsing a call into a chip/widget that replaces its whole
+ * source range would swallow the caret.
+ *
+ * `closeBrackets()` auto-inserts the `)` the moment the user types `(`, so a
+ * half-written `#figure(` is already a *syntactically complete* call with the
+ * caret parked between the parens. Replacing that range mid-keystroke makes
+ * the call vanish before its arguments have been typed — the visual editor's
+ * most jarring failure mode (issue #20).
+ *
+ * Proximity, not line, is the right granularity: these calls sit inline in
+ * prose, so revealing the whole line's source (the `showPill` rule) would
+ * churn the surrounding paragraph. The call re-collapses as soon as the caret
+ * leaves. Every branch of {@link handleFuncCall} that replaces a call's full
+ * range must consult this first.
+ */
+function collapseWouldSwallowCaret(
+  state: EditorState,
+  from: number,
+  to: number,
+  cursors: Set<number>,
+): boolean {
+  return isCursorAdjacentOrInside(state, from, to, cursors);
+}
+
 function nodeOverlapsRanges(from: number, to: number, ranges: { from: number; to: number }[]): boolean {
   for (const r of ranges) {
     if (from < r.to && to > r.from) return true;
@@ -1151,7 +1176,17 @@ function extractDateLiteral(s: string): string | null {
 // Block widgets that collapse to pill + editable value when cursor is on line.
 const BLOCK_WIDGET_FUNCS = new Set(["image", "video", "audio"]);
 
-function handleFuncCall(
+/**
+ * Decorate a single `#func(...)` / `#func[...]` call, pushing its decorations
+ * onto `decos`. Returns true when the caller should keep traversing the call's
+ * children (the body stays live source), false when this call owns its whole
+ * range (a widget replaced it, or the raw markup is deliberately exposed).
+ *
+ * Deliberately parser-independent — it works off the sliced source text, not
+ * the syntax tree — so the collapse rules can be unit-tested against a plain
+ * `EditorState` with no language configured (see func-collapse.test.ts).
+ */
+export function handleFuncCall(
   state: EditorState,
   from: number,
   to: number,
@@ -1302,6 +1337,10 @@ function handleFuncCall(
       return true;
     }
     case "line": {
+      // `#line(length: …, stroke: …)` takes arguments, so a hand-typed call
+      // must stay editable while the caret is in it — the rule renders once
+      // the caret leaves.
+      if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       if (/^#line\b/.test(text)) {
         decos.push(Decoration.replace({
           widget: showPill ? new FuncChipWidget(from, "line") : new HrWidget(),
@@ -1721,6 +1760,9 @@ function handleFuncCall(
       // raw `#bibliography(...)` source for inspection or editing — same
       // pattern as other expandable funcs.
       if (expandedPos === from) return false;
+      // Typing the path by hand must not be interrupted by the block widget
+      // replacing the call out from under the caret.
+      if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       const path = extractFirstStringArg(text) ?? "";
       let replaceEnd = to;
       const docLen = state.doc.length;
@@ -1757,7 +1799,13 @@ function handleFuncCall(
       // source" — drop the chip so the raw multi-line source is visible
       // and the cursor can land inside the body `[…]`. Re-collapses to
       // the chip once the cursor leaves, like the bibliography pill.
+      //
+      // "Always a chip" describes how the call reads when idle; it was written
+      // assuming insertion via the `/` palette (which dispatches expandFunc, so
+      // the source stays open). A hand-typed `#figure(` gets neither, so it
+      // needs the same caret guard every other call has.
       if (expandedPos === from) return false;
+      if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       decos.push(Decoration.replace({
         widget: new FuncChipWidget(from, "figure"),
       }).range(from, to));
@@ -1794,6 +1842,9 @@ function handleFuncCall(
         decos.push(hide.range(content.to, to));
         return true;
       }
+      // An arguments-only call (`#func(…)`, no `[…]` body) collapses to a
+      // chip — but not while the caret is inside it.
+      if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       decos.push(Decoration.replace({
         widget: new FuncChipWidget(from, funcName),
       }).range(from, to));

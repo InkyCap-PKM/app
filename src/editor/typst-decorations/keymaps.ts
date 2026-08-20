@@ -283,6 +283,48 @@ function insertListItem(state: EditorState, marker: string): { changes: ChangeSp
   };
 }
 
+/** The tail of a just-opened, still-empty code block, measured from the end of
+ *  its opening fence: one empty body line, then the closing fence (which may be
+ *  indented along with the block). Exactly what the ``` gesture produces. */
+const EMPTY_FENCE_TAIL = /^\n\n[ \t]*```$/;
+
+/**
+ * Move the caret from the end of a just-opened code fence down into the
+ * block's empty body line, returning true when it did.
+ *
+ * Whether a ` ``` ` line *opens* a block or *closes* one depends on every
+ * fence above it, so the question is put to the syntax tree rather than
+ * answered by counting backticks here — per CLAUDE.md's Typst-first principle,
+ * and because a hand-rolled version got it wrong: the caret at the end of a
+ * block's *closing* fence, with a blank line and another fence below, looked
+ * identical to an opener.
+ *
+ * Fires only on the exact shape the ``` gesture produces — the caret at the end
+ * of the line the raw block starts on, one empty body line, closing fence.
+ * A body with content, an unterminated block, or a caret mid-line all fall
+ * through to normal Enter.
+ */
+function stepIntoOpenFence(view: EditorView): boolean {
+  const sel = view.state.selection.main;
+  if (!sel.empty) return false;
+  const doc = view.state.doc;
+  const line = doc.lineAt(sel.head);
+  if (sel.head !== line.to) return false;
+
+  let raw = syntaxTree(view.state).resolveInner(sel.head, -1);
+  while (raw.name !== "Raw") {
+    if (!raw.parent) return false;
+    raw = raw.parent;
+  }
+  // The block must start on the caret's own line — otherwise the caret is
+  // somewhere inside (or at the end of) an existing block, not on its opener.
+  if (raw.from < line.from) return false;
+  if (!EMPTY_FENCE_TAIL.test(doc.sliceString(line.to, raw.to))) return false;
+
+  view.dispatch({ selection: { anchor: line.to + 1 }, scrollIntoView: true });
+  return true;
+}
+
 function continueList(state: EditorState): { changes: ChangeSpec; selection: { anchor: number } } | null {
   const { from } = state.selection.main;
   const line = state.doc.lineAt(from);
@@ -593,6 +635,16 @@ export const typstKeymap: KeyBinding[] = [
           }
         }
       }
+      // Enter at the end of a freshly-opened code fence steps *into* the
+      // block instead of inserting another blank line. The ``` gesture leaves
+      // the caret on the fence so the language can be typed (see
+      // auto-pair-typst.ts); Enter is then the natural way to start writing
+      // code, and without this it would push a second empty line into a block
+      // that already has one. Deliberately narrow — it only fires on the exact
+      // shape that gesture produces (fence line, one empty body line, closing
+      // fence), so an ordinary Enter before a blank line is untouched.
+      if (stepIntoOpenFence(view)) return true;
+
       const listResult = continueList(view.state);
       if (listResult) {
         view.dispatch({ changes: listResult.changes, selection: listResult.selection });

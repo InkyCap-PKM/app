@@ -7,12 +7,18 @@
 import { LanguageDescription, LanguageSupport } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { classHighlighter, highlightCode } from "@lezer/highlight";
+import { isTypstFenceLang, typstSnippetSupport } from "./typst-snippet-lang";
 
 const langCache = new Map<string, Promise<LanguageSupport | null>>();
 
 function loadLanguage(name: string): Promise<LanguageSupport | null> {
   const key = name.toLowerCase().trim();
   if (!key) return Promise.resolve(null);
+  // Typst isn't in `@codemirror/language-data`, so it must be resolved before
+  // the registry lookup below — otherwise a ```typ block falls through to
+  // plain text. Its support is bundled and memoized, so it needs no cache
+  // entry of its own (see typst-snippet-lang.ts).
+  if (isTypstFenceLang(key)) return Promise.resolve(typstSnippetSupport());
   let p = langCache.get(key);
   if (!p) {
     // matchLanguageName only checks names + aliases, so "py" wouldn't find
