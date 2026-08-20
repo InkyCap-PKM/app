@@ -7184,6 +7184,61 @@ input.date-value__offset {
   white-space: nowrap;
 }
 
+/* Introductory hint + "reset all" control above the editable UI-shortcut list. */
+.help-panel__ui-hint {
+  padding: 4px 12px 8px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.help-panel__reset-all {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 8px 6px;
+}
+
+/* Right-hand cluster of an editable shortcut row: the record button plus an
+   optional reset control. Centred so the compact button aligns with the label
+   (the row itself is baseline-aligned for the read-only keycap rows). */
+.help-panel__row-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Editable combo, styled to echo the keycap chips but read as a button. */
+.help-panel__hotkey-btn {
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.help-panel__hotkey-btn:hover {
+  border-color: var(--accent);
+}
+
+.help-panel__hotkey-btn.recording {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* Per-row reset — a small ui-icon-btn; shrink to sit beside the compact combo. */
+.help-panel__reset.ui-icon-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+
 /* Inline syntax sample (typing shortcuts, Typst/Markdown markup). */
 .help-panel__syntax {
   flex-shrink: 0;

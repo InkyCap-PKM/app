@@ -11,19 +11,31 @@
 //                shortcuts, and the notebox primitives (help-content.ts).
 
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
-import { X } from "lucide-solid";
+import { X, RotateCcw } from "lucide-solid";
 import { useI18n } from "../lib/i18n";
 import { isMac } from "../lib/platform";
 import * as ipc from "../lib/ipc";
-import { toastError } from "../stores/toasts";
+import { toastError, toastWarning } from "../stores/toasts";
+import { promptConfirm } from "../stores/prompt";
 import { Dropdown } from "./Dropdown";
+import HotkeyRecorder from "./HotkeyRecorder";
 import { TypstDocIcon } from "./icons";
 import inkycapLogo from "../assets/inkycap-logo.svg";
 import {
   searchCommands,
   primaryKeybinding,
+  defaultKeybinding,
+  isKeybindingCustomized,
   CATEGORY_LABEL_KEYS,
 } from "../lib/command-registry";
+import {
+  setShortcut,
+  unbindShortcut,
+  resetShortcut,
+  resetAllShortcuts,
+  findShortcutConflict,
+  shortcutOverrideCount,
+} from "../lib/shortcuts";
 import { VISUAL_EDITOR_KEYS, MARKUP_REFERENCE } from "../lib/help-content";
 import { openDocumentationWindow } from "../lib/docs-window";
 
@@ -34,6 +46,11 @@ type HelpView = "ui" | "visual" | "markup";
 // stored tokens to the conventional glyphs for display only.
 const MAC_KEY_LABELS: Record<string, string> = { Ctrl: "⌘", Shift: "⇧", Alt: "⌥" };
 const keyLabel = (k: string): string => (isMac() ? MAC_KEY_LABELS[k] ?? k : k);
+
+/** A keybinding as a single platform-correct display string for the editable
+ *  record button ("⌘⇧O" on macOS, "Ctrl+Shift+O" elsewhere). */
+const comboDisplay = (combo: string): string =>
+  combo.split("+").map(keyLabel).join(isMac() ? "" : "+");
 
 /** Render a keybinding string ("Ctrl+Shift+M") as discrete keycap chips,
  *  using the platform-correct modifier glyphs. */
@@ -72,11 +89,22 @@ const HelpPanel: Component = () => {
   interface UiRow {
     id: string;
     title: string;
-    combo: string;
+    /** Effective binding (undefined when the user has unbound it). */
+    combo: string | undefined;
+    /** Whether this row can be rebound in place. Creation-rule commands and the
+     *  parametric tab-switch row are shown read-only (edited elsewhere / not a
+     *  registry command). */
+    editable: boolean;
+    /** Whether the user has customized this binding (drives the reset button). */
+    customized: boolean;
+    /** Factory-default binding, for the reset tooltip. */
+    defaultCombo: string | undefined;
   }
 
-  // View "ui": every command that has a global keybinding, grouped by category
-  // (canonical order) and sorted alphabetically by title within each group.
+  // View "ui": every command that has (or ever had) a global keybinding,
+  // grouped by category (canonical order) and sorted alphabetically by title.
+  // A command the user has explicitly unbound stays listed — with no combo and
+  // a reset control — so it can be rebound.
   const uiGroups = createMemo(() => {
     const byCat = new Map<string, UiRow[]>();
     const push = (cat: string, row: UiRow) => {
@@ -86,18 +114,34 @@ const HelpPanel: Component = () => {
     };
 
     for (const c of allCommands()) {
-      const combo = primaryKeybinding(c.keybinding);
-      if (!combo) continue;
-      if (!matches(c.title, combo)) continue;
-      push(c.category, { id: c.id, title: c.title, combo });
+      const effective = primaryKeybinding(c.keybinding);
+      const factory = primaryKeybinding(defaultKeybinding(c.id));
+      // Only commands that are (or were) bound belong in this view; markup
+      // commands carry a typing `shortcut`, not a keybinding, and are excluded.
+      if (!effective && !factory) continue;
+      if (!matches(c.title, effective, factory)) continue;
+      // Creation-rule hotkeys have their own editor in Settings; show them
+      // here for reference but not editable, to keep one source of truth.
+      const editable = c.category !== "Creation Rules";
+      push(c.category, {
+        id: c.id,
+        title: c.title,
+        combo: effective,
+        editable,
+        customized: editable && isKeybindingCustomized(c.id),
+        defaultCombo: factory,
+      });
     }
 
     // Parametric tab-switch shortcut: handled directly in keyboard.ts (Ctrl+1…9),
-    // so it isn't a registry command but belongs in the reference.
+    // so it isn't a registry command but belongs in the reference (read-only).
     const tabRow: UiRow = {
       id: "navigate:switch-tab-n",
       title: t("help.ui.switchTab"),
       combo: "Ctrl+1…9",
+      editable: false,
+      customized: false,
+      defaultCombo: "Ctrl+1…9",
     };
     if (matches(tabRow.title, tabRow.combo)) push("Navigate", tabRow);
 
@@ -140,6 +184,20 @@ const HelpPanel: Component = () => {
     { value: "visual" as const, label: t("help.view.visual") },
     { value: "markup" as const, label: t("help.view.markup") },
   ];
+
+  // Reactive: reads the settings store via shortcutOverrideCount(), so the
+  // "reset all" control appears/disappears as bindings are customized/reset.
+  const hasCustomShortcuts = createMemo(() => shortcutOverrideCount() > 0);
+
+  async function handleResetAllShortcuts() {
+    const ok = await promptConfirm({
+      title: t("shortcuts.resetAllTitle"),
+      message: t("shortcuts.resetAllConfirm"),
+      confirmLabel: t("shortcuts.resetAll"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (ok) resetAllShortcuts();
+  }
 
   // Typst docs open in the OS browser (external). InkyCap docs open the bundled
   // system documentation notebox in its own window (the backend seeds it on
@@ -214,8 +272,18 @@ const HelpPanel: Component = () => {
         </div>
       </div>
 
-      {/* UI shortcuts */}
+      {/* UI shortcuts — each row is editable: click the binding to record a
+          new combo, Backspace to unbind, Escape to cancel. Reset restores the
+          default. */}
       <Show when={view() === "ui"}>
+        <div class="help-panel__ui-hint">{t("shortcuts.editHint")}</div>
+        <Show when={hasCustomShortcuts()}>
+          <div class="help-panel__reset-all">
+            <button class="btn btn--ghost btn--sm" onClick={handleResetAllShortcuts}>
+              {t("shortcuts.resetAll")}
+            </button>
+          </div>
+        </Show>
         <Show
           when={uiGroups().length > 0}
           fallback={<div class="help-panel__empty">{t("help.empty")}</div>}
@@ -228,7 +296,48 @@ const HelpPanel: Component = () => {
                   {(row) => (
                     <div class="help-panel__row">
                       <span class="help-panel__label">{row.title}</span>
-                      <KeyCombo combo={row.combo} />
+                      <Show
+                        when={row.editable}
+                        fallback={row.combo ? <KeyCombo combo={row.combo} /> : null}
+                      >
+                        <div class="help-panel__row-edit">
+                          <HotkeyRecorder
+                            buttonClass="help-panel__hotkey-btn"
+                            value={row.combo ? comboDisplay(row.combo) : undefined}
+                            noneLabel={t("shortcuts.unbound")}
+                            recordingLabel={t("shortcuts.recording")}
+                            ariaLabel={t("shortcuts.editAria", { name: row.title })}
+                            findConflict={(c) => {
+                              const conflict = findShortcutConflict(c, row.id);
+                              if (!conflict) return null;
+                              return conflict.reserved
+                                ? t("shortcuts.reservedLabel")
+                                : conflict.label;
+                            }}
+                            onChange={(c) => setShortcut(row.id, c)}
+                            onClear={() => unbindShortcut(row.id)}
+                            onConflict={(c, conflict) =>
+                              toastWarning(
+                                t("shortcuts.conflictToast", { combo: c, conflict }),
+                              )
+                            }
+                          />
+                          <Show when={row.customized}>
+                            <button
+                              class="ui-icon-btn help-panel__reset"
+                              onClick={() => resetShortcut(row.id)}
+                              title={t("shortcuts.resetTitle", {
+                                combo: row.defaultCombo
+                                  ? comboDisplay(row.defaultCombo)
+                                  : t("common.none"),
+                              })}
+                              aria-label={t("shortcuts.resetAria", { name: row.title })}
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+                          </Show>
+                        </div>
+                      </Show>
                     </div>
                   )}
                 </For>

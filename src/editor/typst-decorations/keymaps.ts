@@ -677,3 +677,54 @@ export const typstKeymap: KeyBinding[] = [
   { key: "Shift-Alt-ArrowUp", run: (view) => { try { if (!moveListItem(view, -1)) moveLineUp(view); } catch { /* swallow: never fall through to page scroll */ } return true; } },
   { key: "Shift-Alt-ArrowDown", run: (view) => { try { if (!moveListItem(view, 1)) moveLineDown(view); } catch { /* swallow */ } return true; } },
 ];
+
+/**
+ * Convert a CodeMirror keymap `key` string ("Mod-Shift-x") into the command
+ * registry's canonical combo form ("Ctrl+Shift+X"), matching `formatKeyCombo`
+ * in `lib/keybindings.ts`. `Mod`/`Cmd`/`Meta` fold into `Ctrl`; modifiers are
+ * emitted in the canonical Ctrl→Shift→Alt order; arrow keys map to short
+ * names. Returns null for a bare key (no modifier, not a function key) — those
+ * never normalize to a bindable global shortcut, so they can't collide.
+ */
+function canonicalizeCmKey(key: string | undefined): string | null {
+  if (!key) return null;
+  const parts = key.split("-");
+  const base = parts[parts.length - 1];
+  const mods = new Set(parts.slice(0, -1).map((m) => m.toLowerCase()));
+  const hasCtrl = mods.has("mod") || mods.has("ctrl") || mods.has("cmd") || mods.has("meta");
+  const hasShift = mods.has("shift");
+  const hasAlt = mods.has("alt") || mods.has("option");
+
+  let k = base;
+  if (k === "ArrowUp") k = "Up";
+  else if (k === "ArrowDown") k = "Down";
+  else if (k === "ArrowLeft") k = "Left";
+  else if (k === "ArrowRight") k = "Right";
+  else if (k.length === 1) k = k.toUpperCase();
+
+  const isFKey = /^F\d{1,2}$/.test(k);
+  if (!hasCtrl && !hasShift && !hasAlt && !isFKey) return null;
+
+  const ordered: string[] = [];
+  if (hasCtrl) ordered.push("Ctrl");
+  if (hasShift) ordered.push("Shift");
+  if (hasAlt) ordered.push("Alt");
+  ordered.push(k);
+  return ordered.join("+");
+}
+
+/**
+ * The subset of in-editor `typstKeymap` bindings that could collide with a
+ * global UI shortcut, expressed in the registry's canonical combo form. The
+ * shortcut-customization conflict check consults this so a user can't rebind a
+ * global shortcut onto an editor formatting key (e.g. Ctrl+B bold). Derived
+ * from `typstKeymap` itself, so it stays in sync as editor bindings change.
+ */
+export function editorReservedCombos(): string[] {
+  const out: string[] = [];
+  for (const binding of typstKeymap) {
+    const combo = canonicalizeCmKey(binding.key);
+    if (combo) out.push(combo);
+  }
+  return out;
+}

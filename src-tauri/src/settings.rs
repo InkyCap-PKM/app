@@ -2,6 +2,7 @@
 // All fields use serde(default) so missing keys get sensible defaults.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::errors::Result;
@@ -243,6 +244,24 @@ pub struct UpdateSettings {
     pub include_beta: bool,
 }
 
+/// User overrides for global UI keyboard shortcuts.
+///
+/// The default keybinding of every command lives in the frontend command
+/// registry (`src/lib/commands.ts`); this map records only the *deltas* a
+/// user has made. Keys are command ids (e.g. `"file:quick-open"`); a value
+/// of `Some("Ctrl+Shift+O")` rebinds the command, while `None` means the
+/// user explicitly unbound it (the command keeps its default action but has
+/// no active hotkey). A command absent from the map uses its registry
+/// default. Combos are stored in the frontend's platform-neutral canonical
+/// form (`Cmd` folded into `Ctrl`), so one override file works across
+/// macOS/Linux/Windows. Rust only round-trips the map — all resolution and
+/// conflict-checking happens frontend-side.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ShortcutSettings {
+    pub overrides: HashMap<String, Option<String>>,
+}
+
 /// Typst-facing document defaults that affect compilation, reading view,
 /// and export. User-global because typography is tuned to the device the
 /// user is writing on (display size, eye comfort); a notebox or collection
@@ -458,6 +477,7 @@ pub struct UserSettings {
     pub backup: BackupSettings,
     pub external_tools: ExternalToolSettings,
     pub updates: UpdateSettings,
+    pub shortcuts: ShortcutSettings,
 }
 
 /// A user-registered external program InkyCap can pipe text through — the

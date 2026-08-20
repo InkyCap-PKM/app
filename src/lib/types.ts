@@ -468,6 +468,18 @@ export interface UpdateSettings {
   include_beta: boolean;
 }
 
+/** User overrides for global UI keyboard shortcuts. The default keybinding of
+ *  every command lives in the command registry (`src/lib/commands.ts`); this
+ *  map records only the deltas. Keys are command ids (e.g. `"file:quick-open"`);
+ *  a string value rebinds the command, `null` means the user explicitly unbound
+ *  it (default action kept, no active hotkey), and an absent key means the
+ *  command uses its registry default. Combos are stored in the platform-neutral
+ *  canonical form produced by `formatKeyCombo` (Cmd folded into "Ctrl"), so one
+ *  override works across every OS. Resolution lives in `src/lib/shortcuts.ts`. */
+export interface ShortcutSettings {
+  overrides: Record<string, string | null>;
+}
+
 export type FontMode = "system" | "bundled" | "typst-default" | "follow" | "custom";
 
 export interface FontChoice {
@@ -508,6 +520,7 @@ export interface UserSettings {
   backup: BackupSettings;
   external_tools: ExternalToolSettings;
   updates: UpdateSettings;
+  shortcuts: ShortcutSettings;
 }
 
 /** A user-registered external program the external-tool bridge can pipe text

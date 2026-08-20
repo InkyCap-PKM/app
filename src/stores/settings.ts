@@ -106,6 +106,9 @@ const DEFAULTS: UserSettings = {
     check_on_startup: false,
     include_beta: false,
   },
+  shortcuts: {
+    overrides: {},
+  },
 };
 
 // ── Per-notebox defaults ─────────────────────────────────────────────
