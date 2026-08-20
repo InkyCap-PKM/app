@@ -14,10 +14,10 @@ import type { CreationRule } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fileList } from "../stores/filelist";
 import { findCommandByKeybinding } from "../lib/command-registry";
-import { formatKeyCombo } from "../lib/keybindings";
 import { loadCreationRules } from "../stores/creation-rules";
 import { promptConfirm } from "../stores/prompt";
 import { noteboxSettings } from "../stores/settings";
+import HotkeyRecorder from "./HotkeyRecorder";
 import LucideIconPicker from "./LucideIconPicker";
 import HelpButton from "./HelpButton";
 import RuleIcon from "./RuleIcon";
@@ -68,7 +68,6 @@ const CreationRuleEditor: Component = () => {
   const [refreshTick, setRefreshTick] = createSignal(0);
   const [editingRule, setEditingRule] = createSignal<CreationRule | null>(null);
   const [hotkeyConflict, setHotkeyConflict] = createSignal<string | null>(null);
-  const [recordingHotkey, setRecordingHotkey] = createSignal(false);
   const [folderDropdownOpen, setFolderDropdownOpen] = createSignal(false);
   const [folderFilter, setFolderFilter] = createSignal("");
 
@@ -175,13 +174,11 @@ const CreationRuleEditor: Component = () => {
   function startEdit(rule: CreationRule) {
     setEditingRule({ ...rule });
     setHotkeyConflict(null);
-    setRecordingHotkey(false);
   }
 
   function startNew() {
     setEditingRule(freshUserRule(crypto.randomUUID()));
     setHotkeyConflict(null);
-    setRecordingHotkey(false);
   }
 
   /** Restore the form to the rule's defaults. For built-in rules this is
@@ -270,47 +267,6 @@ const CreationRuleEditor: Component = () => {
     const current = editingRule();
     if (!current) return;
     setEditingRule({ ...current, [key]: value });
-  }
-
-  function handleHotkeyKeyDown(e: KeyboardEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.key === "Escape") {
-      setRecordingHotkey(false);
-      return;
-    }
-
-    if (e.key === "Backspace" || e.key === "Delete") {
-      updateField("hotkey", null);
-      setHotkeyConflict(null);
-      setRecordingHotkey(false);
-      return;
-    }
-
-    const combo = formatKeyCombo(e);
-    if (!combo) return;
-
-    const rule = editingRule();
-    if (rule) {
-      const conflict = findHotkeyConflict(combo, rule.id);
-      if (conflict) {
-        // Every hotkey must map to exactly one action, so refuse the
-        // assignment rather than allowing two commands to fight for the
-        // same combo. The inline label shows the existing binding;
-        // a warning toast confirms the keypress was registered (recording
-        // closes silently otherwise, which reads as "did it take?").
-        setHotkeyConflict(conflict);
-        toastWarning(
-          t("creationRules.hotkeyConflictToast", { combo, conflict }),
-        );
-        setRecordingHotkey(false);
-        return;
-      }
-      setHotkeyConflict(null);
-    }
-    updateField("hotkey", combo);
-    setRecordingHotkey(false);
   }
 
   function selectFolder(folder: string) {
@@ -515,31 +471,31 @@ const CreationRuleEditor: Component = () => {
                 </span>
               </div>
               <div style={{ width: "200px", "flex-shrink": 0 }}>
-                <button
-                  class={`creation-rules__hotkey-btn${recordingHotkey() ? " recording" : ""}`}
-                  // While recording is true, the global dispatcher in
-                  // keyboard.ts checks for this attribute on the focused
-                  // element and suppresses command firing — otherwise
-                  // Ctrl+N would both record the combo here AND fire the
-                  // "New Simple File" command. Explicit focus() on click
-                  // is needed because WebKit (which Tauri uses) does not
-                  // auto-focus <button> on click on all platforms.
-                  data-hotkey-recording={recordingHotkey() ? "true" : undefined}
-                  onClick={(e) => {
-                    setRecordingHotkey(true);
-                    e.currentTarget.focus();
+                <HotkeyRecorder
+                  buttonClass="creation-rules__hotkey-btn"
+                  value={rule().hotkey}
+                  recordingLabel={t("creationRules.hotkeyRecording")}
+                  findConflict={(combo) => findHotkeyConflict(combo, rule().id)}
+                  onChange={(combo) => {
+                    setHotkeyConflict(null);
+                    updateField("hotkey", combo);
                   }}
-                  onBlur={() => {
-                    if (recordingHotkey()) setRecordingHotkey(false);
+                  onClear={() => {
+                    setHotkeyConflict(null);
+                    updateField("hotkey", null);
                   }}
-                  onKeyDown={(e) => {
-                    if (recordingHotkey()) handleHotkeyKeyDown(e);
+                  onConflict={(combo, conflict) => {
+                    // Every hotkey must map to exactly one action, so refuse
+                    // the assignment. The inline label shows the existing
+                    // binding; a warning toast confirms the keypress was
+                    // registered (recording closes silently otherwise, which
+                    // reads as "did it take?").
+                    setHotkeyConflict(conflict);
+                    toastWarning(
+                      t("creationRules.hotkeyConflictToast", { combo, conflict }),
+                    );
                   }}
-                >
-                  {recordingHotkey()
-                    ? t("creationRules.hotkeyRecording")
-                    : rule().hotkey ?? t("common.none")}
-                </button>
+                />
                 <Show when={hotkeyConflict()}>
                   <span class="creation-rules__hotkey-conflict">
                     {t("creationRules.hotkeyConflictBefore", { conflict: hotkeyConflict()! })}

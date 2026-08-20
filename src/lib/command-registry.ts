@@ -74,10 +74,71 @@ interface ScoredCommand {
 const commands = new Map<string, Command>();
 const [commandVersion, setCommandVersion] = createSignal(0);
 
-/** Register a command. Overwrites any existing command with the same id. */
+// ── Keybinding override layer ────────────────────────────────────────
+//
+// A command's `keybinding` as declared in `commands.ts` is its *default*.
+// Users can rebind global shortcuts; those deltas live here as an override
+// map (command id → combo, or `null` for "explicitly unbound"). The
+// registry keeps `Command.keybinding` set to the *effective* binding
+// (override ?? default), so the global dispatcher, command palette, and
+// Help panel all read the resolved value without knowing overrides exist.
+//
+// This module stays dependency-free — the settings store never leaks in.
+// The controller in `src/lib/shortcuts.ts` bridges persisted overrides to
+// `setKeybindingOverrides`. Because `registerCommand` re-resolves on every
+// (re-)registration, the locale-switch re-registration path preserves
+// overrides automatically.
+const defaultKeybindings = new Map<string, string | string[]>();
+let keybindingOverrides = new Map<string, string | null>();
+
+/** Resolve the effective keybinding for a command id from its recorded
+ *  default and any user override. `null` override → unbound (undefined). */
+function resolveKeybinding(id: string): string | string[] | undefined {
+  if (keybindingOverrides.has(id)) {
+    const override = keybindingOverrides.get(id);
+    return override === null ? undefined : override;
+  }
+  return defaultKeybindings.get(id);
+}
+
+/** Register a command. Overwrites any existing command with the same id.
+ *  The declared `keybinding` is recorded as the command's default and then
+ *  replaced in place with the effective (possibly user-overridden) binding. */
 export function registerCommand(cmd: Command): void {
+  if (cmd.keybinding !== undefined) {
+    defaultKeybindings.set(cmd.id, cmd.keybinding);
+  }
+  cmd.keybinding = resolveKeybinding(cmd.id);
   commands.set(cmd.id, cmd);
   setCommandVersion((v) => v + 1);
+}
+
+/** Replace the full set of user keybinding overrides and re-resolve every
+ *  registered command's effective binding. Called by `shortcuts.ts` after
+ *  the settings store loads and whenever the user edits or resets a binding. */
+export function setKeybindingOverrides(overrides: Map<string, string | null>): void {
+  keybindingOverrides = new Map(overrides);
+  for (const cmd of commands.values()) {
+    cmd.keybinding = resolveKeybinding(cmd.id);
+  }
+  setCommandVersion((v) => v + 1);
+}
+
+/** The command's factory-default keybinding, ignoring any user override.
+ *  Used by the Help panel's reset control (tooltip + restore target). */
+export function defaultKeybinding(id: string): string | string[] | undefined {
+  return defaultKeybindings.get(id);
+}
+
+/** The command's currently effective keybinding (override ?? default). */
+export function effectiveKeybinding(id: string): string | string[] | undefined {
+  return commands.get(id)?.keybinding;
+}
+
+/** True when the user has overridden this command's keybinding (including an
+ *  explicit unbind). Drives whether the Help panel shows a reset control. */
+export function isKeybindingCustomized(id: string): boolean {
+  return keybindingOverrides.has(id);
 }
 
 /** Unregister a command by id. */

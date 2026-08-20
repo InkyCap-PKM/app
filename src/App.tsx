@@ -46,6 +46,7 @@ import {
 } from "./stores/settings";
 import { stopLsp } from "./stores/lsp";
 import { initKeyboard, destroyKeyboard } from "./lib/keyboard";
+import { initShortcuts } from "./lib/shortcuts";
 import { initFocusRegions } from "./lib/focus-regions";
 import { initInputModality } from "./lib/input-modality";
 import { initTauriDragDrop, initHtml5DragDrop } from "./lib/tauri-drag-drop";
@@ -270,6 +271,12 @@ const App: Component = () => {
     // without needing a relaunch (the dispatcher reads live from the
     // registry on every keydown).
     registerCreationRuleCommands();
+
+    // Apply the user's saved keyboard-shortcut overrides on top of the
+    // now-registered command defaults, and keep them synced on later edits.
+    // Runs after all commands are registered so every effective binding is
+    // resolved in one pass.
+    initShortcuts();
 
     // Surface any user-registered external tools (the external-tool bridge):
     // the `/` menu for tools opted into it, the global command palette for the
