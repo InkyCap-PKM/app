@@ -20,6 +20,7 @@ import { LanguageDescription, LanguageSupport, syntaxTree } from "@codemirror/la
 import { languages } from "@codemirror/language-data";
 import { RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
+import { isTypstFenceLang, typstSnippetSupport } from "./typst-snippet-lang";
 
 // Synchronous handle to a loaded language. Languages take a microtask + module
 // fetch to load, so the first time we see one we kick off the load and only
@@ -44,6 +45,11 @@ const refreshField = StateField.define<number>({
 function ensureLangLoaded(lang: string, view: EditorView): LanguageSupport | null {
   const key = lang.toLowerCase().trim();
   if (!key) return null;
+  // Typst has no `@codemirror/language-data` entry, so it must be resolved
+  // ahead of the registry lookup below. It is bundled rather than fetched, so
+  // it resolves synchronously — the same shape as a `loadedLangs` cache hit,
+  // and no `refreshHighlight` round-trip is needed (see typst-snippet-lang.ts).
+  if (isTypstFenceLang(key)) return typstSnippetSupport();
   const cached = loadedLangs.get(key);
   if (cached) return cached;
   if (inFlight.has(key)) return null;

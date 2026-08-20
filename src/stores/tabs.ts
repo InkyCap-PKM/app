@@ -41,6 +41,11 @@ export interface Tab {
    *  follow the user's `default_reading_format` setting. Per-tab so two panes
    *  showing the same note in reading mode can differ. */
   readingFormat?: "svg" | "html";
+  /** Per-tab reading-view zoom factor, where 1 = 100%. Undefined = 100%.
+   *  Per-tab (like `readingFormat`) so two panes showing the same note can be
+   *  zoomed independently — one held at a legible reading size while the other
+   *  is pulled back to inspect page layout. */
+  readingZoom?: number;
   /** One-shot cursor offset from scaffold {{cursor}}. Consumed by the editor on load. */
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
@@ -714,6 +719,40 @@ export function tabReadingFormat(tabId: string): "svg" | "html" {
 /** Set a tab's reading-view render format override (per pane). */
 export function setTabReadingFormat(tabId: string, fmt: "svg" | "html") {
   setTabs((t) => t.id === tabId, "readingFormat", fmt);
+}
+
+// Reading-view zoom bounds. Wider than a browser's own range at the low end —
+// pulling a paginated SVG note back far enough to see a whole spread is a real
+// use — and stopping at 4× above, past which the SVG page no longer fits any
+// pane. `READING_ZOOM_STEP` is the geometric factor one Ctrl+= / wheel notch
+// applies, matching the Mycelial view's 1.2.
+export const READING_ZOOM_MIN = 0.25;
+export const READING_ZOOM_MAX = 4;
+export const READING_ZOOM_STEP = 1.2;
+
+/** The reading-view zoom factor for a tab (1 = 100%). Reactive — reads the
+ *  tab store. */
+export function tabReadingZoom(tabId: string): number {
+  const tab = tabs.find((t) => t.id === tabId);
+  return tab?.readingZoom ?? 1;
+}
+
+/** Set a tab's reading-view zoom factor, clamped to the supported range. */
+export function setTabReadingZoom(tabId: string, zoom: number) {
+  const clamped = Math.min(READING_ZOOM_MAX, Math.max(READING_ZOOM_MIN, zoom));
+  setTabs((t) => t.id === tabId, "readingZoom", clamped);
+}
+
+/** Multiply a tab's reading-view zoom by `factor` (one notch in or out).
+ *  Geometric rather than additive so a notch feels the same size at 40% as at
+ *  300% — the same reason the Mycelial view scales rather than steps. */
+export function nudgeTabReadingZoom(tabId: string, factor: number) {
+  setTabReadingZoom(tabId, tabReadingZoom(tabId) * factor);
+}
+
+/** Restore a tab's reading view to 100%. */
+export function resetTabReadingZoom(tabId: string) {
+  setTabs((t) => t.id === tabId, "readingZoom", 1);
 }
 
 // ── Navigation history ──────────────────────────────────

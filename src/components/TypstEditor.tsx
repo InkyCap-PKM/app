@@ -38,6 +38,12 @@ import {
   closeTab,
   tabReadingFormat,
   setTabReadingFormat,
+  tabReadingZoom,
+  nudgeTabReadingZoom,
+  resetTabReadingZoom,
+  READING_ZOOM_MIN,
+  READING_ZOOM_MAX,
+  READING_ZOOM_STEP,
 } from "../stores/tabs";
 import { navigateWikilink, showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { openLink } from "../lib/open-link";
@@ -76,6 +82,8 @@ import {
   PenLine,
   Eye,
   FlaskConical,
+  Minus,
+  Plus,
 } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
@@ -136,6 +144,13 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   const readingFormat = () => tabReadingFormat(props.tabId);
   const setReadingFormat = (fmt: "svg" | "html") =>
     setTabReadingFormat(props.tabId, fmt);
+
+  // Reading-view zoom, likewise per-tab. Applies to both render formats: the
+  // SVG view scales its page boxes (the vector output stays crisp at any
+  // factor, so no re-compile is needed), and the HTML view uses CSS `zoom`,
+  // which scales layout rather than just type — so the measure and images
+  // grow together and text still reflows to the pane.
+  const readingZoom = () => tabReadingZoom(props.tabId);
 
   let containerRef: HTMLDivElement | undefined;
   let editorMountRef: HTMLDivElement | undefined;
@@ -1060,6 +1075,44 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
               <span>{t("readingFormat.html")}</span>
             </button>
           </div>
+          <div
+            class="editor-header__mode-toggle editor-header__zoom"
+            role="group"
+            aria-label={t("editor.reading.zoom.label")}
+          >
+            <button
+              type="button"
+              class="editor-header__mode-seg"
+              disabled={readingZoom() <= READING_ZOOM_MIN}
+              onClick={() => nudgeTabReadingZoom(props.tabId, 1 / READING_ZOOM_STEP)}
+              title={t("editor.reading.zoom.out")}
+              aria-label={t("editor.reading.zoom.out")}
+            >
+              <Minus size={14} />
+            </button>
+            {/* The level doubles as the reset control — the same affordance a
+                browser's zoom indicator offers. */}
+            <button
+              type="button"
+              class="editor-header__mode-seg editor-header__zoom-level"
+              onClick={() => resetTabReadingZoom(props.tabId)}
+              title={t("editor.reading.zoom.reset")}
+            >
+              {t("editor.reading.zoom.percent", {
+                percent: String(Math.round(readingZoom() * 100)),
+              })}
+            </button>
+            <button
+              type="button"
+              class="editor-header__mode-seg"
+              disabled={readingZoom() >= READING_ZOOM_MAX}
+              onClick={() => nudgeTabReadingZoom(props.tabId, READING_ZOOM_STEP)}
+              title={t("editor.reading.zoom.in")}
+              aria-label={t("editor.reading.zoom.in")}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
         </Show>
         <Show when={!isScrollEnabled(props.tabId)}>
         <div class="editor-header__mode-toggle" role="group" aria-label={t("editor.mode.label")}>
@@ -1128,6 +1181,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
             result={htmlResult()}
             loading={htmlResult.loading}
             documentFont={resolveTextFontSync(settings.fonts)}
+            zoom={readingZoom()}
             tabId={props.tabId}
             path={props.path}
           />
@@ -1135,6 +1189,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           <TypstReadingView
             result={compileResult()}
             loading={compileResult.loading}
+            zoom={readingZoom()}
             tabId={props.tabId}
             path={props.path}
           />
@@ -1187,9 +1242,31 @@ function attachReadingScrollMemory(
   });
 }
 
+/** Wire Ctrl/Cmd + wheel on a reading-view container to that tab's zoom, the
+ *  gesture every document viewer uses. Plain wheel scrolling is untouched.
+ *  `passive: false` because the browser's own page zoom must be suppressed. */
+function attachReadingZoomWheel(el: HTMLElement, tabId: string): void {
+  el.addEventListener(
+    "wheel",
+    (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      if (e.deltaY === 0) return;
+      // Trackpad pinch arrives as many small deltas where a mouse wheel sends
+      // one large notch, so scale the step by the delta's magnitude (capped)
+      // rather than applying a full notch per event.
+      const magnitude = Math.min(1, Math.abs(e.deltaY) / 100);
+      const factor = READING_ZOOM_STEP ** (e.deltaY < 0 ? magnitude : -magnitude);
+      nudgeTabReadingZoom(tabId, factor);
+    },
+    { passive: false },
+  );
+}
+
 interface TypstReadingViewProps {
   result: TypstCompileResult | undefined;
   loading: boolean;
+  zoom: number;
   tabId: string;
   path: string;
 }
@@ -1238,7 +1315,10 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
   return (
     <div
       class="typst-reading"
-      ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result)}
+      ref={(el) => {
+        attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result);
+        attachReadingZoomWheel(el, props.tabId);
+      }}
       onClick={onWikilinkClick}
       onAuxClick={onWikilinkClick}
       onContextMenu={onWikilinkClick}
@@ -1267,8 +1347,13 @@ const TypstReadingView: Component<TypstReadingViewProps> = (props) => {
                   <div
                     class="typst-reading__page"
                     style={{
-                      width: `${frame.width_pt * PT_TO_CSS_PX}px`,
-                      height: `${frame.height_pt * PT_TO_CSS_PX}px`,
+                      // Scaling the page box (rather than transforming it) keeps
+                      // the pages in normal flow, so the column still centres and
+                      // the container scrolls to the zoomed extent. The inline
+                      // SVG is `width/height: 100%`, and vector output redraws
+                      // crisply at any size — no re-compile involved.
+                      width: `${frame.width_pt * PT_TO_CSS_PX * props.zoom}px`,
+                      height: `${frame.height_pt * PT_TO_CSS_PX * props.zoom}px`,
                     }}
                     ref={(el) => {
                       const parser = new DOMParser();
@@ -1299,6 +1384,7 @@ interface TypstHtmlReadingViewProps {
   result: TypstHtmlResult | undefined;
   loading: boolean;
   documentFont?: string;
+  zoom: number;
   tabId: string;
   path: string;
 }
@@ -1328,14 +1414,24 @@ async function resolveMediaSources(root: HTMLElement): Promise<void> {
 // (typst-html otherwise drops `align()` blocks).
 
 const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
-  // Font size is intentionally left to CSS (--md-body-size) so the
-  // content zoom (Ctrl+= / Ctrl+-) applies here. Only the font family
+  // Font size is intentionally left to CSS (--md-body-size) so the editor's
+  // body-size preference still sets the baseline here. Only the font family
   // is pinned from settings.
+  //
+  // Reading zoom rides on top of that baseline as CSS `zoom`, not a font-size
+  // multiplier: `zoom` scales the whole layout box, so the `max-width` measure,
+  // images, tables, and code blocks all grow together and the text still
+  // reflows to the pane — which is what "zoom" means to a reader. A font-size
+  // change would grow the type inside a fixed-px measure, squeezing the
+  // line length tighter the further you zoom in. `transform: scale()` was the
+  // other candidate and is wrong here: it doesn't affect layout, so the
+  // container wouldn't scroll to the scaled content's extent.
   const contentStyle = () => {
     const s: Record<string, string> = {};
     if (props.documentFont) {
       s["font-family"] = `"${props.documentFont}", var(--editor-font-body, sans-serif)`;
     }
+    if (props.zoom !== 1) s["zoom"] = String(props.zoom);
     return s;
   };
 
@@ -1384,7 +1480,10 @@ const TypstHtmlReadingView: Component<TypstHtmlReadingViewProps> = (props) => {
   return (
     <div
       class="typst-reading typst-reading--html"
-      ref={(el) => attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result?.html)}
+      ref={(el) => {
+        attachReadingScrollMemory(el, props.tabId, props.path, () => !!props.result?.html);
+        attachReadingZoomWheel(el, props.tabId);
+      }}
       onClick={onWikilinkClick}
       onAuxClick={onWikilinkClick}
       onContextMenu={onWikilinkClick}

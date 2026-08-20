@@ -3,11 +3,16 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { typstKeymap } from "./keymaps";
 
-// The codemirror-lang-typst parser loads from WASM, which Vitest's Node
-// environment can't import — so these tests exercise the keymap's list
-// behaviour directly (it is parser-independent: `continueList` works off the
-// raw line text). They lock in the source ↔ visual shared invariant that a
-// double-Enter at the end of a list exits to regular text.
+// These editors are built without a Typst language, so there is no syntax
+// tree to consult — which is fine, because the keymap's list behaviour is
+// parser-independent (`continueList` works off the raw line text). They lock
+// in the source ↔ visual shared invariant that a double-Enter at the end of a
+// list exits to regular text.
+//
+// (An earlier version of this note claimed Vitest's Node environment cannot
+// import the codemirror-lang-typst WASM parser. It can — see
+// typst-snippet-lang.test.ts, which parses Typst directly. Tests that need a
+// real syntax tree are therefore possible; these simply don't need one.)
 function mk(doc: string) {
   return new EditorView({
     state: EditorState.create({

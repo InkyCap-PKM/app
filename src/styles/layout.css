@@ -10632,6 +10632,33 @@ input.date-value__offset {
   color: var(--accent-orange);
 }
 
+/* Reading-view zoom control (− / level / +). Reuses the same segmented shell
+   as the mode and format toggles; only the level readout needs its own rule,
+   for a stable width so stepping through 100% → 83% → 69% doesn't shift the
+   ± buttons under the pointer. `ch` keeps that width tied to the font rather
+   than a hardcoded pixel guess. */
+.editor-header__zoom-level {
+  font-size: var(--text-sm);
+  padding: 3px 6px;
+  min-width: 4.5ch;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-header__zoom .editor-header__mode-seg {
+  padding: 3px 6px;
+}
+
+.editor-header__zoom .editor-header__mode-seg:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.editor-header__zoom .editor-header__mode-seg:disabled:hover {
+  background: none;
+  color: var(--fg-muted);
+}
+
 /* Slash command palette (/ key in visual editor) */
 .command-palette {
   position: fixed;

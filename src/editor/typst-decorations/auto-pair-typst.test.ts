@@ -87,7 +87,23 @@ describe("auto-pair-typst: triple backtick still expands a code block", () => {
     typeChar(v, "`"); // ``
     typeChar(v, "`"); // expands
     expect(v.state.doc.toString()).toBe("```\n\n```");
-    expect(v.state.selection.main.head).toBe(4);
+    v.destroy();
+  });
+
+  it("leaves the caret on the fence so the language can be typed", () => {
+    // Regression: the caret used to land on the body line (offset 4), so
+    // naming the language meant backspacing back up to the fence — defeating
+    // the point of opening a fenced block. It now sits just past the third
+    // backtick.
+    const v = mk();
+    typeChar(v, "`");
+    typeChar(v, "`");
+    typeChar(v, "`");
+    expect(v.state.selection.main.head).toBe(3);
+
+    // And typing from there names the block, rather than filling its body.
+    for (const ch of "typ") typeChar(v, ch);
+    expect(v.state.doc.toString()).toBe("```typ\n\n```");
     v.destroy();
   });
 });
