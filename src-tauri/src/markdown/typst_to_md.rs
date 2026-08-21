@@ -19,6 +19,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::typst_pipeline::source_structure;
+
 /// Options controlling the typst-to-markdown conversion.
 #[derive(Debug, Clone)]
 pub struct TypstToMarkdownOptions {
@@ -48,6 +50,9 @@ impl Default for TypstToMarkdownOptions {
 static IMPORT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^#import\s+"[^"]*"\s*:\s*\*\s*$"#).unwrap());
 
+// Heading lines reach `convert_line` only after the raw-block filter in
+// `typst_to_markdown` has taken the fenced code out of the stream, so this
+// pattern never sees a `= …` line that Typst would call raw text.
 static HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(=+)\s+(.*)$").unwrap());
 
 static WIKILINK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -116,16 +121,32 @@ static UNKNOWN_FUNC_RE: LazyLock<Regex> =
 /// Convert InkyCap Typst source to markdown.
 pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> String {
     let mut out = String::with_capacity(input.len());
-    let lines = input.lines().peekable();
     let mut frontmatter_fields: Vec<(String, String)> = Vec::new();
     let mut in_note_call = false;
     let mut note_buf = String::new();
     let mut in_table = false;
     let mut table_buf = String::new();
-    let mut in_code_block = false;
-    let mut code_block_lang = String::new();
 
-    for line in lines {
+    // Which lines are fenced code is Typst's call, not a `starts_with("```")`
+    // scan's. The scan missed a fence opened inside a list item (`- ``` `),
+    // and everything in that block — headings, wikilinks, emphasis — was then
+    // translated as if it were markup (issue #21). Markdown fences the same
+    // way Typst does, so these lines pass through untouched.
+    let raw_lines = source_structure::raw_block_lines(input);
+
+    for (idx, line) in input.lines().enumerate() {
+        // Fenced code — delimiters included — passes through untouched, ahead
+        // of every other branch: a code sample may legitimately contain an
+        // `#import` line, a `#note(` call, or anything else this loop would
+        // otherwise consume. The exception is a fence *inside* a multi-line
+        // `#note(…)` / `#table(…)` call, whose accumulation below needs every
+        // line to find its closing paren.
+        if !in_note_call && !in_table && raw_lines.contains(&(idx + 1)) {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
         // Skip import lines.
         if IMPORT_RE.is_match(line) {
             continue;
@@ -190,28 +211,6 @@ pub fn typst_to_markdown(input: &str, options: &TypstToMarkdownOptions) -> Strin
                 out.push_str(&md);
                 out.push('\n');
             }
-            continue;
-        }
-
-        // Code blocks pass through as-is.
-        if line.trim_start().starts_with("```") {
-            if !in_code_block {
-                in_code_block = true;
-                code_block_lang = line.trim_start().trim_start_matches('`').to_string();
-                out.push_str(line);
-                out.push('\n');
-            } else {
-                in_code_block = false;
-                code_block_lang.clear();
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-
-        if in_code_block {
-            out.push_str(line);
-            out.push('\n');
             continue;
         }
 
@@ -779,6 +778,49 @@ mod tests {
         assert!(result.contains("# Title"));
         assert!(result.contains("## Subtitle"));
         assert!(!result.contains("#import"));
+    }
+
+    #[test]
+    fn leaves_typst_markup_inside_a_fence_alone() {
+        // The fence's contents are code, not markup to translate: the heading
+        // stays a heading, the wikilink stays a wikilink.
+        let input = "= Real\n\n```typ\n= Example\n#wikilink(\"Target\")\n```\n";
+        let result = convert(input);
+        assert!(result.contains("# Real"), "{result}");
+        assert!(
+            result.contains("= Example"),
+            "fence content translated: {result}"
+        );
+        assert!(
+            result.contains("#wikilink(\"Target\")"),
+            "fence content translated: {result}"
+        );
+    }
+
+    #[test]
+    fn keeps_an_import_line_that_lives_inside_a_fence() {
+        // A code sample showing the notebox preamble is ordinary content. The
+        // import-stripping branch must not reach into the fence for it.
+        let input = "= Real\n\n```typ\n#import \"/.inkycap/notebox.typ\": *\n```\n";
+        let result = convert(input);
+        assert!(
+            result.contains("#import \"/.inkycap/notebox.typ\": *"),
+            "import inside the fence was stripped: {result}"
+        );
+    }
+
+    #[test]
+    fn leaves_a_fence_opened_inside_a_list_item_alone() {
+        // Issue #21's shape. A `starts_with("```")` scan misses this fence
+        // because the line opens with the list marker, and everything in the
+        // block was then translated as markup.
+        let input = "= Real\n- Bullet\n  - ```\n= Not a headliner\n```\n";
+        let result = convert(input);
+        assert!(
+            result.contains("= Not a headliner"),
+            "fence content translated: {result}"
+        );
+        assert!(!result.contains("# Not a headliner"), "{result}");
     }
 
     #[test]
