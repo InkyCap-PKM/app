@@ -1,20 +1,26 @@
 // CM6 heading tracker — publishes the active document's heading list
 // to a Solid signal consumed by OutlinePanel.
 //
-// Why this is a CM-side regex scan and not a `typst query` round-trip:
-// the outline panel updates on every keystroke and renders alongside the
-// editor. Routing each keystroke through the Tauri IPC boundary, the
-// Typst compiler, and the introspector would add ~20ms of latency to every
-// edit for an outline that's authoritatively defined by `=` markers — a
-// purely lexical signal. CLAUDE.md's Typst-first principle ends with "as a
-// last resort or if necessary to accomplish something important"; this is
-// the "necessary" case — the live editor needs synchronous data, and the
-// answer is in the source text we already hold.
+// Which lines *are* headings is decided by Typst's own parser, through the
+// shared scan in heading-scan.ts. What stays here is the presentation half:
+// turning a heading's markup into the text a reader expects to see in the
+// outline, and keeping the signal fresh without re-scanning on every
+// keystroke.
+//
+// Why the display text is a local lexical pass and not a `typst query`
+// round-trip: the outline updates alongside the editor as the user types.
+// Routing each keystroke through the Tauri IPC boundary, the Typst compiler,
+// and the introspector would add ~20ms of latency to every edit. CLAUDE.md's
+// Typst-first principle allows custom code where the native path can't be
+// reached; a synchronous surface can't wait on a compile, and the editor's
+// in-process syntax tree already answers the structural half of the question.
 
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import type { Text } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import type { EditorState } from "@codemirror/state";
 import { createSignal } from "solid-js";
 import { rightPanelTab, rightCollapsed } from "../../stores/layout";
+import { scanHeadings } from "./heading-scan";
 
 export interface Heading {
   level: number;
@@ -25,8 +31,6 @@ export interface Heading {
 
 const [headings, setHeadings] = createSignal<Heading[]>([]);
 export { headings };
-
-const HEADING_RE = /^(={1,6})\s+(.+)$/;
 
 /**
  * Reduce a heading's inline Typst markup to the readable text a reader expects
@@ -74,16 +78,14 @@ function outlinePaneOpen(): boolean {
   return rightPanelTab() === "outline" && !rightCollapsed();
 }
 
-function collectHeadings(doc: Text): Heading[] {
-  const text = doc.toString();
+function collectHeadings(state: EditorState): Heading[] {
   const out: Heading[] = [];
-  let pos = 0;
-  for (const line of text.split("\n")) {
-    const m = HEADING_RE.exec(line);
-    if (m) {
-      out.push({ level: m[1].length, text: headingDisplayText(m[2]), pos });
-    }
-    pos += line.length + 1;
+  for (const h of scanHeadings(state)) {
+    const text = headingDisplayText(h.text);
+    // A heading with no content yet — the `=` the writer just typed — would
+    // otherwise flash an empty row into the outline as they type.
+    if (!text) continue;
+    out.push({ level: h.level, text, pos: h.from });
   }
   return out;
 }
@@ -92,7 +94,7 @@ function collectHeadings(doc: Text): Heading[] {
  *  outline pane when it opens or the active editor changes — the live `update`
  *  hook below is gated to pane-open + debounced, so it doesn't cover those. */
 export function rescanHeadings(view: EditorView | undefined): void {
-  setHeadings(view ? collectHeadings(view.state.doc) : []);
+  setHeadings(view ? collectHeadings(view.state) : []);
 }
 
 export const headingTracker = ViewPlugin.fromClass(
@@ -101,18 +103,23 @@ export const headingTracker = ViewPlugin.fromClass(
 
     constructor(view: EditorView) {
       // Populate once on mount so the outline is correct the moment it opens.
-      setHeadings(collectHeadings(view.state.doc));
+      setHeadings(collectHeadings(view.state));
     }
     update(update: ViewUpdate) {
       // Only while the outline pane is open (a closed pane costs nothing per
       // keystroke), and debounced so a multi-thousand-line note isn't fully
-      // re-scanned on every key. Snapshot the immutable doc for the timer.
-      if (!update.docChanged || !outlinePaneOpen()) return;
+      // re-scanned on every key. Snapshot the immutable state for the timer.
+      //
+      // A reparse with no document change still moves headings: closing a code
+      // fence turns everything below it back into markup, and the tree is what
+      // tells us so.
+      const reparsed = syntaxTree(update.state) !== syntaxTree(update.startState);
+      if ((!update.docChanged && !reparsed) || !outlinePaneOpen()) return;
       if (this.timer) clearTimeout(this.timer);
-      const doc = update.state.doc;
+      const state = update.state;
       this.timer = setTimeout(() => {
         this.timer = null;
-        setHeadings(collectHeadings(doc));
+        setHeadings(collectHeadings(state));
       }, 150);
     }
     destroy() {

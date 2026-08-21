@@ -7,6 +7,7 @@ use crate::state::AppState;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::compiler::PdfStandardPreset;
 use crate::typst_pipeline::package_fetch::compile_with_auto_packages;
+use crate::typst_pipeline::source_structure;
 use crate::typst_pipeline::style_injection;
 
 use super::helpers::{
@@ -843,30 +844,21 @@ pub fn check_pdf_standard_requirements(
 
 /// Find heading-level jumps that skip one or more levels (e.g. `=` →
 /// `===`, which violates PDF/UA-1's consecutive-nesting rule).
+///
+/// The headings come from Typst's parser, so a `=== Example` line inside a
+/// ``` fence — a code sample, not a section — can't raise a warning the author
+/// has no way to act on.
 fn heading_level_gaps(source: &str) -> Vec<(usize, u8, u8, String)> {
     let mut last_level: Option<u8> = None;
     let mut offenders = Vec::new();
-    for (i, raw_line) in source.lines().enumerate() {
-        let trimmed = raw_line.trim_start();
-        if !trimmed.starts_with('=') {
-            continue;
-        }
-        let count = trimmed.bytes().take_while(|&b| b == b'=').count();
-        if count == 0 || count > u8::MAX as usize {
-            continue;
-        }
-        let after = &trimmed[count..];
-        if !(after.is_empty() || after.starts_with(' ') || after.starts_with('\t')) {
-            continue;
-        }
-        let level = count as u8;
+    for heading in source_structure::headings(source) {
         if let Some(prev) = last_level {
-            if level > prev + 1 {
-                let text = after.trim().chars().take(60).collect::<String>();
-                offenders.push((i + 1, prev, level, text));
+            if heading.level > prev.saturating_add(1) {
+                let text = heading.text.chars().take(60).collect::<String>();
+                offenders.push((heading.line, prev, heading.level, text));
             }
         }
-        last_level = Some(level);
+        last_level = Some(heading.level);
     }
     offenders
 }

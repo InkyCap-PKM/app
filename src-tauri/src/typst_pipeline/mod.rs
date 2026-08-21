@@ -23,6 +23,7 @@ pub mod query;
 pub mod recovery;
 pub mod review_markup;
 pub mod source_lint;
+pub mod source_structure;
 pub mod style_injection;
 pub mod suggestion;
 pub mod syntax;

@@ -9,10 +9,11 @@
 //!    `**bold**` markup. None of that means anything in Typst (a leading `# ` is
 //!    a code-mode expression that errors; `**` and `[](…)` render as literal
 //!    junk), so it's safe to rewrite into the Typst equivalents. The transforms
-//!    are deliberately conservative: they skip fenced code blocks entirely, and
-//!    the inline ones skip any line containing a backtick (an inline-code span)
-//!    rather than risk rewriting code. Every change is surfaced for review
-//!    before it's applied.
+//!    are deliberately conservative: they skip fenced code blocks entirely —
+//!    located with the parser, so a fence opened inside a list item counts too
+//!    — and the inline ones skip any line containing a backtick (an inline-code
+//!    span) rather than risk rewriting code. Every change is surfaced for
+//!    review before it's applied.
 //!
 //! 2. **Syntax errors** — a missing bracket or a typo is a genuine syntax
 //!    error. We can *find* these with `typst::syntax` (the same parser the
@@ -25,6 +26,8 @@ use std::sync::LazyLock;
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
+
+use crate::typst_pipeline::source_structure;
 
 // ── Markdown leftovers ─────────────────────────────────────────────────────
 
@@ -136,25 +139,13 @@ fn transform_line(line: &str) -> Option<(String, String)> {
     }
 }
 
-/// True for a fenced-code-block delimiter line (``` ``` ``` ``` or longer,
-/// optionally with an info string). Toggling on these keeps us from rewriting
-/// Markdown-looking text that is actually code.
-fn is_fence(line: &str) -> bool {
-    let t = line.trim_start();
-    t.starts_with("```") || t.starts_with("~~~")
-}
-
 /// Walk a file's lines and collect every proposed Markdown→Typst fix. Lines
 /// inside fenced code blocks are skipped.
 pub fn detect_md_fixes(content: &str) -> Vec<MdFix> {
+    let raw_lines = source_structure::raw_block_lines(content);
     let mut out = Vec::new();
-    let mut in_fence = false;
     for (idx, line) in content.lines().enumerate() {
-        if is_fence(line) {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
+        if raw_lines.contains(&(idx + 1)) {
             continue;
         }
         if let Some((kind, after)) = transform_line(line) {
@@ -177,16 +168,11 @@ pub fn apply_md_fixes(content: &str) -> String {
     if detect_md_fixes(content).is_empty() {
         return content.to_string();
     }
+    let raw_lines = source_structure::raw_block_lines(content);
     let had_trailing_newline = content.ends_with('\n');
     let mut lines_out: Vec<String> = Vec::new();
-    let mut in_fence = false;
-    for line in content.lines() {
-        if is_fence(line) {
-            in_fence = !in_fence;
-            lines_out.push(line.to_string());
-            continue;
-        }
-        if in_fence {
+    for (idx, line) in content.lines().enumerate() {
+        if raw_lines.contains(&(idx + 1)) {
             lines_out.push(line.to_string());
             continue;
         }
@@ -292,6 +278,31 @@ mod tests {
         assert_eq!(fixes[1].after, "== Sub");
         let out = apply_md_fixes("# Title\n## Sub\nbody\n");
         assert_eq!(out, "= Title\n== Sub\nbody\n");
+    }
+
+    #[test]
+    fn skips_markdown_looking_lines_inside_a_fence() {
+        let src = "= Title\n```md\n# Not a heading to fix\n**not bold**\n```\n";
+        assert!(
+            detect_md_fixes(src).is_empty(),
+            "{:?}",
+            detect_md_fixes(src)
+        );
+        assert_eq!(apply_md_fixes(src), src);
+    }
+
+    #[test]
+    fn skips_a_fence_opened_inside_a_list_item() {
+        // Issue #21's shape: the fence line starts with the list marker, so a
+        // `starts_with("```")` toggle never sees it and the block's contents
+        // were offered up as "fixes".
+        let src = "- item\n  - ```\n# Not a heading to fix\n```\n";
+        assert!(
+            detect_md_fixes(src).is_empty(),
+            "{:?}",
+            detect_md_fixes(src)
+        );
+        assert_eq!(apply_md_fixes(src), src);
     }
 
     #[test]

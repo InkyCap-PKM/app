@@ -25,6 +25,7 @@ use crate::collection_parser::model::{
 use crate::notebox_package::strip_note_preamble;
 use crate::typst_pipeline::contributors;
 use crate::typst_pipeline::diagnostic::TypstDiagnostic;
+use crate::typst_pipeline::source_structure;
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -385,76 +386,50 @@ pub fn scan_label_collisions(notes: &[BookNote]) -> Vec<LabelCollision> {
 /// The veraPDF integration test in `tests/verapdf_pdf_ua.rs` is the
 /// regression net if this assumption is ever revisited.
 pub fn normalize_heading_levels(body: &str, target_min: u8) -> String {
-    let lines: Vec<&str> = body.lines().collect();
-
-    // First pass: collect the heading levels present.
-    let mut levels_present: Vec<u8> = Vec::new();
-    for line in &lines {
-        let trimmed = line.trim_start();
-        if let Some(level) = heading_level(trimmed) {
-            if !levels_present.contains(&level) {
-                levels_present.push(level);
-            }
-        }
-    }
-
-    if levels_present.is_empty() {
+    // Which headings these are is Typst's call, not a line scan's: `= Example`
+    // inside a ``` fence is a code sample, and rewriting its markers would
+    // corrupt the author's content on its way into the book.
+    let headings = source_structure::headings(body);
+    if headings.is_empty() {
         return body.to_string();
     }
 
-    levels_present.sort();
+    // Build a mapping from original level → normalized level. The lowest
+    // heading becomes `target_min`, the next distinct level `target_min + 1`,
+    // and so on — which both shifts and compresses gaps.
+    let mut levels_present: Vec<u8> = headings.iter().map(|h| h.level).collect();
+    levels_present.sort_unstable();
+    levels_present.dedup();
+    let level_map: std::collections::HashMap<u8, u8> = levels_present
+        .iter()
+        .enumerate()
+        .map(|(i, &level)| (level, target_min + i as u8))
+        .collect();
 
-    // Build a mapping from original level → normalized level.
-    // The lowest heading becomes `target_min`, next distinct level becomes
-    // `target_min + 1`, etc. This both shifts and compresses gaps.
-    let mut level_map = std::collections::HashMap::new();
-    for (i, &level) in levels_present.iter().enumerate() {
-        level_map.insert(level, target_min + i as u8);
-    }
-
-    // Second pass: rewrite headings.
+    // Rewrite in place: copy the source through, swapping each heading's run
+    // of `=` for the normalized run. Everything else — indentation, line
+    // endings, the trailing newline — is copied byte for byte.
     let mut out = String::with_capacity(body.len());
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            out.push('\n');
+    let mut copied = 0usize;
+    for heading in &headings {
+        let Some(&new_level) = level_map.get(&heading.level) else {
+            continue;
+        };
+        // Measure the marker run from the source rather than trusting
+        // `level`, which saturates at `u8::MAX`. `=` is ASCII, so counting
+        // bytes lands on a char boundary.
+        let markers = body[heading.range.clone()]
+            .bytes()
+            .take_while(|&b| b == b'=')
+            .count();
+        out.push_str(&body[copied..heading.range.start]);
+        for _ in 0..new_level {
+            out.push('=');
         }
-        let trimmed = line.trim_start();
-        if let Some(orig_level) = heading_level(trimmed) {
-            if let Some(&new_level) = level_map.get(&orig_level) {
-                let leading_ws = &line[..line.len() - trimmed.len()];
-                let after_equals = &trimmed[orig_level as usize..];
-                out.push_str(leading_ws);
-                for _ in 0..new_level {
-                    out.push('=');
-                }
-                out.push_str(after_equals);
-                continue;
-            }
-        }
-        out.push_str(line);
+        copied = heading.range.start + markers;
     }
-    // Preserve trailing newline if the original had one.
-    if body.ends_with('\n') && !out.ends_with('\n') {
-        out.push('\n');
-    }
+    out.push_str(&body[copied..]);
     out
-}
-
-/// Count the heading level of a line (number of leading `=` characters).
-/// Returns `None` if the line is not a Typst heading.
-fn heading_level(trimmed_line: &str) -> Option<u8> {
-    if !trimmed_line.starts_with('=') {
-        return None;
-    }
-    let count = trimmed_line.bytes().take_while(|&b| b == b'=').count();
-    // A heading must be followed by a space (or end of line). "==text" is
-    // not a heading in Typst.
-    let after = trimmed_line.as_bytes().get(count);
-    if after.is_none() || after == Some(&b' ') || after == Some(&b'\t') {
-        Some(count as u8)
-    } else {
-        None
-    }
 }
 
 // ── Wrapper generation ──────────────────────────────────────────────────────
@@ -1140,6 +1115,46 @@ fn humanize_stem(stem: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    // ── Heading normalization ──────────────────────────────────────────────
+
+    #[test]
+    fn normalize_heading_levels_shifts_and_compresses() {
+        // `=` and `===` targeted at min 2 become `==` and `===`: shifted down
+        // to sit under the chapter heading, with the skipped level closed up.
+        assert_eq!(
+            normalize_heading_levels("= Top\n\nbody\n\n=== Deep\n", 2),
+            "== Top\n\nbody\n\n=== Deep\n"
+        );
+    }
+
+    #[test]
+    fn normalize_heading_levels_leaves_a_code_sample_alone() {
+        // Issue #21: `= Not a headliner` inside a fence is raw text. Rewriting
+        // its markers would corrupt the author's code sample in the book.
+        let body = "= Chapter\n\n```typ\n= Example heading\n```\n\n=== Deep\n";
+        assert_eq!(
+            normalize_heading_levels(body, 2),
+            "== Chapter\n\n```typ\n= Example heading\n```\n\n=== Deep\n"
+        );
+    }
+
+    #[test]
+    fn normalize_heading_levels_copies_everything_else_byte_for_byte() {
+        // Indentation, CRLF endings and the trailing newline all survive,
+        // because the rewrite splices markers rather than re-joining lines.
+        let body = "= A\r\n\r\n- item\r\n\r\n  == Indented\r\n";
+        assert_eq!(
+            normalize_heading_levels(body, 2),
+            "== A\r\n\r\n- item\r\n\r\n  === Indented\r\n"
+        );
+    }
+
+    #[test]
+    fn normalize_heading_levels_returns_a_body_without_headings_unchanged() {
+        assert_eq!(normalize_heading_levels("just prose\n", 2), "just prose\n");
+        assert_eq!(normalize_heading_levels("", 2), "");
+    }
+
     use super::*;
 
     fn note(stem: &str, content: &str) -> BookNote {

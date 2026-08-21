@@ -2,6 +2,12 @@
 // that lets the user collapse/expand the section beneath it. This is
 // purely visual: the Typst source is never modified. Folded lines get
 // `display: none` via a line decoration.
+//
+// Headings come from the shared, parser-backed scan in heading-scan.ts. That
+// matters here beyond a stray caret: a false heading — `= Not a headliner`
+// written inside a ``` fence — also *ends* the section above it, so folding
+// the real heading stopped at the fence and left the rest of the section on
+// screen (issue #21).
 
 import {
   StateField,
@@ -17,8 +23,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-
-const HEADING_RE = /^(={1,6})\s/;
+import { syntaxTree } from "@codemirror/language";
+import { scanHeadings } from "./heading-scan";
 
 // Lucide ChevronRight / ChevronDown SVG (matches OutlinePanel's caret icons).
 const CHEVRON_SVG_ATTRS =
@@ -31,21 +37,20 @@ const CHEVRON_DOWN_SVG =
 
 interface HeadingInfo {
   level: number;
+  /** Start of the heading's line — the fold's identity and caret anchor. */
   lineFrom: number;
-  lineTo: number;
+  /** 1-based line number, for walking the lines a fold hides. */
+  lineNumber: number;
 }
 
+// Every heading the scan reports opens its own line, which is what lets a fold
+// work in whole lines.
 function findHeadings(view: EditorView): HeadingInfo[] {
   const doc = view.state.doc;
-  const out: HeadingInfo[] = [];
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    const m = HEADING_RE.exec(line.text);
-    if (m) {
-      out.push({ level: m[1].length, lineFrom: line.from, lineTo: line.to });
-    }
-  }
-  return out;
+  return scanHeadings(view.state).map((h) => {
+    const line = doc.lineAt(h.from);
+    return { level: h.level, lineFrom: line.from, lineNumber: line.number };
+  });
 }
 
 // -- Effects & State --
@@ -155,11 +160,9 @@ function buildDecorations(view: EditorView): DecorationSet {
     const nextSibling = headings.findIndex(
       (other, j) => j > i && other.level <= h.level
     );
-    const hideFrom = doc.lineAt(h.lineFrom).number + 1;
+    const hideFrom = h.lineNumber + 1;
     const hideTo =
-      nextSibling >= 0
-        ? doc.lineAt(headings[nextSibling].lineFrom).number - 1
-        : doc.lines;
+      nextSibling >= 0 ? headings[nextSibling].lineNumber - 1 : doc.lines;
 
     for (let ln = hideFrom; ln <= hideTo; ln++) {
       const lineFrom = doc.line(ln).from;
@@ -183,6 +186,9 @@ const foldDecoPlugin = ViewPlugin.fromClass(
     update(update: ViewUpdate) {
       if (
         update.docChanged ||
+        // A reparse can change the heading list on its own — closing a code
+        // fence turns everything below it back into markup.
+        syntaxTree(update.state) !== syntaxTree(update.startState) ||
         update.state.field(foldedHeadings) !==
           update.startState.field(foldedHeadings)
       ) {

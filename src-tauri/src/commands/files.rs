@@ -8,6 +8,7 @@ use crate::storage::sanitize_notebox_arg;
 use crate::storage::to_frontend_string;
 use crate::storage::traits::NoteboxStorage;
 use crate::typst_pipeline::note_rewriter;
+use crate::typst_pipeline::source_structure;
 
 pub use crate::storage::traits::FileTreeNode;
 
@@ -782,16 +783,20 @@ pub async fn get_note_headings(
     Ok(extract_headings(&content))
 }
 
+/// Project the parser's headings onto the shape the frontend consumes.
+///
+/// Which lines are headings is [`source_structure::headings`]'s call — the
+/// same parser the compiler runs — so `= Example` inside a ``` fence never
+/// reaches heading autocomplete as if it were a section.
 fn extract_headings(content: &str) -> Vec<HeadingInfo> {
-    let re = regex::Regex::new(r"^(=+)\s+(.+?)(?:\s+<([^>]+)>)?\s*$").unwrap();
-    content
-        .lines()
-        .filter_map(|line| {
-            let caps = re.captures(line)?;
-            let level = caps[1].len().min(6) as u8;
-            let text = caps[2].trim().to_string();
-            let label = caps.get(3).map(|m| m.as_str().to_string());
-            Some(HeadingInfo { level, text, label })
+    source_structure::headings(content)
+        .into_iter()
+        .map(|h| HeadingInfo {
+            // Typst doesn't cap heading depth; the outline UI indents by
+            // level, so anything past 6 is clamped for display.
+            level: h.level.min(6),
+            text: h.text,
+            label: h.label,
         })
         .collect()
 }
@@ -811,54 +816,55 @@ pub async fn ensure_heading_label(
     let path_buf = sanitize_notebox_arg(&path)?;
     let content = storage.read_file(&path_buf).await?;
 
-    let headings = extract_headings(&content);
+    let headings = source_structure::headings(&content);
     let heading_lower = heading_text.to_lowercase();
 
-    let matched = headings
+    let Some(matched) = headings
         .iter()
-        .find(|h| h.text.to_lowercase() == heading_lower);
-    let Some(matched) = matched else {
+        .find(|h| h.text.to_lowercase() == heading_lower)
+    else {
         return Ok(None);
     };
 
-    if let Some(ref existing) = matched.label {
+    if let Some(existing) = &matched.label {
         return Ok(Some(existing.clone()));
     }
 
     let label = heading_to_label(&heading_text, &headings);
 
-    let mut new_content = String::with_capacity(content.len() + label.len() + 4);
-    let eq_prefix = "=".repeat(matched.level as usize);
-    let target_prefix = format!("{eq_prefix} {}", matched.text);
+    let new_content = insert_heading_label(&content, matched, &label);
 
-    let mut found = false;
-    for line in content.lines() {
-        if !found && line.trim_start().starts_with(&target_prefix) {
-            new_content.push_str(line.trim_end());
-            new_content.push_str(&format!(" <{label}>"));
-            found = true;
-        } else {
-            new_content.push_str(line);
-        }
-        new_content.push('\n');
-    }
-    if content.ends_with('\n') && new_content.ends_with("\n\n") {
-        new_content.pop();
-    }
-    if !content.ends_with('\n') && new_content.ends_with('\n') {
-        new_content.pop();
-    }
-
-    if found {
-        storage.write_file(&path_buf, &new_content).await?;
-        reindex_note(&path_buf, &new_content, &session).await;
-        Ok(Some(label))
-    } else {
-        Ok(None)
-    }
+    storage.write_file(&path_buf, &new_content).await?;
+    reindex_note(&path_buf, &new_content, &session).await;
+    Ok(Some(label))
 }
 
-fn heading_to_label(text: &str, existing_headings: &[HeadingInfo]) -> String {
+/// Write ` <label>` onto the end of `heading`, returning the new source.
+///
+/// The insertion point is the byte offset the parser reports for the end of
+/// the heading — no re-finding the line by prefix, so a look-alike line
+/// elsewhere in the note can't be hit by mistake, and the rest of the file is
+/// copied through byte for byte. Trailing spaces before the line break are
+/// absorbed, so the result reads `= Title <label>`, not `= Title <label>   `.
+fn insert_heading_label(
+    content: &str,
+    heading: &source_structure::SourceHeading,
+    label: &str,
+) -> String {
+    let mut resume_at = heading.range.end;
+    let bytes = content.as_bytes();
+    while matches!(bytes.get(resume_at), Some(b' ') | Some(b'\t')) {
+        resume_at += 1;
+    }
+
+    let mut out = String::with_capacity(content.len() + label.len() + 4);
+    out.push_str(&content[..heading.range.end]);
+    out.push_str(&format!(" <{label}>"));
+    out.push_str(&content[resume_at..]);
+    out
+}
+
+fn heading_to_label(text: &str, existing_headings: &[source_structure::SourceHeading]) -> String {
     let base: String = text
         .chars()
         .filter_map(|c| {
@@ -1155,4 +1161,68 @@ pub async fn reindex_note_public(path: &std::path::Path, content: &str, session:
 /// this module's existing call sites read naturally.
 async fn reindex_note(path: &std::path::Path, content: &str, session: &NoteboxSession) {
     session.reindex_note(path, content).await;
+}
+
+#[cfg(test)]
+mod heading_tests {
+    use super::*;
+
+    /// The shape from issue #21: a fence nested in a list, holding a line that
+    /// looks exactly like a top-level heading.
+    const ISSUE_21: &str = "= Headline\n- Bullet\n  - ```\n= Not a headliner\n```\n";
+
+    #[test]
+    fn extract_headings_ignores_a_heading_inside_a_fence() {
+        let found = extract_headings(ISSUE_21);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text, "Headline");
+        assert_eq!(found[0].level, 1);
+    }
+
+    #[test]
+    fn extract_headings_reads_levels_labels_and_clamps_depth_for_the_ui() {
+        let found = extract_headings("= One <one>\n\n== Two\n\n========= Deep\n");
+        assert_eq!(found[0].label.as_deref(), Some("one"));
+        assert_eq!(found[0].text, "One");
+        assert_eq!(found[1].level, 2);
+        assert_eq!(
+            found[2].level, 6,
+            "9 markers clamp to the UI's deepest indent"
+        );
+    }
+
+    #[test]
+    fn insert_heading_label_writes_at_the_heading_end() {
+        let content = "= Intro\n\nbody\n\n== Later\n";
+        let heading = &source_structure::headings(content)[0];
+        assert_eq!(
+            insert_heading_label(content, heading, "intro"),
+            "= Intro <intro>\n\nbody\n\n== Later\n"
+        );
+    }
+
+    #[test]
+    fn insert_heading_label_absorbs_trailing_spaces_and_keeps_the_rest_byte_for_byte() {
+        // Trailing whitespace on the heading line goes; a CRLF line ending
+        // further down stays, because the rest of the file is copied, not
+        // re-joined line by line.
+        let content = "= Intro   \r\nbody\r\n";
+        let heading = &source_structure::headings(content)[0];
+        assert_eq!(
+            insert_heading_label(content, heading, "intro"),
+            "= Intro <intro>\r\nbody\r\n"
+        );
+    }
+
+    #[test]
+    fn insert_heading_label_targets_the_parsed_heading_not_a_look_alike_line() {
+        // The fence holds a line identical to the real heading. Splicing by
+        // byte range can't hit it; the old prefix search could.
+        let content = "```\n= Intro\n```\n\n= Intro\n";
+        let heading = &source_structure::headings(content)[0];
+        assert_eq!(
+            insert_heading_label(content, heading, "intro"),
+            "```\n= Intro\n```\n\n= Intro <intro>\n"
+        );
+    }
 }

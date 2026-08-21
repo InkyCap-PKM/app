@@ -126,6 +126,17 @@ Some text.
     }
 
     #[test]
+    fn check_pdf_ua1_ignores_heading_levels_inside_a_code_fence() {
+        // Issue #21: the `=== Deep` below is a code sample, not a section, so
+        // it can't be a real level jump — and the author has no way to "fix" a
+        // warning about it.
+        let source =
+            "= Top\n\n```typ\n=== Deep\n```\n\n== Sub\n#image(\"a.png\", alt: \"a thing\")\n";
+        check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
+            .expect("fenced code must not count as a heading level jump");
+    }
+
+    #[test]
     fn check_pdf_ua1_aggregates_multiple_issue_kinds() {
         let source = "= H1\n#image(\"a.png\")\n=== H3 jump\n";
         let err = check_pdf_standard_requirements(source, PdfStandardPreset::PdfUa1)
