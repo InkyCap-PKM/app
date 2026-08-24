@@ -85,7 +85,7 @@ git2 = { version = "0.21", default-features = false, features = [
 # (the diff engine behind `insta`). Only the default `text` feature is needed.
 similar = "2"
 
-# Typst compile pipeline. Pinned to 0.15.x (typst 0.15.0). Bumping the minor
+# Typst compile pipeline. Pinned to 0.15.x (typst 0.15.1). Bumping the minor
 # requires re-running the pin benchmark and reviewing the fidelity snapshot
 # corpus against the new pin:
 #   cargo test --test fidelity                         # output didn't shift
