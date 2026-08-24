@@ -8,7 +8,12 @@ import { pathEquals } from "../lib/paths";
 import { t } from "../lib/i18n";
 import * as ipc from "../lib/ipc";
 import { buildFileList } from "./filelist";
-import { onFileCreated, onFileDeleted, onFileRenamed } from "../lib/events";
+import {
+  onBookmarksChanged,
+  onFileCreated,
+  onFileDeleted,
+  onFileRenamed,
+} from "../lib/events";
 import { renameTabPath, closeAllTabs, openTab, createEmptyTab, tabs } from "./tabs";
 import { reloadPropertyTypes } from "./propertyTypes";
 import {
@@ -98,6 +103,7 @@ let noteboxLostUnlisten: UnlistenFn | null = null;
 let fileCreatedUnlisten: (() => void) | null = null;
 let fileDeletedUnlisten: (() => void) | null = null;
 let fileRenamedUnlisten: (() => void) | null = null;
+let bookmarksChangedUnlisten: (() => void) | null = null;
 let noteSavedUnlisten: (() => void) | null = null;
 let indexUpdatedUnlisten: UnlistenFn | null = null;
 
@@ -193,6 +199,14 @@ async function ensureIndexEventListeners() {
   if (fileRenamedUnlisten === null) {
     fileRenamedUnlisten = await onFileRenamed((payload) => {
       renameTabPath(payload.from, payload.to);
+    });
+  }
+  // The backend rebases bookmark paths when a bookmarked file/folder is
+  // renamed or moved. Re-query the Bookmarks pane off the same DOM event
+  // other panels use, so it drops the stale path immediately.
+  if (bookmarksChangedUnlisten === null) {
+    bookmarksChangedUnlisten = await onBookmarksChanged(() => {
+      document.dispatchEvent(new CustomEvent("inkycap:bookmarks-changed"));
     });
   }
   // Refresh aliases when a note is saved (inline edits to

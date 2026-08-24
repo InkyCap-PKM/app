@@ -989,6 +989,34 @@ fn preserve_extension(new_name: String, old: &std::path::Path, is_dir: bool) -> 
     }
 }
 
+/// After a file or folder is renamed or moved, rebase any bookmark that
+/// pointed at the old location onto the new one, persist the change, and tell
+/// the frontend to refresh its Bookmarks pane. Bookmarks are app-global and
+/// store paths in frontend string form, so `old`/`new` are normalized through
+/// `to_frontend_string` before matching. A no-op when nothing was bookmarked
+/// under the renamed path.
+async fn rebase_bookmarks_for_rename(
+    state: &AppState,
+    window: &tauri::WebviewWindow,
+    old: &std::path::Path,
+    new: &std::path::Path,
+) {
+    let mut bookmarks = state.bookmarks.write().await;
+    let changed = crate::bookmarks::rewrite_paths_for_rename(
+        &mut bookmarks,
+        &to_frontend_string(old),
+        &to_frontend_string(new),
+    );
+    if !changed {
+        return;
+    }
+    if let Err(e) = crate::bookmarks::save_bookmarks(&bookmarks) {
+        log::warn!("failed to persist bookmarks after rename: {e}");
+    }
+    drop(bookmarks);
+    let _ = window.emit("notebox:bookmarks-changed", ());
+}
+
 /// Rename a file (simple rename, no link updates).
 #[tauri::command]
 pub async fn rename_file(
@@ -1034,6 +1062,8 @@ pub async fn rename_file(
             reindex_note(&new_path, &content, &session).await;
         }
     }
+
+    rebase_bookmarks_for_rename(&state, &window, &old, &new_path).await;
 
     Ok(to_frontend_string(&new_path))
 }
@@ -1104,6 +1134,8 @@ pub async fn rename_and_update_links(
         }
     }
 
+    rebase_bookmarks_for_rename(&state, &window, &old, &new_path).await;
+
     Ok(to_frontend_string(&new_path))
 }
 
@@ -1159,6 +1191,8 @@ pub async fn move_file(
     let content = storage.read_file(&new_path).await?;
     remove_from_indices(&old, &session).await;
     reindex_note(&new_path, &content, &session).await;
+
+    rebase_bookmarks_for_rename(&state, &window, &old, &new_path).await;
 
     Ok(to_frontend_string(&new_path))
 }
@@ -1238,6 +1272,8 @@ pub async fn move_folder(
     storage.rename_file(&old, &new_path).await?;
 
     reindex_directory(&old, &new_path, &storage, &session).await;
+
+    rebase_bookmarks_for_rename(&state, &window, &old, &new_path).await;
 
     Ok(to_frontend_string(&new_path))
 }

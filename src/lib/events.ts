@@ -81,6 +81,17 @@ export function onIndexRebuilt(
   }).then((unlisten) => unlisten);
 }
 
+// Emitted after the backend rebases bookmark paths in response to an
+// InkyCap-initiated rename or move, so the Bookmarks pane re-queries and drops
+// stale paths. Broadcast (not window-scoped) because bookmarks are app-global.
+export function onBookmarksChanged(
+  callback: () => void,
+): Promise<() => void> {
+  return listen("notebox:bookmarks-changed", () => {
+    callback();
+  }).then((unlisten) => unlisten);
+}
+
 // ─────────────────────────── Git collaboration ─────────────────────────────
 // The backend emits `notebox:git-*` throughout the fetch → review →
 // consolidate → push loop (see `src-tauri/src/commands/git.rs` and
