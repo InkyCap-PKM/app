@@ -34,6 +34,7 @@ import { updateSetting, settings } from "../stores/settings";
 import { setShowReplace } from "../stores/search";
 import { activeEditorView } from "../stores/editor";
 import { insertAnnotationMarkup } from "../editor/typst-decorations/annotation-insert";
+import { expandFunc } from "../editor/typst-decorations/effects";
 import * as ipc from "./ipc";
 import { pickAndInsertAttachments } from "./attachment-insert";
 import { triggerCreationRule, activeRules } from "../stores/creation-rules";
@@ -790,7 +791,7 @@ export function relocalizeCommands(): void {
   if (lastBuiltinCallbacks) registerBuiltinCommands(lastBuiltinCallbacks);
 }
 
-function insertMarkup(template: string, cursorOffset: number) {
+function insertMarkup(template: string, cursorOffset: number, expand = false) {
   const handle = activeEditorView();
   if (!handle) return;
   const view = handle.view;
@@ -800,23 +801,30 @@ function insertMarkup(template: string, cursorOffset: number) {
   view.dispatch({
     changes: { from: sel.from, to: sel.to, insert },
     selection: { anchor: sel.from + cursorOffset },
+    // `#func[…]` calls collapse to an atomic pill/glyph the moment the visual
+    // plugin runs (e.g. #quote[…] → smart-quote widgets), and CM then rounds
+    // the caret to the pill's outer edge — so the cursor lands *after* the
+    // closing delimiter and typing goes outside the call. expandFunc keeps the
+    // source brackets visible so the caret stays inside `[…]`. No-op in source
+    // mode. Mirrors the `/` slash menu's `expandOnInsert`.
+    effects: expand ? expandFunc.of(sel.from) : undefined,
   });
   view.focus();
 }
 
 function registerMarkupCommands() {
-  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Symbol" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string };
+  type MarkupItem = { id: string; title: string; category: "Format" | "Structure" | "Insert" | "Symbol" | "Style" | "InkyCap" | "References"; insert: string; cursorOffset: number; shortcut?: string; expand?: boolean };
 
   const items: MarkupItem[] = [
     // ── Format ──
     { id: "bold", title: "Bold", category: "Format", insert: "*${sel}*", cursorOffset: 1, shortcut: "*…*" },
     { id: "italic", title: "Italic", category: "Format", insert: "_${sel}_", cursorOffset: 1, shortcut: "_…_" },
-    { id: "strikethrough", title: "Strikethrough", category: "Format", insert: "#strike[${sel}]", cursorOffset: 8 },
-    { id: "highlight", title: "Highlight", category: "Format", insert: "#highlight[${sel}]", cursorOffset: 11 },
-    { id: "underline", title: "Underline", category: "Format", insert: "#underline[${sel}]", cursorOffset: 11 },
-    { id: "overline", title: "Overline", category: "Format", insert: "#overline[${sel}]", cursorOffset: 10 },
-    { id: "subscript", title: "Subscript", category: "Format", insert: "#sub[${sel}]", cursorOffset: 5 },
-    { id: "superscript", title: "Superscript", category: "Format", insert: "#super[${sel}]", cursorOffset: 7 },
+    { id: "strikethrough", title: "Strikethrough", category: "Format", insert: "#strike[${sel}]", cursorOffset: 8, expand: true },
+    { id: "highlight", title: "Highlight", category: "Format", insert: "#highlight[${sel}]", cursorOffset: 11, expand: true },
+    { id: "underline", title: "Underline", category: "Format", insert: "#underline[${sel}]", cursorOffset: 11, expand: true },
+    { id: "overline", title: "Overline", category: "Format", insert: "#overline[${sel}]", cursorOffset: 10, expand: true },
+    { id: "subscript", title: "Subscript", category: "Format", insert: "#sub[${sel}]", cursorOffset: 5, expand: true },
+    { id: "superscript", title: "Superscript", category: "Format", insert: "#super[${sel}]", cursorOffset: 7, expand: true },
     { id: "inline-code", title: "Inline Code", category: "Format", insert: "`${sel}`", cursorOffset: 1, shortcut: "`…`" },
     { id: "inline-math", title: "Inline Math", category: "Format", insert: "$${sel}$", cursorOffset: 1, shortcut: "$…$" },
 
@@ -830,8 +838,8 @@ function registerMarkupCommands() {
     { id: "bullet-list", title: "Bullet List", category: "Structure", insert: "- ", cursorOffset: 2, shortcut: "- " },
     { id: "ordered-list", title: "Ordered List", category: "Structure", insert: "+ ", cursorOffset: 2, shortcut: "+ " },
     { id: "term-list", title: "Term List", category: "Structure", insert: "/ ", cursorOffset: 2, shortcut: "/ Term: …" },
-    { id: "quote-inline", title: "Quote (inline)", category: "Structure", insert: "#quote[${sel}]", cursorOffset: 7 },
-    { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20, shortcut: "> " },
+    { id: "quote-inline", title: "Quote (inline)", category: "Structure", insert: "#quote[${sel}]", cursorOffset: 7, expand: true },
+    { id: "blockquote", title: "Blockquote", category: "Structure", insert: "#quote(block: true)[${sel}]", cursorOffset: 20, shortcut: "> ", expand: true },
 
     // ── Insert ──
     { id: "link", title: "Link", category: "Insert", insert: '#link("")[${sel}]', cursorOffset: 7 },
@@ -853,12 +861,12 @@ function registerMarkupCommands() {
     { id: "page-break", title: "Page Break", category: "Insert", insert: "#pagebreak()", cursorOffset: 12 },
     { id: "line-break", title: "Line Break", category: "Insert", insert: "#linebreak()", cursorOffset: 12 },
     { id: "lorem-ipsum", title: "Lorem Ipsum", category: "Insert", insert: "#lorem(50)", cursorOffset: 7 },
-    { id: "figure", title: "Figure", category: "Insert", insert: '#figure(\n  [${sel}],\n  caption: [],\n)', cursorOffset: 12 },
+    { id: "figure", title: "Figure", category: "Insert", insert: '#figure(\n  [${sel}],\n  caption: [],\n)', cursorOffset: 12, expand: true },
     { id: "align", title: "Align", category: "Insert", insert: "#align(center)[${sel}]", cursorOffset: 15 },
     { id: "box", title: "Box", category: "Insert", insert: "#box[${sel}]", cursorOffset: 5 },
     { id: "rect", title: "Rect", category: "Insert", insert: "#rect[${sel}]", cursorOffset: 6 },
     { id: "hide", title: "Hide", category: "Insert", insert: "#hide[${sel}]", cursorOffset: 6 },
-    { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17 },
+    { id: "callout", title: "Callout", category: "Insert", insert: '#callout("note")[${sel}]', cursorOffset: 17, expand: true },
     { id: "label", title: "Label", category: "Insert", insert: "<>", cursorOffset: 1, shortcut: "<…>" },
     { id: "citation-at", title: "Citation (@key)", category: "References", insert: "@", cursorOffset: 1, shortcut: "@" },
     { id: "bibliography", title: "Bibliography", category: "References", insert: '#bibliography("/.inkycap/zotero-export.bib")', cursorOffset: 16 },
@@ -895,7 +903,7 @@ function registerMarkupCommands() {
   for (const item of items) {
     const execute = ATTACHMENT_IDS.has(item.id)
       ? () => insertAttachmentViaPicker(item.id as "image" | "video" | "audio")
-      : () => insertMarkup(item.insert, item.cursorOffset);
+      : () => insertMarkup(item.insert, item.cursorOffset, item.expand);
 
     registerCommand({
       // `item.title` stays as the English source (mirrored in en.json under
