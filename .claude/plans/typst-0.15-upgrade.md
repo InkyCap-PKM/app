@@ -321,3 +321,30 @@ one-line `today` change while `typst-kit` itself was rewritten wholesale.
 We keep owning the core (`World`, fonts, packages) and just isolate it
 well. Revisit only if we later need on-demand system-font discovery or
 sandboxed package fetching that typst-kit does materially better.
+
+---
+
+## 0.15.0 → 0.15.1 patch bump · 2026-08-24
+
+First run of the `typst-upgrade.md` runbook as a pure patch bump. No API
+breaks, no source changes: edited the `Cargo.toml` pin comment (0.15.0 →
+0.15.1), `cargo update -p typst` et al. moved all 13 `typst-*` lock
+entries to 0.15.1 (incl. `typst-assets` → New Computer Modern fonts
+v8.1.1), `cargo build` clean.
+
+Changelog impact for us: font update (math regular weight: calligraphic →
+stylistic set 6) plus `lr`/`op` math-alignment fixes. Everything else in
+0.15.1 is CLI / watch-server / bundle behaviour we don't drive.
+
+Fidelity corpus: exactly **one** snapshot shifted — `svg@math.typ` digest
+`svg_len` 65584 → 65593 (+9 bytes), page geometry unchanged. No HTML, no
+metadata, no other-fixture diffs. Accepted as the intended font/alignment
+change.
+
+Pin benchmark (release, 8 fixtures × 20 iters, bundled fonts):
+`ALL  svg 2.64 ms  html 1.33 ms` (mean per compile). Recorded as the
+0.15.1 baseline (the 0.15.0 arc left no ALL line to diff against).
+
+Remaining: MSRV skim (patch, unchanged expected; toolchain 1.94.1) and
+the manual validation checklist (in-app SVG preview, PDF/A · PDF/UA
+export, site export, font picker).

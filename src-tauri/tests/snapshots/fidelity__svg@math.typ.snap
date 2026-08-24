@@ -9,7 +9,7 @@ input_file: tests/fixtures/fidelity/math.typ
     {
       "width_pt": 595,
       "height_pt": 842,
-      "svg_len": 65584
+      "svg_len": 65593
     }
   ]
 }
