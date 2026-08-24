@@ -1216,16 +1216,23 @@ export async function deleteCreationRule(ruleId: string): Promise<void> {
  * regardless of its own `target_folder` or the user's "New note location"
  * preference. This is what the file tree context menu uses to create a
  * note in the right-clicked folder via the New Note rule.
+ *
+ * Pass `scaffoldOverride` (a bare scaffold name or scaffolds-dir-relative
+ * path, `.typ` optional) to start the note from that scaffold instead of the
+ * rule's own; the Ctrl+Shift+\ scaffold picker uses this to begin a
+ * brand-new note "just from a scaffold" when no note is open.
  */
 export async function executeCreationRule(
   ruleId: string,
   titleOverride?: string,
   targetFolderOverride?: string,
+  scaffoldOverride?: string,
 ): Promise<CreationResult> {
   return invoke<CreationResult>("execute_creation_rule", {
     ruleId,
     titleOverride: titleOverride ?? null,
     targetFolderOverride: targetFolderOverride ?? null,
+    scaffoldOverride: scaffoldOverride ?? null,
   });
 }
 
