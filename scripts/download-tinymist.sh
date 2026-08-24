@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-TINYMIST_VERSION="0.14.16"
+TINYMIST_VERSION="0.15.2"
 # Create the target dir before resolving its absolute path: it is gitignored,
 # so on a fresh clone it doesn't exist yet and a bare `cd` would abort under
 # `set -e`.
@@ -21,15 +21,18 @@ BINARIES_DIR="$(cd "$BINARIES_DIR" && pwd)"
 # are committed to the repo (copied from the release's `sha256.sum`), so they
 # are the trust anchor: a tampered or MITM'd download — or a silently-replaced
 # release asset — fails verification before we ever `chmod +x` and bundle a
-# native binary the app spawns. Bump these in lockstep with TINYMIST_VERSION
-# (fetch the new `sha256.sum` from the release and copy the matching lines).
+# native binary the app spawns. Bump these in lockstep with TINYMIST_VERSION:
+# each release publishes one `<asset>.sha256` file per archive (there is no
+# consolidated `sha256.sum`), so fetch the six that match the archive names
+# built below and copy their hashes here, e.g.
+#   curl -fsSL .../tinymist-x86_64-unknown-linux-gnu.tar.gz.sha256
 declare -A EXPECTED_SHA256=(
-  [x86_64-unknown-linux-gnu]="7d6b4b5b83ad81497370419d206b25617d6f5a294b73cf11aa137e041a0242f4"
-  [aarch64-unknown-linux-gnu]="3aef71a2c428e25c2ab1e293391c58b842ea22479f502ec5f2eea2e3b6fe85b4"
-  [x86_64-apple-darwin]="4456e6a7bff189075dc9c22d51120fc5a88894f8bb2518d2e61b9b695819bdce"
-  [aarch64-apple-darwin]="3c077f74d1caa6e2cbb5d4726e5ef4f5f49e7ecb4a6742a2e7a7e72e7133ba87"
-  [x86_64-pc-windows-msvc]="dc4ccb2729b48d19e85dd2ce63123ea59f1048424de9d9df44e592eccc072a60"
-  [aarch64-pc-windows-msvc]="d4ac13fd5ff8cd84c98d4dc6515fc68caed8329a732874f67f1e506ec2aab5d3"
+  [x86_64-unknown-linux-gnu]="9b8a1aea6bb3fc9c39cb70496f0082bd518cfede555757bc3cb5225b05abc99b"
+  [aarch64-unknown-linux-gnu]="eba8e14338cf211906d77be6b18102736222da6721e98161133fa0d8ff5ab599"
+  [x86_64-apple-darwin]="fcfcfd01376394048443f81de349d165c271c17c36579eb9a08b889b30b8c3b2"
+  [aarch64-apple-darwin]="16241868c6752aa5e8f9c162562293c7cdf69e82f54687d7886336daf2c51915"
+  [x86_64-pc-windows-msvc]="91edb0d21edca5841b896d702d8086622792d52b71a9b444d8befb0e937969ae"
+  [aarch64-pc-windows-msvc]="ed120fc474a07c5614bb8a7ecd17a649360cba26c2d9f1f96b14a8bc7b3afc11"
 )
 
 # Verify a downloaded archive against the pinned hash for $TARGET. Aborts if the
