@@ -82,7 +82,6 @@
   "customTypst.title": "Custom Typst — {name}",
   "customTypst.hintBefore": "Injected on every export, after this collection's Style Overrides (so it overrides them) and after the template import (so this is where a template is applied). Raw Typst — e.g.",
   "customTypst.templateGuidance": "Applying a template: fill in your title, authors and other metadata in its #show rule below. Leave the bibliography(\"…\") path as-is — on export InkyCap fills that file in automatically from the works your notes cite, so you don't maintain it. The template only affects book/merged PDF export — not the reading view, the editor, or exporting a single note. If it draws its own title page, uncheck \"Include title page\" under Book Metadata.",
-  "scaffoldPicker.openNoteFirst": "Open a note first",
   "scaffoldPicker.insertFailed": "Failed to insert scaffold",
   "scaffoldPicker.title": "Insert scaffold",
   "scaffoldPicker.hint": "Type to filter, ↑↓ to choose, Enter to insert, Esc to cancel",

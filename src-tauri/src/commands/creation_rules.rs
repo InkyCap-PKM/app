@@ -117,11 +117,19 @@ pub async fn delete_creation_rule(
 /// folder). The override is a path relative to the notebox root; an empty
 /// string is treated as "notebox root". When `None`, the rule's own
 /// folder logic (and fallback) applies unchanged.
+///
+/// `scaffold_override` lets a caller start a note from a specific scaffold
+/// instead of the rule's own `scaffold_path`; this is how the Ctrl+Shift+\
+/// scaffold picker begins a brand-new note "just from a scaffold" when no
+/// note is open (an empty tab). It's a bare scaffold name or a path relative
+/// to the scaffolds dir; the `.typ` suffix is optional. When `None`, the
+/// rule's own scaffold applies unchanged.
 #[tauri::command]
 pub async fn execute_creation_rule(
     rule_id: String,
     title_override: Option<String>,
     target_folder_override: Option<String>,
+    scaffold_override: Option<String>,
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<CreationResult, InkyCapError> {
@@ -190,10 +198,25 @@ pub async fn execute_creation_rule(
         locale,
     )?;
 
-    // If the rule has a scaffold, read and expand it
-    if !rule.scaffold_path.is_empty() {
-        let scaffold_file_path =
-            crate::notebox_package::scaffolds_dir(root).join(&rule.scaffold_path);
+    // Pick the scaffold to expand: an explicit override (the scaffold picker's
+    // "new note from this scaffold" path) wins over the rule's own scaffold.
+    // The override is a bare name or scaffolds-dir-relative path; normalize the
+    // `.typ` suffix the same way `prepare_scaffold_insert` does. A `None`/empty
+    // override falls back to the rule's `scaffold_path`, so existing callers are
+    // unchanged.
+    let scaffold_rel = match scaffold_override.as_deref() {
+        Some(name) if !name.is_empty() => Some(if name.ends_with(".typ") {
+            name.to_string()
+        } else {
+            format!("{name}.typ")
+        }),
+        _ if !rule.scaffold_path.is_empty() => Some(rule.scaffold_path.clone()),
+        _ => None,
+    };
+
+    // If a scaffold applies, read and expand it
+    if let Some(scaffold_rel) = scaffold_rel {
+        let scaffold_file_path = crate::notebox_package::scaffolds_dir(root).join(&scaffold_rel);
         if storage.exists(&scaffold_file_path).await {
             let title = file_path
                 .file_stem()

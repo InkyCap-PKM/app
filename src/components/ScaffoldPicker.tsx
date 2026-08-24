@@ -16,8 +16,9 @@ import { Component, For, Show, createResource, createSignal, createEffect, creat
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { activeEditorView } from "../stores/editor";
-import { getActiveTab } from "../stores/tabs";
-import { toastError, showToast } from "../stores/toasts";
+import { getActiveTab, openCreatedNote } from "../stores/tabs";
+import { triggerCreationRule } from "../stores/creation-rules";
+import { toastError } from "../stores/toasts";
 import { externalReload } from "../editor/typst-decorations/visual-plugin";
 import { useI18n } from "../lib/i18n";
 import { createHoverGuard } from "../lib/picker-hover";
@@ -78,8 +79,13 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
   async function insertScaffold(entry: ipc.TemplateEntry) {
     const handle = activeEditorView();
     if (!handle) {
-      showToast("warning", t("scaffoldPicker.openNoteFirst"));
-      close();
+      // No note is open (an empty "New tab"): start a brand-new note *from*
+      // the chosen scaffold rather than refusing. This is the only way to
+      // create a note whose whole body is a scaffold; inserting into an
+      // existing note only ever appends. Reuses the New Note creation rule
+      // (filename prompt/ZID, folder, import + zid injection) with the
+      // selected scaffold overriding the rule's own.
+      await createNoteFromScaffold(entry);
       return;
     }
     const view = handle.view;
@@ -112,6 +118,28 @@ const ScaffoldPicker: Component<ScaffoldPickerProps> = (props) => {
         annotations: externalReload.of(true),
       });
       view.focus();
+      close();
+    } catch (e) {
+      toastError(t("scaffoldPicker.insertFailed"), e);
+    }
+  }
+
+  // Create a new note whose content is the chosen scaffold, then open it in
+  // the (empty) active tab. Runs when the scaffold picker is invoked with no
+  // note open. `triggerCreationRule` returns null when the user cancels the
+  // filename prompt; nothing to open in that case.
+  async function createNoteFromScaffold(entry: ipc.TemplateEntry) {
+    try {
+      const result = await triggerCreationRule("new-note", { scaffoldOverride: entry.name });
+      if (!result) {
+        close();
+        return;
+      }
+      const name = result.path.split("/").pop() ?? t("bookmarks.untitled");
+      openCreatedNote(
+        { type: "file", title: name, path: result.path },
+        { cursorOffset: result.cursor_offset ?? undefined },
+      );
       close();
     } catch (e) {
       toastError(t("scaffoldPicker.insertFailed"), e);

@@ -82,7 +82,6 @@
   "customTypst.title": "Typst personnalisé — {name}",
   "customTypst.hintBefore": "Injecté à chaque exportation, après les remplacements de style de cette collection (donc il a préséance sur eux) et après l'importation du template (c'est donc ici qu'un template est appliqué). Typst brut — p. ex.",
   "customTypst.templateGuidance": "Appliquer un template : remplissez votre titre, vos auteurs et autres métadonnées dans sa règle #show ci-dessous. Laissez le chemin bibliography(\"…\") tel quel — à l'exportation, InkyCap remplit ce fichier automatiquement à partir des ouvrages cités par vos notes, vous n'avez donc pas à le maintenir. Le template n'affecte que l'exportation en PDF de livre/fusionné — pas l'affichage en lecture, l'éditeur, ni l'exportation d'une note seule. S'il génère sa propre page de titre, décochez « Inclure la page de titre » sous Métadonnées du livre.",
-  "scaffoldPicker.openNoteFirst": "Ouvrez d'abord une note",
   "scaffoldPicker.insertFailed": "Échec de l'insertion du scaffold",
   "scaffoldPicker.title": "Insérer un scaffold",
   "scaffoldPicker.hint": "Tapez pour filtrer, ↑↓ pour choisir, Entrée pour insérer, Échap pour annuler",

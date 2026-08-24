@@ -65,9 +65,10 @@ async function promptFilename(rule: CreationRule | undefined): Promise<string | 
  */
 export async function triggerCreationRule(
   ruleId: string,
-  options?: { targetFolder?: string },
+  options?: { targetFolder?: string; scaffoldOverride?: string },
 ): Promise<CreationResult | null> {
   const folderOverride = options?.targetFolder;
+  const scaffoldOverride = options?.scaffoldOverride;
   let rule = creationRules().find((r) => r.id === ruleId);
   // If the rule isn't cached yet, the store hasn't loaded for this notebox
   // (e.g. a fresh install where the startup load ran before a notebox was
@@ -105,7 +106,7 @@ export async function triggerCreationRule(
   //    cancel. Other errors propagate.
   for (;;) {
     try {
-      return await ipc.executeCreationRule(ruleId, nameOverride, folderOverride);
+      return await ipc.executeCreationRule(ruleId, nameOverride, folderOverride, scaffoldOverride);
     } catch (e) {
       const code = errorCode(e);
       if (code === "filename-required") {
