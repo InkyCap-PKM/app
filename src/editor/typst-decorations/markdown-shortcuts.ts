@@ -42,7 +42,16 @@ function handleSpace(view: EditorView, from: number): boolean {
 
   if (beforeCursor !== ">") return false;
 
-  // The cursor lands inside #quote[] to let the user keep typing the body.
+  // Any text already on the line (to the right of the `>`) is the intended
+  // quote body — wrap it inside the brackets rather than stranding an empty
+  // `[]` before it. On a blank line `rest` is empty and this collapses to the
+  // old `#quote(block: true)[]` with the caret between the brackets.
+  const rest = view.state.doc.sliceString(from, line.to);
+  const prefix = "#quote(block: true)[";
+  const insert = `${prefix}${rest}]`;
+
+  // The cursor lands at the start of the body (just after `[`) so the user can
+  // keep typing before any wrapped text.
   // Without expandFunc, the visual plugin collapses #quote[…] into a pill that
   // replaces the whole call — the cursor then snaps to the pill's left edge
   // and subsequent keystrokes appear in reverse order. expandFunc keeps the
@@ -50,10 +59,9 @@ function handleSpace(view: EditorView, from: number): boolean {
   // Markdown's `>` is semantically a blockquote — map to the form that
   // actually renders attribution and gets block styling. The pill's
   // Inline option lets the user demote to `#quote[…]` after the fact.
-  const insert = "#quote(block: true)[]";
   view.dispatch({
-    changes: { from: line.from, to: from, insert } as ChangeSpec,
-    selection: { anchor: line.from + insert.length - 1 },
+    changes: { from: line.from, to: line.to, insert } as ChangeSpec,
+    selection: { anchor: line.from + prefix.length },
     effects: expandFunc.of(line.from),
   });
   return true;

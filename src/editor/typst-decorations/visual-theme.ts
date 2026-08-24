@@ -628,7 +628,11 @@ export const visualTheme = EditorView.theme({
     fontSize: "0.78em",
     fontFamily: "var(--editor-font-mono, monospace)",
     lineHeight: "1.4",
-    margin: "0",
+    // A hair of trailing space so the chip doesn't butt up against the text
+    // that follows it inline (e.g. #quote[…] before its body). Uses the
+    // density-scaled spacing token (2px at default density) so it tracks the
+    // user's density setting rather than hardcoding a pixel.
+    margin: "0 var(--space-1) 0 0",
   },
   ".cm-typst-pill:hover, .cm-typst-func-chip:hover, .cm-typst-pill:focus-visible, .cm-typst-func-chip:focus-visible": {
     color: "var(--fg-primary)",
