@@ -54,9 +54,11 @@ modules:
       # Unpack the Debian package staged next to this manifest.
       - ar x inkycap.deb
       - tar -xf data.tar.gz
-      # Binaries (main app + tinymist sidecar) -> /app/bin.
+      # Binaries (main app + tinymist sidecar) -> /app/bin. The sidecar keeps its
+      # `inkycap-tinymist` name so Tauri's Command.sidecar resolves it next to the
+      # main binary at runtime (matches the `.deb`'s usr/bin/inkycap-tinymist).
       - install -Dm755 usr/bin/inkycap /app/bin/inkycap
-      - install -Dm755 usr/bin/tinymist /app/bin/tinymist
+      - install -Dm755 usr/bin/inkycap-tinymist /app/bin/inkycap-tinymist
       # Bundled resources (licenses, etc.) -> /app/lib/InkyCap, preserving the
       # ../lib/InkyCap layout the binary resolves relative to /app/bin. cp needs
       # /app/lib to exist first (`install -D` above only created /app/bin).
