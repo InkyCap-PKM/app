@@ -171,6 +171,23 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
+    // Apply the Linux-only "disable DMABUF renderer" workaround before the
+    // webview starts. `WEBKIT_DISABLE_DMABUF_RENDERER` is read once when
+    // WebKitGTK initializes, so it must be set here — before `tauri::Builder`
+    // spins up the webview process — and only takes effect after a restart
+    // when the user toggles it. We're still single-threaded at this point,
+    // which keeps `set_var` sound. macOS/WebView2 don't read these vars, but
+    // gating on `target_os` keeps the intent explicit and means a settings.json
+    // synced from a Linux machine is inert elsewhere. See issue #22.
+    #[cfg(target_os = "linux")]
+    if settings::load_settings().behaviour.disable_dmabuf_renderer {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        log::info!(
+            "WebKitGTK DMABUF renderer disabled via Behaviour setting (issue #22 workaround)"
+        );
+    }
+
     use tauri::Manager;
 
     tauri::Builder::default()

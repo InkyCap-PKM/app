@@ -229,6 +229,18 @@ pub struct BehaviourSettings {
     /// "open in new tab" action), switch the content focus to that tab
     /// immediately. When false, the tab opens in the background.
     pub switch_to_new_tab: bool,
+
+    /// Linux-only workaround for a WebKitGTK rendering bug: when true,
+    /// InkyCap sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (and the sibling
+    /// `WEBKIT_DISABLE_COMPOSITING_MODE=1`) at startup, disabling the
+    /// GPU-accelerated DMABUF compositing path that produces stray/duplicated
+    /// UI artifacts on some GPU + driver + compositor combinations (notably
+    /// NVIDIA/Nouveau and some Wayland sessions). Read once before the webview
+    /// starts (see `crate::run`), so a change only takes effect after a
+    /// restart. Default false: stock WebKitGTK behaviour is left untouched for
+    /// the majority who don't hit the bug. Ignored on macOS/Windows, whose
+    /// webviews (WKWebView / WebView2) are unaffected. See issue #22.
+    pub disable_dmabuf_renderer: bool,
 }
 
 /// In-app update preferences. A check never runs without user action unless

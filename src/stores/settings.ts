@@ -88,6 +88,7 @@ const DEFAULTS: UserSettings = {
   },
   behaviour: {
     switch_to_new_tab: false,
+    disable_dmabuf_renderer: false,
   },
   backup: {
     enabled: true,
