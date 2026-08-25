@@ -17,6 +17,7 @@ import {
   setTabEditingMode,
   createEmptyTab,
   splitPane,
+  splitWithPreview,
   closePane,
   nudgeTabReadingZoom,
   resetTabReadingZoom,
@@ -203,6 +204,15 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     keybinding: "Ctrl+Shift+[",
     execute: () => {
       splitPane(focusedLeaf().id, "column");
+    },
+  });
+
+  registerCommand({
+    id: "pane:split-with-preview",
+    title: t("command.pane.splitWithPreview"),
+    category: "Navigate",
+    execute: () => {
+      splitWithPreview(focusedLeaf().id);
     },
   });
 

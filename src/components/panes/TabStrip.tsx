@@ -6,6 +6,7 @@ import {
   createEmptyTab,
   dirtyTabIds,
   tabDisplayTitle,
+  isSyncedTab,
   TAB_DRAG_MIME,
   type Tab,
 } from "../../stores/tabs";
@@ -19,6 +20,7 @@ import {
   Scroll,
   LibraryBig,
   GitCompareArrows,
+  Link2,
 } from "lucide-solid";
 import TabBarMenu from "./TabBarMenu";
 
@@ -243,6 +245,14 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
                 <Show when={tab.type === "version-diff"}>
                   <span class="tab__icon" title={t("versionDiff.tab.title")}>
                     <GitCompareArrows size={13} />
+                  </span>
+                </Show>
+                <Show when={isSyncedTab(tab.id)}>
+                  <span
+                    class="tab__icon tab__icon--sync"
+                    title={t("tab.syncedPreview")}
+                  >
+                    <Link2 size={13} />
                   </span>
                 </Show>
                 <span class="tab__title">

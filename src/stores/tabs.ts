@@ -16,6 +16,7 @@ import {
   splitLeaf,
   leafById,
   leafForTab,
+  focusPane,
   type SplitDirection,
 } from "./panes";
 
@@ -46,6 +47,12 @@ export interface Tab {
    *  zoomed independently — one held at a legible reading size while the other
    *  is pulled back to inspect page layout. */
   readingZoom?: number;
+  /** Marks a synced editor+preview pair created by "Split with preview": the
+   *  editor tab and its reading-mode preview share one id. Purely drives the
+   *  "synced" tab indicator — the preview's recompile-on-save is path-based, so
+   *  this is not load-bearing for the refresh. A group with only one member
+   *  left open (partner closed) reads as un-synced, so the indicator self-heals. */
+  syncGroupId?: string;
   /** One-shot cursor offset from scaffold {{cursor}}. Consumed by the editor on load. */
   pendingCursorOffset?: number;
   /** One-shot heading label to scroll to after the file loads. */
@@ -607,6 +614,78 @@ export function splitPane(leafId: string, direction: SplitDirection): string | n
     }));
   }
   return newLeafId;
+}
+
+/**
+ * Split the pane and open a live-updating reading-mode preview of the active
+ * note in the new sibling — the "edit here, watch the render there" case.
+ *
+ * The preview follows the user's Appearance > Reading view format preference
+ * (`readingFormat` left undefined → `tabReadingFormat` falls back to
+ * `default_reading_format`). Both tabs are tagged with a shared `syncGroupId`
+ * to drive the synced-pair indicator; the preview's refresh itself is
+ * path-based (it recompiles on `inkycap:note-saved`, which the editor's
+ * autosave already emits). Focus stays on the source pane so the user keeps
+ * typing. Returns the new leaf id, or null when the active tab isn't a note
+ * (nothing to preview) or the split failed.
+ */
+export function splitWithPreview(leafId: string): string | null {
+  const leaf = leafById(leafId);
+  const src = leaf?.activeTabId ? tabs.find((t) => t.id === leaf.activeTabId) : undefined;
+  if (!src || src.type !== "file" || !src.path) return null;
+  // One synced preview per note: refuse if this note already has a pair open
+  // (either from this pane or another). Other notes are unaffected.
+  if (pathHasSyncedPreview(src.path)) return null;
+
+  const groupId = `sync-${nextId++}`;
+  const newId = `tab-${nextId++}`;
+  setTabs(produce((t) => {
+    // Tag the source tab so both panes show the synced indicator.
+    const source = t.find((x) => x.id === src.id);
+    if (source) source.syncGroupId = groupId;
+    t.push({
+      id: newId,
+      type: "file",
+      title: src.title,
+      path: src.path,
+      viewName: src.viewName,
+      editingMode: "reading",
+      syncGroupId: groupId,
+    });
+  }));
+
+  const newLeafId = splitLeaf(leafId, "row", newId);
+  if (!newLeafId) {
+    // Roll back both the orphan tab and the source tag so a failed split
+    // leaves no phantom tab and no dangling indicator.
+    setTabs(produce((t) => {
+      const i = t.findIndex((x) => x.id === newId);
+      if (i !== -1) t.splice(i, 1);
+      const source = t.find((x) => x.id === src.id);
+      if (source) source.syncGroupId = undefined;
+    }));
+    return null;
+  }
+  // Keep the user in the editor pane; the preview only mirrors it.
+  focusPane(leafId);
+  return newLeafId;
+}
+
+/** True when this tab belongs to a synced editor+preview pair whose partner is
+ *  still open. Reactive (reads the tab store). A group stranded to one member
+ *  reads as un-synced, so the indicator clears when either pane closes. */
+export function isSyncedTab(tabId: string): boolean {
+  const tab = tabs.find((t) => t.id === tabId);
+  if (!tab?.syncGroupId) return false;
+  return tabs.some((t) => t.id !== tabId && t.syncGroupId === tab.syncGroupId);
+}
+
+/** True when the note at `path` already has a live "Split with preview" pair
+ *  open anywhere. Caps the feature at one synced preview per note: both the
+ *  editor and preview panes of a synced note report true, so the action is
+ *  hidden for both. Reactive (reads the tab store). */
+export function pathHasSyncedPreview(path: string): boolean {
+  return tabs.some((t) => pathEquals(t.path, path) && isSyncedTab(t.id));
 }
 
 /** Close every tab in a pane, which collapses the pane (or, if it's the only
