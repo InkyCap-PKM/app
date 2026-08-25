@@ -456,6 +456,13 @@ export interface BehaviourSettings {
    *  "open in new tab" action), switch the content focus to that tab
    *  immediately. When false, the tab opens in the background. */
   switch_to_new_tab: boolean;
+
+  /** Linux-only WebKitGTK workaround. When true, InkyCap disables the DMABUF
+   *  GPU compositing path at startup to fix stray/duplicated UI artifacts on
+   *  some GPU + driver + compositor combinations. Read once before the webview
+   *  starts, so a change requires a restart. Ignored on macOS/Windows. See
+   *  issue #22. */
+  disable_dmabuf_renderer: boolean;
 }
 
 /** In-app update preferences. A check never runs without user action unless

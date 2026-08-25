@@ -5,6 +5,7 @@ import * as ipc from "../../lib/ipc";
 import { settings, updateSetting, noteboxSettings, updateNoteboxSetting } from "../../stores/settings";
 import { useI18n } from "../../lib/i18n";
 import { dailyNotesFolder } from "../../stores/journal-scroll";
+import { isLinux } from "../../lib/platform";
 import { SettingSelect, SettingPathText, SettingToggle, collectPaths } from "./shared";
 
 export function BehaviourSettingsSection() {
@@ -118,6 +119,25 @@ export function BehaviourSettingsSection() {
         value={settings.behaviour.switch_to_new_tab}
         onChange={(v) => updateSetting("behaviour", "switch_to_new_tab", v)}
       />
+
+      {/* Graphics (Linux/WebKitGTK only) */}
+      <Show when={isLinux()}>
+        <div class="settings__section-header">
+          <span class="settings__label">{t("settings.behaviour.graphics")}</span>
+        </div>
+        {/* The toggle reads as "GPU compositing" (on = enabled, the default),
+            so the label stays intuitive; the persisted flag is the inverse
+            (`disable_dmabuf_renderer`), matching the env var it drives. */}
+        <SettingToggle
+          label={t("settings.behaviour.gpuCompositing.label")}
+          description={t("settings.behaviour.gpuCompositing.description")}
+          value={!settings.behaviour.disable_dmabuf_renderer}
+          onChange={(v) => updateSetting("behaviour", "disable_dmabuf_renderer", !v)}
+        />
+        <p class="settings__section-note settings__section-note--warn">
+          {t("settings.behaviour.gpuCompositing.restartNote")}
+        </p>
+      </Show>
 
       {/* Software updates */}
       <div class="settings__section-header">
