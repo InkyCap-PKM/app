@@ -10,6 +10,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  type JSX,
 } from "solid-js";
 import * as ipc from "../lib/ipc";
 import { buildChecker } from "../lib/spellchecker";
@@ -84,6 +85,7 @@ import {
   FlaskConical,
   Minus,
   Plus,
+  MoreHorizontal,
 } from "lucide-solid";
 import JournalScrollPill from "./JournalScrollPill";
 import JournalScrollView from "./JournalScrollView";
@@ -137,6 +139,62 @@ function scrollToHeadingLabel(handle: TypstEditorHandle, doc: string, label: str
   }
 }
 
+/**
+ * Overflow container for the editor header's control cluster. When the pane is
+ * too narrow for the controls to sit inline, they collapse into this single
+ * "⋯" button, which drops the same controls into a menu (priority+ pattern).
+ * Children are rendered lazily — only while the menu is open — so the controls
+ * exist in exactly one place at a time (inline OR here, never both).
+ */
+const HeaderOverflowMenu: Component<{ children: JSX.Element }> = (props) => {
+  const [open, setOpen] = createSignal(false);
+  let wrapRef: HTMLDivElement | undefined;
+
+  function onDocPointerDown(e: PointerEvent) {
+    if (wrapRef && !wrapRef.contains(e.target as Node)) setOpen(false);
+  }
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === "Escape") setOpen(false);
+  }
+  onCleanup(() => {
+    document.removeEventListener("pointerdown", onDocPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  });
+
+  function toggle() {
+    const next = !open();
+    setOpen(next);
+    if (next) {
+      document.addEventListener("pointerdown", onDocPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+    } else {
+      document.removeEventListener("pointerdown", onDocPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    }
+  }
+
+  return (
+    <div class="editor-header__overflow" ref={wrapRef}>
+      <button
+        type="button"
+        class="editor-header__icon-btn"
+        aria-haspopup="menu"
+        aria-expanded={open()}
+        title={t("editor.toolbar.more")}
+        aria-label={t("editor.toolbar.more")}
+        onClick={toggle}
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      <Show when={open()}>
+        <div class="editor-header__overflow-popup" role="menu">
+          {props.children}
+        </div>
+      </Show>
+    </div>
+  );
+};
+
 const TypstEditor: Component<TypstEditorProps> = (props) => {
   // Reading-view render format is a per-tab override (so two panes showing
   // the same note in reading mode can differ), falling back to the user's
@@ -151,6 +209,34 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
   // which scales layout rather than just type — so the measure and images
   // grow together and text still reflows to the pane.
   const readingZoom = () => tabReadingZoom(props.tabId);
+
+  // Toolbar overflow: when the pane is too narrow for the header's control
+  // cluster to sit inline, it collapses into a single "⋯" menu (priority+
+  // pattern). Driven by the observed header width against a mode-dependent
+  // threshold — reading mode carries extra controls (format + zoom) so it needs
+  // more room before it fits. A width breakpoint (not content measurement)
+  // keeps this stable: collapsing changes the content but not the header width,
+  // so there's no expand/collapse oscillation. Thresholds are px because the
+  // rendered controls are icon/glyph-sized and locale-stable (SVG/HTML labels
+  // don't translate); tune here if the cluster changes.
+  const COMPACT_TOOLBAR_READING_PX = 540;
+  const COMPACT_TOOLBAR_EDIT_PX = 340;
+  const [headerWidth, setHeaderWidth] = createSignal(0);
+  let headerResizeObserver: ResizeObserver | undefined;
+  const observeHeaderWidth = (el: HTMLElement) => {
+    headerResizeObserver?.disconnect();
+    headerResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) setHeaderWidth(entry.contentRect.width);
+    });
+    headerResizeObserver.observe(el);
+  };
+  onCleanup(() => headerResizeObserver?.disconnect());
+  const compactToolbar = () => {
+    const w = headerWidth();
+    // Before first measurement, assume roomy so the cluster starts inline.
+    if (w === 0) return false;
+    return w < (currentMode() === "reading" ? COMPACT_TOOLBAR_READING_PX : COMPACT_TOOLBAR_EDIT_PX);
+  };
 
   let containerRef: HTMLDivElement | undefined;
   let editorMountRef: HTMLDivElement | undefined;
@@ -880,11 +966,26 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   // ── Reading-mode compile ───────────────────────────────
 
+  // Reading/preview panes compile from disk, so they must recompile whenever
+  // the note is saved elsewhere — e.g. the editor half of a "Split with
+  // preview" pair, or any autosave. Bump a revision the compile resources
+  // depend on, scoped to this tab's path so unrelated saves don't churn it.
+  // (Fixes stale reading views after a save generally, not just synced panes.)
+  const [savedRevision, setSavedRevision] = createSignal(0);
+  const onExternalSave = (e: Event) => {
+    const savedPath = (e as CustomEvent).detail?.path as string | undefined;
+    if (savedPath && currentPath && pathEquals(savedPath, currentPath)) {
+      setSavedRevision((n) => n + 1);
+    }
+  };
+  document.addEventListener("inkycap:note-saved", onExternalSave);
+  onCleanup(() => document.removeEventListener("inkycap:note-saved", onExternalSave));
+
   const [compileResult] = createResource<
     TypstCompileResult | undefined,
-    readonly [string, TypstMode, "svg" | "html"]
+    readonly [string, TypstMode, "svg" | "html", number]
   >(
-    () => [props.path, currentMode(), readingFormat()] as const,
+    () => [props.path, currentMode(), readingFormat(), savedRevision()] as const,
     async ([path, mode, fmt]) => {
       if (mode !== "reading" || fmt !== "svg") return undefined;
       try {
@@ -897,9 +998,9 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   const [htmlResult] = createResource<
     TypstHtmlResult | undefined,
-    readonly [string, TypstMode, "svg" | "html"]
+    readonly [string, TypstMode, "svg" | "html", number]
   >(
-    () => [props.path, currentMode(), readingFormat()] as const,
+    () => [props.path, currentMode(), readingFormat(), savedRevision()] as const,
     async ([path, mode, fmt]) => {
       if (mode !== "reading" || fmt !== "html") return undefined;
       try {
@@ -974,10 +1075,168 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
     );
   };
 
+  // The editor header's right-hand control cluster: the Mycelial button, the
+  // Journal Scroll pill, the reading-format + zoom toggles (reading mode only),
+  // and the source/live/reading mode toggle. Rendered inline when there's room,
+  // or inside the overflow menu when the pane is narrow (see `compactToolbar`).
+  const RightControls: Component<{ layout?: "inline" | "menu" }> = (rc) => {
+    const inMenu = rc.layout === "menu";
+    // In the overflow menu each control becomes a labelled row (muted label
+    // left, control right) so the ragged icon cluster reads as a tidy settings
+    // panel. Inline, Row is transparent — the controls sit bare in the toolbar.
+    const Row: Component<{ label: string; children: JSX.Element }> = (rp) =>
+      inMenu ? (
+        <div class="editor-header__menu-row">
+          <span class="editor-header__menu-label">{rp.label}</span>
+          <div class="editor-header__menu-control">{rp.children}</div>
+        </div>
+      ) : (
+        <>{rp.children}</>
+      );
+
+    return (
+    <>
+      <Row label={t("editor.toolbar.mycelialLabel")}>
+      <button
+        type="button"
+        class="editor-header__icon-btn"
+        onClick={() => {
+          const tab = tabs.find((t) => t.id === props.tabId);
+          if (!tab) return;
+          const name = tab.title.replace(/\.[^.]+$/, "");
+          openTab(
+            { type: "mycelial", title: name, path: tab.path },
+            { forceNewTab: true },
+          );
+        }}
+        title={t("mycelial.button.title")}
+        aria-label={t("mycelial.button.title")}
+      >
+        <BrainCircuit size={14} />
+      </button>
+      </Row>
+      <Row label={t("journalScroll.group")}>
+        <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
+      </Row>
+      <Show when={inMenu}>
+        <div class="editor-header__menu-divider" />
+      </Show>
+      <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
+        <Row label={t("readingFormat.toggle")}>
+        <div
+          class="editor-header__mode-toggle editor-header__format-toggle"
+          role="group"
+          aria-label={t("readingFormat.toggle")}
+        >
+          <button
+            type="button"
+            class="editor-header__mode-seg editor-header__format-seg is-format-svg"
+            classList={{ "is-active": readingFormat() === "svg" }}
+            onClick={() => setReadingFormat("svg")}
+            title={t("readingFormat.svg.title")}
+            aria-pressed={readingFormat() === "svg"}
+          >
+            <BookA size={14} />
+            <span>{t("readingFormat.svg")}</span>
+          </button>
+          <button
+            type="button"
+            class="editor-header__mode-seg editor-header__format-seg is-format-html"
+            classList={{ "is-active": readingFormat() === "html" }}
+            onClick={() => setReadingFormat("html")}
+            title={t("readingFormat.html.title")}
+            aria-pressed={readingFormat() === "html"}
+          >
+            <FileCode size={14} />
+            <span>{t("readingFormat.html")}</span>
+          </button>
+        </div>
+        </Row>
+        <Row label={t("editor.reading.zoom.label")}>
+        <div
+          class="editor-header__mode-toggle editor-header__zoom"
+          role="group"
+          aria-label={t("editor.reading.zoom.label")}
+        >
+          <button
+            type="button"
+            class="editor-header__mode-seg"
+            disabled={readingZoom() <= READING_ZOOM_MIN}
+            onClick={() => nudgeTabReadingZoom(props.tabId, 1 / READING_ZOOM_STEP)}
+            title={t("editor.reading.zoom.out")}
+            aria-label={t("editor.reading.zoom.out")}
+          >
+            <Minus size={14} />
+          </button>
+          {/* The level doubles as the reset control — the same affordance a
+              browser's zoom indicator offers. */}
+          <button
+            type="button"
+            class="editor-header__mode-seg editor-header__zoom-level"
+            onClick={() => resetTabReadingZoom(props.tabId)}
+            title={t("editor.reading.zoom.reset")}
+          >
+            {t("editor.reading.zoom.percent", {
+              percent: String(Math.round(readingZoom() * 100)),
+            })}
+          </button>
+          <button
+            type="button"
+            class="editor-header__mode-seg"
+            disabled={readingZoom() >= READING_ZOOM_MAX}
+            onClick={() => nudgeTabReadingZoom(props.tabId, READING_ZOOM_STEP)}
+            title={t("editor.reading.zoom.in")}
+            aria-label={t("editor.reading.zoom.in")}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+        </Row>
+      </Show>
+      <Show when={!isScrollEnabled(props.tabId)}>
+        <Row label={t("editor.mode.label")}>
+        <div class="editor-header__mode-toggle" role="group" aria-label={t("editor.mode.label")}>
+          <button
+            type="button"
+            class="editor-header__mode-seg"
+            classList={{ "is-active": currentMode() === "source" }}
+            onClick={() => setMode("source")}
+            title={t("editor.mode.source")}
+            aria-pressed={currentMode() === "source"}
+          >
+            <Code size={14} />
+          </button>
+          <button
+            type="button"
+            class="editor-header__mode-seg"
+            classList={{ "is-active": currentMode() === "live" }}
+            onClick={() => setMode("live")}
+            title={t("editor.mode.visual")}
+            aria-pressed={currentMode() === "live"}
+          >
+            <PenLine size={14} />
+          </button>
+          <button
+            type="button"
+            class="editor-header__mode-seg"
+            classList={{ "is-active": currentMode() === "reading" }}
+            onClick={() => setMode("reading")}
+            title={t("editor.mode.reading")}
+            aria-pressed={currentMode() === "reading"}
+          >
+            <Eye size={14} />
+          </button>
+        </div>
+        </Row>
+      </Show>
+    </>
+    );
+  };
+
   return (
     <div class="typst-editor-container" ref={containerRef}>
       <Show when={!isToolingFile()}>
-      <div class="editor-header">
+      <div class="editor-header" ref={observeHeaderWidth}>
         <div class="editor-header__nav" role="group" aria-label={t("editor.nav.label")}>
           <button
             type="button"
@@ -1028,126 +1287,15 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
         </div>
 
         <div class="editor-header__right-group">
-          <button
-            type="button"
-            class="editor-header__icon-btn"
-            onClick={() => {
-              const tab = tabs.find((t) => t.id === props.tabId);
-              if (!tab) return;
-              const name = tab.title.replace(/\.[^.]+$/, "");
-              openTab(
-                { type: "mycelial", title: name, path: tab.path },
-                { forceNewTab: true },
-              );
-            }}
-            title={t("mycelial.button.title")}
-            aria-label={t("mycelial.button.title")}
-          >
-            <BrainCircuit size={14} />
-          </button>
-          <JournalScrollPill tabId={props.tabId} anchorPath={props.path} />
-        <Show when={!isScrollEnabled(props.tabId) && currentMode() === "reading"}>
-          <div
-            class="editor-header__mode-toggle editor-header__format-toggle"
-            role="group"
-            aria-label={t("readingFormat.toggle")}
-          >
-            <button
-              type="button"
-              class="editor-header__mode-seg editor-header__format-seg is-format-svg"
-              classList={{ "is-active": readingFormat() === "svg" }}
-              onClick={() => setReadingFormat("svg")}
-              title={t("readingFormat.svg.title")}
-              aria-pressed={readingFormat() === "svg"}
-            >
-              <BookA size={14} />
-              <span>{t("readingFormat.svg")}</span>
-            </button>
-            <button
-              type="button"
-              class="editor-header__mode-seg editor-header__format-seg is-format-html"
-              classList={{ "is-active": readingFormat() === "html" }}
-              onClick={() => setReadingFormat("html")}
-              title={t("readingFormat.html.title")}
-              aria-pressed={readingFormat() === "html"}
-            >
-              <FileCode size={14} />
-              <span>{t("readingFormat.html")}</span>
-            </button>
-          </div>
-          <div
-            class="editor-header__mode-toggle editor-header__zoom"
-            role="group"
-            aria-label={t("editor.reading.zoom.label")}
-          >
-            <button
-              type="button"
-              class="editor-header__mode-seg"
-              disabled={readingZoom() <= READING_ZOOM_MIN}
-              onClick={() => nudgeTabReadingZoom(props.tabId, 1 / READING_ZOOM_STEP)}
-              title={t("editor.reading.zoom.out")}
-              aria-label={t("editor.reading.zoom.out")}
-            >
-              <Minus size={14} />
-            </button>
-            {/* The level doubles as the reset control — the same affordance a
-                browser's zoom indicator offers. */}
-            <button
-              type="button"
-              class="editor-header__mode-seg editor-header__zoom-level"
-              onClick={() => resetTabReadingZoom(props.tabId)}
-              title={t("editor.reading.zoom.reset")}
-            >
-              {t("editor.reading.zoom.percent", {
-                percent: String(Math.round(readingZoom() * 100)),
-              })}
-            </button>
-            <button
-              type="button"
-              class="editor-header__mode-seg"
-              disabled={readingZoom() >= READING_ZOOM_MAX}
-              onClick={() => nudgeTabReadingZoom(props.tabId, READING_ZOOM_STEP)}
-              title={t("editor.reading.zoom.in")}
-              aria-label={t("editor.reading.zoom.in")}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-        </Show>
-        <Show when={!isScrollEnabled(props.tabId)}>
-        <div class="editor-header__mode-toggle" role="group" aria-label={t("editor.mode.label")}>
-          <button
-            type="button"
-            class="editor-header__mode-seg"
-            classList={{ "is-active": currentMode() === "source" }}
-            onClick={() => setMode("source")}
-            title={t("editor.mode.source")}
-            aria-pressed={currentMode() === "source"}
-          >
-            <Code size={14} />
-          </button>
-          <button
-            type="button"
-            class="editor-header__mode-seg"
-            classList={{ "is-active": currentMode() === "live" }}
-            onClick={() => setMode("live")}
-            title={t("editor.mode.visual")}
-            aria-pressed={currentMode() === "live"}
-          >
-            <PenLine size={14} />
-          </button>
-          <button
-            type="button"
-            class="editor-header__mode-seg"
-            classList={{ "is-active": currentMode() === "reading" }}
-            onClick={() => setMode("reading")}
-            title={t("editor.mode.reading")}
-            aria-pressed={currentMode() === "reading"}
-          >
-            <Eye size={14} />
-          </button>
-        </div>
-        </Show>
+          {/* When the pane is too narrow to hold the control cluster inline,
+              collapse it into a single "⋯" menu (priority+). RightControls
+              mounts in exactly one branch, so there's never a duplicate live
+              instance. */}
+          <Show when={compactToolbar()} fallback={<RightControls />}>
+            <HeaderOverflowMenu>
+              <RightControls layout="menu" />
+            </HeaderOverflowMenu>
+          </Show>
         </div>
       </div>
       </Show>

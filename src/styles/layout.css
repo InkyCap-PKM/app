@@ -1361,6 +1361,13 @@ input.date-value__offset {
   height: 13px;
 }
 
+/* Link glyph marking the two tabs of a synced editor+preview pair. Accent
+   colour keeps the tie between the panes legible without competing with the
+   active/hover tab states, which already colour the tab border. */
+.tab__icon--sync {
+  color: var(--accent);
+}
+
 .tab__close {
   background: none;
   border: none;
@@ -10161,7 +10168,13 @@ input.date-value__offset {
 .typst-reading__pages {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* Left-align the column and centre each page with its own auto margins
+     (below). align-items:center would centre a page wider than the pane too,
+     but flex centring pushes the overflow past BOTH edges — the left edge then
+     clips and can't be scrolled to. Auto margins collapse to 0 on overflow, so
+     a too-wide page (common in a narrow preview split) starts at the left edge
+     and the container's horizontal scroll reaches all of it. */
+  align-items: flex-start;
   gap: 16px;
   padding: 24px 16px;
 }
@@ -10173,6 +10186,9 @@ input.date-value__offset {
   color: #000000;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
+  /* Centre within a pane wider than the page; collapses to a left-aligned,
+     horizontally-scrollable layout once the page outgrows the pane. */
+  margin-inline: auto;
   /* Width/height come from inline style (pt → CSS px). The inline SVG
      fills the box. */
 }
@@ -10609,6 +10625,63 @@ input.date-value__offset {
   flex-shrink: 0;
   width: 1.15em;
   height: 1.15em;
+}
+
+/* Toolbar overflow menu: when a pane is too narrow for the header controls to
+   sit inline, they collapse behind this single "⋯" button (see
+   `compactToolbar` in TypstEditor). The popup drops the same control groups —
+   stacked — using the shared --popup-* surface tokens. */
+.editor-header__overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.editor-header__overflow-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+}
+
+/* Each control in the overflow menu is a labelled row: a muted label on the
+   left, the control (segmented toggle / stepper / icon action) pinned right.
+   Uniform rows turn the ragged inline cluster into a tidy settings panel. */
+.editor-header__menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.editor-header__menu-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.editor-header__menu-control {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.editor-header__overflow-popup .editor-header__menu-divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border-subtle);
 }
 
 /* Reading format toggle (SVG / HTML segmented control).

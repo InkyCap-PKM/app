@@ -3,6 +3,8 @@ import {
   tabs,
   setActiveTabId,
   splitPane,
+  splitWithPreview,
+  pathHasSyncedPreview,
   closePane,
   tabDisplayTitle,
 } from "../../stores/tabs";
@@ -12,6 +14,7 @@ import { MenuTabsIcon } from "../icons";
 import {
   SplitSquareHorizontal,
   SplitSquareVertical,
+  BookOpen,
   X,
   Check,
 } from "lucide-solid";
@@ -24,6 +27,20 @@ import {
 const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
   const [open, setOpen] = createSignal(false);
   let wrapRef: HTMLDivElement | undefined;
+
+  // "Split with preview" only applies to a note (it opens a reading-mode
+  // render of the file); hide it for empty/collection/mycelial/diff tabs, and
+  // for a note that already has a synced preview open — one per note.
+  const canSplitWithPreview = () => {
+    const active = props.leaf.activeTabId
+      ? tabs.find((x) => x.id === props.leaf.activeTabId)
+      : undefined;
+    return (
+      active?.type === "file" &&
+      !!active.path &&
+      !pathHasSyncedPreview(active.path)
+    );
+  };
 
   function onDocPointerDown(e: PointerEvent) {
     if (wrapRef && !wrapRef.contains(e.target as Node)) setOpen(false);
@@ -79,6 +96,19 @@ const TabBarMenu: Component<{ leaf: LeafPane }> = (props) => {
             <SplitSquareVertical size={15} />
             <span>{t("pane.splitDown")}</span>
           </button>
+          <Show when={canSplitWithPreview()}>
+            <button
+              class="tab-bar__menu-item"
+              role="menuitem"
+              onClick={() => {
+                splitWithPreview(props.leaf.id);
+                close();
+              }}
+            >
+              <BookOpen size={15} />
+              <span>{t("pane.splitWithPreview")}</span>
+            </button>
+          </Show>
           <Show when={hasMultiplePanes()}>
             <button
               class="tab-bar__menu-item"
