@@ -12,9 +12,46 @@ release, **odd** is a development (beta) release. Add a new heading below for
 each tagged release, newest first, grouping entries under **Added**, **Changed**,
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
-## [Unreleased]
+## [26.7.4] - 2026-08-25
 
-Nothing yet.
+### Added
+
+- Split with preview: a split view pairing a live editor with a synced reading
+  pane, so writing and rendered output sit side by side.
+- Customizable UI keyboard shortcuts. Shortcuts can be remapped from their
+  defaults through the Help display (F1 or the help icon).
+- Setting to disable GPU compositing (Settings > Behaviour), for Linux system
+  configurations where compositing causes visual glitches.
+- Typst syntax highlighting inside the visual editor's code blocks, matching the
+  other code-block displays.
+
+### Changed
+
+- Mycelial View: anchor-specific scoring, support for small noteboxes, and new
+  gap signals surfacing weak hubs and open questions.
+- Journal Scroll now defaults to the most recently modified note as its anchor
+  when opened without another note already active.
+- Inserting a scaffold when no note is open now automatically starts a new note.
+- Visual editor pills gain a trailing space on the right for a cleaner
+  appearance, and no longer collapse markup into a pill until the user closes a
+  parenthesis rather than assuming it.
+- Reworded the calendar task-list options.
+- Bumped the Typst compile pipeline 0.15.0 to 0.15.1 and the Tinymist language
+  server sidecar 0.14.16 to 0.15.2.
+
+### Fixed
+
+- Heading detection now uses Typst's own parser instead of a line regex, so edge
+  cases parse correctly.
+- Search: typing in the Replace field no longer steals the caret back to Find on
+  macOS/WebKit.
+- Zooming now works in the SVG and HTML view modes.
+- Bookmarks update when a file is renamed or moved, and the system no longer
+  creates duplicate bookmarks.
+- Blockquote: wrapping existing text with `>` places the quote correctly, and the
+  cursor now lands inside the quotation marks for inline quotes.
+- Code blocks no longer advance a line before letting the user specify the
+  language.
 
 ## [26.6.2] - 2026-06-09
 
