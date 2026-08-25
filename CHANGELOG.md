@@ -12,7 +12,7 @@ release, **odd** is a development (beta) release. Add a new heading below for
 each tagged release, newest first, grouping entries under **Added**, **Changed**,
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
-## [26.7.4] - 2026-08-25
+## [26.8.2] - 2026-08-25
 
 ### Added
 
