@@ -8025,6 +8025,17 @@ input.date-value__offset {
   gap: 8px;
 }
 
+/* Young-notebox notice: the statistical signals run with relaxed thresholds
+   below ~50 notes, so suggestions are flagged as tentative. */
+.mycelial-view__notice {
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
 .mycelial-view__toolbar-right {
   display: flex;
   align-items: center;
@@ -8376,6 +8387,13 @@ input.date-value__offset {
   background: var(--mycelial-emergent-bg, color-mix(in srgb, #9a7b4f 8%, var(--bg-primary)));
 }
 
+/* Kindred notes — semantically similar, no link path to the anchor. */
+.mycelial-box--kindred {
+  border-color: var(--mycelial-kindred, #3f7268);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--mycelial-kindred, #3f7268) 6%, var(--bg-primary));
+}
+
 /* The concept phrase dominates the box. */
 .mycelial-box__concept {
   font-size: var(--text-md);
@@ -8402,6 +8420,24 @@ input.date-value__offset {
 
 .mycelial-box--emergent .mycelial-box__subtitle {
   color: var(--mycelial-emergent, #9a7b4f);
+}
+
+.mycelial-box--kindred .mycelial-box__subtitle {
+  color: var(--mycelial-kindred, #3f7268);
+}
+
+/* Kindred shared-vocabulary line — plain terms, not a highlighted snippet. */
+.mycelial-box__snippet--terms {
+  font-style: italic;
+}
+
+/* Under-developed-hub badge on a note box (detail in the Growth panel). */
+.mycelial-box__hub-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: text-bottom;
+  margin-left: var(--space-1);
+  color: var(--mycelial-kindred, #3f7268);
 }
 
 /* Search-result-style context line. */
@@ -8656,6 +8692,41 @@ input.date-value__offset {
 }
 
 .concept-filtering__editlink:hover {
+  color: var(--fg-primary);
+}
+
+/* ─── Mycelial Growth pane (under-developed pages + open questions) ───
+   Rows reuse the Links pane's `.sidebar-item` + `.link-context` structure;
+   only the pieces with no existing equivalent are styled here. */
+
+/* Section heading and its (?) help trigger sit inline. */
+.mycelial-growth__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* A question line: reuses `.link-context`'s indent/typography but is a real
+   button (clicking deep-links into the note at the question), wraps instead
+   of truncating, and reads darker than pure context so it stays legible. */
+.mycelial-growth__question {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-base);
+  text-align: left;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.mycelial-growth__question:hover {
+  background: var(--bg-hover);
   color: var(--fg-primary);
 }
 

@@ -24,7 +24,9 @@ pub struct MycelialConfig {
     pub trigram_boost: f64,
     /// Number of top suggestions to return.
     pub top_k: usize,
-    /// Minimum number of notes in the notebox before suggestions activate.
+    /// Superseded by the corpus-size threshold schedule in
+    /// `effective_thresholds()` (emergent concepts off below 10 docs, relaxed
+    /// frequency floors below 50). Kept for serde compatibility; unread.
     pub min_corpus_size: usize,
     /// Weight for PMI score in composite ranking (bigrams).
     pub pmi_weight: f64,
@@ -42,6 +44,29 @@ pub struct MycelialConfig {
     /// Score multiplier for bigrams — multi-word phrases are the "unnamed
     /// concepts" the view is really after, so they rank above bare words.
     pub bigram_boost: f64,
+    /// MMR diversity penalty λ: when filling the `top_k` suggestion slots,
+    /// a candidate's score is reduced by `λ · max Jaccard overlap` between its
+    /// source-note set and each already-selected candidate's. 0 disables
+    /// diversity selection (pure score order).
+    pub diversity_lambda: f64,
+    /// Minimum cosine similarity to the anchor for a note to surface as a
+    /// "kindred" node (semantically similar but with no link path).
+    pub kindred_min_similarity: f64,
+    /// Maximum kindred nodes shown per analysis — a hard cap so the graph
+    /// stays readable.
+    pub kindred_max: usize,
+    /// Minimum backlink count for an under-developed-hub candidate.
+    pub hub_min_backlinks: usize,
+    /// Maximum indexed word count for an under-developed-hub candidate — a
+    /// note referenced this often but this thin is the gap signal.
+    pub hub_max_words: usize,
+    /// Minimum prose tokens in a sentence for it to count as an open question
+    /// (filters rhetorical fragments).
+    pub question_min_words: usize,
+    /// Maximum open questions collected per note.
+    pub question_max_per_note: usize,
+    /// Maximum open questions returned per analysis.
+    pub question_max_total: usize,
 }
 
 impl Default for MycelialConfig {
@@ -63,6 +88,14 @@ impl Default for MycelialConfig {
             semantic_neighbors: 12,
             min_neighborhood_presence: 2,
             bigram_boost: 1.6,
+            diversity_lambda: 0.5,
+            kindred_min_similarity: 0.15,
+            kindred_max: 3,
+            hub_min_backlinks: 3,
+            hub_max_words: 200,
+            question_min_words: 4,
+            question_max_per_note: 3,
+            question_max_total: 12,
         }
     }
 }

@@ -243,6 +243,9 @@
   --mycelial-latent: #c08a3e;
   --mycelial-emergent: #6f4423;
   --mycelial-source: #6e6e6e;
+  /* Kindred notes (similar but unlinked): a muted teal, deliberately outside
+     the amber/brown family so the "not yet connected" kind reads apart. */
+  --mycelial-kindred: #3f7268;
 
   /* Visual-editor decoration tokens (light) */
   --pill-fg: #ffffff;
@@ -394,6 +397,7 @@
   --mycelial-emergent: #97603a;
   --mycelial-emergent-bg: color-mix(in srgb, #97603a 10%, var(--bg-primary));
   --mycelial-source: #9a9a9a;
+  --mycelial-kindred: #6aa79b;
   --mycelial-hit-bg: color-mix(in srgb, #d6a45c 25%, transparent);
 
   /* Visual-editor decoration tokens (dark) */

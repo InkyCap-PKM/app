@@ -11,13 +11,20 @@
  * only positions — so text stays readable at the default zoom level.
  */
 
-import type { FlowNode, FlowEdge, LatentLink, EmergentConcept } from "./types";
+import type {
+  FlowNode,
+  FlowEdge,
+  LatentLink,
+  EmergentConcept,
+  KindredNote,
+} from "./types";
 import { t, tPlural } from "./i18n";
 
 export const NOTE_W = 156;
 export const NOTE_H = 46;
 export const CONCEPT_W = 224;
 export const CONCEPT_H = 104;
+export const KINDRED_H = 84;
 
 const SPRING_LENGTH = 330;
 const REPULSION = 52000;
@@ -41,8 +48,8 @@ const OVERLAP_MARGIN = 44;
 // meaningful link, so the post-sim `compactLongEdges` pass reels it in.
 const MAX_EDGE = SPRING_LENGTH * 2.2;
 
-export type BoxKind = "center" | "source" | "latent" | "emergent";
-export type ConnectionKind = "anchor" | "latent" | "emergent";
+export type BoxKind = "center" | "source" | "latent" | "emergent" | "kindred";
+export type ConnectionKind = "anchor" | "latent" | "emergent" | "kindred";
 
 export interface MycelialBox {
   id: string;
@@ -57,6 +64,7 @@ export interface MycelialBox {
   sourceLabel: string;
   latent?: LatentLink;
   emergent?: EmergentConcept;
+  kindred?: KindredNote;
   note?: FlowNode;
 }
 
@@ -100,6 +108,7 @@ export function computeMycelialLayout(
   contextEdges: FlowEdge[],
   latentLinks: LatentLink[],
   emergentConcepts: EmergentConcept[],
+  kindredNotes: KindredNote[] = [],
 ): MycelialLayout {
   // ---- 1. Simulation nodes. -----------------------------------------------
   const latentByTarget = new Map<string, LatentLink>();
@@ -128,6 +137,13 @@ export function computeMycelialLayout(
     if (seen.has(id)) continue;
     seen.add(id);
     sim.push({ id, kind: "emergent", w: CONCEPT_W, h: CONCEPT_H });
+  }
+  const kindredByPath = new Map<string, KindredNote>();
+  for (const k of kindredNotes) {
+    if (seen.has(k.path)) continue;
+    seen.add(k.path);
+    kindredByPath.set(k.path, k);
+    sim.push({ id: k.path, kind: "kindred", w: CONCEPT_W, h: KINDRED_H });
   }
   const simIds = new Set(sim.map((n) => n.id));
 
@@ -161,6 +177,13 @@ export function computeMycelialLayout(
       if (simIds.has(m.path)) {
         springs.push({ a: id, b: m.path, kind: "emergent", score: e.score });
       }
+    }
+  }
+  // A kindred note's message is its (missing) relationship to the anchor, so
+  // its one edge runs straight to the center.
+  for (const k of kindredNotes) {
+    if (simIds.has(k.path)) {
+      springs.push({ a: centerId, b: k.path, kind: "kindred", score: k.similarity });
     }
   }
 
@@ -453,6 +476,19 @@ export function computeMycelialLayout(
         snippet: top ? top.snippet : "",
         sourceLabel: tPlural("mycelial.node.mentionedIn", l.mentions.length),
         latent: l,
+      };
+    }
+    if (n.kind === "kindred") {
+      const k = kindredByPath.get(n.id)!;
+      return {
+        ...base,
+        title: k.name,
+        subtitle: t("mycelial.node.kindredSubtitle"),
+        snippet: k.shared_terms.join(" · "),
+        sourceLabel: t("mycelial.node.similarity", {
+          pct: String(Math.round(k.similarity * 100)),
+        }),
+        kindred: k,
       };
     }
     if (n.kind === "emergent") {

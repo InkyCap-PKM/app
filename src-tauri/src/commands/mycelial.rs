@@ -2,22 +2,30 @@
 //!
 //! The Mycelial View is not a link-graph browser — backlinks and forward
 //! links are deliberately *not* the point. It surfaces where a notebox wants
-//! to grow next, via two signals computed over a note's neighborhood:
+//! to grow next (gaps to fill, ideas to develop), via signals computed over a
+//! note's neighborhood:
 //!
 //! - **Latent links** — an existing page is mentioned in other notes as plain
 //!   text, with no wikilink. Clicking one lets the user go connect them.
+//!   (Dangling wikilinks — links to pages never created — are deliberately
+//!   NOT part of this signal: latency is about *unlinked mentions of pages
+//!   that exist*, and the editor already surfaces dangling links inline.)
 //! - **Emergent concepts** — a recurring term/phrase with no page of its own,
 //!   representing knowledge the user has developed implicitly. Clicking one
 //!   creates a new page seeded with the connections it emerged from.
+//! - **Kindred notes** — semantically close to the anchor with no link path
+//!   to it; the one gap signal rendered as its own graph node kind.
+//! - **Under-developed hubs** and **open questions** — Growth-panel signals
+//!   (referenced-but-thin pages; question sentences left in prose).
 //!
 //! The neighborhood those signals are computed over is **not** just the link
 //! graph: it is the link graph *unioned with the most semantically similar
-//! notes*, so a sparsely-linked note still surfaces concepts that emerge from
-//! its thematic context rather than degrading into single-note keywords.
+//! notes*, and each note is *anchor-weighted* (cosine-to-center, floored by a
+//! BFS-depth decay) so the analysis is genuinely specific to this anchor.
 //!
 //! Notes split into two visual roles: **source notes** (provenance — a note a
 //! signal emerged from) and **context notes** (existing wikilink neighbors
-//! that surface no signal — kept as a faint outer horizon for orientation).
+//! that surface no signal — listed in the right panel for orientation).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -37,6 +45,17 @@ use crate::storage::{sanitize_notebox_arg, to_frontend_string};
 const SNIPPET_MAX_CHARS: usize = 160;
 /// Maximum mention sites kept per latent link / emergent concept.
 const MAX_MENTIONS: usize = 8;
+/// Per-BFS-hop floor on a linked note's anchor weight (`0.9^depth`), so an
+/// explicitly linked note never weighs zero even when its vocabulary shares
+/// nothing with the center.
+const DEPTH_DECAY: f64 = 0.9;
+/// Shared distinctive terms shown on a kindred node.
+const KINDRED_SHARED_TERMS: usize = 5;
+/// Maximum under-developed hubs listed per analysis.
+const MAX_WEAK_HUBS: usize = 6;
+/// Maximum neighborhood notes read for open-question extraction — bounds the
+/// pass's file I/O on dense neighborhoods.
+const MAX_QUESTION_NOTES: usize = 30;
 
 /// One note that mentions a term, with enough context to render a
 /// search-result-style snippet and to deep-link the editor to the spot.
@@ -95,14 +114,59 @@ pub struct ExcludedTerm {
     pub source: String,
 }
 
+/// A note referenced often but barely written — high backlink count, low
+/// word count. Shown in the Growth panel (and as a badge on its graph node)
+/// as an under-developed page worth expanding.
+#[derive(Debug, Clone, Serialize)]
+pub struct WeakHub {
+    pub path: String,
+    pub name: String,
+    pub backlink_count: usize,
+    pub word_count: usize,
+}
+
+/// A note semantically close to the anchor with no link path to it within
+/// the BFS depth — two circles of thought that never touch. Rendered as its
+/// own (dashed-edge) node kind; `shared_terms` explains *why* the two notes
+/// read as kindred.
+#[derive(Debug, Clone, Serialize)]
+pub struct KindredNote {
+    pub path: String,
+    pub name: String,
+    /// Cosine similarity to the anchor, in (0, 1].
+    pub similarity: f64,
+    /// Most distinctive vocabulary the two notes share (rarest first).
+    pub shared_terms: Vec<String>,
+}
+
+/// One question sentence found in a note's prose.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenQuestion {
+    /// The sentence text (snippet-trimmed).
+    pub text: String,
+    /// 1-indexed line number.
+    pub line: usize,
+    /// Byte offsets of the sentence within its line, for deep-link highlight.
+    pub char_start: usize,
+    pub char_end: usize,
+}
+
+/// The open questions of one neighborhood note, for the Growth panel.
+#[derive(Debug, Clone, Serialize)]
+pub struct NoteQuestions {
+    pub path: String,
+    pub name: String,
+    pub questions: Vec<OpenQuestion>,
+}
+
 /// Complete data for the Mycelial View rendering.
 #[derive(Debug, Clone, Serialize)]
 pub struct MycelialData {
     pub center: String,
     /// Notes a signal emerged from — rendered as inner provenance nodes.
     pub source_notes: Vec<FlowNode>,
-    /// Existing wikilink neighbors that surfaced no signal — rendered as a
-    /// faint outer horizon ring for spatial orientation.
+    /// Existing wikilink neighbors that surfaced no signal — listed in the
+    /// Linked Context panel for orientation.
     pub context_notes: Vec<FlowNode>,
     /// Wikilinks among center / source / context notes — faint context.
     pub context_edges: Vec<FlowEdge>,
@@ -111,6 +175,16 @@ pub struct MycelialData {
     /// Terms the stopword filter suppressed (would-be concepts) — surfaced for
     /// the Concept Filtering pane.
     pub excluded_terms: Vec<ExcludedTerm>,
+    /// Similar-but-unlinked notes — the one gap signal that earns graph
+    /// presence (a relationship that doesn't exist is a graph's message).
+    pub kindred_notes: Vec<KindredNote>,
+    /// Under-developed pages in the neighborhood — Growth panel + node badge.
+    pub weak_hubs: Vec<WeakHub>,
+    /// Question sentences across the neighborhood — Growth panel only.
+    pub open_questions: Vec<NoteQuestions>,
+    /// Indexed corpus size, so the frontend can label confidence on young
+    /// noteboxes ("early growth" notice below `GROWING_CORPUS_DOCS`).
+    pub total_docs: usize,
 }
 
 /// Build the Mycelial View graph centred on `path`: BFS the wikilink graph to
@@ -180,48 +254,131 @@ pub async fn get_mycelial_data(
         map
     };
 
-    // 3. Build the analysis neighborhood: the link graph widened with the
-    //    most semantically similar notes. The link graph alone collapses to
-    //    a single note for unlinked notes; similarity gives it real context.
-    let (analysis, link_node_ids) = {
+    // 3. Build the analysis neighborhood (the link graph widened with the
+    //    most semantically similar notes) and its anchor weights, and run the
+    //    corpus analysis. Everything needing the corpus lock happens here.
+    let (analysis, link_node_ids, note_weights, kindred_raw, word_counts, total_docs) = {
         let corpus_stats = session.corpus_stats.read().await;
+
+        // Scored semantic neighbors — the widening set, and (scored) the
+        // kindred-note candidates.
+        let similar = corpus_stats.similar_docs_scored(&center_path, config.semantic_neighbors);
+
         let mut neighborhood: HashSet<PathBuf> =
             link_nodes.iter().map(|n| PathBuf::from(&n.id)).collect();
         neighborhood.insert(center_path.clone());
-        for p in corpus_stats.similar_docs(&center_path, config.semantic_neighbors) {
-            neighborhood.insert(p);
+        for (p, _) in &similar {
+            neighborhood.insert(p.clone());
         }
         let neighborhood: Vec<PathBuf> = neighborhood.into_iter().collect();
         let link_node_ids: HashSet<String> = link_nodes.iter().map(|n| n.id.clone()).collect();
+
+        // Anchor weights: each neighborhood note votes in proportion to its
+        // cosine similarity to the center, floored for BFS notes by a depth
+        // decay so an explicitly linked note never weighs zero. This is what
+        // makes the analysis anchor-specific.
+        let cosine = corpus_stats.similarity_map(&center_path, &neighborhood);
+        let depth_of: HashMap<PathBuf, usize> = link_nodes
+            .iter()
+            .map(|n| (PathBuf::from(&n.id), n.depth))
+            .collect();
+        let mut note_weights: HashMap<PathBuf, f64> = HashMap::new();
+        for p in &neighborhood {
+            let w = if *p == center_path {
+                1.0
+            } else {
+                let sim = cosine.get(p).copied().unwrap_or(0.0);
+                let decay = depth_of
+                    .get(p)
+                    .map(|d| DEPTH_DECAY.powi(*d as i32))
+                    .unwrap_or(0.0);
+                sim.max(decay)
+            };
+            note_weights.insert(p.clone(), w);
+        }
+
+        // Kindred candidates: semantically close, no link path within the
+        // BFS depth. Gathered with headroom — the final pass drops any that
+        // already render as source notes or latent targets.
+        let kindred_raw: Vec<(PathBuf, f64, Vec<String>)> = similar
+            .iter()
+            .filter(|(p, s)| {
+                *s >= config.kindred_min_similarity
+                    && !link_node_ids.contains(&to_frontend_string(p))
+            })
+            .take(config.kindred_max * 2)
+            .map(|(p, s)| {
+                (
+                    p.clone(),
+                    *s,
+                    corpus_stats.shared_distinctive_terms(&center_path, p, KINDRED_SHARED_TERMS),
+                )
+            })
+            .collect();
+
+        // Word counts of the linked neighborhood, for hub detection.
+        let word_counts: HashMap<PathBuf, usize> = link_nodes
+            .iter()
+            .filter_map(|n| {
+                let p = PathBuf::from(&n.id);
+                corpus_stats.word_count_of(&p).map(|wc| (p, wc))
+            })
+            .collect();
+
         (
-            corpus_stats.analyze_neighborhood(&neighborhood, &existing_pages, &config),
+            corpus_stats.analyze_neighborhood(&note_weights, &existing_pages, &config),
             link_node_ids,
+            note_weights,
+            kindred_raw,
+            word_counts,
+            corpus_stats.total_docs,
         )
+    };
+
+    // 4. Snapshot everything the latent/hub passes need from the link index
+    //    in one lock scope, so the read guard is never held across the file
+    //    I/O below — a concurrent reindex needs the write lock.
+    let (forward_links, backlink_counts) = {
+        let link_index = session.link_index.read().await;
+
+        // Forward links of latent candidates' sources, for the
+        // already-linked filter.
+        let mut forward: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+        for cand in &analysis.latent {
+            for src in &cand.source_notes {
+                let src_path = PathBuf::from(src);
+                forward
+                    .entry(src_path.clone())
+                    .or_insert_with(|| link_index.get_forward_links(&src_path));
+            }
+        }
+
+        // Backlink counts of the linked neighborhood, for hub detection.
+        let backlink_counts: HashMap<PathBuf, usize> = word_counts
+            .keys()
+            .map(|p| (p.clone(), link_index.get_backlinks(p).len()))
+            .collect();
+
+        (forward, backlink_counts)
     };
 
     let storage = session.get_storage().await?;
 
-    // 4. Latent links: keep only notes that mention the target without a
-    //    wikilink to it, and resolve the mention's location for deep-linking.
-    //
-    //    Snapshot each candidate source's forward links up front so we never
-    //    hold the `link_index` read lock across the `resolve_mention` file
-    //    reads below — a concurrent reindex needs the write lock, and holding
-    //    a read guard across I/O would stall it.
-    let forward_links: HashMap<PathBuf, Vec<PathBuf>> = {
-        let link_index = session.link_index.read().await;
-        let mut map: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        for cand in &analysis.latent {
-            for src in &cand.source_notes {
-                let src_path = PathBuf::from(src);
-                map.entry(src_path.clone())
-                    .or_insert_with(|| link_index.get_forward_links(&src_path));
-            }
-        }
-        map
-    };
+    // 5. Latent links: keep only notes that mention the target without a
+    //    wikilink to it (the analyzer returns raw scores), then MMR-select
+    //    and normalize. The draft carries the mentioning-note ids as the MMR
+    //    diversity source set.
+    struct LatentDraft {
+        term: String,
+        target_path: String,
+        target_name: String,
+        score: f64,
+        is_bigram: bool,
+        mentions: Vec<SourceMention>,
+        source_ids: Vec<String>,
+    }
 
-    let mut latent_links: Vec<LatentLink> = Vec::new();
+    let mut drafts: Vec<LatentDraft> = Vec::new();
     for cand in analysis.latent {
         let target = PathBuf::from(&cand.target_path);
         let mut mentions: Vec<SourceMention> = Vec::new();
@@ -246,18 +403,52 @@ pub async fn get_mycelial_data(
         if mentions.is_empty() {
             continue;
         }
-        latent_links.push(LatentLink {
+        let source_ids: Vec<String> = mentions.iter().map(|m| m.path.clone()).collect();
+        drafts.push(LatentDraft {
             term: cand.term,
             target_name: stem_name(&target),
             target_path: cand.target_path,
             score: cand.score,
             is_bigram: cand.is_bigram,
             mentions,
+            source_ids,
         });
     }
-    latent_links.truncate(config.top_k);
 
-    // 5. Emergent concepts: resolve a context snippet for each source note.
+    drafts.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.term.cmp(&b.term))
+    });
+    let mut drafts = crate::corpus_stats::mmr_select(
+        drafts,
+        config.top_k,
+        config.diversity_lambda,
+        |d: &LatentDraft| d.score,
+        |d: &LatentDraft| d.source_ids.as_slice(),
+    );
+    // Normalize for display (edge widths scale off the score). The first
+    // selected draft carries the maximum raw score.
+    let max_latent = drafts.first().map(|d| d.score).unwrap_or(0.0);
+    if max_latent > 0.0 {
+        for d in &mut drafts {
+            d.score /= max_latent;
+        }
+    }
+    let latent_links: Vec<LatentLink> = drafts
+        .into_iter()
+        .map(|d| LatentLink {
+            term: d.term,
+            target_path: d.target_path,
+            target_name: d.target_name,
+            score: d.score,
+            is_bigram: d.is_bigram,
+            mentions: d.mentions,
+        })
+        .collect();
+
+    // 6. Emergent concepts: resolve a context snippet for each source note.
     let mut emergent_concepts: Vec<EmergentConcept> = Vec::new();
     for cand in analysis.emergent {
         let mut mentions: Vec<SourceMention> = Vec::new();
@@ -278,7 +469,7 @@ pub async fn get_mycelial_data(
         });
     }
 
-    // 6. Partition notes into provenance (source) and orientation (context).
+    // 7. Partition notes into provenance (source) and orientation (context).
     //    Source notes = anything a signal emerged from. Context notes =
     //    explicit wikilink neighbors that surfaced no signal — the horizon.
     let mut source_ids: HashSet<String> = HashSet::new();
@@ -295,6 +486,97 @@ pub async fn get_mycelial_data(
         }
     }
     source_ids.remove(&center_id);
+
+    // 8. Kindred notes: keep only candidates not already rendered in another
+    //    role — kindred rescues notes that are otherwise invisible (similar,
+    //    unlinked, and sourcing no signal).
+    let kindred_notes: Vec<KindredNote> = kindred_raw
+        .into_iter()
+        .filter(|(p, _, _)| {
+            let id = to_frontend_string(p);
+            id != center_id && !source_ids.contains(&id) && !latent_targets.contains(&id)
+        })
+        .take(config.kindred_max)
+        .map(|(p, similarity, shared_terms)| KindredNote {
+            path: to_frontend_string(&p),
+            name: stem_name(&p),
+            similarity,
+            shared_terms,
+        })
+        .collect();
+
+    // 9. Under-developed hubs: linked-neighborhood notes referenced often but
+    //    barely written. Ranked by reference density (backlinks per word).
+    let mut weak_hubs: Vec<WeakHub> = word_counts
+        .iter()
+        .filter_map(|(p, &wc)| {
+            let backlinks = backlink_counts.get(p).copied().unwrap_or(0);
+            if backlinks >= config.hub_min_backlinks && wc <= config.hub_max_words {
+                Some(WeakHub {
+                    path: to_frontend_string(p),
+                    name: stem_name(p),
+                    backlink_count: backlinks,
+                    word_count: wc,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    weak_hubs.sort_by(|a, b| {
+        let da = a.backlink_count as f64 / (a.word_count + 50) as f64;
+        let db = b.backlink_count as f64 / (b.word_count + 50) as f64;
+        db.partial_cmp(&da)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    weak_hubs.truncate(MAX_WEAK_HUBS);
+
+    // 10. Open questions: question sentences across the neighborhood,
+    //     nearest (highest-weighted) notes first, hard-capped so the pass
+    //     reads a bounded number of files.
+    let mut by_weight: Vec<(&PathBuf, f64)> = note_weights.iter().map(|(p, w)| (p, *w)).collect();
+    by_weight.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    let mut open_questions: Vec<NoteQuestions> = Vec::new();
+    let mut total_questions = 0usize;
+    for (p, _) in by_weight.into_iter().take(MAX_QUESTION_NOTES) {
+        if total_questions >= config.question_max_total {
+            break;
+        }
+        let Ok(content) = storage.read_file(p).await else {
+            continue;
+        };
+        let projection = crate::search::text_projection::project(&content);
+        let spans = crate::search::text_projection::extract_questions(
+            &content,
+            &projection,
+            config.question_min_words,
+            config.question_max_per_note,
+        );
+        if spans.is_empty() {
+            continue;
+        }
+        let questions: Vec<OpenQuestion> = spans
+            .into_iter()
+            .take(config.question_max_total - total_questions)
+            .map(|q| OpenQuestion {
+                text: trim_snippet(&q.text),
+                line: q.line + 1,
+                char_start: q.char_start,
+                char_end: q.char_end,
+            })
+            .collect();
+        total_questions += questions.len();
+        open_questions.push(NoteQuestions {
+            path: to_frontend_string(p),
+            name: stem_name(p),
+            questions,
+        });
+    }
 
     // `source_ids` / `link_node_ids` are HashSets — iteration order varies
     // per call. Sort the rendered node lists by id so the Mycelial View
@@ -349,6 +631,10 @@ pub async fn get_mycelial_data(
         latent_links,
         emergent_concepts,
         excluded_terms,
+        kindred_notes,
+        weak_hubs,
+        open_questions,
+        total_docs,
     })
 }
 

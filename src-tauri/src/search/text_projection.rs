@@ -664,6 +664,101 @@ impl LineMap {
     }
 }
 
+/// A question sentence located in a document's prose, for the Mycelial
+/// View's open-questions gap signal.
+#[derive(Debug, Clone)]
+pub struct QuestionSpan {
+    /// 0-based line index.
+    pub line: usize,
+    /// Byte offset within the line of the sentence's first prose token.
+    pub char_start: usize,
+    /// Byte offset within the line just past the `?`.
+    pub char_end: usize,
+    /// The sentence text (line slice, trimmed).
+    pub text: String,
+}
+
+/// Find question sentences in `content`: a `?` that directly follows the
+/// projection's prose (so a `?` inside markup, code-ish tokens, or a URL
+/// query string doesn't fire), preceded by at least `min_words` prose tokens
+/// since the last sentence terminator on the line. Returns at most `max`
+/// spans in document order.
+///
+/// Runs against the same `TextProjection` the corpus engine uses, so
+/// questions inside the `#note(...)` metadata block or import lines can
+/// never surface. Sentences are line-local: Typst prose paragraphs are
+/// typically soft-wrapped single source lines, and a hard line break is a
+/// reasonable sentence boundary for a snippet.
+pub fn extract_questions(
+    content: &str,
+    projection: &TextProjection,
+    min_words: usize,
+    max: usize,
+) -> Vec<QuestionSpan> {
+    let mut out: Vec<QuestionSpan> = Vec::new();
+    if max == 0 {
+        return out;
+    }
+    for (li, line) in content.lines().enumerate() {
+        if out.len() >= max {
+            break;
+        }
+        if !line.contains('?') {
+            continue;
+        }
+        // The projector's tokens on this line, in source order.
+        let toks: Vec<&TextToken> = projection.tokens.iter().filter(|t| t.line == li).collect();
+        if toks.is_empty() {
+            continue;
+        }
+        for (qpos, _) in line.match_indices('?') {
+            if out.len() >= max {
+                break;
+            }
+            // The `?` must directly follow prose (allowing a closing bracket
+            // or quote in between): the last non-space byte before it has to
+            // be the end of a projected token.
+            let before = line[..qpos]
+                .trim_end()
+                .trim_end_matches([')', ']', '}', '"', '\'', '\u{201d}', '\u{2019}', '\u{00bb}']);
+            let prose_end = before.len();
+            if prose_end == 0 {
+                continue;
+            }
+            let Some(last_idx) = toks.iter().rposition(|t| t.char_end == prose_end) else {
+                continue;
+            };
+            // Sentence start: just past the previous sentence terminator on
+            // this line, else the line start.
+            let sent_start = line[..qpos]
+                .rfind(['.', '!', '?', ';'])
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let Some(first_idx) = toks.iter().position(|t| t.char_start >= sent_start) else {
+                continue;
+            };
+            if first_idx > last_idx {
+                continue;
+            }
+            // Fragments below `min_words` are rhetorical shrugs, not open
+            // questions worth surfacing.
+            if last_idx - first_idx + 1 < min_words {
+                continue;
+            }
+            let char_start = toks[first_idx].char_start;
+            // `?` is one ASCII byte, so `qpos + 1` lands on a char boundary.
+            let char_end = qpos + 1;
+            out.push(QuestionSpan {
+                line: li,
+                char_start,
+                char_end,
+                text: line[char_start..char_end].trim().to_string(),
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -928,6 +1023,52 @@ mod tests {
         let w = words(&p);
         assert!(w.iter().any(|(_, t)| *t == "citation"));
         assert!(w.iter().any(|(_, t)| *t == "bit"));
+    }
+
+    #[test]
+    fn questions_require_min_words_and_prose_adjacency() {
+        let src = "How does mycelium route nutrients under stress? Why?\nSee https://example.com/a?b=c for details.";
+        let p = project(src);
+        let qs = extract_questions(src, &p, 4, 10);
+        assert_eq!(qs.len(), 1, "got: {qs:?}");
+        assert!(qs[0].text.starts_with("How does mycelium"));
+        assert!(qs[0].text.ends_with('?'));
+        assert_eq!(qs[0].line, 0);
+        // The span slices cleanly out of the source line.
+        let line = src.lines().next().unwrap();
+        assert_eq!(&line[qs[0].char_start..qs[0].char_end], qs[0].text);
+    }
+
+    #[test]
+    fn questions_handle_multibyte_text() {
+        let src = "Qu'est-ce que ça implique pour la mémoire collective?";
+        let p = project(src);
+        let qs = extract_questions(src, &p, 4, 10);
+        assert_eq!(qs.len(), 1, "got: {qs:?}");
+        assert!(qs[0].text.ends_with('?'));
+        // Byte offsets land on char boundaries even with multi-byte chars.
+        assert_eq!(&src[qs[0].char_start..qs[0].char_end], qs[0].text);
+    }
+
+    #[test]
+    fn questions_ignore_note_metadata_lines() {
+        let src = "#note(\n  title: \"A question here or not?\",\n)\nDoes the projation exclusion keep metadata questions out?";
+        let p = project(src);
+        let qs = extract_questions(src, &p, 4, 10);
+        assert_eq!(qs.len(), 1, "got: {qs:?}");
+        assert_eq!(qs[0].line, 3);
+    }
+
+    #[test]
+    fn questions_respect_caps_and_sentence_splits() {
+        let src =
+            "First real question sits right here? Second real question follows directly after?";
+        let p = project(src);
+        let all = extract_questions(src, &p, 4, 10);
+        assert_eq!(all.len(), 2, "got: {all:?}");
+        assert!(all[1].text.starts_with("Second"));
+        let capped = extract_questions(src, &p, 4, 1);
+        assert_eq!(capped.len(), 1);
     }
 
     #[test]
