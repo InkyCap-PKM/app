@@ -67,11 +67,13 @@ import {
   Ligature,
   Waypoints,
   Filter,
+  Sprout,
 } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import ReferencesPanel from "./ReferencesPanel";
 import CollectionSettings from "./CollectionSettings";
 import MycelialFilteringPanel from "./MycelialFilteringPanel";
+import MycelialGrowthPanel from "./MycelialGrowthPanel";
 import { rightPanelContributions, rightPanelContribution } from "./right-panel-registry";
 import { Dropdown } from "./Dropdown";
 import { toastError } from "../stores/toasts";
@@ -221,10 +223,11 @@ const RightPanel: Component = () => {
     return changesSinceSync().some((e) => normalizePath(e.path) === target);
   });
 
-  // Mycelial-view sub-tab: the graph-context list vs the Concept Filtering
-  // pane. Local (session-scoped) — defaults to context on each panel mount.
+  // Mycelial-view sub-tab: the graph-context list, the Growth pane
+  // (under-developed pages + open questions), or the Concept Filtering pane.
+  // Local (session-scoped) — defaults to context on each panel mount.
   const [mycelialPanelTab, setMycelialPanelTab] =
-    createSignal<"context" | "filtering">("context");
+    createSignal<"context" | "growth" | "filtering">("context");
 
   const [addingProp, setAddingProp] = createSignal(false);
   const [newPropKey, setNewPropKey] = createSignal("");
@@ -1413,6 +1416,14 @@ const RightPanel: Component = () => {
             <Waypoints size={18} />
           </button>
           <button
+            class={`right-panel__tab${mycelialPanelTab() === "growth" ? " right-panel__tab--active" : ""}`}
+            onClick={() => setMycelialPanelTab("growth")}
+            title={t("rightPanel.mycelial.growth")}
+            aria-label={t("rightPanel.mycelial.growth")}
+          >
+            <Sprout size={18} />
+          </button>
+          <button
             class={`right-panel__tab${mycelialPanelTab() === "filtering" ? " right-panel__tab--active" : ""}`}
             onClick={() => setMycelialPanelTab("filtering")}
             title={t("rightPanel.mycelial.filtering")}
@@ -1436,6 +1447,16 @@ const RightPanel: Component = () => {
       <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "filtering"}>
         <div class="right-panel__tab-content">
           <MycelialFilteringPanel excludedTerms={mycelialState().excludedTerms} />
+        </div>
+      </Show>
+
+      {/* Growth pane — under-developed pages + open questions. */}
+      <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "growth"}>
+        <div class="right-panel__tab-content">
+          <MycelialGrowthPanel
+            weakHubs={mycelialState().weakHubs}
+            openQuestions={mycelialState().openQuestions}
+          />
         </div>
       </Show>
 

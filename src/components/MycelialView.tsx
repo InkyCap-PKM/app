@@ -15,14 +15,14 @@ import {
   For,
   Show,
 } from "solid-js";
-import { Info } from "lucide-solid";
+import { Info, Sprout } from "lucide-solid";
 import * as ipc from "../lib/ipc";
 import { pathEquals } from "../lib/paths";
 import { errorCode, errorDetail } from "../lib/errors";
 import { resolveNoteNameConflict } from "../lib/note-name-conflict";
 import { openTab } from "../stores/tabs";
 import { settings } from "../stores/settings";
-import { useI18n } from "../lib/i18n";
+import { useI18n, tPlural } from "../lib/i18n";
 import { Dropdown } from "./Dropdown";
 import {
   publishMycelialState,
@@ -31,7 +31,14 @@ import {
   hoveredContextNote,
   type MycelialContextNote,
 } from "../stores/mycelial";
-import type { LatentLink, SourceMention, FlowEdge, ExcludedTerm } from "../lib/types";
+import type {
+  LatentLink,
+  SourceMention,
+  FlowEdge,
+  ExcludedTerm,
+  WeakHub,
+  NoteQuestions,
+} from "../lib/types";
 import {
   computeMycelialLayout,
   hashString,
@@ -67,6 +74,9 @@ interface ViewCacheEntry {
    *  doesn't blank it while the new graph loads. */
   contextNotes: MycelialContextNote[];
   contextEdges: FlowEdge[];
+  weakHubs: WeakHub[];
+  openQuestions: NoteQuestions[];
+  totalDocs: number;
 }
 
 const viewCache = new Map<string, ViewCacheEntry>();
@@ -107,6 +117,12 @@ const LEGEND: { kind: BoxKind; labelKey: string; color: string; dashed: boolean 
       dashed: false,
     },
     {
+      kind: "kindred",
+      labelKey: "mycelial.legend.kindred",
+      color: "var(--mycelial-kindred, #4a7c74)",
+      dashed: true,
+    },
+    {
       kind: "source",
       labelKey: "mycelial.legend.source",
       color: "var(--mycelial-source, #6e6e6e)",
@@ -125,6 +141,9 @@ export default function MycelialView(props: MycelialViewProps) {
   const [contextNotes, setContextNotes] = createSignal<MycelialContextNote[]>([]);
   const [contextEdges, setContextEdges] = createSignal<FlowEdge[]>([]);
   const [excludedTerms, setExcludedTerms] = createSignal<ExcludedTerm[]>([]);
+  const [weakHubs, setWeakHubs] = createSignal<WeakHub[]>([]);
+  const [openQuestions, setOpenQuestions] = createSignal<NoteQuestions[]>([]);
+  const [totalDocs, setTotalDocs] = createSignal(0);
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
@@ -260,6 +279,7 @@ export default function MycelialView(props: MycelialViewProps) {
       for (const n of data.source_notes) innerIds.add(n.id);
       for (const l of data.latent_links) innerIds.add(l.target_path);
       for (const e of data.emergent_concepts) innerIds.add(`emergent:${e.term}`);
+      for (const k of data.kindred_notes ?? []) innerIds.add(k.path);
 
       setContextNotes(
         data.context_notes.map((n) => {
@@ -273,6 +293,9 @@ export default function MycelialView(props: MycelialViewProps) {
       );
       setContextEdges(data.context_edges);
       setExcludedTerms(data.excluded_terms ?? []);
+      setWeakHubs(data.weak_hubs ?? []);
+      setOpenQuestions(data.open_questions ?? []);
+      setTotalDocs(data.total_docs ?? 0);
 
       const computed = computeMycelialLayout(
         data.center,
@@ -280,6 +303,7 @@ export default function MycelialView(props: MycelialViewProps) {
         data.context_edges,
         data.latent_links,
         data.emergent_concepts,
+        data.kindred_notes ?? [],
       );
       setLayout(computed);
       fitToView(computed);
@@ -305,6 +329,9 @@ export default function MycelialView(props: MycelialViewProps) {
       maxDepth: maxDepth(),
       contextNotes: contextNotes(),
       contextEdges: contextEdges(),
+      weakHubs: weakHubs(),
+      openQuestions: openQuestions(),
+      totalDocs: totalDocs(),
     });
   }
 
@@ -332,6 +359,9 @@ export default function MycelialView(props: MycelialViewProps) {
         setMaxDepth(cached.maxDepth);
         setContextNotes(cached.contextNotes);
         setContextEdges(cached.contextEdges);
+        setWeakHubs(cached.weakHubs);
+        setOpenQuestions(cached.openQuestions);
+        setTotalDocs(cached.totalDocs);
         setLoading(false);
       } else {
         setCenterPath(path);
@@ -354,6 +384,8 @@ export default function MycelialView(props: MycelialViewProps) {
     publishMycelialState(props.tabId, {
       contextNotes: contextNotes(),
       excludedTerms: excludedTerms(),
+      weakHubs: weakHubs(),
+      openQuestions: openQuestions(),
     });
   });
 
@@ -415,9 +447,16 @@ export default function MycelialView(props: MycelialViewProps) {
   // The non-anchor kinds the legend currently shows.
   const visibleKinds = createMemo<BoxKind[]>(() => {
     const h = hidden();
-    return (["latent", "emergent", "source"] as BoxKind[]).filter(
+    return (["latent", "emergent", "kindred", "source"] as BoxKind[]).filter(
       (k) => !h.has(k),
     );
+  });
+
+  // Under-developed hubs by path, for the node badge.
+  const hubByPath = createMemo(() => {
+    const m = new Map<string, WeakHub>();
+    for (const h of weakHubs()) m.set(h.path, h);
+    return m;
   });
 
   // When the legend leaves exactly one kind visible, the graph's real
@@ -586,7 +625,7 @@ export default function MycelialView(props: MycelialViewProps) {
         x: e.clientX - (rect?.left ?? 0),
         y: e.clientY - (rect?.top ?? 0),
       });
-    } else if (box.kind === "source") {
+    } else if (box.kind === "source" || box.kind === "kindred") {
       recenter(box.id);
     }
   }
@@ -656,7 +695,7 @@ export default function MycelialView(props: MycelialViewProps) {
   }
 
   const [contextMenu, setContextMenu] = createSignal<{
-    term: string;
+    box: MycelialBox;
     x: number;
     y: number;
   } | null>(null);
@@ -671,13 +710,33 @@ export default function MycelialView(props: MycelialViewProps) {
     }
   }
 
+  /** The on-disk note a box represents, if any: the anchor itself, a source
+   *  or kindred note (whose box id is its path), or a latent link's existing
+   *  target page. Emergent concepts have no page yet. */
+  function boxNotePath(box: MycelialBox): string | null {
+    if (box.kind === "emergent") return null;
+    if (box.kind === "latent") return box.latent?.target_path ?? null;
+    return box.id;
+  }
+
+  /** Right-click "Open in new tab": review the note's content in the editor
+   *  instead of the left-click action (recenter / picker) — e.g. to read a
+   *  kindred note and see what makes it kindred. */
+  function openBoxNote(box: MycelialBox) {
+    const path = boxNotePath(box);
+    if (!path) return;
+    setContextMenu(null);
+    openTab({ type: "file", title: box.title, path }, { forceNewTab: true });
+  }
+
   function handleBoxContextMenu(box: MycelialBox, e: MouseEvent) {
-    if (box.kind !== "emergent" || !box.emergent) return;
+    const hasStopwordAction = box.kind === "emergent" && !!box.emergent;
+    if (!hasStopwordAction && !boxNotePath(box)) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = canvasRef?.getBoundingClientRect();
     setContextMenu({
-      term: box.emergent.term,
+      box,
       x: e.clientX - (rect?.left ?? 0),
       y: e.clientY - (rect?.top ?? 0),
     });
@@ -776,7 +835,9 @@ export default function MycelialView(props: MycelialViewProps) {
       ? "var(--mycelial-emergent, #6f4423)"
       : kind === "latent"
         ? "var(--mycelial-latent, #c08a3e)"
-        : "var(--border-primary)";
+        : kind === "kindred"
+          ? "var(--mycelial-kindred, #4a7c74)"
+          : "var(--border-primary)";
   }
 
   const renderConnection = (conn: MycelialConnection) => {
@@ -788,7 +849,13 @@ export default function MycelialView(props: MycelialViewProps) {
         stroke={connectionColor(conn.kind)}
         stroke-width={conn.kind === "anchor" ? 1.5 : strokeWidth(conn.score)}
         stroke-linecap="round"
-        stroke-dasharray={conn.kind === "latent" ? "5 4" : "none"}
+        stroke-dasharray={
+          conn.kind === "latent"
+            ? "5 4"
+            : conn.kind === "kindred"
+              ? "10 6"
+              : "none"
+        }
         opacity={
           conn.kind === "anchor"
             ? active()
@@ -848,30 +915,66 @@ export default function MycelialView(props: MycelialViewProps) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <Show
-          when={box.kind === "latent" || box.kind === "emergent"}
-          fallback={<div class="mycelial-box__note-title">{box.title}</div>}
+          when={
+            box.kind === "latent" ||
+            box.kind === "emergent" ||
+            box.kind === "kindred"
+          }
+          fallback={
+            <div class="mycelial-box__note-title">
+              {box.title}
+              {renderHubBadge(box.id)}
+            </div>
+          }
         >
           <div class="mycelial-box__concept">{box.title}</div>
           <div class="mycelial-box__subtitle">{box.subtitle}</div>
           <Show when={box.snippet}>
-            <div class="mycelial-box__snippet">
-              <For
-                each={highlightParts(
-                  box.snippet,
-                  box.latent ? box.latent.term : (box.emergent?.term ?? ""),
-                )}
-              >
-                {(part) => (
-                  <span classList={{ "mycelial-box__hit": part.hit }}>
-                    {part.text}
-                  </span>
-                )}
-              </For>
-            </div>
+            <Show
+              when={box.kind !== "kindred"}
+              fallback={
+                <div class="mycelial-box__snippet mycelial-box__snippet--terms">
+                  {box.snippet}
+                </div>
+              }
+            >
+              <div class="mycelial-box__snippet">
+                <For
+                  each={highlightParts(
+                    box.snippet,
+                    box.latent ? box.latent.term : (box.emergent?.term ?? ""),
+                  )}
+                >
+                  {(part) => (
+                    <span classList={{ "mycelial-box__hit": part.hit }}>
+                      {part.text}
+                    </span>
+                  )}
+                </For>
+              </div>
+            </Show>
           </Show>
           <div class="mycelial-box__source">{box.sourceLabel}</div>
         </Show>
       </div>
+    </Show>
+  );
+
+  // Under-developed-hub badge on a note box: the note is referenced often but
+  // barely written. Detail lives in the Growth panel; the badge is the cue.
+  const renderHubBadge = (id: string) => (
+    <Show when={hubByPath().get(id)}>
+      {(hub) => (
+        <span
+          class="mycelial-box__hub-badge"
+          title={`${tPlural("mycelialGrowth.backlinksCount", hub().backlink_count)} · ${tPlural(
+            "mycelialGrowth.wordsCount",
+            hub().word_count,
+          )}`}
+        >
+          <Sprout size={13} />
+        </span>
+      )}
     </Show>
   );
 
@@ -917,6 +1020,14 @@ export default function MycelialView(props: MycelialViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Young-notebox notice — mirrors the backend's GROWING_CORPUS_DOCS
+          band (10–49 docs run with relaxed statistical thresholds). */}
+      <Show when={totalDocs() > 0 && totalDocs() < 50}>
+        <div class="mycelial-view__notice">
+          {t("mycelial.earlyGrowth", { count: String(totalDocs()) })}
+        </div>
+      </Show>
 
       <div
         class="mycelial-view__canvas"
@@ -1083,7 +1194,9 @@ export default function MycelialView(props: MycelialViewProps) {
           )}
         </Show>
 
-        {/* Emergent concept context menu */}
+        {/* Node context menu — open the underlying note in an editor tab
+            (note-backed kinds, since left-click recenters or opens the
+            picker), or add the term to stopwords (emergent concepts). */}
         <Show when={contextMenu()}>
           {(cm) => (
             <div
@@ -1092,12 +1205,22 @@ export default function MycelialView(props: MycelialViewProps) {
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <button
-                class="mycelial-context-menu__item"
-                onClick={() => handleAddStopword(cm().term)}
-              >
-                {t("mycelial.addStopword", { term: cm().term })}
-              </button>
+              <Show when={boxNotePath(cm().box)}>
+                <button
+                  class="mycelial-context-menu__item"
+                  onClick={() => openBoxNote(cm().box)}
+                >
+                  {t("wikilink.menu.openNewTab")}
+                </button>
+              </Show>
+              <Show when={cm().box.kind === "emergent" && cm().box.emergent}>
+                <button
+                  class="mycelial-context-menu__item"
+                  onClick={() => handleAddStopword(cm().box.emergent!.term)}
+                >
+                  {t("mycelial.addStopword", { term: cm().box.emergent!.term })}
+                </button>
+              </Show>
             </div>
           )}
         </Show>
@@ -1207,6 +1330,9 @@ export default function MycelialView(props: MycelialViewProps) {
                 </li>
                 <li>
                   <b>{t("mycelial.help.emergentLabel")}</b> {t("mycelial.help.emergentBody")}
+                </li>
+                <li>
+                  <b>{t("mycelial.help.kindredLabel")}</b> {t("mycelial.help.kindredBody")}
                 </li>
               </ul>
 

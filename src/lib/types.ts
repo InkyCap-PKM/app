@@ -1068,11 +1068,48 @@ export interface ExcludedTerm {
   source: "builtin" | "user";
 }
 
+/** A note referenced often but barely written — an under-developed page
+ *  worth expanding (Growth panel + node badge). */
+export interface WeakHub {
+  path: string;
+  name: string;
+  backlink_count: number;
+  word_count: number;
+}
+
+/** A note semantically close to the anchor with no link path to it — two
+ *  circles of thought that never touch. Its own dashed-edge node kind. */
+export interface KindredNote {
+  path: string;
+  name: string;
+  /** Cosine similarity to the anchor, in (0, 1]. */
+  similarity: number;
+  /** Most distinctive vocabulary the two notes share (rarest first). */
+  shared_terms: string[];
+}
+
+/** One question sentence found in a note's prose. */
+export interface OpenQuestion {
+  text: string;
+  /** 1-indexed line number. */
+  line: number;
+  /** Byte offsets of the sentence within its line. */
+  char_start: number;
+  char_end: number;
+}
+
+/** The open questions of one neighborhood note (Growth panel). */
+export interface NoteQuestions {
+  path: string;
+  name: string;
+  questions: OpenQuestion[];
+}
+
 export interface MycelialData {
   center: string;
   /** Notes a signal emerged from — inner provenance nodes. */
   source_notes: FlowNode[];
-  /** Wikilink neighbors with no signal — the faint outer horizon ring. */
+  /** Wikilink neighbors with no signal — listed in the Linked Context panel. */
   context_notes: FlowNode[];
   /** Wikilinks among center / source / context notes. */
   context_edges: FlowEdge[];
@@ -1081,6 +1118,15 @@ export interface MycelialData {
   /** Terms the stopword filter held back — surfaced for the Concept
    *  Filtering pane so the user can see and rescue them. */
   excluded_terms: ExcludedTerm[];
+  /** Similar-but-unlinked notes — rendered as kindred graph nodes. */
+  kindred_notes: KindredNote[];
+  /** Under-developed pages in the neighborhood. */
+  weak_hubs: WeakHub[];
+  /** Question sentences across the neighborhood. */
+  open_questions: NoteQuestions[];
+  /** Indexed corpus size — the UI shows an "early growth" notice on young
+   *  noteboxes. */
+  total_docs: number;
 }
 
 // Bibliography (Phase 6)

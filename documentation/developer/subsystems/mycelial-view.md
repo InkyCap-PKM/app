@@ -6,14 +6,24 @@
 > or the layout changes.
 
 The Mycelial View is InkyCap's answer to "where does my knowledge want to grow
-next?" It is **not** a backlink graph. It surfaces two things a plain link graph
+next?" It is **not** a backlink graph — its job is finding *gaps*: areas the
+user could expand or develop. It surfaces five things a plain link graph
 cannot:
 
 - **Latent links**: existing notes you *mention by name* across your writing
-  but never actually wikilinked. Missed connections.
+  but never actually wikilinked. Missed connections. (Dangling wikilinks —
+  links to pages never created — are deliberately **not** part of this
+  signal: latency means an *unlinked mention of a page that exists*, and the
+  editor already surfaces dangling links inline. Recorded 2026-08-25.)
 - **Emergent concepts**: recurring terms and phrases that appear across several
   related notes but have **no page of their own**: ideas you have developed
   implicitly without yet naming them.
+- **Kindred notes**: notes semantically close to the anchor with *no link path*
+  to it — two circles of thought that never touch.
+- **Under-developed hubs**: notes referenced often but barely written (high
+  backlink count, low word count) — surfaced in the Growth panel plus a badge.
+- **Open questions**: question sentences left across the neighborhood's prose
+  — surfaced in the Growth panel.
 
 The metaphor: in a forest, mycelial threads route nutrients along paths that
 form *organically* in response to what is actually in the soil, not along a
@@ -75,17 +85,50 @@ drown out the latent signal the view exists to surface.
 - **TF-IDF**: `tf = term_count / doc_word_count`, `idf = ln(total_docs /
   doc_freq)`. Distinctiveness: a term frequent in one note but rare across the
   notebox scores high; a term that is everywhere scores ~0.
-- **PMI** (bigrams): `log₂( P(w₁w₂) / (P(w₁)·P(w₂)) )`. How much more often two
-  words co-occur than chance predicts, the signal that two words are a *phrase*
-  ("social epistemology") not two independent words.
-- **Cosine similarity** (`similar_docs`): ranks notes by the cosine of their
-  TF-IDF vectors. This is what gives an *unlinked* note a meaningful
-  neighborhood: two notes about fermentation score high even with no wikilink
-  between them, because they share rare vocabulary.
-- **Composite concept score**: `pmi_weight·pmi + tfidf_weight·avg_tfidf +
-  proximity_weight·(neighborhood_presence / neighborhood_size)`, with a
-  **bigram boost (≈1.6×)** and **trigram boost (≈2.0×)** so real multi-word
-  phrases outrank bare words.
+- **NPMI** (bigrams): `pmi / (−log₂ P(w₁w₂))`, clamped to `[0, 1]`, where
+  `pmi = log₂( P(w₁w₂) / (P(w₁)·P(w₂)) )`. How much more often two words
+  co-occur than chance predicts — the signal that two words are a *phrase*
+  ("social epistemology") not two independent words. The normalization is
+  load-bearing: raw PMI is unbounded (8–12 bits for a real collocation) and
+  used to dominate the blend, making the ranking effectively corpus-global —
+  the historical "same suggestions from every anchor" failure.
+- **Cosine similarity** (`similar_docs_scored` / `similarity_map`): ranks
+  notes by the cosine of their TF-IDF vectors. This is what gives an
+  *unlinked* note a meaningful neighborhood, and (scored) what feeds
+  anchor-weighted proximity and kindred-note detection.
+- **Anchor-weighted proximity**: each neighborhood note's "contains the term"
+  vote is weighted by `max(cosine-to-center, 0.9^BFS-depth)` (weights built by
+  the command layer). Presence in the notes *closest to this anchor* counts
+  most — the reason two different anchors rank differently.
+- **Composite concept score**, computed in two passes: gather raw components,
+  then blend after normalizing the TF-IDF component by the run's maximum (its
+  raw scale is idf/word-count units; NPMI and proximity already live in
+  `[0, 1]`). Unigrams blend `tfidf_weight·tfidf_n + proximity_weight·wprox`;
+  n-grams blend `pmi_weight·npmi + proximity_weight·wprox` with a **bigram
+  boost (≈1.6×)** and **trigram boost (≈2.0×)** so real multi-word phrases
+  outrank bare words (but no longer infinitely — a distinctive unigram
+  everywhere in a tight neighborhood can beat a weak collocation).
+- **MMR selection**: the final `top_k` slots are filled greedily by
+  `score − diversity_lambda · max-Jaccard-overlap(source notes, already
+  selected)`, so one dense pair of notes can't supply every suggestion.
+
+### 2.2b The threshold schedule
+
+The old hard `min_corpus_size` cliff is replaced by corpus-size bands
+(`SPARSE_CORPUS_DOCS = 10`, `GROWING_CORPUS_DOCS = 50`):
+
+| Corpus size | Emergent concepts | Frequency floors |
+|---|---|---|
+| < 10 docs | off (statistics are noise) | — |
+| 10–49 docs | on, flagged "early growth" in the UI | `min_doc_freq` etc. relax to 2 |
+| ≥ 50 docs | on | config defaults |
+
+**Latent links are exempt** from all of it (they run from 2 docs up): they are
+name matching, not statistics, and a small notebox is exactly where connecting
+the first pages matters. Latent detection is *name-driven* — each existing
+page name (1–3 words, all words ≥ 2 chars and non-stopword) is looked up
+directly in the per-doc n-gram sets — rather than filtered out of the corpus
+frequency tables, so no frequency gate applies.
 
 ### 2.3 Phrase boundaries and shingle stitching
 
@@ -143,17 +186,22 @@ deserialization.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `min_doc_freq` | 3 | a term must appear in ≥3 notes to count |
+| `min_doc_freq` | 3 | a term must appear in ≥3 notes to count (relaxed to 2 under 50 docs) |
 | `max_doc_freq_ratio` | 0.6 | skip terms in >60% of notes (too generic) |
-| `min_corpus_size` | 20 | below this, show **no** concepts (statistics are noise) |
+| `min_corpus_size` | 20 | **retired** — superseded by the threshold schedule (kept for serde) |
 | `min_neighborhood_presence` | 2 | a concept must recur in ≥2 neighborhood notes |
 | `semantic_neighbors` | 12 | how many cosine-similar notes join the neighborhood |
 | `top_k` | 12 | max suggestions returned |
 | `pmi/tfidf/proximity_weight` | 0.4 / 0.3 / 0.3 | composite-score blend |
 | `bigram_boost` / `trigram_boost` | 1.6 / 2.0 | phrase-over-word multipliers |
+| `diversity_lambda` | 0.5 | MMR overlap penalty (0 = pure score order) |
+| `kindred_min_similarity` / `kindred_max` | 0.15 / 3 | kindred-note floor and graph cap |
+| `hub_min_backlinks` / `hub_max_words` | 3 / 200 | under-developed-hub thresholds |
+| `question_min_words` / `_max_per_note` / `_max_total` | 4 / 3 / 12 | open-question gates |
 
-Below `min_corpus_size` the command returns an empty concept set and the UI says
-the notebox is still growing. This is intentional honesty, not a stub.
+Below 10 docs the command returns an empty *concept* set (latent links still
+run) and the UI says the notebox is still growing; between 10 and 49 docs the
+view carries an "early growth" notice. Intentional honesty, not a stub.
 
 ---
 
@@ -162,23 +210,39 @@ the notebox is still growing. This is intentional honesty, not a stub.
 `get_mycelial_data(path, max_depth)` builds one analysis centred on `path`:
 
 1. **Link-graph BFS** (shared `bfs_link_graph()` helper, depth clamped to 3)
-   over forward + back links → the explicit-link part of the neighborhood.
+   over forward + back links → the explicit-link part of the neighborhood,
+   with per-note depths for the weighting below.
 2. **Existing-pages map** from the `PropertyIndex`: every note's stem, `title`,
    and aliases, lowercased. This is how a candidate is classified: matches an
    existing page → *latent link*; matches nothing → *emergent concept*.
-3. **Neighborhood = link-graph ∪ `similar_docs(center, semantic_neighbors)`.**
-   The union is the key design correction over a naive "neighborhood = link
-   graph": a sparsely-linked note still gets a real thematic context to grow
-   concepts from.
-4. **Latent links**: candidate mentions of existing pages, filtered to drop any
-   the center already wikilinks; mention locations resolved (with snippet + byte
-   range) for deep-linking.
-5. **Emergent concepts**: scored candidates with their source mentions
+3. **Neighborhood = link-graph ∪ `similar_docs_scored(center,
+   semantic_neighbors)`**, plus an **anchor-weight map**: each note weighs
+   `max(cosine-to-center, 0.9^depth)` (center = 1.0). The union is the key
+   design correction over a naive "neighborhood = link graph"; the weights are
+   what make the analysis anchor-specific. Kindred candidates and hub word
+   counts are gathered in the same corpus-lock scope.
+4. **Link-index snapshot** (one lock scope, never held across file I/O):
+   forward links for the already-linked filter and backlink counts for hubs.
+5. **Latent links**: candidates' mentions filtered to notes that don't
+   already wikilink the target (located via `resolve_mention`), then
+   MMR-selected and normalized (the analyzer returns raw scores so this
+   layer owns final selection).
+6. **Emergent concepts**: scored candidates with their source mentions
    resolved; concepts with no resolvable mention are dropped.
-6. **Role partition**: notes split into **source notes** (provenance: where a
-   signal emerged) and **context notes** (wikilink neighbours that surfaced *no*
-   signal, the faint "horizon ring" that still fed the corpus but is demoted to
-   an orientation marker).
+7. **Role partition**: notes split into **source notes** (provenance: where a
+   signal emerged) and **context notes** (wikilink neighbours that surfaced
+   *no* signal — listed in the right panel's Linked Context tab, not drawn in
+   the graph).
+8. **Kindred notes**: semantically-similar candidates with no link path within
+   the BFS depth, kept only if not already rendered in another role, capped at
+   `kindred_max`, each with its top shared distinctive terms.
+9. **Under-developed hubs**: linked-neighborhood notes with
+   `backlinks ≥ hub_min_backlinks` and `words ≤ hub_max_words`, ranked by
+   reference density, capped at 6.
+10. **Open questions**: `extract_questions` over the highest-weighted ≤ 30
+    neighborhood notes (a `?` must directly follow projected prose, with ≥
+    `question_min_words` tokens since the last sentence terminator), capped
+    per note and in total.
 
 `resolve_mention()` reads a note, projects it through the *same*
 `text_projection`, finds the term as consecutive tokens on a line, and returns a
@@ -192,14 +256,16 @@ highlight the exact spot.
 | **center** | the note the analysis is built around (pinned at the layout origin) |
 | **emergent** | a concept with no page yet: the payoff; click to *crystallize* it into a new note |
 | **latent** | an existing page mentioned without a wikilink |
+| **kindred** | a note similar to the anchor with no link path to it; shows shared vocabulary, click recenters |
 | **source** | a note a signal emerged from (provenance) |
-| **context** | a wikilink neighbour with no signal: faint horizon ring |
+| **context** | a wikilink neighbour with no signal — listed in the Linked Context panel, not drawn |
 
 | Edge type | Meaning |
 |---|---|
 | **emergent** | concept → the notes it emerged from (width ∝ score) |
 | **latent** | mention → the existing page it points at (width ∝ score) |
-| **anchor** | a real wikilink among center/source/context (fixed thin weight) |
+| **kindred** | anchor → kindred note (long-dashed; width ∝ similarity) |
+| **anchor** | a real wikilink among center/source notes (fixed thin weight) |
 
 There is **no concept-to-concept edge** in the literal graph: two emergent
 concepts relate only *through a shared source note*. Clusters appear wherever
@@ -241,24 +307,38 @@ same input lays out the same way. Several constraints earn their keep:
   separate pan/zoom transforms, a deliberate workaround for a WebKitGTK
   `foreignObject` repaint issue.
 - **Interactions:**
-  - Click a **source note** → recenter the graph on it (with a history trail).
+  - Click a **source note** or a **kindred note** → recenter the graph on it
+    (with a history trail).
   - Click an **emergent concept** → create a new note titled with the concept,
     pre-populated with wikilinks back to its provenance notes (so the new page
     records *how it emerged*). Long (4+ word) phrases open a title editor first
     so the user can trim the page name.
   - Click a **latent link** → a mention picker (snippet + highlight) opens the
     chosen note at the exact spot to add the wikilink.
-  - Right-click an emergent concept → add to stopwords; a `+ stopword` control
-    on the legend lets the user pre-empt noise terms.
+  - Right-click any note-backed box (anchor, source, kindred, latent target)
+    → "Open in new tab" opens the note in the editor, since left-click is
+    taken by recenter / the picker (e.g. read a kindred note to see what
+    makes it kindred). Right-click an emergent concept → add to stopwords; a
+    `+ stopword` control on the legend lets the user pre-empt noise terms.
+  - A **sprout badge** on a note box marks an under-developed hub (tooltip:
+    backlinks · words); detail lives in the Growth panel.
 - **Legend filters** isolate a kind. When exactly one non-center kind is shown,
   the view synthesizes faint dotted **pathway edges** between siblings that
   share a source note, turning "hide everything else" into "show how these
   relate." Clicking the center legend entry pulses the center rather than
   blanking the canvas.
-- **Per-tab caching.** Layout, zoom, pan, filters, and history are cached per
-  tab (`src/stores/mycelial.ts`) so switching tabs and back is instant and two
-  Mycelial tabs coexist. A `requestMycelialReload()` custom event triggers
-  recompute after stopword edits.
+- **Per-tab caching.** Layout, zoom, pan, filters, history, and the Growth
+  data are cached per tab (`src/stores/mycelial.ts`) so switching tabs and
+  back is instant and two Mycelial tabs coexist. A `requestMycelialReload()`
+  custom event triggers recompute after stopword edits.
+- **Right panel** (when a Mycelial tab is focused): three sub-tabs — **Linked
+  Context** (wikilink neighbours with no signal), **Growth**
+  (`MycelialGrowthPanel`: under-developed pages + open questions, each row
+  deep-linking into the note), and **Concept Filtering** (suppressed terms +
+  stopword editor). This split is deliberate: secondary data lives in panels,
+  not the graph — the lesson of the abandoned "horizon ring".
+- **Young-notebox notice.** Below 50 indexed docs the view shows a one-line
+  "early growth" banner (mirrors the backend's `GROWING_CORPUS_DOCS` band).
 
 ---
 
@@ -282,8 +362,9 @@ same input lays out the same way. Several constraints earn their keep:
 | Config defaults | `src-tauri/src/corpus_stats/config.rs` |
 | Stopwords/dictionary | `src-tauri/src/corpus_stats/stopwords.rs` |
 | The command | `src-tauri/src/commands/mycelial.rs` |
-| Tokenizer | `src-tauri/src/search/text_projection.rs` |
+| Tokenizer + question extraction | `src-tauri/src/search/text_projection.rs` |
 | View | `src/components/MycelialView.tsx` |
+| Growth panel | `src/components/MycelialGrowthPanel.tsx` |
 | Layout | `src/lib/mycelial-layout.ts` |
 | Per-tab store | `src/stores/mycelial.ts` |
 | User files | `<notebox>/.inkycap/mycelial-stopwords.txt`, `dictionary.txt` |

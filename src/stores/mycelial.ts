@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { ExcludedTerm } from "../lib/types";
+import type { ExcludedTerm, WeakHub, NoteQuestions } from "../lib/types";
 
 export interface MycelialContextNote {
   path: string;
@@ -8,14 +8,22 @@ export interface MycelialContextNote {
   linkedInnerIds: string[];
 }
 
-/** The graph state a Mycelial View publishes for the right panel to read: its
- *  context-note list and the terms the stopword filter suppressed. */
+/** The graph state a Mycelial View publishes for the right panel to read:
+ *  its context-note list, the terms the stopword filter suppressed, and the
+ *  Growth-tab signals (under-developed hubs, open questions). */
 export interface MycelialPublished {
   contextNotes: MycelialContextNote[];
   excludedTerms: ExcludedTerm[];
+  weakHubs: WeakHub[];
+  openQuestions: NoteQuestions[];
 }
 
-const EMPTY_PUBLISHED: MycelialPublished = { contextNotes: [], excludedTerms: [] };
+const EMPTY_PUBLISHED: MycelialPublished = {
+  contextNotes: [],
+  excludedTerms: [],
+  weakHubs: [],
+  openQuestions: [],
+};
 
 // Published state keyed by the owning tab id. Several Mycelial View tabs can be
 // open at once (split panes); a single global signal let them clobber each
