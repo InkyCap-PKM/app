@@ -244,12 +244,29 @@ function normaliseAuthors(pkg) {
   return [...new Set(list.filter(Boolean))].join(", ");
 }
 
+// Ask npm for the resolved production dependency tree.
+//
+// On Windows npm is a shim script (`npm.cmd`), and since the CVE-2024-27980
+// mitigation Node refuses to spawn a `.cmd` without `shell: true` — so a bare
+// `execFileSync("npm", …)` aborts with EINVAL there and the JS notices never
+// get written. Prefer `npm_execpath`, which npm sets to its own JS entry point
+// when this runs under `npm run licenses:gen` (the documented invocation):
+// that needs no shell and pins us to the exact npm that invoked us. Only fall
+// back to the shell when the variable is absent — e.g. a direct
+// `node scripts/gen-third-party-licenses.mjs` run — where the argument list is
+// still entirely static literals, so nothing user-supplied reaches cmd.exe.
+function npmLs() {
+  const args = ["ls", "--omit=dev", "--all", "--parseable"];
+  const opts = { cwd: ROOT, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" };
+  const execpath = process.env.npm_execpath;
+  if (execpath && execpath.endsWith(".js")) {
+    return execFileSync(process.execPath, [execpath, ...args], opts);
+  }
+  return execFileSync("npm", args, { ...opts, shell: process.platform === "win32" });
+}
+
 function generateJs() {
-  const out = execFileSync("npm", ["ls", "--omit=dev", "--all", "--parseable"], {
-    cwd: ROOT,
-    maxBuffer: 64 * 1024 * 1024,
-    encoding: "utf8",
-  });
+  const out = npmLs();
   const dirs = [...new Set(out.split("\n").map((l) => l.trim()).filter(Boolean))]
     .filter((d) => d !== ROOT && d.includes(`${join("node_modules")}`));
 
