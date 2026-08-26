@@ -9,12 +9,12 @@ Scope: every npm production dependency shipped in the front-end bundle
 (npm ls --omit=dev). Build-time tooling (Vite, TypeScript, Vitest, …) is
 excluded — it is not distributed.
 
-Components: 74    Unique licence texts: 30
+Components: 72    Unique licence texts: 30
 Identical licence texts are listed once in PART 2 and referenced by #id.
 
 
 ==============================================================================
-PART 1 — COMPONENTS (74)
+PART 1 — COMPONENTS (72)
 ==============================================================================
 
 ==============================================================================
@@ -368,7 +368,7 @@ Repository: git+https://github.com/solidjs-community/solid-primitives.git
 License text: #11
 
 ==============================================================================
-@tauri-apps/api 2.10.1
+@tauri-apps/api 2.11.0
 License: Apache-2.0 OR MIT
 Authors: Tauri Programme within The Commons Conservancy
 Repository: git+https://github.com/tauri-apps/tauri.git
@@ -381,19 +381,7 @@ Repository: https://github.com/tauri-apps/plugins-workspace
 License text: #14
 
 ==============================================================================
-@tauri-apps/plugin-process 2.3.1
-License: MIT OR Apache-2.0
-Repository: https://github.com/tauri-apps/plugins-workspace
-License text: #14
-
-==============================================================================
 @tauri-apps/plugin-shell 2.3.5
-License: MIT OR Apache-2.0
-Repository: https://github.com/tauri-apps/plugins-workspace
-License text: #14
-
-==============================================================================
-@tauri-apps/plugin-updater 2.10.1
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
 License text: #14
@@ -461,7 +449,7 @@ Repository: https://github.com/lucide-icons/lucide.git
 License text: #21
 
 ==============================================================================
-nanoid 3.3.12
+nanoid 3.3.18
 License: MIT
 Authors: Andrey Sitnik <andrey@sitnik.ru>
 Repository: ai/nanoid
@@ -482,7 +470,7 @@ Repository: git+https://github.com/darsain/remove-trailing-separator.git
 License text: #24
 
 ==============================================================================
-seroval 1.5.2
+seroval 1.5.6
 License: MIT
 Authors: Alexis Munsayac
 Repository: https://github.com/lxsmnsyc/seroval.git
@@ -823,7 +811,7 @@ SOFTWARE.
 
 ==============================================================================
 [#12]  LICENSE_APACHE-2.0
-Used by 1 component: @tauri-apps/api 2.10.1
+Used by 1 component: @tauri-apps/api 2.11.0
 ------------------------------------------------------------------------------
 
                                  Apache License
@@ -1005,7 +993,7 @@ Used by 1 component: @tauri-apps/api 2.10.1
 
 ==============================================================================
 [#13]  LICENSE_MIT
-Used by 1 component: @tauri-apps/api 2.10.1
+Used by 1 component: @tauri-apps/api 2.11.0
 ------------------------------------------------------------------------------
 MIT License
 
@@ -1031,7 +1019,7 @@ SOFTWARE.
 
 ==============================================================================
 [#14]  LICENSE.spdx
-Used by 4 components: @tauri-apps/plugin-dialog 2.7.0, @tauri-apps/plugin-process 2.3.1, @tauri-apps/plugin-shell 2.3.5, @tauri-apps/plugin-updater 2.10.1
+Used by 2 components: @tauri-apps/plugin-dialog 2.7.0, @tauri-apps/plugin-shell 2.3.5
 ------------------------------------------------------------------------------
 SPDXVersion: SPDX-2.1
 DataLicense: CC0-1.0
@@ -1438,7 +1426,7 @@ SOFTWARE.
 
 ==============================================================================
 [#22]  LICENSE
-Used by 1 component: nanoid 3.3.12
+Used by 1 component: nanoid 3.3.18
 ------------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -1497,7 +1485,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 ==============================================================================
 [#25]  LICENSE
-Used by 2 components: seroval 1.5.2, seroval-plugins 1.5.2
+Used by 2 components: seroval 1.5.6, seroval-plugins 1.5.2
 ------------------------------------------------------------------------------
 MIT License Copyright (c) 2025 Alexis Munsayac <alexis.munsayac@gmail.com>
 
