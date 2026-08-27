@@ -1441,6 +1441,23 @@ export async function removeMycelialStopword(term: string): Promise<void> {
   return invoke<void>("remove_mycelial_stopword", { term });
 }
 
+/** Hide an under-developed page from the Growth panel (per-notebox, reversible
+ *  via {@link removeMycelialHubExclusion}). */
+export async function excludeMycelialHub(path: string): Promise<void> {
+  return invoke<void>("exclude_mycelial_hub", { path });
+}
+
+/** Un-hide a previously excluded under-developed page. */
+export async function removeMycelialHubExclusion(path: string): Promise<void> {
+  return invoke<void>("remove_mycelial_hub_exclusion", { path });
+}
+
+/** Ensure the hidden-pages list file exists and return its path so it can be
+ *  opened for editing (via {@link openFileExternally}) to review or un-hide. */
+export async function ensureMycelialHubExclusionsFile(): Promise<string> {
+  return invoke<string>("ensure_mycelial_hub_exclusions_file");
+}
+
 // ── Spellcheck dictionaries ───────────────────────────────────────────────
 
 /** An installable spellcheck dictionary (bundled or user-installed). */
