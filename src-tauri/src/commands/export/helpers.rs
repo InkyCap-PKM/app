@@ -57,6 +57,12 @@ pub(super) async fn resolve_user_bib_style(
 /// Resolve bibliography settings and inject/suppress as needed. Combines
 /// `resolve_effective_bib`, `resolve_user_bib_style`, `maybe_inject_bibliography`,
 /// and `apply_bibliography_visibility` into a single call.
+///
+/// Finally escapes stray `@` references (emails like `athena@inkycap.org`) so a
+/// strict export compile doesn't fail on an unknown label — the same step the
+/// reading view runs. This is the shared chokepoint every prepare-based export
+/// path funnels through, so folding the escape in here fixes them all at once
+/// rather than repeating (and forgetting) it at each call site.
 pub(super) async fn prepare_bibliography(
     source: String,
     collection_bib: Option<&str>,
@@ -73,7 +79,8 @@ pub(super) async fn prepare_bibliography(
         _ => resolve_user_bib_style(state, session).await,
     };
     let source = maybe_inject_bibliography(source, effective_bib.as_deref(), bib_style.as_deref());
-    apply_bibliography_visibility(source, include_bibliography)
+    let source = apply_bibliography_visibility(source, include_bibliography);
+    crate::commands::typst::escape_non_bib_citations(&source, state.inner(), session).await
 }
 
 /// Suppress the rendered bibliography from export output without breaking
