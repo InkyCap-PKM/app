@@ -709,6 +709,12 @@ pub async fn export_collection_book_pdf(
         compiler.set_bibliography_style(Some(style.clone()));
     }
     let source = super::super::typst::maybe_inject_set_notebox(&source, &state).await;
+    // Escape stray `@` (emails like `athena@inkycap.org`) inlined from the
+    // member notes. Book export builds its own merged source rather than going
+    // through `prepare_bibliography`, so it needs the same escape step here or a
+    // single member's email would fail the whole strict book compile.
+    let source =
+        super::super::typst::escape_non_bib_citations(&source, state.inner(), &session).await;
     let source = ensure_document_date_for_standard(source, book_pdf_standard);
     check_pdf_standard_requirements(&source, book_pdf_standard)?;
     // Keep a copy to map any compile error's offset back to the note it came

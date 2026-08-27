@@ -751,21 +751,17 @@ fn strip_code_spans(source: &str) -> String {
 /// keys), so it silently rewrote every cross-reference to a heading, figure,
 /// or equation into `\@...` whenever a bibliography was present — breaking
 /// the reference in the rendered output.
+///
+/// An `@` attached to a preceding word character (an email or handle, e.g.
+/// `athena@inkycap.org`) is always escaped, even with no bibliography loaded:
+/// Typst never parses a citation mid-word, so such an `@` cannot be a real
+/// citation. A *standalone* unresolved `@key` is only escaped when
+/// `valid_keys` is non-empty; with none loaded it may be a transiently
+/// unresolved citation and is left untouched.
 pub fn escape_invalid_citations(
     source: &str,
     valid_keys: &std::collections::HashSet<String>,
 ) -> String {
-    // With no bibliography keys to compare against we can't safely tell a real
-    // (but transiently unresolved) citation from a stray `@`. A failed or
-    // not-yet-loaded bibliography arrives here as an empty set, and escaping
-    // every reference in that window would rewrite legitimate citations to
-    // literal text. Leave the source untouched: a dangling `@label` with no
-    // bibliography either resolves to a real `<label>` or earns a clear Typst
-    // "label does not exist" error — neither worth pre-empting by escaping.
-    if valid_keys.is_empty() {
-        return source.to_string();
-    }
-
     let root = parse(source);
     let link = LinkedNode::new(&root);
 
@@ -788,7 +784,31 @@ pub fn escape_invalid_citations(
     let mut out = Vec::with_capacity(source.len() + 16);
     let mut last = 0;
     for (pos, target) in &refs {
+        // A reference whose target is a real bibliography key or a label
+        // defined in this document is genuine — leave it untouched whether or
+        // not it's attached to a preceding word.
         if valid_keys.contains(target) || labels.contains(target) {
+            continue;
+        }
+        // Typst only ever parses a citation or cross-reference at a word
+        // boundary, so an `@` sitting directly after a letter or digit —
+        // `athena@inkycap.org` — is never a citation and is always safe to
+        // render literally, regardless of whether a bibliography is loaded.
+        // This mirrors the visual editor's email heuristic (the `attached`
+        // branch in `visual-plugin.ts`) so the two paths agree. UTF-8-safe:
+        // `*pos` is the byte offset of the ASCII `@`, so slicing to it lands on
+        // a char boundary and `next_back()` yields the whole preceding char.
+        let attached_to_word = source[..*pos]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric());
+        // A *standalone* stray `@` is only escaped when we have keys to compare
+        // against. With none loaded (a failed or not-yet-loaded bibliography)
+        // we can't tell a real, transiently-unresolved citation from a typo, so
+        // we leave it — the original guard's rationale, now scoped to this
+        // ambiguous case instead of aborting the whole pass and letting stray
+        // emails through.
+        if !attached_to_word && valid_keys.is_empty() {
             continue;
         }
         out.extend_from_slice(&bytes[last..*pos]);
@@ -1324,11 +1344,27 @@ mod tests {
     }
 
     #[test]
-    fn escape_invalid_no_bib_leaves_untouched() {
+    fn escape_invalid_no_bib_leaves_standalone_refs_untouched() {
+        // A *standalone* `@ref` (preceded by whitespace) with no bibliography
+        // loaded is ambiguous — it may be a transiently unresolved citation, so
+        // it is left untouched.
         let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
         let src = "Contact @someone and @other";
         let out = escape_invalid_citations(src, &valid);
         assert_eq!(out, src);
+    }
+
+    #[test]
+    fn escape_email_without_bibliography() {
+        // The motivating export bug: an email in a note with no bibliography.
+        // Its `@domain` is attached to a preceding word, so Typst can never
+        // parse it as a citation — it must be escaped even with an empty key
+        // set, or a strict export compile fails on `label <inkycap.org> does
+        // not exist`. (The reading view masked this via error recovery.)
+        let valid: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let src = "e-mail: athena@inkycap.org";
+        let out = escape_invalid_citations(src, &valid);
+        assert_eq!(out, r"e-mail: athena\@inkycap.org");
     }
 
     #[test]

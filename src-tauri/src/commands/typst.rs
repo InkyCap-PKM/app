@@ -193,7 +193,12 @@ async fn inject_style_into_explicit_bib(
 /// Escape `@key` patterns that don't match any entry in the user's
 /// bibliography, so Typst treats them as literal text (e.g. email
 /// addresses like `user@domain.com`). Runs after bibliography injection.
-async fn escape_non_bib_citations(
+///
+/// Shared with the export pipeline (`export::helpers::prepare_bibliography`
+/// and book export) so a strict PDF/HTML compile escapes stray `@` the same
+/// way the reading view does — otherwise an email would compile fine in the
+/// reading view but hard-fail export.
+pub(crate) async fn escape_non_bib_citations(
     source: &str,
     state: &AppState,
     session: &NoteboxSession,
