@@ -40,6 +40,12 @@ const BIGRAM_SEP: char = '\x1f';
 /// `BIGRAM_SEP` as a `&str`, for `join` call sites.
 const BIGRAM_SEP_STR: &str = "\x1f";
 
+/// Sanity bound on how many words an existing page name may have and still be
+/// matched by the latent-link pass. There is no *functional* limit (a page
+/// title of any realistic length is recognized via its consecutive trigrams);
+/// this only stops a pathological name from driving an unbounded per-doc scan.
+const MAX_PAGE_NAME_WORDS: usize = 8;
+
 /// The corpus-wide frequency statistics index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorpusStats {
@@ -608,7 +614,10 @@ impl CorpusStats {
         // frequency-table path had, minus its df gates.
         for (name, target_path) in existing_pages {
             let words: Vec<&str> = name.split_whitespace().collect();
-            if words.is_empty() || words.len() > 3 {
+            // No hard length cap: a page named with many words should still be
+            // recognized as existing. `MAX_PAGE_NAME_WORDS` is only a sanity
+            // bound so a pathological title can't drive an unbounded scan.
+            if words.is_empty() || words.len() > MAX_PAGE_NAME_WORDS {
                 continue;
             }
             if words
@@ -617,37 +626,85 @@ impl CorpusStats {
             {
                 continue;
             }
-            let key = words.join(BIGRAM_SEP_STR);
-            let (sets, df) = match words.len() {
-                1 => (
-                    &self.doc_unigrams,
-                    self.doc_freq.get(&key).copied().unwrap_or(0),
-                ),
-                2 => (
-                    &self.doc_bigram_sets,
-                    self.bigram_doc_freq.get(&key).copied().unwrap_or(0),
-                ),
-                _ => (
-                    &self.doc_trigram_sets,
-                    self.trigram_doc_freq.get(&key).copied().unwrap_or(0),
-                ),
-            };
-            if df == 0 {
-                continue;
-            }
-            // Ubiquitous-name guard — only once the ratio has enough corpus
-            // to mean something.
-            if self.total_docs >= GROWING_CORPUS_DOCS / 2 && df > max_doc_freq {
-                continue;
-            }
-            let (wprox, count, source_notes) = self.weighted_presence(&key, note_weights, sets);
-            if count == 0 {
-                continue;
-            }
-            let (distinct, distinct_is_tfidf) = match words.len() {
-                1 => (self.avg_tfidf_weighted(&key, note_weights), true),
-                2 => (self.npmi(&key), false),
-                _ => (self.trigram_cohesion(&key), false),
+            let (wprox, count, source_notes, distinct, distinct_is_tfidf) = if words.len() <= 3 {
+                // Short names: exact key lookup in the indexed n-gram sets,
+                // with the corpus df tables driving the ubiquity guard.
+                let key = words.join(BIGRAM_SEP_STR);
+                let (sets, df) = match words.len() {
+                    1 => (
+                        &self.doc_unigrams,
+                        self.doc_freq.get(&key).copied().unwrap_or(0),
+                    ),
+                    2 => (
+                        &self.doc_bigram_sets,
+                        self.bigram_doc_freq.get(&key).copied().unwrap_or(0),
+                    ),
+                    _ => (
+                        &self.doc_trigram_sets,
+                        self.trigram_doc_freq.get(&key).copied().unwrap_or(0),
+                    ),
+                };
+                if df == 0 {
+                    continue;
+                }
+                // Ubiquitous-name guard — only once the ratio has enough corpus
+                // to mean something.
+                if self.total_docs >= GROWING_CORPUS_DOCS / 2 && df > max_doc_freq {
+                    continue;
+                }
+                let (wprox, count, source_notes) = self.weighted_presence(&key, note_weights, sets);
+                if count == 0 {
+                    continue;
+                }
+                let (distinct, distinct_is_tfidf) = match words.len() {
+                    1 => (self.avg_tfidf_weighted(&key, note_weights), true),
+                    2 => (self.npmi(&key), false),
+                    _ => (self.trigram_cohesion(&key), false),
+                };
+                (wprox, count, source_notes, distinct, distinct_is_tfidf)
+            } else {
+                // Long names (4+ words): no n-gram set is indexed for the
+                // whole phrase, so detect it via its consecutive trigrams — a
+                // document contains the phrase iff it contains every one of
+                // the phrase's overlapping trigrams (the same overlap
+                // invariant `stitch_overlapping_shingles` relies on). This
+                // scans only the neighborhood, costs no persistent memory, and
+                // scales with the number of long-named pages, not the corpus.
+                let tri_keys: Vec<String> =
+                    words.windows(3).map(|w| w.join(BIGRAM_SEP_STR)).collect();
+                // Global prune: if any constituent trigram never occurs the
+                // phrase can't appear anywhere — skip before the per-doc scan.
+                // `min_tri_df` bounds the phrase's own doc frequency from above
+                // (a phrase is no more frequent than its rarest trigram), so it
+                // stands in for `df` in the ubiquity guard.
+                let mut min_tri_df = usize::MAX;
+                let mut absent = false;
+                for k in &tri_keys {
+                    let df = self.trigram_doc_freq.get(k).copied().unwrap_or(0);
+                    if df == 0 {
+                        absent = true;
+                        break;
+                    }
+                    min_tri_df = min_tri_df.min(df);
+                }
+                if absent {
+                    continue;
+                }
+                if self.total_docs >= GROWING_CORPUS_DOCS / 2 && min_tri_df > max_doc_freq {
+                    continue;
+                }
+                let (wprox, count, source_notes) =
+                    self.phrase_presence_via_trigrams(&tri_keys, note_weights);
+                if count == 0 {
+                    continue;
+                }
+                // Cohesion of the weakest constituent trigram stands in for the
+                // whole phrase's cohesion.
+                let distinct = tri_keys
+                    .iter()
+                    .map(|k| self.trigram_cohesion(k))
+                    .fold(f64::INFINITY, f64::min);
+                (wprox, count, source_notes, distinct, false)
             };
             candidates.push(RawCandidate {
                 term: words.join(" "),
@@ -840,6 +897,17 @@ impl CorpusStats {
         // rather than three near-identical windows of it.
         stitch_overlapping_shingles(&mut emergent);
 
+        // Some surviving phrases are already covered by an existing page: an
+        // exact page name the per-n-gram checks couldn't catch (e.g. a 4-word
+        // title only the stitcher reassembled), or a shorter phrase wholly
+        // inside a neighborhood page's title. Drop them so the view suggests
+        // genuinely *new* concepts, not pages the user already has.
+        let neighborhood_pages: HashSet<String> = note_weights
+            .keys()
+            .map(|p| crate::storage::to_frontend_string(p))
+            .collect();
+        suppress_existing_page_phrases(&mut emergent, existing_pages, &neighborhood_pages);
+
         // Sort by score, then term, so equal-scoring candidates land in a
         // stable order (HashMap iteration order is otherwise non-deterministic),
         // then fill the emergent slots by MMR so the suggestions spread across
@@ -911,6 +979,44 @@ impl CorpusStats {
         // `note_weights` is a HashMap — iteration order varies per call.
         // Sort so the same notebox always yields the same result, and the
         // Mycelial View layout stays stable across recomputes.
+        notes.sort();
+        let wprox = if total_weight > 0.0 {
+            weight_sum / total_weight
+        } else {
+            0.0
+        };
+        (wprox, count, notes)
+    }
+
+    /// Anchor-weighted presence of a phrase longer than the largest indexed
+    /// n-gram (4+ words), detected through its consecutive trigrams: a document
+    /// contains the phrase iff its trigram set contains every one of the
+    /// phrase's overlapping trigrams. Same overlap invariant
+    /// `stitch_overlapping_shingles` relies on, so latent recognition of a long
+    /// page name stays consistent with how emergent shingles are fused.
+    /// `tri_keys` are `BIGRAM_SEP`-joined trigram keys. Returns (weighted
+    /// presence in [0, 1], containing-doc count, sorted source notes).
+    fn phrase_presence_via_trigrams(
+        &self,
+        tri_keys: &[String],
+        note_weights: &HashMap<PathBuf, f64>,
+    ) -> (f64, usize, Vec<String>) {
+        let mut weight_sum = 0.0;
+        let mut total_weight = 0.0;
+        let mut count = 0usize;
+        let mut notes: Vec<String> = Vec::new();
+        for (path, w) in note_weights {
+            total_weight += w;
+            let contains_all = self
+                .doc_trigram_sets
+                .get(path.as_path())
+                .is_some_and(|s| tri_keys.iter().all(|k| s.contains(k)));
+            if contains_all {
+                weight_sum += w;
+                count += 1;
+                notes.push(crate::storage::to_frontend_string(path));
+            }
+        }
         notes.sort();
         let wprox = if total_weight > 0.0 {
             weight_sum / total_weight
@@ -1092,6 +1198,61 @@ fn jaccard(a: &[String], b: &[String]) -> f64 {
 /// Same-length only: a bigram that is a prefix of a trigram ("machine
 /// learning" vs "machine learning models") is a legitimately distinct
 /// concept at a coarser grain and is deliberately left alone.
+/// Drop emergent concepts an existing page already covers:
+///   * **exact match** — the concept's words are exactly a page's name. It is
+///     an existing page, not a new concept, so it is suppressed
+///     unconditionally (the `<= 3`-word emergent passes catch this earlier via
+///     `existing_pages.contains_key`; this catches longer phrases that only
+///     `stitch_overlapping_shingles` reassembled, e.g. "charles van den
+///     heuvel" against the page "Charles van den Heuvel").
+///   * **subphrase** — a *multi-word* concept whose words are a contiguous run
+///     inside a longer page name *that is itself present in the neighborhood*.
+///     The neighborhood gate is what separates "you already have a page
+///     encompassing this" (suppress: e.g. "collection development" inside a
+///     linked "Collection Development Team") from a short phrase that merely
+///     shares words with some unrelated page (keep). Single-word concepts are
+///     never suppressed as subphrases — one word sits inside too many titles
+///     to carry meaning.
+///
+/// All terms compared are lowercased (emergent terms come from lowercased
+/// n-gram keys; `existing_pages` keys are lowercased at build time), so the
+/// match is case-insensitive.
+fn suppress_existing_page_phrases(
+    emergent: &mut Vec<EmergentConcept>,
+    existing_pages: &HashMap<String, String>,
+    neighborhood_pages: &HashSet<String>,
+) {
+    // Tokenize page names once. The path lets the subphrase gate ask whether
+    // the encompassing page is in the neighborhood.
+    let pages: Vec<(Vec<&str>, &str)> = existing_pages
+        .iter()
+        .map(|(name, path)| (name.split_whitespace().collect::<Vec<_>>(), path.as_str()))
+        .collect();
+
+    emergent.retain(|c| {
+        let cw: Vec<&str> = c.term.split_whitespace().collect();
+        if cw.is_empty() {
+            return true;
+        }
+        for (pw, path) in &pages {
+            if pw.len() < cw.len() {
+                continue;
+            }
+            if pw.as_slice() == cw.as_slice() {
+                return false; // exact existing page
+            }
+            if cw.len() >= 2
+                && pw.len() > cw.len()
+                && neighborhood_pages.contains(*path)
+                && pw.windows(cw.len()).any(|w| w == cw.as_slice())
+            {
+                return false; // subphrase of a neighborhood page
+            }
+        }
+        true
+    });
+}
+
 fn stitch_overlapping_shingles(emergent: &mut Vec<EmergentConcept>) {
     let n = emergent.len();
     if n < 2 {
@@ -1705,6 +1866,78 @@ mod tests {
         ];
         stitch_overlapping_shingles(&mut emergent);
         assert_eq!(emergent.len(), 2);
+    }
+
+    #[test]
+    fn suppress_existing_page_phrases_drops_exact_and_subphrase() {
+        let mut emergent = vec![
+            // Exact 4-word page name (only the stitcher could reassemble it):
+            // suppressed regardless of whether its page is in the neighborhood.
+            concept("charles van den heuvel", 0.9, &["a.typ"]),
+            // Multi-word subphrase of a page that IS in the neighborhood:
+            // suppressed.
+            concept("collection development", 0.8, &["a.typ"]),
+            // Multi-word subphrase of a page NOT in the neighborhood: kept
+            // (the shared words may be coincidental).
+            concept("organic rules", 0.7, &["a.typ"]),
+            // Single word inside a neighborhood page: kept (unigrams are never
+            // suppressed as subphrases).
+            concept("development", 0.6, &["a.typ"]),
+            // Shares nothing with any page: kept.
+            concept("distinct idea", 0.5, &["a.typ"]),
+        ];
+        let mut pages = HashMap::new();
+        pages.insert("charles van den heuvel".to_string(), "P1".to_string());
+        pages.insert("collection development team".to_string(), "P2".to_string());
+        pages.insert("organic rules of enabling".to_string(), "P4".to_string());
+        // Only the "collection development team" page is in the neighborhood.
+        let neighborhood: HashSet<String> = ["P2".to_string()].into_iter().collect();
+
+        suppress_existing_page_phrases(&mut emergent, &pages, &neighborhood);
+
+        let terms: Vec<&str> = emergent.iter().map(|c| c.term.as_str()).collect();
+        assert!(
+            !terms.contains(&"charles van den heuvel"),
+            "exact page name"
+        );
+        assert!(
+            !terms.contains(&"collection development"),
+            "subphrase of a neighborhood page"
+        );
+        assert!(
+            terms.contains(&"organic rules"),
+            "subphrase of a non-neighborhood page is kept: {terms:?}"
+        );
+        assert!(
+            terms.contains(&"development"),
+            "unigram is never a subphrase"
+        );
+        assert!(terms.contains(&"distinct idea"));
+    }
+
+    #[test]
+    fn latent_recognizes_page_name_longer_than_three_words() {
+        // A 4-word page name is beyond the largest indexed n-gram, so it is
+        // detected via its consecutive trigrams. Two notes mention it without
+        // linking, so it must surface as a latent link.
+        let phrase = ["quantum", "error", "correcting", "codes"];
+        let mut stats = CorpusStats::new(None);
+        stats.add_doc(Path::new("a.typ"), &doc(&phrase));
+        stats.add_doc(Path::new("b.typ"), &doc(&phrase));
+        stats.add_doc(Path::new("misc.typ"), &doc(&["unrelated", "words"]));
+
+        let mut pages = HashMap::new();
+        pages.insert(phrase.join(" "), "codes.typ".to_string());
+        let weights = uniform_weights(&["a.typ", "b.typ", "misc.typ"]);
+        let analysis = stats.analyze_neighborhood(&weights, &pages, &MycelialConfig::default());
+
+        let latent = analysis
+            .latent
+            .iter()
+            .find(|l| l.term == phrase.join(" "))
+            .expect("4-word page name should surface as a latent link");
+        assert_eq!(latent.target_path, "codes.typ");
+        assert!(latent.source_notes.iter().any(|s| s.ends_with("a.typ")));
     }
 
     #[test]

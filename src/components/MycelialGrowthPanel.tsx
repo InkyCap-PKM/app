@@ -15,7 +15,7 @@
 // Section explanations hide behind a HelpButton (the Settings pattern)
 // instead of permanent hint paragraphs.
 
-import { Component, For, Show } from "solid-js";
+import { Component, For, Show, createSignal } from "solid-js";
 import { Sprout, FileText, ChevronDown, ChevronRight } from "lucide-solid";
 import type { WeakHub, NoteQuestions, OpenQuestion } from "../lib/types";
 import { openTab } from "../stores/tabs";
@@ -25,7 +25,15 @@ import {
   setMycelialGrowthExpanded,
   type MycelialGrowthSection,
 } from "../stores/mycelialGrowthPanel";
+import { requestMycelialReload } from "../stores/mycelial";
+import { toastError } from "../stores/toasts";
+import * as ipc from "../lib/ipc";
+import { clickOutside } from "../lib/clickOutside";
 import HelpButton from "./HelpButton";
+
+// Solid's `use:clickOutside` needs the directive referenced so it isn't
+// tree-shaken; the assignment is the idiomatic way to keep the import live.
+void clickOutside;
 
 interface MycelialGrowthPanelProps {
   /** Under-developed hubs for the focused Mycelial tab, resolved by the right
@@ -36,6 +44,10 @@ interface MycelialGrowthPanelProps {
 
 const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
   const t = useI18n();
+
+  // Right-click menu for hiding an under-developed page. Positioned at the
+  // cursor via the shared app-drawn `.context-menu` (fixed, popup-tokened).
+  const [hubMenu, setHubMenu] = createSignal<{ x: number; y: number; hub: WeakHub } | null>(null);
 
   const questionCount = () =>
     props.openQuestions.reduce((sum, n) => sum + n.questions.length, 0);
@@ -62,6 +74,33 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
 
   function toggleSection(section: MycelialGrowthSection) {
     setMycelialGrowthExpanded(section, !mycelialGrowthExpanded()[section]);
+  }
+
+  function openHubMenu(hub: WeakHub, e: MouseEvent) {
+    e.preventDefault();
+    setHubMenu({ x: e.clientX, y: e.clientY, hub });
+  }
+
+  async function excludeHub(hub: WeakHub) {
+    setHubMenu(null);
+    try {
+      await ipc.excludeMycelialHub(hub.path);
+      // Recompute so the hidden page drops out of every open Mycelial View.
+      requestMycelialReload();
+    } catch (err) {
+      console.error("Failed to exclude under-developed page", err);
+    }
+  }
+
+  /** Open the hidden-pages list in the OS default text editor (created with a
+   *  format header on first use) so past hides can be reviewed and un-hidden. */
+  async function openHiddenPagesFile() {
+    try {
+      const path = await ipc.ensureMycelialHubExclusionsFile();
+      await ipc.openFileExternally(path);
+    } catch (err) {
+      toastError(t("mycelialGrowth.openHiddenFailed"), err);
+    }
   }
 
   return (
@@ -115,6 +154,7 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
                   <div
                     class="sidebar-item"
                     onClick={() => openNote(hub.path, hub.name)}
+                    onContextMenu={(e) => openHubMenu(hub, e)}
                     title={t("mycelialGrowth.openHub", { name: hub.name })}
                   >
                     <span class="sidebar-item__icon">
@@ -127,6 +167,11 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
               )}
             </For>
           </Show>
+          {/* Always available (even with no current hubs) so past hides stay
+              discoverable and reversible — mirrors the stopword list link. */}
+          <button class="concept-filtering__editlink" onClick={openHiddenPagesFile}>
+            {t("mycelialGrowth.editHidden")}
+          </button>
         </Show>
       </div>
 
@@ -202,6 +247,20 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
           </Show>
         </Show>
       </div>
+
+      <Show when={hubMenu()}>
+        {(menu) => (
+          <div
+            class="context-menu"
+            style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+            use:clickOutside={{ onDismiss: () => setHubMenu(null) }}
+          >
+            <button class="context-menu__item" onClick={() => excludeHub(menu().hub)}>
+              {t("mycelialGrowth.excludeHub")}
+            </button>
+          </div>
+        )}
+      </Show>
     </div>
   );
 };

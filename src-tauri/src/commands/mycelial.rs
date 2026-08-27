@@ -364,6 +364,9 @@ pub async fn get_mycelial_data(
 
     let storage = session.get_storage().await?;
 
+    // Under-developed pages the user has chosen to hide from the Growth panel.
+    let hub_exclusions = load_hub_exclusions(storage.root()).await;
+
     // 5. Latent links: keep only notes that mention the target without a
     //    wikilink to it (the analyzer returns raw scores), then MMR-select
     //    and normalize. The draft carries the mentioning-note ids as the MMR
@@ -511,10 +514,14 @@ pub async fn get_mycelial_data(
         .iter()
         .filter_map(|(p, &wc)| {
             let backlinks = backlink_counts.get(p).copied().unwrap_or(0);
-            if backlinks >= config.hub_min_backlinks && wc <= config.hub_max_words {
+            let id = to_frontend_string(p);
+            if backlinks >= config.hub_min_backlinks
+                && wc <= config.hub_max_words
+                && !hub_exclusions.contains(&id)
+            {
                 Some(WeakHub {
-                    path: to_frontend_string(p),
                     name: stem_name(p),
+                    path: id,
                     backlink_count: backlinks,
                     word_count: wc,
                 })
@@ -895,4 +902,126 @@ pub async fn ensure_mycelial_stopwords_file(
     }
 
     Ok(to_frontend_string(&stopwords_path))
+}
+
+/// Path of the notebox's under-developed-page exclusion list.
+fn hub_exclusions_path(root: &Path) -> PathBuf {
+    root.join(".inkycap").join("mycelial-hub-exclusions.txt")
+}
+
+/// Read the set of notebox paths the user has hidden from the Growth panel's
+/// under-developed-pages list. Each line is one `to_frontend_string`-shaped
+/// path — the same shape `WeakHub.path` carries — so membership is a direct
+/// string compare. Missing file, blank lines, and `#` comments yield nothing.
+async fn load_hub_exclusions(root: &Path) -> HashSet<String> {
+    let mut set = HashSet::new();
+    if let Ok(contents) = tokio::fs::read_to_string(hub_exclusions_path(root)).await {
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                set.insert(trimmed.to_string());
+            }
+        }
+    }
+    set
+}
+
+/// Append `value` as its own line to a list file, verbatim (unlike
+/// `append_unique_word`, which lowercases — a path must keep its case). Creates
+/// the file and parent directory if needed; a no-op when already present.
+async fn append_unique_line(path: &Path, value: &str) -> Result<(), InkyCapError> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let existing = tokio::fs::read_to_string(path).await.unwrap_or_default();
+    if existing.lines().any(|line| line.trim() == value) {
+        return Ok(());
+    }
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
+    let line = if existing.ends_with('\n') || existing.is_empty() {
+        format!("{value}\n")
+    } else {
+        format!("\n{value}\n")
+    };
+    file.write_all(line.as_bytes()).await?;
+    Ok(())
+}
+
+/// Hide an under-developed page from the Growth panel by adding its notebox
+/// path to `.inkycap/mycelial-hub-exclusions.txt`. The exclusion is per-notebox
+/// and takes effect the next time the Mycelial View loads. Reversible via
+/// `remove_mycelial_hub_exclusion`.
+#[tauri::command]
+pub async fn exclude_mycelial_hub(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    append_unique_line(&hub_exclusions_path(storage.root()), &path).await?;
+    Ok(())
+}
+
+/// Ensure the under-developed-page exclusion file exists and return its path so
+/// the frontend can open it for editing — the mirror of
+/// `ensure_mycelial_stopwords_file`, giving the user a way to review and prune
+/// what they've hidden from the Growth panel. Created with an explanatory
+/// header (one notebox-relative path per line, `#` comments) on first use.
+#[tauri::command]
+pub async fn ensure_mycelial_hub_exclusions_file(
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<String, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let file = hub_exclusions_path(storage.root());
+
+    if !file.exists() {
+        if let Some(parent) = file.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let header = "# Mycelial View — hidden under-developed pages\n\
+                      #\n\
+                      # Notes listed here are omitted from the Growth panel's\n\
+                      # under-developed-pages list. One notebox path per line;\n\
+                      # lines starting with # are ignored. Remove a line to\n\
+                      # show that page again.\n\
+                      #\n\
+                      # Edits take effect the next time the Mycelial View loads.\n";
+        tokio::fs::write(&file, header).await?;
+    }
+
+    Ok(to_frontend_string(&file))
+}
+
+/// Un-hide a previously excluded under-developed page. No-op if the path isn't
+/// listed.
+#[tauri::command]
+pub async fn remove_mycelial_hub_exclusion(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let file = hub_exclusions_path(storage.root());
+    let Ok(contents) = tokio::fs::read_to_string(&file).await else {
+        return Ok(());
+    };
+    let kept: Vec<&str> = contents
+        .lines()
+        .filter(|line| line.trim() != path)
+        .collect();
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    tokio::fs::write(&file, out).await?;
+    Ok(())
 }
