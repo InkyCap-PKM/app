@@ -16,10 +16,15 @@
 // instead of permanent hint paragraphs.
 
 import { Component, For, Show } from "solid-js";
-import { Sprout, FileText } from "lucide-solid";
+import { Sprout, FileText, ChevronDown, ChevronRight } from "lucide-solid";
 import type { WeakHub, NoteQuestions, OpenQuestion } from "../lib/types";
 import { openTab } from "../stores/tabs";
 import { useI18n, tPlural } from "../lib/i18n";
+import {
+  mycelialGrowthExpanded,
+  setMycelialGrowthExpanded,
+  type MycelialGrowthSection,
+} from "../stores/mycelialGrowthPanel";
 import HelpButton from "./HelpButton";
 
 interface MycelialGrowthPanelProps {
@@ -55,85 +60,146 @@ const MycelialGrowthPanel: Component<MycelialGrowthPanelProps> = (props) => {
     );
   }
 
+  function toggleSection(section: MycelialGrowthSection) {
+    setMycelialGrowthExpanded(section, !mycelialGrowthExpanded()[section]);
+  }
+
   return (
     <div class="mycelial-growth">
       <div class="right-panel__section">
-        <div class="right-panel__section-header">
+        <div
+          class="right-panel__section-header right-panel__section-header--clickable"
+          onClick={() => toggleSection("hubs")}
+          role="button"
+          tabindex="0"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleSection("hubs");
+            }
+          }}
+          aria-expanded={mycelialGrowthExpanded().hubs}
+        >
           <span class="mycelial-growth__heading">
             {t("mycelialGrowth.hubs")}
-            <HelpButton label={t("mycelialGrowth.hubs")}>
-              {t("mycelialGrowth.hubsHint")}
-            </HelpButton>
+            {/* Keep the help toggle out of the collapse gesture: without
+                stopping propagation, opening the popover would also fold the
+                section (and Enter/Space on the trigger would double-fire). */}
+            <span
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <HelpButton label={t("mycelialGrowth.hubs")}>
+                {t("mycelialGrowth.hubsHint")}
+              </HelpButton>
+            </span>
           </span>
-          <span class="right-panel__count">{props.weakHubs.length}</span>
+          <div class="right-panel__header-actions">
+            <span class="right-panel__count">{props.weakHubs.length}</span>
+            <Show
+              when={mycelialGrowthExpanded().hubs}
+              fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+            >
+              <ChevronDown size={14} class="right-panel__section-chevron" />
+            </Show>
+          </div>
         </div>
-        <Show
-          when={props.weakHubs.length > 0}
-          fallback={<p class="sidebar-hint">{t("mycelialGrowth.hubsEmpty")}</p>}
-        >
-          <For each={props.weakHubs}>
-            {(hub) => (
-              <div>
-                <div
-                  class="sidebar-item"
-                  onClick={() => openNote(hub.path, hub.name)}
-                  title={t("mycelialGrowth.openHub", { name: hub.name })}
-                >
-                  <span class="sidebar-item__icon">
-                    <Sprout size={14} />
-                  </span>
-                  <span class="sidebar-item__label">{hub.name}</span>
+        <Show when={mycelialGrowthExpanded().hubs}>
+          <Show
+            when={props.weakHubs.length > 0}
+            fallback={<p class="sidebar-hint">{t("mycelialGrowth.hubsEmpty")}</p>}
+          >
+            <For each={props.weakHubs}>
+              {(hub) => (
+                <div>
+                  <div
+                    class="sidebar-item"
+                    onClick={() => openNote(hub.path, hub.name)}
+                    title={t("mycelialGrowth.openHub", { name: hub.name })}
+                  >
+                    <span class="sidebar-item__icon">
+                      <Sprout size={14} />
+                    </span>
+                    <span class="sidebar-item__label">{hub.name}</span>
+                  </div>
+                  <div class="link-context link-context--match">{hubMeta(hub)}</div>
                 </div>
-                <div class="link-context link-context--match">{hubMeta(hub)}</div>
-              </div>
-            )}
-          </For>
+              )}
+            </For>
+          </Show>
         </Show>
       </div>
 
       <div class="right-panel__section">
-        <div class="right-panel__section-header">
+        <div
+          class="right-panel__section-header right-panel__section-header--clickable"
+          onClick={() => toggleSection("questions")}
+          role="button"
+          tabindex="0"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleSection("questions");
+            }
+          }}
+          aria-expanded={mycelialGrowthExpanded().questions}
+        >
           <span class="mycelial-growth__heading">
             {t("mycelialGrowth.questions")}
-            <HelpButton label={t("mycelialGrowth.questions")}>
-              {t("mycelialGrowth.questionsHint")}
-            </HelpButton>
+            <span
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <HelpButton label={t("mycelialGrowth.questions")}>
+                {t("mycelialGrowth.questionsHint")}
+              </HelpButton>
+            </span>
           </span>
-          <span class="right-panel__count">{questionCount()}</span>
+          <div class="right-panel__header-actions">
+            <span class="right-panel__count">{questionCount()}</span>
+            <Show
+              when={mycelialGrowthExpanded().questions}
+              fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+            >
+              <ChevronDown size={14} class="right-panel__section-chevron" />
+            </Show>
+          </div>
         </div>
-        <Show
-          when={props.openQuestions.length > 0}
-          fallback={
-            <p class="sidebar-hint">{t("mycelialGrowth.questionsEmpty")}</p>
-          }
-        >
-          <For each={props.openQuestions}>
-            {(note) => (
-              <div>
-                <div
-                  class="sidebar-item"
-                  onClick={() => openNote(note.path, note.name)}
-                  title={t("mycelialGrowth.openHub", { name: note.name })}
-                >
-                  <span class="sidebar-item__icon">
-                    <FileText size={14} />
-                  </span>
-                  <span class="sidebar-item__label">{note.name}</span>
+        <Show when={mycelialGrowthExpanded().questions}>
+          <Show
+            when={props.openQuestions.length > 0}
+            fallback={
+              <p class="sidebar-hint">{t("mycelialGrowth.questionsEmpty")}</p>
+            }
+          >
+            <For each={props.openQuestions}>
+              {(note) => (
+                <div>
+                  <div
+                    class="sidebar-item"
+                    onClick={() => openNote(note.path, note.name)}
+                    title={t("mycelialGrowth.openHub", { name: note.name })}
+                  >
+                    <span class="sidebar-item__icon">
+                      <FileText size={14} />
+                    </span>
+                    <span class="sidebar-item__label">{note.name}</span>
+                  </div>
+                  <For each={note.questions}>
+                    {(q) => (
+                      <button
+                        class="link-context mycelial-growth__question"
+                        onClick={() => openQuestion(note, q)}
+                        title={t("mycelialGrowth.openQuestion")}
+                      >
+                        {q.text}
+                      </button>
+                    )}
+                  </For>
                 </div>
-                <For each={note.questions}>
-                  {(q) => (
-                    <button
-                      class="link-context mycelial-growth__question"
-                      onClick={() => openQuestion(note, q)}
-                      title={t("mycelialGrowth.openQuestion")}
-                    >
-                      {q.text}
-                    </button>
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
+              )}
+            </For>
+          </Show>
         </Show>
       </div>
     </div>
