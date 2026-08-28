@@ -33,8 +33,13 @@ interface TabDragPayload {
 
 /**
  * The tab row for a single leaf pane: its tabs (drag to reorder within the
- * pane, or drag into another pane to move), overflow scroll arrows, a
- * new-tab button, and the pane menu (`PanelTopOpen`) at the right edge.
+ * pane, or drag into another pane to move), a fixed control cluster holding
+ * the overflow scroll arrows and the new-tab button, and the pane menu
+ * (`PanelTopOpen`) at the right edge.
+ *
+ * Tabs compress toward a legible floor before the strip starts scrolling, and
+ * an overflowing edge fades out — so "there is more this way" is signalled by
+ * the track itself, not only by whether an arrow happens to be showing.
  */
 const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
   const t = useI18n();
@@ -137,27 +142,84 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
   }
 
   let scrollAreaRef: HTMLDivElement | undefined;
+  let leftArrowRef: HTMLButtonElement | undefined;
+  let rightArrowRef: HTMLButtonElement | undefined;
   const [canScrollLeft, setCanScrollLeft] = createSignal(false);
   const [canScrollRight, setCanScrollRight] = createSignal(false);
+  /** True when the tabs are wider than the track. Drives whether the arrows are
+   *  painted and whether the end gutters are rendered. The arrows are
+   *  absolutely positioned, so painting one costs no layout and nothing to the
+   *  right of the track can shift under the pointer.
+   *
+   *  Deliberately *not* derived from `canScrollLeft || canScrollRight`: the
+   *  gutters this flag renders are themselves scrollable, so a strip whose tabs
+   *  just fit would keep reporting room to scroll into its own gutter and the
+   *  arrows would never stand down. Measuring the tabs' span against the
+   *  track's content box is independent of both scroll position and gutters. */
+  const [overflowing, setOverflowing] = createSignal(false);
+
+  /** Sub-pixel slack when comparing edges. `scrollWidth` / `clientWidth` are
+   *  rounded to integers and WebKit omits a trailing margin from a scroll
+   *  container's `scrollWidth`, so the integer properties can under-report an
+   *  overflow of a few pixels — the tab looks clipped but no arrow appears.
+   *  Measuring the first/last tab's own border box against the viewport edge
+   *  is fractional and includes every part of the tab, so it can't miss. */
+  const EDGE_EPSILON = 0.5;
 
   function updateScrollState() {
-    const el = scrollAreaRef;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    const area = scrollAreaRef;
+    if (!area) return;
+    const tabEls = tabElements();
+    const first = tabEls[0];
+    const last = tabEls[tabEls.length - 1];
+    if (!first || !last) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      setOverflowing(false);
+      return;
+    }
+    const areaRect = area.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const lastRect = last.getBoundingClientRect();
+
+    // Scroll position: how far the outermost tabs poke past the track's edges.
+    setCanScrollLeft(areaRect.left - firstRect.left > EDGE_EPSILON);
+    setCanScrollRight(lastRect.right - areaRect.right > EDGE_EPSILON);
+
+    // Capacity: the tabs' own span against the track's content box. The
+    // gutters sit outside the first and last tab, so they don't inflate this.
+    const style = getComputedStyle(area);
+    const available =
+      areaRect.width -
+      (parseFloat(style.paddingLeft) || 0) -
+      (parseFloat(style.paddingRight) || 0);
+    setOverflowing(lastRect.right - firstRect.left - available > EDGE_EPSILON);
   }
 
   function scrollTabs(direction: -1 | 1) {
     scrollAreaRef?.scrollBy({ left: direction * 200, behavior: "smooth" });
   }
 
+  /** A wheel over the strip scrolls it horizontally. The track has no visible
+   *  scrollbar, so without this the arrows are the only pointer affordance —
+   *  and every browser, plus our own collection view-tab row, scrolls on wheel
+   *  here. A trackpad's horizontal axis is honoured when it dominates. */
+  function handleWheel(e: WheelEvent) {
+    const area = e.currentTarget as HTMLElement;
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (delta === 0) return;
+    if (!canScrollLeft() && !canScrollRight()) return;
+    e.preventDefault();
+    area.scrollLeft += delta;
+  }
+
   /** Scroll the active tab fully into view whenever it changes (or a new tab is
    *  opened, which activates it). Without this, a tab opened past the right edge
    *  stays clipped — its close × hidden — until the user manually clicks the ›
    *  arrow, and the fixed-step arrow may not reveal the whole tab in one press.
-   *  We scroll by exactly the amount the tab overflows either edge, plus a small
-   *  buffer so the × isn't flush against the boundary. */
-  const ACTIVE_TAB_BUFFER = 8;
+   *  We scroll by exactly the amount the tab overflows either edge, plus the
+   *  width of the arrow on that side, so the tab lands beside the arrow rather
+   *  than tucked underneath it. */
   createEffect(() => {
     const activeId = props.leaf.activeTabId;
     // Depend on the tab set too: when a brand-new active tab is opened its DOM
@@ -169,12 +231,22 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     if (!area) return;
     // rAF so a just-opened tab's node is laid out before we measure it.
     requestAnimationFrame(() => {
+      // Re-measure from here too, not just from the observers. Those fire off
+      // DOM mutations, which can land before the new tab has been laid out at
+      // its final width; this runs a frame later, after layout has settled, so
+      // a too-early reading can't stick and leave the arrows hidden over a
+      // strip that has started overflowing.
+      updateScrollState();
       const el = area.querySelector<HTMLElement>(".tab--active");
       if (!el) return;
+      // Measure the arrows rather than restating their width here, so the
+      // buffer can't drift out of step with the CSS.
       const areaRect = area.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      const overRight = elRect.right + ACTIVE_TAB_BUFFER - areaRect.right;
-      const overLeft = elRect.left - ACTIVE_TAB_BUFFER - areaRect.left;
+      const overRight =
+        elRect.right + (rightArrowRef?.offsetWidth ?? 0) - areaRect.right;
+      const overLeft =
+        elRect.left - (leftArrowRef?.offsetWidth ?? 0) - areaRect.left;
       if (overRight > 0) area.scrollBy({ left: overRight, behavior: "smooth" });
       else if (overLeft < 0) area.scrollBy({ left: overLeft, behavior: "smooth" });
     });
@@ -185,11 +257,23 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
     if (!el) return;
     el.addEventListener("scroll", updateScrollState);
     el.addEventListener("scrollend", updateScrollState);
+    // Observe the track *and* every tab in it. Watching only the track misses
+    // the common case where the container keeps its size but the content grows
+    // — a dirty dot appearing, "Untitled" resolving to a real filename, a
+    // rename, a language switch — which previously left the arrows hidden over
+    // a strip that had started overflowing.
     const ro = new ResizeObserver(updateScrollState);
-    ro.observe(el);
-    const mo = new MutationObserver(updateScrollState);
-    mo.observe(el, { childList: true });
-    updateScrollState();
+    function observeTabs() {
+      ro.disconnect();
+      ro.observe(el!);
+      for (const tabEl of tabElements()) ro.observe(tabEl);
+      updateScrollState();
+    }
+    // `subtree` + `characterData` so a title's text changing in place counts,
+    // not just a tab being added or removed.
+    const mo = new MutationObserver(observeTabs);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    observeTabs();
     onCleanup(() => {
       el.removeEventListener("scroll", updateScrollState);
       el.removeEventListener("scrollend", updateScrollState);
@@ -205,94 +289,124 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
       onDrop={handleStripDrop}
       onDragLeave={handleStripDragLeave}
     >
-      <Show when={canScrollLeft()}>
+      <div class="tab-bar__track">
+        <div class="tab-bar__scroll-area" ref={scrollAreaRef} onWheel={handleWheel}>
+          {/* End gutters, present only while the strip overflows. They give the
+              tabs somewhere to scroll to that is clear of the arrows, so a tab
+              never comes to rest hidden underneath a disabled one. Real elements
+              rather than padding on the scroller: WebKit omits a scroll
+              container's end padding from its scrollable extent, which would
+              leave the last tab unreachable. */}
+          <Show when={overflowing()}>
+            <span class="tab-bar__gutter" aria-hidden="true" />
+          </Show>
+          <For each={stripTabs()}>
+            {(tab, index) => {
+              const isDropTarget = () =>
+                dropTargetIndex() === index() && dragFromIndex() !== index();
+              return (
+                <div
+                  class={`tab${tab.id === props.leaf.activeTabId ? " tab--active" : ""}${dragFromIndex() === index() ? " tab--dragging" : ""}${isDropTarget() ? (dropAfter() ? " tab--drop-after" : " tab--drop-before") : ""}`}
+                  onClick={() => setActiveTabId(tab.id)}
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(index(), tab.id, e)}
+                  onDragEnd={resetDragState}
+                >
+                  <Show when={isJournalScrollTab(tab.id)}>
+                    <span class="tab__icon" title={t("journalScroll.tab.title")}>
+                      <Scroll size={13} />
+                    </span>
+                  </Show>
+                  <Show when={tab.type === "mycelial"}>
+                    <span class="tab__icon" title={t("mycelial.tab.title")}>
+                      <BrainCircuit size={13} />
+                    </span>
+                  </Show>
+                  <Show when={tab.type === "collection"}>
+                    <span class="tab__icon" title={t("collection.tab.title")}>
+                      <LibraryBig size={13} />
+                    </span>
+                  </Show>
+                  <Show when={tab.type === "version-diff"}>
+                    <span class="tab__icon" title={t("versionDiff.tab.title")}>
+                      <GitCompareArrows size={13} />
+                    </span>
+                  </Show>
+                  <Show when={isSyncedTab(tab.id)}>
+                    <span
+                      class="tab__icon tab__icon--sync"
+                      title={t("tab.syncedPreview")}
+                    >
+                      <Link2 size={13} />
+                    </span>
+                  </Show>
+                  <span class="tab__title" title={tabDisplayTitle(tab)}>
+                    {dirtyTabIds().has(tab.id) ? "● " : ""}
+                    {tabDisplayTitle(tab)}
+                  </span>
+                  <button
+                    class="tab__close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  >
+                    {"×"}
+                  </button>
+                </div>
+              );
+            }}
+          </For>
+          <Show when={overflowing()}>
+            <span class="tab-bar__gutter" aria-hidden="true" />
+          </Show>
+        </div>
+        {/* The arrows sit *over* the ends of the track, opaque and shadowed, so
+            tabs read as sliding underneath them. Being absolutely positioned
+            they cost no layout: painting one can't shift the new-tab button,
+            and reaching the end of the strip leaves a disabled arrow in place
+            rather than removing the control under the pointer — which is what
+            used to let a repeated scroll click land on a tab's close ×. */}
         <button
+          ref={leftArrowRef}
           class="tab-bar__scroll tab-bar__scroll--left"
+          classList={{ "tab-bar__scroll--idle": !overflowing() }}
+          disabled={!canScrollLeft()}
           onClick={() => scrollTabs(-1)}
           aria-label={t("tabStrip.scrollLeft")}
+          aria-hidden={!overflowing()}
+          tabIndex={overflowing() ? 0 : -1}
         >
           <ChevronLeft size={14} />
         </button>
-      </Show>
-      <div class="tab-bar__scroll-area" ref={scrollAreaRef}>
-        <For each={stripTabs()}>
-          {(tab, index) => {
-            const isDropTarget = () =>
-              dropTargetIndex() === index() && dragFromIndex() !== index();
-            return (
-              <div
-                class={`tab${tab.id === props.leaf.activeTabId ? " tab--active" : ""}${dragFromIndex() === index() ? " tab--dragging" : ""}${isDropTarget() ? (dropAfter() ? " tab--drop-after" : " tab--drop-before") : ""}`}
-                onClick={() => setActiveTabId(tab.id)}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(index(), tab.id, e)}
-                onDragEnd={resetDragState}
-              >
-                <Show when={isJournalScrollTab(tab.id)}>
-                  <span class="tab__icon" title={t("journalScroll.tab.title")}>
-                    <Scroll size={13} />
-                  </span>
-                </Show>
-                <Show when={tab.type === "mycelial"}>
-                  <span class="tab__icon" title={t("mycelial.tab.title")}>
-                    <BrainCircuit size={13} />
-                  </span>
-                </Show>
-                <Show when={tab.type === "collection"}>
-                  <span class="tab__icon" title={t("collection.tab.title")}>
-                    <LibraryBig size={13} />
-                  </span>
-                </Show>
-                <Show when={tab.type === "version-diff"}>
-                  <span class="tab__icon" title={t("versionDiff.tab.title")}>
-                    <GitCompareArrows size={13} />
-                  </span>
-                </Show>
-                <Show when={isSyncedTab(tab.id)}>
-                  <span
-                    class="tab__icon tab__icon--sync"
-                    title={t("tab.syncedPreview")}
-                  >
-                    <Link2 size={13} />
-                  </span>
-                </Show>
-                <span class="tab__title">
-                  {dirtyTabIds().has(tab.id) ? "● " : ""}
-                  {tabDisplayTitle(tab)}
-                </span>
-                <button
-                  class="tab__close"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                >
-                  {"×"}
-                </button>
-              </div>
-            );
-          }}
-        </For>
-      </div>
-      <Show when={canScrollRight()}>
         <button
+          ref={rightArrowRef}
           class="tab-bar__scroll tab-bar__scroll--right"
+          classList={{ "tab-bar__scroll--idle": !overflowing() }}
+          disabled={!canScrollRight()}
           onClick={() => scrollTabs(1)}
           aria-label={t("tabStrip.scrollRight")}
+          aria-hidden={!overflowing()}
+          tabIndex={overflowing() ? 0 : -1}
         >
           <ChevronRight size={14} />
         </button>
-      </Show>
-      <button
-        class="tab-bar__new"
-        onClick={() => {
-          focusPane(props.leaf.id);
-          createEmptyTab();
-        }}
-        title={t("tabStrip.newTab")}
-      >
-        {"+"}
-      </button>
-      <div class="main-content__tabs-spacer" />
+      </div>
+      {/* The track above takes all the free width, so these stay pinned at the
+          right edge instead of drifting with the tab count. */}
+      <div class="tab-bar__controls">
+        <span class="tab-bar__controls-divider" aria-hidden="true" />
+        <button
+          class="tab-bar__new"
+          onClick={() => {
+            focusPane(props.leaf.id);
+            createEmptyTab();
+          }}
+          title={t("tabStrip.newTab")}
+        >
+          {"+"}
+        </button>
+      </div>
       <TabBarMenu leaf={props.leaf} />
     </div>
   );
