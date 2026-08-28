@@ -12,6 +12,15 @@ release, **odd** is a development (beta) release. Add a new heading below for
 each tagged release, newest first, grouping entries under **Added**, **Changed**,
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
+
+## [26.8.4] - 2026-08-28
+
+- Fixed — selection toolbar popups near a viewport edge (today's work)
+- Fixed — tab strip overflow detection and scroll affordances
+- Fixed — @ in an email address misread as a broken reference, breaking PDF export
+- Added/Changed — Mycelial View: n-gram phrase detection, hiding under-developed pages, expand/collapse in the growth pane
+
+
 ## [26.8.2] - 2026-08-25
 
 ### Added
