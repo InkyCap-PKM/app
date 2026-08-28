@@ -929,6 +929,30 @@
 //   dir:        text direction (auto | ltr | rtl).
 // ---------------------------------------------------------------------------
 
+// Preserve a verse line's idiosyncratic spacing *without* making the whole
+// line unbreakable.
+//
+// Mapping every ASCII space to U+00A0 (what this used to do) keeps the
+// spacing, but it also removes every legal break opportunity — so a verse
+// line longer than the measure runs straight off the right margin instead of
+// wrapping, in the SVG preview and in exported PDFs alike.
+//
+// Instead:
+//   * a leading run stays fully non-breaking — indentation must never be
+//     split across lines, and plain leading spaces would be stripped by
+//     markup anyway;
+//   * a trailing run stays fully non-breaking so it survives layout;
+//   * every interior run of N spaces becomes N-1 non-breaking spaces plus one
+//     ordinary space: identical visual width, exactly one break opportunity
+//     per word gap, and no markup space-collapsing (only ever one plain space
+//     per run reaches `eval`).
+#let _verse-preserve-spaces(line) = {
+  let nbsp = "\u{00A0}"
+  let out = line.replace(regex("^ +"), m => nbsp * m.text.len())
+  out = out.replace(regex(" +$"), m => nbsp * m.text.len())
+  out.replace(regex(" +"), m => nbsp * (m.text.len() - 1) + " ")
+}
+
 #let verse(
   body,
   font: none,
@@ -984,7 +1008,7 @@
       let n = 0
       for line in lines {
         n = n + 1
-        let preserved = line.replace(" ", "\u{00A0}")
+        let preserved = _verse-preserve-spaces(line)
         let body-content = if preserved.len() == 0 {
           text("\u{00A0}")
         } else {
@@ -1038,7 +1062,7 @@
         let n = 0
         for line in lines {
           n = n + 1
-          let preserved = line.replace(" ", "\u{00A0}")
+          let preserved = _verse-preserve-spaces(line)
           let body-content = if preserved.len() == 0 {
             text("\u{00A0}")
           } else {
@@ -1059,10 +1083,10 @@
         let acc = []
         for line in lines {
           n = n + 1
-          // NBSP every ASCII space — Typst preserves these verbatim,
-          // so idiosyncratic indentation and run-spacing survive
-          // layout.
-          let preserved = line.replace(" ", "\u{00A0}")
+          // Non-breaking spaces preserve idiosyncratic indentation and
+          // run-spacing through layout; one ordinary space per interior
+          // run keeps the line breakable. See _verse-preserve-spaces.
+          let preserved = _verse-preserve-spaces(line)
           // Empty line → single NBSP keeps the linebreak meaningful
           // (otherwise the layout collapses adjacent breaks).
           let body-content = if preserved.len() == 0 {
