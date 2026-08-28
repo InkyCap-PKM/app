@@ -15,10 +15,17 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 
 ## [26.8.4] - 2026-08-28
 
-- Fixed — selection toolbar popups near a viewport edge (today's work)
-- Fixed — tab strip overflow detection and scroll affordances
-- Fixed — @ in an email address misread as a broken reference, breaking PDF export
-- Added/Changed — Mycelial View: n-gram phrase detection, hiding under-developed pages, expand/collapse in the growth pane
+### Fixed
+
+— selection toolbar popups near a viewport edge
+— tab strip overflow detection and scroll affordances
+— @ in an email address misread as a broken reference, breaking PDF export
+- Verse lines now wrap at the right margin in the reading view and in exported
+  PDFs instead of running off the page. Preserved indentation and run-spacing
+  are unchanged.
+
+### Added
+— Mycelial View: n-gram phrase detection, hiding under-developed pages, expand/collapse in the growth pane
 
 
 ## [26.8.2] - 2026-08-25
