@@ -4,6 +4,7 @@ import { syntaxTree } from "@codemirror/language";
 import { applyToggleWrap } from "./wrap-format";
 import { VERSE_ICON_SVG } from "../../components/icons/verse";
 import { t, localeVersion } from "../../lib/i18n";
+import { positionPopupAtAnchor } from "./popup-position";
 
 /* ── Inline format actions (always-visible buttons) ─────── */
 
@@ -468,10 +469,9 @@ function toggleDropdown() {
     return;
   }
   if (!toolbar) return;
-  const tbRect = toolbar.getBoundingClientRect();
-  dd.style.left = `${tbRect.left}px`;
-  dd.style.top = `${tbRect.bottom + 4}px`;
-  dd.style.display = "flex";
+  // Anchor to the toolbar's own rect, so a menu that has to flip upward (near
+  // the bottom of the viewport) clears the toolbar instead of covering it.
+  positionPopupAtAnchor(dd, toolbar.getBoundingClientRect(), { display: "flex" });
 }
 
 function toggleAlignPopup(anchorBtn: HTMLElement) {
@@ -480,15 +480,23 @@ function toggleAlignPopup(anchorBtn: HTMLElement) {
     ap.style.display = "none";
     return;
   }
-  // Drop from the toolbar's bottom edge — not the button's — so the popup
-  // clears the toolbar with the same 4px gap as the block-type dropdown.
-  // The button sits inside the toolbar's padding, so anchoring to it would
-  // leave the popup all but touching the toolbar.
+  // Line up horizontally with the button, but vertically with the toolbar's
+  // edges — not the button's — so the popup clears the toolbar with the same
+  // gap as the block-type dropdown. The button sits inside the toolbar's
+  // padding, so anchoring vertically to it would leave the popup all but
+  // touching the toolbar (and, when flipped upward, overlapping it).
   const btnRect = anchorBtn.getBoundingClientRect();
   const tbRect = toolbar?.getBoundingClientRect();
-  ap.style.left = `${btnRect.left}px`;
-  ap.style.top = `${(tbRect ? tbRect.bottom : btnRect.bottom) + 4}px`;
-  ap.style.display = "flex";
+  positionPopupAtAnchor(
+    ap,
+    {
+      left: btnRect.left,
+      right: btnRect.right,
+      top: tbRect ? tbRect.top : btnRect.top,
+      bottom: tbRect ? tbRect.bottom : btnRect.bottom,
+    },
+    { display: "flex" },
+  );
 }
 
 /* ── Core toolbar logic ─────────────────────────────────── */
@@ -534,13 +542,22 @@ function showToolbar(view: EditorView) {
     return;
   }
 
-  const midX = (startCoords.left + endCoords.right) / 2;
-  const top = startCoords.top;
-
-  el.style.left = `${midX}px`;
-  el.style.top = `${top - 44}px`;
-  el.style.transform = "translateX(-50%)";
-  el.style.display = "flex";
+  // Anchor to the selection's bounding box. The toolbar centres on it and
+  // opens above by default, flipping below the last selected line when the
+  // selection sits at the top of the viewport — either way it stays clear of
+  // the text being formatted, and the shared helper clamps it inside the left
+  // and right margins. The 8px gap matches the spacing the previous hardcoded
+  // `top - 44` produced, without baking in the toolbar's height.
+  positionPopupAtAnchor(
+    el,
+    {
+      left: startCoords.left,
+      right: endCoords.right,
+      top: startCoords.top,
+      bottom: endCoords.bottom,
+    },
+    { display: "flex", prefer: "above", align: "center", gap: 8 },
+  );
 }
 
 /* ── User-gesture gate ───────────────────────────────────── */
