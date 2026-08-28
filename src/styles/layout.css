@@ -1302,15 +1302,31 @@ input.date-value__offset {
   /* Slightly tighter right padding so the close × sits nearer the tab's
      right edge — improves target alignment without crowding the title. */
   padding: 4px 6px 4px 12px;
-  margin: 4px 2px;
+  margin: 4px 0;
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--fg-muted);
   font-size: var(--text-md);
   white-space: nowrap;
-  min-width: 0;
-  flex-shrink: 0;
+  /* Compress before the strip scrolls (the browser-tab model): tabs give up
+     title width down to this floor, and only then does the row overflow.
+     The floor is on the tab rather than on the title so the flex algorithm
+     respects it — a floor on the title alone would let the tab's box shrink
+     past its own contents and slide the close × over the text. `ch` keeps it
+     proportional to the user's text size: the fixed chrome (icons, ×,
+     padding) plus roughly ten characters. Don't lower it without checking how
+     it feels at a wide window — the floor is also what decides when the row
+     starts to overflow, so a smaller one silently pushes the scroll arrows out
+     of reach and squeezes titles past the point of being recognizable. A tab
+     whose title is shorter than the floor is held open to it, as browser tabs
+     are; `.tab__title` grows into that slack so the × still lands on the tab's
+     right edge rather than floating mid-tab.
+     Spacing between tabs is `gap` on the track, not a margin here — a
+     trailing margin is omitted from a scroll container's scrollWidth in
+     WebKit, which used to hide a few pixels of overflow from measurement. */
+  flex: 0 1 auto;
+  min-width: 16ch;
   /* Settle state changes instead of snapping, so hover/active read as a
      tab gaining body rather than a colour flicking on. */
   transition:
@@ -1345,7 +1361,16 @@ input.date-value__offset {
 .tab__title {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  /* Absorbs the tab's compression in both directions: `min-width: 0` lets it
+     ellipsize (the floor that stops the shrinking lives on `.tab`), and
+     `flex-grow: 1` lets it take up any slack when the tab is held open at
+     that floor by a short title — otherwise the slack collects between the
+     title and the close ×, leaving the × stranded in the middle of the tab.
+     The cap is `ch` rather than the old fixed 180px so it tracks the user's
+     text size. */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 25ch;
 }
 
 /* Leading icon marking a tab that holds a Journal Scroll view. */
@@ -9492,41 +9517,89 @@ input.date-value__offset {
   background: var(--bg-hover);
 }
 
-.main-content__tabs-spacer {
-  flex: 1;
+/* Width of the overlaid scroll arrows. Doubles as the width of the end gutters
+   inside the track, so the first and last tab can always scroll to a resting
+   place clear of an arrow instead of sitting underneath it. */
+.main-content__tabs {
+  --tab-arrow-width: 28px;
+}
+
+/* Holds the scrolling tab track and the two arrows overlaid on its ends. Takes
+   all the row's free width, which is what keeps the new-tab button and pane
+   menu pinned to the right edge regardless of how many tabs are open. */
+.tab-bar__track {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .tab-bar__scroll-area {
   display: flex;
   align-items: stretch;
   overflow: hidden;
+  flex: 1 1 auto;
   min-width: 0;
+  /* `gap` replaces the per-tab horizontal margin (see .tab), keeping the same
+     4px between tabs; the matching outer inset the margins used to give is
+     restored as padding, which — unlike a trailing margin — stays measurable. */
+  gap: var(--space-2);
+  padding-inline: var(--space-1);
+}
+
+/* Scroll stop at each end of an overflowing track, sized to match the arrow
+   that covers it. Rendered only while the strip overflows, so a short tab row
+   still starts flush at the left. */
+.tab-bar__gutter {
+  flex: 0 0 var(--tab-arrow-width);
 }
 
 .tab-bar__scroll {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--tab-arrow-width);
+  /* Opaque, so a tab scrolling past disappears beneath the arrow rather than
+     showing through as a sliver that only becomes visible on hover. */
   background: var(--bg-secondary);
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 0 6px;
-  margin: 4px 0;
+  padding: 0;
   font-size: var(--text-xl);
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  position: relative;
   z-index: 1;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.tab-bar__scroll:hover {
+.tab-bar__scroll:hover:not(:disabled) {
   color: var(--fg-primary);
 }
 
+/* End of the strip reached. The arrow keeps its box and still swallows the
+   click, so an over-eager repeat press does nothing instead of landing on
+   whatever would otherwise have moved into that spot. */
+.tab-bar__scroll:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Nothing overflows: no arrow to offer, and no gutters for it to cover. */
+.tab-bar__scroll--idle {
+  visibility: hidden;
+}
+
+/* The edge and cast shadow are what sell the illusion that the tabs run on
+   underneath — without them the arrow reads as a button sitting in a gap. */
 .tab-bar__scroll--left {
+  left: 0;
   border-right: 1px solid var(--border-primary);
-  box-shadow: 6px 0 6px -3px rgba(0, 0, 0, 0.16);  
+  box-shadow: 6px 0 6px -3px rgba(0, 0, 0, 0.16);
 }
 
 [data-theme="dark"] .tab-bar__scroll--left {
@@ -9534,12 +9607,29 @@ input.date-value__offset {
 }
 
 .tab-bar__scroll--right {
+  right: 0;
   border-left: 1px solid var(--border-primary);
   box-shadow: -6px 0 6px -3px rgba(0, 0, 0, 0.16);
 }
 
 [data-theme="dark"] .tab-bar__scroll--right {
   box-shadow: -6px 0 8px -2px rgba(0, 0, 0, 0.5);
+}
+
+/* New-tab button, held at the right edge of the row by the track's flex-grow. */
+.tab-bar__controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Keeps the new-tab button off the right scroll arrow, so a mistimed scroll
+   click doesn't open an empty tab. */
+.tab-bar__controls-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: var(--space-3) var(--space-2);
+  background: var(--border-primary);
 }
 
 /* ─── Status bar: clickable notebox name ─── */
