@@ -11070,6 +11070,12 @@ input.date-value__offset {
     var(--popup-shadow);
   padding: var(--popup-padding-block) 0;
   z-index: var(--z-menu);
+  /* Flipping above the toolbar rescues the menu on a short viewport only if it
+     fits there; with every block type listed it may not. Cap it against the
+     viewport so the placement helper measures a size that can fit, and let the
+     overflow scroll. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .selection-toolbar__menu-item {
@@ -11085,6 +11091,9 @@ input.date-value__offset {
   cursor: pointer;
   text-align: left;
   font-family: var(--interface-font, sans-serif);
+  /* The menu is a flex column inside a max-height + overflow-y:auto container;
+     without this the rows squash instead of scrolling. */
+  flex-shrink: 0;
 }
 
 .selection-toolbar__menu-item:hover {
@@ -11109,6 +11118,7 @@ input.date-value__offset {
   height: 1px;
   background: var(--toolbar-float-sep);
   margin: 4px 0;
+  flex-shrink: 0;
 }
 
 /* ── Alignment sub-popup ── */
