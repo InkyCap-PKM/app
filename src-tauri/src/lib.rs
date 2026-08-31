@@ -418,6 +418,8 @@ pub fn run() {
             commands::typ_audit::repair_typ_files,
             commands::typ_audit::repair_markdown_files,
             commands::typ_audit::save_audit_report,
+            commands::name_audit::audit_notebox_names,
+            commands::name_audit::save_name_audit_report,
             commands::export::site::export_collection_static_site,
             commands::export::csv::export_collection_csv,
             commands::export::csv::export_collection_csv_to_file,

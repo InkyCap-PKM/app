@@ -22,6 +22,7 @@ pub mod search;
 pub mod settings;
 pub mod spellcheck;
 pub mod system_color;
+pub mod name_audit;
 pub mod typ_audit;
 pub mod typst;
 pub mod typst_packages;

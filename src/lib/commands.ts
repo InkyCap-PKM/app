@@ -64,6 +64,8 @@ export interface BuiltinCommandCallbacks {
   openRefNotePicker: () => void;
   openSearch: () => void;
   openTypAudit: () => void;
+  /** Open the notebox name check (cross-platform name problems). */
+  openNameAudit: () => void;
   openScaffoldPicker: () => void;
   openCollaborationPanel: () => void;
   openHelp: () => void;
@@ -546,6 +548,13 @@ export function registerBuiltinCommands(callbacks: BuiltinCommandCallbacks): voi
     title: t("command.tools.audit-typ-files"),
     category: "Tools",
     execute: callbacks.openTypAudit,
+  });
+
+  registerCommand({
+    id: "tools:audit-notebox-names",
+    title: t("command.tools.audit-notebox-names"),
+    category: "Tools",
+    execute: callbacks.openNameAudit,
   });
 
   registerCommand({
