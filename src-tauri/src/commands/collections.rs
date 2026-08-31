@@ -1017,7 +1017,12 @@ fn compare_property_values(
         }
         (None | Some(PropertyValue::Null), _) => std::cmp::Ordering::Greater,
         (_, None | Some(PropertyValue::Null)) => std::cmp::Ordering::Less,
-        (Some(PropertyValue::String(a)), Some(PropertyValue::String(b))) => a.cmp(b),
+        (Some(PropertyValue::String(a)), Some(PropertyValue::String(b))) => {
+            // Natural ordering, matching every name sort in the frontend: a
+            // column of `Chapter 2` / `Chapter 10` reads in the order the
+            // user numbered it.
+            crate::sort::compare_name(a, b)
+        }
         (Some(PropertyValue::Number(a)), Some(PropertyValue::Number(b))) => {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
         }

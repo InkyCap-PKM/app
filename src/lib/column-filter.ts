@@ -17,6 +17,7 @@
 
 import type { FilterGroup, PropertyType } from "./types";
 import { type FilterRow, parseFilterRow, serializeFilterRow } from "./filter-expr";
+import { compareName } from "./sort";
 
 /** The control shape a column header presents, derived from its property type.
  *  `list` and `commalist` both render a multi-select checklist but lower to
@@ -378,7 +379,7 @@ export function multiSelectOptions(rawValues: string[], kind: "list" | "commalis
       if (v) set.add(v);
     }
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return Array.from(set).sort((a, b) => compareName(a, b));
 }
 
 // ── Checkbox filter ───────────────────────────────────────────────────

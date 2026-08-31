@@ -11,6 +11,7 @@ import {
 } from "../lib/command-registry";
 import { useI18n } from "../lib/i18n";
 import { createHoverGuard } from "../lib/picker-hover";
+import { compareName } from "../lib/sort";
 
 interface CommandPaletteProps {
   visible: boolean;
@@ -85,7 +86,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
     }
     // Sort commands within each group by title
     for (const group of map.values()) {
-      group.commands.sort((a, b) => a.command.title.localeCompare(b.command.title));
+      group.commands.sort((a, b) => compareName(a.command.title, b.command.title));
     }
     return [...map.values()].sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
   });

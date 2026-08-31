@@ -7,6 +7,7 @@
 // clears the search box.
 
 import { errorText } from "../lib/errors";
+import { compareName } from "../lib/sort";
 import {
   Component,
   createEffect,
@@ -550,10 +551,10 @@ const SearchPanel: Component = () => {
       switch (mode) {
         case "name-asc":
           return (a: GroupedResult, b: GroupedResult) =>
-            a.file_name.localeCompare(b.file_name);
+            compareName(a.file_name, b.file_name);
         case "name-desc":
           return (a: GroupedResult, b: GroupedResult) =>
-            b.file_name.localeCompare(a.file_name);
+            compareName(b.file_name, a.file_name);
         case "modified-desc":
           return (a: GroupedResult, b: GroupedResult) =>
             b.modified_time - a.modified_time;

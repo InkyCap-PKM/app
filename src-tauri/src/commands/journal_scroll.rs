@@ -216,9 +216,11 @@ fn sort_candidates(candidates: Vec<&NoteMetadata>, sort: &ScrollSort) -> Vec<Scr
         // stay at the end regardless of the chosen sort direction.
         a.0 .0
             .cmp(&b.0 .0)
+            // Natural ordering so a `10 …` title ranks after `2 …`. It is a
+            // total, reproducible order, which pagination below depends on.
             .then_with(|| match direction {
-                SortDir::Asc => a.0 .1.cmp(&b.0 .1),
-                SortDir::Desc => b.0 .1.cmp(&a.0 .1),
+                SortDir::Asc => crate::sort::compare_name(&a.0 .1, &b.0 .1),
+                SortDir::Desc => crate::sort::compare_name(&b.0 .1, &a.0 .1),
             })
             // Final tiebreaker: the note's path. The candidate set is
             // collected from a HashMap, so its iteration order varies

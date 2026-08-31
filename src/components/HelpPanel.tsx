@@ -14,6 +14,7 @@ import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import { X, RotateCcw } from "lucide-solid";
 import { useI18n } from "../lib/i18n";
 import { isMac } from "../lib/platform";
+import { compareName } from "../lib/sort";
 import * as ipc from "../lib/ipc";
 import { toastError, toastWarning } from "../stores/toasts";
 import { promptConfirm } from "../stores/prompt";
@@ -153,7 +154,7 @@ const HelpPanel: Component = () => {
       })
       .map((category) => ({
         category,
-        rows: byCat.get(category)!.sort((a, b) => a.title.localeCompare(b.title)),
+        rows: byCat.get(category)!.sort((a, b) => compareName(a.title, b.title)),
       }));
   });
 
@@ -163,7 +164,7 @@ const HelpPanel: Component = () => {
     allCommands()
       .filter((c) => c.shortcut)
       .filter((c) => matches(c.title, c.shortcut))
-      .sort((a, b) => a.title.localeCompare(b.title)),
+      .sort((a, b) => compareName(a.title, b.title)),
   );
   const visualKeys = createMemo(() =>
     VISUAL_EDITOR_KEYS.filter((k) => matches(t(k.labelKey), k.keys)),

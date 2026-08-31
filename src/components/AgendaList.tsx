@@ -8,6 +8,7 @@
 
 import { Component, createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { attachListNav } from "../lib/list-nav";
+import { compareName, compareZid } from "../lib/sort";
 import {
   ArrowDownNarrowWide,
   CalendarClock,
@@ -302,7 +303,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
   const tagOptions = createMemo(() => {
     const set = new Set<string>();
     for (const it of props.items) for (const tg of it.tags) set.add(tg);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return Array.from(set).sort((a, b) => compareName(a, b));
   });
 
   function toggleTag(tag: string) {
@@ -434,7 +435,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
       case "due-asc":
       case "due-desc": {
         const t = tail(a.date, b.date);
-        if (t !== null) return t === 0 ? a.text.localeCompare(b.text) : t;
+        if (t !== null) return t === 0 ? compareName(a.text, b.text) : t;
         return mode === "due-asc"
           ? a.date!.localeCompare(b.date!)
           : b.date!.localeCompare(a.date!);
@@ -442,7 +443,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
       case "created-asc":
       case "created-desc": {
         const t = tail(a.created, b.created);
-        if (t !== null) return t === 0 ? a.text.localeCompare(b.text) : t;
+        if (t !== null) return t === 0 ? compareName(a.text, b.text) : t;
         return mode === "created-asc"
           ? a.created!.localeCompare(b.created!)
           : b.created!.localeCompare(a.created!);
@@ -450,15 +451,15 @@ const AgendaList: Component<AgendaListProps> = (props) => {
       case "zid-asc":
       case "zid-desc": {
         const t = tail(a.zid, b.zid);
-        if (t !== null) return t === 0 ? a.text.localeCompare(b.text) : t;
-        return mode === "zid-asc"
-          ? a.zid!.localeCompare(b.zid!)
-          : b.zid!.localeCompare(a.zid!);
+        if (t !== null) return t === 0 ? compareName(a.text, b.text) : t;
+        // Same natural zid ordering the file tree and Links pane use, so a
+        // `z10` task ranks after `z2` here too.
+        return compareZid(a.zid, b.zid, mode === "zid-asc" ? "asc" : "desc");
       }
       case "name-asc":
-        return a.text.localeCompare(b.text, undefined, { sensitivity: "base" });
+        return compareName(a.text, b.text);
       case "name-desc":
-        return b.text.localeCompare(a.text, undefined, { sensitivity: "base" });
+        return compareName(b.text, a.text);
     }
   }
 

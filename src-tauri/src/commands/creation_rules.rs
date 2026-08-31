@@ -437,7 +437,7 @@ pub async fn list_scaffold_entries(
         })
         .collect();
 
-    entries.sort_by_key(|a| a.name.to_lowercase());
+    entries.sort_by(|a, b| crate::sort::compare_name(&a.name, &b.name));
     Ok(entries)
 }
 

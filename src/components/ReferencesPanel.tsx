@@ -8,6 +8,7 @@ import { noteboxSettings } from "../stores/settings";
 import type { FileCitation, BibEntry } from "../lib/types";
 import * as ipc from "../lib/ipc";
 import { fuzzyMatch } from "../lib/fuzzy";
+import { compareName } from "../lib/sort";
 import { useI18n, tPlural } from "../lib/i18n";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
@@ -51,7 +52,7 @@ function nullsLast(
   if (aEmpty && bEmpty) return 0;
   if (aEmpty) return 1;
   if (bEmpty) return -1;
-  return asc ? a!.localeCompare(b!) : b!.localeCompare(a!);
+  return asc ? compareName(a!, b!) : compareName(b!, a!);
 }
 
 function sortEntries(entries: BibEntry[], key: SortKey): BibEntry[] {

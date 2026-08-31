@@ -10,7 +10,7 @@ import {
 } from "../stores/mycelial";
 import type { LinkInfo, PropertyType, PropertyValue, Recurrence } from "../lib/types";
 import { normalizePath } from "../lib/paths";
-import { compareZid } from "../lib/sort";
+import { compareName, compareZid } from "../lib/sort";
 import { createNoteForTarget } from "../lib/wikilink-nav";
 import * as ipc from "../lib/ipc";
 import type { OutboundLink, PotentialLink } from "../lib/ipc";
@@ -374,7 +374,7 @@ const RightPanel: Component = () => {
         if (ai !== -1 && bi !== -1) return ai - bi;
         if (ai !== -1) return -1;
         if (bi !== -1) return 1;
-        return a.localeCompare(b);
+        return compareName(a, b);
       });
     }
     const orderIdx = new Map(order.map((k, i) => [k, i]));
@@ -382,7 +382,7 @@ const RightPanel: Component = () => {
       const ai = orderIdx.has(a) ? orderIdx.get(a)! : Infinity;
       const bi = orderIdx.has(b) ? orderIdx.get(b)! : Infinity;
       if (ai !== bi) return ai - bi;
-      return a.localeCompare(b);
+      return compareName(a, b);
     });
   }
 
@@ -606,21 +606,21 @@ const RightPanel: Component = () => {
   >(a: T, b: T, mode: LinksSortMode): number {
     switch (mode) {
       case "name-asc":
-        return a.name.localeCompare(b.name);
+        return compareName(a.name, b.name);
       case "name-desc":
-        return b.name.localeCompare(a.name);
+        return compareName(b.name, a.name);
       case "modified-desc":
-        return cmpEpoch(b.modified_time, a.modified_time) || a.name.localeCompare(b.name);
+        return cmpEpoch(b.modified_time, a.modified_time) || compareName(a.name, b.name);
       case "modified-asc":
-        return cmpEpoch(a.modified_time, b.modified_time) || a.name.localeCompare(b.name);
+        return cmpEpoch(a.modified_time, b.modified_time) || compareName(a.name, b.name);
       case "created-desc":
-        return cmpEpoch(b.created_time, a.created_time) || a.name.localeCompare(b.name);
+        return cmpEpoch(b.created_time, a.created_time) || compareName(a.name, b.name);
       case "created-asc":
-        return cmpEpoch(a.created_time, b.created_time) || a.name.localeCompare(b.name);
+        return cmpEpoch(a.created_time, b.created_time) || compareName(a.name, b.name);
       case "zid-asc":
       case "zid-desc": {
         const c = compareZid(a.zid, b.zid, mode === "zid-asc" ? "asc" : "desc");
-        return c !== 0 ? c : a.name.localeCompare(b.name);
+        return c !== 0 ? c : compareName(a.name, b.name);
       }
     }
   }
@@ -1477,7 +1477,7 @@ const RightPanel: Component = () => {
               if (contextSort() === "connections") {
                 return b.linkedInnerIds.length - a.linkedInnerIds.length;
               }
-              return a.name.localeCompare(b.name);
+              return compareName(a.name, b.name);
             });
           });
 

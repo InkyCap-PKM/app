@@ -1,5 +1,41 @@
-// Shared sort comparators used across note-listing surfaces (file tree,
-// Links pane) so the same ordering rules don't drift between them.
+// Shared sort comparators used across every note-listing surface (file tree,
+// Links pane, search results, collections, tag and property lists) so the
+// same ordering rules don't drift between them.
+
+/**
+ * The one collator behind every user-facing name/label sort in the app.
+ *
+ * `numeric: true` is the load-bearing option: it gives digit runs inside a
+ * string a *natural* ordering, so `2 Draft` sorts before `10 Draft` rather
+ * than between `1 Draft` and `3 Draft`. Users number folders and notes to
+ * impose an order, and lexicographic digit comparison silently defeats that.
+ *
+ * Sensitivity is left at its default (`"variant"`) on purpose. A collator
+ * built with `sensitivity: "base"` reports two names differing only in case
+ * as *equal*, which makes their relative order fall through to whatever the
+ * input order happened to be — a real hazard on case-sensitive filesystems
+ * where `Notes/` and `notes/` can coexist. The default still orders case as
+ * a tertiary difference (`apple` before `Zebra`), it just breaks the tie
+ * deterministically.
+ *
+ * Built once at module load rather than per comparison: a file tree or search
+ * result list runs this O(n log n) times, and constructing an {@link
+ * Intl.Collator} is far more expensive than invoking one.
+ */
+const nameCollator = new Intl.Collator(undefined, { numeric: true });
+
+/**
+ * Compare two names/labels for an *ascending* sort, with natural ordering of
+ * embedded numbers. Callers wanting descending order swap the arguments
+ * (`compareName(b.name, a.name)`) rather than negating, so a tie stays a tie.
+ *
+ * Use this for anything the user reads as a name: filenames, folder names,
+ * note titles, tag names, property keys and values, collection names,
+ * bibliography titles, command titles.
+ */
+export function compareName(a: string, b: string): number {
+  return nameCollator.compare(a, b);
+}
 
 /**
  * Compare two `zid` values for a sort, in `dir` order.

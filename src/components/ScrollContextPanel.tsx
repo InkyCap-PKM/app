@@ -26,6 +26,7 @@ import {
 } from "solid-js";
 import { ChevronDown, ChevronRight } from "lucide-solid";
 import * as ipc from "../lib/ipc";
+import { compareName } from "../lib/sort";
 import { getEntries, getVisibleEntries } from "../stores/journal-scroll";
 import { openTab } from "../stores/tabs";
 import { useI18n, tPlural } from "../lib/i18n";
@@ -240,7 +241,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
         }),
       );
       const rows = [...merged.values()].sort((a, b) =>
-        a.name.localeCompare(b.name),
+        compareName(a.name, b.name),
       );
       cacheContextData(props.tabId, { connections: rows });
       return rows;
@@ -298,7 +299,7 @@ const ScrollContextPanel: Component<ScrollContextPanelProps> = (props) => {
       const rows = [...counts.entries()]
         .filter(([, c]) => c >= 1)
         .map(([tag, count]) => ({ tag, count }))
-        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+        .sort((a, b) => b.count - a.count || compareName(a.tag, b.tag));
       cacheContextData(props.tabId, { tags: rows });
       return rows;
     },
