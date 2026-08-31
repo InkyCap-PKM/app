@@ -386,8 +386,8 @@ pub async fn save_name_audit_report(
 /// markup characters in filenames stay inert; note names additionally get a
 /// `#wikilink(...)` so the report doubles as a worklist.
 fn format_name_report(report: &NameAuditReport) -> String {
-    use std::fmt::Write as _;
     use crate::commands::typ_audit::code_span;
+    use std::fmt::Write as _;
 
     let today = chrono::Local::now().date_naive().format("%Y-%m-%d");
     let mut s = String::new();
@@ -548,16 +548,16 @@ mod tests {
     fn ignores_case_variants_in_different_folders() {
         // `Dogs/` and `archive/dogs/` have different parents, so Windows can
         // represent both. Not a collision.
-        let r = scan(&[dir("Dogs", vec![]), dir("archive", vec![dir("dogs", vec![])])]);
+        let r = scan(&[
+            dir("Dogs", vec![]),
+            dir("archive", vec![dir("dogs", vec![])]),
+        ]);
         assert!(r.case_collisions.is_empty());
     }
 
     #[test]
     fn reports_the_folder_a_nested_collision_lives_in() {
-        let r = scan(&[dir(
-            "Projects",
-            vec![file("Notes.typ"), file("notes.typ")],
-        )]);
+        let r = scan(&[dir("Projects", vec![file("Notes.typ"), file("notes.typ")])]);
         assert_eq!(r.case_collisions.len(), 1);
         assert_eq!(r.case_collisions[0].folder, "Projects");
     }
@@ -611,8 +611,16 @@ mod tests {
 
     #[test]
     fn flags_characters_windows_rejects() {
-        let r = scan(&[file("Chapter 1: Intro.typ"), file("What?.typ"), file("fine.typ")]);
-        let paths: Vec<&str> = r.illegal_characters.iter().map(|i| i.path.as_str()).collect();
+        let r = scan(&[
+            file("Chapter 1: Intro.typ"),
+            file("What?.typ"),
+            file("fine.typ"),
+        ]);
+        let paths: Vec<&str> = r
+            .illegal_characters
+            .iter()
+            .map(|i| i.path.as_str())
+            .collect();
         assert_eq!(paths, vec!["Chapter 1: Intro.typ", "What?.typ"]);
         assert_eq!(r.illegal_characters[0].detail, ":");
     }
@@ -631,7 +639,10 @@ mod tests {
 
     #[test]
     fn counts_every_entry_including_folders() {
-        let r = scan(&[dir("a", vec![file("one.typ"), file("two.typ")]), file("three.typ")]);
+        let r = scan(&[
+            dir("a", vec![file("one.typ"), file("two.typ")]),
+            file("three.typ"),
+        ]);
         assert_eq!(r.total_scanned, 4);
     }
 
