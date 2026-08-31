@@ -2872,6 +2872,7 @@ dependencies = [
  "gtk",
  "hayagriva 0.9.1",
  "icu_collator",
+ "icu_normalizer",
  "include_dir",
  "insta",
  "keyring",

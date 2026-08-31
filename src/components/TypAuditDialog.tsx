@@ -149,7 +149,7 @@ const TypAuditDialog: Component<{
       openTab({ type: "file", title: t("typAudit.reportTitle"), path }, { forceNewTab: true });
       props.onClose();
     } catch (e: any) {
-      toastError(t("typAudit.saveFailed"), e);
+      toastError(t("audit.saveFailed"), e);
     } finally {
       setPhase("idle");
     }
@@ -175,16 +175,16 @@ const TypAuditDialog: Component<{
   return (
     <Show when={props.open}>
       <div
-        class="typ-audit__backdrop"
+        class="audit-dialog__backdrop"
         onClick={(e) => {
           if (e.target === e.currentTarget && phase() === "idle") props.onClose();
         }}
       >
-        <div class="typ-audit__panel" role="dialog" aria-label={t("typAudit.dialogAria")}>
-          <header class="typ-audit__header">
-            <h2 class="typ-audit__title">{t("command.tools.audit-typ-files")}</h2>
+        <div class="audit-dialog__panel" role="dialog" aria-label={t("typAudit.dialogAria")}>
+          <header class="audit-dialog__header">
+            <h2 class="audit-dialog__title">{t("command.tools.audit-typ-files")}</h2>
             <button
-              class="typ-audit__close"
+              class="audit-dialog__close"
               aria-label={t("common.close")}
               onClick={props.onClose}
               disabled={phase() !== "idle"}
@@ -193,13 +193,13 @@ const TypAuditDialog: Component<{
             </button>
           </header>
 
-          <div class="typ-audit__body">
+          <div class="audit-dialog__body">
             <Show when={phase() === "auditing"}>
-              <p class="typ-audit__hint">{t("typAudit.scanning")}</p>
+              <p class="audit-dialog__hint">{t("typAudit.scanning")}</p>
             </Show>
 
             <Show when={error()}>
-              <div class="typ-audit__error" role="alert">
+              <div class="audit-dialog__error" role="alert">
                 {error()}
               </div>
             </Show>
@@ -211,7 +211,7 @@ const TypAuditDialog: Component<{
                 const fixCount = filesToRepair().length;
                 return (
                   <>
-                    <p class="typ-audit__summary">
+                    <p class="audit-dialog__summary">
                       {t("typAudit.scannedLead")} <strong>{total}</strong>{" "}
                       {t("typAudit.scannedUnit")}{" "}
                       <Show
@@ -230,7 +230,7 @@ const TypAuditDialog: Component<{
                     </p>
 
                     <Show when={r.markdownFixes.length > 0 || r.syntaxErrors.length > 0}>
-                      <p class="typ-audit__summary">
+                      <p class="audit-dialog__summary">
                         <Show when={r.markdownFixes.length > 0}>
                           <span>
                             <strong>{r.markdownFixes.length}</strong> {t("typAudit.mdHave")}{" "}
@@ -245,14 +245,14 @@ const TypAuditDialog: Component<{
                     </Show>
 
                     <Show when={r.missingImport.length > 0}>
-                      <details class="typ-audit__group" open>
+                      <details class="audit-dialog__group" open>
                         <summary>
                           {t("typAudit.missingImportLabel")} <code>{"#import"}</code> ({r.missingImport.length})
                         </summary>
-                        <p class="typ-audit__group-hint">
+                        <p class="audit-dialog__group-hint">
                           {t("typAudit.missingImportHint")}
                         </p>
-                        <ul class="typ-audit__file-list">
+                        <ul class="audit-dialog__file-list">
                           <For each={r.missingImport}>
                             {(p) => <li>{p}</li>}
                           </For>
@@ -261,14 +261,14 @@ const TypAuditDialog: Component<{
                     </Show>
 
                     <Show when={r.missingNote.length > 0}>
-                      <details class="typ-audit__group" open>
+                      <details class="audit-dialog__group" open>
                         <summary>
                           {t("typAudit.missingLabel")} <code>{"#note(...)"}</code> {t("typAudit.metadataLabel")} ({r.missingNote.length})
                         </summary>
-                        <p class="typ-audit__group-hint">
+                        <p class="audit-dialog__group-hint">
                           {t("typAudit.missingNoteHint")}
                         </p>
-                        <ul class="typ-audit__file-list">
+                        <ul class="audit-dialog__file-list">
                           <For each={r.missingNote}>
                             {(p) => <li>{p}</li>}
                           </For>
@@ -277,38 +277,38 @@ const TypAuditDialog: Component<{
                     </Show>
 
                     <Show when={r.markdownFixes.length > 0}>
-                      <details class="typ-audit__group" open>
+                      <details class="audit-dialog__group" open>
                         <summary>
                           {tPlural("typAudit.mdGroup", r.markdownFixes.length, { count: r.markdownFixes.length })}
                         </summary>
-                        <p class="typ-audit__group-hint">
+                        <p class="audit-dialog__group-hint">
                           {t("typAudit.markdownHint")}
                         </p>
                         <For each={r.markdownFixes}>
                           {(f) => (
-                            <div class="typ-audit__lint-file">
-                              <div class="typ-audit__lint-path">{f.path}</div>
-                              <ul class="typ-audit__file-list">
+                            <div class="audit-dialog__lint-file">
+                              <div class="audit-dialog__lint-path">{f.path}</div>
+                              <ul class="audit-dialog__file-list">
                                 <For each={f.fixes}>
                                   {(fx) => (
                                     <li
-                                      class="typ-audit__md-fix"
+                                      class="audit-dialog__md-fix"
                                       classList={{
-                                        "typ-audit__md-fix--rejected": !isAccepted(f.path, fx.line),
+                                        "audit-dialog__md-fix--rejected": !isAccepted(f.path, fx.line),
                                       }}
                                     >
                                       <input
                                         type="checkbox"
-                                        class="typ-audit__md-check"
+                                        class="audit-dialog__md-check"
                                         checked={isAccepted(f.path, fx.line)}
                                         onChange={() => toggleFix(f.path, fx.line)}
                                         title={t("typAudit.applyFix")}
                                         aria-label={t("typAudit.applyFixLine", { line: fx.line })}
                                       />
-                                      <span class="typ-audit__lint-loc">L{fx.line}</span>
-                                      <code class="typ-audit__md-before">{fx.before}</code>
-                                      <span class="typ-audit__md-arrow">→</span>
-                                      <code class="typ-audit__md-after">{fx.after}</code>
+                                      <span class="audit-dialog__lint-loc">L{fx.line}</span>
+                                      <code class="audit-dialog__md-before">{fx.before}</code>
+                                      <span class="audit-dialog__md-arrow">→</span>
+                                      <code class="audit-dialog__md-after">{fx.after}</code>
                                     </li>
                                   )}
                                 </For>
@@ -320,22 +320,22 @@ const TypAuditDialog: Component<{
                     </Show>
 
                     <Show when={r.syntaxErrors.length > 0}>
-                      <details class="typ-audit__group">
+                      <details class="audit-dialog__group">
                         <summary>
                           {tPlural("typAudit.syntaxGroup", r.syntaxErrors.length, { count: r.syntaxErrors.length })}
                         </summary>
-                        <p class="typ-audit__group-hint">
+                        <p class="audit-dialog__group-hint">
                           {t("typAudit.syntaxHint")}
                         </p>
                         <For each={r.syntaxErrors}>
                           {(f) => (
-                            <div class="typ-audit__lint-file">
-                              <div class="typ-audit__lint-path">{f.path}</div>
-                              <ul class="typ-audit__file-list">
+                            <div class="audit-dialog__lint-file">
+                              <div class="audit-dialog__lint-path">{f.path}</div>
+                              <ul class="audit-dialog__file-list">
                                 <For each={f.errors}>
                                   {(e) => (
                                     <li>
-                                      <span class="typ-audit__lint-loc">
+                                      <span class="audit-dialog__lint-loc">
                                         L{e.line}:{e.column}
                                       </span>{" "}
                                       {e.message}
@@ -350,7 +350,7 @@ const TypAuditDialog: Component<{
                     </Show>
 
                     <Show when={resultMessage()}>
-                      <div class="typ-audit__result">
+                      <div class="audit-dialog__result">
                         <pre>{resultMessage()}</pre>
                       </div>
                     </Show>
@@ -360,25 +360,25 @@ const TypAuditDialog: Component<{
             </Show>
           </div>
 
-          <footer class="typ-audit__footer">
+          <footer class="audit-dialog__footer">
             <button
               type="button"
               onClick={runAudit}
               disabled={phase() !== "idle"}
             >
-              {t("typAudit.rescan")}
+              {t("audit.rescan")}
             </button>
             <Show when={hasFindings()}>
               <button
                 type="button"
                 onClick={runSaveReport}
                 disabled={phase() !== "idle"}
-                title={t("typAudit.saveTitle")}
+                title={t("audit.saveTitle")}
               >
-                {phase() === "saving" ? t("typAudit.saving") : t("typAudit.saveReport")}
+                {phase() === "saving" ? t("audit.saving") : t("audit.saveReport")}
               </button>
             </Show>
-            <div class="typ-audit__footer-spacer" />
+            <div class="audit-dialog__footer-spacer" />
             <button
               type="button"
               onClick={props.onClose}
@@ -398,7 +398,7 @@ const TypAuditDialog: Component<{
             </Show>
             <button
               type="button"
-              class="typ-audit__primary"
+              class="audit-dialog__primary"
               onClick={runRepair}
               disabled={phase() !== "idle" || filesToRepair().length === 0}
             >

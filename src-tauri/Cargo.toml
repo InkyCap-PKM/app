@@ -66,6 +66,11 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Already in the dependency graph via typst-library -> hayagriva, so this
 # is a direct dep on a crate the binary was compiling regardless.
 icu_collator = "2.2"
+# NFC normalization for the notebox name audit: `café` written as one
+# codepoint and as `e` + combining acute are two files on Linux and Windows
+# but one on macOS. Already in the graph beneath icu_collator, so this is a
+# direct dep on a crate the binary was compiling regardless.
+icu_normalizer = "2.2"
 log = "0.4"
 env_logger = "0.11"
 

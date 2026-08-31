@@ -292,7 +292,7 @@ fn note_stem(rel_path: &str) -> &str {
 /// A `#wikilink("<note name>")` for the given path — clickable in the editor to
 /// open that note. Every scanned `.typ` is in the index (even ones that fail to
 /// compile), so these resolve rather than offering to create a new note.
-fn wikilink(rel_path: &str) -> String {
+pub(crate) fn wikilink(rel_path: &str) -> String {
     let stem = note_stem(rel_path)
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
@@ -302,7 +302,7 @@ fn wikilink(rel_path: &str) -> String {
 /// Wrap text in a Typst inline-code span, so paths/snippets with markup
 /// characters (`*`, `_`, `#`, `@`, …) render literally. A backtick in the text
 /// (vanishingly rare in a path) is dropped to keep the span well-formed.
-fn code_span(text: &str) -> String {
+pub(crate) fn code_span(text: &str) -> String {
     format!("`{}`", text.replace('`', ""))
 }
 

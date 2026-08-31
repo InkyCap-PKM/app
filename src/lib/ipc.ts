@@ -1757,6 +1757,67 @@ export async function saveAuditReport(): Promise<string> {
   return invoke<string>("save_audit_report");
 }
 
+// ── Notebox name audit ──
+//
+// Mirrors the Rust structs in `src-tauri/src/commands/name_audit.rs`. Reports
+// names that break when the notebox is copied to Windows or macOS, plus note
+// names that make a wikilink ambiguous. Report-only: there is no repair
+// command, because which of two colliding notes keeps its name is a judgement
+// about their contents.
+
+/// Sibling entries in one folder whose names differ only in case.
+export interface NameCollision {
+  /// Notebox-relative folder holding them; empty string for the notebox root.
+  folder: string;
+  /// The colliding names exactly as they appear on disk.
+  names: string[];
+}
+
+/// One entry whose name carries characters Windows will not accept.
+export interface NameIssue {
+  path: string;
+  /// The offending characters, space-separated; controls as `U+XXXX`.
+  detail: string;
+}
+
+/// One note in a duplicate-name group. Carries both path shapes: the report
+/// note prints `rel`, the dialog opens a tab with `abs`.
+export interface DuplicateNotePath {
+  /// Notebox-relative, for display.
+  rel: string;
+  /// Absolute, for `openTab`.
+  abs: string;
+}
+
+/// Notes sharing one wikilink name across different folders.
+export interface DuplicateNoteName {
+  name: string;
+  paths: DuplicateNotePath[];
+}
+
+export interface NameAuditReport {
+  /// Entries visited, files and folders together.
+  totalScanned: number;
+  caseCollisions: NameCollision[];
+  /// Byte-different names that are identical once accents are normalized.
+  /// macOS-only: Windows and Linux keep these as separate files.
+  normalizationCollisions: NameCollision[];
+  reservedNames: string[];
+  illegalCharacters: NameIssue[];
+  trailingDotsOrSpaces: string[];
+  duplicateNoteNames: DuplicateNoteName[];
+}
+
+export async function auditNoteboxNames(): Promise<NameAuditReport> {
+  return invoke<NameAuditReport>("audit_notebox_names");
+}
+
+/// Write the name audit to a note at the notebox root and return its absolute
+/// path, so the user can work through findings in a tab with the dialog closed.
+export async function saveNameAuditReport(): Promise<string> {
+  return invoke<string>("save_name_audit_report");
+}
+
 /// Result of a static-site export. `files` are the artifacts written;
 /// `skippedNotes` lists notes that couldn't be compiled (as "name: reason")
 /// and were left out, so the caller can tell the user what to fix. A run

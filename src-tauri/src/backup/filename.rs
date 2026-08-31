@@ -24,6 +24,35 @@ const WINDOWS_RESERVED_STEMS: &[&str] = &[
     "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
+/// Whether `ch` is rejected by Windows in a filename.
+///
+/// The nine reserved punctuation characters plus every ASCII control (Windows
+/// rejects `0x00..=0x1F` outright; other systems allow them, but a filename
+/// with a newline in it is hostile to every tool that has to display it).
+/// Shared with the notebox name audit so the two agree on what "illegal"
+/// means.
+pub fn is_windows_illegal_char(ch: char) -> bool {
+    matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || (ch as u32) < 0x20
+}
+
+/// Whether `name`'s stem is a Windows reserved device name (`CON`, `LPT1`, …).
+///
+/// The check is on the portion before the first dot, so `CON.typ` is caught
+/// even though the full string isn't an exact reserved name. Such a file
+/// cannot be created on Windows at all.
+pub fn is_windows_reserved_stem(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    WINDOWS_RESERVED_STEMS
+        .iter()
+        .any(|r| stem.eq_ignore_ascii_case(r))
+}
+
+/// Whether `name` ends in a dot or space, which Windows silently strips at
+/// write time (so `notes ` and `notes` become the same file there).
+pub fn has_trailing_dot_or_space(name: &str) -> bool {
+    name.ends_with('.') || name.ends_with(' ')
+}
+
 /// Sanitize a value that will be substituted into a filename. Replaces
 /// reserved characters with `_`, collapses runs of `_` to a single one,
 /// trims leading/trailing whitespace and dots (Windows strips those at
@@ -35,16 +64,7 @@ const WINDOWS_RESERVED_STEMS: &[&str] = &[
 pub fn sanitize_token_value(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
-        let mapped = match ch {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
-            // ASCII controls (including NUL, tab, newline). Windows
-            // rejects 0x00..=0x1F outright; other OSes generally allow
-            // them but a filename with a newline in it is hostile to
-            // every tool that ever has to look at the backup folder.
-            c if (c as u32) < 0x20 => '_',
-            c => c,
-        };
-        out.push(mapped);
+        out.push(if is_windows_illegal_char(ch) { '_' } else { ch });
     }
 
     // Collapse runs of underscores so "Foo // Bar" doesn't become
@@ -72,11 +92,7 @@ pub fn sanitize_token_value(input: &str) -> String {
     // Rewrite reserved stems case-insensitively. The check is on the
     // portion before the first dot so `CON.notebox` (stem "CON") gets
     // caught even though the full string isn't an exact reserved name.
-    let stem = trimmed.split('.').next().unwrap_or(trimmed);
-    if WINDOWS_RESERVED_STEMS
-        .iter()
-        .any(|r| stem.eq_ignore_ascii_case(r))
-    {
+    if is_windows_reserved_stem(trimmed) {
         return format!("{trimmed}_");
     }
 

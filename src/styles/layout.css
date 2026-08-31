@@ -12203,7 +12203,11 @@ input.date-value__offset {
 
 /* ── Typ-audit dialog ────────────────────────────────────────────── */
 
-.typ-audit__backdrop {
+/* Shared shell for the full-screen audit dialogs (.typ compatibility
+   audit, notebox name audit). Both render the same structure: header,
+   scrollable body of collapsible finding groups, action footer. Add a
+   third audit by reusing these classes, not by copying them. */
+.audit-dialog__backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
@@ -12213,7 +12217,7 @@ input.date-value__offset {
   justify-content: center;
 }
 
-.typ-audit__panel {
+.audit-dialog__panel {
   background: var(--modal-bg);
   border: 1px solid var(--modal-border-color);
   border-radius: var(--modal-radius);
@@ -12224,21 +12228,21 @@ input.date-value__offset {
   box-shadow: var(--modal-shadow);
 }
 
-.typ-audit__header {
+.audit-dialog__header {
   display: flex;
   align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-primary);
 }
 
-.typ-audit__title {
+.audit-dialog__title {
   font-size: var(--text-lg);
   font-weight: 600;
   margin: 0;
   flex: 1;
 }
 
-.typ-audit__close {
+.audit-dialog__close {
   background: none;
   border: none;
   color: var(--fg-muted);
@@ -12248,16 +12252,16 @@ input.date-value__offset {
   padding: 0 6px;
 }
 
-.typ-audit__close:hover:not(:disabled) {
+.audit-dialog__close:hover:not(:disabled) {
   color: var(--fg-primary);
 }
 
-.typ-audit__close:disabled {
+.audit-dialog__close:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.typ-audit__body {
+.audit-dialog__body {
   padding: 14px 16px;
   overflow-y: auto;
   flex: 1;
@@ -12266,35 +12270,35 @@ input.date-value__offset {
   gap: 12px;
 }
 
-.typ-audit__hint {
+.audit-dialog__hint {
   margin: 0;
   color: var(--fg-muted);
 }
 
-.typ-audit__summary {
+.audit-dialog__summary {
   margin: 0;
   font-size: var(--text-base);
 }
 
-.typ-audit__group {
+.audit-dialog__group {
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   padding: 8px 12px;
   background: var(--bg-primary);
 }
 
-.typ-audit__group > summary {
+.audit-dialog__group > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.typ-audit__group-hint {
+.audit-dialog__group-hint {
   margin: 6px 0 8px;
   color: var(--fg-muted);
   font-size: var(--text-sm);
 }
 
-.typ-audit__file-list {
+.audit-dialog__file-list {
   margin: 0;
   padding-left: 18px;
   max-height: 200px;
@@ -12304,18 +12308,45 @@ input.date-value__offset {
   color: var(--fg-secondary);
 }
 
-.typ-audit__file-list li {
+.audit-dialog__file-list li {
   padding: 1px 0;
   word-break: break-all;
 }
 
+/* A path inside a finding list that opens that exact note in a new tab.
+   Used by the duplicate-note-name section, whose rows are always notes and
+   whose whole point is getting to a specific one to rename it. Deliberately
+   NOT `.btn` — these sit inline in a dense monospace list, and button
+   geometry (padding, min-height) would break the alignment of the rows
+   around them. */
+.audit-dialog__file-link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.audit-dialog__file-link:hover {
+  text-decoration: underline;
+}
+
+.audit-dialog__file-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* Per-file grouping for the cleanup sections (Markdown fixes / syntax
    errors): a path heading above its own list of line-level findings. */
-.typ-audit__lint-file {
+.audit-dialog__lint-file {
   margin-top: 6px;
 }
 
-.typ-audit__lint-path {
+.audit-dialog__lint-path {
   font-family: var(--editor-font-mono, monospace);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -12324,13 +12355,13 @@ input.date-value__offset {
 }
 
 /* Line/column tag at the start of a finding. */
-.typ-audit__lint-loc {
+.audit-dialog__lint-loc {
   color: var(--fg-muted);
   margin-right: 6px;
 }
 
 /* A proposed Markdown→Typst line change: [✓] before → after. */
-.typ-audit__md-fix {
+.audit-dialog__md-fix {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -12338,7 +12369,7 @@ input.date-value__offset {
 }
 
 /* Per-change accept toggle. */
-.typ-audit__md-check {
+.audit-dialog__md-check {
   flex-shrink: 0;
   align-self: center;
   cursor: pointer;
@@ -12346,34 +12377,34 @@ input.date-value__offset {
 
 /* A rejected change is dimmed and its proposed replacement de-emphasised, so
    the kept-as-is rows read as inactive without disappearing. */
-.typ-audit__md-fix--rejected {
+.audit-dialog__md-fix--rejected {
   opacity: 0.5;
 }
 
-.typ-audit__md-fix--rejected .typ-audit__md-before {
+.audit-dialog__md-fix--rejected .audit-dialog__md-before {
   text-decoration: none;
 }
 
-.typ-audit__md-fix--rejected .typ-audit__md-after,
-.typ-audit__md-fix--rejected .typ-audit__md-arrow {
+.audit-dialog__md-fix--rejected .audit-dialog__md-after,
+.audit-dialog__md-fix--rejected .audit-dialog__md-arrow {
   color: var(--fg-muted);
 }
 
-.typ-audit__md-before {
+.audit-dialog__md-before {
   color: var(--fg-danger, #e55);
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--fg-danger, #e55) 50%, transparent);
 }
 
-.typ-audit__md-after {
+.audit-dialog__md-after {
   color: var(--fg-success, #16a34a);
 }
 
-.typ-audit__md-arrow {
+.audit-dialog__md-arrow {
   color: var(--fg-muted);
 }
 
-.typ-audit__error {
+.audit-dialog__error {
   background: var(--bg-danger, rgba(229, 85, 85, 0.1));
   border: 1px solid var(--fg-danger, #e55);
   color: var(--fg-danger, #e55);
@@ -12382,21 +12413,21 @@ input.date-value__offset {
   font-size: var(--text-sm);
 }
 
-.typ-audit__result {
+.audit-dialog__result {
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: 4px;
   padding: 8px 12px;
 }
 
-.typ-audit__result pre {
+.audit-dialog__result pre {
   margin: 0;
   white-space: pre-wrap;
   font-family: var(--editor-font-mono, monospace);
   font-size: var(--text-sm);
 }
 
-.typ-audit__footer {
+.audit-dialog__footer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -12404,11 +12435,11 @@ input.date-value__offset {
   border-top: 1px solid var(--border-primary);
 }
 
-.typ-audit__footer-spacer {
+.audit-dialog__footer-spacer {
   flex: 1;
 }
 
-.typ-audit__footer button {
+.audit-dialog__footer button {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 4px;
@@ -12418,23 +12449,23 @@ input.date-value__offset {
   font-size: var(--text-base);
 }
 
-.typ-audit__footer button:hover:not(:disabled) {
+.audit-dialog__footer button:hover:not(:disabled) {
   border-color: var(--border-input);
   color: var(--fg-primary);
 }
 
-.typ-audit__footer button:disabled {
+.audit-dialog__footer button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.typ-audit__primary {
+.audit-dialog__primary {
   background: var(--accent, #1D7874) !important;
   color: white !important;
   border-color: var(--accent, #1D7874) !important;
 }
 
-.typ-audit__primary:hover:not(:disabled) {
+.audit-dialog__primary:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 

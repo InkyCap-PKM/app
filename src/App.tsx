@@ -32,6 +32,7 @@ import PromptHost from "./components/PromptHost";
 import FolderPickerHost from "./components/FolderPickerHost";
 import NoteboxSeedHost from "./components/NoteboxSeedHost";
 import TypAuditDialog from "./components/TypAuditDialog";
+import NameAuditDialog from "./components/NameAuditDialog";
 import { initNotebox, openNotebox, showNoteboxPicker, noteboxInfo, initAttempted } from "./stores/notebox";
 import { initTheme, applyFontSettings } from "./stores/theme";
 import { initLocale, syncLocaleFromSettings } from "./stores/locale";
@@ -73,6 +74,7 @@ const App: Component = () => {
   const [citationPickerVisible, setCitationPickerVisible] = createSignal(false);
   const [refNotePickerVisible, setRefNotePickerVisible] = createSignal(false);
   const [typAuditVisible, setTypAuditVisible] = createSignal(false);
+  const [nameAuditVisible, setNameAuditVisible] = createSignal(false);
   const [scaffoldPickerVisible, setScaffoldPickerVisible] = createSignal(false);
 
   // Persist the active file path so "last-file" startup behavior can restore it.
@@ -256,6 +258,7 @@ const App: Component = () => {
       openRefNotePicker: () => setRefNotePickerVisible(true),
       openSearch: () => document.dispatchEvent(new CustomEvent("inkycap:open-search")),
       openTypAudit: () => setTypAuditVisible(true),
+      openNameAudit: () => setNameAuditVisible(true),
       openScaffoldPicker: () => setScaffoldPickerVisible(true),
       openCollaborationPanel: () =>
         document.dispatchEvent(new CustomEvent("inkycap:open-collaboration")),
@@ -463,6 +466,10 @@ const App: Component = () => {
         <TypAuditDialog
           open={typAuditVisible()}
           onClose={() => setTypAuditVisible(false)}
+        />
+        <NameAuditDialog
+          open={nameAuditVisible()}
+          onClose={() => setNameAuditVisible(false)}
         />
         <ToastHost />
         <PromptHost />
