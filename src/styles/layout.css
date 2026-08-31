@@ -4832,6 +4832,12 @@ input.date-value__offset {
   font-family: var(--editor-font-mono, monospace);
 }
 
+/* The group header reuses the highlighter to mark a file-name match, but
+   keeps the header font instead of the monospace snippet font. */
+.search-panel__file-label-text {
+  font-family: inherit;
+}
+
 .search-panel__highlight {
   background: var(--search-highlight, rgba(255, 213, 0, 0.3));
   color: inherit;

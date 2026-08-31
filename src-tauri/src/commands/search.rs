@@ -107,6 +107,11 @@ pub async fn notebox_search(
             *start = byte_to_utf16(&r.line_text, *start);
             *end = byte_to_utf16(&r.line_text, *end);
         }
+        // Filename ranges index into `file_name`, not `line_text`.
+        for (start, end) in &mut r.file_name_ranges {
+            *start = byte_to_utf16(&r.file_name, *start);
+            *end = byte_to_utf16(&r.file_name, *end);
+        }
     }
 
     Ok(SearchResponse {
