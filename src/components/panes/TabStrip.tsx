@@ -240,13 +240,16 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
       const el = area.querySelector<HTMLElement>(".tab--active");
       if (!el) return;
       // Measure the arrows rather than restating their width here, so the
-      // buffer can't drift out of step with the CSS.
+      // buffer can't drift out of step with the CSS. Add the track's own
+      // inter-tab gap on top, so the tab lands a small step clear of the arrow
+      // instead of resting flush against its edge.
       const areaRect = area.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
+      const gap = parseFloat(getComputedStyle(area).columnGap) || 0;
       const overRight =
-        elRect.right + (rightArrowRef?.offsetWidth ?? 0) - areaRect.right;
+        elRect.right + (rightArrowRef?.offsetWidth ?? 0) + gap - areaRect.right;
       const overLeft =
-        elRect.left - (leftArrowRef?.offsetWidth ?? 0) - areaRect.left;
+        elRect.left - (leftArrowRef?.offsetWidth ?? 0) - gap - areaRect.left;
       if (overRight > 0) area.scrollBy({ left: overRight, behavior: "smooth" });
       else if (overLeft < 0) area.scrollBy({ left: overLeft, behavior: "smooth" });
     });

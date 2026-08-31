@@ -1346,15 +1346,15 @@ input.date-value__offset {
   box-shadow: var(--tab-active-shadow);
 }
 
-/* Hover gives an inactive tab a defined edge and an opaque neutral surface
-   that lifts toward the page colour — so it reads as a solid object, not the
-   translucent accent wash it used to be. The edge picks up the accent colour
-   on hover as a quiet cue, while the fill stays neutral so it doesn't shout. */
+/* Hover matches the other buttons in the top row (the pane menu, the toolbar
+   icon buttons): a quiet neutral wash and a firmer text colour, with no accent
+   outline. The tab keeps its transparent border so nothing shifts, and the
+   highlight reads as the same "button under the pointer" cue used elsewhere in
+   the row rather than a colour the tab shouts on its own. */
 .tab:hover:not(.tab--active),
 .pane:not(.pane--focused) .tab--active:hover {
   color: var(--fg-primary);
-  background: color-mix(in srgb, var(--bg-primary) 70%, var(--bg-secondary));
-  border-color: var(--accent);
+  background: var(--bg-hover);
 }
 
 
