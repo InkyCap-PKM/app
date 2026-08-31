@@ -1988,6 +1988,7 @@
   "leftSidebar.bookmark": "Signet",
   "leftSidebar.menuNewNote": "Nouvelle note",
   "leftSidebar.menuNewFolder": "Nouveau dossier",
+  "leftSidebar.searchInFolder": "Rechercher dans le dossier",
   "leftSidebar.moveFile": "Déplacer le fichier vers...",
   "leftSidebar.moveFolder": "Déplacer le dossier vers...",
   "leftSidebar.mergeTagsTitle": "Fusionner les étiquettes",

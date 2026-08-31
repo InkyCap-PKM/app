@@ -480,6 +480,9 @@ const SearchPanel: Component = () => {
   interface GroupedResult {
     path: string;
     file_name: string;
+    /** Highlight ranges within `file_name`; same for every match in the
+     *  group, so we keep the first result's copy. */
+    file_name_ranges: [number, number][];
     matches: SearchResult[];
     modified_time: number;
     created_time: number;
@@ -495,6 +498,7 @@ const SearchPanel: Component = () => {
         group = {
           path: r.path,
           file_name: r.file_name,
+          file_name_ranges: r.file_name_ranges,
           matches: [],
           modified_time: r.modified_time,
           created_time: r.created_time,
@@ -974,7 +978,11 @@ const SearchPanel: Component = () => {
                     class="search-panel__file-label"
                     onClick={(e) => openResult(group.matches[0], e)}
                   >
-                    {group.file_name}
+                    <HighlightedLine
+                      text={group.file_name}
+                      ranges={group.file_name_ranges}
+                      class="search-panel__file-label-text"
+                    />
                   </span>
                   <span class="search-panel__match-count">
                     {group.matches.length}
@@ -1083,13 +1091,24 @@ const ResultLine: Component<{
 const HighlightedLine: Component<{
   text: string;
   ranges: [number, number][];
+  /** Wrapper class. Defaults to the monospace snippet style; the group
+   *  header passes its own so the file name keeps the header font. */
+  class?: string;
 }> = (props) => {
   const segments = () => {
     const text = props.text;
     const ranges = props.ranges;
     if (ranges.length === 0) return [{ text, highlight: false }];
 
-    const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+    // Drop zero-width ranges. Document-level matches (a `tag:`/`path:`
+    // filter, or a filename hit) carry a `(0, 0)` placeholder range that
+    // marks the line as a match without pointing at a body span; rendering
+    // it would paint an empty highlight at the start of the line.
+    const sorted = ranges
+      .filter(([start, end]) => end > start)
+      .sort((a, b) => a[0] - b[0]);
+    if (sorted.length === 0) return [{ text, highlight: false }];
+
     const parts: { text: string; highlight: boolean }[] = [];
     let cursor = 0;
 
@@ -1107,7 +1126,7 @@ const HighlightedLine: Component<{
   };
 
   return (
-    <span class="search-panel__result-text">
+    <span class={props.class ?? "search-panel__result-text"}>
       <For each={segments()}>
         {(seg) => (
           <Show when={seg.highlight} fallback={<span>{seg.text}</span>}>

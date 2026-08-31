@@ -946,6 +946,9 @@ export interface SearchResult {
   line_number: number;
   line_text: string;
   match_ranges: [number, number][];
+  /** Ranges within `file_name` that matched, for highlighting the term in
+   *  the result group header. Empty unless the query hit the file name. */
+  file_name_ranges: [number, number][];
   score: number;
   modified_time: number;
   created_time: number;

@@ -2333,6 +2333,25 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               >
                 {t("leftSidebar.menuNewFolder")}
               </button>
+              <Show when={node.is_dir}>
+                <button
+                  class="context-menu__item"
+                  onClick={() => {
+                    setFileContextMenu(null);
+                    // `path:` is a substring match against each note's full
+                    // path; the notebox-relative folder path keeps the query
+                    // readable and the trailing slash scopes it to this
+                    // folder's contents (not a sibling with the same prefix).
+                    const root = noteboxInfo()?.path ?? "";
+                    const rel = node.path.startsWith(root + "/")
+                      ? node.path.slice(root.length + 1)
+                      : node.path;
+                    openSearchFor(`path:"${rel}/" `);
+                  }}
+                >
+                  {t("leftSidebar.searchInFolder")}
+                </button>
+              </Show>
               <Show when={!node.is_dir && isNoteFile(node.name)}>
                 <button
                   class="context-menu__item"

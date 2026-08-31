@@ -480,6 +480,11 @@ impl SearchEngine {
                 doc.word_count,
             );
 
+            // Where the query's text lands inside the file name, so the UI
+            // can highlight the term in the result header. Computed once per
+            // doc and shared by every line row.
+            let file_name_ranges = query_filename_ranges(query, &doc.file_name);
+
             // Walk matches in source order so the UI shows them in the
             // same order they appear in the file.
             let mut sorted_lines: Vec<(usize, &Vec<WordPosition>)> = line_matches
@@ -519,6 +524,7 @@ impl SearchEngine {
                     line_number: line_idx + 1,
                     line_text,
                     match_ranges,
+                    file_name_ranges: file_name_ranges.clone(),
                     // Per-line score: use the doc score plus a small bonus
                     // for line density so the file's first match (often the
                     // most relevant) ranks just slightly higher than later
@@ -641,8 +647,13 @@ impl SearchEngine {
         matches
     }
 
-    /// Find documents containing a single term.
-    fn find_term(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
+    /// Find documents whose body text contains a single term.
+    ///
+    /// Body-only lookup against the inverted index. Callers that want the
+    /// full "term matches body or filename" behaviour use [`find_term`];
+    /// phrase matching seeds from the body postings only, so it calls this
+    /// directly.
+    fn find_term_body(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         let mut result = HashMap::new();
         if let Some(posting) = self.index.get(term) {
             for (doc_id, positions) in posting {
@@ -656,14 +667,78 @@ impl SearchEngine {
         result
     }
 
+    /// Find documents containing a single term in their body text or their
+    /// filename. Filename hits mirror the `file:` filter's case-insensitive
+    /// substring rule, so a plain word that appears only in the file name
+    /// still surfaces the note (via a representative-line placeholder), and
+    /// picks up the same filename relevance bonus as a `file:` match.
+    fn find_term(&self, term: &str) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
+        // `term` is already lowercased by the query parser.
+        let mut result = self.find_term_body(term);
+        self.add_filename_matches(&mut result, |name| name.contains(term));
+        result
+    }
+
+    /// A synthetic single-line match used when a document matches at the
+    /// document level (a filter, or a filename hit) rather than on a
+    /// specific body line. Points at the first non-empty, non-import line
+    /// with a zero-width range so the result carries a readable snippet
+    /// without highlighting an arbitrary span.
+    fn representative_line_match(&self, doc: &DocEntry) -> HashMap<usize, Vec<WordPosition>> {
+        let representative = doc
+            .lines
+            .iter()
+            .enumerate()
+            .find(|(idx, line)| !doc.import_line_indices.contains(idx) && !line.trim().is_empty())
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+        let mut lines = HashMap::new();
+        lines.insert(
+            representative,
+            vec![WordPosition {
+                line: representative,
+                word_index: 0,
+                char_start: 0,
+                char_end: 0,
+            }],
+        );
+        lines
+    }
+
+    /// Add documents whose (lowercased) filename satisfies `matches_name` to
+    /// an existing match set. Documents already present keep their precise
+    /// body positions; documents that match only by filename are added with
+    /// a representative-line placeholder. Shadowed duplicate paths are
+    /// skipped, matching every other doc-iterating path.
+    fn add_filename_matches(
+        &self,
+        result: &mut HashMap<usize, HashMap<usize, Vec<WordPosition>>>,
+        matches_name: impl Fn(&str) -> bool,
+    ) {
+        for (doc_id, doc) in self.docs.iter().enumerate() {
+            if self.path_to_doc.get(&doc.path) != Some(&doc_id) {
+                continue;
+            }
+            if result.contains_key(&doc_id) {
+                continue;
+            }
+            if matches_name(&doc.file_name.to_lowercase()) {
+                result.insert(doc_id, self.representative_line_match(doc));
+            }
+        }
+    }
+
     /// Find documents containing an exact phrase (sequence of words on the same line).
     fn find_phrase(&self, words: &[String]) -> HashMap<usize, HashMap<usize, Vec<WordPosition>>> {
         if words.is_empty() {
             return HashMap::new();
         }
 
-        // Start with the first word's positions
-        let first_matches = self.find_term(&words[0]);
+        // Start with the first word's body positions. Filename hits can't
+        // seed a phrase (they carry no per-word positions to check adjacency
+        // against), so use the body-only lookup here and add filename phrase
+        // matches once at the end.
+        let first_matches = self.find_term_body(&words[0]);
         let mut result = HashMap::new();
 
         for (doc_id, line_positions) in &first_matches {
@@ -722,6 +797,12 @@ impl SearchEngine {
             }
         }
 
+        // Also match the phrase against filenames (same joined-substring rule
+        // as the `file:` filter), so a quoted title that lives only in the
+        // file name still surfaces the note.
+        let joined = words.join(" ");
+        self.add_filename_matches(&mut result, |name| name.contains(&joined));
+
         result
     }
 
@@ -746,6 +827,11 @@ impl SearchEngine {
                 }
             }
         }
+
+        // A wildcard also matches a filename the pattern spans end-to-end
+        // (the pattern is already anchored with `^…$`), keeping filename
+        // search consistent with plain terms.
+        self.add_filename_matches(&mut result, |name| re.is_match(name));
 
         result
     }
@@ -920,24 +1006,7 @@ impl SearchEngine {
                 // body contains no `#tag(...)` call — the doc still
                 // matches the filter, just lacks a precise location.
                 if lines.is_empty() {
-                    let representative = doc
-                        .lines
-                        .iter()
-                        .enumerate()
-                        .find(|(idx, line)| {
-                            !doc.import_line_indices.contains(idx) && !line.trim().is_empty()
-                        })
-                        .map(|(idx, _)| idx)
-                        .unwrap_or(0);
-                    lines.insert(
-                        representative,
-                        vec![WordPosition {
-                            line: representative,
-                            word_index: 0,
-                            char_start: 0,
-                            char_end: 0,
-                        }],
-                    );
+                    lines = self.representative_line_match(doc);
                 }
                 result.insert(doc_id, lines);
             }
@@ -1160,6 +1229,70 @@ struct DocBuild {
 /// line is skipped from indexing (so users searching for `notebox` or
 /// `import` don't get every note back) but kept in `lines` so result
 /// line numbers stay aligned with the source.
+/// Byte ranges within `text` (original case) that the query's literal text
+/// leaves match, case-insensitively, with overlaps merged. Powers filename
+/// highlighting in the result list — it answers "where in this file name did
+/// the query hit?". Filters, negations, proximity, and raw regex contribute
+/// nothing; only the words the user actually typed are highlighted.
+fn query_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> {
+    let mut ranges = collect_filename_ranges(node, text);
+    merge_ranges(&mut ranges);
+    ranges
+}
+
+fn collect_filename_ranges(node: &QueryNode, text: &str) -> Vec<(usize, usize)> {
+    match node {
+        QueryNode::Term(term) => regex_ranges(&regex::escape(term), text),
+        QueryNode::Phrase(words) => regex_ranges(&regex::escape(&words.join(" ")), text),
+        QueryNode::Wildcard(pattern) => {
+            // A wildcard is matched against the whole file name (anchored),
+            // so highlight the entire name when it matches.
+            let anchored = format!("(?i)^{}$", pattern.replace('*', ".*"));
+            let hit = compile_bounded_regex(&anchored)
+                .map(|re| re.is_match(text))
+                .unwrap_or(false);
+            if hit && !text.is_empty() {
+                vec![(0, text.len())]
+            } else {
+                Vec::new()
+            }
+        }
+        QueryNode::And(left, right) | QueryNode::Or(left, right) => {
+            let mut out = collect_filename_ranges(left, text);
+            out.extend(collect_filename_ranges(right, text));
+            out
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Case-insensitive occurrences of an already-escaped pattern in `text`,
+/// as byte ranges into the original string.
+fn regex_ranges(escaped_pattern: &str, text: &str) -> Vec<(usize, usize)> {
+    match compile_bounded_regex(&format!("(?i){escaped_pattern}")) {
+        Some(re) => re
+            .find_iter(text)
+            .filter(|m| m.end() > m.start())
+            .map(|m| (m.start(), m.end()))
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Sort and merge overlapping or touching ranges so the frontend's
+/// left-to-right slicer never double-counts a character.
+fn merge_ranges(ranges: &mut Vec<(usize, usize)>) {
+    ranges.sort_by_key(|(start, _)| *start);
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges.drain(..) {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    *ranges = merged;
+}
+
 fn build_doc(
     path: PathBuf,
     content: &str,
@@ -1416,6 +1549,81 @@ mod tests {
         // for that file.
         assert_eq!(unique_paths(&results), 1);
         assert!(results.iter().all(|r| r.path.contains("note1")));
+    }
+
+    #[test]
+    fn plain_term_matches_filename() {
+        let engine = make_engine();
+        // "note1" is in the file name note1.md but appears on no body line.
+        let query = parse_query("note1").unwrap();
+        let results = engine.search(&query, 10);
+        assert_eq!(unique_paths(&results), 1);
+        assert!(results[0].path.contains("note1"));
+        // The placeholder points at a real, non-empty body line so the
+        // result still shows a readable snippet.
+        assert!(!results[0].line_text.trim().is_empty());
+    }
+
+    #[test]
+    fn filename_match_composes_with_boolean_query() {
+        let engine = make_engine();
+        // `note1` matches only note1's filename; `rust` matches the bodies of
+        // note1 and note2. The AND keeps just note1 — proving filename hits
+        // flow through boolean composition like any other leaf match.
+        let query = parse_query("note1 rust").unwrap();
+        let results = engine.search(&query, 10);
+        assert_eq!(unique_paths(&results), 1);
+        assert!(results.iter().all(|r| r.path.contains("note1")));
+
+        // A word in neither any body nor any filename matches nothing.
+        let query = parse_query("nonexistentname").unwrap();
+        assert!(engine.search(&query, 10).is_empty());
+    }
+
+    #[test]
+    fn filename_ranges_mark_the_matched_span() {
+        let engine = make_engine();
+        // "note1" sits at the start of the file stem "note1"; the highlight
+        // range should cover exactly those five characters.
+        let query = parse_query("note1").unwrap();
+        let results = engine.search(&query, 10);
+        assert_eq!(unique_paths(&results), 1);
+        assert_eq!(results[0].file_name_ranges, vec![(0, 5)]);
+
+        // A filter-only query highlights nothing in the file name.
+        let query = parse_query("tag:rust").unwrap();
+        let results = engine.search(&query, 10);
+        assert!(results.iter().all(|r| r.file_name_ranges.is_empty()));
+    }
+
+    #[test]
+    fn filename_ranges_survive_boolean_and_overlap() {
+        // The screenshot case: `path:"…" km` — the path filter contributes no
+        // highlight, the plain term highlights "km" in the file name.
+        let engine = SearchEngine::build(vec![(
+            PathBuf::from("/notebox/Consultations/KM about things.md"),
+            "#note(title: \"KM\")\nBody text without the term.".to_string(),
+            Vec::new(),
+            Some("KM".to_string()),
+            Vec::new(),
+            HashMap::new(),
+        )]);
+        let query = parse_query("path:\"Consultations/\" km").unwrap();
+        let results = engine.search(&query, 10);
+        assert_eq!(unique_paths(&results), 1);
+        // "KM" is the first two characters of the file stem.
+        assert_eq!(results[0].file_name_ranges, vec![(0, 2)]);
+    }
+
+    #[test]
+    fn filename_match_ranks_by_filename_bonus() {
+        let engine = make_engine();
+        // "note2" is only in note2's filename; the filename bonus should make
+        // it the top result even though other notes mention "note" in prose.
+        let query = parse_query("note2").unwrap();
+        let results = engine.search(&query, 10);
+        assert!(!results.is_empty());
+        assert!(results[0].path.contains("note2"));
     }
 
     #[test]

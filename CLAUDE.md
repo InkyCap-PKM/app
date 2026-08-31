@@ -124,6 +124,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 - Prefer obvious code over clever code. Reach for an abstraction only when a second concrete caller exists — speculative generality is a tax.
 - One file, one responsibility. If a module's purpose can't be summarized in a sentence, split it.
 - Public APIs (Tauri commands, trait methods, exported TS) carry doc comments stating intent and invariants. Internal code stays self-evident through naming.
+- Ensure that code comments are worded in plain language without jargon. Keep comments concise and appropriately descriptive or explanatory without recounting the history or decision-making process. Focus on the information someone would need to know to use, modify, or otherwise meaningfully work with that code.
 - Tests cover load-bearing invariants — source↔visual round-trip, `#note(...)` property preservation, `typst query` label stability — at the unit level. They double as executable documentation.
 - Avoid creating duplications of code, unless there is a justifiable and necessary reason. Reuse existing code when reasonable. 
 - Do not create new CSS where styles exist that should be used repeatedly for the same and consistent UI elements. There should be a valid, justifiable, and necessary reason otherwise.

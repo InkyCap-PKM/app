@@ -15,6 +15,10 @@ pub struct SearchResult {
     pub line_text: String,
     /// Character offset ranges within `line_text` that matched.
     pub match_ranges: Vec<(usize, usize)>,
+    /// Character offset ranges within `file_name` that matched, for
+    /// highlighting the term where it appears in the file name (the result
+    /// group header). Empty unless the query's text hit the file name.
+    pub file_name_ranges: Vec<(usize, usize)>,
     /// Relevance score (higher is better).
     pub score: f64,
     /// File modification time as a Unix timestamp in seconds. 0 if unknown.

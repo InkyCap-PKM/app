@@ -1988,6 +1988,7 @@
   "leftSidebar.bookmark": "Bookmark",
   "leftSidebar.menuNewNote": "New Note",
   "leftSidebar.menuNewFolder": "New Folder",
+  "leftSidebar.searchInFolder": "Search in folder",
   "leftSidebar.moveFile": "Move file to...",
   "leftSidebar.moveFolder": "Move folder to...",
   "leftSidebar.mergeTagsTitle": "Merge tags",
