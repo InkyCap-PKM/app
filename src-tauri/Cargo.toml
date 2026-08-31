@@ -61,6 +61,11 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # behavior identical. Picked over `ureq` because it's already in the
 # dependency graph via tauri.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+# Unicode collation for user-facing name sorting (src/sort.rs), so the
+# backend orders names identically to the frontend's `Intl.Collator`.
+# Already in the dependency graph via typst-library -> hayagriva, so this
+# is a direct dep on a crate the binary was compiling regardless.
+icu_collator = "2.2"
 log = "0.4"
 env_logger = "0.11"
 

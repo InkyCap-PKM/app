@@ -1,5 +1,6 @@
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { type TableData, type TableCell, serializeTable, parseClipboardAsGrid, parseTsvToGrid } from "./table-parser";
+import { compareName } from "../../lib/sort";
 
 // Lucide grip glyphs for the reorder handles — crisper and less fragile than
 // hand-laid dot grids. `grip-horizontal` suits the wide/short column handle,
@@ -1413,9 +1414,12 @@ export class TableWidget extends WidgetType {
   }
 
   private sortColumn(view: EditorView, colIdx: number, dir: "asc" | "desc") {
+    // Natural ordering, so a column of `2`, `10`, `100` sorts as numbers
+    // rather than as text — the common case for a table column.
     const sorted = [...this.data.rows].sort((a, b) => {
-      const cmp = (a[colIdx]?.content ?? "").localeCompare(b[colIdx]?.content ?? "");
-      return dir === "asc" ? cmp : -cmp;
+      const x = a[colIdx]?.content ?? "";
+      const y = b[colIdx]?.content ?? "";
+      return dir === "asc" ? compareName(x, y) : compareName(y, x);
     });
     this.replaceTable(view, { ...this.data, rows: sorted });
   }

@@ -32,6 +32,7 @@ pub mod scaffolds;
 pub mod scanner;
 pub mod search;
 pub mod settings;
+pub mod sort;
 pub mod state;
 pub mod storage;
 pub mod typst_packages;

@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { fileList, type FileEntry } from "../stores/filelist";
 import { fuzzyMatch, type FuzzyMatch } from "../lib/fuzzy";
+import { compareName } from "../lib/sort";
 import { openTab } from "../stores/tabs";
 import { useI18n } from "../lib/i18n";
 import { createHoverGuard } from "../lib/picker-hover";
@@ -77,7 +78,7 @@ const QuickOpen: Component<QuickOpenProps> = (props) => {
         .sort(
           (a, b) =>
             b.modified_time - a.modified_time ||
-            a.name.localeCompare(b.name),
+            compareName(a.name, b.name),
         )
         .map((entry) => ({ entry, match: { score: 0, ranges: [] } }));
     }

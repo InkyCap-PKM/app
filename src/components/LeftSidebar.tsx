@@ -39,7 +39,7 @@ import { attachListNav } from "../lib/list-nav";
 import { anchorPanelMenu } from "../lib/uiMenu";
 import { clickOutside } from "../lib/clickOutside";
 import { createOverflowWatcher } from "../lib/overflow";
-import { compareZid } from "../lib/sort";
+import { compareName, compareZid } from "../lib/sort";
 import { settings, updateSetting, noteboxSettings } from "../stores/settings";
 import type { FileSortMode } from "../lib/types";
 import { noteboxInfo, noteboxUiKey, fileTreeVersion, propertyVersion, bumpPropertyVersion } from "../stores/notebox";
@@ -161,9 +161,9 @@ function sortFileTree(
     }
     switch (mode) {
       case "name-asc":
-        return a.name.localeCompare(b.name);
+        return compareName(a.name, b.name);
       case "name-desc":
-        return b.name.localeCompare(a.name);
+        return compareName(b.name, a.name);
       case "modified-desc":
         return b.modified_time - a.modified_time;
       case "modified-asc":
@@ -175,7 +175,7 @@ function sortFileTree(
       case "zid-asc":
       case "zid-desc": {
         const c = compareZid(a.zid, b.zid, mode === "zid-asc" ? "asc" : "desc");
-        return c !== 0 ? c : a.name.localeCompare(b.name);
+        return c !== 0 ? c : compareName(a.name, b.name);
       }
     }
   };
@@ -354,9 +354,9 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     return filtered.sort((a, b) => {
       switch (mode) {
         case "name-asc":
-          return a.name.localeCompare(b.name);
+          return compareName(a.name, b.name);
         case "name-desc":
-          return b.name.localeCompare(a.name);
+          return compareName(b.name, a.name);
         case "modified-desc":
           return b.modified_time - a.modified_time;
         case "modified-asc":
@@ -369,7 +369,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         case "zid-desc":
           // Collections have no zid; the collection dropdown never offers
           // these modes, but the shared FileSortMode type requires them.
-          return a.name.localeCompare(b.name);
+          return compareName(a.name, b.name);
       }
     });
   });
@@ -700,13 +700,13 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     const cmp = (a: [string, number], b: [string, number]) => {
       switch (mode) {
         case "name-asc":
-          return a[0].localeCompare(b[0]);
+          return compareName(a[0], b[0]);
         case "name-desc":
-          return b[0].localeCompare(a[0]);
+          return compareName(b[0], a[0]);
         case "count-desc":
-          return b[1] - a[1] || a[0].localeCompare(b[0]);
+          return b[1] - a[1] || compareName(a[0], b[0]);
         case "count-asc":
-          return a[1] - b[1] || a[0].localeCompare(b[0]);
+          return a[1] - b[1] || compareName(a[0], b[0]);
       }
     };
     return filtered.sort(cmp);

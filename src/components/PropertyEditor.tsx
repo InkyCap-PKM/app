@@ -2,6 +2,7 @@ import { Component, createSignal, createResource, createEffect, onCleanup, For, 
 import type { PropertyValue, PropertyType } from "../lib/types";
 import { propertyType } from "../stores/propertyTypes";
 import { sanitizeAlias } from "../lib/typst";
+import { compareName } from "../lib/sort";
 import * as ipc from "../lib/ipc";
 import { showWikilinkContextMenu } from "../lib/wikilink-nav";
 import { useI18n } from "../lib/i18n";
@@ -446,7 +447,7 @@ const ListEditor: Component<PropertyEditorProps> = (props) => {
     const universe = new Set<string>(allValues() ?? []);
     for (const it of currentItems()) universe.add(it);
     const filt = filter().trim().toLowerCase();
-    const arr = [...universe].sort((a, b) => a.localeCompare(b));
+    const arr = [...universe].sort((a, b) => compareName(a, b));
     return filt ? arr.filter((v) => v.toLowerCase().includes(filt)) : arr;
   };
 

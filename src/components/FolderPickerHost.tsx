@@ -18,6 +18,7 @@ import { activeFolderPicker, resolveFolderPicker } from "../stores/folderPicker"
 import { noteboxInfo } from "../stores/notebox";
 import * as ipc from "../lib/ipc";
 import { normalizePath, pathEquals, pathStartsWith } from "../lib/paths";
+import { compareName } from "../lib/sort";
 import { useI18n } from "../lib/i18n";
 import type { FileTreeNode } from "../lib/types";
 
@@ -78,7 +79,7 @@ const FolderPickerHost: Component = () => {
         if (p.currentParent && pathEquals(e.abs, p.currentParent)) return false;
         return true;
       });
-      filtered.sort((a, b) => a.label.localeCompare(b.label));
+      filtered.sort((a, b) => compareName(a.label, b.label));
 
       // Pin the notebox root as the first entry so the user can always
       // move an item to the top of the notebox, unless the root itself is

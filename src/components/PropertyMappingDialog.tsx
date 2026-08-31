@@ -16,6 +16,7 @@ import { For, Show, createMemo } from "solid-js";
 import { createStore } from "solid-js/store";
 import * as ipc from "../lib/ipc";
 import type { PropertyType } from "../lib/types";
+import { compareName } from "../lib/sort";
 import { Dropdown, type DropdownOption } from "./Dropdown";
 import { useI18n, tPlural } from "../lib/i18n";
 
@@ -106,7 +107,7 @@ export function PropertyMappingDialog(props: PropertyMappingDialogProps) {
 
   const systemTargets = createMemo(() => props.targets.filter((t) => t.isSystem));
   const userTargets = createMemo(() =>
-    props.targets.filter((t) => !t.isSystem).sort((a, b) => a.key.localeCompare(b.key)),
+    props.targets.filter((t) => !t.isSystem).sort((a, b) => compareName(a.key, b.key)),
   );
 
   // System property names are reserved: a user may map onto them but must not

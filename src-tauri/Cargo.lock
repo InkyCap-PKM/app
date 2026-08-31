@@ -2871,6 +2871,7 @@ dependencies = [
  "git2",
  "gtk",
  "hayagriva 0.9.1",
+ "icu_collator",
  "include_dir",
  "insta",
  "keyring",
