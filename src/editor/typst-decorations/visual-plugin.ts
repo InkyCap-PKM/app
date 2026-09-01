@@ -1468,6 +1468,12 @@ export function handleFuncCall(
             Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
           );
         }
+        // Caret on/adjacent to the call → reveal the raw `#task("…")` source
+        // for inline editing, the same temporary-expand-on-cursor affordance
+        // footnote and wikilink use. The pill above stays available for the
+        // done/due/label menu; moving the caret away collapses the source back
+        // to the checkbox widget below.
+        if (isCursorAdjacentOrInside(state, from, to, cursors)) return false;
         decos.push(
           Decoration.replace({
             widget: new TaskWidget(body, done, due, from),

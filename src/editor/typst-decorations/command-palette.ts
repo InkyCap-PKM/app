@@ -164,7 +164,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Suggest insertion", labelKey: "slash.suggestInsertion", category: "InkyCap", dynamic: (s) => mark("insert", s) },
   { label: "Suggest deletion", labelKey: "slash.suggestDeletion", category: "InkyCap", dynamic: (s) => mark("delete", s) },
   { label: "Suggest replacement", labelKey: "slash.suggestReplacement", category: "InkyCap", dynamic: (s) => mark("replace", s) },
-  { label: "Task", labelKey: "slash.task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
+  { label: "Task", labelKey: "slash.task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]", expandOnInsert: true },
   { label: "Due date", labelKey: "slash.dueDate", category: "InkyCap", insert: '#due("")', cursorOffset: 6 },
 
   { label: "Page size", labelKey: "slash.pageSize", category: "Style", insert: '#set page(paper: "a4")', cursorOffset: 17 },

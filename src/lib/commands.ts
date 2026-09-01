@@ -931,7 +931,7 @@ function registerMarkupCommands() {
     // ── InkyCap ──
     { id: "wikilink", title: "Wikilink", category: "InkyCap", insert: '#wikilink("")', cursorOffset: 11, shortcut: "[[…]]" },
     { id: "verse", title: "Verse", category: "InkyCap", insert: '#verse("")', cursorOffset: 8 },
-    { id: "task", title: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]" },
+    { id: "task", title: "Task", category: "InkyCap", insert: '#task("")', cursorOffset: 7, shortcut: "- [ ]", expand: true },
     { id: "due", title: "Due date", category: "InkyCap", insert: "#due()", cursorOffset: 5 },
   ];
 
