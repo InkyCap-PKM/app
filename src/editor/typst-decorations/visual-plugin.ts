@@ -750,6 +750,13 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             const text = state.doc.sliceString(node.from, node.to);
             const isBlock = text.startsWith("```");
             if (!isBlock) {
+              // Typst's parser is error-tolerant, so a lone or still-unclosed
+              // backtick already parses as a Raw node. Hiding its delimiters
+              // here would make the backtick the user just typed disappear the
+              // moment the cursor moves off it. Only collapse the markup once a
+              // real closing backtick exists (matched pair, at least two chars).
+              const closed = text.length >= 2 && text.endsWith("`");
+              if (!closed) return false;
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
               if (autoExpand && onCursor) return false;
               decos.push(hide.range(node.from, node.from + 1));
