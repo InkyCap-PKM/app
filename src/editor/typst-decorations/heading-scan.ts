@@ -90,9 +90,23 @@ function childIndexAt(tree: Tree, offset: number, pos: number): number {
   return -1;
 }
 
-/** The `Heading` node starting exactly at `pos`, or null if the parser sees
- *  something else there — raw text, a comment, a string, plain markup. */
-function headingNodeAt(tree: Tree, pos: number): { from: number; to: number } | null {
+/**
+ * The innermost node starting exactly at `pos` whose type name is in `names`,
+ * or null if the parser sees something else there — raw text, a comment, a
+ * string, plain markup. Uses the same O(log n) binary-search descent as the
+ * heading scan, so it stays cheap even when called once per line of a
+ * list-heavy outline (see list-scan.ts).
+ *
+ * Container types not in `names` are descended into, so a leaf marker nested a
+ * few levels down (e.g. a `ListMarker` inside a `ListItem`) is still reached.
+ * A node whose type *is* in `names` but does not start exactly at `pos` yields
+ * null — `pos` sits inside such a node, not at its opening.
+ */
+export function nodeStartingAt(
+  tree: Tree,
+  pos: number,
+  names: Set<string>,
+): { name: string; from: number; to: number } | null {
   let node = tree;
   let offset = 0;
   for (;;) {
@@ -106,16 +120,18 @@ function headingNodeAt(tree: Tree, pos: number): { from: number; to: number } | 
     // correct (if slower) answer rather than a wrong one.
     if (!(child instanceof Tree)) {
       let n: SyntaxNode | null = tree.resolveInner(pos, 1);
-      while (n && n.name !== "Heading") n = n.parent;
-      return n && n.from === pos ? { from: n.from, to: n.to } : null;
+      while (n && !names.has(n.name)) n = n.parent;
+      return n && n.from === pos ? { name: n.name, from: n.from, to: n.to } : null;
     }
-    if (child.type.name === "Heading") {
-      return from === pos ? { from, to: from + child.length } : null;
+    if (names.has(child.type.name)) {
+      return from === pos ? { name: child.type.name, from, to: from + child.length } : null;
     }
     node = child;
     offset = from;
   }
 }
+
+const HEADING_NAMES = new Set(["Heading"]);
 
 /** Every heading in `doc`, in document order, as `tree` sees them. */
 export function headingsInTree(tree: Tree, doc: Text): HeadingSpan[] {
@@ -125,7 +141,7 @@ export function headingsInTree(tree: Tree, doc: Text): HeadingSpan[] {
     const candidate = CANDIDATE_RE.exec(line);
     if (candidate) {
       const markerFrom = pos + candidate[0].length - candidate[1].length;
-      const node = headingNodeAt(tree, markerFrom);
+      const node = nodeStartingAt(tree, markerFrom, HEADING_NAMES);
       if (node) {
         // Read the level off the node rather than the candidate match, so the
         // parser stays the authority on both halves of the answer.

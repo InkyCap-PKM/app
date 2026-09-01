@@ -4,7 +4,7 @@
 //   "> "           at line start  →  #quote(block: true)[<cursor>]
 //   "+++"          alone on a line →  #line(length: 100%)
 //   "++<text>++"   inline          →  #footnote[<text>]
-//   "- [ ] " / "- [x] " at line start → #task("<cursor>") (done: true when x)
+//   "- [ ] " / "- [x] " at line start → - #task("<cursor>") (done: true when x)
 //
 // The pattern follows the same philosophy as the [[wikilink]] shortcut:
 // trigger sequences map to function calls that have no native Typst markup.
@@ -24,17 +24,27 @@ function handleSpace(view: EditorView, from: number): boolean {
   const line = view.state.doc.lineAt(from);
   const beforeCursor = view.state.doc.sliceString(line.from, from);
 
-  // Markdown task checkbox → #task(...). The just-typed space starts the body,
-  // so the line so far is the bare `- [ ]` / `- [x]` marker (indentation kept).
-  // `x`/`X` inside the box maps to `done: true`; the caret lands inside the
-  // body string so the user types the task text next.
-  const task = beforeCursor.match(/^(\s*)[-+] \[([ xX]?)\]$/);
+  // Markdown task checkbox → a bulleted task. The just-typed space starts the
+  // body, so the line so far is the bare `- [ ]` / `- [x]` marker (indentation
+  // and marker character kept). `x`/`X` inside the box maps to `done: true`;
+  // the caret lands inside the body string so the user types the task text next.
+  //
+  // The list marker is preserved so the result is `- #task("")`, i.e. a task
+  // that is itself a list item. This matches the outliner workflow (issue #24):
+  // tasks nest and fold with the surrounding list instead of becoming standalone
+  // lines that break the list structure. The marker the user typed (`-` or `+`)
+  // is carried through so ordered/unordered intent is respected.
+  const task = beforeCursor.match(/^(\s*)([-+]) \[([ xX]?)\]$/);
   if (task) {
     const indent = task[1];
-    const done = /[xX]/.test(task[2]);
-    const insert = done ? '#task("", done: true)' : '#task("")';
-    // The `#` of the inserted call sits just after any indentation.
-    const funcFrom = line.from + indent.length;
+    const marker = task[2];
+    const done = /[xX]/.test(task[3]);
+    const call = done ? '#task("", done: true)' : '#task("")';
+    // `- ` (marker + separator space) stays; the `[ ]` becomes the task call.
+    const markerPrefix = `${marker} `;
+    const insert = indent + markerPrefix + call;
+    // The `#` of the inserted call sits just after the indentation and marker.
+    const funcFrom = line.from + indent.length + markerPrefix.length;
     // Keep the fresh call expanded on the cursor line, exactly like the `>`
     // quote branch below. Without this, the visual plugin collapses `#task(…)`
     // into its checkbox widget the instant the call is complete — the caret
@@ -45,7 +55,7 @@ function handleSpace(view: EditorView, from: number): boolean {
     // the string; moving away collapses it back to the widget. The pill menu
     // (right-click / click) remains available for done/due/label. See issue #23.
     view.dispatch({
-      changes: { from: line.from, to: from, insert: indent + insert } as ChangeSpec,
+      changes: { from: line.from, to: from, insert } as ChangeSpec,
       selection: { anchor: funcFrom + '#task("'.length },
       effects: expandFunc.of(funcFrom),
     });

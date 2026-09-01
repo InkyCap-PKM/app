@@ -1,7 +1,7 @@
 import { Compartment, EditorState, Prec, StateField, Transaction, type Extension, type StateEffect } from "@codemirror/state";
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { bracketMatching, indentOnInput, foldGutter, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { bracketMatching, indentOnInput, foldKeymap, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import {
   searchKeymap,
   searchPanelOpen,
@@ -164,7 +164,7 @@ import { autoPairTypstInput } from "./typst-decorations/auto-pair-typst";
 import { markdownShortcuts } from "./typst-decorations/markdown-shortcuts";
 import { headingTracker } from "./typst-decorations/heading-tracker";
 import { annotationTracker } from "./typst-decorations/annotation-tracker";
-import { headingFold } from "./typst-decorations/heading-fold";
+import { typstFolding } from "./typst-decorations/folding";
 import { wordCountTracker } from "./typst-decorations/word-count";
 import { cursorPositionTracker } from "./typst-decorations/cursor-position";
 import { lspExtension, visualModeFacet } from "./lsp";
@@ -331,9 +331,6 @@ const inkycapTheme = EditorView.theme({
   ".cm-matchingBracket": {
     backgroundColor: "var(--bg-matching-bracket)",
     outline: "1px solid var(--border-subtle)",
-  },
-  ".cm-foldGutter .cm-gutterElement": {
-    color: "var(--fg-dim)",
   },
   ".cm-tooltip": {
     // Shared popup surface — see --popup-* tokens in themes.css.
@@ -655,7 +652,11 @@ function baseExtensions(options: TypstEditorOptions): Extension[] {
   const exts: Extension[] = [
     lineNumbers(),
     highlightSpecialChars(),
-    foldGutter(),
+    // Outliner folding (headings + nested list items) lives in the base config,
+    // not the visual-mode compartment, so folds work in both source and visual
+    // mode and survive switching between them. Uses a hover chevron, so the
+    // standard fold gutter is deliberately omitted. See folding.ts.
+    typstFolding(),
     // Rectangular selection + the Alt "crosshair" cursor are code-editor
     // affordances: in a prose/notebox editor they add little, and the crosshair
     // turned holding Alt (e.g. for the Alt-Shift line-move shortcut) into a
@@ -782,11 +783,13 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   const commandPaletteCompartment = new Compartment();
   // Single source of truth for the visual-mode extension set, used both for the
   // initial config and for setVisualMode()'s compartment reconfigure — so the
-  // two can never drift (a past drift silently dropped headingFold, the suggest
-  // popups, and verse search highlighting when toggling source→visual).
+  // two can never drift (a past drift silently dropped the suggest popups and
+  // verse search highlighting when toggling source→visual). Note: folding is
+  // NOT here — it lives in the base config so folds persist across mode
+  // switches (see typstFolding in baseExtensions).
   const visualModeExtensions = () => [
     typstVisualMode(), verseFocusRouter, verseSearchHighlighter,
-    wikilinkSuggest, referenceSuggest, headingFold(), visualModeFacet.of(true),
+    wikilinkSuggest, referenceSuggest, visualModeFacet.of(true),
   ];
   const visualExts = options.visualMode ? visualModeExtensions() : [];
   const activeLineExts = options.visualMode ? [] : [highlightActiveLine(), highlightActiveLineGutter()];

@@ -49,6 +49,10 @@ export default defineConfig({
     // rAF callback. See src/test-setup.ts.
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
-    server: { deps: { inline: [/solid-js/, /@solid-primitives\//] } },
+    // `codemirror-lang-typst` ships a `.wasm` parser. Inlining it routes the
+    // import through `vite-plugin-wasm` so Vite transforms the `.wasm` module;
+    // otherwise Vitest externalizes the dep and Node's ESM loader rejects the
+    // unknown `.wasm` extension, failing every suite that touches the parser.
+    server: { deps: { inline: [/solid-js/, /@solid-primitives\//, /codemirror-lang-typst/] } },
   },
 });
