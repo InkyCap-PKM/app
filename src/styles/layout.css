@@ -9317,6 +9317,15 @@ input.date-value__offset {
   flex-shrink: 0;
 }
 
+/* The button box stays 24px; the glyph within it is kept small so it reads as
+   a quiet control rather than an attention-getting icon. This overrides the
+   em-scaled svg.lucide default, which would otherwise size the icon off the
+   button's font-size. */
+.tab-bar__new svg {
+  width: 14px;
+  height: 14px;
+}
+
 .tab-bar__new:hover {
   background: var(--bg-hover);
   color: var(--fg-primary);
