@@ -4,13 +4,15 @@ import { EditorView } from "@codemirror/view";
 import { markdownShortcuts } from "./markdown-shortcuts";
 import { expandFunc } from "./effects";
 
-// The task-checkbox shortcut (`- [ ] ` / `- [x] `) expands into a `#task(...)`
-// call. The regression these tests guard (issue #23): the newly inserted call
-// must stay *expanded* (raw source visible) so the description the user keeps
-// typing flows into the string argument — `#task("Task text")` — rather than
-// landing after a collapsed widget as `#task("")Task text`. That relies on the
-// dispatch carrying an `expandFunc` effect targeting the call's start, and on
-// the caret landing between the quotes.
+// The task-checkbox shortcut (`- [ ] ` / `- [x] `) expands into a bulleted
+// `#task(...)` call: the list marker is preserved so the result is
+// `- #task("")`, a task that is itself a list item (issue #24 outliner
+// workflow). The regression these tests also guard (issue #23): the newly
+// inserted call must stay *expanded* (raw source visible) so the description the
+// user keeps typing flows into the string argument — `#task("Task text")` —
+// rather than landing after a collapsed widget as `#task("")Task text`. That
+// relies on the dispatch carrying an `expandFunc` effect targeting the call's
+// start (past the marker), and on the caret landing between the quotes.
 
 function mk(doc = "", anchor?: number) {
   return new EditorView({
@@ -57,12 +59,12 @@ function recordingView(doc = "", anchor?: number) {
 }
 
 describe("markdown-shortcuts: task checkbox", () => {
-  it("expands `- [ ] ` into #task(\"\") with the caret between the quotes", () => {
+  it("expands `- [ ] ` into a bulleted `- #task(\"\")` with the caret between the quotes", () => {
     const v = mk("- [ ]", 5);
     typeChar(v, " ");
-    expect(v.state.doc.toString()).toBe('#task("")');
+    expect(v.state.doc.toString()).toBe('- #task("")');
     // Caret sits just after the opening quote, ready for the description.
-    expect(v.state.selection.main.head).toBe('#task("'.length);
+    expect(v.state.selection.main.head).toBe('- #task("'.length);
     v.destroy();
   });
 
@@ -70,34 +72,41 @@ describe("markdown-shortcuts: task checkbox", () => {
     const v = mk("- [ ]", 5);
     typeChar(v, " ");
     for (const ch of "Buy milk") typeChar(v, ch);
-    expect(v.state.doc.toString()).toBe('#task("Buy milk")');
+    expect(v.state.doc.toString()).toBe('- #task("Buy milk")');
     v.destroy();
   });
 
   it("`- [x] ` marks the task done", () => {
     const v = mk("- [x]", 5);
     typeChar(v, " ");
-    expect(v.state.doc.toString()).toBe('#task("", done: true)');
+    expect(v.state.doc.toString()).toBe('- #task("", done: true)');
     v.destroy();
   });
 
-  it("dispatches expandFunc at the call start so it stays live-editable", () => {
+  it("preserves a `+` marker for ordered-list tasks", () => {
+    const v = mk("+ [ ]", 5);
+    typeChar(v, " ");
+    expect(v.state.doc.toString()).toBe('+ #task("")');
+    v.destroy();
+  });
+
+  it("dispatches expandFunc at the call start (past the marker) so it stays live-editable", () => {
     const { view, effects } = recordingView("- [ ]", 5);
     typeChar(view, " ");
     const expand = effects.filter((e) => (e as { is: (t: unknown) => boolean }).is(expandFunc));
     expect(expand).toHaveLength(1);
-    // The call begins at the start of the line (no indentation here).
-    expect((expand[0] as { value: number }).value).toBe(0);
+    // `- ` (marker + separator) precedes the `#`, so the call begins at offset 2.
+    expect((expand[0] as { value: number }).value).toBe(2);
     view.destroy();
   });
 
-  it("indented sub-task expands at the `#`, past the indentation", () => {
+  it("indented sub-task expands at the `#`, past the indentation and marker", () => {
     const { view, effects } = recordingView("  - [ ]", 7);
     typeChar(view, " ");
-    expect(view.state.doc.toString()).toBe('  #task("")');
+    expect(view.state.doc.toString()).toBe('  - #task("")');
     const expand = effects.filter((e) => (e as { is: (t: unknown) => boolean }).is(expandFunc));
-    // Two spaces of indent → the `#` (and the expand target) sit at offset 2.
-    expect((expand[0] as { value: number }).value).toBe(2);
+    // Two spaces of indent + `- ` marker → the `#` (and expand target) at offset 4.
+    expect((expand[0] as { value: number }).value).toBe(4);
     view.destroy();
   });
 });

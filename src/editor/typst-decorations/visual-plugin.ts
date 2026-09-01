@@ -1477,17 +1477,22 @@ export function handleFuncCall(
     }
     case "task": {
       const body = extractFirstStringArg(text);
+      // Pill shows even when the body is missing — an auto-paired `#task()`
+      // (typed by hand, before a description exists) still gets the pill, so the
+      // visual editor confirms "yes, this function exists" while the user is
+      // still typing rather than staying silent until the call is fully formed.
+      // Mirrors the `due` case; addresses issue #24.
+      if (showPill) {
+        decos.push(
+          Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
+        );
+      }
       if (body !== null && body !== undefined) {
         const done = /\bdone\s*:\s*true\b/.test(text);
         // Look for the due date only after the `due:` keyword so a date
         // inside the body string can't be mistaken for it.
         const dueIdx = text.search(/\bdue\s*:/);
         const due = dueIdx >= 0 ? extractDateLiteral(text.slice(dueIdx)) : null;
-        if (showPill) {
-          decos.push(
-            Decoration.widget({ widget: new FuncPillWidget(from, "task"), side: -1 }).range(from),
-          );
-        }
         // Caret on/adjacent to the call → reveal the raw `#task("…")` source
         // for inline editing, the same temporary-expand-on-cursor affordance
         // footnote and wikilink use. The pill above stays available for the

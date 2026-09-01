@@ -185,4 +185,16 @@ describe("#task reveals raw source when the caret enters it (issue #23)", () => 
     const { decos } = decorate(CALL, [CALL.length]);
     expect(fullRangeReplace(decos)).toBeUndefined();
   });
+
+  it("empty auto-paired `#task()` still shows the pill as existence feedback (issue #24)", () => {
+    // Typing `#task(` autopairs to `#task()`; no body yet, but the pill must
+    // still appear so the editor confirms the function is recognized.
+    const EMPTY = "#task()";
+    const { decos } = decorate(EMPTY, [EMPTY.indexOf("(") + 1]);
+    const widgets = widgetsIn(decos);
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
+    // No checkbox widget replaces the (empty) call.
+    expect(decos.find((d) => d.from === 0 && d.to === EMPTY.length)).toBeUndefined();
+  });
 });

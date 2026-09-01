@@ -1,8 +1,9 @@
 import { type EditorView, type KeyBinding } from "@codemirror/view";
-import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
+import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line, type StateEffect } from "@codemirror/state";
+import { syntaxTree, foldedRanges, foldEffect } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
 import { toggleWrap } from "./wrap-format";
+import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 
 /**
  * When true, indent/outdent of a list item also moves any nested
@@ -465,17 +466,74 @@ function applyIndentPlan(view: EditorView, plan: { changes: { from: number; to?:
   }
 }
 
+/** Is `text` a list item whose leading indent is exactly `indent`? */
+function isListItemAt(text: string, indent: number): boolean {
+  const m = text.match(/^(\s*)(?:[-+]|\d+\.)\s/);
+  return !!m && m[1].length === indent;
+}
+
+/** The explicit number of a numbered (`N.`) item's first line, or null for a
+ *  `-`/`+` item. */
+function numberOf(firstLine: string): string | null {
+  const m = firstLine.match(/^\s*(\d+)\./);
+  return m ? m[1] : null;
+}
+
+/** Replace the leading `N.` number on a block's first line, keeping indent and
+ *  content. No-op when `newNum` is null or the first line isn't numbered. */
+function withNumber(blockText: string, newNum: string | null): string {
+  if (newNum === null) return blockText;
+  const nl = blockText.indexOf("\n");
+  const first = nl === -1 ? blockText : blockText.slice(0, nl);
+  const rest = nl === -1 ? "" : blockText.slice(nl);
+  return first.replace(/^(\s*)\d+\./, `$1${newNum}.`) + rest;
+}
+
+/** Length of the leading marker (indent + `-`/`+`/`N.` + separators) on the
+ *  first line of a block. */
+function markerLenOf(firstLine: string): number {
+  return firstLine.match(/^(\s*)(?:[-+]|\d+\.)[ \t]+/)?.[0].length ?? 0;
+}
+
 /**
- * Reorder a list item by swapping its content with the adjacent sibling's,
- * leaving the markers fixed in place — so an explicit `1. 2. 3.` numbering
- * stays in order (the number belongs to the position, not the moved text) and
- * a `+`/`-` list is unaffected. Self-contained and a single transaction: it
- * does NOT delegate to the generic move-line command, which interacted badly
- * with the visual decoration layer (the move would silently stop working after
- * a few presses). Only swaps with an immediately adjacent same-indent sibling;
- * at a list edge it consumes the key without moving — never falling through to
- * a page scroll. Returns false when the cursor is not on a list item, so the
- * caller can fall back to plain line movement for ordinary prose.
+ * Start line (1-based) of the previous same-indent sibling of the item at
+ * `curStart`, walking up over any blank lines and the sibling's own nested
+ * subtree. Null when the item is the first child of its parent (nothing above
+ * to swap with at this level).
+ */
+function prevSiblingStart(doc: EditorState["doc"], curStart: number, indent: number): number | null {
+  let n = curStart - 1;
+  while (n >= 1 && doc.line(n).text.trim() === "") n--;
+  if (n < 1) return null;
+  if (leadingWhitespace(doc.line(n).text) < indent) return null; // first child
+  while (n >= 1) {
+    const t = doc.line(n).text;
+    if (t.trim() === "") { n--; continue; }
+    const ind = leadingWhitespace(t);
+    if (ind < indent) return null;               // ran past into a shallower scope
+    if (ind === indent) return isListItemAt(t, indent) ? n : null;
+    n--;                                          // deeper — inside the sibling subtree
+  }
+  return null;
+}
+
+/**
+ * Reorder a list item, carrying its whole nested subtree with it: a parent item
+ * moves as a group, a leaf item moves alone. It swaps places with the adjacent
+ * same-indent sibling's subtree (past any blank-line gap between them), keeping
+ * the gap between the two blocks.
+ *
+ * Explicit `1. 2. 3.` numbering stays in document order — the number belongs to
+ * the position, not the moved text — so only the two blocks' first-line numbers
+ * are swapped back into place; `+`/`-` lists need no such fix. Nested numbering
+ * inside a moved block is untouched.
+ *
+ * Self-contained and a single transaction: it does NOT delegate to the generic
+ * move-line command, which interacted badly with the visual decoration layer
+ * (the move would silently stop working after a few presses). At a list edge it
+ * consumes the key without moving — never falling through to a page scroll.
+ * Returns false when the cursor is not on a list item, so the caller can fall
+ * back to plain line movement for ordinary prose.
  */
 function moveListItem(view: EditorView, dir: -1 | 1): boolean {
   const { state } = view;
@@ -483,32 +541,87 @@ function moveListItem(view: EditorView, dir: -1 | 1): boolean {
   const head = state.selection.main.head;
   const line = doc.lineAt(head);
   const m = line.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
-  if (!m) return false; // not a list item → caller falls back
+  if (!m) return false; // not a list item → caller falls back to plain line move
   const indent = m[1].length;
-  const targetNo = dir < 0 ? line.number - 1 : line.number + 1;
-  if (targetNo < 1 || targetNo > doc.lines) return true; // document edge → consume
-  const target = doc.line(targetNo);
-  const tm = target.text.match(/^(\s*)(?:[-+]|\d+\.)\s+/);
-  if (!tm || tm[1].length !== indent) return true; // not an adjacent sibling → consume
 
-  const curContentFrom = line.from + m[0].length;
-  const tgtContentFrom = target.from + tm[0].length;
-  const curContent = doc.sliceString(curContentFrom, line.to);
-  const tgtContent = doc.sliceString(tgtContentFrom, target.to);
-  const offset = Math.max(0, head - curContentFrom); // caret position within the content
+  // The current block is the item and everything nested under it.
+  const curStart = line.number;
+  const curEnd = listSubtreeEndLine(doc, curStart, indent);
+  const curText = doc.sliceString(doc.line(curStart).from, doc.line(curEnd).to);
+  const curNum = numberOf(line.text);
+  // Caret column within the current item's first-line content (after its marker).
+  const contentCol = Math.max(0, head - (line.from + m[0].length));
 
-  // Two non-overlapping content replacements, ordered ascending by position.
-  const changes = dir < 0
-    ? [{ from: tgtContentFrom, to: target.to, insert: curContent },
-       { from: curContentFrom, to: line.to, insert: tgtContent }]
-    : [{ from: curContentFrom, to: line.to, insert: tgtContent },
-       { from: tgtContentFrom, to: target.to, insert: curContent }];
-  // The moved content lands in the sibling's content slot; the caret follows.
-  const newHead = dir < 0
-    ? tgtContentFrom + offset
-    : tgtContentFrom + (tgtContent.length - curContent.length) + offset;
+  // Resolve the sibling block above/below to swap with.
+  let sibStart: number, sibEnd: number;
+  if (dir < 0) {
+    const s = prevSiblingStart(doc, curStart, indent);
+    if (s === null) return true; // no sibling above → consume
+    sibStart = s;
+    sibEnd = listSubtreeEndLine(doc, sibStart, indent);
+  } else {
+    let n = curEnd + 1;
+    while (n <= doc.lines && doc.line(n).text.trim() === "") n++;
+    if (n > doc.lines || !isListItemAt(doc.line(n).text, indent)) return true; // no sibling below
+    sibStart = n;
+    sibEnd = listSubtreeEndLine(doc, sibStart, indent);
+  }
+  const sibText = doc.sliceString(doc.line(sibStart).from, doc.line(sibEnd).to);
+  const sibNum = numberOf(doc.line(sibStart).text);
 
-  view.dispatch({ changes, selection: { anchor: newHead }, scrollIntoView: true, userEvent: "move.line" });
+  // Order the two blocks top→bottom and grab the untouched gap between them.
+  const upFirst = dir < 0 ? sibStart : curStart;
+  const upLast = dir < 0 ? sibEnd : curEnd;
+  const downFirst = dir < 0 ? curStart : sibStart;
+  const downLast = dir < 0 ? curEnd : sibEnd;
+  const regionFrom = doc.line(upFirst).from;
+  const regionTo = doc.line(downLast).to;
+  const gap = doc.sliceString(doc.line(upLast).to, doc.line(downFirst).from);
+
+  // After the swap the blocks trade places; the top position keeps the top
+  // number and the bottom keeps the bottom number (positional numbering).
+  const upText = dir < 0 ? sibText : curText;   // originally on top
+  const downText = dir < 0 ? curText : sibText; // originally on bottom
+  const upNum = dir < 0 ? sibNum : curNum;
+  const downNum = dir < 0 ? curNum : sibNum;
+  const newTop = withNumber(downText, upNum);   // bottom block rises, shows top's number
+  const newBottom = withNumber(upText, downNum); // top block sinks, shows bottom's number
+  const insert = newTop + gap + newBottom;
+
+  // Where each block lands after the swap.
+  const curIsTop = dir < 0; // moving up puts the current block on top
+  const currentNewText = curIsTop ? newTop : newBottom;
+  const curNewStart = curIsTop ? regionFrom : regionFrom + newTop.length + gap.length;
+  const sibNewText = curIsTop ? newBottom : newTop;
+  const sibNewStart = curIsTop ? regionFrom + newTop.length + gap.length : regionFrom;
+  const newHead = curNewStart + markerLenOf(currentNewText) + contentCol;
+
+  // Preserve folds across the move. The swap deletes and reinserts the blocks,
+  // which would drop any fold on them (a collapsed parent would spring open).
+  // Re-apply each fold that was inside the region at its new position: within a
+  // block the content is identical apart from a possibly-changed first-line
+  // number, so a fold shifts by the block's move distance plus that number's
+  // length delta.
+  const curFrom = doc.line(curStart).from, curTo = doc.line(curEnd).to;
+  const sibFrom = doc.line(sibStart).from, sibTo = doc.line(sibEnd).to;
+  const curDelta = currentNewText.length - curText.length;
+  const sibDelta = sibNewText.length - sibText.length;
+  const refolds: StateEffect<unknown>[] = [];
+  foldedRanges(state).between(regionFrom, regionTo, (from, to) => {
+    if (from >= curFrom && to <= curTo) {
+      refolds.push(foldEffect.of({ from: curNewStart + (from - curFrom) + curDelta, to: curNewStart + (to - curFrom) + curDelta }));
+    } else if (from >= sibFrom && to <= sibTo) {
+      refolds.push(foldEffect.of({ from: sibNewStart + (from - sibFrom) + sibDelta, to: sibNewStart + (to - sibFrom) + sibDelta }));
+    }
+  });
+
+  view.dispatch({
+    changes: { from: regionFrom, to: regionTo, insert },
+    selection: { anchor: newHead },
+    effects: refolds,
+    scrollIntoView: true,
+    userEvent: "move.line",
+  });
   return true;
 }
 
