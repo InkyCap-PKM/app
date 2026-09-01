@@ -33,9 +33,21 @@ function handleSpace(view: EditorView, from: number): boolean {
     const indent = task[1];
     const done = /[xX]/.test(task[2]);
     const insert = done ? '#task("", done: true)' : '#task("")';
+    // The `#` of the inserted call sits just after any indentation.
+    const funcFrom = line.from + indent.length;
+    // Keep the fresh call expanded on the cursor line, exactly like the `>`
+    // quote branch below. Without this, the visual plugin collapses `#task(…)`
+    // into its checkbox widget the instant the call is complete — the caret
+    // placed between the quotes then has no live text to sit in, so the task
+    // description the user keeps typing lands *after* the widget
+    // (`#task("")Task text` instead of `#task("Task text")`). expandFunc reveals
+    // the raw source while the cursor stays on the line, so typing flows into
+    // the string; moving away collapses it back to the widget. The pill menu
+    // (right-click / click) remains available for done/due/label. See issue #23.
     view.dispatch({
       changes: { from: line.from, to: from, insert: indent + insert } as ChangeSpec,
-      selection: { anchor: line.from + indent.length + '#task("'.length },
+      selection: { anchor: funcFrom + '#task("'.length },
+      effects: expandFunc.of(funcFrom),
     });
     return true;
   }

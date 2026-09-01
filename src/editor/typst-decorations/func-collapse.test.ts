@@ -151,3 +151,38 @@ describe("content-bracket #func[...] collapse is unchanged", () => {
     expect(decos[1].to).toBe(CALL.length);
   });
 });
+
+describe("#task reveals raw source when the caret enters it (issue #23)", () => {
+  const CALL = '#task("Buy milk")';
+
+  const fullRangeReplace = (decos: Range<Decoration>[]) =>
+    decos.find((d) => d.from === 0 && d.to === CALL.length);
+
+  it("caret away → collapses to the checkbox widget over the whole range", () => {
+    const state = EditorState.create({ doc: `${CALL}\n\nprose` });
+    const decos: Range<Decoration>[] = [];
+    // onCursor false, caret far away.
+    handleFuncCall(state, 0, CALL.length, decos, false, new Set([CALL.length + 5]), false, null);
+    const replace = fullRangeReplace(decos);
+    expect(replace, "task widget replaces the call range").toBeTruthy();
+    expect(replace!.value.spec.widget).toBeTruthy();
+  });
+
+  it("caret inside → raw source stays live (no full-range replace), pill shown", () => {
+    // Caret between the quotes, as right after the shortcut / slash insert.
+    const caret = CALL.indexOf('"') + 1;
+    const { decos, traverse } = decorate(CALL, [caret]);
+    // No decoration replaces the whole call, so `#task("…")` is editable text.
+    expect(fullRangeReplace(decos)).toBeUndefined();
+    expect(traverse).toBe(false);
+    // The pill above stays available for the done/due/label menu.
+    const widgets = widgetsIn(decos);
+    expect(widgets).toHaveLength(1);
+    expect(widgets[0]).toBeInstanceOf(FuncPillWidget);
+  });
+
+  it("caret adjacent at the call end → still reveals raw source", () => {
+    const { decos } = decorate(CALL, [CALL.length]);
+    expect(fullRangeReplace(decos)).toBeUndefined();
+  });
+});
