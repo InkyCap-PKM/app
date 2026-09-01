@@ -579,13 +579,24 @@ const LIST_INDENT_CH = 1.2;
  * absorb each typed space back into the widget, making the keystroke look like a
  * no-op (the text never moves right).
  */
+/**
+ * Whether a list/enum marker is immediately followed by a separating space or
+ * tab — the character that turns `-`/`+`/`N.` into an actual Typst list item.
+ * A bare marker with no separator is just typed text, so the visual editor
+ * leaves it undecorated until the writer types the space.
+ */
+function markerHasSeparator(state: EditorState, node: { to: number }): boolean {
+  return /^[ \t]/.test(state.doc.sliceString(node.to, node.to + 1));
+}
+
 function markerReplaceRange(
   state: EditorState,
   node: { from: number; to: number },
 ): [number, number] {
   const lineFrom = state.doc.lineAt(node.from).from;
-  const hasSeparatorSpace = /^[ \t]/.test(state.doc.sliceString(node.to, node.to + 1));
-  return [lineFrom, node.to + (hasSeparatorSpace ? 1 : 0)];
+  // Callers only reach here for markers that have a separator (see the
+  // ListMarker/EnumMarker cases), so the separator space is always folded in.
+  return [lineFrom, node.to + (markerHasSeparator(state, node) ? 1 : 0)];
 }
 
 function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFrom: number) {
@@ -733,6 +744,14 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             break;
           }
           case "ListMarker": {
+            // Only render the bullet once the marker is followed by a real
+            // separating space — i.e. `- ` is a list item but a bare `-` is
+            // just a typed character. Rendering a bullet on a bare marker made
+            // the line *look* like a list before the writer had typed the
+            // space, so their next keystroke produced `-text` (not a list) and
+            // the bullet vanished. Gating on the space matches how markdown
+            // editors form lists and keeps the display honest.
+            if (!markerHasSeparator(state, node)) break;
             pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget("•") }).range(...markerReplaceRange(state, node)),
@@ -740,6 +759,7 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
             return false;
           }
           case "EnumMarker": {
+            if (!markerHasSeparator(state, node)) break;
             pushListIndent(decos, state, node.from);
             decos.push(
               Decoration.replace({ widget: new BulletWidget(enumItemNumber(state, node.from)) }).range(...markerReplaceRange(state, node)),

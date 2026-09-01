@@ -129,36 +129,18 @@ function handlePlus(view: EditorView, from: number): boolean {
 // remain available via the `/` slash menu, the command palette, and the
 // Annotations pane — only the delimiter-run typing shortcuts are gone.
 
-// Typing the first content character immediately after a bare list marker
-// (`-`, `+`, or an explicit number `N.`) inserts the separating space for the
-// user, so the list forms without them having to remember to press space —
-// otherwise `-text` / `+text` / `1.text` compile as literal prose, not a list.
-function handleListMarkerSpace(view: EditorView, from: number, text: string): boolean {
-  const line = view.state.doc.lineAt(from);
-  const beforeCursor = view.state.doc.sliceString(line.from, from);
-  const m = beforeCursor.match(/^\s*([-+]|\d+\.)$/);
-  if (!m) return false;
-  const marker = m[1];
-  // Don't break the repeated-marker shorthands: `++`/`+++` (footnote / rule)
-  // and `--`/`---` (en/em dash). A repeated bullet marker is never a list.
-  if ((marker === "+" || marker === "-") && text === marker) return false;
-  // Don't turn a decimal ("1.5") into a list item.
-  if (marker.endsWith(".") && /\d/.test(text)) return false;
-  view.dispatch({
-    changes: { from, insert: " " + text } as ChangeSpec,
-    selection: { anchor: from + 2 },
-  });
-  return true;
-}
+// Lists form the same way as in markdown editors: the writer types the marker
+// (`-`, `+`, or `N.`) followed by a space themselves. Typst's parser then
+// recognizes `- `/`+ `/`N. ` as a list item and the visual layer renders the
+// bullet or number — no marker character is treated specially on its own. Once
+// a list has started, pressing Enter continues it with a fresh marker (see
+// `continueList` in keymaps.ts), matching the Obsidian-style flow.
 
 export const markdownShortcuts: Extension = EditorView.inputHandler.of(
   (view, from, to, text) => {
     if (from !== to) return false;
     if (text === " ") return handleSpace(view, from);
     if (text === "+" && handlePlus(view, from)) return true;
-    // Any single character can complete a bare list marker into a real list
-    // item by auto-inserting the separating space.
-    if (text.length === 1) return handleListMarkerSpace(view, from, text);
     return false;
   },
 );

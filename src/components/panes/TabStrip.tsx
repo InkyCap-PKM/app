@@ -17,6 +17,7 @@ import {
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
+  Plus,
   Scroll,
   LibraryBig,
   GitCompareArrows,
@@ -407,7 +408,7 @@ const TabStrip: Component<{ leaf: LeafPane }> = (props) => {
           }}
           title={t("tabStrip.newTab")}
         >
-          {"+"}
+          <Plus size={14} />
         </button>
       </div>
       <TabBarMenu leaf={props.leaf} />
