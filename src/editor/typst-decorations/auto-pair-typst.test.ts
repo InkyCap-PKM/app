@@ -1,18 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
-import { closeBrackets } from "@codemirror/autocomplete";
+import { EditorView, runScopeHandlers, keymap } from "@codemirror/view";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { defaultKeymap } from "@codemirror/commands";
 import { autoPairTypstInput } from "./auto-pair-typst";
 
 // These tests rely on the default `settings.editor.auto_pair_typst === true`
 // (see stores/settings.ts DEFAULTS); the store isn't mutated elsewhere in the
 // test process.
 //
-// The handler under test no longer auto-closes the Typst markup delimiters
-// (* _ ` $) on a bare keystroke — only the real bracket/quote pairs do, via
-// CodeMirror's closeBrackets(). Typing a delimiter with a selection still wraps
-// it. This mirrors Zettlr/Obsidian and keeps editing existing markup
-// predictable (typing `*` after a word adds one star, not two).
+// The handler under test does not auto-close the markup delimiters * _ $ on a
+// bare keystroke — typing one after a word adds a single delimiter, not two.
+// Backtick is the exception: it auto-closes into a pair like a bracket (with
+// type-over and delete-both), because an unclosed backtick otherwise swallows
+// the rest of the line as raw. Typing any delimiter with a selection wraps it.
 
 function mk(doc = "", anchor?: number, head?: number) {
   return new EditorView({
@@ -22,8 +23,13 @@ function mk(doc = "", anchor?: number, head?: number) {
         ? { anchor, head: head ?? anchor }
         : undefined,
       // Mirror real precedence: closeBrackets first (as in baseExtensions),
-      // autoPairTypstInput after.
-      extensions: [closeBrackets(), autoPairTypstInput],
+      // autoPairTypstInput after, then the shared keymaps. autoPairTypstInput
+      // carries both the input handler and its own Backspace binding.
+      extensions: [
+        closeBrackets(),
+        autoPairTypstInput,
+        keymap.of([...closeBracketsKeymap, ...defaultKeymap]),
+      ],
     }),
     parent: document.body,
   });
@@ -41,8 +47,14 @@ function typeChar(view: EditorView, ch: string) {
   view.dispatch(view.state.replaceSelection(ch));
 }
 
-describe("auto-pair-typst: no bare-keystroke auto-close", () => {
-  for (const ch of ["*", "_", "`", "$"]) {
+// Runs the registered keymaps for a key, the way the real editor does on a
+// keypress — used to exercise the Backspace delete-both binding.
+function pressKey(view: EditorView, key: string) {
+  runScopeHandlers(view, new KeyboardEvent("keydown", { key }), "editor");
+}
+
+describe("auto-pair-typst: no bare-keystroke auto-close for * _ $", () => {
+  for (const ch of ["*", "_", "$"]) {
     it(`typing "${ch}" with no selection inserts a single character`, () => {
       const v = mk();
       typeChar(v, ch);
@@ -57,6 +69,61 @@ describe("auto-pair-typst: no bare-keystroke auto-close", () => {
     typeChar(v, "*");
     expect(v.state.doc.toString()).toBe("*bol*d*");
     expect(v.state.selection.main.head).toBe(7);
+    v.destroy();
+  });
+});
+
+describe("auto-pair-typst: backtick auto-closes like a bracket", () => {
+  it("typing ` on an empty line inserts a pair with the caret between", () => {
+    const v = mk();
+    typeChar(v, "`");
+    expect(v.state.doc.toString()).toBe("``");
+    expect(v.state.selection.main.head).toBe(1);
+    v.destroy();
+  });
+
+  it("typing ` before whitespace closes the pair", () => {
+    const v = mk("a  b", 2, 2); // caret between the two spaces
+    typeChar(v, "`");
+    expect(v.state.doc.toString()).toBe("a `` b");
+    expect(v.state.selection.main.head).toBe(3);
+    v.destroy();
+  });
+
+  it("typing the closing ` steps over the auto-inserted one", () => {
+    const v = mk();
+    typeChar(v, "`"); // `|`
+    for (const ch of "code") typeChar(v, ch); // `code|`
+    typeChar(v, "`"); // steps past the close rather than adding one
+    expect(v.state.doc.toString()).toBe("`code`");
+    expect(v.state.selection.main.head).toBe(6);
+    v.destroy();
+  });
+
+  it("mid-word (before a letter) inserts a single backtick", () => {
+    const v = mk("word", 2, 2); // caret inside the word
+    typeChar(v, "`");
+    expect(v.state.doc.toString()).toBe("wo`rd");
+    expect(v.state.selection.main.head).toBe(3);
+    v.destroy();
+  });
+
+  it("Backspace between an empty pair deletes both backticks", () => {
+    const v = mk();
+    typeChar(v, "`"); // `|`
+    pressKey(v, "Backspace");
+    expect(v.state.doc.toString()).toBe("");
+    expect(v.state.selection.main.head).toBe(0);
+    v.destroy();
+  });
+
+  it("typing ` around a selection wraps it as `code`", () => {
+    const v = mk("code", 0, 4);
+    typeChar(v, "`");
+    expect(v.state.doc.toString()).toBe("`code`");
+    const sel = v.state.selection.main;
+    expect(sel.from).toBe(1);
+    expect(sel.to).toBe(5);
     v.destroy();
   });
 });
