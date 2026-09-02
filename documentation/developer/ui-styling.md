@@ -171,6 +171,18 @@ combobox) round only their outer corners using the same token
 - **Line-heights consolidated onto the leading scale (2026-09).** 1.3–1.6
   literals mapped to `--leading-tight/normal/relaxed` (deltas ≤ 0.05).
   Structural values (0, 1, and two 1.2s) stay literal by design.
+- **Accessibility is token-level (2026-09).** Two media blocks at the end of
+  `themes.css` override tokens only, so every theme/palette follows without
+  component awareness: `prefers-reduced-motion` collapses `--dur-*` and
+  blankets keyframe animations (spinners freeze on frame one — acceptable);
+  `prefers-contrast: more` folds `--border-subtle` into `--border-primary`,
+  `--fg-dim` into `--fg-muted`, and strengthens the focus ring. Don't add
+  per-component reduced-motion rules — the tokens already carry it.
+- **`--fg-dim` meets 4.5:1 in every palette (2026-09).** It was 2.6–3.2:1,
+  which is fine for decoration but this token carries information (hints,
+  shortcuts, timestamps). Values were tuned per palette to ≥ 4.5:1 while
+  staying visibly quieter than `--fg-muted`. `--fg-gutter` keeps the old
+  quieter values on purpose — line numbers are decorative.
 - **Seams are drawn once (2026-09).** Where two regions already differ by
   background (editor column vs chrome), the separating hairline uses
   `--border-subtle`, not `--border-primary` — the boundary shouldn't be
