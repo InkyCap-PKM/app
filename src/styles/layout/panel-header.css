@@ -31,6 +31,45 @@
   letter-spacing: 0.3px;
 }
 
+/* ── Pinned pane header, scrolling pane body ──────────────────────────────
+   Every left-sidebar pane is laid out as a fixed head (its section header,
+   plus any filter box or action row) over one scrolling body. The head stays
+   put while the list moves, and the scrollbar begins beneath the head rather
+   than running the full height of the pane.
+
+   `.left-sidebar__content` is the fixed-size box (see app-shell.css); a pane
+   fills it and only `.left-sidebar__pane-body` scrolls. The body pulls itself
+   back out to that box's edges and re-adds the inset as its own padding, so
+   its scrollbar rides the sidebar's outer edge while its rows stay aligned
+   with the header above them. On the right it stops `--resize-handle-width`
+   short: the width-drag handle is laid over that strip and would otherwise
+   cover half the scrollbar, leaving it hard to grab.
+
+   A pane that owns its whole layout (Search, Help) can fill the content box
+   directly instead; it just has to keep a single scrolling region of its own
+   rather than growing past the box. */
+.left-sidebar__pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Everything above the body keeps its natural height. */
+.left-sidebar__pane > :not(.left-sidebar__pane-body) {
+  flex-shrink: 0;
+}
+
+.left-sidebar__pane-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-left: calc(-1 * var(--space-4));
+  margin-right: calc(var(--resize-handle-width) - var(--space-4));
+  margin-bottom: calc(-1 * var(--space-4));
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .left-sidebar__add-btn {
   color: var(--fg-muted);
   font-size: var(--text-lg);

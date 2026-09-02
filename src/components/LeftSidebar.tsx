@@ -424,10 +424,10 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
   // --- File-tree virtualization (fixed-height windowing) ---
   // Rows are uniform-height `.sidebar-item`s, so a flat windowed list keeps
   // the DOM bounded regardless of notebox size. The scroll container is the
-  // shared `.left-sidebar__content` (the Files header sits above the tree),
+  // pane's `.left-sidebar__pane-body` (the Files header sits above it, pinned),
   // so the window is derived from how far the tree has scrolled past that
   // container's top edge — measured by rects, which needs no CSS change and
-  // doesn't disturb the other sidebar modes that share the same scroller.
+  // doesn't disturb the other sidebar panes that use the same wrapper.
   const TREE_OVERSCAN = 8; // rows rendered beyond the viewport on each side
   const [rowHeight, setRowHeight] = createSignal(28); // measured from a live row
   const [treeScrolledPast, setTreeScrolledPast] = createSignal(0); // px of tree above the viewport top
@@ -522,7 +522,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
     detachTreeScroll?.();
     treeRootEl = el;
     requestAnimationFrame(() => {
-      const scrollEl = el.closest<HTMLElement>(".left-sidebar__content");
+      const scrollEl = el.closest<HTMLElement>(".left-sidebar__pane-body");
       if (!scrollEl) return;
       treeScrollEl = scrollEl;
       const onScroll = () => recomputeTreeWindow();
@@ -1498,145 +1498,149 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
       </div>
       <div class="left-sidebar__content">
         <Show when={mode() === "collections"}>
-          <div class="left-sidebar__section-header">
-            <span>{t("leftSidebar.collections")}</span>
-            <div class="left-sidebar__header-actions">
-              <div class="left-sidebar__sort-wrap">
-                <button
-                  ref={collectionSortBtnRef}
-                  class="ui-icon-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowCollectionSortMenu((v) => !v);
-                  }}
-                  title={t("leftSidebar.sortCollections")}
-                  aria-label={t("leftSidebar.sortCollections")}
-                >
-                  <ArrowDownNarrowWide size={18} />
-                </button>
-                <Show when={showCollectionSortMenu()}>
-                  <div
-                    class="context-menu"
-                    ref={(el) => anchorPanelMenu(collectionSortBtnRef, el)}
-                    use:clickOutside={{
-                      onDismiss: () => setShowCollectionSortMenu(false),
-                      ignore: collectionSortBtnRef,
+          <div class="left-sidebar__pane">
+            <div class="left-sidebar__section-header">
+              <span>{t("leftSidebar.collections")}</span>
+              <div class="left-sidebar__header-actions">
+                <div class="left-sidebar__sort-wrap">
+                  <button
+                    ref={collectionSortBtnRef}
+                    class="ui-icon-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCollectionSortMenu((v) => !v);
                     }}
+                    title={t("leftSidebar.sortCollections")}
+                    aria-label={t("leftSidebar.sortCollections")}
                   >
-                    <For each={FILE_SORT_OPTIONS}>
-                      {(opt) => (
-                        <button
-                          classList={{
-                            "context-menu__item": true,
-                            "context-menu__item--active":
-                              collectionSortMode() === opt.value,
-                          }}
-                          onClick={() => {
-                            setCollectionSortMode(opt.value);
-                            setShowCollectionSortMenu(false);
-                          }}
-                        >
-                          {t(opt.labelKey)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
+                    <ArrowDownNarrowWide size={18} />
+                  </button>
+                  <Show when={showCollectionSortMenu()}>
+                    <div
+                      class="context-menu"
+                      ref={(el) => anchorPanelMenu(collectionSortBtnRef, el)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowCollectionSortMenu(false),
+                        ignore: collectionSortBtnRef,
+                      }}
+                    >
+                      <For each={FILE_SORT_OPTIONS}>
+                        {(opt) => (
+                          <button
+                            classList={{
+                              "context-menu__item": true,
+                              "context-menu__item--active":
+                                collectionSortMode() === opt.value,
+                            }}
+                            onClick={() => {
+                              setCollectionSortMode(opt.value);
+                              setShowCollectionSortMenu(false);
+                            }}
+                          >
+                            {t(opt.labelKey)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+                <button
+                  class={`ui-icon-btn${showCollectionSearch() ? " is-active" : ""}`}
+                  onClick={() => {
+                    const next = !showCollectionSearch();
+                    setShowCollectionSearch(next);
+                    if (!next) setCollectionFilter("");
+                  }}
+                  title={t("leftSidebar.filterCollections")}
+                  aria-label={t("leftSidebar.filterCollections")}
+                  aria-pressed={showCollectionSearch()}
+                >
+                  <Search size={14} />
+                </button>
+                <button
+                  class="pane-action-btn left-sidebar__add-btn"
+                  onClick={createCollection}
+                  title={t("leftSidebar.newCollection")}
+                  aria-label={t("leftSidebar.newCollection")}
+                >
+                  <LibraryPlusIcon size={18} />
+                </button>
+              </div>
+            </div>
+            <Show when={showCollectionSearch()}>
+              <div class="left-sidebar__filter-wrap">
+                <input
+                  class="left-sidebar__filter-input"
+                  type="text"
+                  placeholder={t("leftSidebar.filterCollectionsPlaceholder")}
+                  value={collectionFilter()}
+                  onInput={(e) => setCollectionFilter(e.currentTarget.value)}
+                  autofocus
+                />
+                <Show when={collectionFilter().length > 0}>
+                  <button
+                    class="left-sidebar__filter-clear"
+                    onMouseDown={(e) => { e.preventDefault(); setCollectionFilter(""); }}
+                    title={t("references.clearFilter")}
+                    aria-label={t("references.clearFilter")}
+                  >
+                    <X size={12} />
+                  </button>
                 </Show>
               </div>
-              <button
-                class={`ui-icon-btn${showCollectionSearch() ? " is-active" : ""}`}
-                onClick={() => {
-                  const next = !showCollectionSearch();
-                  setShowCollectionSearch(next);
-                  if (!next) setCollectionFilter("");
-                }}
-                title={t("leftSidebar.filterCollections")}
-                aria-label={t("leftSidebar.filterCollections")}
-                aria-pressed={showCollectionSearch()}
+            </Show>
+            <div class="left-sidebar__pane-body">
+              <Show
+                when={!collections.loading}
+                fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
               >
-                <Search size={14} />
-              </button>
-              <button
-                class="pane-action-btn left-sidebar__add-btn"
-                onClick={createCollection}
-                title={t("leftSidebar.newCollection")}
-                aria-label={t("leftSidebar.newCollection")}
-              >
-                <LibraryPlusIcon size={18} />
-              </button>
-            </div>
-          </div>
-          <Show when={showCollectionSearch()}>
-            <div class="left-sidebar__filter-wrap">
-              <input
-                class="left-sidebar__filter-input"
-                type="text"
-                placeholder={t("leftSidebar.filterCollectionsPlaceholder")}
-                value={collectionFilter()}
-                onInput={(e) => setCollectionFilter(e.currentTarget.value)}
-                autofocus
-              />
-              <Show when={collectionFilter().length > 0}>
-                <button
-                  class="left-sidebar__filter-clear"
-                  onMouseDown={(e) => { e.preventDefault(); setCollectionFilter(""); }}
-                  title={t("references.clearFilter")}
-                  aria-label={t("references.clearFilter")}
+                <For
+                  each={sortedFilteredCollections()}
+                  fallback={<p class="sidebar-hint">{t("leftSidebar.noCollections")}</p>}
                 >
-                  <X size={12} />
-                </button>
+                  {(col) => (
+                    <Show
+                      when={renamingPath() === col.path}
+                      fallback={
+                        <div
+                          classList={{
+                            "sidebar-item": true,
+                            // Highlight the collection whose tab is currently active,
+                            // mirroring how the file tree marks the open file.
+                            "sidebar-item--active":
+                              getActiveTab()?.type === "collection" &&
+                              pathEquals(getActiveTab()?.path, col.path),
+                          }}
+                          onClick={() => openCollection(col)}
+                          onContextMenu={(e) => handleCollectionContext(e, col)}
+                        >
+                          <span class="sidebar-item__icon">
+                            <RuleIcon iconEmoji={col.icon ?? "lucide:folder-pen"} name={col.name} size={14} />
+                          </span>
+                          <span class="sidebar-item__label">{col.name}</span>
+                        </div>
+                      }
+                    >
+                      <div class="sidebar-item sidebar-item--editing">
+                        <input
+                          class="sidebar-item__rename-input"
+                          type="text"
+                          value={renameValue()}
+                          onInput={(e) => setRenameValue(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename();
+                            if (e.key === "Escape") setRenamingPath(null);
+                          }}
+                          onBlur={commitRename}
+                          ref={(el) => setTimeout(() => el.focus(), 0)}
+                        />
+                      </div>
+                    </Show>
+                  )}
+                </For>
               </Show>
             </div>
-          </Show>
-          <Show
-            when={!collections.loading}
-            fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
-          >
-            <For
-              each={sortedFilteredCollections()}
-              fallback={<p class="sidebar-hint">{t("leftSidebar.noCollections")}</p>}
-            >
-              {(col) => (
-                <Show
-                  when={renamingPath() === col.path}
-                  fallback={
-                    <div
-                      classList={{
-                        "sidebar-item": true,
-                        // Highlight the collection whose tab is currently active,
-                        // mirroring how the file tree marks the open file.
-                        "sidebar-item--active":
-                          getActiveTab()?.type === "collection" &&
-                          pathEquals(getActiveTab()?.path, col.path),
-                      }}
-                      onClick={() => openCollection(col)}
-                      onContextMenu={(e) => handleCollectionContext(e, col)}
-                    >
-                      <span class="sidebar-item__icon">
-                        <RuleIcon iconEmoji={col.icon ?? "lucide:folder-pen"} name={col.name} size={14} />
-                      </span>
-                      <span class="sidebar-item__label">{col.name}</span>
-                    </div>
-                  }
-                >
-                  <div class="sidebar-item sidebar-item--editing">
-                    <input
-                      class="sidebar-item__rename-input"
-                      type="text"
-                      value={renameValue()}
-                      onInput={(e) => setRenameValue(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename();
-                        if (e.key === "Escape") setRenamingPath(null);
-                      }}
-                      onBlur={commitRename}
-                      ref={(el) => setTimeout(() => el.focus(), 0)}
-                    />
-                  </div>
-                </Show>
-              )}
-            </For>
-          </Show>
+          </div>
         </Show>
 
         <Show when={mode() === "agenda"}>
@@ -1644,234 +1648,238 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         </Show>
 
         <Show when={mode() === "filetree"}>
-          <div class="left-sidebar__section-header">
-            <span>{t("leftSidebar.files")}</span>
-            <div class="left-sidebar__header-actions">
-              <div class="left-sidebar__sort-wrap">
-                <button
-                  ref={fileSortBtnRef}
-                  class="ui-icon-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowFileSortMenu((v) => !v);
-                  }}
-                  title={t("leftSidebar.sortFiles")}
-                  aria-label={t("leftSidebar.sortFiles")}
-                >
-                  <ArrowDownNarrowWide size={18} />
-                </button>
-                <Show when={showFileSortMenu()}>
-                  <div
-                    class="context-menu"
-                    ref={(el) => anchorPanelMenu(fileSortBtnRef, el)}
-                    use:clickOutside={{
-                      onDismiss: () => setShowFileSortMenu(false),
-                      ignore: fileSortBtnRef,
+          <div class="left-sidebar__pane">
+            <div class="left-sidebar__section-header">
+              <span>{t("leftSidebar.files")}</span>
+              <div class="left-sidebar__header-actions">
+                <div class="left-sidebar__sort-wrap">
+                  <button
+                    ref={fileSortBtnRef}
+                    class="ui-icon-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowFileSortMenu((v) => !v);
                     }}
+                    title={t("leftSidebar.sortFiles")}
+                    aria-label={t("leftSidebar.sortFiles")}
                   >
-                    <For each={FILE_TREE_SORT_OPTIONS}>
-                      {(opt) => (
-                        <button
-                          classList={{
-                            "context-menu__item": true,
-                            "context-menu__item--active": fileSortMode() === opt.value,
-                          }}
-                          onClick={() => {
-                            setFileSortMode(opt.value);
-                            setShowFileSortMenu(false);
-                          }}
-                        >
-                          {t(opt.labelKey)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-              <button
-                class="ui-icon-btn"
-                onClick={() =>
-                  allDirsExpanded() ? collapseAllDirs() : expandAllDirs()
-                }
-                title={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
-                aria-label={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
-              >
-                <Show
-                  when={allDirsExpanded()}
-                  fallback={<ListChevronsUpDown size={18} />}
-                >
-                  <ListChevronsDownUp size={18} />
-                </Show>
-              </button>
-              <div
-                class="left-sidebar__split-btn"
-                onClick={(e) => e.stopPropagation()}
-              >
+                    <ArrowDownNarrowWide size={18} />
+                  </button>
+                  <Show when={showFileSortMenu()}>
+                    <div
+                      class="context-menu"
+                      ref={(el) => anchorPanelMenu(fileSortBtnRef, el)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowFileSortMenu(false),
+                        ignore: fileSortBtnRef,
+                      }}
+                    >
+                      <For each={FILE_TREE_SORT_OPTIONS}>
+                        {(opt) => (
+                          <button
+                            classList={{
+                              "context-menu__item": true,
+                              "context-menu__item--active": fileSortMode() === opt.value,
+                            }}
+                            onClick={() => {
+                              setFileSortMode(opt.value);
+                              setShowFileSortMenu(false);
+                            }}
+                          >
+                            {t(opt.labelKey)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
                 <button
-                  class="left-sidebar__split-btn__main"
-                  onClick={() => createNewNote()}
-                  title={(() => {
-                    const rule = creationRules().find((r) => r.id === "new-note");
-                    const hotkey = rule?.hotkey ?? "Ctrl+N";
-                    return t("leftSidebar.newNoteTitle", { hotkey });
-                  })()}
-                  aria-label={t("leftSidebar.newNote")}
+                  class="ui-icon-btn"
+                  onClick={() =>
+                    allDirsExpanded() ? collapseAllDirs() : expandAllDirs()
+                  }
+                  title={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
+                  aria-label={allDirsExpanded() ? t("leftSidebar.collapseAllFolders") : t("leftSidebar.expandAllFolders")}
                 >
-                  <FilePlus2 size={14} />
-                </button>
-                <button
-                  ref={newMenuBtnRef}
-                  class="left-sidebar__split-btn__caret"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowNewMenu((v) => !v);
-                  }}
-                  title={t("leftSidebar.moreOptions")}
-                  aria-label={t("leftSidebar.moreCreateOptions")}
-                  aria-haspopup="menu"
-                  aria-expanded={showNewMenu()}
-                >
-                  <ChevronDown size={12} />
-                </button>
-                <Show when={showNewMenu()}>
-                  <div
-                    class="context-menu"
-                    role="menu"
-                    ref={(el) => anchorPanelMenu(newMenuBtnRef, el)}
+                  <Show
+                    when={allDirsExpanded()}
+                    fallback={<ListChevronsUpDown size={18} />}
                   >
-                    <button
-                      class="context-menu__item context-menu__item--icon"
-                      role="menuitem"
-                      onClick={createNewFolderAtRoot}
-                    >
-                      <Folder size={14} />
-                      <span>{t("leftSidebar.newFolder")}</span>
-                    </button>
-                    <button
-                      class="context-menu__item context-menu__item--icon"
-                      role="menuitem"
-                      onClick={uploadIntoNotebox}
-                    >
-                      <Download size={14} />
-                      <span>{t("leftSidebar.copyIntoNotebox")}</span>
-                    </button>
-                  </div>
-                </Show>
-              </div>
-            </div>
-          </div>
-          <Show
-            // Only show the loading hint on the very first load. Solid keeps
-            // the resolved tree available during a refetch (e.g. after a move),
-            // so gating on "have we any data yet" keeps the tree on screen and
-            // avoids a jarring flash to the loading state after each drop.
-            when={fileTree() !== undefined}
-            fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
-          >
-            {/* Root drop zone: a drag released outside any folder row
-                lands here and moves the item to the notebox root. Rows
-                stop propagation on their own drag events, so this only
-                fires for the empty space / top-level area. */}
-            <div
-              ref={initTreeViewport}
-              classList={{
-                "left-sidebar__tree-root": true,
-                "left-sidebar__tree-root--drop-target":
-                  dragOverDir() === (noteboxInfo()?.path ?? ""),
-              }}
-              // One Tab stop for the whole tree (ARIA tree pattern); arrow keys
-              // move `focusedTreePath`. `data-focus-entry` makes F6 land here.
-              tabindex={0}
-              role="tree"
-              data-focus-entry
-              aria-label={t("leftSidebar.fileTree")}
-              aria-activedescendant={
-                focusedTreePath() ? treeItemId(focusedTreePath()!) : undefined
-              }
-              onKeyDown={onTreeKeyDown}
-              onFocus={() => {
-                if (focusedTreePath()) return;
-                const rows = flatRows();
-                if (rows.length === 0) return;
-                const activePath = getActiveTab()?.path ?? null;
-                const start = activePath && rows.some((r) => pathEquals(r.node.path, activePath))
-                  ? activePath
-                  : rows[0].node.path;
-                focusTreeRow(start);
-              }}
-              onDragOver={(e) => {
-                if (!e.dataTransfer?.types.includes(TREE_MOVE_MIME)) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setDragOverDir(noteboxInfo()?.path ?? "");
-              }}
-              onDragLeave={(e) => {
-                if (e.currentTarget === e.target) setDragOverDir(null);
-              }}
-              onDrop={(e) => {
-                const raw = e.dataTransfer?.getData(TREE_MOVE_MIME);
-                setDragOverDir(null);
-                if (!raw) return;
-                e.preventDefault();
-                try {
-                  moveItems(JSON.parse(raw), noteboxInfo()?.path ?? "");
-                } catch {
-                  /* malformed payload — ignore */
-                }
-              }}
-            >
-              {/* Windowed render: a full-height spacer preserves the scrollbar
-                  while only the visible row slice is mounted, translated to its
-                  position. Descendants are already separate flat rows, so each
-                  TreeNode renders just itself (indented by depth) — no recursion. */}
-              <div
-                style={{
-                  height: `${flatRows().length * (rowHeight() || 28)}px`,
-                  position: "relative",
-                }}
-              >
+                    <ListChevronsDownUp size={18} />
+                  </Show>
+                </button>
                 <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${treeWindow().start * (rowHeight() || 28)}px)`,
-                  }}
+                  class="left-sidebar__split-btn"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <For each={windowedRows()}>
-                    {(row) => (
-                      <TreeNode
-                        node={row.node}
-                        depth={row.depth}
-                        focusedPath={focusedTreePath}
-                        onNodeClick={handleNodeClick}
-                        onAuxOpen={openFileInNewTab}
-                        onContext={handleFileContext}
-                        renamingPath={fileRenamingPath()}
-                        renameValue={fileRenameValue()}
-                        onRenameInput={setFileRenameValue}
-                        onRenameCommit={commitFileRename}
-                        onRenameCancel={() => setFileRenamingPath(null)}
-                        activePath={getActiveTab()?.path ?? null}
-                        noteboxRoot={noteboxInfo()?.path ?? ""}
-                        expandedDirs={expandedDirs}
-                        onToggleDir={toggleDir}
-                        treeMoveMime={TREE_MOVE_MIME}
-                        dragItems={dragItemsFor}
-                        dragOverDir={dragOverDir}
-                        setDragOverDir={setDragOverDir}
-                        draggingPath={draggingPath}
-                        setDraggingPath={setDraggingPath}
-                        onStartDragGhost={startDragGhost}
-                        onMoveItems={moveItems}
-                      />
-                    )}
-                  </For>
+                  <button
+                    class="left-sidebar__split-btn__main"
+                    onClick={() => createNewNote()}
+                    title={(() => {
+                      const rule = creationRules().find((r) => r.id === "new-note");
+                      const hotkey = rule?.hotkey ?? "Ctrl+N";
+                      return t("leftSidebar.newNoteTitle", { hotkey });
+                    })()}
+                    aria-label={t("leftSidebar.newNote")}
+                  >
+                    <FilePlus2 size={14} />
+                  </button>
+                  <button
+                    ref={newMenuBtnRef}
+                    class="left-sidebar__split-btn__caret"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowNewMenu((v) => !v);
+                    }}
+                    title={t("leftSidebar.moreOptions")}
+                    aria-label={t("leftSidebar.moreCreateOptions")}
+                    aria-haspopup="menu"
+                    aria-expanded={showNewMenu()}
+                  >
+                    <ChevronDown size={12} />
+                  </button>
+                  <Show when={showNewMenu()}>
+                    <div
+                      class="context-menu"
+                      role="menu"
+                      ref={(el) => anchorPanelMenu(newMenuBtnRef, el)}
+                    >
+                      <button
+                        class="context-menu__item context-menu__item--icon"
+                        role="menuitem"
+                        onClick={createNewFolderAtRoot}
+                      >
+                        <Folder size={14} />
+                        <span>{t("leftSidebar.newFolder")}</span>
+                      </button>
+                      <button
+                        class="context-menu__item context-menu__item--icon"
+                        role="menuitem"
+                        onClick={uploadIntoNotebox}
+                      >
+                        <Download size={14} />
+                        <span>{t("leftSidebar.copyIntoNotebox")}</span>
+                      </button>
+                    </div>
+                  </Show>
                 </div>
               </div>
             </div>
-          </Show>
+            <div class="left-sidebar__pane-body">
+              <Show
+                // Only show the loading hint on the very first load. Solid keeps
+                // the resolved tree available during a refetch (e.g. after a move),
+                // so gating on "have we any data yet" keeps the tree on screen and
+                // avoids a jarring flash to the loading state after each drop.
+                when={fileTree() !== undefined}
+                fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
+              >
+                {/* Root drop zone: a drag released outside any folder row
+                    lands here and moves the item to the notebox root. Rows
+                    stop propagation on their own drag events, so this only
+                    fires for the empty space / top-level area. */}
+                <div
+                  ref={initTreeViewport}
+                  classList={{
+                    "left-sidebar__tree-root": true,
+                    "left-sidebar__tree-root--drop-target":
+                      dragOverDir() === (noteboxInfo()?.path ?? ""),
+                  }}
+                  // One Tab stop for the whole tree (ARIA tree pattern); arrow keys
+                  // move `focusedTreePath`. `data-focus-entry` makes F6 land here.
+                  tabindex={0}
+                  role="tree"
+                  data-focus-entry
+                  aria-label={t("leftSidebar.fileTree")}
+                  aria-activedescendant={
+                    focusedTreePath() ? treeItemId(focusedTreePath()!) : undefined
+                  }
+                  onKeyDown={onTreeKeyDown}
+                  onFocus={() => {
+                    if (focusedTreePath()) return;
+                    const rows = flatRows();
+                    if (rows.length === 0) return;
+                    const activePath = getActiveTab()?.path ?? null;
+                    const start = activePath && rows.some((r) => pathEquals(r.node.path, activePath))
+                      ? activePath
+                      : rows[0].node.path;
+                    focusTreeRow(start);
+                  }}
+                  onDragOver={(e) => {
+                    if (!e.dataTransfer?.types.includes(TREE_MOVE_MIME)) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverDir(noteboxInfo()?.path ?? "");
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget === e.target) setDragOverDir(null);
+                  }}
+                  onDrop={(e) => {
+                    const raw = e.dataTransfer?.getData(TREE_MOVE_MIME);
+                    setDragOverDir(null);
+                    if (!raw) return;
+                    e.preventDefault();
+                    try {
+                      moveItems(JSON.parse(raw), noteboxInfo()?.path ?? "");
+                    } catch {
+                      /* malformed payload — ignore */
+                    }
+                  }}
+                >
+                  {/* Windowed render: a full-height spacer preserves the scrollbar
+                      while only the visible row slice is mounted, translated to its
+                      position. Descendants are already separate flat rows, so each
+                      TreeNode renders just itself (indented by depth) — no recursion. */}
+                  <div
+                    style={{
+                      height: `${flatRows().length * (rowHeight() || 28)}px`,
+                      position: "relative",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        transform: `translateY(${treeWindow().start * (rowHeight() || 28)}px)`,
+                      }}
+                    >
+                      <For each={windowedRows()}>
+                        {(row) => (
+                          <TreeNode
+                            node={row.node}
+                            depth={row.depth}
+                            focusedPath={focusedTreePath}
+                            onNodeClick={handleNodeClick}
+                            onAuxOpen={openFileInNewTab}
+                            onContext={handleFileContext}
+                            renamingPath={fileRenamingPath()}
+                            renameValue={fileRenameValue()}
+                            onRenameInput={setFileRenameValue}
+                            onRenameCommit={commitFileRename}
+                            onRenameCancel={() => setFileRenamingPath(null)}
+                            activePath={getActiveTab()?.path ?? null}
+                            noteboxRoot={noteboxInfo()?.path ?? ""}
+                            expandedDirs={expandedDirs}
+                            onToggleDir={toggleDir}
+                            treeMoveMime={TREE_MOVE_MIME}
+                            dragItems={dragItemsFor}
+                            dragOverDir={dragOverDir}
+                            setDragOverDir={setDragOverDir}
+                            draggingPath={draggingPath}
+                            setDraggingPath={setDraggingPath}
+                            onStartDragGhost={startDragGhost}
+                            onMoveItems={moveItems}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          </div>
         </Show>
 
         <Show when={mode() === "search"}>
@@ -1879,262 +1887,272 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
         </Show>
 
         <Show when={mode() === "tags"}>
-          <div class="left-sidebar__section-header">
-            <span>{t("leftSidebar.tags")}</span>
-            <div class="left-sidebar__header-actions">
-              <div class="left-sidebar__sort-wrap">
-                <button
-                  ref={tagSortBtnRef}
-                  class="ui-icon-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowTagSortMenu((v) => !v);
-                  }}
-                  title={t("leftSidebar.sortTags")}
-                  aria-label={t("leftSidebar.sortTags")}
-                >
-                  <ArrowDownNarrowWide size={18} />
-                </button>
-                <Show when={showTagSortMenu()}>
-                  <div
-                    class="context-menu"
-                    ref={(el) => anchorPanelMenu(tagSortBtnRef, el)}
-                    use:clickOutside={{
-                      onDismiss: () => setShowTagSortMenu(false),
-                      ignore: tagSortBtnRef,
+          <div class="left-sidebar__pane">
+            <div class="left-sidebar__section-header">
+              <span>{t("leftSidebar.tags")}</span>
+              <div class="left-sidebar__header-actions">
+                <div class="left-sidebar__sort-wrap">
+                  <button
+                    ref={tagSortBtnRef}
+                    class="ui-icon-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowTagSortMenu((v) => !v);
                     }}
+                    title={t("leftSidebar.sortTags")}
+                    aria-label={t("leftSidebar.sortTags")}
                   >
-                    <For each={LIST_SORT_OPTIONS}>
-                      {(opt) => (
-                        <button
-                          classList={{
-                            "context-menu__item": true,
-                            "context-menu__item--active": tagSortMode() === opt.value,
-                          }}
-                          onClick={() => {
-                            setTagSortMode(opt.value);
-                            setShowTagSortMenu(false);
-                          }}
-                        >
-                          {t(opt.labelKey)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-              <button
-                class={`ui-icon-btn${showTagSearch() ? " is-active" : ""}`}
-                onClick={() => {
-                  const next = !showTagSearch();
-                  setShowTagSearch(next);
-                  if (!next) setTagFilter("");
-                }}
-                title={t("leftSidebar.filterTags")}
-                aria-label={t("leftSidebar.filterTags")}
-                aria-pressed={showTagSearch()}
-              >
-                <Search size={14} />
-              </button>
-            </div>
-          </div>
-          <Show when={showTagSearch()}>
-            <div class="left-sidebar__filter-wrap">
-              <input
-                class="left-sidebar__filter-input"
-                type="text"
-                placeholder={t("leftSidebar.filterTagsPlaceholder")}
-                value={tagFilter()}
-                onInput={(e) => setTagFilter(e.currentTarget.value)}
-                autofocus
-              />
-              <Show when={tagFilter().length > 0}>
-                <button
-                  class="left-sidebar__filter-clear"
-                  onMouseDown={(e) => { e.preventDefault(); setTagFilter(""); }}
-                  title={t("references.clearFilter")}
-                  aria-label={t("references.clearFilter")}
-                >
-                  <X size={12} />
-                </button>
-              </Show>
-            </div>
-          </Show>
-          <div class="left-sidebar__tag-list" ref={attachListNav} aria-label={t("leftSidebar.tags")}>
-          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
-            {(idx) => (
-              <For
-                each={sortAndFilterList(idx().tags, tagSortMode(), tagFilter())}
-                fallback={<p class="sidebar-hint">{t("leftSidebar.noTags")}</p>}
-              >
-                {([tag, count]) => (
-                  <Show
-                    when={renamingTag() === tag}
-                    fallback={
-                      <div
-                        data-list-item
-                        class="sidebar-item"
-                        onClick={() => openSearchFor(`tag:${tag}`)}
-                        onContextMenu={(e) => handleTagContext(e, tag)}
-                      >
-                        <span class="sidebar-item__icon">
-                          <Tag size={14} />
-                        </span>
-                        <span class="sidebar-item__label">{tag}</span>
-                        <span class="notebox-index__count">{count}</span>
-                      </div>
-                    }
-                  >
-                    <div class="sidebar-item sidebar-item--editing">
-                      <input
-                        class="sidebar-item__rename-input"
-                        type="text"
-                        value={tagRenameValue()}
-                        onInput={(e) => setTagRenameValue(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitTagRename();
-                          if (e.key === "Escape") setRenamingTag(null);
-                        }}
-                        onBlur={commitTagRename}
-                        ref={(el) => setTimeout(() => el.focus(), 0)}
-                      />
+                    <ArrowDownNarrowWide size={18} />
+                  </button>
+                  <Show when={showTagSortMenu()}>
+                    <div
+                      class="context-menu"
+                      ref={(el) => anchorPanelMenu(tagSortBtnRef, el)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowTagSortMenu(false),
+                        ignore: tagSortBtnRef,
+                      }}
+                    >
+                      <For each={LIST_SORT_OPTIONS}>
+                        {(opt) => (
+                          <button
+                            classList={{
+                              "context-menu__item": true,
+                              "context-menu__item--active": tagSortMode() === opt.value,
+                            }}
+                            onClick={() => {
+                              setTagSortMode(opt.value);
+                              setShowTagSortMenu(false);
+                            }}
+                          >
+                            {t(opt.labelKey)}
+                          </button>
+                        )}
+                      </For>
                     </div>
                   </Show>
+                </div>
+                <button
+                  class={`ui-icon-btn${showTagSearch() ? " is-active" : ""}`}
+                  onClick={() => {
+                    const next = !showTagSearch();
+                    setShowTagSearch(next);
+                    if (!next) setTagFilter("");
+                  }}
+                  title={t("leftSidebar.filterTags")}
+                  aria-label={t("leftSidebar.filterTags")}
+                  aria-pressed={showTagSearch()}
+                >
+                  <Search size={14} />
+                </button>
+              </div>
+            </div>
+            <Show when={showTagSearch()}>
+              <div class="left-sidebar__filter-wrap">
+                <input
+                  class="left-sidebar__filter-input"
+                  type="text"
+                  placeholder={t("leftSidebar.filterTagsPlaceholder")}
+                  value={tagFilter()}
+                  onInput={(e) => setTagFilter(e.currentTarget.value)}
+                  autofocus
+                />
+                <Show when={tagFilter().length > 0}>
+                  <button
+                    class="left-sidebar__filter-clear"
+                    onMouseDown={(e) => { e.preventDefault(); setTagFilter(""); }}
+                    title={t("references.clearFilter")}
+                    aria-label={t("references.clearFilter")}
+                  >
+                    <X size={12} />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <div class="left-sidebar__tag-list left-sidebar__pane-body" ref={attachListNav} aria-label={t("leftSidebar.tags")}>
+              <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
+                {(idx) => (
+                  <For
+                    each={sortAndFilterList(idx().tags, tagSortMode(), tagFilter())}
+                    fallback={<p class="sidebar-hint">{t("leftSidebar.noTags")}</p>}
+                  >
+                    {([tag, count]) => (
+                      <Show
+                        when={renamingTag() === tag}
+                        fallback={
+                          <div
+                            data-list-item
+                            class="sidebar-item"
+                            onClick={() => openSearchFor(`tag:${tag}`)}
+                            onContextMenu={(e) => handleTagContext(e, tag)}
+                          >
+                            <span class="sidebar-item__icon">
+                              <Tag size={14} />
+                            </span>
+                            <span class="sidebar-item__label">{tag}</span>
+                            <span class="notebox-index__count">{count}</span>
+                          </div>
+                        }
+                      >
+                        <div class="sidebar-item sidebar-item--editing">
+                          <input
+                            class="sidebar-item__rename-input"
+                            type="text"
+                            value={tagRenameValue()}
+                            onInput={(e) => setTagRenameValue(e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") commitTagRename();
+                              if (e.key === "Escape") setRenamingTag(null);
+                            }}
+                            onBlur={commitTagRename}
+                            ref={(el) => setTimeout(() => el.focus(), 0)}
+                          />
+                        </div>
+                      </Show>
+                    )}
+                  </For>
                 )}
-              </For>
-            )}
-          </Show>
+              </Show>
+            </div>
           </div>
         </Show>
 
         <Show when={mode() === "properties"}>
-          <div class="left-sidebar__section-header">
-            <span>{t("leftSidebar.properties")}</span>
-            <div class="left-sidebar__header-actions">
-              <div class="left-sidebar__sort-wrap">
-                <button
-                  ref={propSortBtnRef}
-                  class="ui-icon-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowPropSortMenu((v) => !v);
-                  }}
-                  title={t("leftSidebar.sortProperties")}
-                  aria-label={t("leftSidebar.sortProperties")}
-                >
-                  <ArrowDownNarrowWide size={18} />
-                </button>
-                <Show when={showPropSortMenu()}>
-                  <div
-                    class="context-menu"
-                    ref={(el) => anchorPanelMenu(propSortBtnRef, el)}
-                    use:clickOutside={{
-                      onDismiss: () => setShowPropSortMenu(false),
-                      ignore: propSortBtnRef,
+          <div class="left-sidebar__pane">
+            <div class="left-sidebar__section-header">
+              <span>{t("leftSidebar.properties")}</span>
+              <div class="left-sidebar__header-actions">
+                <div class="left-sidebar__sort-wrap">
+                  <button
+                    ref={propSortBtnRef}
+                    class="ui-icon-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowPropSortMenu((v) => !v);
                     }}
+                    title={t("leftSidebar.sortProperties")}
+                    aria-label={t("leftSidebar.sortProperties")}
                   >
-                    <For each={LIST_SORT_OPTIONS}>
-                      {(opt) => (
-                        <button
-                          classList={{
-                            "context-menu__item": true,
-                            "context-menu__item--active": propSortMode() === opt.value,
-                          }}
-                          onClick={() => {
-                            setPropSortMode(opt.value);
-                            setShowPropSortMenu(false);
-                          }}
-                        >
-                          {t(opt.labelKey)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-              <button
-                class={`ui-icon-btn${showPropSearch() ? " is-active" : ""}`}
-                onClick={() => {
-                  const next = !showPropSearch();
-                  setShowPropSearch(next);
-                  if (!next) setPropFilter("");
-                }}
-                title={t("leftSidebar.filterProperties")}
-                aria-label={t("leftSidebar.filterProperties")}
-                aria-pressed={showPropSearch()}
-              >
-                <Search size={14} />
-              </button>
-            </div>
-          </div>
-          <Show when={showPropSearch()}>
-            <div class="left-sidebar__filter-wrap">
-              <input
-                class="left-sidebar__filter-input"
-                type="text"
-                placeholder={t("leftSidebar.filterPropertiesPlaceholder")}
-                value={propFilter()}
-                onInput={(e) => setPropFilter(e.currentTarget.value)}
-                autofocus
-              />
-              <Show when={propFilter().length > 0}>
-                <button
-                  class="left-sidebar__filter-clear"
-                  onMouseDown={(e) => { e.preventDefault(); setPropFilter(""); }}
-                  title={t("references.clearFilter")}
-                  aria-label={t("references.clearFilter")}
-                >
-                  <X size={12} />
-                </button>
-              </Show>
-            </div>
-          </Show>
-          <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
-            {(idx) => (
-              <For
-                each={sortAndFilterList(idx().property_keys, propSortMode(), propFilter())}
-                fallback={<p class="sidebar-hint">{t("leftSidebar.noProperties")}</p>}
-              >
-                {([key, count]) => (
-                  <Show
-                    when={renamingProperty() === key}
-                    fallback={
-                      <div
-                        class="sidebar-item"
-                        onClick={() => openSearchFor(`property:${key}=`)}
-                        onContextMenu={(e) => handlePropertyContext(e, key)}
-                      >
-                        <span class="sidebar-item__label">{key}</span>
-                        <span class="notebox-index__count">{count}</span>
-                      </div>
-                    }
-                  >
-                    <div class="sidebar-item sidebar-item--editing">
-                      <input
-                        class="sidebar-item__rename-input"
-                        type="text"
-                        value={propertyRenameValue()}
-                        onInput={(e) => setPropertyRenameValue(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitPropertyRename();
-                          if (e.key === "Escape") setRenamingProperty(null);
-                        }}
-                        onBlur={commitPropertyRename}
-                        ref={(el) => setTimeout(() => el.focus(), 0)}
-                      />
+                    <ArrowDownNarrowWide size={18} />
+                  </button>
+                  <Show when={showPropSortMenu()}>
+                    <div
+                      class="context-menu"
+                      ref={(el) => anchorPanelMenu(propSortBtnRef, el)}
+                      use:clickOutside={{
+                        onDismiss: () => setShowPropSortMenu(false),
+                        ignore: propSortBtnRef,
+                      }}
+                    >
+                      <For each={LIST_SORT_OPTIONS}>
+                        {(opt) => (
+                          <button
+                            classList={{
+                              "context-menu__item": true,
+                              "context-menu__item--active": propSortMode() === opt.value,
+                            }}
+                            onClick={() => {
+                              setPropSortMode(opt.value);
+                              setShowPropSortMenu(false);
+                            }}
+                          >
+                            {t(opt.labelKey)}
+                          </button>
+                        )}
+                      </For>
                     </div>
                   </Show>
+                </div>
+                <button
+                  class={`ui-icon-btn${showPropSearch() ? " is-active" : ""}`}
+                  onClick={() => {
+                    const next = !showPropSearch();
+                    setShowPropSearch(next);
+                    if (!next) setPropFilter("");
+                  }}
+                  title={t("leftSidebar.filterProperties")}
+                  aria-label={t("leftSidebar.filterProperties")}
+                  aria-pressed={showPropSearch()}
+                >
+                  <Search size={14} />
+                </button>
+              </div>
+            </div>
+            <Show when={showPropSearch()}>
+              <div class="left-sidebar__filter-wrap">
+                <input
+                  class="left-sidebar__filter-input"
+                  type="text"
+                  placeholder={t("leftSidebar.filterPropertiesPlaceholder")}
+                  value={propFilter()}
+                  onInput={(e) => setPropFilter(e.currentTarget.value)}
+                  autofocus
+                />
+                <Show when={propFilter().length > 0}>
+                  <button
+                    class="left-sidebar__filter-clear"
+                    onMouseDown={(e) => { e.preventDefault(); setPropFilter(""); }}
+                    title={t("references.clearFilter")}
+                    aria-label={t("references.clearFilter")}
+                  >
+                    <X size={12} />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <div class="left-sidebar__pane-body">
+              <Show when={noteboxIndex()} fallback={<p class="sidebar-hint">{t("common.loading")}</p>}>
+                {(idx) => (
+                  <For
+                    each={sortAndFilterList(idx().property_keys, propSortMode(), propFilter())}
+                    fallback={<p class="sidebar-hint">{t("leftSidebar.noProperties")}</p>}
+                  >
+                    {([key, count]) => (
+                      <Show
+                        when={renamingProperty() === key}
+                        fallback={
+                          <div
+                            class="sidebar-item"
+                            onClick={() => openSearchFor(`property:${key}=`)}
+                            onContextMenu={(e) => handlePropertyContext(e, key)}
+                          >
+                            <span class="sidebar-item__label">{key}</span>
+                            <span class="notebox-index__count">{count}</span>
+                          </div>
+                        }
+                      >
+                        <div class="sidebar-item sidebar-item--editing">
+                          <input
+                            class="sidebar-item__rename-input"
+                            type="text"
+                            value={propertyRenameValue()}
+                            onInput={(e) => setPropertyRenameValue(e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") commitPropertyRename();
+                              if (e.key === "Escape") setRenamingProperty(null);
+                            }}
+                            onBlur={commitPropertyRename}
+                            ref={(el) => setTimeout(() => el.focus(), 0)}
+                          />
+                        </div>
+                      </Show>
+                    )}
+                  </For>
                 )}
-              </For>
-            )}
-          </Show>
+              </Show>
+            </div>
+          </div>
         </Show>
 
         <Show when={mode() === "bookmarks"}>
-          <div class="left-sidebar__section-header">
-            <span>{t("leftSidebar.bookmarks")}</span>
+          <div class="left-sidebar__pane">
+            <div class="left-sidebar__section-header">
+              <span>{t("leftSidebar.bookmarks")}</span>
+            </div>
+            <div class="left-sidebar__pane-body">
+              <BookmarksPanel refreshTick={refreshTick()} />
+            </div>
           </div>
-          <BookmarksPanel refreshTick={refreshTick()} />
         </Show>
 
         <Show when={mode() === "templates"}>

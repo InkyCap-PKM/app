@@ -56,6 +56,10 @@ interface AgendaListProps {
   /** Persist the current filters as a named saved-view bookmark. Provided only
    *  alongside {@link persistKey} (the main panel). */
   onSaveView?: (name: string, snapshot: AgendaFilterSnapshot) => void | Promise<void>;
+  /** Extra class for the item list. The list is the only part of this
+   *  component that should scroll, so a host that pins chrome above it (the
+   *  sidebar pane) names it as its scroll body here. */
+  listClass?: string;
 }
 
 /** All sort orders the Agenda offers. Each carries its own direction in
@@ -845,7 +849,11 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         when={!props.loading}
         fallback={<p class="sidebar-hint">{t("common.loading")}</p>}
       >
-        <div class="agenda__list" ref={attachListNav} aria-label={t("agenda.title")}>
+        <div
+          class={`agenda__list${props.listClass ? ` ${props.listClass}` : ""}`}
+          ref={attachListNav}
+          aria-label={t("agenda.title")}
+        >
         <Show
           when={visible().length > 0}
           fallback={<p class="sidebar-hint">{props.emptyMessage}</p>}

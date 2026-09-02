@@ -259,12 +259,21 @@ const foldChevronPlugin = ViewPlugin.fromClass(
 //                     to centred at the x-height, so it needs only a small
 //                     rise; the larger heading rise would read high on a bullet.
 //                 Raise a value to move that chevron up, lower it to move down.
+//   CARET_SIZE  — diameter of the round hover highlight. Deliberately wider
+//                 than the 1em chevron drawn inside it, so the circle reads as
+//                 a target around the glyph rather than a tight ring on it.
+//   CARET_INSET — half the difference between the two. Subtracted from the
+//                 chevron's right offset so enlarging the circle grows the
+//                 highlight outwards in both directions instead of nudging the
+//                 glyph towards the text. Keep it at (CARET_SIZE - 1em) / 2.
 // Heading chevrons sit CARET_GAP left of the text; list chevrons sit a further
 // `--list-bullet-width` left to clear the hanging bullet (see
 // .cm-typst-list-bullet in visual-theme.ts).
 const CARET_GAP = "0.4em";
 const CARET_RISE = "0.18em";
 const CARET_RISE_LIST = "0.05em";
+const CARET_SIZE = "1.3em";
+const CARET_INSET = "0.15em";
 
 const foldTheme = EditorView.theme({
   // Zero-width inline anchor at the item's content origin. `vertical-align:
@@ -283,11 +292,11 @@ const foldTheme = EditorView.theme({
     // is zero-width, so its right edge is the origin). A direct `right` offset
     // — not `right: 100%` plus a margin — avoids a subpixel reposition on
     // hover.
-    right: CARET_GAP,
+    right: `calc(${CARET_GAP} - ${CARET_INSET})`,
     top: "50%",
     transform: `translateY(calc(-50% - ${CARET_RISE}))`,
-    width: "1em",
-    height: "1em",
+    width: CARET_SIZE,
+    height: CARET_SIZE,
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -302,7 +311,7 @@ const foldTheme = EditorView.theme({
   // List items: clear the hanging bullet, which occupies one bullet-width to
   // the left of the item text, and use the smaller body-text rise.
   ".cm-fold-caret--list": {
-    right: `calc(var(--list-bullet-width, 1.5em) + ${CARET_GAP})`,
+    right: `calc(var(--list-bullet-width, 1.5em) + ${CARET_GAP} - ${CARET_INSET})`,
     transform: `translateY(calc(-50% - ${CARET_RISE_LIST}))`,
   },
   ".cm-fold-line:hover .cm-fold-caret, .cm-fold-caret:focus-visible": {
@@ -323,6 +332,22 @@ const foldTheme = EditorView.theme({
     width: "1em",
     height: "1em",
     pointerEvents: "none",
+  },
+  // The "…" chip the fold engine leaves standing in place of a collapsed
+  // region. CodeMirror's own base theme hard-codes a pale grey fill for it,
+  // which glares against a dark editor; app tokens track whichever theme is
+  // active.
+  ".cm-foldPlaceholder": {
+    background: "var(--bg-highlight)",
+    border: "1px solid var(--border-input)",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--fg-muted)",
+    padding: "0 var(--space-3)",
+    margin: "0 var(--space-2)",
+  },
+  ".cm-foldPlaceholder:hover": {
+    background: "var(--bg-hover)",
+    color: "var(--fg-primary)",
   },
 });
 

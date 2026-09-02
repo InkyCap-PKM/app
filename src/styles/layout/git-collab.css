@@ -49,13 +49,15 @@
   flex-shrink: 0;
 }
 
-/* Panel body */
+/* Panel body — the sidebar pane's one scrolling region, below the pinned
+   section header. Sizing, scrolling and the horizontal inset come from
+   `.left-sidebar__pane-body` (panel-header.css), which this element also
+   carries; only the block padding is its own. */
 .git-panel__body {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: 8px 10px;
-  overflow-y: auto;
+  padding-block: var(--space-4);
 }
 
 .git-panel__setup .settings__label {

@@ -11,6 +11,16 @@
   flex-direction: column;
   align-items: center;
   width: var(--toolbar-width);
+  /* A grid item whose overflow is visible refuses to shrink below its own
+     content height. The toolbar is the tallest fixed-content column in the
+     shell, so without this it sets a floor on the whole `1fr` row: shrink the
+     window past that floor and the grid grows taller than the viewport,
+     pushing the sidebar's and editor's bottom edges off-screen. Their panes
+     still believe they have room, so nothing scrolls — content simply
+     disappears under the window edge. Capping the toolbar here lets the row
+     track the viewport; the button column below scrolls instead. */
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Header band holding the sidebar toggle. Height + bottom border mirror
@@ -42,6 +52,10 @@
   align-self: stretch;
   flex: 1;
   border-right: 1px solid var(--border-primary);
+  /* Scrolls only when the window is too short to show every button, so the
+     bottom group (Help, Settings) stays reachable instead of being clipped. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .vertical-toolbar__top {

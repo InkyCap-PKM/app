@@ -320,7 +320,7 @@ const TemplatesPanel: Component = () => {
   }
 
   return (
-    <>
+    <div class="left-sidebar__pane">
       <div class="left-sidebar__section-header templates-pane__header">
         <span class="templates-pane__title">{title()}</span>
         <div class="templates-pane__tabs" role="tablist">
@@ -459,7 +459,11 @@ const TemplatesPanel: Component = () => {
         </div>
       </Show>
 
-      <div class="templates-pane__body" ref={attachListNav} aria-label={t("templates.title")}>
+      <div
+        class="templates-pane__body left-sidebar__pane-body"
+        ref={attachListNav}
+        aria-label={t("templates.title")}
+      >
         <Show when={tab() === "scaffolds"}>
           <Show
             when={!scaffolds.loading && (scaffolds() ?? []).length > 0}
@@ -616,7 +620,7 @@ const TemplatesPanel: Component = () => {
           </Show>
         </Show>
       </div>
-    </>
+    </div>
   );
 };
 

@@ -122,7 +122,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: var(--resize-handle-width);
   cursor: col-resize;
   z-index: 20;
   background: transparent;
@@ -139,9 +139,16 @@
    the hover bar never reaches across into the content column (where it used
    to clip the top tab's edge). Left handle hugs the sidebar→content divider
    from the sidebar side; right handle hugs the content→panel divider from the
-   panel side — mirror images, consistently "on the panel side". */
+   panel side — mirror images, consistently "on the panel side".
+
+   Because the left handle lies over the sidebar's own right edge, it covers
+   whatever is painted there — including the scroll region's scrollbar. Sidebar
+   scroll regions therefore stop `--resize-handle-width` short of that edge
+   (see `.left-sidebar__pane-body`), leaving the two side by side instead of
+   stacked. The right handle sits just outside the editor column, so the
+   editor's scrollbar already clears it. */
 .resize-handle--left {
-  left: calc(var(--toolbar-width) + var(--left-width) - 6px);
+  left: calc(var(--toolbar-width) + var(--left-width) - var(--resize-handle-width));
 }
 
 .resize-handle--right {
@@ -208,9 +215,17 @@
   background: var(--bg-highlight);
 }
 
+/* The fixed-size box a sidebar pane fills. It does not scroll itself: each
+   pane pins its own header and scrolls only the list beneath it, so a pane's
+   title and controls stay on screen and the scrollbar starts below them.
+   See `.left-sidebar__pane` in panel-header.css for the pattern; panes that
+   manage their own layout (Search, Help) fill this box the same way. */
 .left-sidebar__content {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: var(--space-4);
 }
 

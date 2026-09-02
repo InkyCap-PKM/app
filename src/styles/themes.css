@@ -98,6 +98,14 @@
   --space-8: calc(32px * var(--density));
   --space-9: calc(48px * var(--density));
 
+  /* Width of the panel resize handles (.resize-handle), and the matching
+     inset a sidebar scroll region leaves on its right edge. A handle is an
+     invisible strip laid over a panel's edge, so anything underneath it stops
+     being clickable: a wider handle swallows a bigger slice of the scrollbar
+     beside it. Keep it narrow, and keep both handles on this one value so the
+     left and right panels stay symmetrical. */
+  --resize-handle-width: 3px;
+
   /* ── Buttons & focus ────────────────────────────────────────────
      Shared button geometry consumed by the .btn utility (layout.css).
      --focus-ring is the single keyboard-focus affordance applied via
