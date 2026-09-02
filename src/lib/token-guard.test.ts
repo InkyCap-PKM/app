@@ -22,6 +22,9 @@ const RAW_HEX = /#[0-9a-fA-F]{3,8}\b/;
 // Raw z-index of 100 or more is a stacking-scale bypass; small local values
 // (1, 2, 10…) inside a component's own stacking context are fine.
 const RAW_Z = /z-index:\s*(\d{3,})/;
+// Corner radii come from the --radius-* scale. 0 and 50% (circles) are
+// geometric, not scale values, so they stay allowed as literals.
+const RAW_RADIUS = /border-radius:[^;]*?\b\d+(?:\.\d+)?px/;
 
 /** Lines of the file with comment text blanked out (so a hex code mentioned
  *  inside a comment doesn't trip the check), plus the raw lines for the
@@ -86,6 +89,9 @@ describe("design-token guard (src/styles/layout)", () => {
         const z = line.match(RAW_Z);
         if (z) {
           violations.push(`${file}:${i + 1} raw z-index ${z[1]} — use the --z-menu/--z-modal/--z-toast scale`);
+        }
+        if (RAW_RADIUS.test(line)) {
+          violations.push(`${file}:${i + 1} raw px border-radius — use the --radius-* scale`);
         }
       });
       expect(violations, violations.join("\n")).toEqual([]);

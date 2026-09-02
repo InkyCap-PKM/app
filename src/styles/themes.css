@@ -21,16 +21,31 @@
   --editor-font-mono: "JuliaMono", ui-monospace, monospace;
 
   /* Type scale — all UI font sizes reference these tokens.
-   * Adjust these values to scale the entire interface. */
+   * Adjust these values to scale the entire interface, and keep them in
+   * sync with TOKEN_BASES in src/lib/ui-scale.ts (the runtime rescaler
+   * overwrites these when the editor font size changes).
+   *
+   * The chrome sizes (2xs–lg) step by 1px for dense UI text. The heading
+   * sizes (xl–3xl) step by a ~1.2 ratio ladder (15 → 18 → 22 → 28) so
+   * titles establish hierarchy through scale, not just weight. */
   --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
   --text-md: 14px;
   --text-lg: 15px;
-  --text-xl: 17px;
-  --text-2xl: 19px;
-  --text-3xl: 25px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  /* Line-height scale — pair with the type scale so vertical rhythm is
+   * consistent instead of per-rule. none = glyph-height chrome (icon
+   * buttons, pills); tight = headings and single-line labels; normal =
+   * UI body text; relaxed = longer prose (help copy, hints). */
+  --leading-none: 1;
+  --leading-tight: 1.3;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
 
   /* Icon sizing tokens */
   --icon-sm: 18px;
@@ -54,9 +69,11 @@
      --radius-sm because a 7px corner reads as over-rounded at that small
      footprint (size-proportional radius). Larger surfaces (tabs, cards,
      full buttons) stay on --radius-md. */
+  --radius-xs: 2px;   /* hairline corners: inline marks, match highlights */
   --radius-sm: 4px;
   --radius-md: 7px;
   --radius-lg: 8px;
+  --radius-full: 999px;   /* pills and fully-rounded tracks */
   --radius-control: var(--radius-sm);
   /* Radius for text inputs, textareas, and select/combobox triggers. Unified
      with --radius-control so form controls share the small-control roundedness
@@ -76,6 +93,10 @@
   --space-4: calc(8px * var(--density));
   --space-5: calc(12px * var(--density));
   --space-6: calc(16px * var(--density));
+  /* Section- and page-level steps, so bigger gaps stay on the scale too. */
+  --space-7: calc(24px * var(--density));
+  --space-8: calc(32px * var(--density));
+  --space-9: calc(48px * var(--density));
 
   /* ── Buttons & focus ────────────────────────────────────────────
      Shared button geometry consumed by the .btn utility (layout.css).
@@ -622,7 +643,7 @@
 
 .wikilink-suggest__match {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .wikilink-suggest__folder {

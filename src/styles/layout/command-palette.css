@@ -87,7 +87,7 @@
   font-size: var(--text-base);
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-3);
   flex-shrink: 0;
   font-family: inherit;
@@ -97,7 +97,7 @@
   color: var(--fg-dim);
   font-size: var(--text-sm);
   background: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 1px 5px;
   flex-shrink: 0;
   font-family: var(--editor-font-mono, monospace);

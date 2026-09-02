@@ -138,7 +138,7 @@
   font-family: inherit;
   font-size: var(--text-base);
   outline: none;
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .status-bar__rename-input:focus {

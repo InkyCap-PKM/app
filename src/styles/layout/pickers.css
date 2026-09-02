@@ -92,7 +92,7 @@
 .ref-note-picker__note-preview {
   font-size: var(--text-md);
   color: var(--fg-primary);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   white-space: normal;
   word-break: break-word;
 }

@@ -26,7 +26,9 @@
   justify-content: center;
   align-self: stretch;
   min-height: 38px;
-  border-bottom: 1px solid var(--border-primary);
+  /* One continuous line with .left-sidebar__mode-bar and
+     .right-panel::after — keep the three tiers in step. */
+  border-bottom: 1px solid var(--border-subtle);
   box-sizing: border-box;
   flex-shrink: 0;
 }

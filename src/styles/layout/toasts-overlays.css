@@ -21,9 +21,9 @@
   align-items: flex-start;
   gap: var(--space-4);
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: var(--text-md);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   color: var(--fg-primary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
@@ -60,7 +60,7 @@
 .toast__icon {
   flex-shrink: 0;
   font-size: var(--text-lg);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .toast--error .toast__icon { color: var(--accent-danger); }

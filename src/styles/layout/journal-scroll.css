@@ -59,7 +59,7 @@
 .journal-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 24px;
+  padding: var(--space-6) var(--space-7);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -74,7 +74,7 @@
   position: relative;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   padding: 0;
   /* Without this, the flex-column parent (with overflow-y: auto) shrinks
@@ -223,9 +223,9 @@
      looks the same in the scroll as it does in dedicated reading mode. */
   font-family: var(--md-body-font, inherit);
   font-size: var(--md-body-size, 17px);
-  line-height: 1.6;
+  line-height: var(--leading-relaxed);
   color: var(--fg-primary);
-  padding: 16px 24px 24px;
+  padding: var(--space-6) var(--space-7) var(--space-7);
   max-width: var(--md-max-width, none);
   margin: 0 auto;
   box-sizing: content-box;
@@ -240,7 +240,7 @@
 }
 
 .journal-scroll__entry-loading {
-  padding: 16px 24px;
+  padding: var(--space-6) var(--space-7);
   color: var(--fg-dim);
   font-size: var(--text-md);
   font-style: italic;
@@ -256,7 +256,7 @@
 
 .journal-scroll__loading {
   text-align: center;
-  padding: 24px;
+  padding: var(--space-7);
   color: var(--fg-dim);
   font-size: var(--text-md);
 }

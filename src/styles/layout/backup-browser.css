@@ -15,7 +15,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: var(--space-8);
 }
 
 .backup-browser {
@@ -155,7 +155,7 @@
   text-align: left;
   background: transparent;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   cursor: pointer;
   color: var(--fg-primary);
@@ -196,7 +196,7 @@
 .backup-browser__warning {
   background: var(--bg-warning, var(--bg-hover));
   border: 1px solid var(--border-warning, var(--border-subtle));
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-5);
   color: var(--fg-warning, var(--fg-primary));
   font-size: var(--text-sm);
@@ -233,7 +233,7 @@
   flex: 1;
   min-height: 80px;
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: var(--space-2);
 }
 

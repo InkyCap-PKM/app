@@ -30,9 +30,9 @@
   padding: var(--space-1) var(--space-3);
   background: var(--surface-2);
   color: var(--fg-muted);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-primary);
   font-size: var(--text-sm);
-  line-height: 1.3;
+  line-height: var(--leading-tight);
   text-align: center;
 }
 
@@ -173,7 +173,9 @@
   gap: var(--space-1);
   padding: 0 var(--space-4);
   min-height: 38px;
-  border-bottom: 1px solid var(--border-primary);
+  /* One continuous line with .vertical-toolbar__header and
+     .right-panel::after — keep the three tiers in step. */
+  border-bottom: 1px solid var(--border-subtle);
   box-sizing: border-box;
   /* flex-shrink: 0 keeps the bar at exactly 38px even when the scrollable
      content below tries to claim space. The right panel's tab bar uses the
@@ -246,8 +248,11 @@
 .main-content__body {
   flex: 1;
   overflow: auto;
-  border-left: 1px solid var(--border-primary);
-  border-right: 1px solid var(--border-primary);
+  /* The bg change (bright editor vs grey chrome) already marks this
+     boundary; the hairline is kept at the quiet tier so the seam is
+     defined without being drawn twice. */
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
   box-sizing: border-box;
 }
 

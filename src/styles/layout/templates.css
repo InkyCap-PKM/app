@@ -35,7 +35,7 @@
 .scaffold-picker__results .quick-open__empty code {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 var(--space-2);
   font-size: 0.9em;
 }
@@ -90,7 +90,7 @@
 .templates-pane__help code {
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 var(--space-2);
   font-size: 0.9em;
 }
@@ -210,7 +210,7 @@
 .templates-panel__section-desc code {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 0 var(--space-2);
   font-size: 0.9em;
 }

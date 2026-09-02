@@ -20,7 +20,7 @@
   font-weight: 500;
   cursor: pointer;
   padding: 1px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-family: inherit;
 }
 
@@ -166,7 +166,7 @@
   padding: var(--space-3) var(--space-4);
   border-left: 3px solid var(--accent);
   background: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .git-panel__banner-author {
@@ -292,7 +292,7 @@
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-secondary);
 }
 
@@ -356,7 +356,7 @@
   margin-bottom: var(--space-4);
   border-left: 3px solid var(--accent);
   background: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 /* Post-sync digest ("what landed"): a dismissible, non-blocking summary block. */
@@ -367,7 +367,7 @@
   padding: var(--space-3) var(--space-4);
   border-left: 3px solid var(--accent);
   background: var(--bg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .git-panel__digest-head {

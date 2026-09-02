@@ -112,7 +112,7 @@
   white-space: pre-wrap;
   font-family: inherit;
   font-size: inherit;
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .export-dialog__error-close {
@@ -159,6 +159,6 @@
 .export-dialog__hint {
   font-size: var(--text-sm);
   color: var(--fg-muted);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
