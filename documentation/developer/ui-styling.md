@@ -171,6 +171,24 @@ combobox) round only their outer corners using the same token
 - **Line-heights consolidated onto the leading scale (2026-09).** 1.3–1.6
   literals mapped to `--leading-tight/normal/relaxed` (deltas ≤ 0.05).
   Structural values (0, 1, and two 1.2s) stay literal by design.
+- **The motion vocabulary (2026-09).** Transient surfaces (menus, dropdowns,
+  palettes, tooltips, modals and their backdrop) fade in with the shared
+  `surface-in` keyframes over `--dur-fast`; toasts slide from their edge;
+  state changes transition over `--dur-fast`/`--dur-base`; only progress
+  indicators animate continuously. Nothing else moves — no slides, scales,
+  or bounces on open. A new floating surface gets
+  `animation: surface-in var(--dur-fast) var(--ease-out);`, nothing bespoke.
+- **Disabled controls share `--disabled-opacity` (0.4, 2026-09).** Four
+  ad-hoc values (0.35–0.6) were consolidated; 0.6 read as active and invited
+  clicks the control swallowed (found via the tab-strip arrow investigation).
+  Pair it with `cursor: default` and no hover response.
+- **Panel zero-states read as `--fg-muted` at `--text-base` (2026-09).**
+  Empty notices carry information, so they use muted (not dim), centered,
+  with roomy padding. Inline "no results" rows inside popups stay on their
+  smaller italic style — different role.
+- **Borders stay softened, not removed (2026-09).** After living with the
+  Phase C `--border-subtle` seams, outright removal was considered and
+  declined — the hairlines still do orientation work at the panel scale.
 - **Accessibility is token-level (2026-09).** Two media blocks at the end of
   `themes.css` override tokens only, so every theme/palette follows without
   component awareness: `prefers-reduced-motion` collapses `--dur-*` and

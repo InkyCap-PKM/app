@@ -12,6 +12,7 @@
    be migrated to share these selectors when that file is next touched. */
 
 .app-modal__backdrop {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   position: fixed;
   inset: 0;
   background: var(--modal-backdrop);
@@ -22,6 +23,7 @@
 }
 
 .app-modal {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   background: var(--modal-bg);
   border: 1px solid var(--modal-border-color);
   border-radius: var(--modal-radius);
@@ -353,7 +355,7 @@
 }
 
 .notebox-required__entry:disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 

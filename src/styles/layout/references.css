@@ -159,7 +159,7 @@
 
 .left-sidebar__icon-btn:disabled,
 .right-panel__icon-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

@@ -107,7 +107,7 @@
 .creation-rules__edit-btn:disabled,
 .creation-rules__delete-btn:disabled,
 .creation-rules__disable-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -165,7 +165,7 @@
 }
 
 .creation-rules__add-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -197,7 +197,7 @@
 }
 
 .creation-rules__save-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

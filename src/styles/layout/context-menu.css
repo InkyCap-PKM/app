@@ -4,6 +4,7 @@
 
 /* Context menu (shared by view tabs and sidebar) */
 .context-menu {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   position: fixed;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);

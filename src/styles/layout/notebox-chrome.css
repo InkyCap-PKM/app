@@ -76,7 +76,7 @@
 /* A notebox already open in another window: greyed and unclickable in the
    switcher (one notebox per window), tagged so the reason is obvious. */
 .notebox-switcher__switch:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 

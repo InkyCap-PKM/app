@@ -102,6 +102,11 @@
      Shared button geometry consumed by the .btn utility (layout.css).
      --focus-ring is the single keyboard-focus affordance applied via
      :focus-visible across interactive elements. */
+  /* One opacity for every :disabled control. Low enough to read as
+     inert at a glance — a barely-dimmed disabled control invites
+     clicks it will swallow. */
+  --disabled-opacity: 0.4;
+
   --btn-pad-y: 6px;
   --btn-pad-x: 14px;
   --btn-radius: var(--radius-md);
@@ -110,6 +115,11 @@
   /* ── Motion ─────────────────────────────────────────────────────
      Consistent micro-interaction timing. Keep transitions short and
      uniform so the UI feels responsive, not animated. */
+  /* The motion vocabulary, in full: transient surfaces (menus,
+     dropdowns, palettes, tooltips, modals) fade in with surface-in
+     over --dur-fast; toasts slide from their edge; state changes
+     transition over --dur-fast/--dur-base; only progress indicators
+     animate continuously. Nothing else moves. */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --dur-fast: 120ms;
   --dur-base: 200ms;
@@ -587,6 +597,13 @@
   --scrollbar-thumb: #4a4a4a;
 }
 
+/* The one entrance animation — see the motion vocabulary note above. */
+@keyframes surface-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* ── Accessibility overrides ─────────────────────────────────────────
    Both blocks override tokens only, so they retune every theme and
    palette from one place; component rules need no awareness of them. */
@@ -630,6 +647,7 @@
 /* ── Wikilink suggest popup (body-level, outside CM editor) ── */
 
 .wikilink-suggest {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   position: fixed;
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);

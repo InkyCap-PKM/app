@@ -93,7 +93,7 @@
 }
 
 .git-panel__primary-btn:disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -273,7 +273,7 @@
 }
 
 .git-panel__choice:disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

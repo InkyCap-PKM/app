@@ -7,6 +7,7 @@
    tokens and sits at the --z-menu tier. Anchored under the header funnel by
    `anchorPanelMenu`. */
 .column-filter {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   position: fixed;
   z-index: var(--z-menu);
   min-width: 220px;

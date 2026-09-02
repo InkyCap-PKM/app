@@ -4,6 +4,7 @@
 
 /* Formatting toolbar (floating tooltip) */
 .cm-formatting-toolbar {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -97,6 +98,7 @@
 
 /* Page preview tooltip */
 .cm-tooltip-page-preview {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   background: var(--popup-bg);
   border: 1px solid var(--popup-border-color);
   border-radius: var(--popup-radius);

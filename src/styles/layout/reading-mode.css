@@ -582,7 +582,7 @@
 }
 
 .editor-header__zoom .editor-header__mode-seg:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

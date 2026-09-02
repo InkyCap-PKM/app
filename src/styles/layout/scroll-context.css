@@ -13,7 +13,7 @@
 
 .scroll-context__empty {
   padding: var(--space-6) var(--space-5);
-  color: var(--fg-dim);
+  color: var(--fg-muted);
   font-size: var(--text-sm);
   font-style: italic;
   text-align: center;
@@ -126,7 +126,7 @@
 }
 
 .scroll-context__empty-row {
-  color: var(--fg-dim);
+  color: var(--fg-muted);
   font-size: var(--text-sm);
   font-style: italic;
   padding: var(--space-2) 0;

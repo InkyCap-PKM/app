@@ -18,7 +18,7 @@
 }
 
 .search-panel__replace-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -285,7 +285,7 @@
 }
 
 .search-panel__page-btn:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
