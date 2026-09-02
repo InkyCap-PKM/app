@@ -227,7 +227,9 @@
   --fg-primary: #071E22;
   --fg-secondary: #1a3a3e;
   --fg-muted: #4d706a;
-  --fg-dim: #8a9e9a;
+  /* Kept at >= 4.5:1 contrast — dim text still carries information
+     (hints, shortcuts, timestamps), so it must stay readable. */
+  --fg-dim: #627672;
   --fg-gutter: #8a9e9a;
   --fg-separator: #d6d6d6;
 
@@ -395,7 +397,7 @@
   --fg-primary: #d8e0e0;
   --fg-secondary: #b8c8c6;
   --fg-muted: #7a9490;
-  --fg-dim: #4d706a;
+  --fg-dim: #718b87;   /* >= 4.5:1 on Ink Black — see light-theme note */
   --fg-gutter: #7a9490;
   --fg-separator: #1a4045;
 
@@ -541,7 +543,7 @@
   --fg-primary: #1d1915;
   --fg-secondary: #3b3630;
   --fg-muted: #6b655c;
-  --fg-dim: #968f84;
+  --fg-dim: #7a7369;   /* >= 4.5:1 — see light-theme note */
   --fg-gutter: #968f84;
   --fg-separator: #cfc9bb;
 
@@ -572,7 +574,7 @@
   --fg-primary: #e0e0e0;
   --fg-secondary: #c0c0c0;
   --fg-muted: #909090;
-  --fg-dim: #606060;
+  --fg-dim: #878787;   /* >= 4.5:1 — see light-theme note */
   --fg-gutter: #909090;
   --fg-separator: #3e3e3e;
 
@@ -583,6 +585,46 @@
   --code-block-border: #3e3e3e;
 
   --scrollbar-thumb: #4a4a4a;
+}
+
+/* ── Accessibility overrides ─────────────────────────────────────────
+   Both blocks override tokens only, so they retune every theme and
+   palette from one place; component rules need no awareness of them. */
+
+/* Reduced motion: micro-interaction timing collapses via the motion
+   tokens, and the blanket rule catches keyframe animations plus any
+   literal durations that predate the token scale. Spinners and loading
+   dots freeze on their first frame — still visible, no longer moving.
+   Nothing in the app listens for transitionend/animationend, so
+   near-zero durations are safe. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Higher contrast: quiet hairlines take the strong border tier, the
+   dimmest text tier is folded into muted, and the keyboard focus ring
+   strengthens. Selectors repeat with attributes so these win over the
+   per-theme and per-palette blocks above at equal-or-higher specificity. */
+@media (prefers-contrast: more) {
+  :root,
+  :root[data-theme],
+  :root[data-palette][data-theme] {
+    --border-subtle: var(--border-primary);
+    --fg-dim: var(--fg-muted);
+    --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-color, #1D7874) 85%, transparent);
+  }
 }
 
 /* ── Wikilink suggest popup (body-level, outside CM editor) ── */
