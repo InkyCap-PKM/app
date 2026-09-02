@@ -4,6 +4,13 @@
 // `SpellChecker` (Hunspell-backed) supplied through `spellCheckerFacet`; this
 // module's job is to decide *what* to check and to draw the wavy underlines.
 //
+// The underlines are painted by a CodeMirror *layer* (absolutely positioned
+// elements floating over the text) rather than by a mark decoration. A mark
+// decoration would wrap each misspelled word in a <span>, which splits the
+// line into separate inline boxes; the browser rounds each box's width, so the
+// flagged word visibly nudges sideways the moment it is underlined. A layer
+// never touches inline layout, so the text stays exactly where it was.
+//
 // Typst-awareness is the point: we only check prose, never markup or code. We
 // walk the lezer-typst syntax tree and collect text from:
 //   • `Text` leaves — ordinary markup prose, including headings and the prose
@@ -18,16 +25,20 @@
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import {
+  EditorSelection,
   Facet,
+  RangeSet,
+  RangeValue,
   StateEffect,
   type EditorState,
   type Extension,
   type Range,
 } from "@codemirror/state";
 import {
-  Decoration,
-  type DecorationSet,
   EditorView,
+  type LayerMarker,
+  layer,
+  RectangleMarker,
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
@@ -45,9 +56,14 @@ export const spellCheckerFacet = Facet.define<SpellChecker | null, SpellChecker 
 // permanent dictionary add.
 const ignoredWords = new Set<string>();
 
-// Forces a decoration rebuild without a doc/viewport/checker change — dispatched
-// after "Ignore" so the just-ignored word's underline clears immediately.
+// Forces a re-check without a doc/viewport/checker change — dispatched after
+// "Ignore" so the just-ignored word's underline clears immediately.
 const rebuildSpell = StateEffect.define<null>();
+
+// Says "the flagged words changed, repaint the underlines" without asking for
+// another check. Dispatched by the debounced re-check, which has already done
+// the work by the time it fires.
+const spellRedraw = StateEffect.define<null>();
 
 // Subtrees that never hold prose — skip them (and their descendants) entirely.
 const SKIP_SUBTREE = new Set([
@@ -67,7 +83,16 @@ const SKIP_SUBTREE = new Set([
   "ImportItemPath",
 ]);
 
-const spellMark = Decoration.mark({ class: "cm-spell-error" });
+/**
+ * A flagged word. Carries no styling of its own: the set of these ranges is
+ * only a position store (mapped through edits, queried by the context menu),
+ * and the layer below turns it into squiggles.
+ */
+class Misspelling extends RangeValue {}
+const misspelling = new Misspelling();
+
+/** Sorted, non-overlapping ranges of the misspelled words in view. */
+export type MisspellingSet = RangeSet<Misspelling>;
 
 // A word: a letter followed by letters / combining marks / intra-word
 // apostrophes and hyphens. Unicode-aware so accented Latin, CJK, etc. tokenize.
@@ -88,13 +113,13 @@ function isInVerseCall(state: EditorState, node: SyntaxNode): boolean {
   return false;
 }
 
-/** Push spell-error marks for every misspelled word in [from, to). */
+/** Push a range for every misspelled word in [from, to). */
 function checkRange(
   state: EditorState,
   checker: SpellChecker,
   from: number,
   to: number,
-  out: Range<Decoration>[],
+  out: Range<Misspelling>[],
 ) {
   const text = state.doc.sliceString(from, to);
   WORD_RE.lastIndex = 0;
@@ -109,15 +134,15 @@ function checkRange(
     if (ignoredWords.has(word.toLowerCase())) continue;
     if (checker.correct(word)) continue;
     const start = from + m.index;
-    out.push(spellMark.range(start, start + raw.length));
+    out.push(misspelling.range(start, start + raw.length));
   }
 }
 
-function buildDecorations(view: EditorView): DecorationSet {
+function findMisspellings(view: EditorView): MisspellingSet {
   const checker = view.state.facet(spellCheckerFacet);
-  if (!checker) return Decoration.none;
+  if (!checker) return RangeSet.empty;
 
-  const out: Range<Decoration>[] = [];
+  const out: Range<Misspelling>[] = [];
   const tree = syntaxTree(view.state);
   // Only the visible ranges — checking the whole document on every keystroke
   // doesn't scale, and off-screen underlines aren't visible anyway.
@@ -143,16 +168,16 @@ function buildDecorations(view: EditorView): DecorationSet {
     });
   }
   out.sort((a, b) => a.from - b.from);
-  return Decoration.set(out, true);
+  return RangeSet.of(out, true);
 }
 
 const spellcheckPlugin = ViewPlugin.fromClass(
   class {
-    decorations: DecorationSet;
+    misspellings: MisspellingSet;
     private timer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(view: EditorView) {
-      this.decorations = buildDecorations(view);
+      this.misspellings = findMisspellings(view);
     }
 
     update(update: ViewUpdate) {
@@ -165,18 +190,18 @@ const spellcheckPlugin = ViewPlugin.fromClass(
       // Viewport / checker / forced changes rebuild immediately; typing debounces
       // so we aren't re-checking a half-typed word on every keystroke.
       if (update.viewportChanged || checkerChanged || forced) {
-        this.decorations = buildDecorations(update.view);
+        this.misspellings = findMisspellings(update.view);
       } else if (update.docChanged) {
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => {
           this.timer = null;
-          this.decorations = buildDecorations(update.view);
-          // Empty dispatch to trigger a redraw cycle that re-reads the freshly
-          // rebuilt decorations (we're outside the update loop here).
-          update.view.dispatch({});
+          this.misspellings = findMisspellings(update.view);
+          // We're outside the update loop here, so ask for a redraw cycle that
+          // re-reads the freshly rebuilt ranges.
+          update.view.dispatch({ effects: spellRedraw.of(null) });
         }, 300);
-        // Map existing marks through the edit so they track until the rebuild.
-        this.decorations = this.decorations.map(update.changes);
+        // Map existing ranges through the edit so they track until the rebuild.
+        this.misspellings = this.misspellings.map(update.changes);
       }
     }
 
@@ -184,16 +209,94 @@ const spellcheckPlugin = ViewPlugin.fromClass(
       if (this.timer) clearTimeout(this.timer);
     }
   },
-  {
-    decorations: (v) => v.decorations,
-  },
 );
 
+// ── Underline layer ─────────────────────────────────────────────────────────
+// One absolutely-positioned element per flagged word (per visual line, when a
+// word wraps), drawn on top of the text. Nothing here takes part in inline
+// layout, so underlining a word never moves it.
+
+/** Squiggle thickness and its gap below the glyphs, in CSS pixels. */
+const WAVE_HEIGHT = 3;
+const WAVE_GAP = 1;
+/** Rough height of a line of text, as a multiple of its font size. */
+const TEXT_HEIGHT_RATIO = 1.2;
+
+/** Wavy squiggle, used as a mask so the colour stays a theme token. */
+const WAVE_MASK =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' " +
+  "width='6' height='3'%3E%3Cpath d='M0 2.5q1.5-2 3 0t3 0' fill='none' " +
+  "stroke='%23000' stroke-width='1'/%3E%3C/svg%3E\")";
+
+/** The rendered font size at `pos`, so the squiggle follows headings too. */
+function fontSizeAt(view: EditorView, pos: number): number {
+  const { node } = view.domAtPos(pos);
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement);
+  const size = parseFloat(window.getComputedStyle(el ?? view.contentDOM).fontSize);
+  return size > 0 ? size : parseFloat(window.getComputedStyle(view.contentDOM).fontSize);
+}
+
+/**
+ * Thin squiggle bars covering one flagged word, one per visual line, since a
+ * word can wrap. `RectangleMarker.forRange` does the hard part (horizontal
+ * extent, wrapping, right-to-left text); we keep its horizontal geometry and
+ * replace the vertical box with a bar sitting just under the glyphs. Its boxes
+ * are as tall as the line, which with generous line spacing leaves the text
+ * centred inside them, so the glyph bottom is the box centre plus half the
+ * text's own height.
+ */
+function underlineMarkers(view: EditorView, from: number, to: number): LayerMarker[] {
+  const fontSize = fontSizeAt(view, from);
+  const boxes = RectangleMarker.forRange(
+    view,
+    "cm-spell-underline",
+    EditorSelection.range(from, to),
+  );
+  return boxes.map((box) => {
+    const textHeight = Math.min(box.height, fontSize * TEXT_HEIGHT_RATIO);
+    const top = box.top + box.height / 2 + textHeight / 2 + WAVE_GAP;
+    return new RectangleMarker("cm-spell-underline", box.left, top, box.width, WAVE_HEIGHT);
+  });
+}
+
+const spellUnderlineLayer = layer({
+  above: true,
+  class: "cm-spell-layer",
+  // Text-layout changes (typing, scrolling, decorations appearing) already
+  // re-measure the layer on their own; this only catches the flagged words
+  // changing on their own.
+  update: (update) =>
+    update.transactions.some((tr) =>
+      tr.effects.some((e) => e.is(rebuildSpell) || e.is(spellRedraw)),
+    ),
+  markers: (view) => {
+    const flagged = view.plugin(spellcheckPlugin)?.misspellings;
+    if (!flagged) return [];
+    const markers: LayerMarker[] = [];
+    for (const { from, to } of view.visibleRanges) {
+      flagged.between(from, to, (wordFrom, wordTo) => {
+        markers.push(...underlineMarkers(view, wordFrom, wordTo));
+      });
+    }
+    return markers;
+  },
+});
+
 const spellcheckTheme = EditorView.baseTheme({
-  ".cm-spell-error": {
-    textDecoration: "underline wavy var(--accent-danger, #e06c75)",
-    textDecorationSkipInk: "none",
-    textUnderlineOffset: "2px",
+  // The layer sits above the text, so it must not eat clicks meant for it.
+  ".cm-spell-layer": {
+    pointerEvents: "none",
+  },
+  ".cm-spell-underline": {
+    backgroundColor: "var(--accent-danger, #e06c75)",
+    maskImage: WAVE_MASK,
+    WebkitMaskImage: WAVE_MASK,
+    maskRepeat: "repeat-x",
+    WebkitMaskRepeat: "repeat-x",
+    maskPosition: "left bottom",
+    WebkitMaskPosition: "left bottom",
+    maskSize: `6px ${WAVE_HEIGHT}px`,
+    WebkitMaskSize: `6px ${WAVE_HEIGHT}px`,
   },
 });
 
@@ -328,10 +431,10 @@ const spellContextMenu = EditorView.domEventHandlers({
     if (pos == null) return false;
     // Only intercept when the click is actually on an underlined misspelling —
     // otherwise let the native menu (cut/copy/paste) through.
-    const deco = view.plugin(spellcheckPlugin)?.decorations;
-    if (!deco) return false;
+    const flagged = view.plugin(spellcheckPlugin)?.misspellings;
+    if (!flagged) return false;
     let hit: { from: number; to: number } | null = null;
-    deco.between(pos, pos, (from, to) => {
+    flagged.between(pos, pos, (from, to) => {
       hit = { from, to };
       return false;
     });
@@ -349,6 +452,7 @@ const spellContextMenu = EditorView.domEventHandlers({
 /** The spell-check extension. Pair with `spellCheckerFacet.of(checker)`. */
 export const spellcheck: Extension = [
   spellcheckPlugin,
+  spellUnderlineLayer,
   spellcheckTheme,
   spellContextMenu,
 ];
