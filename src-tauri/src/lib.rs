@@ -396,6 +396,8 @@ pub fn run() {
             commands::mycelial::exclude_mycelial_hub,
             commands::mycelial::remove_mycelial_hub_exclusion,
             commands::mycelial::ensure_mycelial_hub_exclusions_file,
+            commands::mycelial_exclusions::get_mycelial_exclusions,
+            commands::mycelial_exclusions::set_mycelial_exclusions,
             commands::spellcheck::list_spellcheck_dictionaries,
             commands::spellcheck::read_spellcheck_dictionary,
             commands::spellcheck::spellcheck_dictionary_folder,

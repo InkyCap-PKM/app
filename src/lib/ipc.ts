@@ -26,6 +26,7 @@ import type {
   Bookmark,
   BookmarkKind,
   MycelialData,
+  MycelialExclusionInfo,
   PropertyType,
   AgendaItem,
   Recurrence,
@@ -1439,6 +1440,19 @@ export async function rescueMycelialTerm(term: string): Promise<void> {
 /** Rescue a term the user added to their stopword list by removing that line. */
 export async function removeMycelialStopword(term: string): Promise<void> {
   return invoke<void>("remove_mycelial_stopword", { term });
+}
+
+/** Notebox-wide Mycelial exclusion rules plus the count of notes they
+ *  currently exclude. */
+export async function getMycelialExclusions(): Promise<MycelialExclusionInfo> {
+  return invoke<MycelialExclusionInfo>("get_mycelial_exclusions");
+}
+
+/** Replace the Mycelial exclusion rule list and return the refreshed state. */
+export async function setMycelialExclusions(
+  rules: string[],
+): Promise<MycelialExclusionInfo> {
+  return invoke<MycelialExclusionInfo>("set_mycelial_exclusions", { rules });
 }
 
 /** Hide an under-developed page from the Growth panel (per-notebox, reversible

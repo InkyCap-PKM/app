@@ -15,6 +15,7 @@ pub mod git;
 pub mod journal_scroll;
 pub mod markdown;
 pub mod mycelial;
+pub mod mycelial_exclusions;
 pub mod name_audit;
 pub mod notebox;
 pub mod plugins;

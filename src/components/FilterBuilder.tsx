@@ -3,23 +3,17 @@ import type { FilterGroup, FilterNode } from "../lib/types";
 import { Dropdown } from "./Dropdown";
 import { propertyLabel } from "../lib/property-labels";
 import { useI18n } from "../lib/i18n";
-import { type FilterRow, parseFilterRow, serializeFilterRow } from "../lib/filter-expr";
+import {
+  FILTER_OPERATORS,
+  type FilterRow,
+  parseFilterRow,
+  serializeFilterRow,
+} from "../lib/filter-expr";
 
 /** Operators available in the filter builder. Labels resolve through i18n at
  *  render time (see `labelKey`). The relational operators (< ≤ > ≥) compare
  *  numerically or, for ISO dates, chronologically — see the Rust evaluator. */
-const OPERATORS = [
-  { value: "==", labelKey: "filter.op.equals" },
-  { value: "!=", labelKey: "filter.op.notEquals" },
-  { value: "<", labelKey: "filter.op.lt" },
-  { value: "<=", labelKey: "filter.op.le" },
-  { value: ">", labelKey: "filter.op.gt" },
-  { value: ">=", labelKey: "filter.op.ge" },
-  { value: ".contains", labelKey: "filter.op.contains" },
-  { value: "!.contains", labelKey: "filter.op.notContains" },
-  { value: ".isEmpty", labelKey: "filter.op.isEmpty" },
-  { value: "!.isEmpty", labelKey: "filter.op.isNotEmpty" },
-] as const;
+const OPERATORS = FILTER_OPERATORS;
 
 /** Group combinators, mapped to the backend `and`/`or`/`not` keys. The UI
  *  labels them All / Any / None, following the convention in the reference
@@ -118,7 +112,9 @@ function propertyOptions(
   ];
 }
 
-const FilterRowEditor: Component<{
+/** One property/operator/value row. Exported so other filter surfaces (the
+ *  Mycelial exclusion editor) present the same row UI as the FilterBuilder. */
+export const FilterRowEditor: Component<{
   row: FilterRow;
   allKeys: string[];
   onChange: (row: FilterRow) => void;

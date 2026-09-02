@@ -67,6 +67,22 @@ export function parseFilterRow(expr: string): FilterRow {
  *  input is needed. */
 export const RELATIONAL_OPERATORS = ["==", "!=", "<", "<=", ">", ">="] as const;
 
+/** Every operator a filter row can carry, with its i18n label key. Shared by
+ *  the FilterBuilder and the Mycelial exclusion editor so the two present
+ *  identical operator vocabularies. */
+export const FILTER_OPERATORS = [
+  { value: "==", labelKey: "filter.op.equals" },
+  { value: "!=", labelKey: "filter.op.notEquals" },
+  { value: "<", labelKey: "filter.op.lt" },
+  { value: "<=", labelKey: "filter.op.le" },
+  { value: ">", labelKey: "filter.op.gt" },
+  { value: ">=", labelKey: "filter.op.ge" },
+  { value: ".contains", labelKey: "filter.op.contains" },
+  { value: "!.contains", labelKey: "filter.op.notContains" },
+  { value: ".isEmpty", labelKey: "filter.op.isEmpty" },
+  { value: "!.isEmpty", labelKey: "filter.op.isNotEmpty" },
+] as const;
+
 /** Serialize a FilterRow back to a filter expression string, or "" when the
  *  row has no property yet (such rows are dropped on save). */
 export function serializeFilterRow(row: FilterRow): string {

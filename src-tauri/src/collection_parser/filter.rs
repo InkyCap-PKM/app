@@ -338,6 +338,17 @@ pub fn parse_filter_expr(input: &str) -> Result<FilterExpr, InkyCapError> {
 fn resolve_property(prop: &PropertyRef, note: &NoteMetadata, self_path: &Path) -> PropertyValue {
     match prop {
         PropertyRef::File(field) => {
+            // `file.tags` resolves from the note's real tag list — the union
+            // of inline `#tag(...)` calls and `#note(tags: ...)` — rather
+            // than from the `file.*` property map, which never carries tags.
+            if field == "tags" {
+                return PropertyValue::List(
+                    note.tags
+                        .iter()
+                        .map(|t| PropertyValue::String(t.clone()))
+                        .collect(),
+                );
+            }
             let key = format!("file.{}", field);
             note.properties
                 .get(&key)
@@ -612,6 +623,12 @@ mod tests {
         }
     }
 
+    fn make_tagged_note(tags: Vec<&str>) -> NoteMetadata {
+        let mut note = make_note(vec![]);
+        note.tags = tags.into_iter().map(String::from).collect();
+        note
+    }
+
     #[test]
     fn test_parse_file_name_ne_this() {
         let expr = parse_filter_expr("file.name != this.file.name").unwrap();
@@ -702,13 +719,7 @@ mod tests {
     #[test]
     fn test_tags_contains() {
         let expr = parse_filter_expr(r#"file.tags.contains("rust")"#).unwrap();
-        let note = make_note(vec![(
-            "file.tags",
-            PropertyValue::List(vec![
-                PropertyValue::String("rust".to_string()),
-                PropertyValue::String("tauri".to_string()),
-            ]),
-        )]);
+        let note = make_tagged_note(vec!["rust", "tauri"]);
         assert!(evaluate(
             &expr,
             &note,
@@ -784,20 +795,14 @@ mod tests {
     fn test_negation_flips_result() {
         let expr = parse_filter_expr(r#"!file.tags.contains("rust")"#).unwrap();
 
-        let has_rust = make_note(vec![(
-            "file.tags",
-            PropertyValue::List(vec![PropertyValue::String("rust".into())]),
-        )]);
+        let has_rust = make_tagged_note(vec!["rust"]);
         assert!(!evaluate(
             &expr,
             &has_rust,
             Path::new("/notebox/x.collection")
         ));
 
-        let no_rust = make_note(vec![(
-            "file.tags",
-            PropertyValue::List(vec![PropertyValue::String("go".into())]),
-        )]);
+        let no_rust = make_tagged_note(vec!["go"]);
         assert!(evaluate(
             &expr,
             &no_rust,

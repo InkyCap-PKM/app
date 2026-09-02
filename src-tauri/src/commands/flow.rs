@@ -24,11 +24,16 @@ pub struct FlowEdge {
 
 /// BFS traversal of the link graph from a center note.
 /// Returns (nodes, edges) for rendering.
+///
+/// Notes in `excluded` are treated as absent from the graph: they are never
+/// added as nodes, never emit edges, and never bridge two other notes. The
+/// center note itself is always kept, even if listed.
 pub fn bfs_link_graph(
     link_index: &LinkIndex,
     center_path: &Path,
     center_id: &str,
     max_depth: usize,
+    excluded: &HashSet<PathBuf>,
 ) -> (Vec<FlowNode>, Vec<FlowEdge>) {
     let mut nodes: Vec<FlowNode> = Vec::new();
     let mut edges: Vec<FlowEdge> = Vec::new();
@@ -55,6 +60,9 @@ pub fn bfs_link_graph(
         }
         let backlinks = link_index.get_backlinks(&current);
         for bl in backlinks {
+            if excluded.contains(&bl) {
+                continue;
+            }
             let bl_str = to_frontend_string(&bl);
             edges.push(FlowEdge {
                 source: bl_str.clone(),
@@ -86,6 +94,9 @@ pub fn bfs_link_graph(
         }
         let forward = link_index.get_forward_links(&current);
         for fl in forward {
+            if excluded.contains(&fl) {
+                continue;
+            }
             let fl_str = to_frontend_string(&fl);
             edges.push(FlowEdge {
                 source: to_frontend_string(&current),

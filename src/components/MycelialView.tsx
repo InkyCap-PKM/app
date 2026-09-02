@@ -77,6 +77,8 @@ interface ViewCacheEntry {
   weakHubs: WeakHub[];
   openQuestions: NoteQuestions[];
   totalDocs: number;
+  /** Whether the centre note matches the notebox's exclusion rules. */
+  centerExcluded: boolean;
 }
 
 const viewCache = new Map<string, ViewCacheEntry>();
@@ -144,6 +146,7 @@ export default function MycelialView(props: MycelialViewProps) {
   const [weakHubs, setWeakHubs] = createSignal<WeakHub[]>([]);
   const [openQuestions, setOpenQuestions] = createSignal<NoteQuestions[]>([]);
   const [totalDocs, setTotalDocs] = createSignal(0);
+  const [centerExcluded, setCenterExcluded] = createSignal(false);
   const [maxDepth, setMaxDepth] = createSignal(2);
   const [centerPath, setCenterPath] = createSignal(props.path);
   const [history, setHistory] = createSignal<string[]>([]);
@@ -296,6 +299,7 @@ export default function MycelialView(props: MycelialViewProps) {
       setWeakHubs(data.weak_hubs ?? []);
       setOpenQuestions(data.open_questions ?? []);
       setTotalDocs(data.total_docs ?? 0);
+      setCenterExcluded(data.center_excluded ?? false);
 
       const computed = computeMycelialLayout(
         data.center,
@@ -332,6 +336,7 @@ export default function MycelialView(props: MycelialViewProps) {
       weakHubs: weakHubs(),
       openQuestions: openQuestions(),
       totalDocs: totalDocs(),
+      centerExcluded: centerExcluded(),
     });
   }
 
@@ -362,6 +367,7 @@ export default function MycelialView(props: MycelialViewProps) {
         setWeakHubs(cached.weakHubs);
         setOpenQuestions(cached.openQuestions);
         setTotalDocs(cached.totalDocs);
+        setCenterExcluded(cached.centerExcluded);
         setLoading(false);
       } else {
         setCenterPath(path);
@@ -372,9 +378,13 @@ export default function MycelialView(props: MycelialViewProps) {
     });
   });
 
-  // Recompute when the Concept Filtering pane rescues a term or edits the
-  // stopword list — the suppressed-term set and the graph both change.
-  const onMycelialReload = () => loadData();
+  // Recompute when the Filtering pane changes stopwords or note-exclusion
+  // rules — the graph changes for every note, so drop all cached views
+  // rather than restoring stale ones when the user navigates back.
+  const onMycelialReload = () => {
+    viewCache.clear();
+    loadData();
+  };
   document.addEventListener("inkycap:mycelial-reload", onMycelialReload);
 
   // Mirror this view's context list and excluded terms into the tab-keyed store
@@ -1026,6 +1036,14 @@ export default function MycelialView(props: MycelialViewProps) {
       <Show when={totalDocs() > 0 && totalDocs() < 50}>
         <div class="mycelial-view__notice">
           {t("mycelial.earlyGrowth", { count: String(totalDocs()) })}
+        </div>
+      </Show>
+
+      {/* The centre note matches the notebox's exclusion rules — it is
+          analyzed anyway because the user opened the view on it. */}
+      <Show when={centerExcluded()}>
+        <div class="mycelial-view__notice">
+          {t("mycelial.centerExcluded")}
         </div>
       </Show>
 

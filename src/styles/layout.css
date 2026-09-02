@@ -8726,6 +8726,28 @@ input.date-value__offset {
   color: var(--fg-primary);
 }
 
+/* Property-rule editor for note exclusions. Reuses the FilterBuilder's row
+   component; the panel is much narrower than the collection table, so the row
+   wraps and its fixed-width property picker stretches instead. */
+.concept-filtering__rule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.concept-filtering__rule-editor .filter-builder__row {
+  flex-wrap: wrap;
+}
+
+.concept-filtering__rule-editor .filter-builder__property-dropdown {
+  width: 100%;
+}
+
+.concept-filtering__rule-editor > .btn {
+  align-self: flex-end;
+}
+
 /* ─── Mycelial Growth pane (under-developed pages + open questions) ───
    Rows reuse the Links pane's `.sidebar-item` + `.link-context` structure;
    only the pieces with no existing equivalent are styled here. */
