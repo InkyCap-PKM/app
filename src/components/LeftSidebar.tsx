@@ -1504,7 +1504,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <div class="left-sidebar__sort-wrap">
                 <button
                   ref={collectionSortBtnRef}
-                  class="left-sidebar__icon-btn"
+                  class="ui-icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowCollectionSortMenu((v) => !v);
@@ -1544,7 +1544,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </Show>
               </div>
               <button
-                class={`left-sidebar__icon-btn${showCollectionSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                class={`ui-icon-btn${showCollectionSearch() ? " is-active" : ""}`}
                 onClick={() => {
                   const next = !showCollectionSearch();
                   setShowCollectionSearch(next);
@@ -1650,7 +1650,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <div class="left-sidebar__sort-wrap">
                 <button
                   ref={fileSortBtnRef}
-                  class="left-sidebar__icon-btn"
+                  class="ui-icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowFileSortMenu((v) => !v);
@@ -1689,7 +1689,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </Show>
               </div>
               <button
-                class="left-sidebar__icon-btn"
+                class="ui-icon-btn"
                 onClick={() =>
                   allDirsExpanded() ? collapseAllDirs() : expandAllDirs()
                 }
@@ -1885,7 +1885,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <div class="left-sidebar__sort-wrap">
                 <button
                   ref={tagSortBtnRef}
-                  class="left-sidebar__icon-btn"
+                  class="ui-icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowTagSortMenu((v) => !v);
@@ -1924,7 +1924,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </Show>
               </div>
               <button
-                class={`left-sidebar__icon-btn${showTagSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                class={`ui-icon-btn${showTagSearch() ? " is-active" : ""}`}
                 onClick={() => {
                   const next = !showTagSearch();
                   setShowTagSearch(next);
@@ -2014,7 +2014,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
               <div class="left-sidebar__sort-wrap">
                 <button
                   ref={propSortBtnRef}
-                  class="left-sidebar__icon-btn"
+                  class="ui-icon-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowPropSortMenu((v) => !v);
@@ -2053,7 +2053,7 @@ const LeftSidebar: Component<LeftSidebarProps> = (props) => {
                 </Show>
               </div>
               <button
-                class={`left-sidebar__icon-btn${showPropSearch() ? " left-sidebar__icon-btn--active" : ""}`}
+                class={`ui-icon-btn${showPropSearch() ? " is-active" : ""}`}
                 onClick={() => {
                   const next = !showPropSearch();
                   setShowPropSearch(next);

@@ -157,12 +157,6 @@
   box-shadow: var(--focus-ring);
 }
 
-.left-sidebar__icon-btn:disabled,
-.right-panel__icon-btn:disabled {
-  opacity: var(--disabled-opacity);
-  cursor: default;
-}
-
 .refresh-icon--spinning {
   animation: spin 0.8s linear infinite;
 }

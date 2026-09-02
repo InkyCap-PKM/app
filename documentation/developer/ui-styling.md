@@ -80,14 +80,11 @@ carries nothing but its margin.
 
 ### Icon-only buttons
 
-Square icon buttons are a separate role. The canonical class is
-**`.ui-icon-btn`** (add `.is-active` for a toggled state). `.icon-btn`,
-`.left-sidebar__icon-btn`, and `.right-panel__icon-btn` are pre-existing,
-visually-equivalent variants kept for their call sites; **prefer
-`.ui-icon-btn` for new code**. All of them now share the `--focus-ring`
-focus-visible treatment. (Consolidating the legacy three onto `.ui-icon-btn`
-is a safe future cleanup — it was left out of the first pass only to avoid
-touching dozens of call sites blind.)
+Square icon buttons are a separate role. The one class is **`.ui-icon-btn`**
+(add `.is-active` for a toggled state). The legacy variants (`.icon-btn`,
+`.left-sidebar__icon-btn`, `.right-panel__icon-btn`) were consolidated onto
+it in 2026-09 and no longer exist — do not reintroduce them. Buttons are
+sized by padding around the icon so they scale with the icon tokens.
 
 ---
 
@@ -132,13 +129,14 @@ combobox) round only their outer corners using the same token
 
 - **Corner radius is 7px** at the control tier (`--radius-md`). This was a
   deliberate, slightly-softer-than-6px choice; retune from the one token.
-- **Density** is implemented as a `--density` multiplier on the spacing scale,
-  toggled by `data-density="compact"` on `<html>`. The CSS mechanism is in
-  place. A user-facing Settings toggle is **intentionally not surfaced yet**:
-  it only bites on rules that consume `--space-*`, so it should wait until
-  spacing-scale adoption across the `src/styles/layout/` files is broad enough
-  for "compact" to meaningfully tighten the UI. Surfacing it early would be a
-  shim.
+- **Density stays a CSS-only lever — no Settings toggle.** The `--density`
+  multiplier on the spacing scale (via `data-density="compact"` on `<html>`)
+  works app-wide since the 2026-09 token migration. A Settings → Appearance
+  toggle was built, tried, and **removed the same day**: at 0.85 the visible
+  difference was too small to justify a user-facing option. Don't re-propose
+  the toggle without also making compact meaningfully tighter. The CSS
+  mechanism is kept — it costs three lines and makes any future revisit
+  trivial.
 - **No frosted / glass surfaces.** `backdrop-filter` blur on menus/palettes was
   considered and **rejected** — it is not the desired aesthetic. Do not
   re-propose it.

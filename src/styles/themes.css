@@ -264,7 +264,7 @@
   --accent-purple: var(--accent-color, #1D7874);
   --accent-purple-bg: color-mix(in srgb, var(--accent-color, #1D7874) 12%, white);
   --accent-yellow: #9a6830;
-  --accent-green: #2a6a50;
+  --accent-green: var(--accent-success);
   --accent-orange: #a86430;
   --accent-danger: #c42025;
   --accent-danger-bg: #fde8e8;
@@ -356,12 +356,12 @@
   --callout-abstract: #2a8a9a;
   --callout-info: color-mix(in srgb, var(--accent-color, #1D7874) 85%, black);
   --callout-tip: #2a6a50;
-  --callout-success: #2a6a50;
+  --callout-success: var(--accent-success);
   --callout-question: #c48a30;
   --callout-warning: #c48a30;
-  --callout-failure: #c42025;
+  --callout-failure: var(--accent-danger);
   --callout-danger: #a81a1e;
-  --callout-bug: #c42025;
+  --callout-bug: var(--accent-danger);
   --callout-example: #6a5ea8;
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
 
@@ -515,12 +515,12 @@
   --callout-abstract: #3da8c4;
   --callout-info: var(--accent-color, #1D7874);
   --callout-tip: color-mix(in srgb, var(--accent-color, #1D7874) 50%, white);
-  --callout-success: #5a9a6e;
+  --callout-success: var(--accent-success);
   --callout-question: #F4C095;
   --callout-warning: #e8a84c;
-  --callout-failure: #EE2E31;
+  --callout-failure: var(--accent-danger);
   --callout-danger: #d41e21;
-  --callout-bug: #EE2E31;
+  --callout-bug: var(--accent-danger);
   --callout-example: #8a7ec8;
   --callout-quote: color-mix(in srgb, var(--accent-color, #1D7874) 60%, white);
 

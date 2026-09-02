@@ -1850,7 +1850,7 @@ const RightPanel: Component = () => {
             <div class="right-panel__links-toolbar">
               <button
                 ref={linksSortBtnRef}
-                class="right-panel__icon-btn"
+                class="ui-icon-btn"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowLinksSortMenu((v) => !v);
@@ -1897,7 +1897,7 @@ const RightPanel: Component = () => {
                 </div>
               </Show>
               <button
-                class="right-panel__icon-btn"
+                class="ui-icon-btn"
                 onClick={() => setLinksCollapsePreviews(!linksCollapsePreviews())}
                 title={
                   linksCollapsePreviews()
@@ -1918,7 +1918,7 @@ const RightPanel: Component = () => {
                 </Show>
               </button>
               <button
-                class={`right-panel__icon-btn${linksShowMoreContext() ? " right-panel__icon-btn--active" : ""}`}
+                class={`ui-icon-btn${linksShowMoreContext() ? " is-active" : ""}`}
                 onClick={() => setLinksShowMoreContext(!linksShowMoreContext())}
                 title={t("search.showMoreContext")}
                 aria-pressed={linksShowMoreContext()}
@@ -1926,7 +1926,7 @@ const RightPanel: Component = () => {
                 <LayersPlus size={18} />
               </button>
               <button
-                class={`right-panel__icon-btn${linksShowFilter() ? " right-panel__icon-btn--active" : ""}`}
+                class={`ui-icon-btn${linksShowFilter() ? " is-active" : ""}`}
                 onClick={() => {
                   const next = !linksShowFilter();
                   setLinksShowFilter(next);

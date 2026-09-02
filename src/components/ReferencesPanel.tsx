@@ -314,7 +314,7 @@ const ReferencesPanel: Component = () => {
           </button>
           <div class="right-panel__header-actions">
             <button
-              class="right-panel__icon-btn"
+              class="ui-icon-btn"
               onClick={handleRefresh}
               disabled={refreshing()}
               title={t("references.refresh")}
@@ -483,7 +483,7 @@ const ReferencesPanel: Component = () => {
           <Show when={citations()?.length}>
             <div class="right-panel__header-actions">
               <button
-                class="right-panel__icon-btn"
+                class="ui-icon-btn"
                 onClick={handleCopyBibliography}
                 disabled={copyingBib()}
                 title={t("references.copyBib")}
