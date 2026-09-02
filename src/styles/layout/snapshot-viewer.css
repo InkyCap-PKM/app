@@ -65,8 +65,8 @@
 .snapshot-viewer__empty,
 .snapshot-viewer__hint {
   padding: 20px;
-  color: var(--fg-dim);
-  font-size: var(--text-md);
+  color: var(--fg-muted);
+  font-size: var(--text-base);
   text-align: center;
 }
 
@@ -140,7 +140,7 @@
 }
 
 .snapshot-viewer__restore-btn:disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 

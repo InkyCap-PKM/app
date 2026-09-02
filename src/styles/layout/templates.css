@@ -302,7 +302,7 @@
 .templates-panel__empty {
   padding: 8px 10px;
   font-size: var(--text-sm);
-  color: var(--fg-dim);
+  color: var(--fg-muted);
   background: var(--bg-secondary);
   border: 1px dashed var(--border-primary);
   border-radius: var(--radius-sm);

@@ -58,7 +58,7 @@
 }
 
 .audit-dialog__close:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -256,7 +256,7 @@
 }
 
 .audit-dialog__footer button:disabled {
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

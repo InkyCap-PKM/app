@@ -189,7 +189,7 @@
    click, so an over-eager repeat press does nothing instead of landing on
    whatever would otherwise have moved into that spot. */
 .tab-bar__scroll:disabled {
-  opacity: 0.35;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

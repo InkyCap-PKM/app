@@ -85,7 +85,7 @@
 .editor-header__nav-btn:disabled,
 .editor-header__nav-btn.is-disabled {
   color: var(--fg-muted);
-  opacity: 0.35;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 

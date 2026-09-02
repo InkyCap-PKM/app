@@ -46,7 +46,7 @@
 }
 
 .dropdown__trigger:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -68,6 +68,7 @@
 }
 
 .dropdown__menu {
+  animation: surface-in var(--dur-fast) var(--ease-out);
   max-height: 320px;
   overflow-y: auto;
 }

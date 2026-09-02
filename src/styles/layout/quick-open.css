@@ -88,10 +88,10 @@
 }
 
 .quick-open__empty {
-  color: var(--fg-dim);
+  color: var(--fg-muted);
   text-align: center;
   padding: var(--space-6);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
 }
 
 /* Folder picker (Move file/folder to…) — reuses .quick-open__* and adds
