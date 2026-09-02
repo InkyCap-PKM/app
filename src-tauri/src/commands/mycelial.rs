@@ -185,6 +185,10 @@ pub struct MycelialData {
     /// Indexed corpus size, so the frontend can label confidence on young
     /// noteboxes ("early growth" notice below `GROWING_CORPUS_DOCS`).
     pub total_docs: usize,
+    /// True when the centre note matches the notebox's Mycelial exclusion
+    /// rules. It is analyzed anyway (the user opened the view on it); the
+    /// frontend shows a notice explaining that.
+    pub center_excluded: bool,
 }
 
 /// Build the Mycelial View graph centred on `path`: BFS the wikilink graph to
@@ -209,11 +213,34 @@ pub async fn get_mycelial_data(
     // the graph to just the anchor. Deriving the id here keeps it consistent.
     let center_id = to_frontend_string(&center_path);
     let config = MycelialConfig::default();
+    let storage = session.get_storage().await?;
+
+    // 0. Notebox-wide note exclusions: notes matching the user's exclusion
+    //    rules take no part in any calculation below — they don't appear in
+    //    the graph, don't bridge links, and don't feed the corpus analysis.
+    //    The centre note is the one exception: the user opened the view on
+    //    it, so it always participates; `center_excluded` tells the frontend
+    //    to explain that.
+    let exclusion_group =
+        crate::commands::mycelial_exclusions::load_exclusion_group(storage.root()).await;
+    let (excluded, center_excluded) = match &exclusion_group {
+        Some(group) => {
+            let prop_index = session.property_index.read().await;
+            let mut set = crate::commands::mycelial_exclusions::excluded_note_paths(
+                &prop_index,
+                group,
+                storage.root(),
+            );
+            let center_excluded = set.remove(&center_path);
+            (set, center_excluded)
+        }
+        None => (HashSet::new(), false),
+    };
 
     // 1. BFS the link graph — these are the notebox's explicit connections.
     let (link_nodes, link_edges) = {
         let link_index = session.link_index.read().await;
-        bfs_link_graph(&link_index, &center_path, &center_id, max_depth)
+        bfs_link_graph(&link_index, &center_path, &center_id, max_depth, &excluded)
     };
 
     // 2. Map every existing page name -> its path, so corpus analysis can tell
@@ -261,8 +288,13 @@ pub async fn get_mycelial_data(
         let corpus_stats = session.corpus_stats.read().await;
 
         // Scored semantic neighbors — the widening set, and (scored) the
-        // kindred-note candidates.
-        let similar = corpus_stats.similar_docs_scored(&center_path, config.semantic_neighbors);
+        // kindred-note candidates. Excluded notes are dropped before they can
+        // widen the neighborhood or surface as kindred.
+        let similar: Vec<(PathBuf, f64)> = corpus_stats
+            .similar_docs_scored(&center_path, config.semantic_neighbors)
+            .into_iter()
+            .filter(|(p, _)| !excluded.contains(p))
+            .collect();
 
         let mut neighborhood: HashSet<PathBuf> =
             link_nodes.iter().map(|n| PathBuf::from(&n.id)).collect();
@@ -362,8 +394,6 @@ pub async fn get_mycelial_data(
         (forward, backlink_counts)
     };
 
-    let storage = session.get_storage().await?;
-
     // Under-developed pages the user has chosen to hide from the Growth panel.
     let hub_exclusions = load_hub_exclusions(storage.root()).await;
 
@@ -384,6 +414,12 @@ pub async fn get_mycelial_data(
     let mut drafts: Vec<LatentDraft> = Vec::new();
     for cand in analysis.latent {
         let target = PathBuf::from(&cand.target_path);
+        // An excluded page never surfaces as a latent-link target. It stays
+        // in `existing_pages`, though, so its name can't be misread as an
+        // emergent concept with no page.
+        if excluded.contains(&target) {
+            continue;
+        }
         let mut mentions: Vec<SourceMention> = Vec::new();
         for src in &cand.source_notes {
             let src_path = PathBuf::from(src);
@@ -642,6 +678,7 @@ pub async fn get_mycelial_data(
         weak_hubs,
         open_questions,
         total_docs,
+        center_excluded,
     })
 }
 

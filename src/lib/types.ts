@@ -1130,6 +1130,19 @@ export interface MycelialData {
   /** Indexed corpus size — the UI shows an "early growth" notice on young
    *  noteboxes. */
   total_docs: number;
+  /** True when the centre note matches the notebox's Mycelial exclusion
+   *  rules — it is analyzed anyway, and the view explains why. */
+  center_excluded: boolean;
+}
+
+/** Notebox-wide Mycelial exclusion state, for the Filtering pane. A note
+ *  matching any rule is left out of all Mycelial View calculations. */
+export interface MycelialExclusionInfo {
+  /** Filter expression strings, e.g. `file.tags.contains("worklog")`. */
+  rules: string[];
+  /** Notes the rules currently exclude, out of `note_count` indexed notes. */
+  excluded_count: number;
+  note_count: number;
 }
 
 // Bibliography (Phase 6)
