@@ -1,0 +1,18 @@
+# Keep line endings predictable across platforms. Without this, Git for
+# Windows' default core.autocrlf=true rewrites shell scripts to CRLF and
+# they fail to run with "$'\r': command not found".
+
+# Default: store text as LF in the repo, check out native on each platform.
+* text=auto
+
+# Must stay LF: run by a shell, which chokes on carriage returns.
+*.sh        text eol=lf
+.githooks/* text eol=lf
+
+# Must stay byte-for-byte: patch-package matches the target file exactly,
+# and this patch's target uses CRLF.
+*.patch     -text
+
+# Windows-native scripts, if any are added later.
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
