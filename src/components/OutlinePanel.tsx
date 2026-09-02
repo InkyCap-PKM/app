@@ -120,7 +120,7 @@ const OutlinePanel: Component = () => {
   }
 
   return (
-    <div class="outline-panel">
+    <div class="outline-panel right-panel__pane">
       <div class="right-panel__section-header">
         <span>{t("outlinePanel.title")}</span>
         <Show when={headings().length > 0}>
@@ -141,17 +141,19 @@ const OutlinePanel: Component = () => {
           </div>
         </Show>
       </div>
-      <Show
-        when={headings().length > 0}
-        fallback={<p class="sidebar-hint">{t("outlinePanel.noHeadings")}</p>}
-      >
-        <OutlineTree
-          nodes={tree()}
-          expandedKeys={expandedKeys}
-          onToggle={toggleKey}
-          onScroll={scrollToHeading}
-        />
-      </Show>
+      <div class="right-panel__pane-body">
+        <Show
+          when={headings().length > 0}
+          fallback={<p class="sidebar-hint">{t("outlinePanel.noHeadings")}</p>}
+        >
+          <OutlineTree
+            nodes={tree()}
+            expandedKeys={expandedKeys}
+            onToggle={toggleKey}
+            onScroll={scrollToHeading}
+          />
+        </Show>
+      </div>
     </div>
   );
 };

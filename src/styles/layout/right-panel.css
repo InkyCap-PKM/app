@@ -136,20 +136,21 @@
   background: none;
 }
 
+/* The fixed-size box a right-panel pane fills. Like `.left-sidebar__content`
+   it does not scroll itself: each pane pins its own header and scrolls only
+   the body beneath it (see `.right-panel__pane` in panel-header.css), so a
+   pane's title and controls stay on screen and the scrollbar starts below
+   them. Panes that manage their own layout (Annotations) fill this box the
+   same way.
+   The padding matches `.left-sidebar__content` so section-headers on both
+   sides align horizontally — the section-header itself adds its own 4px
+   inset. */
 .right-panel__tab-content {
   flex: 1;
-  overflow-y: auto;
-  /* Matches .left-sidebar__content so section-headers on both sides align
-     horizontally — the section-header itself adds its own 4px inset. */
-  padding: var(--space-4);
-}
-
-/* A tab-content variant that doesn't scroll as a whole: the pane inside
-   manages its own scroll region (e.g. the Annotations pane, which pins a
-   toolbar to the bottom while its list scrolls). */
-.right-panel__tab-content--fill {
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  padding: var(--space-4);
 }
 

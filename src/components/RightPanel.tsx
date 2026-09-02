@@ -1438,7 +1438,7 @@ const RightPanel: Component = () => {
           its insert toolbar to the bottom while the list scrolls. The file-tab
           block below yields when this is active. */}
       <Show when={activePanel() === "annotations" && activeFileTab()}>
-        <div class="right-panel__tab-content right-panel__tab-content--fill">
+        <div class="right-panel__tab-content">
           <AnnotationsPanel />
         </div>
       </Show>
@@ -1446,17 +1446,21 @@ const RightPanel: Component = () => {
       {/* Concept Filtering pane — suppressed terms + stopword editor. */}
       <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "filtering"}>
         <div class="right-panel__tab-content">
-          <MycelialFilteringPanel excludedTerms={mycelialState().excludedTerms} />
+          <div class="right-panel__pane-body">
+            <MycelialFilteringPanel excludedTerms={mycelialState().excludedTerms} />
+          </div>
         </div>
       </Show>
 
       {/* Growth pane — under-developed pages + open questions. */}
       <Show when={!activeFileTab() && getActiveTab()?.type === "mycelial" && mycelialPanelTab() === "growth"}>
         <div class="right-panel__tab-content">
-          <MycelialGrowthPanel
-            weakHubs={mycelialState().weakHubs}
-            openQuestions={mycelialState().openQuestions}
-          />
+          <div class="right-panel__pane-body">
+            <MycelialGrowthPanel
+              weakHubs={mycelialState().weakHubs}
+              openQuestions={mycelialState().openQuestions}
+            />
+          </div>
         </div>
       </Show>
 
@@ -1504,7 +1508,7 @@ const RightPanel: Component = () => {
 
           return (
             <div class="right-panel__tab-content">
-              <div class="right-panel__section">
+              <div class="right-panel__pane">
                 <div class="right-panel__section-header">
                   <span>{t("rightPanel.linkedContext")}</span>
                   <span class="right-panel__count">{mycelialState().contextNotes.length}</span>
@@ -1540,82 +1544,84 @@ const RightPanel: Component = () => {
                     ariaLabel={t("rightPanel.sortContextAria")}
                   />
                 </div>
-                <Show
-                  when={sortedFiltered().length > 0}
-                  fallback={<p class="sidebar-hint">{t("rightPanel.noContextNotes")}</p>}
-                >
-                  <div class="search-panel__results">
-                    <For each={sortedFiltered()}>
-                      {(note) => {
-                        const expanded = () => expandedContext().has(note.path);
-                        return (
-                          <div class="search-panel__file-group">
-                            <div
-                              class="search-panel__result-file"
-                              classList={{
-                                "mycelial-context__item--highlighted":
-                                  isHighlighted(note),
-                              }}
-                              onMouseEnter={() => setHoveredContextNote(note.path)}
-                              onMouseLeave={() => setHoveredContextNote(null)}
-                            >
-                              <Show
-                                when={note.linkedInnerIds.length > 0}
-                                fallback={
-                                  <span class="mycelial-context__chevron-spacer" />
-                                }
+                <div class="right-panel__pane-body">
+                  <Show
+                    when={sortedFiltered().length > 0}
+                    fallback={<p class="sidebar-hint">{t("rightPanel.noContextNotes")}</p>}
+                  >
+                    <div class="search-panel__results">
+                      <For each={sortedFiltered()}>
+                        {(note) => {
+                          const expanded = () => expandedContext().has(note.path);
+                          return (
+                            <div class="search-panel__file-group">
+                              <div
+                                class="search-panel__result-file"
+                                classList={{
+                                  "mycelial-context__item--highlighted":
+                                    isHighlighted(note),
+                                }}
+                                onMouseEnter={() => setHoveredContextNote(note.path)}
+                                onMouseLeave={() => setHoveredContextNote(null)}
                               >
-                                <button
-                                  class="search-panel__group-chevron"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleExpanded(note.path);
-                                  }}
-                                  title={expanded() ? t("search.collapse") : t("search.expand")}
-                                  aria-expanded={expanded()}
+                                <Show
+                                  when={note.linkedInnerIds.length > 0}
+                                  fallback={
+                                    <span class="mycelial-context__chevron-spacer" />
+                                  }
                                 >
-                                  <Show
-                                    when={expanded()}
-                                    fallback={<ChevronRight size={14} />}
+                                  <button
+                                    class="search-panel__group-chevron"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleExpanded(note.path);
+                                    }}
+                                    title={expanded() ? t("search.collapse") : t("search.expand")}
+                                    aria-expanded={expanded()}
                                   >
-                                    <ChevronDown size={14} />
-                                  </Show>
-                                </button>
-                              </Show>
-                              <span
-                                class="search-panel__file-label"
-                                onClick={() =>
-                                  openTab(
-                                    { type: "file", title: note.name, path: note.path },
-                                    { forceNewTab: true },
-                                  )
-                                }
-                              >
-                                {note.name}
-                              </span>
-                              <Show when={note.linkedInnerIds.length > 0}>
-                                <span class="search-panel__match-count">
-                                  {note.linkedInnerIds.length}
+                                    <Show
+                                      when={expanded()}
+                                      fallback={<ChevronRight size={14} />}
+                                    >
+                                      <ChevronDown size={14} />
+                                    </Show>
+                                  </button>
+                                </Show>
+                                <span
+                                  class="search-panel__file-label"
+                                  onClick={() =>
+                                    openTab(
+                                      { type: "file", title: note.name, path: note.path },
+                                      { forceNewTab: true },
+                                    )
+                                  }
+                                >
+                                  {note.name}
                                 </span>
+                                <Show when={note.linkedInnerIds.length > 0}>
+                                  <span class="search-panel__match-count">
+                                    {note.linkedInnerIds.length}
+                                  </span>
+                                </Show>
+                              </div>
+                              <Show when={expanded()}>
+                                <For each={note.linkedInnerIds}>
+                                  {(innerId) => (
+                                    <div class="search-panel__result">
+                                      <span class="search-panel__result-line">
+                                        → {innerNodeName(innerId)}
+                                      </span>
+                                    </div>
+                                  )}
+                                </For>
                               </Show>
                             </div>
-                            <Show when={expanded()}>
-                              <For each={note.linkedInnerIds}>
-                                {(innerId) => (
-                                  <div class="search-panel__result">
-                                    <span class="search-panel__result-line">
-                                      → {innerNodeName(innerId)}
-                                    </span>
-                                  </div>
-                                )}
-                              </For>
-                            </Show>
-                          </div>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </Show>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
               </div>
             </div>
           );
@@ -1628,11 +1634,13 @@ const RightPanel: Component = () => {
       <Show when={activeCollectionTab()}>
         {(tab) => (
           <div class="right-panel__tab-content">
-            <CollectionSettings
-              collectionPath={tab().path}
-              collectionName={collectionStem(tab().path)}
-              tab={collectionPanelTab()}
-            />
+            <div class="right-panel__pane-body">
+              <CollectionSettings
+                collectionPath={tab().path}
+                collectionName={collectionStem(tab().path)}
+                tab={collectionPanelTab()}
+              />
+            </div>
           </div>
         )}
       </Show>
@@ -1660,173 +1668,179 @@ const RightPanel: Component = () => {
               its tab is the active panel; built-in ids never match, so the
               built-in panes below are unaffected. */}
           <Show when={activeContributed()}>
-            {(c) => <Dynamic component={c().component} />}
+            {(c) => (
+              <div class="right-panel__pane-body">
+                <Dynamic component={c().component} />
+              </div>
+            )}
           </Show>
           {/* Properties tab */}
           <Show when={activePanel() === "properties"}>
-            <div class="right-panel__section">
+            <div class="right-panel__pane">
               <div class="right-panel__section-header">
                 <span>{t("rightPanel.properties")}</span>
                 {/* Reserved for future per-pane actions to keep the header
                     bar visually aligned with the left sidebar's pattern. */}
                 <div class="right-panel__header-actions" />
               </div>
-              <Show when={metadata()}>
-                {(meta) => (
-                  <div class="properties-list">
-                    <For each={sortedPropertyKeys()}>
-                      {(key) => {
-                        // Read reactively by key so a value edit updates the row
-                        // in place rather than remounting it (see
-                        // sortedPropertyKeys).
-                        const value = () => meta().properties[key];
-                        const ty = () => {
-                          const declared = getPropertyType(key);
-                          if (declared !== "auto") return declared;
-                          // Untyped key: resolve to a concrete type (system
-                          // default, else inferred from the value) so the row
-                          // never shows the ambiguous "Automatic".
-                          return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value());
-                        };
-                        const isDragging = () => draggingKey() === key;
-                        const dropAbove = () =>
-                          dragOverKey() === key && dropPosition() === "before";
-                        const dropBelow = () =>
-                          dragOverKey() === key && dropPosition() === "after";
-                        return (
-                          <>
-                          <div
-                            class={
-                              `property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}` +
-                              `${isDragging() ? " property-row--dragging" : ""}` +
-                              `${dropAbove() ? " property-row--drop-above" : ""}` +
-                              `${dropBelow() ? " property-row--drop-below" : ""}`
-                            }
-                            onDragOver={(e) => handleDragOver(e, key)}
-                            onDrop={(e) => handleDrop(e, key)}
-                            onDragLeave={() => {
-                              if (dragOverKey() === key) setDragOverKey(null);
-                            }}
-                          >
-                            <div class="property-row__name">
-                              <span
-                                class="property-row__icon property-row__drag-handle"
-                                title={t("rightPanel.propTypeDragTitle", { type: propertyTypeLabel(ty()) })}
-                                draggable={true}
-                                onDragStart={(e) => handleDragStart(e, key)}
-                                onDragEnd={handleDragEnd}
-                              >
-                                <Dynamic component={propertyTypeIcon(ty(), key)} size={14} />
-                              </span>
-                              <span class="property-row__key">{key}</span>
-                            </div>
-                            <div class="property-row__value-cell">
-                              <PropertyEditor
-                                propKey={key}
-                                value={value()}
-                                onSave={handlePropertySave}
-                                typeHint={ty()}
-                                scaffoldContext={activeFileIsScaffold()}
-                              />
-                            </div>
-                            <button
-                              class="property-row__type-btn"
-                              title={t("rightPanel.propertyOptions")}
-                              onClick={(e) => openRowMenu(e, key)}
+              <div class="right-panel__pane-body">
+                <Show when={metadata()}>
+                  {(meta) => (
+                    <div class="properties-list">
+                      <For each={sortedPropertyKeys()}>
+                        {(key) => {
+                          // Read reactively by key so a value edit updates the row
+                          // in place rather than remounting it (see
+                          // sortedPropertyKeys).
+                          const value = () => meta().properties[key];
+                          const ty = () => {
+                            const declared = getPropertyType(key);
+                            if (declared !== "auto") return declared;
+                            // Untyped key: resolve to a concrete type (system
+                            // default, else inferred from the value) so the row
+                            // never shows the ambiguous "Automatic".
+                            return KNOWN_FIELD_TYPES[key] ?? inferPropertyType(value());
+                          };
+                          const isDragging = () => draggingKey() === key;
+                          const dropAbove = () =>
+                            dragOverKey() === key && dropPosition() === "before";
+                          const dropBelow = () =>
+                            dragOverKey() === key && dropPosition() === "after";
+                          return (
+                            <>
+                            <div
+                              class={
+                                `property-row${KNOWN_FIELDS.has(key) ? " property-row--system" : ""}` +
+                                `${isDragging() ? " property-row--dragging" : ""}` +
+                                `${dropAbove() ? " property-row--drop-above" : ""}` +
+                                `${dropBelow() ? " property-row--drop-below" : ""}`
+                              }
+                              onDragOver={(e) => handleDragOver(e, key)}
+                              onDrop={(e) => handleDrop(e, key)}
+                              onDragLeave={() => {
+                                if (dragOverKey() === key) setDragOverKey(null);
+                              }}
                             >
-                              {"\u22EE"}
-                            </button>
-                          </div>
-                          {/* Recurrence is a subsection of the `due` date \u2014 it
-                              repeats that date, so it reads as nested under it
-                              rather than as a free-standing panel. */}
-                          <Show when={key === "due" && noteDueRecurs()}>
-                            <div class="property-recurrence">
-                              <RecurrenceEditor
-                                value={meta().recurrence ?? null}
-                                onChange={handleRecurrenceChange}
-                              />
+                              <div class="property-row__name">
+                                <span
+                                  class="property-row__icon property-row__drag-handle"
+                                  title={t("rightPanel.propTypeDragTitle", { type: propertyTypeLabel(ty()) })}
+                                  draggable={true}
+                                  onDragStart={(e) => handleDragStart(e, key)}
+                                  onDragEnd={handleDragEnd}
+                                >
+                                  <Dynamic component={propertyTypeIcon(ty(), key)} size={14} />
+                                </span>
+                                <span class="property-row__key">{key}</span>
+                              </div>
+                              <div class="property-row__value-cell">
+                                <PropertyEditor
+                                  propKey={key}
+                                  value={value()}
+                                  onSave={handlePropertySave}
+                                  typeHint={ty()}
+                                  scaffoldContext={activeFileIsScaffold()}
+                                />
+                              </div>
+                              <button
+                                class="property-row__type-btn"
+                                title={t("rightPanel.propertyOptions")}
+                                onClick={(e) => openRowMenu(e, key)}
+                              >
+                                {"\u22EE"}
+                              </button>
                             </div>
-                          </Show>
-                          </>
-                        );
-                      }}
-                    </For>
-                  </div>
-                )}
-              </Show>
-
-              <Show
-                when={addingProp()}
-                fallback={
-                  <button
-                    class="right-panel__add-btn"
-                    onClick={() => { loadPropertyKeysForAutocomplete(); setAddingProp(true); }}
-                  >
-                    {t("rightPanel.addProperty")}
-                  </button>
-                }
-              >
-                <div class="right-panel__add-form">
-                  <input
-                    class="property-editor__input"
-                    type="text"
-                    placeholder={t("rightPanel.addPropertyPlaceholder")}
-                    value={newPropKey()}
-                    onInput={(e) => onNewPropKeyInput(e.currentTarget.value)}
-                    onKeyDown={handleAddKeyDown}
-                    onBlur={() => setTimeout(() => setAddPropHighlight(-1), 100)}
-                    ref={(el) => setTimeout(() => el.focus(), 0)}
-                  />
-                  <Show when={addPropSuggestions().length > 0}>
-                    <div class="add-prop-suggestions">
-                      <For each={addPropSuggestions()}>
-                        {(key, idx) => (
-                          <button
-                            type="button"
-                            class={`add-prop-suggestions__item${addPropHighlight() === idx() ? " add-prop-suggestions__item--active" : ""}`}
-                            onMouseDown={(e) => {
-                              // mousedown so the click commits before the
-                              // input's blur handler clears highlight state.
-                              e.preventDefault();
-                              pickSuggestion(key);
-                            }}
-                            onMouseEnter={() => setAddPropHighlight(idx())}
-                          >
-                            <span class="add-prop-suggestions__icon">
-                              <Dynamic
-                                component={propertyTypeIcon(
-                                  KNOWN_FIELD_TYPES[key] ?? getPropertyType(key),
-                                  key,
-                                )}
-                                size={12}
-                              />
-                            </span>
-                            <span>{key}</span>
-                            <Show when={KNOWN_FIELDS.has(key)}>
-                              <span class="add-prop-suggestions__badge">{t("rightPanel.systemBadge")}</span>
+                            {/* Recurrence is a subsection of the `due` date \u2014 it
+                                repeats that date, so it reads as nested under it
+                                rather than as a free-standing panel. */}
+                            <Show when={key === "due" && noteDueRecurs()}>
+                              <div class="property-recurrence">
+                                <RecurrenceEditor
+                                  value={meta().recurrence ?? null}
+                                  onChange={handleRecurrenceChange}
+                                />
+                              </div>
                             </Show>
-                          </button>
-                        )}
+                            </>
+                          );
+                        }}
                       </For>
                     </div>
-                  </Show>
-                  <Show when={!KNOWN_FIELDS.has(newPropKey().trim()) && getPropertyType(newPropKey().trim()) === "auto"}>
-                    <Dropdown<PropertyType>
-                      class="dropdown--block"
-                      value={newPropType()}
-                      options={PROPERTY_TYPE_OPTIONS.filter(
-                        (t) => t !== "auto",
-                      ).map((ty) => ({
-                        value: ty,
-                        label: propertyTypeLabel(ty),
-                      }))}
-                      onChange={setNewPropType}
-                      ariaLabel={t("rightPanel.newPropertyType")}
+                  )}
+                </Show>
+
+                <Show
+                  when={addingProp()}
+                  fallback={
+                    <button
+                      class="right-panel__add-btn"
+                      onClick={() => { loadPropertyKeysForAutocomplete(); setAddingProp(true); }}
+                    >
+                      {t("rightPanel.addProperty")}
+                    </button>
+                  }
+                >
+                  <div class="right-panel__add-form">
+                    <input
+                      class="property-editor__input"
+                      type="text"
+                      placeholder={t("rightPanel.addPropertyPlaceholder")}
+                      value={newPropKey()}
+                      onInput={(e) => onNewPropKeyInput(e.currentTarget.value)}
+                      onKeyDown={handleAddKeyDown}
+                      onBlur={() => setTimeout(() => setAddPropHighlight(-1), 100)}
+                      ref={(el) => setTimeout(() => el.focus(), 0)}
                     />
-                  </Show>
-                </div>
-              </Show>
+                    <Show when={addPropSuggestions().length > 0}>
+                      <div class="add-prop-suggestions">
+                        <For each={addPropSuggestions()}>
+                          {(key, idx) => (
+                            <button
+                              type="button"
+                              class={`add-prop-suggestions__item${addPropHighlight() === idx() ? " add-prop-suggestions__item--active" : ""}`}
+                              onMouseDown={(e) => {
+                                // mousedown so the click commits before the
+                                // input's blur handler clears highlight state.
+                                e.preventDefault();
+                                pickSuggestion(key);
+                              }}
+                              onMouseEnter={() => setAddPropHighlight(idx())}
+                            >
+                              <span class="add-prop-suggestions__icon">
+                                <Dynamic
+                                  component={propertyTypeIcon(
+                                    KNOWN_FIELD_TYPES[key] ?? getPropertyType(key),
+                                    key,
+                                  )}
+                                  size={12}
+                                />
+                              </span>
+                              <span>{key}</span>
+                              <Show when={KNOWN_FIELDS.has(key)}>
+                                <span class="add-prop-suggestions__badge">{t("rightPanel.systemBadge")}</span>
+                              </Show>
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <Show when={!KNOWN_FIELDS.has(newPropKey().trim()) && getPropertyType(newPropKey().trim()) === "auto"}>
+                      <Dropdown<PropertyType>
+                        class="dropdown--block"
+                        value={newPropType()}
+                        options={PROPERTY_TYPE_OPTIONS.filter(
+                          (t) => t !== "auto",
+                        ).map((ty) => ({
+                          value: ty,
+                          label: propertyTypeLabel(ty),
+                        }))}
+                        onChange={setNewPropType}
+                        ariaLabel={t("rightPanel.newPropertyType")}
+                      />
+                    </Show>
+                  </div>
+                </Show>
+              </div>
             </div>
           </Show>
 
@@ -1837,430 +1851,436 @@ const RightPanel: Component = () => {
 
           {/* Links tab */}
           <Show when={activePanel() === "links"}>
-            <Show when={!indexReady()}>
-              <p class="sidebar-hint">{t("search.indexing")}</p>
-            </Show>
-
-            {/* Toolbar: Sort, Expand/Collapse, More Context, Filter.
-                Mirrors the Search panel's button cluster so users coming
-                from the left sidebar see the same icons doing the same
-                things. Sort is the file-tree sort (filetree-style options),
-                Expand/Collapse and More Context act on per-link previews,
-                Filter is a name substring filter applied to all sections. */}
-            <div class="right-panel__links-toolbar">
-              <button
-                ref={linksSortBtnRef}
-                class="ui-icon-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowLinksSortMenu((v) => !v);
-                }}
-                title={t("rightPanel.sortLinksTitle", { label: activeLinksSortLabel() })}
-                aria-label={t("rightPanel.sortLinks")}
-                aria-haspopup="menu"
-                aria-expanded={showLinksSortMenu()}
-              >
-                <ArrowDownNarrowWide size={18} />
-              </button>
-              <Show when={showLinksSortMenu()}>
-                {/* Same .context-menu + anchorPanelMenu pattern as the
-                    file-tree sort dropdown so the menu sizes to its
-                    content (instead of inheriting the narrow right-panel
-                    column) and floats above the panel chrome. Wrapper
-                    classes / extra positioning rules would only fork the
-                    behaviour from the left-side equivalent. */}
-                <div
-                  class="context-menu"
-                  ref={(el) => anchorPanelMenu(linksSortBtnRef, el)}
-                  use:clickOutside={{
-                    onDismiss: () => setShowLinksSortMenu(false),
-                    ignore: linksSortBtnRef,
-                  }}
-                >
-                  <For each={LINKS_SORT_OPTIONS}>
-                    {(opt) => (
-                      <button
-                        classList={{
-                          "context-menu__item": true,
-                          "context-menu__item--active":
-                            linksSortMode() === opt.value,
-                        }}
-                        onClick={() => {
-                          setLinksSortMode(opt.value);
-                          setShowLinksSortMenu(false);
-                        }}
-                      >
-                        {t(opt.labelKey)}
-                      </button>
-                    )}
-                  </For>
-                </div>
+            <div class="right-panel__pane">
+              <Show when={!indexReady()}>
+                <p class="sidebar-hint">{t("search.indexing")}</p>
               </Show>
-              <button
-                class="ui-icon-btn"
-                onClick={() => setLinksCollapsePreviews(!linksCollapsePreviews())}
-                title={
-                  linksCollapsePreviews()
-                    ? t("rightPanel.expandPreviews")
-                    : t("rightPanel.collapsePreviews")
-                }
-                aria-label={
-                  linksCollapsePreviews()
-                    ? t("rightPanel.expandPreviews")
-                    : t("rightPanel.collapsePreviews")
-                }
-              >
-                <Show
-                  when={linksCollapsePreviews()}
-                  fallback={<ListChevronsDownUp size={18} />}
-                >
-                  <ListChevronsUpDown size={18} />
-                </Show>
-              </button>
-              <button
-                class={`ui-icon-btn${linksShowMoreContext() ? " is-active" : ""}`}
-                onClick={() => setLinksShowMoreContext(!linksShowMoreContext())}
-                title={t("search.showMoreContext")}
-                aria-pressed={linksShowMoreContext()}
-              >
-                <LayersPlus size={18} />
-              </button>
-              <button
-                class={`ui-icon-btn${linksShowFilter() ? " is-active" : ""}`}
-                onClick={() => {
-                  const next = !linksShowFilter();
-                  setLinksShowFilter(next);
-                  if (next) {
-                    setTimeout(() => linksFilterInputRef?.focus(), 0);
-                  }
-                }}
-                title={t("rightPanel.filterLinksByName")}
-                aria-pressed={linksShowFilter()}
-              >
-                <Search size={18} />
-              </button>
-            </div>
 
-            <Show when={linksShowFilter()}>
-              <div class="right-panel__links-filter-wrap">
-                <input
-                  ref={(el) => (linksFilterInputRef = el)}
-                  class="right-panel__links-filter-input"
-                  type="text"
-                  placeholder={t("rightPanel.searchWithinLinks")}
-                  title={t("rightPanel.searchWithinLinksTitle")}
-                  value={linksFilterQuery()}
-                  onInput={(e) => setLinksFilterQuery(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      if (linksFilterQuery()) {
-                        setLinksFilterQuery("");
-                      } else {
-                        setLinksShowFilter(false);
-                      }
+              {/* Toolbar: Sort, Expand/Collapse, More Context, Filter.
+                  Mirrors the Search panel's button cluster so users coming
+                  from the left sidebar see the same icons doing the same
+                  things. Sort is the file-tree sort (filetree-style options),
+                  Expand/Collapse and More Context act on per-link previews,
+                  Filter is a name substring filter applied to all sections. */}
+              <div class="right-panel__links-toolbar">
+                <button
+                  ref={linksSortBtnRef}
+                  class="ui-icon-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowLinksSortMenu((v) => !v);
+                  }}
+                  title={t("rightPanel.sortLinksTitle", { label: activeLinksSortLabel() })}
+                  aria-label={t("rightPanel.sortLinks")}
+                  aria-haspopup="menu"
+                  aria-expanded={showLinksSortMenu()}
+                >
+                  <ArrowDownNarrowWide size={18} />
+                </button>
+                <Show when={showLinksSortMenu()}>
+                  {/* Same .context-menu + anchorPanelMenu pattern as the
+                      file-tree sort dropdown so the menu sizes to its
+                      content (instead of inheriting the narrow right-panel
+                      column) and floats above the panel chrome. Wrapper
+                      classes / extra positioning rules would only fork the
+                      behaviour from the left-side equivalent. */}
+                  <div
+                    class="context-menu"
+                    ref={(el) => anchorPanelMenu(linksSortBtnRef, el)}
+                    use:clickOutside={{
+                      onDismiss: () => setShowLinksSortMenu(false),
+                      ignore: linksSortBtnRef,
+                    }}
+                  >
+                    <For each={LINKS_SORT_OPTIONS}>
+                      {(opt) => (
+                        <button
+                          classList={{
+                            "context-menu__item": true,
+                            "context-menu__item--active":
+                              linksSortMode() === opt.value,
+                          }}
+                          onClick={() => {
+                            setLinksSortMode(opt.value);
+                            setShowLinksSortMenu(false);
+                          }}
+                        >
+                          {t(opt.labelKey)}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <button
+                  class="ui-icon-btn"
+                  onClick={() => setLinksCollapsePreviews(!linksCollapsePreviews())}
+                  title={
+                    linksCollapsePreviews()
+                      ? t("rightPanel.expandPreviews")
+                      : t("rightPanel.collapsePreviews")
+                  }
+                  aria-label={
+                    linksCollapsePreviews()
+                      ? t("rightPanel.expandPreviews")
+                      : t("rightPanel.collapsePreviews")
+                  }
+                >
+                  <Show
+                    when={linksCollapsePreviews()}
+                    fallback={<ListChevronsDownUp size={18} />}
+                  >
+                    <ListChevronsUpDown size={18} />
+                  </Show>
+                </button>
+                <button
+                  class={`ui-icon-btn${linksShowMoreContext() ? " is-active" : ""}`}
+                  onClick={() => setLinksShowMoreContext(!linksShowMoreContext())}
+                  title={t("search.showMoreContext")}
+                  aria-pressed={linksShowMoreContext()}
+                >
+                  <LayersPlus size={18} />
+                </button>
+                <button
+                  class={`ui-icon-btn${linksShowFilter() ? " is-active" : ""}`}
+                  onClick={() => {
+                    const next = !linksShowFilter();
+                    setLinksShowFilter(next);
+                    if (next) {
+                      setTimeout(() => linksFilterInputRef?.focus(), 0);
                     }
                   }}
-                />
-                <Show when={linksFilterQuery().length > 0}>
-                  <button
-                    class="right-panel__links-filter-clear"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setLinksFilterQuery("");
-                      linksFilterInputRef?.focus();
+                  title={t("rightPanel.filterLinksByName")}
+                  aria-pressed={linksShowFilter()}
+                >
+                  <Search size={18} />
+                </button>
+              </div>
+
+              <Show when={linksShowFilter()}>
+                <div class="right-panel__links-filter-wrap">
+                  <input
+                    ref={(el) => (linksFilterInputRef = el)}
+                    class="right-panel__links-filter-input"
+                    type="text"
+                    placeholder={t("rightPanel.searchWithinLinks")}
+                    title={t("rightPanel.searchWithinLinksTitle")}
+                    value={linksFilterQuery()}
+                    onInput={(e) => setLinksFilterQuery(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        if (linksFilterQuery()) {
+                          setLinksFilterQuery("");
+                        } else {
+                          setLinksShowFilter(false);
+                        }
+                      }
                     }}
-                    title={t("references.clearFilter")}
-                    aria-label={t("references.clearFilter")}
-                  >
-                    <X size={12} />
-                  </button>
-                </Show>
-              </div>
-            </Show>
-
-            {/* Inbound Links section (formerly "Backlinks") */}
-            <div class="right-panel__section">
-              <div
-                class="right-panel__section-header right-panel__section-header--clickable"
-                onClick={() => toggleLinksSection("inbound")}
-                role="button"
-                tabindex="0"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleLinksSection("inbound");
-                  }
-                }}
-                aria-expanded={linksSectionExpanded().inbound}
-              >
-                <span>
-                  {t("rightPanel.inboundLinks")}
-                  <Show when={sortedBacklinks().length}>
-                    <span class="right-panel__count">
-                      {" "}({sortedBacklinks().length})
-                    </span>
-                  </Show>
-                </span>
-                <div class="right-panel__header-actions">
-                  <Show
-                    when={linksSectionExpanded().inbound}
-                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
-                  >
-                    <ChevronDown size={14} class="right-panel__section-chevron" />
+                  />
+                  <Show when={linksFilterQuery().length > 0}>
+                    <button
+                      class="right-panel__links-filter-clear"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setLinksFilterQuery("");
+                        linksFilterInputRef?.focus();
+                      }}
+                      title={t("references.clearFilter")}
+                      aria-label={t("references.clearFilter")}
+                    >
+                      <X size={12} />
+                    </button>
                   </Show>
                 </div>
-              </div>
-              <Show when={linksSectionExpanded().inbound}>
-                <For each={sortedBacklinks()}>
-                  {(link) => {
-                    const expanded = () => isPreviewExpanded("inbound", link.path);
-                    const preview = () => rowPreview(link);
-                    return (
-                      <div>
-                        <div
-                          class="sidebar-item"
-                          onClick={(e) => openLinkedFile(link, e)}
-                          onContextMenu={(e) =>
-                            openLinkRowMenu(e, link.path, link.name)
-                          }
-                          onDblClick={() =>
-                            toggleLinksPreviewOverride(`inbound::${link.path}`)
-                          }
-                          title={t("rightPanel.rowTitle.full")}
-                        >
-                          <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
-                          <span class="sidebar-item__label">{link.name}</span>
-                        </div>
-                        <Show when={expanded() && preview()}>
-                          {(p) => (
-                            <>
-                              <Show when={linksShowMoreContext() && p().before.length}>
-                                <For each={p().before}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                              <div class="link-context link-context--match">{p().line}</div>
-                              <Show when={linksShowMoreContext() && p().after.length}>
-                                <For each={p().after}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                            </>
-                          )}
-                        </Show>
-                      </div>
-                    );
-                  }}
-                </For>
-                <Show when={sortedBacklinks().length === 0}>
-                  <p class="sidebar-hint">
-                    {linksShowFilter() && linksFilterQuery().trim()
-                      ? t("rightPanel.noMatchingInbound")
-                      : t("rightPanel.noInbound")}
-                  </p>
-                </Show>
               </Show>
-            </div>
 
-            {/* Outbound Links section (formerly "Forward links") */}
-            <div class="right-panel__section">
-              <div
-                class="right-panel__section-header right-panel__section-header--clickable"
-                onClick={() => toggleLinksSection("outbound")}
-                role="button"
-                tabindex="0"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleLinksSection("outbound");
-                  }
-                }}
-                aria-expanded={linksSectionExpanded().outbound}
-              >
-                <span>
-                  {t("rightPanel.outboundLinks")}
-                  <Show when={sortedForwardLinks().length}>
-                    <span class="right-panel__count">
-                      {" "}({sortedForwardLinks().length})
-                    </span>
-                  </Show>
-                </span>
-                <div class="right-panel__header-actions">
-                  <Show
-                    when={linksSectionExpanded().outbound}
-                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+              <div class="right-panel__pane-body">
+                {/* Inbound Links section (formerly "Backlinks") */}
+                <div class="right-panel__section">
+                  <div
+                    class="right-panel__section-header right-panel__section-header--clickable"
+                    onClick={() => toggleLinksSection("inbound")}
+                    role="button"
+                    tabindex="0"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleLinksSection("inbound");
+                      }
+                    }}
+                    aria-expanded={linksSectionExpanded().inbound}
                   >
-                    <ChevronDown size={14} class="right-panel__section-chevron" />
-                  </Show>
-                </div>
-              </div>
-              <Show when={linksSectionExpanded().outbound}>
-                <For each={sortedForwardLinks()}>
-                  {(link) => {
-                    // Outbound rows have no native preview line, so this
-                    // only shows anything when a search filter matched.
-                    // The cm-typst-search-match-line styling makes the
-                    // line read as a search hit, not as a stored
-                    // backlink quote.
-                    const expanded = () => isPreviewExpanded("outbound", link.path);
-                    const preview = () => rowPreview(link);
-                    return (
-                      <div class={link.resolved ? "" : "link--unresolved"}>
-                        <div
-                          class="sidebar-item"
-                          onClick={(e) =>
-                            link.resolved
-                              ? openLinkedFile(link, e)
-                              : createUnresolvedNote(link.target)
-                          }
-                          onContextMenu={(e) => {
-                            if (link.resolved) openLinkRowMenu(e, link.path, link.name);
-                          }}
-                          onDblClick={() => {
-                            if (link.resolved && filterActive()) {
-                              toggleLinksPreviewOverride(`outbound::${link.path}`);
-                            }
-                          }}
-                          title={
-                            link.resolved
-                              ? t("rightPanel.rowTitle.resolved")
-                              : t("rightPanel.rowTitle.unresolved")
-                          }
-                        >
-                          <span class="sidebar-item__icon" innerHTML={link.resolved
-                            ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
-                            : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
-                          } />
-                          <span class="sidebar-item__label">{link.name}</span>
-                          <Show when={!link.resolved}>
-                            <button
-                              class="link__create-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                createUnresolvedNote(link.target);
-                              }}
+                    <span>
+                      {t("rightPanel.inboundLinks")}
+                      <Show when={sortedBacklinks().length}>
+                        <span class="right-panel__count">
+                          {" "}({sortedBacklinks().length})
+                        </span>
+                      </Show>
+                    </span>
+                    <div class="right-panel__header-actions">
+                      <Show
+                        when={linksSectionExpanded().inbound}
+                        fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                      >
+                        <ChevronDown size={14} class="right-panel__section-chevron" />
+                      </Show>
+                    </div>
+                  </div>
+                  <Show when={linksSectionExpanded().inbound}>
+                    <For each={sortedBacklinks()}>
+                      {(link) => {
+                        const expanded = () => isPreviewExpanded("inbound", link.path);
+                        const preview = () => rowPreview(link);
+                        return (
+                          <div>
+                            <div
+                              class="sidebar-item"
+                              onClick={(e) => openLinkedFile(link, e)}
+                              onContextMenu={(e) =>
+                                openLinkRowMenu(e, link.path, link.name)
+                              }
+                              onDblClick={() =>
+                                toggleLinksPreviewOverride(`inbound::${link.path}`)
+                              }
+                              title={t("rightPanel.rowTitle.full")}
                             >
-                              {t("rightPanel.create")}
-                            </button>
-                          </Show>
-                        </div>
-                        <Show when={expanded() && preview()}>
-                          {(p) => (
-                            <>
-                              <Show when={linksShowMoreContext() && p().before.length}>
-                                <For each={p().before}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                              <div class="link-context link-context--match">{p().line}</div>
-                              <Show when={linksShowMoreContext() && p().after.length}>
-                                <For each={p().after}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                            </>
-                          )}
-                        </Show>
-                      </div>
-                    );
-                  }}
-                </For>
-                <Show when={sortedForwardLinks().length === 0}>
-                  <p class="sidebar-hint">
-                    {linksShowFilter() && linksFilterQuery().trim()
-                      ? t("rightPanel.noMatchingOutbound")
-                      : t("rightPanel.noOutbound")}
-                  </p>
-                </Show>
-              </Show>
-            </div>
-
-            {/* Potential Links \u2014 files mentioning this note's name without
-                an actual wikilink, surfaced so the user can spot missed
-                link opportunities. */}
-            <div class="right-panel__section">
-              <div
-                class="right-panel__section-header right-panel__section-header--clickable"
-                onClick={() => toggleLinksSection("potential")}
-                role="button"
-                tabindex="0"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleLinksSection("potential");
-                  }
-                }}
-                aria-expanded={linksSectionExpanded().potential}
-              >
-                <span>
-                  {t("rightPanel.possibleWikilinks")}
-                  <Show when={sortedPotentialLinks().length}>
-                    <span class="right-panel__count">
-                      {" "}({sortedPotentialLinks().length})
-                    </span>
+                              <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                              <span class="sidebar-item__label">{link.name}</span>
+                            </div>
+                            <Show when={expanded() && preview()}>
+                              {(p) => (
+                                <>
+                                  <Show when={linksShowMoreContext() && p().before.length}>
+                                    <For each={p().before}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                  <div class="link-context link-context--match">{p().line}</div>
+                                  <Show when={linksShowMoreContext() && p().after.length}>
+                                    <For each={p().after}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                </>
+                              )}
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                    <Show when={sortedBacklinks().length === 0}>
+                      <p class="sidebar-hint">
+                        {linksShowFilter() && linksFilterQuery().trim()
+                          ? t("rightPanel.noMatchingInbound")
+                          : t("rightPanel.noInbound")}
+                      </p>
+                    </Show>
                   </Show>
-                </span>
-                <div class="right-panel__header-actions">
-                  <Show
-                    when={linksSectionExpanded().potential}
-                    fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                </div>
+
+                {/* Outbound Links section (formerly "Forward links") */}
+                <div class="right-panel__section">
+                  <div
+                    class="right-panel__section-header right-panel__section-header--clickable"
+                    onClick={() => toggleLinksSection("outbound")}
+                    role="button"
+                    tabindex="0"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleLinksSection("outbound");
+                      }
+                    }}
+                    aria-expanded={linksSectionExpanded().outbound}
                   >
-                    <ChevronDown size={14} class="right-panel__section-chevron" />
+                    <span>
+                      {t("rightPanel.outboundLinks")}
+                      <Show when={sortedForwardLinks().length}>
+                        <span class="right-panel__count">
+                          {" "}({sortedForwardLinks().length})
+                        </span>
+                      </Show>
+                    </span>
+                    <div class="right-panel__header-actions">
+                      <Show
+                        when={linksSectionExpanded().outbound}
+                        fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                      >
+                        <ChevronDown size={14} class="right-panel__section-chevron" />
+                      </Show>
+                    </div>
+                  </div>
+                  <Show when={linksSectionExpanded().outbound}>
+                    <For each={sortedForwardLinks()}>
+                      {(link) => {
+                        // Outbound rows have no native preview line, so this
+                        // only shows anything when a search filter matched.
+                        // The cm-typst-search-match-line styling makes the
+                        // line read as a search hit, not as a stored
+                        // backlink quote.
+                        const expanded = () => isPreviewExpanded("outbound", link.path);
+                        const preview = () => rowPreview(link);
+                        return (
+                          <div class={link.resolved ? "" : "link--unresolved"}>
+                            <div
+                              class="sidebar-item"
+                              onClick={(e) =>
+                                link.resolved
+                                  ? openLinkedFile(link, e)
+                                  : createUnresolvedNote(link.target)
+                              }
+                              onContextMenu={(e) => {
+                                if (link.resolved) openLinkRowMenu(e, link.path, link.name);
+                              }}
+                              onDblClick={() => {
+                                if (link.resolved && filterActive()) {
+                                  toggleLinksPreviewOverride(`outbound::${link.path}`);
+                                }
+                              }}
+                              title={
+                                link.resolved
+                                  ? t("rightPanel.rowTitle.resolved")
+                                  : t("rightPanel.rowTitle.unresolved")
+                              }
+                            >
+                              <span class="sidebar-item__icon" innerHTML={link.resolved
+                                ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`
+                                : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z" stroke-dasharray="2.5 2"/><polyline points="9.5 2 9.5 5.5 13 5.5" stroke-dasharray="2.5 2"/></svg>`
+                              } />
+                              <span class="sidebar-item__label">{link.name}</span>
+                              <Show when={!link.resolved}>
+                                <button
+                                  class="link__create-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    createUnresolvedNote(link.target);
+                                  }}
+                                >
+                                  {t("rightPanel.create")}
+                                </button>
+                              </Show>
+                            </div>
+                            <Show when={expanded() && preview()}>
+                              {(p) => (
+                                <>
+                                  <Show when={linksShowMoreContext() && p().before.length}>
+                                    <For each={p().before}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                  <div class="link-context link-context--match">{p().line}</div>
+                                  <Show when={linksShowMoreContext() && p().after.length}>
+                                    <For each={p().after}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                </>
+                              )}
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                    <Show when={sortedForwardLinks().length === 0}>
+                      <p class="sidebar-hint">
+                        {linksShowFilter() && linksFilterQuery().trim()
+                          ? t("rightPanel.noMatchingOutbound")
+                          : t("rightPanel.noOutbound")}
+                      </p>
+                    </Show>
+                  </Show>
+                </div>
+
+                {/* Potential Links \u2014 files mentioning this note's name without
+                    an actual wikilink, surfaced so the user can spot missed
+                    link opportunities. */}
+                <div class="right-panel__section">
+                  <div
+                    class="right-panel__section-header right-panel__section-header--clickable"
+                    onClick={() => toggleLinksSection("potential")}
+                    role="button"
+                    tabindex="0"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleLinksSection("potential");
+                      }
+                    }}
+                    aria-expanded={linksSectionExpanded().potential}
+                  >
+                    <span>
+                      {t("rightPanel.possibleWikilinks")}
+                      <Show when={sortedPotentialLinks().length}>
+                        <span class="right-panel__count">
+                          {" "}({sortedPotentialLinks().length})
+                        </span>
+                      </Show>
+                    </span>
+                    <div class="right-panel__header-actions">
+                      <Show
+                        when={linksSectionExpanded().potential}
+                        fallback={<ChevronRight size={14} class="right-panel__section-chevron" />}
+                      >
+                        <ChevronDown size={14} class="right-panel__section-chevron" />
+                      </Show>
+                    </div>
+                  </div>
+                  <Show when={linksSectionExpanded().potential}>
+                    <For each={sortedPotentialLinks()}>
+                      {(link) => {
+                        const expanded = () => isPreviewExpanded("potential", link.path);
+                        const preview = () => nativePreview(link);
+                        return (
+                          <div>
+                            <div
+                              class="sidebar-item"
+                              onClick={(e) => openLinkedFile(link, e)}
+                              onContextMenu={(e) =>
+                                openLinkRowMenu(e, link.path, link.name)
+                              }
+                              onDblClick={() =>
+                                toggleLinksPreviewOverride(`potential::${link.path}`)
+                              }
+                              title={t("rightPanel.rowTitle.full")}
+                            >
+                              <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
+                              <span class="sidebar-item__label">{link.name}</span>
+                            </div>
+                            <Show when={expanded() && preview()}>
+                              {(p) => (
+                                <>
+                                  <Show when={linksShowMoreContext() && p().before.length}>
+                                    <For each={p().before}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                  <div class="link-context link-context--match">{p().line}</div>
+                                  <Show when={linksShowMoreContext() && p().after.length}>
+                                    <For each={p().after}>
+                                      {(l) => <div class="link-context link-context--ctx">{l}</div>}
+                                    </For>
+                                  </Show>
+                                </>
+                              )}
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                    <Show when={sortedPotentialLinks().length === 0}>
+                      <p class="sidebar-hint">{t("rightPanel.noPossibleWikilinks")}</p>
+                    </Show>
                   </Show>
                 </div>
               </div>
-              <Show when={linksSectionExpanded().potential}>
-                <For each={sortedPotentialLinks()}>
-                  {(link) => {
-                    const expanded = () => isPreviewExpanded("potential", link.path);
-                    const preview = () => nativePreview(link);
-                    return (
-                      <div>
-                        <div
-                          class="sidebar-item"
-                          onClick={(e) => openLinkedFile(link, e)}
-                          onContextMenu={(e) =>
-                            openLinkRowMenu(e, link.path, link.name)
-                          }
-                          onDblClick={() =>
-                            toggleLinksPreviewOverride(`potential::${link.path}`)
-                          }
-                          title={t("rightPanel.rowTitle.full")}
-                        >
-                          <span class="sidebar-item__icon" innerHTML={`<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2H4.5a1.5 1.5 0 0 0-1.5 1.5v9a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2z"/><polyline points="9.5 2 9.5 5.5 13 5.5"/></svg>`} />
-                          <span class="sidebar-item__label">{link.name}</span>
-                        </div>
-                        <Show when={expanded() && preview()}>
-                          {(p) => (
-                            <>
-                              <Show when={linksShowMoreContext() && p().before.length}>
-                                <For each={p().before}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                              <div class="link-context link-context--match">{p().line}</div>
-                              <Show when={linksShowMoreContext() && p().after.length}>
-                                <For each={p().after}>
-                                  {(l) => <div class="link-context link-context--ctx">{l}</div>}
-                                </For>
-                              </Show>
-                            </>
-                          )}
-                        </Show>
-                      </div>
-                    );
-                  }}
-                </For>
-                <Show when={sortedPotentialLinks().length === 0}>
-                  <p class="sidebar-hint">{t("rightPanel.noPossibleWikilinks")}</p>
-                </Show>
-              </Show>
             </div>
           </Show>
 
           {/* References tab */}
           <Show when={activePanel() === "references"}>
-            <ReferencesPanel />
+            <div class="right-panel__pane-body">
+              <ReferencesPanel />
+            </div>
           </Show>
 
           {/* Scroll Context tab — only meaningful when Journal Scroll is on
@@ -2278,7 +2298,11 @@ const RightPanel: Component = () => {
           >
             {(() => {
               const tab = activeFileTab();
-              return tab ? <ScrollContextPanel tabId={tab.id} /> : null;
+              return tab ? (
+                <div class="right-panel__pane-body">
+                  <ScrollContextPanel tabId={tab.id} />
+                </div>
+              ) : null;
             })()}
           </Show>
         </div>

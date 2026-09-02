@@ -32,23 +32,29 @@
 }
 
 /* ── Pinned pane header, scrolling pane body ──────────────────────────────
-   Every left-sidebar pane is laid out as a fixed head (its section header,
-   plus any filter box or action row) over one scrolling body. The head stays
-   put while the list moves, and the scrollbar begins beneath the head rather
-   than running the full height of the pane.
+   Both side panels lay every pane out the same way: a fixed head (its section
+   header, plus any filter box or toolbar row) over one scrolling body. The
+   head stays put while the list moves, and the scrollbar begins beneath the
+   head rather than running the full height of the pane.
 
-   `.left-sidebar__content` is the fixed-size box (see app-shell.css); a pane
-   fills it and only `.left-sidebar__pane-body` scrolls. The body pulls itself
-   back out to that box's edges and re-adds the inset as its own padding, so
-   its scrollbar rides the sidebar's outer edge while its rows stay aligned
-   with the header above them. On the right it stops `--resize-handle-width`
-   short: the width-drag handle is laid over that strip and would otherwise
-   cover half the scrollbar, leaving it hard to grab.
+   `.left-sidebar__content` / `.right-panel__tab-content` are the fixed-size
+   boxes (see app-shell.css and right-panel.css); a pane fills its box and only
+   the `*__pane-body` scrolls. The body pulls itself back out to the box's
+   edges and re-adds the inset as its own padding, so its scrollbar rides the
+   panel's outer edge while its rows stay aligned with the header above them.
 
-   A pane that owns its whole layout (Search, Help) can fill the content box
-   directly instead; it just has to keep a single scrolling region of its own
-   rather than growing past the box. */
-.left-sidebar__pane {
+   As with the section-header rules above, the two sides keep separate class
+   names so the JSX stays side-scoped, and share their CSS through grouped
+   selectors — a change to this geometry lands in one place for both.
+
+   A pane that owns its whole layout (Search, Help, Annotations) can fill the
+   box directly instead; it just has to keep a single scrolling region of its
+   own rather than growing past the box.
+
+   A body with nothing to pin above it needs no `*__pane` wrapper — the body
+   class alone works as a direct child of the content box. */
+.left-sidebar__pane,
+.right-panel__pane {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -56,18 +62,26 @@
 }
 
 /* Everything above the body keeps its natural height. */
-.left-sidebar__pane > :not(.left-sidebar__pane-body) {
+.left-sidebar__pane > :not(.left-sidebar__pane-body),
+.right-panel__pane > :not(.right-panel__pane-body) {
   flex-shrink: 0;
 }
 
-.left-sidebar__pane-body {
+.left-sidebar__pane-body,
+.right-panel__pane-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  margin-left: calc(-1 * var(--space-4));
-  margin-right: calc(var(--resize-handle-width) - var(--space-4));
-  margin-bottom: calc(-1 * var(--space-4));
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
   padding: 0 var(--space-4) var(--space-4);
+}
+
+/* Left side only: the panel-width drag handle is laid over the sidebar's right
+   edge, so a scrollbar directly under it can't be grabbed. Stop the body that
+   far short and the two sit side by side. The right panel needs no equivalent
+   — its handle is on its left edge, away from the scrollbar. */
+.left-sidebar__pane-body {
+  margin-right: calc(var(--resize-handle-width) - var(--space-4));
 }
 
 .left-sidebar__add-btn {
