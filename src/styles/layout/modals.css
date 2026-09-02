@@ -175,7 +175,7 @@
 .app-modal__text {
   margin: 0;
   font-size: var(--text-base);
-  line-height: 1.45;
+  line-height: var(--leading-normal);
   color: var(--fg-secondary);
 }
 

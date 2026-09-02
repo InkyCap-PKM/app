@@ -122,7 +122,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-7);
   /* Breathing room between the logo's foot and the Notebox Management row. */
   margin-bottom: var(--space-6);
 }
@@ -268,7 +268,7 @@
   color: var(--fg-muted);
   font-family: var(--editor-font-mono);
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   white-space: pre-wrap;
   word-break: break-word;
   -webkit-user-select: text;
@@ -450,12 +450,12 @@
 .settings__notice {
   margin-top: var(--space-4);
   padding: var(--space-4) var(--space-5);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border-left: 3px solid var(--callout-info);
   background: color-mix(in srgb, var(--callout-info) 8%, transparent);
   color: var(--fg-secondary);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-normal);
 }
 
 /* "this notebox" badge — small inline tag next to per-notebox setting
@@ -498,7 +498,7 @@
   right: 0;
   bottom: 0;
   background: var(--toggle-off-bg);
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   transition: background var(--dur-base);
 }
 
@@ -695,7 +695,7 @@
 /* Reserve space on the right of the input so the clear button doesn't
  * overlap typed text. Mirrors the SearchPanel pattern. */
 .settings__font-picker-input {
-  padding-right: 24px;
+  padding-right: var(--space-7);
 }
 
 .settings__font-picker-clear {
@@ -880,7 +880,7 @@
   display: inline-flex;
   align-self: center;
   border: 1px solid var(--border-input);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-primary);
   flex-shrink: 0;
@@ -993,7 +993,7 @@
   padding: var(--space-4) var(--space-5);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: var(--radius-sm);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .settings__section-note--warn {

@@ -83,7 +83,7 @@
 
 .audit-dialog__group {
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-5);
   background: var(--bg-primary);
 }

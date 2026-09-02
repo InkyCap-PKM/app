@@ -19,7 +19,7 @@
   padding: 3px 12px;
   font-size: var(--text-md);
   color: var(--fg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   margin: 1px 4px;
 }
 
@@ -57,7 +57,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 1px 4px;
 }
 

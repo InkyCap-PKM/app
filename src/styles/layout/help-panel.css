@@ -92,7 +92,7 @@
    square icon-btn like any other glyph. */
 .help-panel__doc-logo {
   display: block;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .help-panel__group {
@@ -116,7 +116,7 @@
   padding: 3px 4px;
   font-size: var(--text-md);
   color: var(--fg-secondary);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .help-panel__row:hover {
@@ -143,7 +143,7 @@
   padding: 1px 5px;
   font-family: inherit;
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   color: var(--fg-secondary);
   background: var(--bg-input);
   border: 1px solid var(--border-input);
@@ -180,7 +180,7 @@
   padding: 1px 6px;
   font-family: inherit;
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   color: var(--fg-secondary);
   background: var(--bg-input);
   border: 1px solid var(--border-input);
@@ -227,7 +227,7 @@
    equivalent, and an optional note. */
 .help-panel__markup-row {
   padding: var(--space-2) var(--space-2) var(--space-3);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .help-panel__markup-row:hover {
@@ -261,7 +261,7 @@
   margin-top: 3px;
   font-size: var(--text-xs);
   color: var(--fg-muted);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .help-panel__empty {

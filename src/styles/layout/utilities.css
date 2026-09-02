@@ -110,7 +110,7 @@
 
 .badge--count {
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--border-input);
   color: var(--fg-secondary);
 }

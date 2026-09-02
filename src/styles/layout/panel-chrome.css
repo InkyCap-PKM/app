@@ -15,7 +15,9 @@
   left: 0;
   right: 0;
   height: 38px;
-  border-bottom: 1px solid var(--border-primary);
+  /* One continuous line with .left-sidebar__mode-bar and
+     .vertical-toolbar__header — keep the three tiers in step. */
+  border-bottom: 1px solid var(--border-subtle);
   pointer-events: none;
 }
 

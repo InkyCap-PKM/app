@@ -133,7 +133,7 @@
 .search-panel__highlight {
   background: var(--search-highlight, rgba(255, 213, 0, 0.3));
   color: inherit;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   padding: 0 1px;
 }
 
@@ -165,7 +165,7 @@
 .search-panel__tip {
   font-size: var(--text-sm);
   color: var(--fg-muted);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   padding: var(--space-1) var(--space-1) var(--space-2);
   text-align: center;
 }
@@ -208,7 +208,7 @@
   color: var(--fg-primary);
   cursor: pointer;
   text-align: left;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .search-panel__hint:hover {

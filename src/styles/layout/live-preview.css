@@ -26,7 +26,7 @@
   border: 1px dashed var(--border-primary);
   color: var(--fg-dim);
   font-size: var(--text-base);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .cm-ilp-hr {
@@ -72,7 +72,7 @@
   background: var(--syntax-mono-bg, var(--bg-active));
   color: var(--syntax-mono, var(--fg-primary));
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-family: var(--editor-font-mono);
   font-size: 0.95em;
 }

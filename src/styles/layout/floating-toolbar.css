@@ -115,7 +115,7 @@
 .cm-tooltip-page-preview__body {
   font-size: var(--text-base);
   color: var(--fg-secondary);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 5;

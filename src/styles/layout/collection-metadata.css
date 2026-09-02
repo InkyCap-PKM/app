@@ -324,7 +324,7 @@
   box-shadow: var(--popup-shadow);
   color: var(--fg-primary);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--leading-normal);
 }
 
 .help-button__content {
@@ -368,7 +368,7 @@
   }
 }
 .cm-typst-pill-pulse {
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   animation: cm-typst-pill-pulse-kf 0.5s ease-out;
 }
 

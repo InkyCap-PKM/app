@@ -26,11 +26,12 @@ warm palettes automatically.
 
 | Family | Tokens | Use for |
 | --- | --- | --- |
-| **Type scale** | `--text-2xs … --text-3xl` | every UI font-size |
+| **Type scale** | `--text-2xs … --text-3xl` | every UI font-size; chrome sizes step 1px, heading sizes (xl/2xl/3xl = 18/22/28) step a ~1.2 ratio |
+| **Line-height scale** | `--leading-none/tight/normal/relaxed` (1 / 1.3 / 1.45 / 1.6) | glyph chrome / headings / UI body / longer prose |
 | **Icon scale** | `--icon-sm/md/lg` | Lucide glyph sizing |
-| **Radius scale** | `--radius-sm` (4px) · `--radius-md` (7px) · `--radius-lg` (8px) | sm = badges/chips, md = buttons/controls/popups, lg = modals |
+| **Radius scale** | `--radius-xs` (2px) · `--radius-sm` (4px) · `--radius-md` (7px) · `--radius-lg` (8px) · `--radius-full` (999px) | xs = hairline marks, sm = badges/chips, md = buttons/controls/popups, lg = modals, full = pills |
 | **Input radius** | `--radius-input` (= `--radius-md`) | text inputs, textareas, select/combobox triggers |
-| **Spacing scale** | `--space-1 … --space-6` (2/4/6/8/12/16px) | padding & gap |
+| **Spacing scale** | `--space-1 … --space-9` (2/4/6/8/12/16/24/32/48px) | padding & gap, up to section/page-level steps |
 | **Button geometry** | `--btn-pad-y/-x`, `--btn-radius` | consumed by `.btn` |
 | **Focus** | `--focus-ring` | the one keyboard-focus affordance |
 | **Motion** | `--ease-out`, `--dur-fast` (120ms), `--dur-base` (200ms) | transitions |
@@ -155,10 +156,28 @@ combobox) round only their outer corners using the same token
   `/* token-exempt: <reason> */` comment on its line or the line above (the
   reading view's white "paper" page is the canonical example). Small local
   z-indexes (1, 2, 10) inside a component's own stacking context are allowed.
-- **Off-scale radii and durations are a deferred decision.** ~47 radii of
-  2/3/6px and a handful of 0.5s+ durations were left as literals during the
-  2026-09 token migration rather than silently snapped to the scale; whether
-  to snap them (a visual change) is a typography/geometry-pass decision.
+- **Off-scale radii were snapped in the typography pass (2026-09).** 3px
+  radii snapped up to `--radius-sm` (4px) and 6px up to `--radius-md` (7px) —
+  sub-pixel-perceptible changes accepted for a single-scale system. 2px became
+  `--radius-xs` (hairline tier, kept as its own step because inline marks read
+  wrong at 4px). Fully-round values (the toggle track's 20px, 999px pills)
+  became `--radius-full`. The token-guard test now also rejects raw px radii
+  (0 and 50% stay allowed). Long animation durations (0.5s+ pulses/spinners)
+  remain literals — they are choreography, not micro-interaction timing.
+- **Heading sizes step by ratio, chrome sizes by 1px (2026-09).** `--text-xl/
+  2xl/3xl` moved from 17/19/25 to 18/22/28 so titles establish hierarchy
+  through scale. Keep `TOKEN_BASES` in `src/lib/ui-scale.ts` in sync with the
+  type scale — the runtime rescaler overwrites the CSS values.
+- **Line-heights consolidated onto the leading scale (2026-09).** 1.3–1.6
+  literals mapped to `--leading-tight/normal/relaxed` (deltas ≤ 0.05).
+  Structural values (0, 1, and two 1.2s) stay literal by design.
+- **Seams are drawn once (2026-09).** Where two regions already differ by
+  background (editor column vs chrome), the separating hairline uses
+  `--border-subtle`, not `--border-primary` — the boundary shouldn't be
+  declared twice. The 38px header band's underline is one continuous line
+  drawn by three elements (`.left-sidebar__mode-bar`,
+  `.vertical-toolbar__header`, `.right-panel::after`); keep their border
+  tiers in step.
 
 ---
 

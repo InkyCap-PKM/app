@@ -73,7 +73,7 @@
   cursor: pointer;
   padding: 3px 6px 3px 10px;
   font-size: var(--text-base);
-  line-height: 1.4;
+  line-height: var(--leading-normal);
   /* Keep each tab at its natural single-line width so a long view name doesn't
      wrap or compress; overflow scrolls the row instead. */
   flex-shrink: 0;
@@ -274,7 +274,7 @@
   white-space: pre-wrap;
   font-family: inherit;
   font-size: inherit;
-  line-height: 1.4;
+  line-height: var(--leading-normal);
 }
 
 .collection-table__export-error-close {
@@ -439,7 +439,7 @@
 .collection-table__cell-value {
   cursor: pointer;
   padding: 1px 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .collection-table__cell-value:hover {

@@ -172,7 +172,7 @@
   color: var(--fg-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  padding-left: 32px; /* visually align under matched line text */
+  padding-left: var(--space-8); /* visually align under matched line text */
 }
 
 .search-panel__result--wide .search-panel__result-line {
