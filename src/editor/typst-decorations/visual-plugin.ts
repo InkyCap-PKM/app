@@ -32,6 +32,7 @@ import {
   SuggestionWidget,
   type SuggestionKind,
   CALLOUT_COLORS,
+  createVerseEntryKeymap,
 } from "./widgets";
 import { TableWidget } from "./table-widget";
 import { parseCanonicalTable } from "./table-parser";
@@ -2610,6 +2611,7 @@ const protectedCursorFilter = createProtectedCursorFilter(
 );
 const protectedChangeFilter = createProtectedChangeFilter(protectedRangesField);
 const tableEntryKeymap = createTableEntryKeymap(visualField);
+const verseEntryKeymap = createVerseEntryKeymap(visualField);
 const clickAnchorPlugin = createClickAnchorPlugin(visualField);
 
 // A trailing paragraph-break `\` is hidden in visual mode (see
@@ -2757,6 +2759,6 @@ const dueCursorRoundOut = ViewPlugin.fromClass(class {
 });
 
 export function typstVisualMode() {
-  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
+  return [expandedFuncField, protectedRangesField, protectedCursorFilter, protectedChangeFilter, dueCursorRoundOut, Prec.high(tableEntryKeymap), Prec.high(verseEntryKeymap), visualField, softBreakRangesField, softBreakAtomicRanges, markupAtomicRanges, postHistoryRebuild, visualTheme, linkClickHandler, tableClipboardHandler, tablePasteHandler, clickAnchorPlugin, pillBoundaryNav];
 }
 

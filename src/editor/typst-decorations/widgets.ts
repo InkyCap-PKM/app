@@ -1,4 +1,5 @@
-import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { type EditorView, WidgetType, ViewPlugin, type ViewUpdate, type DecorationSet, keymap } from "@codemirror/view";
+import { type StateField } from "@codemirror/state";
 import { getSearchQuery, setSearchQuery } from "@codemirror/search";
 import { openLink } from "../../lib/open-link";
 import { loadImageObjectUrl, loadMediaObjectUrl, revokeBlobUrls } from "../../lib/media-src";
@@ -1749,8 +1750,18 @@ export class VerseWidget extends WidgetType {
     // focus to the canvas. Without this, the widget DOM is reused
     // (eq() returns true while body bounds are unchanged) so toDOM's
     // focus-routing branch doesn't re-run, and keystrokes go to CM.
-    wrap.dataset.bodyFrom = String(this.opts.bodyFrom);
-    wrap.dataset.bodyTo = String(this.opts.bodyTo);
+    //
+    // The offsets are stored RELATIVE to the call start, not as absolute
+    // document positions. Incremental decoration updates remap a widget's
+    // range through edits elsewhere (e.g. typing in a list above the
+    // verse) but do NOT rebuild the widget or re-run toDOM, so an absolute
+    // offset stamped here goes stale while the live document shifts. That
+    // stale window used to drift under the growing cursor offset and yank
+    // focus into the verse mid-typing. Relative offsets survive the shift
+    // because the whole call moves as one unit; readers recover the live
+    // absolute range via `liveVerseBodyRange` (posAtDOM + these offsets).
+    wrap.dataset.bodyRelFrom = String(this.opts.bodyFrom - this.opts.callFrom);
+    wrap.dataset.bodyRelTo = String(this.opts.bodyTo - this.opts.callFrom);
 
     // ── Pill (top-left): identifies the block as verse and opens the
     // super-menu, which includes the alignment options for verse. The
@@ -1828,6 +1839,22 @@ export class VerseWidget extends WidgetType {
         document.execCommand("insertText", false, "\t");
         return;
       }
+      // Arrow keys at the canvas edges hand control back to the source
+      // editor so the verse isn't a keyboard trap — mirrors a table cell
+      // exiting at the grid edge. Interior presses fall through to the
+      // browser's native caret motion inside the canvas.
+      if ((e.key === "ArrowLeft" || e.key === "ArrowUp")
+          && caretAtCanvasEdge(canvas, "start", e.key === "ArrowUp")) {
+        e.preventDefault();
+        this.exitToEditor(view, wrap, "before");
+        return;
+      }
+      if ((e.key === "ArrowRight" || e.key === "ArrowDown")
+          && caretAtCanvasEdge(canvas, "end", e.key === "ArrowDown")) {
+        e.preventDefault();
+        this.exitToEditor(view, wrap, "after");
+        return;
+      }
     });
 
     canvas.addEventListener("paste", (e) => {
@@ -1873,16 +1900,33 @@ export class VerseWidget extends WidgetType {
         if (!document.body.contains(canvas)) return;
         if (!view.hasFocus) return;
         canvas.focus({ preventScroll: true });
-        const range = document.createRange();
-        range.selectNodeContents(canvas);
-        range.collapse(false);
-        const docSel = window.getSelection();
-        docSel?.removeAllRanges();
-        docSel?.addRange(range);
+        placeCaretInVerseCanvas(canvas, "end");
       });
     }
 
     return wrap;
+  }
+
+  /** Move the caret from the verse canvas back into the source editor,
+   *  landing just before (`"before"`) or just after (`"after"`) the
+   *  `#verse(...)` call so the verse can be exited by keyboard. */
+  private exitToEditor(view: EditorView, wrap: HTMLElement, direction: "before" | "after"): void {
+    // Resolve the call's live start from the DOM — incremental decoration
+    // updates remap the widget without rebuilding it, so the build-time
+    // offset can be stale.
+    let callFrom: number;
+    try {
+      callFrom = view.posAtDOM(wrap);
+    } catch {
+      callFrom = this.opts.callFrom;
+    }
+    const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
+    // Blur first so any pending canvas edit flushes to source before we
+    // compute the call's end and move the selection.
+    canvas?.blur();
+    const target = direction === "before" ? callFrom : findCallEnd(view, callFrom);
+    view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
+    view.focus();
   }
 
   /** Read the canvas DOM, encode to Typst source, and dispatch a
@@ -2585,12 +2629,84 @@ function showCiteContextMenu(
   document.addEventListener("keydown", closeOnEscape, true);
 }
 
+/** Collapse the DOM selection to the start or end of a verse canvas's
+ *  content. Shared by mount-time focus routing and keyboard entry so caret
+ *  placement stays consistent. */
+function placeCaretInVerseCanvas(canvas: HTMLElement, where: "start" | "end"): void {
+  const range = document.createRange();
+  range.selectNodeContents(canvas);
+  range.collapse(where === "start");
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+
+/** Whether the collapsed caret sits at the canvas edge that a given arrow key
+ *  would leave from. `edge` is the boundary in question; `vertical` is true
+ *  for ArrowUp/ArrowDown. Horizontal keys leave only at the absolute text
+ *  boundary; vertical keys also leave from the first/last visual line so they
+ *  don't get stuck mid-column. */
+function caretAtCanvasEdge(
+  canvas: HTMLElement,
+  edge: "start" | "end",
+  vertical: boolean,
+): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+  const caret = sel.getRangeAt(0);
+
+  // Absolute boundary: no rendered text between the caret and the canvas
+  // edge. Covers empty/single-line verses and is the guaranteed escape
+  // hatch for the horizontal arrows.
+  const probe = document.createRange();
+  probe.selectNodeContents(canvas);
+  if (edge === "start") probe.setEnd(caret.startContainer, caret.startOffset);
+  else probe.setStart(caret.endContainer, caret.endOffset);
+  if (probe.toString().length === 0) return true;
+
+  if (!vertical) return false;
+
+  // Vertical: caret on the first (start) / last (end) visual line. The
+  // tolerance scales with the caret height so it holds at any font size.
+  const caretRect = caret.getBoundingClientRect();
+  if (caretRect.height === 0) return false;
+  const box = canvas.getBoundingClientRect();
+  const tol = caretRect.height * 0.5;
+  return edge === "start"
+    ? caretRect.top - box.top < tol
+    : box.bottom - caretRect.bottom < tol;
+}
+
+/** Resolve a verse wrap's current body range in the live document.
+ *  The wrap's DOM is reused across edits that shift the widget's position
+ *  (typing in a list above it, etc.), so the relative offsets stamped at
+ *  mount time are combined with the widget's live call start — read fresh
+ *  from `posAtDOM` — to recover the true body range without a rebuild.
+ *  Returns null if the range can't be resolved (missing data / unmounted
+ *  node). */
+function liveVerseBodyRange(
+  view: EditorView,
+  wrap: HTMLElement,
+): { from: number; to: number } | null {
+  const relFrom = Number(wrap.dataset.bodyRelFrom);
+  const relTo = Number(wrap.dataset.bodyRelTo);
+  if (!Number.isFinite(relFrom) || !Number.isFinite(relTo)) return null;
+  let callFrom: number;
+  try {
+    callFrom = view.posAtDOM(wrap);
+  } catch {
+    // posAtDOM can throw for a node CM no longer tracks.
+    return null;
+  }
+  return { from: callFrom + relFrom, to: callFrom + relTo };
+}
+
 /** Route focus into a verse canvas whenever CM's logical cursor moves
  *  into a verse body range. Complements VerseWidget.toDOM's mount-time
  *  focus routing: that branch only fires on widget construction, but
  *  if the user backspaces from below into an existing verse, the
- *  widget DOM is reused (eq() returns true while bodyFrom/bodyTo
- *  haven't shifted), so toDOM doesn't re-run — yet CM's selection has
+ *  widget DOM is reused (eq() returns true while the body bounds are
+ *  unchanged) so toDOM doesn't re-run — yet CM's selection has
  *  entered the body range. Without this plugin, keystrokes go to CM's
  *  contentDOM instead of the canvas, producing reverse-typing /
  *  caret-at-edge symptoms documented in CLAUDE.md (CM6 widget recipe). */
@@ -2617,14 +2733,13 @@ export const verseFocusRouter = ViewPlugin.fromClass(
         if (!view.hasFocus) return;
         const wraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse");
         for (const wrap of wraps) {
-          const from = Number(wrap.dataset.bodyFrom);
-          const to = Number(wrap.dataset.bodyTo);
-          if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+          const body = liveVerseBodyRange(view, wrap);
+          if (!body) continue;
           // Selection (point or range) must lie entirely within this
           // verse's body. Toolbar-wrap-around-selection produces a range;
           // backspace-into-verse and slash-insert produce a point — both
           // flow here.
-          if (lo < from || hi > to) continue;
+          if (lo < body.from || hi > body.to) continue;
           const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
           if (!canvas) return;
           if (document.activeElement === canvas) return;
@@ -2644,6 +2759,94 @@ export const verseFocusRouter = ViewPlugin.fromClass(
     }
   },
 );
+
+/**
+ * Locate a verse widget the cursor should step into from `pos` when moving in
+ * `direction`, and which end the caret should land at. The verse renders as an
+ * atomic range, so a plain arrow press skips the whole block; this finds the
+ * block that press should instead enter. `decoField` is passed in to avoid a
+ * circular import with visual-plugin. Mirrors `findTableWrapNear`.
+ */
+function findVerseEntry(
+  view: EditorView,
+  pos: number,
+  direction: "up" | "down" | "left" | "right",
+  decoField: StateField<DecorationSet>,
+): { wrap: HTMLElement; place: "start" | "end" } | null {
+  const decos = view.state.field(decoField, false);
+  if (!decos) return null;
+  let vf = -1;
+  let vt = -1;
+  decos.between(0, view.state.doc.length, (f, t, deco) => {
+    if (!(deco.spec?.widget instanceof VerseWidget)) return;
+    if (direction === "up" && t <= pos && t > vt) { vf = f; vt = t; }
+    else if (direction === "down" && f >= pos && (vf < 0 || f < vf)) { vf = f; vt = t; }
+    else if (direction === "right" && f === pos) { vf = f; vt = t; }
+    else if (direction === "left" && t === pos) { vf = f; vt = t; }
+  });
+  if (vf < 0) return null;
+
+  // Vertical motion only enters when the verse is actually on the adjacent
+  // line, so Up/Down near (but not next to) a verse behaves normally.
+  if (direction === "up" || direction === "down") {
+    const line = view.state.doc.lineAt(pos);
+    const adjacent = direction === "up"
+      ? (line.number > 1 ? view.state.doc.line(line.number - 1) : null)
+      : (line.number < view.state.doc.lines ? view.state.doc.line(line.number + 1) : null);
+    if (!adjacent) return null;
+    if (!(vf <= adjacent.to && vt >= adjacent.from)) return null;
+  }
+
+  const wraps = view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse");
+  for (const w of wraps) {
+    try {
+      const p = view.posAtDOM(w);
+      if (p >= vf && p <= vt) {
+        const place = direction === "up" || direction === "left" ? "end" : "start";
+        return { wrap: w, place };
+      }
+    } catch { /* posAtDOM can throw for unmounted nodes */ }
+  }
+  return null;
+}
+
+/**
+ * Keymap letting the arrow keys step into an adjacent verse canvas from the
+ * source editor. Without it the verse's atomic range makes one arrow press
+ * skip the whole block, so it could only be entered by mouse. Returned as a
+ * factory so visual-plugin can supply its decoration StateField without a
+ * circular import. Mirrors `createTableEntryKeymap`.
+ */
+export function createVerseEntryKeymap(decoField: StateField<DecorationSet>) {
+  const enter = (view: EditorView, direction: "up" | "down" | "left" | "right"): boolean => {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    // On a wrapped line, only enter vertically from the first/last visual
+    // line, so intra-line motion runs first (matches the table entry keymap).
+    if (direction === "up" || direction === "down") {
+      const line = view.state.doc.lineAt(sel.head);
+      const headC = view.coordsAtPos(sel.head);
+      const edgeC = view.coordsAtPos(direction === "up" ? line.from : line.to);
+      if (headC && edgeC) {
+        if (direction === "up" && headC.top > edgeC.top + 2) return false;
+        if (direction === "down" && headC.top < edgeC.top - 2) return false;
+      }
+    }
+    const target = findVerseEntry(view, sel.head, direction, decoField);
+    if (!target) return false;
+    const canvas = target.wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
+    if (!canvas) return false;
+    canvas.focus({ preventScroll: true });
+    placeCaretInVerseCanvas(canvas, target.place);
+    return true;
+  };
+  return keymap.of([
+    { key: "ArrowRight", run: (v) => enter(v, "right") },
+    { key: "ArrowLeft", run: (v) => enter(v, "left") },
+    { key: "ArrowDown", run: (v) => enter(v, "down") },
+    { key: "ArrowUp", run: (v) => enter(v, "up") },
+  ]);
+}
 
 // ---------------------------------------------------------------------------
 // verseSearchHighlighter: paints the current Ctrl+F match inside a verse
@@ -2721,10 +2924,9 @@ function refreshVerseSearchHits(view: EditorView): void {
   if (sel.empty) return;
 
   for (const wrap of view.dom.querySelectorAll<HTMLElement>(".cm-typst-verse")) {
-    const from = Number(wrap.dataset.bodyFrom);
-    const to = Number(wrap.dataset.bodyTo);
-    if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
-    if (sel.from < from || sel.to > to) continue;
+    const body = liveVerseBodyRange(view, wrap);
+    if (!body) continue;
+    if (sel.from < body.from || sel.to > body.to) continue;
 
     const canvas = wrap.querySelector<HTMLElement>(".cm-typst-verse-canvas");
     if (!canvas) return;
@@ -2736,7 +2938,7 @@ function refreshVerseSearchHits(view: EditorView): void {
     // search for (and count) matches what the canvas actually renders.
     const needle = decodeVerseLiteral(view.state.doc.sliceString(sel.from, sel.to));
     if (!needle) return;
-    const prefix = decodeVerseLiteral(view.state.doc.sliceString(from, sel.from));
+    const prefix = decodeVerseLiteral(view.state.doc.sliceString(body.from, sel.from));
     const occurrence = countOccurrences(prefix, needle, query.caseSensitive);
     paintVerseHit(canvas, needle, occurrence, query.caseSensitive);
     return;
