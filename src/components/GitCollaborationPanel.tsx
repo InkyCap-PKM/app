@@ -110,14 +110,14 @@ const GitCollaborationPanel: Component = () => {
   // explicitly, after this unmounts).
   onCleanup(() => setManageOpen(false));
   return (
-    <>
+    <div class="left-sidebar__pane">
       <div class="left-sidebar__section-header">
         <span>{t("git.panel.title")}</span>
       </div>
       <Show when={collaborative() && !repoMissing()} fallback={<SetupForm />}>
         <SyncView />
       </Show>
-    </>
+    </div>
   );
 };
 
@@ -203,7 +203,7 @@ const SetupForm: Component = () => {
   }
 
   return (
-    <div class="git-panel__body git-panel__setup">
+    <div class="git-panel__body git-panel__setup left-sidebar__pane-body">
       {/* This notebox is already a git repo with a remote but has no collab
           config — offer to adopt it in one click before the manual form. */}
       <Show when={!repoMissing() && reconnectable()}>
@@ -388,7 +388,7 @@ const SyncView: Component = () => {
     packageMode() ? t("git.package.modeLabel") : t("git.sync.heading");
 
   return (
-    <div class="git-panel__body">
+    <div class="git-panel__body left-sidebar__pane-body">
       {/* The actions live in a collapsed-by-default section whose header doubles
           as the status row. Merge-first never pauses, so there is no conflict
           resolution view — incoming changes land and are reviewed/reverted from

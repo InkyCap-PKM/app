@@ -111,6 +111,11 @@
   font-size: var(--text-xl);
   width: 18px;
   height: 18px;
+  /* Hold that size when the tab compresses. As a flex item the × would
+     otherwise shrink along with the title, so a tab with a long (truncated)
+     title ended up with a visibly smaller × and hover area than a tab with a
+     short one. Only `.tab__title` gives up width; the chrome stays fixed. */
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;

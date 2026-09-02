@@ -10,7 +10,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { ChevronLeft, ChevronRight, Funnel } from "lucide-solid";
+import { ChevronLeft, ChevronRight, Funnel, PenLine } from "lucide-solid";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { exportDefault, rememberExportFile, rememberExportDir } from "../lib/dialog-defaults";
 import type {
@@ -21,7 +21,7 @@ import type {
   ViewDef,
 } from "../lib/types";
 import * as ipc from "../lib/ipc";
-import { openTab } from "../stores/tabs";
+import { openTab, type EditingMode } from "../stores/tabs";
 import { propertyVersion, fileTreeVersion } from "../stores/notebox";
 import { promptText, promptConfirm } from "../stores/prompt";
 import { useI18n, tPlural } from "../lib/i18n";
@@ -72,6 +72,25 @@ function parseInput(raw: string, hint: "boolean" | "number" | "list" | "string")
     return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
   }
   return trimmed;
+}
+
+/**
+ * Open the note behind a collection row. Every row affordance funnels through
+ * here so they agree on the modifier conventions: a plain click navigates the
+ * current tab, Ctrl/Cmd-click and middle-click open a new one. `editingMode`
+ * pins the editor mode the note lands in — the row's pencil button asks for the
+ * visual editor; the file-name link leaves it undefined and follows the user's
+ * default.
+ */
+function openRowNote(
+  filePath: string,
+  fileName: string,
+  opts: { newTab: boolean; editingMode?: EditingMode },
+): void {
+  openTab(
+    { type: "file", title: fileName, path: filePath, editingMode: opts.editingMode },
+    opts.newTab ? { forceNewTab: true, newTabAction: true } : undefined,
+  );
 }
 
 // ── Inline cell editor ─────────────────────────────────────────────
@@ -138,22 +157,15 @@ const InlineCell: Component<{
     return (
       <a
         class="collection-table__link"
-        onClick={(e) => {
-          // Ctrl/Cmd-click (or middle-click) opens the note in a new tab
-          // rather than replacing the current one.
-          const newTab = e.ctrlKey || e.metaKey;
-          openTab(
-            { type: "file", title: props.fileName, path: props.filePath },
-            newTab ? { forceNewTab: true, newTabAction: true } : undefined,
-          );
-        }}
+        onClick={(e) =>
+          openRowNote(props.filePath, props.fileName, {
+            newTab: e.ctrlKey || e.metaKey,
+          })
+        }
         onAuxClick={(e) => {
           if (e.button !== 1) return; // middle-click only
           e.preventDefault();
-          openTab(
-            { type: "file", title: props.fileName, path: props.filePath },
-            { forceNewTab: true, newTabAction: true },
-          );
+          openRowNote(props.filePath, props.fileName, { newTab: true });
         }}
       >
         {props.fileName}
@@ -1263,6 +1275,11 @@ const CollectionTable: Component<{ path: string }> = (props) => {
               <table class="collection-table__table">
                 <thead>
                   <tr>
+                    {/* Gutter above the per-row "open in visual editor"
+                        buttons. Empty by design — the buttons carry their own
+                        labels, and a heading here would read as a sortable
+                        column. */}
+                    <th class="collection-table__gutter-th" />
                     <For each={d().columns}>
                       {(col) => (
                         <th
@@ -1335,6 +1352,29 @@ const CollectionTable: Component<{ path: string }> = (props) => {
                   <For each={d().rows}>
                     {(row) => (
                       <tr onContextMenu={(e) => handleRowContext(e, row.file_path, row.file_name)}>
+                        <td class="collection-table__gutter-td">
+                          <button
+                            class="collection-table__open-btn"
+                            onClick={(e) =>
+                              openRowNote(row.file_path, row.file_name, {
+                                newTab: e.ctrlKey || e.metaKey,
+                                editingMode: "live",
+                              })
+                            }
+                            onAuxClick={(e) => {
+                              if (e.button !== 1) return; // middle-click only
+                              e.preventDefault();
+                              openRowNote(row.file_path, row.file_name, {
+                                newTab: true,
+                                editingMode: "live",
+                              });
+                            }}
+                            title={t("collection.table.openInVisualEditor")}
+                            aria-label={t("collection.table.openInVisualEditor")}
+                          >
+                            <PenLine size={13} />
+                          </button>
+                        </td>
                         <For each={d().columns}>
                           {(col) => (
                             <td

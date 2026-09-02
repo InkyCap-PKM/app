@@ -1221,6 +1221,7 @@
   "collection.table.tableView": "Vue tableau",
   "collection.table.agendaView": "Vue agenda",
   "collection.table.sortByTitle": "Trier par {label} — glisser pour réordonner",
+  "collection.table.openInVisualEditor": "Ouvrir dans l'éditeur visuel (Ctrl-clic pour un nouvel onglet)",
   "collection.table.resizeColumn": "Glisser pour redimensionner la colonne",
   "collection.table.loading": "Chargement de la collection...",
   "collection.table.openNote": "Ouvrir la note",

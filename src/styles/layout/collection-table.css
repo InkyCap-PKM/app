@@ -540,3 +540,52 @@
   accent-color: var(--accent);
 }
 
+
+/* ── Row gutter: "open in visual editor" ──
+   A narrow leading column carrying one pencil button per row, so a note can be
+   opened straight into the visual editor without first hunting for the
+   file-name cell (which the user may have hidden). The button is faint until
+   its row is hovered, matching the column-header funnel's reveal-on-hover
+   treatment, and shows fully on keyboard focus. */
+.collection-table__gutter-th,
+.collection-table__gutter-td {
+  width: 1%;
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+.collection-table__gutter-th {
+  border-bottom: 2px solid var(--border-primary);
+}
+
+.collection-table__open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.collection-table__table tr:hover .collection-table__open-btn,
+.collection-table__open-btn:focus-visible {
+  opacity: 1;
+}
+
+.collection-table__open-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.collection-table__open-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

@@ -10,9 +10,9 @@
   gap: var(--space-3);
   /* Fill the sidebar content box so the input + controls stay pinned at the
      top and only the results list scrolls (see `.search-panel__results`).
-     Without this the whole panel grows and the shared `.left-sidebar__content`
-     scrolls everything, carrying the search box off-screen. */
-  height: 100%;
+     Without this the whole panel grows and the search box is pushed off the
+     top of the pane. */
+  flex: 1;
   min-height: 0;
 }
 

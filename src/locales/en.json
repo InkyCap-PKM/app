@@ -1221,6 +1221,7 @@
   "collection.table.tableView": "Table view",
   "collection.table.agendaView": "Agenda view",
   "collection.table.sortByTitle": "Sort by {label} — drag to reorder",
+  "collection.table.openInVisualEditor": "Open in visual editor (Ctrl-click for a new tab)",
   "collection.table.resizeColumn": "Drag to resize column",
   "collection.table.loading": "Loading collection...",
   "collection.table.openNote": "Open note",

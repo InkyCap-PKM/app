@@ -95,9 +95,10 @@
   font-size: 0.9em;
 }
 
+/* Block padding only — the horizontal inset comes from the pane-body wrapper
+   this element doubles as (see .left-sidebar__pane-body). */
 .templates-pane__body {
-  padding: var(--space-2) 0 var(--space-5) 0;
-  overflow-y: auto;
+  padding-block: var(--space-2) var(--space-5);
 }
 
 .templates-pane__item {

@@ -37,7 +37,7 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
   );
 
   return (
-    <>
+    <div class="left-sidebar__pane">
       <div class="left-sidebar__section-header">
         <span>{t("agenda.title")}</span>
       </div>
@@ -45,6 +45,7 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
         items={items() ?? []}
         loading={items.loading}
         emptyMessage={t("agenda.noItems")}
+        listClass="left-sidebar__pane-body"
         persistKey={noteboxInfo() ? agendaFiltersKey(noteboxInfo()!.path) : undefined}
         onSaveView={async (name, snapshot) => {
           const info = noteboxInfo();
@@ -63,7 +64,7 @@ const AgendaPanel: Component<AgendaPanelProps> = (props) => {
           )
         }
       />
-    </>
+    </div>
   );
 };
 

@@ -274,6 +274,10 @@ function shouldActivate(opts: OpenTabOptions | undefined): boolean {
  * If a tab with the same path+type already exists, that tab is reused.
  * Whether the content focus switches to the opened/reused tab is governed
  * by `shouldActivate` (see `OpenTabOptions.activate`).
+ *
+ * Passing `editingMode` pins the mode the tab lands in (source / visual /
+ * reading); it is applied whichever way the tab is resolved — reused, navigated
+ * in place, or freshly created. Leave it undefined to follow the user default.
  */
 export function openTab(
   tab: Omit<Tab, "id">,
@@ -294,6 +298,12 @@ export function openTab(
     }
     if (opts?.match) {
       setTabs((t) => t.id === existing.id, "pendingMatch", opts.match);
+    }
+    // A caller that asks for a specific editor mode (e.g. the collection
+    // table's "open in visual editor" button) gets it even when the note is
+    // already open in some other mode.
+    if (tab.editingMode) {
+      setTabs((t) => t.id === existing.id, "editingMode", tab.editingMode);
     }
     if (shouldActivate(opts) || activeTabId() === null) {
       setActiveTabId(existing.id);
@@ -333,6 +343,7 @@ export function openTab(
         t.title = tab.title;
         t.path = tab.path;
         if (tab.viewName !== undefined) t.viewName = tab.viewName;
+        if (tab.editingMode !== undefined) t.editingMode = tab.editingMode;
         t.pendingCursorOffset = opts?.cursorOffset;
         t.pendingHeadingLabel = opts?.headingLabel;
         t.pendingMatch = opts?.match;

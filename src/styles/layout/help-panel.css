@@ -8,9 +8,13 @@
    Dropdown and a filter input, and the body is a list of labelled rows with
    keycap chips or syntax samples. Reuses the shared section-header typography
    convention (weight + letter-spacing + muted colour — no all-caps). */
+/* Fills the sidebar content box and scrolls internally, with its header stuck
+   to the top of that scroll region — the same "pinned head, scrolling body"
+   result the other panes get from `.left-sidebar__pane`. */
 .help-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   padding: 0 0 var(--space-4);
   overflow-y: auto;
