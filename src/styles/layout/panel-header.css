@@ -100,41 +100,9 @@
   align-items: center;
 }
 
-/* Generic header icon button used by the Sort, Expand/Collapse, and
-   Filter (search) toggles across file-tree / tags / properties panes, and
-   mirrored on the right panel (Outline toggle, future per-pane actions). */
-.left-sidebar__icon-btn,
-.right-panel__icon-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  color: var(--fg-dim);
-  cursor: pointer;
-  padding: var(--space-1) var(--space-2);
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.left-sidebar__icon-btn:hover,
-.right-panel__icon-btn:hover {
-  color: var(--fg-muted);
-  border-color: var(--border-input);
-}
-
-.left-sidebar__icon-btn--active,
-.right-panel__icon-btn--active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
 /* Inline SVGs sit on the text baseline, leaving ~1px of extra space
    above the icon and visually thinning the bottom border. Block-level
    icons remove the baseline gap so all four borders read evenly. */
-.left-sidebar__icon-btn > svg,
-.right-panel__icon-btn > svg,
 .left-sidebar__add-btn > svg,
 .left-sidebar__split-btn__main > svg,
 .left-sidebar__split-btn__caret > svg,

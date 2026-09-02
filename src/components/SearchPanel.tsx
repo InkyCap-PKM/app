@@ -642,7 +642,7 @@ const SearchPanel: Component = () => {
           </Show>
         </div>
         <button
-          class={`icon-btn ${caseSensitive() ? "icon-btn--active" : ""}`}
+          class={`ui-icon-btn ${caseSensitive() ? "is-active" : ""}`}
           onClick={() => {
             setCaseSensitive(!caseSensitive());
             executeSearch();
@@ -653,7 +653,7 @@ const SearchPanel: Component = () => {
           <CaseSensitive size={18} />
         </button>
         <button
-          class={`icon-btn ${showSettings() ? "icon-btn--active" : ""}`}
+          class={`ui-icon-btn ${showSettings() ? "is-active" : ""}`}
           onClick={() => setShowSettings(!showSettings())}
           title={t("search.options")}
           aria-pressed={showSettings()}
@@ -661,7 +661,7 @@ const SearchPanel: Component = () => {
           <Settings2 size={18} />
         </button>
         <button
-          class={`icon-btn ${showTips() ? "icon-btn--active" : ""}`}
+          class={`ui-icon-btn ${showTips() ? "is-active" : ""}`}
           onClick={() => setShowTips(!showTips())}
           title={t("search.tips")}
           aria-pressed={showTips()}
@@ -673,7 +673,7 @@ const SearchPanel: Component = () => {
       <Show when={showSettings()}>
         <div class="search-panel__options-row">
           <button
-            class="icon-btn"
+            class="ui-icon-btn"
             onClick={() => {
               // Per-file overrides invert their meaning when the global
               // flag flips. Clearing them ensures Expand/Collapse acts
@@ -693,7 +693,7 @@ const SearchPanel: Component = () => {
             </Show>
           </button>
           <button
-            class={`icon-btn ${showMoreContext() ? "icon-btn--active" : ""}`}
+            class={`ui-icon-btn ${showMoreContext() ? "is-active" : ""}`}
             onClick={() => setShowMoreContext(!showMoreContext())}
             title={t("search.showMoreContext")}
             aria-pressed={showMoreContext()}
@@ -701,7 +701,7 @@ const SearchPanel: Component = () => {
             <LayersPlus size={18} />
           </button>
           <button
-            class={`icon-btn ${useRegex() ? "icon-btn--active" : ""}`}
+            class={`ui-icon-btn ${useRegex() ? "is-active" : ""}`}
             onClick={() => {
               setUseRegex(!useRegex());
               executeSearch();
@@ -714,7 +714,7 @@ const SearchPanel: Component = () => {
           <div class="search-panel__scope-menu-wrap">
             <button
               ref={scopeBtnRef}
-              class={`icon-btn ${annotationScope() !== "all" ? "icon-btn--active" : ""}`}
+              class={`ui-icon-btn ${annotationScope() !== "all" ? "is-active" : ""}`}
               onClick={() => setShowScopeMenu(!showScopeMenu())}
               title={annotationScopeTitle()}
               aria-label={t("search.annotationScope")}
@@ -786,7 +786,7 @@ const SearchPanel: Component = () => {
             {t("search.replaceAll")}
           </button>
           <button
-            class="icon-btn"
+            class="ui-icon-btn"
             onClick={() => {
               setShowReplace(false);
               setReplacement("");

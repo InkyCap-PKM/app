@@ -126,7 +126,7 @@ const OutlinePanel: Component = () => {
         <Show when={headings().length > 0}>
           <div class="right-panel__header-actions">
             <button
-              class="right-panel__icon-btn"
+              class="ui-icon-btn"
               onClick={() => (allExpanded() ? collapseAll() : expandAll())}
               title={allExpanded() ? t("outlinePanel.collapseAll") : t("outlinePanel.expandAll")}
               aria-label={allExpanded() ? t("outlinePanel.collapseAll") : t("outlinePanel.expandAll")}

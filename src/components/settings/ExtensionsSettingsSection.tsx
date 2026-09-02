@@ -75,7 +75,7 @@ export function ExtensionsSettingsSection() {
                 onInput={(e) => patch(i, { name: e.currentTarget.value })}
               />
               <button
-                class="icon-btn"
+                class="ui-icon-btn"
                 title={t("common.remove")}
                 aria-label={t("common.remove")}
                 onClick={() => remove(i)}

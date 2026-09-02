@@ -325,7 +325,7 @@ const TemplatesPanel: Component = () => {
         <span class="templates-pane__title">{title()}</span>
         <div class="templates-pane__tabs" role="tablist">
           <button
-            class={`left-sidebar__icon-btn${tab() === "scaffolds" ? " left-sidebar__icon-btn--active" : ""}`}
+            class={`ui-icon-btn${tab() === "scaffolds" ? " is-active" : ""}`}
             onClick={() => setTab("scaffolds")}
             role="tab"
             aria-selected={tab() === "scaffolds"}
@@ -335,7 +335,7 @@ const TemplatesPanel: Component = () => {
             <Pyramid size={14} />
           </button>
           <button
-            class={`left-sidebar__icon-btn${tab() === "templates" ? " left-sidebar__icon-btn--active" : ""}`}
+            class={`ui-icon-btn${tab() === "templates" ? " is-active" : ""}`}
             onClick={() => setTab("templates")}
             role="tab"
             aria-selected={tab() === "templates"}
@@ -345,7 +345,7 @@ const TemplatesPanel: Component = () => {
             <Layers2 size={14} />
           </button>
           <button
-            class={`left-sidebar__icon-btn${tab() === "packages" ? " left-sidebar__icon-btn--active" : ""}`}
+            class={`ui-icon-btn${tab() === "packages" ? " is-active" : ""}`}
             onClick={() => setTab("packages")}
             role="tab"
             aria-selected={tab() === "packages"}
@@ -357,7 +357,7 @@ const TemplatesPanel: Component = () => {
         </div>
         <div class="templates-pane__header-spacer" />
         <button
-          class="left-sidebar__icon-btn"
+          class="ui-icon-btn"
           onClick={refresh}
           title={t("templates.refresh")}
           aria-label={t("templates.refresh")}
@@ -365,7 +365,7 @@ const TemplatesPanel: Component = () => {
           <RefreshCw size={14} />
         </button>
         <button
-          class={`left-sidebar__icon-btn${showHelp() ? " left-sidebar__icon-btn--active" : ""}`}
+          class={`ui-icon-btn${showHelp() ? " is-active" : ""}`}
           onClick={() => setShowHelp((v) => !v)}
           title={showHelp() ? t("templates.hideHelp") : t("templates.showHelp")}
           aria-label={t("templates.toggleHelp")}

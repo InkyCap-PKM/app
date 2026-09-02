@@ -127,47 +127,10 @@
   color: var(--accent-danger);
 }
 
-/* Shared icon-button style. Used by the search-panel toggle row and any
-   other place that wants a square 28×28 button with a Lucide glyph. */
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 0;
-  flex: 0 0 auto;
-}
-
-.icon-btn:hover {
-  color: var(--fg-primary);
-  border-color: var(--border-input);
-}
-
-.icon-btn--active {
-  color: var(--accent-text);
-  background: var(--bg-highlight);
-  border-color: var(--accent);
-}
-
-.icon-btn:disabled {
-  opacity: var(--disabled-opacity);
-  cursor: default;
-}
-
-/* Shared control-surface utility. Use for any new panel header /
-   heading-row icon button so it picks up the unified --radius-control,
-   border, and hover treatment. Existing class-specific buttons
-   (.left-sidebar__icon-btn, .right-panel__icon-btn, .icon-btn,
-   .left-sidebar__add-btn) are visually
-   equivalent — prefer this class for new code so future radius /
-   color retuning happens in one place. Add an `is-active` modifier
-   for toggled states. */
+/* THE shared icon-button style — every square icon button in the app
+   (panel headers, search toggles, header actions) uses this class, with
+   an `is-active` modifier for toggled states. Sized by padding around
+   the icon so it scales with the icon tokens. */
 .ui-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -201,7 +164,6 @@
 /* Unified keyboard-focus affordance for the icon-button utilities — these
    otherwise had no visible focus state. Pointer users never see it
    (:focus-visible), keyboard users get the shared --focus-ring. */
-.icon-btn:focus-visible,
 .ui-icon-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);

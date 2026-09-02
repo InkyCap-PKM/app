@@ -516,7 +516,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
         <div class="agenda__controls-actions">
           <Show when={hasRecurring()}>
             <button
-              class="left-sidebar__icon-btn"
+              class="ui-icon-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 setGlobalCollapse(!collapseRecurring());
@@ -542,7 +542,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           </Show>
           <button
             ref={sortBtnRef}
-            class="left-sidebar__icon-btn"
+            class="ui-icon-btn"
             onClick={(e) => {
               e.stopPropagation();
               setShowSortMenu((v) => !v);
@@ -556,7 +556,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           </button>
           <Show when={props.onSaveView}>
             <button
-              class="left-sidebar__icon-btn"
+              class="ui-icon-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 setViewName("");
@@ -570,7 +570,7 @@ const AgendaList: Component<AgendaListProps> = (props) => {
           </Show>
           <Show when={hasActiveFilters()}>
             <button
-              class="left-sidebar__icon-btn"
+              class="ui-icon-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 resetFilters();
