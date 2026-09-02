@@ -1,0 +1,326 @@
+/* References panel and shared citation row.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── References Panel ── */
+
+.references-panel {
+  /* No top padding here for the same reason as .outline-panel: the
+     tab-content already provides the 8px gutter, and the References pane's
+     own header bar adds its inset. Extra padding here would push the
+     References header below the matching header rows on the left side. */
+  padding: 0;
+}
+
+/* ─── Citation row — shared by the References sidebar and the Journal
+   Scroll's Scroll Context pane so a cited work looks and behaves the same
+   in both. Markup: CitationRow.tsx. ─── */
+.citation-row {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.citation-row--clickable {
+  cursor: pointer;
+}
+
+.citation-row--clickable:hover {
+  background: var(--bg-hover);
+}
+
+.citation-row__key-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-1);
+}
+
+/* Left group: optional Zotero link + the citation key. `min-width: 0` lets
+   it shrink below its content width so a long, space-free key wraps within
+   the panel rather than overflowing it. */
+.citation-row__key-left {
+  display: flex;
+  /* Align to the top so the Zotero link tracks the first line of a
+     wrapped key rather than the key block's vertical centre. */
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.citation-row__key {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--accent);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.citation-row__count {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+
+.citation-row__zotero-link {
+  display: inline-flex;
+  align-items: center;
+  /* Box one key-line tall, so the centred icon lines up with the vertical
+     centre of the key's first line (key-left is top-aligned). */
+  font-size: var(--text-base);
+  height: 1.5em;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg-dim);
+  opacity: 0.6;
+  transition: opacity var(--dur-fast), color var(--dur-fast);
+}
+
+.citation-row__zotero-link:hover {
+  opacity: 1;
+  color: rgb(204, 41, 54);
+}
+
+.citation-row__title {
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+  line-height: 1.3;
+}
+
+.citation-row__meta {
+  margin-top: var(--space-1);
+  font-size: var(--text-base);
+  color: var(--fg-dim);
+}
+
+/* Citation highlight — applied to a citation's occurrences in the Journal
+   Scroll when its Scroll Context card is clicked. `outline` (not `border`)
+   so the citation text doesn't reflow. Cleared once the occurrence has been
+   seen and scrolled out of view (see ScrollContextPanel). */
+.citation-highlight {
+  border-radius: var(--radius-sm);
+  outline: 1px dotted var(--accent-danger);
+  outline-offset: 2px;
+  /* Outline + outward glow only — the inner area stays transparent so the
+     citation text reads normally. */
+  box-shadow: 0 0 6px 2px
+    color-mix(in srgb, var(--accent-danger) 55%, transparent);
+  /* Honored by `scrollIntoView` when a citation is scrolled into view:
+     keeps clearance above/below so the outline and glow aren't clipped at
+     the viewport edge (lands the highlight a row down from the edge). */
+  scroll-margin: 2rem;
+  animation: citation-highlight-in 0.25s ease-out;
+}
+
+@keyframes citation-highlight-in {
+  from {
+    outline-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* "Browse references" toggle sits in a `.right-panel__section-header` and
+   shares its heading typography (sm / 600 / muted), but unlike the static
+   section labels it expands/collapses the browse list — so it carries a
+   resting outline and a disclosure chevron to read unmistakably as a button.
+   The negative left margin pulls the chevron back to the header's content
+   edge so the row still aligns with the other section labels. */
+.references-panel__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -4px;
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.references-panel__toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.references-panel__toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.left-sidebar__icon-btn:disabled,
+.right-panel__icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.refresh-icon--spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.references-panel__search-wrap {
+  position: relative;
+  margin: var(--space-2) var(--space-5) var(--space-4);
+}
+
+.references-panel__search {
+  display: block;
+  width: 100%;
+  padding: 5px 26px 5px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.references-panel__search:focus {
+  border-color: var(--accent);
+}
+
+.references-panel__search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.references-panel__search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.references-panel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-5) var(--space-3);
+  gap: var(--space-4);
+}
+
+.references-panel__count {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.settings__input-with-button {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.settings__text-input--path {
+  min-width: 200px;
+}
+
+.references-panel__source-badge {
+  display: inline-block;
+  font-size: var(--text-xs);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  margin-left: var(--space-3);
+  vertical-align: middle;
+}
+
+.references-panel__skip-warning {
+  font-size: var(--text-xs);
+  color: var(--fg-warning, var(--fg-muted));
+  margin-left: var(--space-3);
+  cursor: help;
+}
+
+/* Sort control: an app-drawn button + `.context-menu`, not a native
+   <select>. A native select hands its popup to the OS, which on
+   WebKitGTK ignores the InkyCap theme. This matches the left sidebar's
+   File/Tag/Property sort menus (see `anchorPanelMenu`). */
+.references-panel__sort-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.references-panel__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.references-panel__sort:hover {
+  background: var(--bg-hover);
+}
+
+.references-panel__sort-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.references-panel__sort > svg {
+  flex: none;
+  color: var(--fg-dim);
+}
+
+.references-panel__sentinel {
+  height: 1px;
+}
+
+.references-panel__show-more {
+  display: block;
+  width: calc(100% - 24px);
+  margin: var(--space-2) var(--space-5) var(--space-4);
+  padding: var(--space-3) 0;
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: center;
+}
+
+.references-panel__show-more:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.sidebar-hint--error {
+  color: var(--accent-danger);
+}
+

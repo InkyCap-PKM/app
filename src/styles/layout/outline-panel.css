@@ -1,0 +1,74 @@
+/* Outline panel.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Outline Panel ── */
+
+/* No extra padding on the pane wrapper: the right panel's tab-content
+   already provides the 8px gutter, and the shared section-header adds its
+   own 4px inset. Any additional top-padding here would push the "Outline"
+   label below the left sidebar's "Files" label and break the cross-panel
+   header alignment. */
+.outline-panel {
+  padding: 0;
+}
+
+.outline-panel__item {
+  display: flex;
+  align-items: center;
+  padding: 3px 12px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  border-radius: 3px;
+  margin: 1px 4px;
+}
+
+.outline-panel__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  cursor: pointer;
+  color: var(--fg-muted);
+  border-radius: 50%;
+  margin-right: var(--space-1);
+}
+
+.outline-panel__caret:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.outline-panel__caret--leaf {
+  cursor: default;
+}
+
+.outline-panel__caret--leaf:hover {
+  color: var(--fg-muted);
+  background: none;
+}
+
+.outline-panel__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.outline-panel__label:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.outline-panel__item--active {
+  background: var(--bg-selection);
+  color: var(--fg-primary);
+}
+
+

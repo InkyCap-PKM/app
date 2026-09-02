@@ -1,0 +1,31 @@
+/* Shared empty-state pattern (headline + hints).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Empty state */
+.empty-state {
+  color: var(--fg-dim);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.empty-state > p {
+  margin: 0;
+}
+
+/* Headline. Same visual weight the empty state used to have. */
+.empty-state__primary {
+  font-size: var(--text-lg);
+}
+
+/* Shortcut hints. Smaller and pushed down slightly so they read as
+   supporting text rather than competing with the headline. */
+.empty-state__hint {
+  font-size: var(--text-sm);
+  margin-top: var(--space-6);
+}
+
+.empty-state__hint + .empty-state__hint {
+  margin-top: var(--space-2);
+}
+

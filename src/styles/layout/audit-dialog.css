@@ -1,0 +1,272 @@
+/* Typ-audit dialog.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Typ-audit dialog ────────────────────────────────────────────── */
+
+/* Shared shell for the full-screen audit dialogs (.typ compatibility
+   audit, notebox name audit). Both render the same structure: header,
+   scrollable body of collapsible finding groups, action footer. Add a
+   third audit by reusing these classes, not by copying them. */
+.audit-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--modal-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.audit-dialog__panel {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+}
+
+.audit-dialog__header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.audit-dialog__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.audit-dialog__close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 var(--space-3);
+}
+
+.audit-dialog__close:hover:not(:disabled) {
+  color: var(--fg-primary);
+}
+
+.audit-dialog__close:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.audit-dialog__body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.audit-dialog__hint {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.audit-dialog__summary {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.audit-dialog__group {
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-primary);
+}
+
+.audit-dialog__group > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.audit-dialog__group-hint {
+  margin: var(--space-3) 0 var(--space-4);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.audit-dialog__file-list {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+}
+
+.audit-dialog__file-list li {
+  padding: 1px 0;
+  word-break: break-all;
+}
+
+/* A path inside a finding list that opens that exact note in a new tab.
+   Used by the duplicate-note-name section, whose rows are always notes and
+   whose whole point is getting to a specific one to rename it. Deliberately
+   NOT `.btn` — these sit inline in a dense monospace list, and button
+   geometry (padding, min-height) would break the alignment of the rows
+   around them. */
+.audit-dialog__file-link {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.audit-dialog__file-link:hover {
+  text-decoration: underline;
+}
+
+.audit-dialog__file-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Per-file grouping for the cleanup sections (Markdown fixes / syntax
+   errors): a path heading above its own list of line-level findings. */
+.audit-dialog__lint-file {
+  margin-top: var(--space-3);
+}
+
+.audit-dialog__lint-path {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+  word-break: break-all;
+}
+
+/* Line/column tag at the start of a finding. */
+.audit-dialog__lint-loc {
+  color: var(--fg-muted);
+  margin-right: var(--space-3);
+}
+
+/* A proposed Markdown→Typst line change: [✓] before → after. */
+.audit-dialog__md-fix {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Per-change accept toggle. */
+.audit-dialog__md-check {
+  flex-shrink: 0;
+  align-self: center;
+  cursor: pointer;
+}
+
+/* A rejected change is dimmed and its proposed replacement de-emphasised, so
+   the kept-as-is rows read as inactive without disappearing. */
+.audit-dialog__md-fix--rejected {
+  opacity: 0.5;
+}
+
+.audit-dialog__md-fix--rejected .audit-dialog__md-before {
+  text-decoration: none;
+}
+
+.audit-dialog__md-fix--rejected .audit-dialog__md-after,
+.audit-dialog__md-fix--rejected .audit-dialog__md-arrow {
+  color: var(--fg-muted);
+}
+
+.audit-dialog__md-before {
+  color: var(--accent-danger);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--accent-danger) 50%, transparent);
+}
+
+.audit-dialog__md-after {
+  color: var(--accent-success);
+}
+
+.audit-dialog__md-arrow {
+  color: var(--fg-muted);
+}
+
+.audit-dialog__error {
+  background: var(--bg-danger, rgba(229, 85, 85, 0.1));
+  border: 1px solid var(--accent-danger);
+  color: var(--accent-danger);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.audit-dialog__result {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+}
+
+.audit-dialog__result pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+}
+
+.audit-dialog__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.audit-dialog__footer-spacer {
+  flex: 1;
+}
+
+.audit-dialog__footer button {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 6px 14px;
+  font-size: var(--text-base);
+}
+
+.audit-dialog__footer button:hover:not(:disabled) {
+  border-color: var(--border-input);
+  color: var(--fg-primary);
+}
+
+.audit-dialog__footer button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.audit-dialog__primary {
+  background: var(--accent) !important;
+  color: white !important;
+  border-color: var(--accent) !important;
+}
+
+.audit-dialog__primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+

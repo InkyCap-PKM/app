@@ -1,0 +1,214 @@
+/* Shared sidebar panel header: split button, header icon buttons, inline search.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Shared panel header pattern ──────────────────────────────────────────
+   The left sidebar and right panel use the same three-class pattern at the
+   top of each pane:
+     .{side}__section-header   — the bar itself (label left, actions right)
+     .{side}__header-actions   — the right-aligned action cluster
+     .{side}__icon-btn         — the individual square icon buttons inside
+   The two sides are kept as separate class names (so JSX stays semantic and
+   side-scoped), but they share CSS rules below via grouped selectors. That
+   means a future change to padding, font, color, border, or hit area is
+   made in ONE place and automatically applies to both panels — preserving
+   the cross-panel alignment the design depends on.
+
+   Vertical alignment between the two sides is load-bearing: the section
+   header sits directly inside `.left-sidebar__content` / `.right-panel__
+   tab-content`, both of which use the same 8px padding. Do not add
+   intermediate wrappers with extra top-padding on either side — that will
+   push one column's headers below the other's. */
+.left-sidebar__section-header,
+.right-panel__section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.left-sidebar__add-btn {
+  color: var(--fg-muted);
+  font-size: var(--text-lg);
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+  justify-content: center;
+}
+
+/* Split button: pill that pairs a primary action (New Note) with a
+   caret that opens a menu of related actions. The subtle outer outline
+   stays put at all times; on hover the hovered half lights up with the
+   same colour highlight as the sidebar mode buttons, and an inner
+   divider (matching the outline) appears so the two halves read as
+   independently clickable. The buttons keep a transparent border so the
+   divider can colour in without shifting layout. */
+.left-sidebar__split-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  background: none;
+}
+
+.left-sidebar__split-btn__main,
+.left-sidebar__split-btn__caret {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-sidebar__split-btn__main {
+  padding: var(--space-1) var(--space-3);
+  border-top-left-radius: var(--radius-control);
+  border-bottom-left-radius: var(--radius-control);
+}
+
+.left-sidebar__split-btn__caret {
+  padding: var(--space-1) var(--space-1);
+  border-top-right-radius: var(--radius-control);
+  border-bottom-right-radius: var(--radius-control);
+}
+
+/* Hovering either half reveals the divider between them, matching the
+   outer outline's style. Colours only the caret's reserved left border,
+   so no layout shift. */
+.left-sidebar__split-btn:hover .left-sidebar__split-btn__caret {
+  border-left-color: var(--border-input);
+}
+
+/* The hovered half gets the mode-button colour highlight. */
+.left-sidebar__split-btn__main:hover,
+.left-sidebar__split-btn__caret:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.left-sidebar__header-actions,
+.right-panel__header-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Generic header icon button used by the Sort, Expand/Collapse, and
+   Filter (search) toggles across file-tree / tags / properties panes, and
+   mirrored on the right panel (Outline toggle, future per-pane actions). */
+.left-sidebar__icon-btn,
+.right-panel__icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-sidebar__icon-btn:hover,
+.right-panel__icon-btn:hover {
+  color: var(--fg-muted);
+  border-color: var(--border-input);
+}
+
+.left-sidebar__icon-btn--active,
+.right-panel__icon-btn--active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Inline SVGs sit on the text baseline, leaving ~1px of extra space
+   above the icon and visually thinning the bottom border. Block-level
+   icons remove the baseline gap so all four borders read evenly. */
+.left-sidebar__icon-btn > svg,
+.right-panel__icon-btn > svg,
+.left-sidebar__add-btn > svg,
+.left-sidebar__split-btn__main > svg,
+.left-sidebar__split-btn__caret > svg,
+.ui-icon-btn > svg {
+  display: block;
+}
+
+/* The sort dropdown anchors to its trigger button. The wrap is
+   position: relative so the absolute .context-menu lands directly
+   below the icon. */
+.left-sidebar__sort-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Inline search box revealed below the Tags / Properties header when
+   the search icon is toggled on. */
+.left-sidebar__filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 var(--space-2) var(--space-3);
+}
+
+.left-sidebar__filter-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 5px 8px;
+  padding-right: 26px;
+  outline: none;
+  min-width: 0;
+}
+
+.left-sidebar__filter-input:focus {
+  border-color: var(--accent);
+}
+
+.left-sidebar__filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.left-sidebar__filter-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.sidebar-item__rename-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 3px 6px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+

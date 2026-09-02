@@ -1,0 +1,125 @@
+/* Editor tab bar: tabs, close affordance, journal/synced-pair glyphs.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Tabs */
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  /* Slightly tighter right padding so the close × sits nearer the tab's
+     right edge — improves target alignment without crowding the title. */
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  margin: var(--space-2) 0;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  /* Compress before the strip scrolls (the browser-tab model): tabs give up
+     title width down to this floor, and only then does the row overflow.
+     The floor is on the tab rather than on the title so the flex algorithm
+     respects it — a floor on the title alone would let the tab's box shrink
+     past its own contents and slide the close × over the text. `ch` keeps it
+     proportional to the user's text size: the fixed chrome (icons, ×,
+     padding) plus roughly ten characters. Don't lower it without checking how
+     it feels at a wide window — the floor is also what decides when the row
+     starts to overflow, so a smaller one silently pushes the scroll arrows out
+     of reach and squeezes titles past the point of being recognizable. A tab
+     whose title is shorter than the floor is held open to it, as browser tabs
+     are; `.tab__title` grows into that slack so the × still lands on the tab's
+     right edge rather than floating mid-tab.
+     Spacing between tabs is `gap` on the track, not a margin here — a
+     trailing margin is omitted from a scroll container's scrollWidth in
+     WebKit, which used to hide a few pixels of overflow from measurement. */
+  flex: 0 1 auto;
+  min-width: 16ch;
+  /* Settle state changes instead of snapping, so hover/active read as a
+     tab gaining body rather than a colour flicking on. */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.tab--active {
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  /* A lightly crisped neutral edge — firmer than a plain input border for
+     definition, but well short of a dark stroke; the elevation still carries
+     most of the lift. */
+  border-color: color-mix(in srgb, var(--border-input), var(--fg-muted) 15%);
+  box-shadow: var(--tab-active-shadow);
+}
+
+/* Hover matches the other buttons in the top row (the pane menu, the toolbar
+   icon buttons): a quiet neutral wash and a firmer text colour, with no accent
+   outline. The tab keeps its transparent border so nothing shifts, and the
+   highlight reads as the same "button under the pointer" cue used elsewhere in
+   the row rather than a colour the tab shouts on its own. */
+.tab:hover:not(.tab--active),
+.pane:not(.pane--focused) .tab--active:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+
+.tab__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Absorbs the tab's compression in both directions: `min-width: 0` lets it
+     ellipsize (the floor that stops the shrinking lives on `.tab`), and
+     `flex-grow: 1` lets it take up any slack when the tab is held open at
+     that floor by a short title — otherwise the slack collects between the
+     title and the close ×, leaving the × stranded in the middle of the tab.
+     The cap is `ch` rather than the old fixed 180px so it tracks the user's
+     text size. */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 25ch;
+}
+
+/* Leading icon marking a tab that holds a Journal Scroll view. */
+.tab__icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--fg-dim);
+}
+
+.tab__icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Link glyph marking the two tabs of a synced editor+preview pair. Accent
+   colour keeps the tie between the panes legible without competing with the
+   active/hover tab states, which already colour the tab border. */
+.tab__icon--sync {
+  color: var(--accent);
+}
+
+.tab__close {
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-dim);
+  cursor: pointer;
+  /* Slightly larger hit target (and glyph) so the × is easier to click. */
+  font-size: var(--text-xl);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.tab__close:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+

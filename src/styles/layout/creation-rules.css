@@ -1,0 +1,276 @@
+/* Creation rules editor.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Creation Rules Editor ── */
+
+.creation-rules__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+/* Scaffold dropdown paired with its create/edit icon buttons. */
+.creation-rules__scaffold-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.creation-rules__add-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--bg-primary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+}
+
+.creation-rules__add-btn:hover {
+  opacity: 0.9;
+}
+
+.creation-rules__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.creation-rules__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: 6px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+}
+
+.creation-rules__icon {
+  font-size: var(--text-2xl);
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+.creation-rules__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.creation-rules__name {
+  display: block;
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+
+.creation-rules__desc {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.creation-rules__hotkey {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  padding: var(--space-1) var(--space-3);
+  border-radius: 3px;
+  font-family: var(--editor-font-mono, monospace);
+  white-space: nowrap;
+}
+
+.creation-rules__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.creation-rules__edit-btn,
+.creation-rules__delete-btn,
+.creation-rules__disable-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.creation-rules__edit-btn:disabled,
+.creation-rules__delete-btn:disabled,
+.creation-rules__disable-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.creation-rules__edit-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.creation-rules__delete-btn:hover:not(:disabled) {
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.creation-rules__disable-btn:hover:not(:disabled) {
+  border-color: var(--fg-primary);
+  color: var(--fg-primary);
+}
+
+.creation-rules__item--disabled .creation-rules__icon,
+.creation-rules__item--disabled .creation-rules__info {
+  opacity: 0.55;
+}
+
+.creation-rules__disabled-tag {
+  color: var(--fg-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.creation-rules__description {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.4;
+  /* Description gets the wide treatment that Hotkey used to have: it fills
+     the row so the user has room to write longer notes. Width on
+     .settings__text-input is 200px otherwise, which we override here. */
+  width: auto;
+  flex: 1;
+}
+
+.creation-rules__restore-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-md);
+}
+
+.creation-rules__restore-btn:hover {
+  border-color: var(--fg-primary);
+  color: var(--fg-primary);
+}
+
+.creation-rules__add-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.creation-rules__form {
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  background: var(--bg-primary);
+}
+
+.creation-rules__form-actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-primary);
+}
+
+.creation-rules__save-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--bg-primary);
+  cursor: pointer;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-md);
+}
+
+.creation-rules__save-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.creation-rules__cancel-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-md);
+}
+
+.creation-rules__cancel-btn:hover {
+  border-color: var(--fg-primary);
+  color: var(--fg-primary);
+}
+
+.creation-rules__hotkey-btn {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-md);
+  cursor: pointer;
+  text-align: left;
+}
+
+.creation-rules__hotkey-btn.recording {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.creation-rules__hotkey-btn:hover {
+  border-color: var(--accent);
+}
+
+.creation-rules__hotkey-conflict {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--accent-danger);
+  margin-top: var(--space-2);
+}
+
+.creation-rules__folder-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — flush top edge against the control above. */
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+}
+
+.creation-rules__folder-option {
+  padding: 4px 10px;
+  font-size: var(--text-md);
+  cursor: pointer;
+  color: var(--fg-primary);
+}
+
+.creation-rules__folder-option:hover {
+  background: var(--bg-hover);
+}
+

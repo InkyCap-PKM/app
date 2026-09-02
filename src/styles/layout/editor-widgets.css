@@ -1,0 +1,115 @@
+/* Visual-editor widgets: callouts, code blocks, math, mermaid, embeds, footnote tooltip.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Callout rendering */
+.cm-callout {
+  border-left: 3px solid var(--callout-note);
+  background: color-mix(in srgb, var(--callout-note) 8%, transparent);
+  padding-left: var(--space-4);
+}
+
+.cm-callout--note { border-left-color: var(--callout-note); background: color-mix(in srgb, var(--callout-note) 8%, transparent); }
+.cm-callout--abstract, .cm-callout--summary, .cm-callout--tldr { border-left-color: var(--callout-abstract); background: color-mix(in srgb, var(--callout-abstract) 8%, transparent); }
+.cm-callout--info { border-left-color: var(--callout-info); background: color-mix(in srgb, var(--callout-info) 8%, transparent); }
+.cm-callout--tip, .cm-callout--hint, .cm-callout--important { border-left-color: var(--callout-tip); background: color-mix(in srgb, var(--callout-tip) 8%, transparent); }
+.cm-callout--success, .cm-callout--check, .cm-callout--done { border-left-color: var(--callout-success); background: color-mix(in srgb, var(--callout-success) 8%, transparent); }
+.cm-callout--question, .cm-callout--help, .cm-callout--faq { border-left-color: var(--callout-question); background: color-mix(in srgb, var(--callout-question) 8%, transparent); }
+.cm-callout--warning, .cm-callout--caution, .cm-callout--attention { border-left-color: var(--callout-warning); background: color-mix(in srgb, var(--callout-warning) 8%, transparent); }
+.cm-callout--failure, .cm-callout--fail, .cm-callout--missing { border-left-color: var(--callout-failure); background: color-mix(in srgb, var(--callout-failure) 8%, transparent); }
+.cm-callout--danger, .cm-callout--error { border-left-color: var(--callout-danger); background: color-mix(in srgb, var(--callout-danger) 8%, transparent); }
+.cm-callout--bug { border-left-color: var(--callout-bug); background: color-mix(in srgb, var(--callout-bug) 8%, transparent); }
+.cm-callout--example { border-left-color: var(--callout-example); background: color-mix(in srgb, var(--callout-example) 8%, transparent); }
+.cm-callout--quote, .cm-callout--cite { border-left-color: var(--callout-quote); background: color-mix(in srgb, var(--callout-quote) 8%, transparent); }
+
+/* Code block styling */
+.cm-code-block-line {
+  background: var(--code-block-bg);
+}
+
+.cm-code-block-start {
+  border-top: 1px solid var(--code-block-border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.cm-code-block-end {
+  border-bottom: 1px solid var(--code-block-border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+/* Math widget styling */
+.cm-math-widget {
+  color: var(--fg-primary);
+  padding: var(--space-1) var(--space-2);
+}
+
+.cm-math-widget--block {
+  display: block;
+  text-align: center;
+  padding: var(--space-4);
+  margin: var(--space-2) 0;
+}
+
+.cm-math-widget--error {
+  color: var(--accent-danger);
+  font-size: var(--text-base);
+  font-style: italic;
+}
+
+/* Mermaid widget styling */
+.cm-mermaid-widget {
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: var(--space-5);
+  margin: var(--space-2) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.cm-mermaid-widget--loading {
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  font-style: italic;
+  padding: 20px;
+}
+
+.cm-mermaid-widget--error {
+  color: var(--accent-danger);
+  font-size: var(--text-base);
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+/* Embed widget styling */
+.cm-embed-widget {
+  margin: var(--space-2) 0;
+}
+
+.cm-embed-widget img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+}
+
+.cm-embed-widget audio {
+  width: 100%;
+}
+
+.cm-embed-widget--error {
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  font-style: italic;
+}
+
+/* Footnote tooltip */
+.cm-tooltip-footnote {
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  padding: var(--space-4) var(--space-5);
+  color: var(--fg-secondary);
+  font-size: var(--text-md);
+  max-width: 400px;
+  box-shadow: var(--popup-shadow);
+}
+

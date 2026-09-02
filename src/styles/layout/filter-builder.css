@@ -1,0 +1,144 @@
+/* Collection filter builder: boolean groups, rows, property picker.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Filter builder */
+.filter-builder {
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: var(--space-4);
+}
+
+.filter-builder__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.filter-builder__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Filter-builder footer buttons use the shared .btn system (see markup). */
+
+/* A boolean group: a combinator header, its member rows / sub-groups, and
+   the add buttons. The root group is unadorned (the .filter-builder box is
+   its frame); nested groups are inset with a left accent rule so the
+   boolean structure reads at a glance. */
+.filter-builder__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.filter-builder__group--nested {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.filter-builder__group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.filter-builder__group-caption {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.filter-builder__remove--group {
+  margin-left: auto;
+}
+
+.filter-builder__add-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.filter-builder__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.filter-builder__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.filter-builder__input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-4);
+  height: 30px;
+  box-sizing: border-box;
+  outline: none;
+  font-family: inherit;
+}
+
+.filter-builder__input:focus {
+  border-color: var(--accent);
+}
+
+.filter-builder__input--property {
+  width: 160px;
+}
+
+/* The property picker is a themed Dropdown (not a text input), sized to match
+   the old free-text field so the row layout is unchanged. */
+.filter-builder__property-dropdown {
+  width: 160px;
+}
+
+.filter-builder__input--value {
+  flex: 1;
+  min-width: 80px;
+}
+
+.filter-builder__remove {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-xl);
+  padding: 0 var(--space-2);
+  flex-shrink: 0;
+}
+
+.filter-builder__remove:hover {
+  color: var(--accent-danger);
+}
+
+.filter-builder__add {
+  background: none;
+  border: 1px dashed var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+  text-align: left;
+}
+
+.filter-builder__add:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg-secondary);
+}
+

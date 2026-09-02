@@ -1,0 +1,275 @@
+/* Journal Scroll pill and continuous scroll view.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Journal Scroll pill (centered in editor header) ─── */
+
+.journal-scroll-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.journal-scroll-pill__toggle {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  /* Match .editor-header__icon-btn exactly (its sibling in the header) — without
+     pinning the font-size it inherits the larger header font and renders taller. */
+  font-size: var(--text-base);
+  padding: var(--space-2) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+
+.journal-scroll-pill__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+}
+
+.journal-scroll-pill__toggle.is-active {
+  background: var(--bg-active);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.journal-scroll-pill__toggle svg {
+  display: block;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+/* "Return to anchor" button — shares the toggle's bordered-button look so
+   the two read as one pill. Shown only while the scroll is on. */
+/* The Journal Scroll's date-direction and return-to-anchor controls live in
+   the right panel (reusing `.right-panel__tab`), not on this pill — so the
+   pill needs only the on/off toggle rule above.
+
+   Anchor-connection decoration has no pill control — it is always on.
+   See `.journal-scroll__entry--*` accent strips and
+   `.journal-scroll__entry-connection` header icons below. */
+
+
+
+/* ─── Journal Scroll view (continuous file scroll) ─── */
+
+.journal-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  background: var(--bg-secondary);
+}
+
+.journal-scroll__entry {
+  /* Card-framed entry: a flat panel with a left accent strip that encodes
+     connection-decoration state in step 13 (anchor, linksToAnchor,
+     linkedFromAnchor, sharesTags). The accent strip element is always
+     present so the modifier classes can light it up without layout shift. */
+  position: relative;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 0;
+  /* Without this, the flex-column parent (with overflow-y: auto) shrinks
+     entries proportionally instead of overflowing — making them visually
+     collapse on top of each other. */
+  flex-shrink: 0;
+}
+
+.journal-scroll__entry-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background var(--dur-fast) ease;
+}
+
+/* Connection decoration: an always-on accent strip + a subtle border
+   emphasis. Multiple flags may apply to the same entry; the strip can only
+   show one color, so specificity goes anchor > linksTo > linkedFrom >
+   sharesTags (cascade order below). The per-entry header icons
+   (`.journal-scroll__entry-connection`) show *every* applicable relation. */
+.journal-scroll__entry--shares-tags > .journal-scroll__entry-accent {
+  background: var(--accent-warn);
+}
+.journal-scroll__entry--linked-from-anchor > .journal-scroll__entry-accent {
+  background: var(--accent-green);
+}
+.journal-scroll__entry--links-to-anchor > .journal-scroll__entry-accent {
+  background: var(--accent-info);
+}
+.journal-scroll__entry--anchor > .journal-scroll__entry-accent {
+  background: var(--accent);
+  width: 4px;
+}
+.journal-scroll__entry--anchor {
+  border-color: var(--accent);
+}
+
+.journal-scroll__entry-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.journal-scroll__entry-title {
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+}
+
+.journal-scroll__entry-title:hover {
+  text-decoration: underline;
+  color: var(--syntax-link, var(--accent));
+}
+
+/* Trailing cluster of the entry header — the compile-warning button
+   (when present) followed by the connection icons, pushed to the right
+   edge as a group so the warning button always sits just left of the
+   icons. */
+.journal-scroll__entry-header-end {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Compile-warning button — toggles the (otherwise hidden) diagnostics
+   block. Borderless like the other header buttons: warnings are secondary,
+   nice-to-know info in Journal Scroll, so the icon colour alone carries the
+   signal. Warning amber by default, error red when any diagnostic is an
+   error. */
+.journal-scroll__entry-warning {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--accent-warn);
+  cursor: pointer;
+  padding: 3px 5px;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+.journal-scroll__entry-warning:hover {
+  background: color-mix(in srgb, var(--accent-warn) 12%, transparent);
+}
+
+.journal-scroll__entry-warning.is-error {
+  color: var(--accent-danger);
+}
+
+.journal-scroll__entry-warning.is-error:hover {
+  background: color-mix(in srgb, var(--accent-danger) 12%, transparent);
+}
+
+.journal-scroll__entry-warning svg {
+  display: block;
+}
+
+/* Connection icons — one per relation an entry has to the scroll's anchor.
+   Each icon is colored to match its accent-strip color so the strip's
+   meaning stays self-documenting. Decorative + tooltip only (no click
+   action); the native `title` carries the explanation on hover, and
+   `aria-label` exposes it to assistive tech. */
+.journal-scroll__entry-connection {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  cursor: help;
+}
+
+.journal-scroll__entry-connection svg {
+  display: block;
+}
+
+.journal-scroll__entry-connection--anchor {
+  color: var(--accent);
+}
+.journal-scroll__entry-connection--links-to-anchor {
+  color: var(--accent-info);
+}
+.journal-scroll__entry-connection--linked-from-anchor {
+  color: var(--accent-green);
+}
+.journal-scroll__entry-connection--shares-tags {
+  color: var(--accent-warn);
+}
+
+.journal-scroll__entry-body {
+  /* Mirrors the reading view's continuous-HTML layout so a single note
+     looks the same in the scroll as it does in dedicated reading mode. */
+  font-family: var(--md-body-font, inherit);
+  font-size: var(--md-body-size, 17px);
+  line-height: 1.6;
+  color: var(--fg-primary);
+  padding: 16px 24px 24px;
+  max-width: var(--md-max-width, none);
+  margin: 0 auto;
+  box-sizing: content-box;
+}
+
+/* Hide bibliography and footnote sections in the scroll view — the Scroll
+   Context sidebar already surfaces citations per-entry, so the full
+   bibliography is redundant noise in the compact scroll layout. */
+.journal-scroll__entry-body section[role="doc-bibliography"],
+.journal-scroll__entry-body section[role="doc-endnotes"] {
+  display: none;
+}
+
+.journal-scroll__entry-loading {
+  padding: 16px 24px;
+  color: var(--fg-dim);
+  font-size: var(--text-md);
+  font-style: italic;
+}
+
+.journal-scroll__entry-diagnostics {
+  padding: 8px 20px;
+  background: var(--bg-secondary);
+  color: var(--accent-danger);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.journal-scroll__loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--fg-dim);
+  font-size: var(--text-md);
+}
+
+.journal-scroll__empty {
+  text-align: center;
+  padding: 40px 24px;
+  color: var(--fg-dim);
+  font-size: var(--text-lg);
+}
+
+.journal-scroll__sentinel {
+  height: 1px;
+  flex-shrink: 0;
+}
+

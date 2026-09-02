@@ -1,0 +1,433 @@
+/* Editor host, properties panel, property editor, custom date picker.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Typst editor (CodeMirror container) */
+.typst-editor-container {
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.typst-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.typst-editor .cm-editor {
+  height: 100%;
+}
+
+/* Properties */
+.properties-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.property-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 3px 0;
+  min-height: 24px;
+}
+
+.property-row__key {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.property-row__value {
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  word-break: break-word;
+}
+
+.right-panel__count {
+  color: var(--fg-dim);
+}
+
+/* External-tool output pane ("panel" output disposition). Monospace,
+   soft-wrapped stdout that the user can read while editing. */
+.tool-output__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+  margin: 0;
+}
+
+.right-panel__add-btn {
+  background: none;
+  border: 1px dashed var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-base);
+  margin-top: var(--space-4);
+  width: 100%;
+  text-align: left;
+}
+
+.right-panel__add-btn:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg-secondary);
+}
+
+.right-panel__add-form {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Built-in InkyCap properties are tagged "system"; user-created properties
+   carry no label. (Reversed from the prior "custom" tag — most properties
+   are user-created in real noteboxes, so the label noise belongs on the
+   smaller built-in set.) */
+.property-row--system .property-row__key::after {
+  content: "system";
+  font-size: var(--text-2xs);
+  color: var(--fg-dim);
+  margin-left: var(--space-2);
+  opacity: 0.7;
+}
+
+/* Property editor */
+.property-editor {
+  min-height: 20px;
+  width: 100%;
+}
+
+/* Display value reads as a clickable affordance: hovering reveals a faint
+   1px underline so users notice the cell is editable. The cursor: text
+   hint matches what they get once an input replaces it. */
+.property-editor__value {
+  display: inline-block;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  word-break: break-word;
+  cursor: text;
+  padding: 1px 4px;
+  border-radius: 2px;
+  border-bottom: 1px solid transparent;
+  min-width: 60px;
+}
+
+.property-editor__value:hover {
+  background: var(--bg-hover);
+  border-bottom-color: var(--border-input);
+}
+
+.property-editor__value--null,
+.property-editor__value--empty {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.property-editor__input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-1) var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  font-family: inherit;
+}
+
+.property-editor__input:focus {
+  border-color: var(--border-input-focus);
+}
+
+.property-editor__input--error {
+  border-color: var(--accent-danger);
+}
+
+.property-editor__error {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--accent-danger);
+  margin-top: var(--space-1);
+}
+
+.property-editor__wikilink {
+  color: var(--syntax-link);
+  text-decoration: underline;
+  /* Solid, not dotted: a dotted underline reads as an unresolved/uncreated
+     link. These are real links to existing notes, so the underline is solid. */
+  text-decoration-style: solid;
+  cursor: pointer;
+}
+
+.property-editor__wikilink:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Custom calendar date picker (replaces the native <input type=date>). */
+.date-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.date-picker__popup {
+  position: fixed;
+  z-index: var(--z-menu);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--space-4);
+  width: 238px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.date-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.date-picker__heading {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.date-picker__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+}
+
+.date-picker__nav:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.date-picker__grid {
+  display: grid;
+  /* Fixed 30px columns keep the popup an exact, predictable width
+     (7×30 + 6×2 gap = 222px) instead of stretching with 1fr. */
+  grid-template-columns: repeat(7, 30px);
+  gap: var(--space-1);
+}
+
+.date-picker__weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.date-picker__day {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+
+.date-picker__day:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.date-picker__day--blank {
+  cursor: default;
+}
+
+.date-picker__day--blank:hover {
+  background: none;
+}
+
+.date-picker__day--today {
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.date-picker__day--cursor {
+  border-color: var(--border-input-focus);
+}
+
+.date-picker__day--selected {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+.date-picker__time-row {
+  margin-top: var(--space-4);
+}
+
+.date-picker__footer {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.date-picker__action {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.date-picker__action:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.collection-picker {
+  position: relative;
+}
+
+.collection-picker__dropdown {
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — keeps the control's radius. */
+  border-radius: var(--radius-input);
+  box-shadow: var(--popup-shadow);
+  margin-top: var(--space-2);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.collection-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.collection-picker__item:hover {
+  background: var(--bg-hover);
+}
+
+.collection-picker__empty {
+  display: block;
+  padding: var(--space-4);
+  font-size: var(--text-base);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.list-picker {
+  position: relative;
+}
+
+.list-picker__filter {
+  width: 100%;
+  margin-bottom: var(--space-2);
+  box-sizing: border-box;
+}
+
+.list-picker__create {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--accent-purple);
+  font-weight: 500;
+}
+
+.add-prop-suggestions {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-2);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.add-prop-suggestions__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 3px;
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.add-prop-suggestions__item--active,
+.add-prop-suggestions__item:hover {
+  background: var(--bg-hover);
+}
+
+.add-prop-suggestions__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.add-prop-suggestions__badge {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.property-editor__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.property-editor__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  cursor: pointer;
+  min-height: 20px;
+  padding: 1px 0;
+}
+
+/* Property tags use the shared .badge .badge--accent chip (see markup). */
+

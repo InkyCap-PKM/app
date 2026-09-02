@@ -1,0 +1,395 @@
+/* App modal base, property-mapping dialog, notebox-required overlay.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── App modal (.app-modal) ──────────────────────────────────────────────
+   Generic centered dialog used by the in-app prompt component (see
+   stores/prompt.ts + components/PromptHost.tsx) and intended as the shared
+   base for any future modal in the app. New modals should reuse these
+   classes rather than inventing their own backdrop/box styles so dialogs
+   stay visually consistent.
+   The older .export-dialog__* rules are functionally equivalent and could
+   be migrated to share these selectors when that file is next touched. */
+
+.app-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+}
+
+.app-modal {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: var(--modal-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Typst editor modal — wider than the default app-modal and with a
+   tall scrolling CodeMirror so a power-user can author rules comfortably. */
+.custom-typst-modal {
+  width: 720px;
+}
+
+.custom-typst-modal__editor {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  height: 50vh;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.custom-typst-modal__editor .cm-editor {
+  height: 100%;
+}
+
+.custom-typst-modal__editor .cm-scroller {
+  overflow: auto;
+}
+
+.app-modal__header {
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
+  /* Flex so a header close (✕) button floats to the right; single-child
+     headers (the text prompt / confirm) keep their title left-aligned. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.app-modal__header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.app-modal__body {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.app-modal__label {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.app-modal__input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  font-family: inherit;
+  outline: none;
+}
+
+.app-modal__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.app-modal__hint {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Confirmation-dialog body text. Preserves authored newlines so a bulleted
+   list (e.g. the notes a book export would exclude) reads as written. */
+.app-modal__message {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.app-modal__error {
+  font-size: var(--text-sm);
+  color: var(--accent-danger);
+}
+
+/* Inline "this feature is experimental" notice — flag glyph + cautionary text,
+   non-interactive. The flag takes the warning amber; the text stays muted so it
+   draws the eye without alarming. */
+.experimental-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.experimental-notice__icon {
+  flex-shrink: 0;
+  color: var(--callout-warning);
+}
+
+/* Inline variant: sits in a flex row beside a control (e.g. the per-notebox
+   "Configure" button) rather than as its own block — no vertical margin. */
+.experimental-notice--inline {
+  margin: 0;
+}
+
+/* Optional opt-in checkbox in a confirm dialog (e.g. a destructive extra). */
+.app-modal__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.app-modal__checkbox input {
+  cursor: pointer;
+}
+
+.app-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-top: 1px solid var(--border-primary);
+}
+
+/* App-modal action buttons use the shared .btn system (see markup). */
+
+/* Body paragraph inside an .app-modal (seed dialog, notebox-required overlay). */
+.app-modal__text {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.45;
+  color: var(--fg-secondary);
+}
+
+/* ── Markdown-import property mapping dialog (PropertyMappingDialog) ───────
+   A wider .app-modal variant holding the YAML→property mapping grid. The
+   grid columns are shared by the head row and every data row so they stay
+   aligned; the body scrolls when there are many properties. */
+.property-map-dialog {
+  width: 720px;
+}
+
+.property-map-dialog .app-modal__body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.property-map {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--modal-radius);
+  overflow: hidden;
+  /* The grid must keep its natural (content) height so the scrolling
+     .app-modal__body overflows and shows a scrollbar. The body is a flex
+     column, and WebKitGTK (the Tauri webview) otherwise shrinks this flex
+     child to fit the body's max-height — its `overflow: hidden` then clips
+     the trailing rows with no scrollbar, leaving them unreachable. Blink
+     doesn't shrink it, so the bug is WebKit-only. flex-shrink: 0 keeps the
+     grid full-height on both engines. */
+  flex-shrink: 0;
+}
+
+.property-map__head,
+.property-map__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(120px, 0.8fr);
+  gap: var(--space-5);
+  /* Top-align so each row's "Maps to" dropdown lines up horizontally with
+     its "Type" control and YAML key — rows vary in height (the source cell
+     has a meta line, the target cell an optional status line). */
+  align-items: start;
+  padding: var(--space-4) var(--space-5);
+}
+
+.property-map__head {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.property-map__row + .property-map__row,
+.property-map__row {
+  border-top: 1px solid var(--border-primary);
+}
+
+.property-map__head + .property-map__row {
+  border-top: none;
+}
+
+.property-map__source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.property-map__key {
+  font-weight: 500;
+  color: var(--fg-primary);
+  word-break: break-word;
+}
+
+.property-map__meta {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.property-map__target {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.property-map__status {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Editable name for a "Create new" property mapping. Mirrors the dropdown
+   trigger's sizing so it sits flush under it. */
+.property-map__name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  font-family: inherit;
+  font-size: var(--text-md);
+  outline: none;
+}
+
+.property-map__name-input:focus {
+  border-color: var(--accent);
+}
+
+.property-map__name-input--error {
+  border-color: var(--accent-danger);
+}
+
+.property-map__error {
+  font-size: var(--text-sm);
+  color: var(--accent-danger);
+}
+
+.property-map__type {
+  min-width: 0;
+}
+
+/* Locked (non-editable) type label. Padding matches the dropdown trigger's
+   text inset (4px padding + 1px border) so a locked label's text baseline
+   aligns with the editable type dropdowns in adjacent rows. */
+.property-map__type-locked {
+  display: block;
+  padding: 5px 2px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* ── "Open a notebox to continue" overlay (NoteboxRequiredOverlay) ─────────
+   A blocking dialog built on .app-modal. The list reopens a known notebox;
+   the footer button opens or creates one. Shown whenever the app has no
+   active notebox, so it is intentionally non-dismissable. */
+.notebox-required__open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notebox-required__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.notebox-required__entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-base);
+}
+
+.notebox-required__entry:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.notebox-required__entry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.notebox-required__entry-icon {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.notebox-required__entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.notebox-required__entry-name {
+  font-weight: 500;
+}
+
+.notebox-required__entry-path {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Marks a notebox already open in another window (it can't be opened here —
+   one notebox per window). Pushed to the row's right edge. */
+.notebox-required__entry-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+}
+

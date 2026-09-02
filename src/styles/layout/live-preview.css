@@ -1,0 +1,230 @@
+/* Live preview rendering: fold arrows, markers, bullets, checkboxes, links.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Live preview rendering ─── */
+
+.cm-ilp-image,
+.cm-ilp-image-block {
+  display: block;
+  max-width: 100%;
+  margin: var(--space-2) 0;
+}
+
+.cm-ilp-image img,
+.cm-ilp-image-block img {
+  max-width: 100%;
+  max-height: 480px;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.cm-ilp-image--missing,
+.cm-ilp-image-block--missing {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  border: 1px dashed var(--border-primary);
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  border-radius: 3px;
+}
+
+.cm-ilp-hr {
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  margin: var(--space-5) 0;
+}
+
+.cm-ilp-table-wrap {
+  margin: var(--space-4) 0;
+  overflow-x: auto;
+}
+
+.cm-ilp-table {
+  border-collapse: collapse;
+  font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
+  font-size: var(--text-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cm-ilp-table th,
+.cm-ilp-table td {
+  border: 1px solid var(--border-primary);
+  padding: var(--space-3) var(--space-5);
+  text-align: left;
+  color: var(--fg-primary);
+  vertical-align: top;
+}
+
+.cm-ilp-table thead th {
+  background: var(--bg-active);
+  font-weight: 600;
+}
+
+.cm-ilp-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-primary) 50%, var(--bg-secondary));
+}
+
+.cm-ilp-code {
+  background: var(--syntax-mono-bg, var(--bg-active));
+  color: var(--syntax-mono, var(--fg-primary));
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--editor-font-mono);
+  font-size: 0.95em;
+}
+
+/* ─── Heading fold arrow (absolutely positioned, next to heading text) ───
+ *
+ * `position: absolute` so the widget contributes ZERO to the heading
+ * line's inline flow — its presence cannot perturb CodeMirror's height
+ * map or measurement. The parent .cm-line.cm-ilp-h{1..6} sets
+ * `position: relative` (see theme.ts) so this anchors against the
+ * line's left edge.
+ *
+ * Hidden by default; visible on heading-line hover or when the section
+ * is collapsed. */
+.cm-ilp-fold-arrow {
+  position: absolute;
+  left: -3em;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1em;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.75em;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease-in-out;
+}
+
+.cm-line:hover .cm-ilp-fold-arrow,
+.cm-ilp-fold-arrow--collapsed,
+.cm-ilp-fold-arrow:hover {
+  opacity: 1;
+}
+
+.cm-ilp-fold-arrow:hover {
+  color: var(--fg-primary);
+}
+
+/* ─── Live preview: marker hiding ───
+ *
+ * `.cm-ilp-hide` collapses inline markup to ~zero width. Used for
+ * **bold**, _italic_, `inline code`, ==highlight==, [text](url) brackets,
+ * and [[wikilink]] brackets. The user accepts the small horizontal
+ * shift that happens when the cursor enters the line and the markers
+ * become visible (their original "shift is acceptable for inline
+ * markers" decision in the plan).
+ *
+ * For HEADING markers we use a different class (`.cm-ilp-heading-mark`,
+ * below) which preserves width — the heading line then uses text-indent
+ * to pull the marker into the gutter-side margin so heading text stays
+ * column-aligned with body text and doesn't shift on cursor enter.
+ *
+ * We use font-size:0 rather than display:none because the latter removes the span
+ * from CodeMirror's layout entirely and can confuse line measurement
+ * for adjacent inline content.
+ */
+.cm-ilp-hide {
+  font-size: 0 !important;
+  letter-spacing: 0 !important;
+  color: transparent !important;
+}
+
+/* ─── Heading marker (margin gutter) ───
+ *
+ * Rendered by `heading-lines.ts` as a 0-width inline-block wrapper
+ * containing an absolutely-positioned `#` glyph. The wrapper sits at
+ * the heading line's column 0 (since the heading text starts there);
+ * the absolute child hangs in the negative-x area, which is visible
+ * because `.cm-content` has `padding-left: 4em` (see theme.ts).
+ *
+ * The marker font-size is reduced (0.7em) so it stays compact even for
+ * h6 (`######`). Right-aligned via `right: 0.4em` so it sits flush
+ * against the heading text with a small gap.
+ */
+.cm-ilp-heading-marker-wrap {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  /* font-size:0 + line-height:0 ensure the inline-block contributes
+   * zero to the heading line's vertical metrics. Without these the
+   * inline-block's line-box could nudge the line height by a fraction
+   * of a pixel and accumulate height-map drift across many headings. */
+  font-size: 0;
+  line-height: 0;
+  position: relative;
+  vertical-align: top;
+}
+
+.cm-ilp-heading-marker {
+  position: absolute;
+  right: 0.4em;
+  top: 0.1em;
+  color: var(--fg-muted);
+  font-family: var(--editor-font-mono);
+  font-size: 0.7em;
+  font-weight: 400;
+  pointer-events: none;
+  white-space: pre;
+  user-select: none;
+}
+
+/* ─── Live preview: list bullets ───
+ *
+ * The source `-` character stays in the DOM with `color: transparent` (so it occupies its layout
+ * box but isn't visible), and an absolutely-positioned `::after` paints
+ * the bullet glyph on top. Width is preserved across reveal/hide.
+ */
+.cm-ilp-bullet-mark,
+.cm-line .cm-ilp-bullet-mark,
+.cm-content .cm-ilp-bullet-mark {
+  color: transparent !important;
+  position: relative;
+}
+
+.cm-ilp-bullet-mark::after {
+  content: "\2022"; /* • */
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  text-align: center;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+/* ─── Live preview: task checkboxes ─── */
+
+.cm-ilp-task {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+  cursor: pointer;
+}
+
+.cm-ilp-checkbox {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* ─── Live preview: markdown links ─── */
+
+.cm-ilp-link {
+  color: var(--syntax-link);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.cm-ilp-link:hover {
+  border-bottom-color: var(--syntax-link);
+}
+

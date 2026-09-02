@@ -1,0 +1,381 @@
+/* Search panel results list, replace actions, reminder dropdown.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+.search-panel__replace-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--bg-primary);
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+.search-panel__replace-btn:hover {
+  opacity: 0.9;
+}
+
+.search-panel__replace-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.search-panel__replace-info {
+  font-size: var(--text-base);
+  color: var(--accent-success);
+  padding: var(--space-2) 0;
+}
+
+.search-panel__status {
+  font-size: var(--text-base);
+  color: var(--fg-muted);
+  padding: var(--space-1) 0;
+}
+
+.search-panel__error {
+  font-size: var(--text-base);
+  color: var(--accent-danger);
+  padding: var(--space-2) 0;
+}
+
+.search-panel__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* The only scrollable region: takes the height left over after the fixed
+     header stack, and scrolls its own overflow. `min-height: 0` lets a flex
+     child shrink below its content height so the scrollbar engages. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.search-panel__file-group {
+  margin-bottom: var(--space-1);
+}
+
+.search-panel__result {
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-6);
+  cursor: pointer;
+}
+
+.search-panel__result:hover {
+  background: var(--bg-hover);
+}
+
+.search-panel__result-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--fg-primary);
+  padding: var(--space-2) var(--space-2);
+  position: relative;
+}
+
+.search-panel__result-file:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.search-panel__group-chevron {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.search-panel__file-label {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-panel__match-count {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: 0 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.search-panel__result-line {
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.search-panel__result-lineno {
+  color: var(--fg-dim);
+  margin-right: var(--space-2);
+  font-family: var(--editor-font-mono, monospace);
+}
+
+.search-panel__result-text {
+  font-family: var(--editor-font-mono, monospace);
+}
+
+/* The group header reuses the highlighter to mark a file-name match, but
+   keeps the header font instead of the monospace snippet font. */
+.search-panel__file-label-text {
+  font-family: inherit;
+}
+
+.search-panel__highlight {
+  background: var(--search-highlight, rgba(255, 213, 0, 0.3));
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-panel__result-replace-btn {
+  margin-left: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  opacity: 0;
+}
+
+.search-panel__result-file:hover .search-panel__result-replace-btn {
+  opacity: 1;
+}
+
+.search-panel__result-replace-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Reminder dropdown shown when the search input has focus and is empty. */
+/* One-line reminder shown under the search box before a query is entered.
+   Reuses .inline-link for the "See the search tips for help." trigger, which
+   opens the same tips dropdown as the (i) button. */
+.search-panel__tip {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: 1.4;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  text-align: center;
+}
+
+/* The link is a <button> (in-app action, not navigation), so strip the
+   native button chrome and let .inline-link supply the link appearance. */
+.search-panel__tip-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+}
+
+.search-panel__hints {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.search-panel__hints-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+  padding: var(--space-1) var(--space-4) var(--space-2);
+}
+
+.search-panel__hint {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 3px;
+}
+
+.search-panel__hint:hover {
+  background: var(--bg-hover);
+}
+
+.search-panel__hint-prefix {
+  font-family: var(--editor-font-mono, monospace);
+  font-weight: 600;
+  color: var(--accent-text, var(--fg-primary));
+  /* Fixed column so every description aligns at the same left edge. Sized in
+     `ch` (mono font) to fit the widest prefix/label, `annotation:` (11). */
+  min-width: 12ch;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.search-panel__hint-desc {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+/* Search-display options row: icon-button toggles for collapse/expand,
+   more-context, and regex. Lives below the search input when the user
+   has opened the Search Options pane. */
+.search-panel__options-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Positioning context for the annotation-scope dropdown so its anchored
+   menu (.search-panel__menu-anchored) drops directly under the button. */
+.search-panel__scope-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.search-panel__hints-divider {
+  height: 1px;
+  background: var(--border-input);
+  margin: var(--space-2) var(--space-4);
+}
+
+.search-panel__hint--static {
+  cursor: default;
+}
+
+.search-panel__hint--static:hover {
+  background: transparent;
+}
+
+/* Status row: result count + overflow menu + sort dropdown. */
+.search-panel__pagination {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.search-panel__page-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.search-panel__page-btn:hover:not(:disabled) {
+  color: var(--fg-primary);
+  border-color: var(--fg-muted);
+}
+
+.search-panel__page-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.search-panel__busy {
+  color: var(--fg-muted);
+}
+
+.search-panel__dot {
+  animation: dot-pulse 1.2s infinite;
+  opacity: 0;
+}
+
+.search-panel__dot--1 { animation-delay: 0s; }
+.search-panel__dot--2 { animation-delay: 0.25s; }
+.search-panel__dot--3 { animation-delay: 0.5s; }
+
+@keyframes dot-pulse {
+  0%, 20% { opacity: 0; }
+  40% { opacity: 1; }
+  60%, 100% { opacity: 0; }
+}
+
+/* Reusable animated "…" — three staggered dots that pulse on the same
+   timing as the search panel's, so the in-progress affordance feels
+   consistent across the app. Drop-in for any string that would
+   otherwise end in a static `…`: render the literal text without the
+   ellipsis, then append `<LoadingDots />` (or three spans with these
+   classes inline). */
+.loading-dots {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.loading-dots__dot {
+  animation: dot-pulse 1.2s infinite;
+  opacity: 0;
+}
+
+.loading-dots__dot--1 { animation-delay: 0s; }
+.loading-dots__dot--2 { animation-delay: 0.25s; }
+.loading-dots__dot--3 { animation-delay: 0.5s; }
+
+.search-panel__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  position: relative;
+}
+
+.search-panel__overflow-btn,
+.search-panel__sort-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.search-panel__sort-btn {
+  margin-left: auto;
+}
+
+.search-panel__overflow-btn:hover,
+.search-panel__sort-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+/* Re-anchor the shared .context-menu when used inside the search panel.
+   The base style positions absolutely; we just need to lock it to the
+   status row's overflow/sort buttons. */
+.search-panel__menu-anchored {
+  position: absolute;
+  top: 100%;
+  margin-top: var(--space-1);
+  z-index: var(--z-menu);
+}
+
+.search-panel__menu-anchored--right {
+  right: 0;
+}
+
+.search-panel__menu-anchored--left {
+  left: 0;
+}
+
+.context-menu__item--active {
+  background: var(--bg-highlight);
+  color: var(--accent-text);
+}
+

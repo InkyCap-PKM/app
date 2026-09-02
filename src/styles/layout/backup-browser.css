@@ -1,0 +1,298 @@
+/* Backup browser modal.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Backup browser modal ─────────────────────────────────────────── */
+/* Backdropped, centred dialog: per CLAUDE.md/themes.css guidance,
+   uses the --modal-* tokens (not raw values). Two-column body
+   layout: archives list on the left, contents picker on the right. */
+
+.backup-browser__backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.backup-browser {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
+  /* Narrower than the old 960px: the dialog only needs to be wide
+     enough to comfortably show ~3 archive cards in a row plus the
+     contents panel. A user with many backups gets a wrapping grid
+     rather than an ever-wider list. */
+  width: min(720px, 100%);
+  max-height: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.backup-browser__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.backup-browser__header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.backup-browser__header h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.backup-browser__intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.backup-browser__close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 22px;
+  line-height: 1;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.backup-browser__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Vertical stack: archives section on top (compact, grid-style for
+   many backups), contents section below (revealed when one is
+   selected). The previous two-column layout left a large empty
+   contents column when no archive was selected, which looked off
+   and wasted width — vertical reads more naturally for a "pick
+   then act on it" flow. */
+.backup-browser__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: 16px 20px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.backup-browser__archives {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.backup-browser__archives-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+/* The folder-path heading must stay on a single line when there's
+   room (otherwise the layout flexes oddly when an archive is
+   selected and the heading suddenly has more space). Truncate with
+   an ellipsis instead — the full path is also shown in the settings
+   row above the Browse button. */
+.backup-browser__archives-heading {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Auto-fill grid: 1 column for few archives, more as the dialog
+   widens or as more archives are listed. Cards stay readable
+   (220px min) without making the dialog itself wider. */
+.backup-browser__archive-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  overflow-y: auto;
+  /* Cap the archive section height so the contents panel below
+     still has room. Roughly enough for 3-4 rows of cards before
+     the inner scrolls take over. */
+  max-height: 220px;
+  min-height: 0;
+}
+
+/* External archive marker — the user-picked .zip from outside the
+   destination folder. Distinct border so it doesn't look like a
+   scheduled backup. */
+.backup-browser__archive-item--external {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
+.backup-browser__archive-label {
+  font-size: var(--text-xs);
+  text-transform: none;
+  letter-spacing: 0.3px;
+  color: var(--accent);
+  margin-bottom: var(--space-1);
+}
+
+.backup-browser__archive-item {
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--fg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.backup-browser__archive-item:hover {
+  background: var(--bg-hover);
+}
+
+.backup-browser__archive-item.is-selected {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.backup-browser__archive-name {
+  font-weight: 500;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-browser__archive-meta {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.backup-browser__contents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.backup-browser__warning {
+  background: var(--bg-warning, var(--bg-hover));
+  border: 1px solid var(--border-warning, var(--border-subtle));
+  border-radius: 6px;
+  padding: var(--space-4) var(--space-5);
+  color: var(--fg-warning, var(--fg-primary));
+  font-size: var(--text-sm);
+}
+
+/* Per-archive password override block. Keeps the override field and its
+   accompanying hint visually grouped between the contents heading and
+   the filter row. */
+.backup-browser__password {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.backup-browser__password .settings__text-input {
+  width: 100%;
+  max-width: 360px;
+}
+
+.backup-browser__filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.backup-browser__filter-row .settings__text-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.backup-browser__entry-list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 80px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: var(--space-2);
+}
+
+.backup-browser__entry {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.backup-browser__entry:hover {
+  background: var(--bg-hover);
+}
+
+.backup-browser__entry-path {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-browser__entry-size {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.backup-browser__restore-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.backup-browser__radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* Tint native checkboxes/radios in the backup browser with the
+   InkyCap accent so they match the rest of the app rather than the
+   OS default. The browser falls back gracefully when this property
+   is unsupported. */
+.backup-browser input[type="checkbox"],
+.backup-browser input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.backup-browser__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-subtle, transparent);
+}
+

@@ -1,0 +1,184 @@
+/* Themed Dropdown component (select replacement).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Dropdown (themed <select> replacement, see Dropdown.tsx) ───
+   The trigger looks like a text input; the popup reuses `.context-menu`.
+   Native <select> popups can't be themed under WebKitGTK — this can. */
+.dropdown {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+/* Fill the available width — for dropdowns used as form fields. */
+.dropdown--block {
+  display: flex;
+  width: 100%;
+}
+
+.dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  padding: var(--space-2) var(--space-4);
+  font-family: inherit;
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+
+.dropdown__trigger:hover {
+  background: var(--bg-hover);
+}
+
+.dropdown__trigger:focus-visible,
+.dropdown__trigger--open {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dropdown__trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dropdown__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdown__chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+/* Compact variant — for tight toolbars (e.g. the mycelial sort control). */
+.dropdown--sm .dropdown__trigger {
+  padding: 3px 6px;
+  font-size: var(--text-xs);
+}
+
+.dropdown__menu {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* The selected option is marked with a trailing checkmark — not a
+   background — so it never competes with the hover/keyboard highlight. */
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.dropdown__item-label {
+  flex: 1;
+}
+
+.dropdown__check {
+  flex-shrink: 0;
+  color: var(--accent-text);
+}
+
+.dropdown__item--highlight {
+  background: var(--bg-hover);
+}
+
+.dropdown__item--disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dropdown__item--disabled:hover {
+  background: none;
+}
+
+/* Group heading inside the menu — the <optgroup> equivalent. */
+.dropdown__group {
+  padding: var(--space-3) var(--space-5) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-dim);
+}
+
+.dropdown__group:not(:first-child) {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--popup-border-color);
+  padding-top: var(--space-3);
+}
+
+/* Clear-X button inside the search input. Only visible when the input
+   has content. The wrap is `position: relative` so the absolute X sits
+   at the right edge inside the field. */
+.search-panel__input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.search-panel__input-wrap .search-panel__input {
+  padding-right: 26px;
+}
+
+.search-panel__clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.search-panel__clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Context lines shown around a matched line when "Show more context" is on. */
+.search-panel__result--wide {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-input);
+}
+
+.search-panel__result--wide:last-child {
+  border-bottom: none;
+}
+
+.search-panel__context-line {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-left: 32px; /* visually align under matched line text */
+}
+
+.search-panel__result--wide .search-panel__result-line {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+  word-break: break-word;
+}
+

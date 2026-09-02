@@ -1,0 +1,147 @@
+/* Status bar controls: word count, spellcheck chip, cursor readout, file path.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Word/character count toggle and the distraction-free button: both are
+   borderless status-bar buttons that inherit the bar's foreground. The count
+   toggle shares one slot — its label swaps between words and characters. */
+.status-bar__count,
+.status-bar__df {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--status-fg);
+  font-size: var(--text-base);
+  padding: 0 var(--space-3);
+  height: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.status-bar__count:hover,
+.status-bar__df:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+.status-bar__count-icon {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* Spellcheck language chip — same borderless status-bar button language as the
+   count toggle, opening the language menu upward. */
+.status-bar__spell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  color: var(--status-fg);
+  font-size: var(--text-base);
+  padding: 0 var(--space-3);
+  height: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.status-bar__spell:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+.status-bar__spell--off {
+  opacity: 0.55;
+}
+
+.status-bar__spell-icon {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.status-bar__spell-label {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+}
+
+.status-bar__spell-chevron {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.status-bar__count-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cursor line:column readout (Source Edit mode). Tabular figures keep the
+   width steady as the numbers change so the status bar doesn't jitter. */
+.status-bar__cursor {
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar__separator {
+  color: var(--fg-dim);
+  padding: 0 var(--space-2);
+}
+
+/* Centered notebox-relative path of the active file. The two flex spacers
+   on either side of this span do the centering; the inner text is
+   allowed to ellipsize when the path doesn't fit. */
+.status-bar__path {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 50%;
+  color: var(--fg-muted);
+  font-size: var(--text-base);
+}
+
+.status-bar__path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.status-bar__path-rename {
+  /* No fixed dimensions — sizes to the icon (matches the .status-bar__notebox-name
+     button's approach so both status-bar glyphs render at the same scale). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 1px;
+  flex-shrink: 0;
+}
+
+.status-bar__path-rename:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* Inline rename input that swaps in for the path text when the user clicks
+   the rename icon. Kept visually unobtrusive — only a subtle bottom border
+   so it reads as in-place edit rather than a separate field. */
+.status-bar__rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  padding: 0 var(--space-2);
+  color: var(--fg-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  outline: none;
+  line-height: 1.4;
+}
+
+.status-bar__rename-input:focus {
+  border-color: var(--accent);
+}
+

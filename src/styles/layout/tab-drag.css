@@ -1,0 +1,20 @@
+/* Tab drag-to-reorder feedback.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Tab drag-to-reorder */
+.tab--dragging {
+  opacity: 0.5;
+}
+
+/* Insertion line shown on the side of the hovered tab the pointer is
+   nearest. Drawn with an inset box-shadow rather than a border so the
+   tab's content doesn't shift sideways as the cue appears. */
+.tab--drop-before {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.tab--drop-after {
+  box-shadow: inset -2px 0 0 0 var(--accent);
+}
+

@@ -1,0 +1,542 @@
+/* Collection table: view tabs, grid, column resize/reorder, column picker.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Collection table */
+.collection-table {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.collection-table__view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) 0;
+  gap: var(--space-4);
+}
+
+.collection-table__view-tabs {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  /* Outer wrapper: takes the row's free width. The scroll-area inside it holds
+     the tabs; chevron buttons and the add-view "+" sit outside it so they stay
+     put while the tabs scroll. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The scrolling track for the view tabs. `overflow: hidden` (not auto) keeps
+   the tabs scrollable programmatically via the chevron buttons / wheel without
+   a visible scrollbar eating into the row — mirrors the file tab strip. */
+.collection-table__view-tabs-scroll {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Chevron scroll buttons, shown only when the tabs overflow that side. */
+.collection-table__view-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.collection-table__view-scroll:hover {
+  color: var(--fg-primary);
+}
+
+.collection-table__view-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  /* A visible border (matching the Filter/Columns/Export toolbar buttons
+     beside them) so the view switchers read clearly as clickable tab-buttons
+     rather than plain text. The active tab strengthens it below. */
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 3px 6px 3px 10px;
+  font-size: var(--text-base);
+  line-height: 1.4;
+  /* Keep each tab at its natural single-line width so a long view name doesn't
+     wrap or compress; overflow scrolls the row instead. */
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.collection-table__view-tab:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+}
+
+.collection-table__view-tab--active {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+  background: var(--bg-highlight);
+}
+
+/* Drag-to-reorder feedback (mirrors the table column reorder): the dragged tab
+   dims, and a coloured edge marks where it will drop. */
+.collection-table__view-tab--dragging {
+  opacity: 0.4;
+}
+
+.collection-table__view-tab--drop-before {
+  box-shadow: -2px 0 0 var(--accent);
+}
+
+.collection-table__view-tab--drop-after {
+  box-shadow: 2px 0 0 var(--accent);
+}
+
+.collection-table__view-tab--add {
+  color: var(--fg-dim);
+  font-size: var(--text-lg);
+  padding: var(--space-1) var(--space-4);
+}
+
+.collection-table__view-tab--add:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+}
+
+/* The close affordance stays visible on every tab — active, hovered, or
+   not — so it never pops in under the cursor (which made it easy to click
+   by accident). It sits muted by default and turns red on direct hover. */
+.collection-table__view-delete {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: 0;
+  line-height: 1;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.collection-table__view-delete:hover {
+  color: var(--accent-danger);
+}
+
+.collection-table__view-rename-input {
+  background: var(--bg-active);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-base);
+  padding: 3px 8px;
+  outline: none;
+  width: 100px;
+}
+
+.collection-table__toolbar {
+  display: flex;
+  gap: var(--space-2);
+  /* Stays at its natural size while the view-tabs row scrolls beside it. */
+  flex-shrink: 0;
+}
+
+.collection-table__toolbar-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  /* Compact toolbar control — uses the small-control radius (not --radius-md),
+     matching .btn--sm and the other dense toolbar buttons so it isn't
+     over-rounded at this footprint. */
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 3px 10px;
+  font-size: var(--text-sm);
+}
+
+.collection-table__toolbar-btn:hover {
+  border-color: var(--fg-dim);
+  color: var(--fg-primary);
+}
+
+.collection-table__toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Keep a disabled button visually inert — the hover rule above otherwise still
+   lights it up on pointer-over, making it look clickable. */
+.collection-table__toolbar-btn:disabled:hover {
+  border-color: var(--border-primary);
+  color: var(--fg-muted);
+}
+
+.collection-table__export-wrapper {
+  position: relative;
+}
+
+/* "+ add view" type picker (Table / Agenda). */
+.collection-table__add-view-wrap {
+  position: relative;
+  display: inline-flex;
+  /* Stays put beside the scrolling tab track. */
+  flex-shrink: 0;
+}
+
+.collection-table__add-view-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--z-menu);
+  min-width: 140px;
+  margin-top: var(--space-1);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+}
+
+/* Agenda view body — a scrollable flat list in place of the table grid. */
+.collection-table__agenda {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+/* Portaled to <body> and placed with `anchorPanelMenu` (which sets
+   `position: fixed` plus inline left/top), so it escapes `.main-content`'s
+   `overflow: hidden` and never paints behind the right panel. No static
+   position/top/right here — those would fight the helper's inline coords. */
+.collection-table__export-menu {
+  z-index: var(--z-menu);
+  min-width: 180px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+}
+
+/* The PDF-standard selector stacks its label above a full-width dropdown.
+   A horizontal label+dropdown row overflowed the menu's right edge because
+   the block dropdown claims 100% width and does not shrink; stacking lets
+   it fill the field exactly instead. */
+.collection-table__export-menu-field {
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.collection-table__export-menu-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.collection-table__export-status {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+}
+
+.collection-table__export-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+  background: color-mix(in srgb, var(--accent-danger) 10%, var(--bg-secondary));
+  border-top: 1px solid var(--accent-danger);
+}
+
+.collection-table__export-error-text {
+  flex: 1;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.4;
+}
+
+.collection-table__export-error-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-primary);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.collection-table__export-error-close:hover {
+  color: var(--fg-primary);
+  border-color: var(--accent-danger);
+}
+
+.collection-table__scroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.collection-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-md);
+}
+
+.collection-table__th--sortable {
+  position: relative;
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--border-primary);
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: var(--text-base);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collection-table__th--sortable:hover {
+  color: var(--fg-primary);
+}
+
+/* Column-width resize grip: a thin hit area straddling the header's right
+   edge. Invisible until the header (or grip) is hovered, then a faint rule
+   hints at the draggable boundary. */
+.collection-table__col-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.collection-table__col-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.collection-table__th--sortable:hover .collection-table__col-resize::after,
+.collection-table__col-resize:hover::after {
+  background: var(--border-primary);
+}
+
+/* Column reorder drag-and-drop feedback. The dragged header dims; the hovered
+   drop target shows an accent bar on the side the column will land. */
+.collection-table__th--dragging {
+  opacity: 0.4;
+}
+
+.collection-table__th--drop-before {
+  box-shadow: inset 2px 0 0 0 var(--accent, var(--fg-primary));
+}
+
+.collection-table__th--drop-after {
+  box-shadow: inset -2px 0 0 0 var(--accent, var(--fg-primary));
+}
+
+.collection-table__sort-indicator {
+  font-size: var(--text-xs);
+  color: var(--accent-text);
+}
+
+/* Per-column filter funnel. Sits inline after the header label; faint until the
+   header is hovered, and shown solid (accent) when the column has an active
+   filter so an applied filter reads at a glance. */
+.collection-table__filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: var(--space-2);
+  padding: var(--space-1);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.collection-table__th--sortable:hover .collection-table__filter-btn {
+  opacity: 1;
+}
+
+.collection-table__filter-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.collection-table__filter-btn--active {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.collection-table__table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-secondary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-table__table tr:hover td {
+  background: var(--bg-hover);
+}
+
+.collection-table__link {
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.collection-table__link:hover {
+  text-decoration: underline;
+}
+
+.collection-table__cell-value {
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.collection-table__cell-value:hover {
+  background: var(--bg-highlight);
+}
+
+.collection-table__cell-value--readonly {
+  cursor: default;
+}
+
+.collection-table__cell-value--readonly:hover {
+  background: transparent;
+}
+
+.collection-table__cell-value--null {
+  color: var(--border-input);
+}
+
+.collection-table__cell-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 1px 4px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  font-family: inherit;
+}
+
+.collection-table__footer {
+  padding: 8px 10px;
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  border-top: 1px solid var(--border-primary);
+}
+
+/* Column picker */
+.column-picker {
+  background: var(--bg-active);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.column-picker__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.column-picker__close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-xl);
+  padding: 0 var(--space-1);
+}
+
+.column-picker__close:hover {
+  color: var(--fg-primary);
+}
+
+.column-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.column-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.column-picker__item:hover {
+  background: var(--bg-highlight);
+}
+
+.column-picker__item input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+

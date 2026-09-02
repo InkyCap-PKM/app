@@ -1,0 +1,1065 @@
+/* Settings panel and its form controls (toggle, inputs, font picker, combobox, segmented).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Settings panel */
+.settings__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  outline: none;
+}
+
+.settings__panel {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: 900px;
+  height: 80vh;
+  max-height: 750px;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+  overflow: hidden;
+}
+
+.settings__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.settings__title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin: 0;
+}
+
+.settings__close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-3xl);
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
+.settings__close:hover {
+  color: var(--fg-primary);
+}
+
+.settings__content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings__sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  flex-shrink: 0;
+  padding: var(--space-5) 0;
+  border-right: 1px solid var(--border-primary);
+  overflow-y: auto;
+}
+
+.settings__tab {
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: var(--space-4) var(--space-6);
+  text-align: left;
+  transition: color var(--dur-fast), background var(--dur-fast), border-color var(--dur-fast);
+}
+
+.settings__tab:hover {
+  color: var(--fg-secondary);
+  background: color-mix(in srgb, var(--fg-primary) 5%, transparent);
+}
+
+.settings__tab--active {
+  color: var(--fg-primary);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.settings__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 120px;
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings__overview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  /* Breathing room between the logo's foot and the Notebox Management row. */
+  margin-bottom: var(--space-6);
+}
+
+.settings__overview-header > div:first-child {
+  flex: 1;
+}
+
+/* Left column of the Overview header: branding + version, software updates,
+   and help stacked so they fill the space beside the tall logo. */
+.settings__overview-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The brand/version row leads the column — no top padding, and no bottom
+   border: the branding flows straight into the Help section without a rule
+   between them. The update control sits to its right, aligned with the app
+   name at the top rather than centred against the multi-line version block. */
+.settings__row.settings__overview-brand {
+  padding-top: 0;
+  border-bottom: none;
+  align-items: flex-start;
+}
+
+/* "Check for updates" cluster: the button, with any in-flight status / release
+   notes stacking beneath it, kept right-aligned against the row edge. */
+.settings__update-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* Centre the button against the InkyCap/version/link block rather than
+     pinning it to the top of the row. */
+  align-self: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Button row of the update control: a single "Check" button most of the time,
+   but "Download" + "View releases" once an update is available. */
+.settings__update-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings__update-status {
+  text-align: right;
+}
+
+/* App name reads as the page's heading — set in Junicode (the brand serif)
+   at the same size as the "Settings" dialog title. The doubled class beats
+   `.settings__label`, which is defined later in this file with equal
+   specificity and would otherwise win on font-size. */
+.settings__label.settings__overview-title {
+  font-family: "Junicode", serif;
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+
+.settings__overview-logo {
+  /* The asset's viewBox is cropped to the mark, so the box hugs the artwork
+     (portrait ~466:560) — no dead space to compensate for. The crown lines
+     up with the InkyCap heading row via the header's flex-start alignment. */
+  height: 134px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .settings__overview-logo {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.14) 30%, transparent 70%);
+}
+
+.settings__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-primary) 50%, transparent);
+}
+
+.settings__section-header + .settings__section-header,
+.settings__row + .settings__section-header,
+.settings__section-note + .settings__section-header {
+  margin-top: var(--space-6);
+}
+
+.settings__section-header .settings__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--fg-muted);
+}
+
+.settings__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-primary) 50%, transparent);
+  gap: var(--space-6);
+}
+
+/* Sources tab: the right-hand cluster of a component row — licence badge plus
+   the "open project page" icon button, kept together against the row edge. */
+.settings__sources-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Sources tab: the lazily-loaded "Full third-party notices" viewer — a
+   scrollable, read-only dump of the per-dependency notices file. */
+.settings__notices-tabs {
+  margin-top: var(--space-3);
+}
+
+/* Update checker (Overview): release-notes block reuses the notices viewer
+   styling but stays compact; the error detail is muted/danger-tinted. */
+.settings__update-notes {
+  max-height: 160px;
+  margin-top: var(--space-2);
+}
+
+.settings__update-error {
+  color: var(--accent-danger);
+}
+
+.settings__notices {
+  margin-top: var(--space-3);
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--fg-muted);
+  font-family: var(--editor-font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.settings__row-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+/* Inline label paired with a HelpButton (the circled "?"), so the detail
+   lives one click away and the row stays terse. */
+.settings__label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings__label {
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+  font-weight: 500;
+}
+
+/* Inline text link inside settings rows (Overview: website, documentation).
+   A button styled as a link — keeps external-open routed through IPC rather
+   than a navigating <a href>. */
+.settings__link {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.settings__link:hover {
+  text-decoration: underline;
+}
+
+/* Inline variant: a link rendered mid-sentence (About: LiLiQ-P licence names).
+   Drops the block-level alignment/margin so it flows within the paragraph. */
+.settings__link--inline {
+  align-self: auto;
+  margin-top: 0;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+/* A setting label paired with an inline "?" help trigger (HelpButton). Keeps
+   the label text and the circled "?" on one baseline, mirroring the spacing
+   of the notebox-management section title. */
+.settings__label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.settings__description {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Inline text link inside body/help copy (settings descriptions, etc.). */
+.inline-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.inline-link:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Inline validation message (e.g. an invalid Add-notebox folder). */
+.settings__description--error {
+  color: var(--accent-danger);
+}
+
+.settings__field-hint {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.settings__dict-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.settings__dict-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 3px 4px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.settings__dict-row:hover {
+  background: var(--bg-hover);
+}
+
+.settings__dict-name {
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+}
+
+.settings__dict-code {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  font-family: var(--mono-font, monospace);
+}
+
+.settings__dict-badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  background: var(--bg-highlight);
+  border-radius: var(--radius-control);
+  padding: 0 5px;
+}
+
+/* Personal-dictionary word rows: the word with a trailing "Remove" link. */
+.settings__userword-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 3px 4px;
+  border-radius: var(--radius-md);
+}
+
+.settings__userword-row:hover {
+  background: var(--bg-hover);
+}
+
+.settings__userword {
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__userword-remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.settings__userword-remove:hover {
+  color: var(--accent-danger, var(--fg-primary));
+}
+
+/* Transient post-action notice (e.g. markdown-import result). Styled as a
+   callout-style banner — tinted background + accent left border — so it
+   reads as a distinct notification rather than blending into the section's
+   descriptive copy. Reuses the shared callout-info tokens. */
+.settings__notice {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: 6px;
+  border-left: 3px solid var(--callout-info);
+  background: color-mix(in srgb, var(--callout-info) 8%, transparent);
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* "this notebox" badge — small inline tag next to per-notebox setting
+   labels, so users can see at a glance which settings are scoped to
+   the current notebox vs. user-global. */
+.settings__scope-badge {
+  display: inline-block;
+  margin-left: var(--space-4);
+  padding: 1px 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  vertical-align: middle;
+  letter-spacing: 0.2px;
+}
+
+/* Toggle switch */
+.settings__toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.settings__toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings__toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--toggle-off-bg);
+  border-radius: 20px;
+  transition: background var(--dur-base);
+}
+
+.settings__toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform var(--dur-base);
+}
+
+.settings__toggle input:checked + .settings__toggle-slider {
+  background: var(--accent);
+}
+
+.settings__toggle input:checked + .settings__toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* Number input */
+.settings__number-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-4);
+  width: 70px;
+  text-align: center;
+  outline: none;
+  flex-shrink: 0;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.settings__number-input::-webkit-inner-spin-button,
+.settings__number-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+.settings__number-input:focus {
+  border-color: var(--accent);
+}
+
+/* Text input */
+.settings__text-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-4);
+  width: 200px;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.settings__text-input:focus {
+  border-color: var(--accent);
+}
+
+/* Placeholder hint text must read as a prompt, not as a real entered value —
+   dim it well below the primary input colour so it isn't mistaken for content. */
+/* Extensions tab — external-tool cards. A list of user-registered tools, each
+   a bordered card of standard settings rows. Token-based so it tracks the
+   theme; no hardcoded colours. */
+.settings__tool-card {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings__tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The name input leads the card and grows to fill the row width. */
+.settings__tool-card-head .settings__text-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.settings__path-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.settings__path-row .settings__text-input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.settings__textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+
+.settings__inline-btn,
+.settings__add-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+  flex-shrink: 0;
+}
+
+.settings__add-btn {
+  border-style: dashed;
+  color: var(--fg-muted);
+  align-self: flex-start;
+}
+
+.settings__inline-btn:hover,
+.settings__add-btn:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg-secondary);
+}
+
+.settings__path-input {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.settings__path-input .settings__text-input {
+  width: 200px;
+}
+
+.settings__path-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-1);
+  min-width: 100%;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — keeps the control's 4px radius. */
+  border-radius: var(--radius-sm);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.settings__path-dropdown.is-flipped {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--space-1);
+}
+
+.settings__path-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-5);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings__path-option:hover,
+.settings__path-option.is-selected {
+  background: var(--bg-secondary);
+}
+
+/* Select dropdown */
+/* Font picker — searchable dropdown with font preview. */
+.settings__font-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Reserve space on the right of the input so the clear button doesn't
+ * overlap typed text. Mirrors the SearchPanel pattern. */
+.settings__font-picker-input {
+  padding-right: 24px;
+}
+
+.settings__font-picker-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.settings__font-picker-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.settings__font-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-1);
+  width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached dropdown — matches the --radius-sm of the input it
+     hangs off rather than the free-floating --popup-radius. */
+  border-radius: var(--radius-md);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+}
+
+/* Drop-up variant: opened above the input when there isn't enough space
+ * below. Mirrors the box-shadow direction so the menu still looks "lifted"
+ * relative to its anchor. The 240px max-height stays in sync with the JS
+ * threshold in FontPicker.tsx. */
+.settings__font-dropdown--up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--space-1);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.settings__font-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 5px 10px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings__font-option:hover,
+.settings__font-option.is-selected {
+  background: var(--bg-secondary);
+}
+
+.settings__font-option.is-selected {
+  color: var(--accent);
+}
+
+/* Combobox — number input with a dropdown of presets. */
+.settings__combobox {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.settings__combobox-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  /* Left half of a split control — round the left corners only; the
+     toggle butts against the square right edge. */
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-4);
+  width: 54px;
+  text-align: center;
+  outline: none;
+  border-right: none;
+}
+
+.settings__combobox-input:focus {
+  border-color: var(--accent);
+}
+
+.settings__combobox-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0 var(--space-3);
+  outline: none;
+}
+
+.settings__combobox-toggle:hover {
+  color: var(--fg-primary);
+  background: var(--bg-secondary);
+}
+
+.settings__combobox-input:focus + .settings__combobox-toggle {
+  border-color: var(--accent);
+}
+
+/* Large settings form fields keep the medium (7px) corner — at full width a
+   4px radius reads as too tight for a prominent field. This also covers the
+   generic Dropdown used for settings preset selects (page size, citation
+   style, …) so every form control in the Settings panel matches. Compact
+   inputs/dropdowns elsewhere stay on the small --radius-input tier. */
+.settings__panel .dropdown__trigger {
+  border-radius: var(--radius-md);
+}
+
+.settings__combobox-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-1);
+  min-width: 100%;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  /* Input-attached — matches the combobox field's medium radius. */
+  border-radius: var(--radius-md);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.settings__combobox-dropdown.is-flipped {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--space-1);
+}
+
+.settings__combobox-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-5);
+  text-align: center;
+  cursor: pointer;
+}
+
+.settings__combobox-option:hover {
+  background: var(--bg-secondary);
+}
+
+.settings__combobox-option.is-selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Segmented control — used for the accent-source picker. */
+.settings__segmented {
+  display: inline-flex;
+  align-self: center;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.settings__segmented button {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--border-input);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  padding: var(--space-2) var(--space-5);
+  outline: none;
+}
+
+.settings__segmented button:first-child {
+  border-left: 0;
+}
+
+.settings__segmented button:hover:not(:disabled):not(.settings__segmented--active) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.settings__segmented button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+.settings__segmented .settings__segmented--active {
+  background: var(--accent);
+  color: var(--pill-fg);
+}
+
+/* Accent color picker. Lives below the segmented control when "Custom"
+   is selected; renders a native color wheel and hex input. */
+.color-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.color-picker__custom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.color-picker__wheel {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  cursor: pointer;
+}
+
+.color-picker__hex {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-base);
+  padding: var(--space-1) var(--space-3);
+  width: 92px;
+  outline: none;
+}
+
+.color-picker__hex:focus {
+  border-color: var(--accent);
+}
+
+.color-picker__warning {
+  color: var(--warn-fg);
+  background: var(--warn-bg-alpha);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  padding: var(--space-2) var(--space-4);
+}
+
+/* Compose row: when an accent-source row needs to stack the segmented
+   control above the picker, override the default flex direction. */
+.settings__row--stack-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.settings__row--stack-control .settings__row-info {
+  flex: 1 1 auto;
+}
+
+/* Footer */
+.settings__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-primary);
+}
+
+/* Settings reset button uses the shared .btn .btn--danger system (see markup). */
+
+.settings__section-note {
+  font-size: var(--text-base);
+  color: var(--fg-dim);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.settings__section-note--warn {
+  background: var(--warn-bg-alpha);
+  color: var(--fg-secondary);
+}
+
+/* Plain variant: prose with no tinted card behind it (About section).
+   Drops the background and the side padding so the text aligns flush with
+   the section headers. */
+.settings__section-note--plain {
+  background: none;
+  padding: 0;
+  margin-bottom: var(--space-4);
+}
+
+.settings__detect-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+.settings__detect-btn:hover {
+  background: var(--bg-hover);
+}
+
+.settings__detect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Call-to-action emphasis: a button whose prerequisites are now met but whose
+   click is the non-obvious next step (e.g. "Add" once a notebox name and
+   location are set, or "Clone & open" once a remote and folder are chosen). A
+   gentle accent pulse draws the eye without shouting. */
+.settings__detect-btn--cta,
+.settings__detect-btn--cta:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+  color: var(--fg-primary);
+  animation: settings-cta-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes settings-cta-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+
+/* Honour reduced-motion: keep the accent emphasis, drop the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .settings__detect-btn--cta,
+  .settings__detect-btn--cta:hover {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+}
+
