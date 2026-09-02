@@ -1,0 +1,257 @@
+/* App shell grid, documentation notice, distraction-free mode, panel resize handles.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+.app-shell {
+  --left-width: 240px;
+  --right-width: 280px;
+  --toolbar-width: 44px;
+  display: grid;
+  grid-template-areas:
+    "toolbar sidebar main right"
+    "status  status  status status";
+  grid-template-columns: var(--toolbar-width) var(--left-width) 1fr var(--right-width);
+  grid-template-rows: 1fr auto;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+/* Documentation window: a slim notice pinned to the top of the content area
+   (a non-growing flex child of `.main-content`, above the pane tree). It sits
+   inside the content column — not the window chrome — and stays put while the
+   manual scrolls, because scrolling happens inside the pane below it. */
+.docs-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  text-align: center;
+}
+
+.docs-banner__icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.app-shell.app-shell--left-collapsed {
+  --left-width: 0px;
+}
+
+.app-shell.app-shell--right-collapsed {
+  --right-width: 0px;
+}
+
+/* Distraction-free mode: collapse all chrome down to just the editor toolbar
+   (.editor-header) + content. The vertical toolbar, both sidebars and the
+   per-pane tab strip are hidden; the status bar keeps only its exit button
+   (handled in StatusBar). The left/right column widths are zeroed inline in
+   App.tsx (inline style would otherwise win); the toolbar column is zeroed
+   here since it has no inline override. */
+.app-shell--distraction-free {
+  --toolbar-width: 0px;
+}
+
+.app-shell--distraction-free .vertical-toolbar,
+.app-shell--distraction-free .left-sidebar,
+.app-shell--distraction-free .right-panel,
+.app-shell--distraction-free .right-panel-toggle,
+.app-shell--distraction-free .resize-handle,
+.app-shell--distraction-free .main-content__tabs {
+  display: none;
+}
+
+/* The status bar itself disappears: lifting it to `position: fixed` removes it
+   from the grid's `auto` row (which then collapses to 0, so the editor fills
+   the full height) and shrink-wraps it to the bottom-right corner. Only the
+   exit button remains, floating there.
+
+   In this mode the editor reclaims the full width, so its 12px vertical
+   scrollbar (and the bottom stepper button at the corner) now run right under
+   where the button would sit. Inset past the scrollbar (12px + gap) and lift
+   it a little off the corner so it never overlaps — this also lands it near
+   the right-edge position it occupies in the normal status bar. */
+.app-shell--distraction-free .status-bar {
+  position: fixed;
+  right: 18px;
+  bottom: 10px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  z-index: var(--z-menu);
+}
+
+/* The lone floating exit button: a semi-transparent pill so it stays
+   unobtrusive over the content, solidifying on hover. */
+.app-shell--distraction-free .status-bar__df {
+  background: var(--status-btn-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--popup-radius);
+  padding: 5px 7px;
+  opacity: 0.55;
+  backdrop-filter: blur(4px);
+}
+
+.app-shell--distraction-free .status-bar__df:hover {
+  opacity: 1;
+  background: var(--status-btn-bg-hover);
+}
+
+/* Native checkboxes/radios follow the app accent (teal) instead of the
+   desktop palette (which paints them the OS highlight colour, e.g. orange).
+   themes.css sets `color-scheme` for the same intent; `accent-color` is the
+   piece that actually tints the control. App-wide so every checkbox matches
+   — individual components no longer need their own accent-color rule. */
+.app-shell input[type="checkbox"],
+.app-shell input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* Drag handles for resizing the side panels. Positioned absolutely so
+   they sit on the column boundary without taking up grid space. */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background var(--dur-fast) ease;
+}
+
+.resize-handle:hover,
+.resize-handle--dragging {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+/* Each handle seats against its divider from inside its own side panel, so
+   the hover bar never reaches across into the content column (where it used
+   to clip the top tab's edge). Left handle hugs the sidebar→content divider
+   from the sidebar side; right handle hugs the content→panel divider from the
+   panel side — mirror images, consistently "on the panel side". */
+.resize-handle--left {
+  left: calc(var(--toolbar-width) + var(--left-width) - 6px);
+}
+
+.resize-handle--right {
+  left: calc(100vw - var(--right-width));
+}
+
+.app-shell.app-shell--left-collapsed .resize-handle--left,
+.app-shell.app-shell--right-collapsed .resize-handle--right {
+  display: none;
+}
+
+.left-sidebar {
+  grid-area: sidebar;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  min-width: 0;
+}
+
+.app-shell--left-collapsed .left-sidebar {
+  display: none;
+}
+
+.left-sidebar__mode-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-4);
+  min-height: 38px;
+  border-bottom: 1px solid var(--border-primary);
+  box-sizing: border-box;
+  /* flex-shrink: 0 keeps the bar at exactly 38px even when the scrollable
+     content below tries to claim space. The right panel's tab bar uses the
+     same lock; without it, sub-pixel shrinking pulls the section-header
+     below up by ~1px and breaks cross-panel header alignment. */
+  flex-shrink: 0;
+}
+
+.left-sidebar__mode-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.left-sidebar__mode-btn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.left-sidebar__mode-btn--active {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+  background: var(--bg-highlight);
+}
+
+.left-sidebar__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.main-content {
+  grid-area: main;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Bottom lip shadow — confined to the content column (not the full-width
+   status bar), so content appears to slide under the status bar only
+   where the two actually meet. Inset by 1px to clear the body borders. */
+.main-content::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 0;
+  height: 4px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.22), transparent);
+}
+
+.main-content__tabs {
+  display: flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+.main-content__body {
+  flex: 1;
+  overflow: auto;
+  border-left: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
+  box-sizing: border-box;
+}
+
+.main-content__body--collection {
+  padding: var(--space-6);
+}
+

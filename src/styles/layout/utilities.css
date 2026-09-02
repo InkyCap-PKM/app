@@ -1,0 +1,209 @@
+/* Shared utilities: .btn system, .badge, .ui-icon-btn, control surface, focus ring.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Shared button system ────────────────────────────────────────────
+   Canonical text/action button utility. Compose `.btn` + one variant
+   (and optionally `.btn--sm` for a compact footprint). Geometry and
+   colour come from the --btn-*, --radius-*, --space-*, --accent* and
+   --focus-ring tokens (themes.css) so the whole app retunes from one
+   place. Prefer this over authoring a new component-scoped button class.
+     .btn--primary    accent-filled call to action
+     .btn--secondary  neutral bordered action
+     .btn--danger     destructive action (outlined, accent-danger)
+     .btn--ghost      borderless text action
+   For square icon-only panel/header buttons use .ui-icon-btn instead. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--btn-pad-y) var(--btn-pad-x);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  font-family: inherit;
+  font-size: var(--text-md);
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-out);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Compact size — for dense footers/toolbars (filter builder, inline panels).
+   Takes the small-control radius so its tighter footprint isn't over-rounded. */
+.btn--sm {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-control);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-weight: 500;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--secondary {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+  color: var(--fg-primary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn--danger {
+  background: transparent;
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--accent-danger-bg);
+}
+
+.btn--ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* ── Shared badge / chip ─────────────────────────────────────────────
+   Small inline label or chip (tags, scope labels, source markers).
+   Compose `.badge` + an optional variant. For a numeric count use
+   `.badge--count` (fully rounded pill). Prefer this over a new
+   component-scoped badge class. Status indicators that are a bare dot
+   or coloured text (e.g. tab unread dot, git status line) are a
+   different role and intentionally stay separate. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+}
+
+.badge--count {
+  border: none;
+  border-radius: 999px;
+  background: var(--border-input);
+  color: var(--fg-secondary);
+}
+
+.badge--accent {
+  border-color: transparent;
+  background: var(--accent-purple-bg);
+  color: var(--accent-purple);
+}
+
+.badge--danger {
+  border-color: transparent;
+  background: var(--accent-danger-bg);
+  color: var(--accent-danger);
+}
+
+/* Shared icon-button style. Used by the search-panel toggle row and any
+   other place that wants a square 28×28 button with a Lucide glyph. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.icon-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+.icon-btn--active {
+  color: var(--accent-text);
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Shared control-surface utility. Use for any new panel header /
+   heading-row icon button so it picks up the unified --radius-control,
+   border, and hover treatment. Existing class-specific buttons
+   (.left-sidebar__icon-btn, .right-panel__icon-btn, .icon-btn,
+   .left-sidebar__add-btn) are visually
+   equivalent — prefer this class for new code so future radius /
+   color retuning happens in one place. Add an `is-active` modifier
+   for toggled states. */
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.ui-icon-btn:hover {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+}
+
+.ui-icon-btn.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ui-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Unified keyboard-focus affordance for the icon-button utilities — these
+   otherwise had no visible focus state. Pointer users never see it
+   (:focus-visible), keyboard users get the shared --focus-ring. */
+.icon-btn:focus-visible,
+.ui-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+

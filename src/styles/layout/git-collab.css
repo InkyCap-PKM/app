@@ -1,0 +1,504 @@
+/* Git collaboration panel and review UI.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─────────────────────────── Git collaboration ─────────────────────────── */
+
+/* Status-bar git chip: the sole collaboration entry point — neutral by default,
+   accented only when action is required (see `--attention`). */
+.status-bar__git {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  /* Neutral by default so it doesn't compete with the notebox switcher; the
+     icon + word take on the accent only when action is required (see
+     `--attention`). */
+  color: var(--status-fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.status-bar__git:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+/* Incoming updates or a pending review — colour the icon + word to draw the eye. */
+.status-bar__git--attention {
+  color: var(--accent-text, var(--status-fg));
+  font-weight: 600;
+}
+
+@keyframes git-spin {
+  to { transform: rotate(360deg); }
+}
+
+.status-bar__git-spin {
+  animation: git-spin 1s linear infinite;
+}
+
+/* Disclosure chevron at the button's right edge. Muted so it reads as an
+   affordance without competing with the handshake icon + summary word. */
+.status-bar__git-chevron {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Panel body */
+.git-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 8px 10px;
+  overflow-y: auto;
+}
+
+.git-panel__setup .settings__label {
+  margin-top: var(--space-2);
+}
+
+.git-panel__identity-row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.git-panel__identity-row .settings__text-input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Primary action button — mirrors the app's accent button convention. */
+.git-panel__primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.git-panel__primary-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.git-panel__primary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Visual styling comes from .btn .btn--danger .btn--sm (see markup); this
+   rule only carries the layout spacing from the primary button above it. */
+.git-panel__danger-btn {
+  margin-top: var(--space-4);
+}
+
+/* Collapsible action section (Import/export changes · Sync changes). The header
+   doubles as the status row: title + chevron on the left, sync state on the
+   right. Reuses the status spans below for the title/state. */
+.git-panel__section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-align: left;
+}
+
+.git-panel__section-toggle:hover .git-panel__remote {
+  color: var(--accent);
+}
+
+.git-panel__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.git-panel__remote,
+.git-panel__status-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.git-panel__remote {
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.git-panel__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* "Review incoming changes" toggle row — separated from the gestures above. */
+.git-panel__review-toggle {
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* Incoming commit context banner */
+.git-panel__banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.git-panel__banner-author {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.git-panel__banner-msg {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.git-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.git-panel__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.git-panel__item--readonly {
+  cursor: default;
+  opacity: 0.75;
+}
+
+/* Non-interactive rows (binary conflict rows, digest entries) shouldn't show
+   the interactive hover background the base .sidebar-item carries. */
+.git-panel__item--readonly:hover {
+  background: transparent;
+}
+
+.git-panel__item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-panel__item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.git-panel__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs, 0.72rem);
+  color: var(--fg-dim);
+}
+
+.git-panel__badge--conflict {
+  color: var(--accent-danger);
+  font-weight: 600;
+}
+
+/* "N suggestions await feedback" — flags a since-sync note that also carries
+   open tracked changes, so the user knows there are inline decisions to make
+   beyond reverting the whole note. Accent (not danger) — it's a prompt, not a
+   problem. */
+.git-panel__badge--feedback {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Whole-file decision chips for a conflicted binary (Keep mine / Take theirs /
+   Keep both). Mirrors the annotations view-toggle aesthetic: muted by default,
+   accent when chosen. */
+.git-panel__binary-choices {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.git-panel__choice {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 1px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.git-panel__choice:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.git-panel__choice--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.git-panel__choice:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* A small follow-up note under a resolved item (e.g. the "Keep both" sibling). */
+.git-panel__item-note {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  margin-top: var(--space-1);
+}
+
+/* settings.json key-clash resolver: a labelled block of per-key Mine/Theirs
+   picks, shown below the conflict list when both sides changed shared config. */
+.git-panel__settings-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--bg-secondary);
+}
+
+.git-panel__settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.git-panel__settings-intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.git-panel__settings-key {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.git-panel__settings-path {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  color: var(--fg-primary);
+  word-break: break-word;
+}
+
+/* A conflict banner reuses the incoming banner, tinted with the danger accent. */
+.git-panel__banner--conflict {
+  border-left-color: var(--accent-danger);
+}
+
+/* A field label paired with its ? help trigger (keeps long hint text out of
+   the cramped panel — the detail lives in the popover). */
+.git-panel__label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A label-row whose toggle sits at the far right (label + help on the left).
+   Used for the "Offline" and "Connect with SSH" switches so they read
+   "<option>  … <switch>" like the other toggles in the panel. */
+.git-panel__toggle-row {
+  margin-top: var(--space-3);
+}
+.git-panel__toggle-row .settings__toggle {
+  margin-left: auto;
+}
+
+/* Reconnect offer: a highlighted box above the manual setup form. */
+.git-panel__reconnect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+/* Post-sync digest ("what landed"): a dismissible, non-blocking summary block. */
+.git-panel__digest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.git-panel__digest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* Outgoing "Changes to share" preview — same card as the digest, tinted by a
+   warm accent border to read as "pending action" rather than "already done". */
+.git-panel__share {
+  border-left-color: var(--warning, var(--accent));
+}
+
+.git-panel__share-heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+/* Unresolved tracked-changes block — same card, but its rows are actionable
+   (clicking opens the note to resolve), so it carries the attention accent and
+   its rows keep the interactive hover (no --readonly). */
+.git-panel__unresolved {
+  border-left-color: var(--warning, var(--accent));
+}
+
+/* The unresolved rows are <button>s — strip native button chrome so they read
+   as sidebar items, then .sidebar-item supplies the layout + hover cue. */
+button.git-panel__item {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+/* The clickable "open this note" region of a changes-since-sync row, sitting to
+   the left of the row's Revert action so the two don't conflict. Borderless and
+   transparent — the parent .sidebar-item carries the hover background. */
+.git-panel__item-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* "Close" dismisses the (purely informational) digest. Sits at the bottom of
+   the list, right-aligned, as a quiet secondary action. */
+.git-panel__digest-close {
+  align-self: flex-end;
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 2px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-secondary);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.git-panel__digest-close:hover {
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+/* Keep the note name from overflowing its row. */
+.git-panel__item .sidebar-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Per-kind icon tint, mirroring the inline suggestion tones. */
+.git-panel__icon--added { color: var(--callout-success, var(--accent)); }
+.git-panel__icon--modified { color: var(--accent); }
+.git-panel__icon--deleted { color: var(--accent-danger); }
+.git-panel__icon--renamed { color: var(--accent); }
+.git-panel__icon--binary { color: var(--fg-dim); }
+
+/* Manage (collapsible) */
+.git-panel__manage {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}
+
+.git-panel__manage-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  font-family: inherit;
+}
+
+.git-panel__manage-toggle:hover {
+  color: var(--fg-primary);
+}
+
+.git-panel__manage-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.git-panel__inline-form {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.git-panel__inline-form .settings__text-input {
+  min-width: 0;
+  flex: 1;
+}

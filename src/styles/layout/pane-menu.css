@@ -1,0 +1,110 @@
+/* Tab-strip pane menu (PanelTopOpen dropdown).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Tab-strip pane menu (PanelTopOpen dropdown) ─────────────────────── */
+.tab-bar__menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0 var(--space-2);
+}
+
+/* Matches the top-bar icon buttons (e.g. the right panel's File Actions,
+   .right-panel__tab): padding-sized around an 18px icon rather than a fixed
+   box, so the hover highlight is the same dimensions as its neighbours. */
+.tab-bar__menu-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-bar__menu-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.tab-bar__menu-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-2);
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+  z-index: var(--z-menu);
+}
+
+.tab-bar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--popup-item-padding);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  text-align: left;
+}
+
+.tab-bar__menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.tab-bar__menu-divider {
+  height: 1px;
+  background: var(--popup-border-color);
+  margin: var(--space-2) 0;
+}
+
+.tab-bar__menu-group-label {
+  padding: var(--space-2) var(--space-5) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-dim);
+}
+
+.tab-bar__menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.tab-bar__menu-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-panel {
+  grid-area: right;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+

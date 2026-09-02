@@ -1,0 +1,274 @@
+/* Help panel.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Help panel ──
+   Sidebar reference for keyboard shortcuts and Typst markup. Three views
+   (UI / visual editor / markup) share this chrome; the header holds the view
+   Dropdown and a filter input, and the body is a list of labelled rows with
+   keycap chips or syntax samples. Reuses the shared section-header typography
+   convention (weight + letter-spacing + muted colour — no all-caps). */
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 0 var(--space-4);
+  overflow-y: auto;
+}
+
+.help-panel__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+}
+
+/* Each header row pairs a control (view dropdown / filter) with a square
+   documentation button, so the two doc buttons stack on the right edge. */
+.help-panel__header-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.help-panel__view {
+  flex: 1;
+  min-width: 0;
+}
+
+.help-panel__filter-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.help-panel__filter {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 26px 4px 8px;
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+}
+
+.help-panel__filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Clear (×) button inside the filter — mirrors the search panel's. */
+.help-panel__clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.help-panel__clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* The brand logo is full-colour artwork; keep it crisp and let it sit on the
+   square icon-btn like any other glyph. */
+.help-panel__doc-logo {
+  display: block;
+  border-radius: 2px;
+}
+
+.help-panel__group {
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.help-panel__group-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  padding: var(--space-3) var(--space-2) var(--space-2);
+}
+
+.help-panel__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 3px 4px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  border-radius: 3px;
+}
+
+.help-panel__row:hover {
+  background: var(--bg-hover);
+}
+
+.help-panel__label {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Keycap chips: render "Ctrl+Shift+M" as discrete keys. Driven entirely by
+   theme tokens so they invert correctly in dark mode. */
+.help-panel__combo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.help-panel__key {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* Introductory hint + "reset all" control above the editable UI-shortcut list. */
+.help-panel__ui-hint {
+  padding: var(--space-2) var(--space-5) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.help-panel__reset-all {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+/* Right-hand cluster of an editable shortcut row: the record button plus an
+   optional reset control. Centred so the compact button aligns with the label
+   (the row itself is baseline-aligned for the read-only keycap rows). */
+.help-panel__row-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Editable combo, styled to echo the keycap chips but read as a button. */
+.help-panel__hotkey-btn {
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.help-panel__hotkey-btn:hover {
+  border-color: var(--accent);
+}
+
+.help-panel__hotkey-btn.recording {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* Per-row reset — a small ui-icon-btn; shrink to sit beside the compact combo. */
+.help-panel__reset.ui-icon-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+
+/* Inline syntax sample (typing shortcuts, Typst/Markdown markup). */
+.help-panel__syntax {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.help-panel__syntax--dim {
+  color: var(--fg-muted);
+}
+
+/* Markup rows stack a head (label + Typst form), an optional Markdown
+   equivalent, and an optional note. */
+.help-panel__markup-row {
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border-radius: 3px;
+}
+
+.help-panel__markup-row:hover {
+  background: var(--bg-hover);
+}
+
+.help-panel__markup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px 8px;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+}
+
+/* When the label + example don't both fit, the example wraps onto its own
+   row beneath the label rather than overlapping it; the chip itself also
+   wraps its contents so a long call never overflows a narrow sidebar. */
+.help-panel__markup-head .help-panel__label {
+  flex: 1 1 auto;
+}
+
+.help-panel__markup-head .help-panel__syntax {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.help-panel__markup-note {
+  margin-top: 3px;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.help-panel__empty {
+  padding: var(--space-6) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+

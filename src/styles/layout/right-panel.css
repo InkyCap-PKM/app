@@ -1,0 +1,155 @@
+/* Right panel tabs and header overflow cue.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Right Panel Tabs ── */
+
+.right-panel__tabs {
+  display: flex;
+  align-items: center;
+  /* The bottom divider is drawn full-width by .right-panel::after — this
+     element is clipped 40px short of the right edge (clip-path below), so its
+     own border-bottom would stop short of the window edge. */
+  min-height: 38px;
+  gap: var(--space-1);
+  padding: 0 40px 0 8px;
+  /* Must match .left-sidebar__mode-bar exactly so the section-headers below
+     each bar land on the same horizontal line. flex-shrink: 0 here is
+     load-bearing — see the comment on .left-sidebar__mode-bar. */
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* ── Overflow cue for the two header bars ──────────────────────────────────
+   When the left mode bar / right tab bar is narrowed past the point where all
+   its buttons fit, the extras are clipped at the trailing edge. A soft inward
+   shadow appears there — driven by `data-overflow` from createOverflowWatcher
+   — to signal there's more; the reveal gesture is widening the panel, so there
+   are deliberately no scroll buttons. Same shadow language as the tab strip. */
+.left-sidebar__mode-bar,
+.right-panel__tabs {
+  position: relative;
+  overflow: hidden;
+}
+
+.left-sidebar__mode-bar::after,
+.right-panel__tabs::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.16));
+}
+
+/* The right panel's collapse toggle occupies the trailing 40px (it's why the
+   tab bar reserves padding-right: 40px). clip-path cuts the tab content off at
+   that line so overflowing tabs can't render under the button — or, crucially,
+   in the gap beside it — and the cue sits just to its left where tabs actually
+   disappear. (overflow: hidden alone clips at the padding box, i.e. the window
+   edge, which let icons bleed past the button.) */
+.right-panel__tabs {
+  clip-path: inset(0 40px 0 0);
+}
+
+.right-panel__tabs::after {
+  right: 40px;
+}
+
+[data-theme="dark"] .left-sidebar__mode-bar::after,
+[data-theme="dark"] .right-panel__tabs::after {
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.5));
+}
+
+.left-sidebar__mode-bar[data-overflow="true"]::after,
+.right-panel__tabs[data-overflow="true"]::after {
+  opacity: 1;
+}
+
+.right-panel__tab {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+
+.right-panel__tab:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+.right-panel__tab--active {
+  color: var(--fg-primary);
+  border-color: var(--border-input);
+  background: var(--bg-highlight);
+}
+
+/* Attention dot on a tab icon (Changes & History when a note has tracked
+   changes awaiting a decision). Positioned at the icon's top-right corner. */
+.right-panel__tab-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.right-panel__tab-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* Ring in the bar's background so the dot reads cleanly over the icon. */
+  box-shadow: 0 0 0 1.5px var(--bg-primary);
+}
+
+/* A non-interactive marker (not a real tab button) — used to show the
+   Journal Scroll state in the tab bar without offering a pressable target. */
+.right-panel__tab--indicator {
+  cursor: default;
+}
+
+.right-panel__tab--indicator:hover {
+  color: var(--fg-muted);
+  background: none;
+}
+
+.right-panel__tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.right-panel__tab:disabled:hover {
+  color: var(--fg-muted);
+  background: none;
+}
+
+.right-panel__tab-content {
+  flex: 1;
+  overflow-y: auto;
+  /* Matches .left-sidebar__content so section-headers on both sides align
+     horizontally — the section-header itself adds its own 4px inset. */
+  padding: var(--space-4);
+}
+
+/* A tab-content variant that doesn't scroll as a whole: the pane inside
+   manages its own scroll region (e.g. the Annotations pane, which pins a
+   toolbar to the bottom while its list scrolls). */
+.right-panel__tab-content--fill {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+

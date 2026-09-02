@@ -1,0 +1,99 @@
+/* Split-pane editor tree: pane containers, split drag handles, active-pane cue.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Pane tree (split editor) ─────────────────────────────────────────
+   The editor area holds one PaneView. A leaf pane (.pane--leaf) stacks its
+   tab strip over its body; a split (.pane-split) lays leaves out in a row
+   (side-by-side) or column (stacked) with a resizer between each pair. */
+/* A pane or split fills its container — the editor area at the top level,
+   or a parent split's slot when nested. */
+.pane,
+.pane-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane--leaf {
+  flex-direction: column;
+}
+
+.main-content__tabs {
+  flex-shrink: 0;
+}
+
+.pane-split--row {
+  flex-direction: row;
+}
+
+.pane-split--column {
+  flex-direction: column;
+}
+
+/* Each child occupies a flex slot; flex-grow is set inline from the node's
+   stored size fraction. flex-basis:0 makes the fractions the sole sizing
+   input, so two 0.5 slots are equal regardless of content width. */
+.pane-split__slot {
+  display: flex;
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Drag handle between two split children. Thin, with a wider invisible hit
+   area via padding-box vs. the visible line, and a hover/active accent. */
+.pane-resizer {
+  flex: 0 0 auto;
+  background: var(--border-primary);
+  position: relative;
+  z-index: 1;
+}
+
+.pane-resizer--row {
+  width: 1px;
+  cursor: col-resize;
+}
+
+.pane-resizer--column {
+  height: 1px;
+  cursor: row-resize;
+}
+
+/* Invisible widened hit target so the 1px line is easy to grab. */
+.pane-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.pane-resizer--row::after {
+  left: -3px;
+  right: -3px;
+}
+
+.pane-resizer--column::after {
+  top: -3px;
+  bottom: -3px;
+}
+
+.pane-resizer:hover,
+body.is-resizing-pane .pane-resizer {
+  background: var(--accent);
+}
+
+/* Quiet cue for the active pane: non-focused panes render their active tab
+   like an ordinary tab, so the focused pane's active tab is the only one
+   highlighted. In a single-pane workspace the sole pane is always focused,
+   so this leaves today's appearance unchanged. */
+.pane:not(.pane--focused) .tab--active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+  /* Flat like an ordinary tab — drop the focused active tab's elevation. */
+  box-shadow: none;
+}
+

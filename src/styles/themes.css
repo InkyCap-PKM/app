@@ -236,7 +236,24 @@
   --accent-danger: #c42025;
   --accent-danger-bg: #fde8e8;
 
+  /* Semantic status family — one hue per meaning, app-wide. Any UI that
+     communicates a state (an error row, a success check, a caution note,
+     an informational hint) uses these rather than an ad-hoc colour, so
+     the meaning of each hue stays learnable across the whole app.
+     Danger is the pre-existing --accent-danger above. */
+  --accent-warn: #d97706;
+  --accent-success: #2a6a50;
+  --accent-info: #2563eb;
+  /* Text sitting on an accent-filled surface (primary buttons, active
+     chips, pills). White works against every accent the picker allows. */
+  --fg-on-accent: #ffffff;
+  /* Collaboration annotations/suggestions — a purple kept distinct from
+     every status hue and from the accent. */
+  --annotation-accent: #8b5cf6;
+
   /* Mycelial View (light) */
+  --mycelial-emergent-bg: color-mix(in srgb, var(--mycelial-emergent) 8%, var(--bg-primary));
+  --mycelial-hit-bg: color-mix(in srgb, var(--mycelial-latent) 22%, transparent);
   --mycelial-tendril: #8b7355;
   --mycelial-tendril-strong: #5d4e37;
   --mycelial-tendril-text: #6b5b45;
@@ -249,8 +266,8 @@
 
   /* Visual-editor decoration tokens (light) */
   --pill-fg: #ffffff;
-  --warn-fg: #d97706;
-  --warn-bg-alpha: color-mix(in srgb, #d97706 12%, transparent);
+  --warn-fg: var(--accent-warn);
+  --warn-bg-alpha: color-mix(in srgb, var(--accent-warn) 12%, transparent);
 
   /* Syntax highlighting */
   --syntax-heading: #071E22;
@@ -387,6 +404,14 @@
   --accent-danger: #EE2E31;
   --accent-danger-bg: #3a1215;
 
+  /* Semantic status family — see the light-theme block for the rule. */
+  --accent-warn: #f59e0b;
+  --accent-success: #5a9a6e;
+  --accent-info: #448aff;
+  --fg-on-accent: #ffffff;
+  /* Lighter than the light-theme purple so it stays legible on dark. */
+  --annotation-accent: #a78bfa;
+
   /* Mycelial View (dark) */
   --mycelial-tendril: #c4a882;
   --mycelial-tendril-strong: #d4b892;
@@ -395,15 +420,15 @@
   /* Pulled toward true brown (less orange) so it reads as distinct from the
      gold latent-link colour above rather than a near-sibling of it. */
   --mycelial-emergent: #97603a;
-  --mycelial-emergent-bg: color-mix(in srgb, #97603a 10%, var(--bg-primary));
+  --mycelial-emergent-bg: color-mix(in srgb, var(--mycelial-emergent) 10%, var(--bg-primary));
   --mycelial-source: #9a9a9a;
   --mycelial-kindred: #6aa79b;
   --mycelial-hit-bg: color-mix(in srgb, #d6a45c 25%, transparent);
 
   /* Visual-editor decoration tokens (dark) */
   --pill-fg: #ffffff;
-  --warn-fg: #f59e0b;
-  --warn-bg-alpha: color-mix(in srgb, #f59e0b 18%, transparent);
+  --warn-fg: var(--accent-warn);
+  --warn-bg-alpha: color-mix(in srgb, var(--accent-warn) 18%, transparent);
 
   /* Syntax highlighting */
   --syntax-heading: #d8e0e0;

@@ -1,0 +1,146 @@
+/* Snapshot viewer.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Snapshot Viewer ─── */
+
+.snapshot-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+}
+
+.snapshot-viewer {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: 700px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+}
+
+.snapshot-viewer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.snapshot-viewer__header h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--fg-primary);
+}
+
+.snapshot-viewer__close {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: var(--text-2xl);
+  cursor: pointer;
+}
+
+.snapshot-viewer__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.snapshot-viewer__timeline {
+  width: 220px;
+  border-right: 1px solid var(--border-primary);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.snapshot-viewer__empty,
+.snapshot-viewer__hint {
+  padding: 20px;
+  color: var(--fg-dim);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+.snapshot-entry {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: none;
+  border-bottom: 1px solid var(--border-primary);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-primary);
+}
+
+.snapshot-entry:hover {
+  background: var(--bg-hover);
+}
+
+.snapshot-entry--selected {
+  background: var(--bg-active);
+}
+
+.snapshot-entry__time {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.snapshot-entry__size {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  margin-top: var(--space-1);
+}
+
+.snapshot-viewer__preview {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+.snapshot-viewer__content {
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--editor-font-mono, monospace);
+  margin: 0;
+}
+
+.snapshot-viewer__footer {
+  padding: var(--space-5) var(--space-6);
+  border-top: 1px solid var(--border-primary);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.snapshot-viewer__restore-btn {
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius-control);
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.snapshot-viewer__restore-btn:hover {
+  background: var(--accent-hover);
+}
+
+.snapshot-viewer__restore-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+

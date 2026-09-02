@@ -1,0 +1,136 @@
+/* Floating formatting toolbar and page preview tooltip.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Formatting toolbar (floating tooltip) */
+.cm-formatting-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  padding: var(--space-2) var(--space-3);
+  box-shadow: var(--popup-shadow);
+  position: relative;
+}
+
+.cm-fmt-toolbar__block-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-4);
+  min-width: 32px;
+}
+
+.cm-fmt-toolbar__block-btn:hover {
+  background: var(--bg-hover);
+}
+
+.cm-fmt-toolbar__sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-primary);
+  margin: 0 var(--space-2);
+}
+
+.cm-fmt-toolbar__btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--text-lg);
+  padding: 4px 7px;
+  min-width: 28px;
+  text-align: center;
+}
+
+.cm-fmt-toolbar__btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.cm-fmt-toolbar__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--space-2);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+  min-width: 180px;
+  z-index: var(--z-menu);
+}
+
+.cm-fmt-toolbar__dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: var(--popup-item-padding);
+  text-align: left;
+}
+
+.cm-fmt-toolbar__dropdown-item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.cm-fmt-toolbar__dropdown-icon {
+  display: inline-block;
+  width: 24px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+/* Page preview tooltip */
+.cm-tooltip-page-preview {
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  padding: 10px 14px;
+  max-width: 350px;
+  box-shadow: var(--popup-shadow);
+}
+
+.cm-tooltip-page-preview__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: var(--space-3);
+}
+
+.cm-tooltip-page-preview__body {
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
+.cm-tooltip-page-preview__empty {
+  font-size: var(--text-base);
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.cm-tooltip-page-preview--missing {
+  color: var(--fg-dim);
+  font-style: italic;
+  font-size: var(--text-base);
+}
+

@@ -1,0 +1,109 @@
+/* Right-panel divider and collapsed-panel floating toggle.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* The tab bar's own border-bottom is clipped 40px short of the right edge
+   (see .right-panel__tabs clip-path, which keeps overflowing tab icons out
+   of the collapse-toggle's zone). Draw the divider on the un-clipped panel
+   container instead so it reaches the window edge — matching the left
+   sidebar's mode-bar border. The 38px height mirrors .right-panel__tabs
+   min-height so the line lands exactly where the tab bar ends. */
+.right-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  border-bottom: 1px solid var(--border-primary);
+  pointer-events: none;
+}
+
+.app-shell--right-collapsed .right-panel {
+  display: none;
+}
+
+.right-panel-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  margin: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+
+.right-panel-toggle:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* When the right panel is collapsed, the floating toggle drops onto the
+   editor's own tab strip at the top-right — exactly where the pane menu sits.
+   Reserve its width (matching its right offset) so the toggle lands in an
+   empty gap instead of stacking over the pane menu and showing through to it.
+   Making the toggle opaque instead would just hide the pane menu. */
+.app-shell--right-collapsed .main-content__tabs {
+  padding-right: 40px;
+}
+
+.right-panel__section {
+  margin-bottom: var(--space-6);
+}
+
+.right-panel__heading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--fg-muted);
+  margin-bottom: var(--space-4);
+}
+
+.status-bar {
+  grid-area: status;
+  background: var(--status-bg);
+  color: var(--status-fg);
+  font-size: var(--text-base);
+  padding: var(--space-1) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: 22px;
+}
+
+.status-bar__btn {
+  background: var(--status-btn-bg);
+  border: none;
+  color: var(--status-fg);
+  font-size: var(--text-sm);
+  padding: 1px 8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.status-bar__btn:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+.status-bar__btn + .status-bar__btn {
+  margin-left: 0;
+}
+
+.status-bar__spacer {
+  flex: 1;
+}
+
+.status-bar__stat {
+  font-size: var(--text-base);
+  color: var(--status-fg);
+  padding: 0 var(--space-3);
+}
+

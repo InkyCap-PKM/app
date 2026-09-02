@@ -1,0 +1,310 @@
+/* Scaffold picker, templates pane, legacy templates modal.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Scaffold picker (Ctrl+\) ────────────────────────────────────────── */
+
+.scaffold-picker {
+  width: 460px;
+  max-width: 90vw;
+}
+
+.scaffold-picker__header {
+  padding: 10px 14px 8px 14px;
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.scaffold-picker__title {
+  font-weight: 600;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+}
+
+.scaffold-picker__hint {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.scaffold-picker__results {
+  outline: none;
+}
+
+.scaffold-picker__results .quick-open__empty code {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+  font-size: 0.9em;
+}
+
+/* ── Templates pane (.templates-pane) ───────────────────────────────────
+   Inline sidebar pane (rendered when LeftSidebar mode === "templates").
+   Triggered by the LayoutTemplate button on the vertical toolbar. The
+   list-item / badge / button styles below (.templates-panel__*) are
+   shared with this pane. */
+
+.templates-pane__header {
+  gap: var(--space-2);
+}
+
+.templates-pane__title {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+}
+
+.templates-pane__tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-3);
+}
+
+.templates-pane__header-spacer {
+  flex: 1;
+}
+
+.templates-pane__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-2) var(--space-5);
+}
+
+.templates-pane__help {
+  margin: var(--space-2) var(--space-5) var(--space-4) var(--space-5);
+  padding: 8px 10px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+
+.templates-pane__help p {
+  margin: 0;
+}
+
+.templates-pane__help code {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+  font-size: 0.9em;
+}
+
+.templates-pane__body {
+  padding: var(--space-2) 0 var(--space-5) 0;
+  overflow-y: auto;
+}
+
+.templates-pane__item {
+  gap: var(--space-3);
+}
+
+.templates-pane__item .templates-panel__item-action,
+.templates-pane__item .templates-panel__item-icon {
+  flex: 0 0 auto;
+}
+
+/* ── Templates modal (.templates-panel) — DEPRECATED, kept only because
+   the list/button/badge styles below are still consumed by the sidebar
+   pane above. The original modal mount was removed. */
+
+.templates-panel {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: 560px;
+  max-width: 92vw;
+  max-height: 80vh;
+  box-shadow: var(--modal-shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.templates-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.templates-panel__refresh {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+}
+
+.templates-panel__refresh:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.templates-panel__body {
+  padding: var(--space-5) var(--space-6) var(--space-6) var(--space-6);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.templates-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.templates-panel__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.templates-panel__section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  font-size: var(--text-md);
+}
+
+.templates-panel__btn-group {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.templates-panel__new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--fg-primary);
+  font-size: var(--text-sm);
+  padding: 3px 8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.templates-panel__new-btn:hover {
+  background: var(--bg-hover);
+}
+
+.templates-panel__section-desc {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.templates-panel__section-desc code {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  padding: 0 var(--space-2);
+  font-size: 0.9em;
+}
+
+.templates-panel__list {
+  list-style: none;
+  margin: var(--space-2) 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.templates-panel__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.templates-panel__item-main {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-primary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-md);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.templates-panel__item-main:hover {
+  background: var(--bg-hover);
+}
+
+.templates-panel__item-action {
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.templates-panel__item-action:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.templates-panel__version {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.templates-panel__item-icon {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+}
+
+.templates-panel__item-icon:hover {
+  background: var(--bg-hover);
+  color: var(--accent-danger);
+}
+
+.templates-panel__badge {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  letter-spacing: 0.3px;
+}
+
+.templates-panel__empty {
+  padding: 8px 10px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+

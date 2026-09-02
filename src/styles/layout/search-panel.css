@@ -1,0 +1,47 @@
+/* Search panel header (input, tips, options rows).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Search Panel ── */
+
+.search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Fill the sidebar content box so the input + controls stay pinned at the
+     top and only the results list scrolls (see `.search-panel__results`).
+     Without this the whole panel grows and the shared `.left-sidebar__content`
+     scrolls everything, carrying the search box off-screen. */
+  height: 100%;
+  min-height: 0;
+}
+
+/* Every header element (input row, tips, replace row, options row, status,
+   pagination, error) keeps its size; only the results region flexes/scrolls. */
+.search-panel > :not(.search-panel__results) {
+  flex-shrink: 0;
+}
+
+.search-panel__input-row,
+.search-panel__replace-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.search-panel__input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  padding: 5px 8px;
+  font-size: var(--text-md);
+  outline: none;
+  min-width: 0;
+}
+
+.search-panel__input:focus {
+  border-color: var(--accent);
+}
+

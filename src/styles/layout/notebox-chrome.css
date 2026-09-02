@@ -1,0 +1,272 @@
+/* Notebox name/switcher, management pane, notebox-lost banner.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Status bar: clickable notebox name ─── */
+
+/* Matches the pending-review badge: an accent-tinted clickable chip. */
+.status-bar__notebox-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--status-btn-bg);
+  border: none;
+  color: var(--accent-text, var(--status-fg));
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.status-bar__notebox-name:hover {
+  background: var(--status-btn-bg-hover);
+}
+
+/* ─── Notebox switcher popup ─── */
+
+.context-menu__item:has(.notebox-switcher__name),
+.context-menu__item:has(svg) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.notebox-switcher__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Each notebox row pairs the switch action (fills the row) with a trailing
+   "open in a new window" button, which only tints on hover so it stays quiet
+   until reached for. */
+.notebox-switcher__row {
+  display: flex;
+  align-items: center;
+}
+
+.notebox-switcher__switch {
+  flex: 1;
+  min-width: 0;
+}
+
+.notebox-switcher__new-window {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: var(--space-2);
+  padding: var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.notebox-switcher__new-window:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* A notebox already open in another window: greyed and unclickable in the
+   switcher (one notebox per window), tagged so the reason is obvious. */
+.notebox-switcher__switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notebox-switcher__badge {
+  margin-left: var(--space-3);
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* ─── Notebox management (Settings > Overview) ─── */
+
+.notebox-row {
+  align-items: flex-start;
+}
+
+/* Registry rows (not the add/clone/import forms, which lack data-notebox-path)
+   float their action buttons top-right and out of flow, so the info column —
+   and the per-notebox collaboration line with its experimental notice — can use
+   the full row width before wrapping, instead of being boxed into the narrow
+   space left of the buttons. `top` matches the row's 10px padding. */
+.notebox-row[data-notebox-path] {
+  position: relative;
+}
+
+.notebox-row[data-notebox-path] > .notebox-row__actions {
+  position: absolute;
+  top: 10px;
+  right: 0;
+}
+
+.notebox-row__name-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notebox-row__edit-btn {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: var(--space-1);
+  flex-shrink: 0;
+}
+
+.notebox-row__edit-btn:hover {
+  color: var(--accent);
+}
+
+.notebox-row__inline-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A field row inside an add/clone/import form: the text input paired with its
+   inline "?" help trigger, so the explanatory hint lives in the popover rather
+   than cramped into the input's placeholder. */
+.notebox-form__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notebox-row__inline-edit .settings__text-input {
+  flex: 1;
+}
+
+.notebox-row__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-1);
+  flex-shrink: 0;
+}
+
+.notebox-row__icon-btn:hover {
+  color: var(--accent);
+}
+
+.notebox-row__icon-btn--cancel:hover {
+  color: var(--accent-danger);
+}
+
+.notebox-row__active-badge {
+  font-size: var(--text-xs, 11px);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.notebox-row__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+/* Per-notebox collaboration toggle line, sitting under the notebox path. */
+.notebox-row__collab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.notebox-row__collab-icon {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+  transition: color var(--dur-fast) ease;
+}
+
+/* When collaboration is on for this notebox, the handshake reads as a live,
+   accented status rather than a dim decorative glyph. */
+.notebox-row__collab-icon--active {
+  color: var(--accent);
+}
+
+.notebox-row__collab-label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.notebox-row__collab-configure {
+  margin-left: var(--space-1);
+}
+
+/* Section header title group: the label and its inline help "?" trigger sit
+   together on the left while the section's action buttons stay on the right. */
+.settings__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+
+/* ─── Notebox-lost banner (top-of-app warning when the notebox directory
+       has vanished from disk while the app is still running) ─── */
+
+.notebox-lost-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: var(--space-4) var(--space-6);
+  background: color-mix(in srgb, var(--accent-danger) 45%, black);
+  color: var(--fg-on-accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-danger) 65%, black);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.notebox-lost-banner__icon {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+}
+
+.notebox-lost-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.notebox-lost-banner__title {
+  font-weight: 600;
+}
+
+.notebox-lost-banner__detail {
+  opacity: 0.92;
+}
+
+.notebox-lost-banner__path {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: 0.9em;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  word-break: break-all;
+}
+

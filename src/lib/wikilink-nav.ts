@@ -110,7 +110,7 @@ async function openInMycelialView(target: string): Promise<void> {
  *
  * Built as plain DOM (not a Solid component) so it can be summoned identically
  * from CodeMirror widgets and Solid components. Reuses the shared `.context-menu`
- * styling from layout.css.
+ * styling from styles/layout/context-menu.css.
  */
 export function showWikilinkContextMenu(
   x: number,

@@ -1,0 +1,146 @@
+/* Enhanced links (external-link icons, hover affordances).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Enhanced Links ── */
+
+/* Toolbar above the Inbound/Outbound/Potential sections. Mirrors the
+   search-panel options row so the controls feel native — same icon-btn
+   styling, same right-anchored sort menu, same height. The buttons are
+   centered horizontally so the cluster sits as a balanced toolbar
+   rather than hugging the left edge. */
+.right-panel__links-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+.right-panel__links-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 var(--space-2) var(--space-3);
+}
+
+.right-panel__links-filter-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-input);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  padding: 5px 8px;
+  padding-right: 26px;
+  outline: none;
+  min-width: 0;
+}
+
+.right-panel__links-filter-input:focus {
+  border-color: var(--accent);
+}
+
+.right-panel__links-filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary, var(--bg-hover));
+  border: none;
+  border-radius: 50%;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.right-panel__links-filter-clear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* Clickable variant of the existing section header. The visual style
+   stays identical to a non-clickable Properties / Outline header so
+   the Links pane reads consistent with its neighbours — the only
+   affordance is the cursor + a subtle hover lift and the chevron sitting
+   in the header-actions slot. */
+.right-panel__section-header--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.right-panel__section-header--clickable:hover {
+  color: var(--fg-secondary);
+}
+
+.right-panel__section-header--clickable:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: var(--radius-control);
+}
+
+.right-panel__section-chevron {
+  color: var(--fg-dim);
+}
+
+/* The "match" line of an inbound/potential preview stays on one line by
+   default (.link-context's existing rule). The ctx- variant carries the
+   before/after lines surfaced when "More context" is on; those are
+   visually subdued and allowed to wrap so the user gets readable
+   surrounding text instead of an ellipsis. */
+.link-context--match {
+  color: var(--fg-muted);
+}
+
+.link-context--ctx {
+  color: var(--fg-dim);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  padding-top: 0;
+  padding-bottom: var(--space-1);
+}
+
+.link-context {
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  padding: 2px 0 6px 24px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-context__match {
+  color: var(--accent-text);
+}
+
+.link--unresolved .sidebar-item__label {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.link--unresolved .sidebar-item__icon {
+  color: var(--fg-dim);
+}
+
+.link__create-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 0 var(--space-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.link__create-btn:hover {
+  text-decoration: underline;
+}
+

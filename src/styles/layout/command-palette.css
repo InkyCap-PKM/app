@@ -1,0 +1,117 @@
+/* Command palette.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Command Palette ── */
+
+.cmd-palette__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.cmd-palette {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  width: 560px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+  overflow: hidden;
+}
+
+.cmd-palette--tall {
+  max-height: 520px;
+}
+
+.cmd-palette__input {
+  background: var(--bg-primary);
+  border: none;
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--fg-primary);
+  font-size: var(--text-lg);
+  padding: var(--space-5) var(--space-6);
+  outline: none;
+  font-family: inherit;
+}
+
+.cmd-palette__results {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cmd-palette__result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  cursor: pointer;
+  font-size: var(--text-lg);
+}
+
+.cmd-palette__result:hover,
+.cmd-palette__result--selected {
+  background: var(--bg-hover);
+}
+
+.cmd-palette__result--selected {
+  background: var(--bg-selection);
+}
+
+.cmd-palette__result-category {
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.cmd-palette__result-title {
+  color: var(--fg-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-palette__keybinding {
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  padding: var(--space-1) var(--space-3);
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.cmd-palette__shortcut {
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  font-family: var(--editor-font-mono, monospace);
+}
+
+.cmd-palette__highlight {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.cmd-palette__empty {
+  color: var(--fg-dim);
+  text-align: center;
+  padding: var(--space-6);
+  font-size: var(--text-md);
+}
+

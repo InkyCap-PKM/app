@@ -1,0 +1,137 @@
+/* Scroll Context right-panel surface.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Scroll Context right-panel surface ─── */
+
+.scroll-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+}
+
+.scroll-context__empty {
+  padding: var(--space-6) var(--space-5);
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  font-style: italic;
+  text-align: center;
+}
+
+/* Section body — a light card on the panel's darker (--bg-secondary)
+   background so content reads as distinct from the section headings
+   above it. */
+.scroll-context__section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-2) 0;
+  padding: var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+}
+
+.scroll-context__outline-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block: 4px;
+}
+
+.scroll-context__outline-title {
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  font-weight: 600;
+  padding: var(--space-1) 0;
+  text-align: left;
+}
+
+.scroll-context__outline-title:hover {
+  color: var(--accent);
+}
+
+.scroll-context__outline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.scroll-context__outline-heading button {
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: var(--space-1) 0;
+  text-align: left;
+  width: 100%;
+}
+
+.scroll-context__outline-heading button:hover {
+  color: var(--fg-primary);
+}
+
+.scroll-context__connection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 3px;
+  text-align: left;
+}
+
+.scroll-context__connection:hover {
+  background: var(--bg-hover);
+}
+
+.scroll-context__connection-dirs {
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  font-family: var(--editor-font-mono, monospace);
+}
+
+.scroll-context__tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Informational chip — shows which tags concentrate on the visible
+   entries. Not interactive: the scroll has no per-tab filter to narrow to. */
+.scroll-context__tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-primary);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-4);
+}
+
+.scroll-context__tag-count {
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.scroll-context__empty-row {
+  color: var(--fg-dim);
+  font-size: var(--text-sm);
+  font-style: italic;
+  padding: var(--space-2) 0;
+}
+
+/* Citation rows in the Scroll Context pane use the shared `.citation-row`
+   styles — see the citation-row block above. */
+

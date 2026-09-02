@@ -1,0 +1,108 @@
+/* Quick-open palette and folder picker.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Quick-open command palette */
+.quick-open__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.quick-open {
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border-color);
+  border-radius: var(--modal-radius);
+  /* ~1/3 wider than the previous 500px, but capped to the viewport so it
+     stays usable in a narrow window. */
+  width: min(680px, 92vw);
+  max-height: 520px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--modal-shadow);
+  overflow: hidden;
+}
+
+.quick-open__input {
+  background: var(--bg-primary);
+  border: none;
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--fg-primary);
+  font-size: var(--text-lg);
+  padding: var(--space-5) var(--space-6);
+  outline: none;
+  font-family: inherit;
+}
+
+.quick-open__results {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.quick-open__result {
+  display: flex;
+  align-items: baseline;
+  /* Let a long folder path drop onto its own line beneath the name rather
+     than being clipped when name + path can't share one row. */
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  cursor: pointer;
+  font-size: var(--text-lg);
+}
+
+.quick-open__result:hover,
+.quick-open__result--selected {
+  background: var(--bg-hover);
+}
+
+.quick-open__result--selected {
+  background: var(--bg-selection);
+}
+
+.quick-open__result-name {
+  color: var(--fg-primary);
+  /* Wrap rather than ellipsize so a very long name stays fully readable. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quick-open__result-folder {
+  color: var(--fg-dim);
+  font-size: var(--text-base);
+  /* Wrap a deep directory path onto as many lines as it needs. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quick-open__highlight {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.quick-open__empty {
+  color: var(--fg-dim);
+  text-align: center;
+  padding: var(--space-6);
+  font-size: var(--text-md);
+}
+
+/* Folder picker (Move file/folder to…) — reuses .quick-open__* and adds
+   a keyboard-hint footer. */
+.folder-picker__footer {
+  display: flex;
+  gap: var(--space-6);
+  justify-content: center;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+

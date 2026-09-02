@@ -1,0 +1,98 @@
+/* Column header quick-filter popover.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Column header quick-filter popover ───────────────────────────────────
+   A floating, transient surface (a menu by role), so it uses the --popup-*
+   tokens and sits at the --z-menu tier. Anchored under the header funnel by
+   `anchorPanelMenu`. */
+.column-filter {
+  position: fixed;
+  z-index: var(--z-menu);
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.column-filter__header {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.column-filter__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.column-filter__row--dates {
+  flex-wrap: wrap;
+}
+
+.column-filter__search,
+.column-filter__value {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.column-filter__between {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  margin-inline: var(--space-1);
+}
+
+/* Scrollable checklist of the column's distinct values. */
+.column-filter__options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.column-filter__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  line-height: 1.4;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* The list is a flex column inside a max-height + overflow-y:auto container.
+     Without this the rows keep the default flex-shrink:1 and get compressed to
+     fit the cap instead of overflowing, squashing each row below its text
+     height (the lines overlapped) and leaving nothing to scroll. Holding their
+     natural height lets the container scroll as intended. */
+  flex-shrink: 0;
+}
+
+.column-filter__option:hover {
+  background: var(--bg-hover);
+}
+
+.column-filter__empty {
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+.column-filter__footer {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+

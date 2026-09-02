@@ -1,0 +1,86 @@
+/* Block-type dropdown and alignment sub-popup.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Block-type dropdown menu ── */
+.selection-toolbar__menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  /* Match the toolbar's contrasting surface — these menus open from it,
+     so a plain --popup-bg menu would jump to the page colour. */
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
+  border-radius: var(--popup-radius);
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
+  padding: var(--popup-padding-block) 0;
+  z-index: var(--z-menu);
+  /* Flipping above the toolbar rescues the menu on a short viewport only if it
+     fits there; with every block type listed it may not. Cap it against the
+     viewport so the placement helper measures a size that can fit, and let the
+     overflow scroll. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.selection-toolbar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--popup-item-padding);
+  border: none;
+  background: transparent;
+  color: var(--toolbar-float-fg-strong);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--interface-font, sans-serif);
+  /* The menu is a flex column inside a max-height + overflow-y:auto container;
+     without this the rows squash instead of scrolling. */
+  flex-shrink: 0;
+}
+
+.selection-toolbar__menu-item:hover {
+  background: var(--toolbar-float-hover-bg);
+  color: var(--toolbar-float-fg-strong);
+}
+
+.selection-toolbar__menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.selection-toolbar__menu-label {
+  flex: 1;
+}
+
+.selection-toolbar__menu-sep {
+  height: 1px;
+  background: var(--toolbar-float-sep);
+  margin: var(--space-2) 0;
+  flex-shrink: 0;
+}
+
+/* ── Alignment sub-popup ── */
+.selection-toolbar__align-popup {
+  position: fixed;
+  display: flex;
+  gap: var(--space-1);
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
+  border-radius: var(--popup-radius);
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
+  padding: 3px;
+  z-index: var(--z-menu);
+}
+

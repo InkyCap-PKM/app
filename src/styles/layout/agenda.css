@@ -1,0 +1,417 @@
+/* Agenda panel: task list, date filters, recurrence editor, saved views.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Agenda panel — flat task/date list with Sort, Task List, and Tags
+   dropdown filters. Reuses `.sidebar-item` for rows. */
+.agenda__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+.agenda__controls-left {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.agenda__controls-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Shared chrome for action buttons that live inside sidebar panes
+   (file tree, collections, agenda): a subtle outline at rest that lights
+   up with the same colour highlight as the sidebar mode buttons on hover.
+   Per-pane classes layer on colour, sizing and spacing. The file-tree
+   split button is structurally different (one outline around two halves)
+   and carries its own rules, but mirrors this hover treatment. */
+.pane-action-btn {
+  background: none;
+  border: 1px solid var(--border-input);
+  /* Small pill controls (agenda Task/Tags/Date/Sort pills, a few sidebar
+     actions) — the small-control radius, shared with the other compact
+     controls via --radius-control. */
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pane-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.agenda__dropdown {
+  color: var(--fg-secondary);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.agenda__dropdown-label {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.agenda__tag-menu {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Agenda date-filter menu: an operator dropdown over one or two date pickers,
+   laid out in a column with a little breathing room. Inherits the .context-menu
+   surface tokens. */
+/* Compound selector (not a bare `.agenda__date-menu`) so these win over the
+   shared `.context-menu` base, which is defined later in the file and zeroes
+   the horizontal padding / sets a 120px min-width for its list-of-items use.
+   Mirrors the comfortable edge spacing of the collection `.column-filter`. */
+.context-menu.agenda__date-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 240px;
+  padding: var(--space-3);
+}
+
+/* Align the "Clear date filter" action's text with the dropdown / date field
+   above it (the menu already provides the horizontal inset), while its hover
+   background still spans the full content width. Direct child only — the
+   operator dropdown's options are also `.context-menu__item`s nested deeper,
+   and must keep their own horizontal padding. */
+.context-menu.agenda__date-menu > .context-menu__item {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.agenda__date-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.agenda__date-and {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  /* A little breathing room on both sides of "and", on top of the row gap. */
+  margin-inline: var(--space-1);
+}
+
+/* In a "within" range, each value sizes to its content (no grow/shrink) so the
+   two date fields keep symmetric spacing around "and" and wrap as whole groups
+   to the next line rather than squeezing a date until it breaks. */
+.agenda__date-row--range .date-value,
+.column-filter__row--range .date-value {
+  flex: 0 0 auto;
+}
+
+/* "Due today" toggle: a plain checkbox + label, sitting between the operator
+   dropdown and the value editor in the date menu. */
+.agenda__date-today {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-md);
+}
+
+/* The date-value field inside the filter surfaces. The DatePicker's trigger is
+   the inline `property-editor__value` span; here it fills the row and gains a
+   right-aligned calendar icon (no border — the icon alone signals it's a date
+   control to click), keeping the menu light. */
+.agenda__date-row .date-picker,
+.column-filter__row--dates .date-picker {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.agenda__date-row .date-picker > .property-editor__value,
+.column-filter__row--dates .date-picker > .property-editor__value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 28px;
+  font-size: var(--text-md);
+  cursor: pointer;
+  /* Never break a date across two lines (e.g. "2026-06-22"). */
+  white-space: nowrap;
+}
+
+/* Themeable calendar icon, right-aligned, so the field reads as a date control
+   even when empty. A mask lets the glyph follow the theme foreground. */
+.agenda__date-row .date-picker > .property-editor__value::after,
+.column-filter__row--dates .date-picker > .property-editor__value::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background-color: var(--fg-dim);
+  -webkit-mask: var(--icon-calendar) center / contain no-repeat;
+  mask: var(--icon-calendar) center / contain no-repeat;
+}
+
+/* The date-filter value editor: a mode toggle (fixed calendar vs. relative
+   "today ± N days") followed by either the DatePicker or the relative offset
+   inputs. It fills the row so its inner picker keeps the full-width treatment
+   above; the toggle stays a fixed-size square. */
+.date-value {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.date-value__mode {
+  flex-shrink: 0;
+}
+
+/* Unit + resolved-date preview stacked, so "= <date>" lines up under the
+   "days from today" label instead of under the toggle/input. */
+.date-value__rel-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.date-value__rel-unit {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* Sized to show ~5 characters at once. The element selector outranks
+   `.property-editor__input`'s `width: 100%`; `flex: 0 0 auto` stops it
+   stretching. Width = content (5ch) + the trimmed horizontal padding + borders
+   (box-sizing is border-box). */
+input.date-value__offset {
+  width: calc(5ch + 2 * var(--space-2) + 2px);
+  flex: 0 0 auto;
+  text-align: center;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+/* The resolved-date preview sits under the unit label (in the stacked text
+   column); dimmed because it's derived, not editable. */
+.date-value__preview {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+}
+
+/* Inline "name this view" row that drops below the Agenda controls when saving
+   a filter set as a bookmark. The name field takes the row; the actions sit
+   beside it. */
+.agenda__save-view {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.agenda__save-view .left-sidebar__filter-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.agenda__tag-check {
+  margin-right: var(--space-3);
+  vertical-align: middle;
+}
+
+.agenda__tag-check--hidden {
+  visibility: hidden;
+}
+
+.agenda__item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.agenda__item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cadence/end-date line under a recurring item's current occurrence — quiet,
+   single-line, so it informs without competing with the title. */
+.agenda__recur-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+}
+
+.agenda__item--done .agenda__item-text {
+  text-decoration: line-through;
+  color: var(--fg-dim);
+}
+
+.agenda__date {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.agenda__date--overdue {
+  color: var(--accent-danger);
+  font-weight: 500;
+}
+
+.agenda__recur-icon {
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+  color: var(--fg-dim);
+}
+
+.agenda__recur-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.agenda__recur-caret:hover {
+  color: var(--fg-primary);
+  background: var(--surface-1);
+}
+
+/* Revealed child occurrences indent under their series' current-occurrence
+   row so the group reads as nested. */
+.agenda__item--recurrence-future {
+  padding-left: 28px;
+}
+
+/* Later occurrences of a recurring series read as quieter echoes of the
+   current one, so a frequent reminder is visible without crowding out one-off
+   items. The current (next) occurrence keeps full strength. */
+.agenda__item--recurrence-future .agenda__item-text {
+  color: var(--fg-muted);
+}
+
+.agenda__item--recurrence-future .agenda__date,
+.agenda__item--recurrence-future .agenda__recur-icon {
+  color: var(--fg-dim);
+}
+
+/* Recurrence editor (the "Repeat" control in the property panel).
+   Rendered as an indented subsection beneath the `due` property row, so it
+   reads as belonging to that date rather than as a free-standing panel. */
+.property-recurrence {
+  padding: var(--space-1) 0 var(--space-3) var(--space-5);
+}
+
+.recurrence-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recurrence-editor--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.recurrence-editor__toggle,
+.recurrence-editor__until-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+
+.recurrence-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-1);
+}
+
+.recurrence-editor__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.recurrence-editor__label {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.recurrence-editor__interval {
+  width: 3rem;
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--fg-primary);
+  font: inherit;
+  text-align: center;
+}
+
+.recurrence-editor__weekdays {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.recurrence-editor__weekday {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-input);
+  background: var(--surface-1);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.recurrence-editor__weekday--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.recurrence-editor__summary {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+

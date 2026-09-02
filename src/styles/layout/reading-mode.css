@@ -1,0 +1,754 @@
+/* Typst reading mode (compiled SVG frames).
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Typst reading mode (compiled SVG, frame-based) ─── */
+
+.typst-reading {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+.typst-reading--html {
+  background: var(--bg-primary);
+}
+
+.typst-reading__status {
+  padding: 24px;
+  color: var(--fg-muted);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+.typst-reading__pages {
+  display: flex;
+  flex-direction: column;
+  /* Left-align the column and centre each page with its own auto margins
+     (below). align-items:center would centre a page wider than the pane too,
+     but flex centring pushes the overflow past BOTH edges — the left edge then
+     clips and can't be scrolled to. Auto margins collapse to 0 on overflow, so
+     a too-wide page (common in a narrow preview split) starts at the left edge
+     and the container's horizontal scroll reaches all of it. */
+  align-items: flex-start;
+  gap: var(--space-6);
+  padding: 24px 16px;
+}
+
+.typst-reading__page {
+  background: #ffffff; /* token-exempt: pages mimic paper, independent of UI theme */
+  /* Pages always show on white regardless of theme — they're a document
+     surface, not a UI surface. */
+  color: #000000; /* token-exempt: pages mimic paper, independent of UI theme */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+  /* Centre within a pane wider than the page; collapses to a left-aligned,
+     horizontally-scrollable layout once the page outgrows the pane. */
+  margin-inline: auto;
+  /* Width/height come from inline style (pt → CSS px). The inline SVG
+     fills the box. */
+}
+
+.typst-reading__page > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.typst-reading__diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  font-size: var(--text-base);
+  font-family: var(--editor-font-mono, monospace);
+}
+
+.typst-reading__diagnostic {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.typst-reading__diagnostic--error {
+  border-color: var(--accent-danger);
+  background: rgba(192, 57, 43, 0.08);
+}
+
+.typst-reading__diagnostic--warning {
+  border-color: var(--accent-warn);
+  background: rgba(214, 137, 16, 0.08);
+}
+
+.typst-reading__diagnostic-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.typst-reading__diagnostic-severity {
+  font-weight: 600;
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+}
+
+.typst-reading__diagnostic--error .typst-reading__diagnostic-severity {
+  color: var(--accent-danger);
+}
+
+.typst-reading__diagnostic--warning .typst-reading__diagnostic-severity {
+  color: var(--accent-warn);
+}
+
+.typst-reading__diagnostic-message {
+  color: var(--fg-primary);
+}
+
+.typst-reading__diagnostic-loc {
+  color: var(--fg-muted);
+}
+
+.typst-reading__diagnostic-hints {
+  margin-top: var(--space-2);
+  color: var(--fg-muted);
+}
+
+/* Shown above the diagnostics when a failed compile was still rendered by
+   dropping the errored span(s). Explains why content appears despite errors. */
+.typst-reading__recovered-note {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-warn);
+  background: rgba(214, 137, 16, 0.08);
+  color: var(--fg-primary);
+}
+
+/* HTML reading view — flowing, copyable content */
+.typst-reading__html-content {
+  padding: 32px 48px;
+  /* `width: 100%` (capped by max-width) gives the box a definite width.
+     Without it, the auto margins below would override align-self:stretch
+     on the flex parent (.typst-reading), shrinking the box to its content
+     and centering short notes instead of left-aligning them. */
+  width: 100%;
+  max-width: 800px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  font-family: var(--md-body-font, var(--editor-font-body, sans-serif));
+  /* Driven by the editor's body-font-size preference so Ctrl+= / Ctrl+-
+     (the "content" zoom target) resize the HTML reading view, matching
+     the visual editor. */
+  font-size: var(--md-body-size, var(--text-xl));
+  line-height: 1.6;
+  color: var(--fg-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.typst-reading__html-content h1,
+.typst-reading__html-content h2,
+.typst-reading__html-content h3,
+.typst-reading__html-content h4,
+.typst-reading__html-content h5,
+.typst-reading__html-content h6 {
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+  color: var(--fg-primary);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+/* Typst's HTML export emits semantic <h1>–<h6> but no sizing — the consumer
+   supplies the type scale. Without these the reading view rendered every
+   heading at the body size. Sizes are `em`-relative so the content zoom
+   (Ctrl+= / Ctrl+-, which drives --md-body-size) scales headings with the body. */
+.typst-reading__html-content h1 { font-size: 1.8em; font-weight: 700; }
+.typst-reading__html-content h2 { font-size: 1.5em; font-weight: 700; }
+.typst-reading__html-content h3 { font-size: 1.3em; }
+.typst-reading__html-content h4 { font-size: 1.15em; }
+.typst-reading__html-content h5 { font-size: 1.05em; }
+.typst-reading__html-content h6 { font-size: 1em; color: var(--fg-muted); }
+
+.typst-reading__html-content p {
+  margin: 0.8em 0;
+}
+
+.typst-reading__html-content a {
+  color: var(--syntax-link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--syntax-link) 40%, transparent);
+}
+
+.typst-reading__html-content a:hover {
+  text-decoration-color: var(--syntax-link);
+}
+
+.typst-reading__html-content a:not(.inkycap-wikilink)[href^="http"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: var(--space-1);
+  vertical-align: baseline;
+  position: relative;
+  top: 0.05em;
+  opacity: 0.45;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.typst-reading__html-content pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: var(--space-5) var(--space-6);
+  overflow-x: auto;
+  font-family: var(--editor-font-mono, monospace);
+  font-size: 0.9em;
+}
+
+.typst-reading__html-content code {
+  font-family: var(--editor-font-mono, monospace);
+  font-size: 0.9em;
+}
+
+.typst-reading__html-content :not(pre) > code {
+  background: var(--bg-active);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.typst-reading__html-content table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+}
+
+.typst-reading__html-content th,
+.typst-reading__html-content td {
+  border: 1px solid var(--border-primary);
+  padding: var(--space-4) var(--space-5);
+  text-align: left;
+}
+
+.typst-reading__html-content th {
+  background: var(--bg-active);
+  font-weight: 600;
+}
+
+.typst-reading__html-content blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: var(--fg-secondary);
+}
+
+.typst-reading__html-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.typst-reading__html-content figure {
+  margin: 1.5em 0;
+  text-align: center;
+}
+
+.typst-reading__html-content figcaption {
+  font-size: 0.9em;
+  color: var(--fg-muted);
+  margin-top: 0.5em;
+}
+
+.typst-reading__html-content ul,
+.typst-reading__html-content ol {
+  padding-left: 1.5em;
+  margin: 0.8em 0;
+}
+
+.typst-reading__html-content li > ul,
+.typst-reading__html-content li > ol {
+  margin: 0;
+}
+
+/* Typst's HTML backend wraps an <li>'s text in <p> when the item contains
+   block children (e.g. a nested list). The default <p> margin then breaks
+   visual continuity with sibling list items. */
+.typst-reading__html-content li > p {
+  margin: 0;
+}
+
+/* Typst emits bibliography entries as <section role="doc-bibliography"> with
+   a <ul> of <li> entries. The section carries class="hanging-indent" when the
+   citation style calls for it (Chicago, APA, MLA, etc.). */
+.typst-reading__html-content section[role="doc-bibliography"] {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] > h2 {
+  margin-top: 0;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] ul {
+  padding-left: 0;
+  margin: 0;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"] li {
+  margin: 0.8em 0;
+  line-height: 1.5;
+}
+
+.typst-reading__html-content section[role="doc-bibliography"].hanging-indent li {
+  padding-left: 2em;
+  text-indent: -2em;
+}
+
+/* Typst emits footnote bodies as <section role="doc-endnotes"> at the end of
+   the document. Without explicit styling it renders flush against the body
+   text and reads as more content — give it a clear visual break. */
+.typst-reading__html-content section[role="doc-endnotes"] {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.9em;
+  color: var(--fg-secondary);
+}
+
+.typst-reading__html-content section[role="doc-endnotes"] ol {
+  padding-left: 1em;
+  margin: 0;
+}
+
+.typst-reading__html-content section[role="doc-endnotes"] li {
+  margin: 0.4em 0;
+}
+
+.typst-reading__html-content section[role="doc-endnotes"] li > a[role="doc-backlink"] {
+  margin-right: 0.4em;
+  text-decoration: none;
+}
+
+.typst-reading__html-content a[role="doc-noteref"] {
+  text-decoration: none;
+  color: var(--footnote-ref);
+}
+
+.typst-reading__html-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Admonition callouts (#callout) and annotations (#annotation). The notebox
+   package emits these as <div class="inkycap-callout …"> on the HTML target
+   (typst-html can't carry the paged `block` box styling), passing the resolved
+   kind colour through the --inkycap-callout-color custom property. Mirrors the
+   paged/SVG and visual-editor look: a left border + faint tint + coloured
+   title. */
+.typst-reading__html-content .inkycap-callout {
+  border-left: 3px solid var(--inkycap-callout-color, var(--accent-info));
+  background: color-mix(in srgb, var(--accent-info) 8%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--space-4) var(--space-5);
+  margin: 1em 0;
+}
+
+.typst-reading__html-content .inkycap-callout__title {
+  font-weight: 600;
+  color: var(--inkycap-callout-color, var(--accent-info));
+  font-size: 0.95em;
+  margin-bottom: 0.25em;
+}
+
+.typst-reading__html-content .inkycap-annotation {
+  border-left: 2px solid var(--annotation-accent);
+  background: color-mix(in srgb, var(--annotation-accent) 6%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 6px 10px;
+  margin: 1em 0;
+}
+
+.typst-reading__html-content .inkycap-annotation__title {
+  font-weight: 600;
+  color: var(--annotation-accent);
+  font-size: 0.8em;
+  margin-bottom: 0.25em;
+}
+
+/* The body's first/last block (a <p> Typst wraps text in) shouldn't add
+   margin past the callout padding. */
+.typst-reading__html-content .inkycap-callout__body > :first-child,
+.typst-reading__html-content .inkycap-annotation__body > :first-child {
+  margin-top: 0;
+}
+
+.typst-reading__html-content .inkycap-callout__body > :last-child,
+.typst-reading__html-content .inkycap-annotation__body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Term lists (`/ Term: definition`) → <dl><dt><dd>. */
+.typst-reading__html-content dl {
+  margin: 0.8em 0;
+}
+.typst-reading__html-content dt {
+  font-weight: 600;
+  margin-top: 0.6em;
+}
+.typst-reading__html-content dd {
+  margin: 0 0 0.4em 1.5em;
+}
+
+/* Highlight (#highlight) → <mark>; the notebox package sets the background
+   colour inline, so here we only keep the text readable (the UA stylesheet
+   forces black) and soften the corners. */
+.typst-reading__html-content mark {
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+/* Inline quote (#quote[…]) → <q>: don't let the UA's auto quotation marks
+   double up with any the writer typed; keep it as plain emphasised text. */
+.typst-reading__html-content q {
+  quotes: "\201C" "\201D" "\2018" "\2019";
+}
+
+/* Embedded media (#video / #audio) → <video controls> / <audio controls>. */
+.typst-reading__html-content video,
+.typst-reading__html-content audio {
+  max-width: 100%;
+}
+
+/* Whitespace-preserving verse (#verse) → <div class="inkycap-verse">; the
+   package sets white-space / alignment / font inline, so this only spaces it. */
+.typst-reading__html-content .inkycap-verse {
+  margin: 1em 0;
+}
+
+/* Horizontal rule (#line(length: 100%)) and any emitted <hr>. */
+.typst-reading__html-content hr {
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  margin: 1.5em 0;
+}
+
+/* Strikethrough (#strike → <s>/<del>) — explicit so a future CSS reset can't
+   silently drop the line. */
+.typst-reading__html-content s,
+.typst-reading__html-content del {
+  text-decoration: line-through;
+}
+
+/* No top gap above the very first block (Typst wraps leading text in <p>,
+   and the first heading carries margin-top). */
+.typst-reading__html-content > :first-child {
+  margin-top: 0;
+}
+
+/* Generic icon-only button in the editor header right group
+   (e.g. the Mycelial View button). */
+.editor-header__icon-btn {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-base);
+  padding: var(--space-2) var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+.editor-header__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+}
+
+.editor-header__icon-btn svg {
+  display: block;
+  flex-shrink: 0;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+/* Toolbar overflow menu: when a pane is too narrow for the header controls to
+   sit inline, they collapse behind this single "⋯" button (see
+   `compactToolbar` in TypstEditor). The popup drops the same control groups —
+   stacked — using the shared --popup-* surface tokens. */
+.editor-header__overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.editor-header__overflow-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+}
+
+/* Each control in the overflow menu is a labelled row: a muted label on the
+   left, the control (segmented toggle / stepper / icon action) pinned right.
+   Uniform rows turn the ragged inline cluster into a tidy settings panel. */
+.editor-header__menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.editor-header__menu-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.editor-header__menu-control {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.editor-header__overflow-popup .editor-header__menu-divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border-subtle);
+}
+
+/* Reading format toggle (SVG / HTML segmented control).
+   Reuses .editor-header__mode-toggle / __mode-seg and tints the active
+   segment with a format-specific accent so the control reads as a picker
+   rather than a status badge. Text is downsized relative to the mode
+   toggle next to it — the format pick is secondary to source/visual/
+   reading and shouldn't shout. */
+.editor-header__format-seg {
+  font-size: var(--text-sm);
+  padding: 3px 8px;
+}
+
+.editor-header__format-seg.is-format-svg.is-active {
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+  color: var(--accent-green);
+}
+
+.editor-header__format-seg.is-format-html.is-active {
+  background: color-mix(in srgb, var(--accent-orange) 16%, transparent);
+  color: var(--accent-orange);
+}
+
+/* Reading-view zoom control (− / level / +). Reuses the same segmented shell
+   as the mode and format toggles; only the level readout needs its own rule,
+   for a stable width so stepping through 100% → 83% → 69% doesn't shift the
+   ± buttons under the pointer. `ch` keeps that width tied to the font rather
+   than a hardcoded pixel guess. */
+.editor-header__zoom-level {
+  font-size: var(--text-sm);
+  padding: 3px 6px;
+  min-width: 4.5ch;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-header__zoom .editor-header__mode-seg {
+  padding: 3px 6px;
+}
+
+.editor-header__zoom .editor-header__mode-seg:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.editor-header__zoom .editor-header__mode-seg:disabled:hover {
+  background: none;
+  color: var(--fg-muted);
+}
+
+/* Slash command palette (/ key in visual editor) */
+.command-palette {
+  position: fixed;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--popup-padding-block) 0;
+}
+
+.command-palette__category {
+  padding: var(--space-3) var(--space-5) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-dim);
+  letter-spacing: 0.05em;
+}
+
+.command-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--popup-item-padding);
+  cursor: pointer;
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+}
+
+.command-palette__item.is-selected {
+  background: var(--bg-selection);
+  color: var(--fg-primary);
+}
+
+.command-palette__item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette__shortcut {
+  flex: 0 0 auto;
+  font-family: var(--editor-font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* "More symbols…"-style group rows: a chevron hints at expand/collapse. */
+.command-palette__submenu-caret {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+/* A group's children, shown inline beneath it when expanded. */
+.command-palette__item--child {
+  padding-left: 26px;
+}
+
+/* Paste-as-URL popup menu */
+.paste-url-menu {
+  position: fixed;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  min-width: 140px;
+  padding: var(--popup-padding-block) 0;
+}
+
+.paste-url-menu__header {
+  padding: var(--space-3) var(--space-5) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+
+.paste-url-menu__item {
+  padding: var(--popup-item-padding);
+  cursor: pointer;
+  font-size: var(--text-md);
+  color: var(--fg-primary);
+}
+
+.paste-url-menu__item.is-selected {
+  background: var(--bg-selection);
+  color: var(--fg-primary);
+}
+
+/* Floating selection toolbar — surface from the shared --popup-* tokens. */
+/* The selection toolbar floats directly over document text, so unlike
+   menus that open into empty space it uses a contrasting surface
+   (--toolbar-float-*) rather than plain --popup-bg, which equals the
+   page background. */
+.selection-toolbar {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--toolbar-float-bg);
+  border: 1px solid var(--toolbar-float-border);
+  border-radius: var(--popup-radius);
+  /* Inset top highlight defines the toolbar edge on dark themes without
+     having to brighten the whole surface. Light themes pass `transparent`,
+     so the highlight is a no-op there. */
+  box-shadow:
+    inset 0 1px 0 0 var(--toolbar-float-highlight),
+    var(--popup-shadow);
+  padding: 3px;
+  z-index: var(--z-menu);
+}
+
+.selection-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--toolbar-float-fg);
+  font-size: var(--text-md);
+  cursor: pointer;
+  font-family: var(--editor-font-mono, monospace);
+  gap: 1px;
+}
+
+.selection-toolbar__btn:hover {
+  background: var(--toolbar-float-hover-bg);
+  color: var(--toolbar-float-fg-strong);
+}
+
+.selection-toolbar__btn svg {
+  flex-shrink: 0;
+}
+
+.selection-toolbar__dropdown-trigger {
+  gap: var(--space-1);
+  width: auto;
+  padding: 0 var(--space-3);
+}
+
+.selection-toolbar__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--toolbar-float-sep);
+  margin: 0 var(--space-1);
+  flex-shrink: 0;
+}
+

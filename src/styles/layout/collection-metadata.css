@@ -1,0 +1,652 @@
+/* Collection metadata editor.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ── Collection Metadata Editor ── */
+
+.collection-meta {
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.collection-meta__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  background: var(--bg-secondary);
+  border: none;
+  padding: 6px 10px;
+  font-size: var(--text-base);
+  color: var(--fg-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.collection-meta__toggle:hover {
+  background: var(--bg-hover);
+}
+
+.collection-meta__name {
+  font-weight: 600;
+}
+
+.collection-meta__subtitle {
+  color: var(--fg-muted);
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.collection-meta__body {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+}
+
+/* Collection Settings tab body in the right panel — the rows reuse the
+   `.collection-meta__*` styles, this just provides the vertical rhythm the
+   old `.collection-meta__body` wrapper gave inside the table. */
+.collection-settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.collection-meta__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  /* Trailing controls (a Browse button, a help "?", an inline checkbox's
+     hint) wrap onto the next line instead of pushing the row past the
+     panel's right edge. */
+  flex-wrap: wrap;
+}
+
+/* The right panel is narrow (and user-resizable down to 160px), so the
+   default 200px-wide, non-shrinking text input overflowed it and forced a
+   horizontal scrollbar. In a collection field, let text inputs shrink to the
+   space available — small fixed-width inputs (sizes, languages) keep their
+   inline width because they never need to shrink. */
+.collection-meta__row .settings__text-input {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Style Overrides controls: a length field (number + unit dropdown) and a
+   preset picker (dropdown + optional revealed custom field). Both follow the
+   row label and fill the remaining width, shrinking with the narrow panel. */
+.length-input,
+.preset-select {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Trailing control cluster after a collection-meta label — a text input paired
+   with a dropdown and/or a Browse button (template, bibliography style/file).
+   Wraps onto the next line in the narrow, user-resizable right panel instead of
+   overflowing past its edge or shrinking the input to nothing. */
+.collection-meta__control-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Keep the paired input usable: it fills the row but never collapses below a
+   legible width, so it drops to its own line rather than vanishing. */
+.collection-meta__control-group .settings__text-input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.length-input__num {
+  width: 64px;
+  flex-shrink: 0;
+}
+
+.preset-select__custom {
+  flex: 1;
+  min-width: 100px;
+}
+
+.collection-meta__row--top {
+  align-items: flex-start;
+}
+
+.collection-meta__inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.collection-meta__tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: var(--space-2);
+}
+
+.collection-meta__tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-base);
+  margin-bottom: -1px;
+}
+
+.collection-meta__tab:hover {
+  color: var(--fg-primary);
+}
+
+.collection-meta__tab.is-active {
+  color: var(--fg-primary);
+  border-bottom-color: var(--accent, var(--fg-primary));
+  font-weight: 600;
+}
+
+.collection-meta__label {
+  font-size: var(--text-base);
+  color: var(--fg-secondary);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+/* Label paired with an inline help "?" — the group keeps the label column's
+   width so controls stay aligned, while the "?" sits right beside the word. */
+.collection-meta__label-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.collection-meta__label-group .collection-meta__label {
+  min-width: 0;
+}
+
+.collection-meta__icon-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1;
+}
+
+.collection-meta__section-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.5px;
+  margin-top: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+/* Inline-suggestion Accept/Reject menu (SuggestionWidget). Portalled to
+   <body> and positioned via anchorPanelMenu, so it uses the --popup-* tokens
+   like every other floating surface. */
+.cm-suggestion-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+}
+
+.cm-suggestion-menu__header {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.3px;
+}
+
+.cm-suggestion-menu__comment {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.cm-suggestion-menu__comment:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.cm-suggestion-menu__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.cm-suggestion-menu__item {
+  flex: 1 1 0;
+  text-align: center;
+  padding: var(--popup-item-padding);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.cm-suggestion-menu__item:hover {
+  background: var(--bg-hover);
+}
+
+.cm-suggestion-menu__item.is-accept {
+  color: var(--accent-success);
+}
+
+.cm-suggestion-menu__item.is-reject {
+  color: var(--accent-danger);
+}
+
+.cm-suggestion-menu__item.is-comment {
+  color: var(--accent-text, var(--fg-primary));
+}
+
+/* Inline marker shown on a suggestion that carries a reviewer comment, so the
+   note is discoverable without opening the review menu. */
+.cm-suggestion-note {
+  font-size: 0.8em;
+  margin-left: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Reusable help-button + popover (HelpButton.tsx). A circled "?" trigger that
+   opens a dismissible explanation. Popover uses the --popup-* tokens; it is
+   portalled to <body>, so it positions itself with inline left/top. */
+.help-button {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.help-button__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.help-button__trigger:hover,
+.help-button__trigger.is-open {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.help-button__popover {
+  position: fixed;
+  /* Floats above modals too: HelpButtons appear inside Settings/Export/etc.
+     and the popover is Portaled to <body>, so a plain --z-menu would hide
+     behind those dialogs. See --z-menu-over-modal in themes.css. */
+  z-index: var(--z-menu-over-modal);
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  padding: 10px 12px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  color: var(--fg-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.help-button__content {
+  /* Links/inline markup in help text inherit the popover's muted body style. */
+  color: var(--fg-primary);
+}
+
+.help-button__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.help-button__close:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+
+/* Pill content-boundary pulse (pill-boundary-nav.ts). A brief outline that
+   flashes around an inline pill's content when the caret crosses — or pauses
+   at — its boundary, so the region change is legible. Lives in global CSS so
+   the @keyframes resolves; the class is applied inside the editor DOM. */
+@keyframes cm-typst-pill-pulse-kf {
+  0% {
+    box-shadow: 0 0 0 2px var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+    background: transparent;
+  }
+}
+.cm-typst-pill-pulse {
+  border-radius: 3px;
+  animation: cm-typst-pill-pulse-kf 0.5s ease-out;
+}
+
+/* Contributors editor (Book Metadata) */
+.contributors-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.contributors-editor__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* All row controls share one height/metric so inputs, the dropdown, and the
+   buttons line up. The dropdown trigger and .settings__text-input already use
+   4px 8px / --text-md; the toolbar buttons default to a smaller size, so they
+   are matched here. */
+.contributors-editor__name {
+  flex: 1 1 160px;
+  min-width: 120px;
+  width: auto;
+}
+
+.contributors-editor__role {
+  flex: 0 0 auto;
+  min-width: 150px;
+}
+
+/* Free-text role field shown when the role select is on "Other…". Flows
+   inline after the select and wraps with the row's other controls. */
+.contributors-editor__role-other {
+  flex: 1 1 140px;
+  min-width: 120px;
+  width: auto;
+}
+
+.contributors-editor__btn {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-md);
+}
+
+.contributors-editor__remove {
+  /* Square-ish, just the glyph. */
+  padding: 4px 9px;
+}
+
+/* Accent tint comes from the app-wide rule near the top; just normalize the
+   box margin so it aligns with the row controls. */
+.contributors-editor input[type="checkbox"] {
+  margin: 0;
+}
+
+.contributors-editor__credit {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-2) var(--space-5);
+  padding: 8px 0 8px 10px;
+  margin: var(--space-1) 0 var(--space-1) var(--space-2);
+  border-left: 2px solid var(--accent);
+}
+
+.contributors-editor__credit-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+}
+
+.contributors-editor__credit-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+  margin-top: var(--space-1);
+}
+
+.collection-meta__hint {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  margin-top: var(--space-1);
+}
+
+
+.collection-meta__section-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.collection-meta__section-toggle:hover {
+  color: var(--fg-primary);
+}
+
+.collection-meta__style-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+}
+
+/* When a Typst template owns the layout, the style overrides can't take
+   effect — dim and block the grid (the note above explains why). Custom Typst
+   lives outside this grid, so it stays editable. */
+.collection-meta__style-grid.is-template-locked {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Short explainer shown when a template disables/supersedes a tab's controls. */
+.collection-meta__lock-note {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  background: var(--surface-1);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.collection-meta__style-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.collection-meta__style-group-label {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  margin-top: var(--space-2);
+}
+
+.creation-rules__icon-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 0 0 auto;
+}
+
+.creation-rules__icon-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--fg);
+  flex: 0 0 auto;
+}
+
+.rule-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.rule-icon--text {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  zoom: var(--ui-scale, 1);
+}
+
+.rule-icon--svg {
+  color: currentColor;
+}
+
+.icon-picker {
+  position: relative;
+}
+
+.icon-picker__trigger {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-input);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: var(--text-base);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.icon-picker__trigger:hover {
+  border-color: var(--border-input);
+  color: var(--fg-primary);
+}
+
+.icon-picker__dropdown {
+  width: 260px;
+  max-height: 300px;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.icon-picker__search {
+  border: none;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  padding: 8px 10px;
+  font-size: var(--text-base);
+  outline: none;
+}
+
+.icon-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: var(--space-1);
+  padding: var(--space-3);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.icon-picker__item {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-picker__item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.icon-picker__item--selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-highlight);
+}
+
+.icon-picker__clear {
+  border: none;
+  border-top: 1px solid var(--border-primary);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.icon-picker__clear:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
+}
+

@@ -362,7 +362,8 @@ const inkycapTheme = EditorView.theme({
     borderTop: "1px solid var(--border-subtle)",
     // Carry the content area's bottom "lip" shadow onto the panel's top edge
     // so editor content still appears to slide underneath when the panel is
-    // open. Mirrors the editor header's lip (.editor-header in layout.css).
+    // open. Mirrors the editor header's lip (.editor-header in
+    // styles/layout/editor-header.css).
     position: "relative",
     zIndex: "2",
     boxShadow: "0 -4px 6px -4px rgba(0, 0, 0, 0.22)",

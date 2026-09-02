@@ -1,0 +1,111 @@
+/* Shared context menu: items, submenus, explanatory lines.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* Context menu (shared by view tabs and sidebar) */
+.context-menu {
+  position: fixed;
+  background: var(--popup-bg);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius);
+  box-shadow: var(--popup-shadow);
+  z-index: var(--z-menu);
+  min-width: 120px;
+  padding: var(--popup-padding-block) 0;
+}
+
+.context-menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  padding: var(--popup-item-padding);
+  font-size: var(--text-md);
+  cursor: pointer;
+  /* Menu items are short labels — keep each on one line so the menu
+     sizes its width to the longest item instead of wrapping. */
+  white-space: nowrap;
+}
+
+.context-menu__item:hover {
+  background: var(--bg-hover);
+}
+
+/* Icon + label menu items (e.g. the New-note dropdown's
+   "Folder" / "Upload into notebox" entries). Uses flex so the icon
+   sits inline with the label rather than inheriting the default
+   block layout. */
+.context-menu__item--icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.context-menu__item--icon > svg {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.context-menu__item--danger {
+  color: var(--accent-danger);
+}
+
+.context-menu__item--danger:hover {
+  background: var(--accent-danger-bg);
+}
+
+.context-menu__separator {
+  height: 1px;
+  background: var(--popup-border-color);
+  margin: var(--space-2) 0;
+}
+
+/* Non-interactive explanatory line inside a context menu (e.g. an empty-state
+   hint). */
+.context-menu__hint {
+  display: block;
+  padding: 4px 10px;
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  max-width: 220px;
+}
+
+/* Nested submenu (Property type selector). */
+.context-menu__item--submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--popup-item-padding);
+  color: var(--fg-primary);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+.context-menu__item--submenu:hover {
+  background: var(--bg-hover);
+}
+.context-menu__chevron {
+  opacity: 0.6;
+  margin-left: var(--space-4);
+}
+.context-menu--submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: var(--space-1);
+}
+/* Flipped variant: submenu opens to the left of its parent when
+   there isn't room on the right edge of the window. */
+.context-menu--submenu-left {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: var(--space-1);
+}
+.context-menu__check {
+  float: right;
+  opacity: 0.8;
+}
+

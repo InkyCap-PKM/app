@@ -1,0 +1,122 @@
+/* Late chrome additions: new-tab button, palette category headers, status-bar toggles.
+   Split from layout.css; import order (see ../layout.css) preserves the
+   original cascade. */
+
+/* ─── Tab bar: new-tab button ─── */
+
+.tab-bar__new {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--fg-muted);
+  font-size: var(--text-lg);
+  line-height: 1;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* The button box stays 24px; the glyph within it is kept small so it reads as
+   a quiet control rather than an attention-getting icon. This overrides the
+   em-scaled svg.lucide default, which would otherwise size the icon off the
+   button's font-size. */
+.tab-bar__new svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tab-bar__new:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+/* WebView2 (Windows) draws a default blue text-selection / tap highlight on
+   buttons whose label is a bare text glyph ("+", "×"); WebKitGTK (Linux/macOS)
+   does not, so this only surfaces on Windows. Suppress the platform default on
+   the tab-bar's text-glyph buttons, and give them the shared keyboard-focus
+   affordance they otherwise lack (pointer users never see :focus-visible). */
+.tab-bar__new,
+.tab__close,
+.tab-bar__scroll {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab-bar__new:focus-visible,
+.tab__close:focus-visible,
+.tab-bar__scroll:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ─── Command palette: category headers for default list ─── */
+
+.cmd-palette__group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: var(--text-lg);
+  color: var(--fg-primary);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.cmd-palette__group-header:hover,
+.cmd-palette__group-header--selected {
+  background: var(--bg-hover);
+}
+
+.cmd-palette__group-header--selected {
+  background: var(--bg-selection);
+}
+
+.cmd-palette__group-chevron {
+  font-size: var(--text-sm);
+  color: var(--fg-dim);
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.cmd-palette__group-name {
+  flex: 1;
+}
+
+.cmd-palette__group-count {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
+.cmd-palette__result--nested {
+  padding-left: 34px;
+}
+
+/* ─── Status bar: panel toggle buttons ─── */
+
+.status-bar__panel-toggle {
+  background: none;
+  border: none;
+  color: var(--status-fg, var(--fg-secondary));
+  cursor: pointer;
+  font-size: var(--text-lg);
+  padding: 0 var(--space-4);
+  line-height: 1;
+}
+
+.status-bar__panel-toggle:hover {
+  color: var(--fg-primary);
+}
+
+/* Editor selection is the native browser `::selection`, tinted with
+ * `--bg-selection` in inkycapTheme (typst-editor.ts). No drawn-selection layer. */
+
