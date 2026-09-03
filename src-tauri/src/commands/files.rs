@@ -801,6 +801,37 @@ fn extract_headings(content: &str) -> Vec<HeadingInfo> {
         .collect()
 }
 
+/// A standalone `<label>` in a note, returned to the frontend.
+#[derive(serde::Serialize)]
+pub struct LabelInfo {
+    pub name: String,
+    /// The words the label tags, for showing the writer what they're linking to.
+    pub context: String,
+}
+
+/// Get the standalone labels in a note — the ones a writer attached to prose, a
+/// figure, or an equation, as opposed to a heading's own label, which
+/// [`get_note_headings`] already reports. Drives the wikilink picker's label
+/// list, so `[[Note::` can link to any anchor in the target note.
+#[tauri::command]
+pub async fn get_note_labels(
+    path: String,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<LabelInfo>, InkyCapError> {
+    let session = state.session(window.label()).await;
+    let storage = session.get_storage().await?;
+    let path_buf = sanitize_notebox_arg(&path)?;
+    let content = storage.read_file(&path_buf).await?;
+    Ok(source_structure::labels(&content)
+        .into_iter()
+        .map(|l| LabelInfo {
+            name: l.name,
+            context: l.context,
+        })
+        .collect())
+}
+
 /// Ensure a heading in the target note has a `<label>` tag. If the heading
 /// exists but lacks a label, one is auto-inserted. Returns the label that
 /// was applied (existing or newly generated).

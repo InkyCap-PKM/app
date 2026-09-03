@@ -178,7 +178,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   { label: "Line spacing", labelKey: "slash.lineSpacing", category: "Style", insert: '#set par(leading: 0.65em)', cursorOffset: 19 },
   { label: "Paragraph spacing", labelKey: "slash.paragraphSpacing", category: "Style", insert: '#set par(spacing: 1.2em)', cursorOffset: 18 },
   { label: "First line indent", labelKey: "slash.firstLineIndent", category: "Style", insert: '#set par(first-line-indent: 1em)', cursorOffset: 27 },
-  { label: "Heading numbering", labelKey: "slash.headingNumbering", category: "Style", insert: '#set heading(numbering: "1.1")', cursorOffset: 24 },
+  { label: "Heading numbering", labelKey: "slash.headingNumbering", category: "Style", insert: '#set heading(numbering: "1.")', cursorOffset: 25 },
 ];
 
 interface PaletteState {

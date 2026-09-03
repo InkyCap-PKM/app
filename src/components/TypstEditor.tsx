@@ -55,6 +55,7 @@ import { onFileChanged } from "../lib/events";
 import type { TypstCompileResult, TypstHtmlResult, TypstDiagnostic } from "../lib/types";
 import { EditorView } from "@codemirror/view";
 import { createTypstEditor, type TypstEditorHandle } from "../editor/typst-editor";
+import { findLabelDefinition } from "../editor/typst-decorations/label-nav";
 import { getLspClient, lspReady } from "../stores/lsp";
 import { filePathToUri, createLspDiagnosticsUpdater } from "../editor/lsp";
 import { noteboxInfo } from "../stores/notebox";
@@ -123,20 +124,25 @@ function scrollToMatch(
   view.focus();
 }
 
-function scrollToHeadingLabel(handle: TypstEditorHandle, doc: string, label: string) {
+/**
+ * Scroll to the anchor a wikilink points at. Tries, in order: the heading
+ * carrying this label, a heading whose *text* is the label (links written
+ * before the heading was labelled), then any other label definition — the case
+ * where the writer tagged a line of prose, a figure, or an equation.
+ */
+function scrollToLabel(handle: TypstEditorHandle, doc: string, label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const byLabel = new RegExp(`^=+\\s+.*<${escaped}>\\s*$`, "m");
   const byText = new RegExp(`^=+\\s+${escaped}\\s*(?:<[^>]+>)?\\s*$`, "im");
   const match = doc.match(byLabel) ?? doc.match(byText);
-  if (match?.index !== undefined) {
-    const pos = match.index;
-    const view = handle.view;
-    view.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 16 }),
-    });
-    view.focus();
-  }
+  const pos = match?.index ?? findLabelDefinition(doc, label);
+  if (pos < 0) return;
+  const view = handle.view;
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 16 }),
+  });
+  view.focus();
 }
 
 /**
@@ -781,7 +787,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               if (!editorHandle) return;
-              scrollToHeadingLabel(editorHandle, editorHandle.getText(), pendingHeading);
+              scrollToLabel(editorHandle, editorHandle.getText(), pendingHeading);
             });
           });
         } else if (restoredFromCache) {
@@ -825,7 +831,7 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       if (!tab?.pendingHeadingLabel) return;
       const label = consumePendingHeadingLabel(props.tabId);
       if (label) {
-        scrollToHeadingLabel(editorHandle, doc, label);
+        scrollToLabel(editorHandle, doc, label);
       }
     }),
   );

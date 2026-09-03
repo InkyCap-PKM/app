@@ -6,13 +6,22 @@ import * as ipc from "../../lib/ipc";
 import { t } from "../../lib/i18n";
 import type { BibEntry } from "../../lib/types";
 import { scanDocumentLabels, type DocLabel, type LabelKind } from "./document-labels";
+import { canReferenceWithAt, documentNumbersHeadings, linkReference } from "./reference-form";
 
 // The `@` popup. In Typst `@` is the *universal reference* operator — it points
 // at any `<label>` (heading, figure, equation, table) as well as bibliography
 // entries; a citation is just one kind of reference target. So this popup lists
 // citations first (the common academic action, and the historical behaviour),
-// then the document's labelled targets grouped by kind. Inserting either writes
-// the same `@name` shorthand.
+// then the document's labelled targets grouped by kind.
+//
+// What gets inserted depends on whether `@name` would actually compile. Typst's
+// `ref` renders the target's *number*, so a label on prose has nothing to show
+// and errors with "cannot reference text". Those rows insert the equivalent
+// `#link(<name>)[…]` instead, with the placeholder wording selected, and the
+// row's muted secondary shows which form it will write. Headings follow the
+// same rule: `@` while the document numbers them, a link while it doesn't
+// (turning numbering on is the "Heading numbering" palette command's job, not
+// this popup's). The rules live in [reference-form.ts](./reference-form.ts).
 
 interface SuggestState {
   active: boolean;
@@ -25,12 +34,10 @@ const EMPTY: SuggestState = { active: false, from: 0, query: "" };
 /** A single selectable row: a bibliography citation or a document label. */
 type RefItem =
   | { type: "citation"; entry: BibEntry }
-  | { type: "label"; label: DocLabel };
+  | { type: "label"; label: DocLabel; form: InsertForm };
 
-/** The name that `@…` inserts for a given item. */
-function itemName(item: RefItem): string {
-  return item.type === "citation" ? item.entry.key : item.label.name;
-}
+/** Which cross-reference syntax a label row writes. */
+type InsertForm = "ref" | "link";
 
 let popup: HTMLElement | null = null;
 let selectedIndex = 0;
@@ -248,11 +255,11 @@ function searchText(item: RefItem): string {
 /** Localized header for a group; bibliography is keyed separately. */
 function groupTitle(kind: LabelKind): string {
   switch (kind) {
-    case "heading": return t("refSuggest.groupHeadings");
+    case "heading": return t("common.headings");
     case "figure": return t("refSuggest.groupFigures");
     case "equation": return t("refSuggest.groupEquations");
     case "table": return t("refSuggest.groupTables");
-    default: return t("refSuggest.groupLabels");
+    default: return t("common.labels");
   }
 }
 
@@ -269,7 +276,12 @@ interface RenderGroup {
  * Each group's items are fuzzy-scored and sorted; an empty query keeps source
  * order (citations as returned, labels as scanned).
  */
-function buildGroups(entries: BibEntry[], labels: DocLabel[], query: string): RenderGroup[] {
+export function buildGroups(
+  entries: BibEntry[],
+  labels: DocLabel[],
+  query: string,
+  headingsNumbered: boolean,
+): RenderGroup[] {
   const score = (item: RefItem): number | null => scoreReferenceQuery(query, searchText(item));
   const collect = (items: RefItem[]): RefItem[] => {
     const scored: { item: RefItem; score: number }[] = [];
@@ -289,7 +301,10 @@ function buildGroups(entries: BibEntry[], labels: DocLabel[], query: string): Re
   }
 
   for (const kind of LABEL_KIND_ORDER) {
-    const ofKind = labels.filter((l) => l.kind === kind).map((label) => ({ type: "label", label }) as RefItem);
+    const form: InsertForm = canReferenceWithAt(kind, headingsNumbered) ? "ref" : "link";
+    const ofKind = labels
+      .filter((l) => l.kind === kind)
+      .map((label) => ({ type: "label", label, form }) as RefItem);
     const matched = collect(ofKind);
     if (matched.length > 0) {
       groups.push({ title: groupTitle(kind), items: matched.slice(0, 30) });
@@ -318,7 +333,12 @@ async function showPopup(view: EditorView, state: SuggestState) {
     return;
   }
 
-  const groups = buildGroups(entries, labels, state.query);
+  const groups = buildGroups(
+    entries,
+    labels,
+    state.query,
+    documentNumbersHeadings(view.state.doc.toString()),
+  );
   filteredItems = groups.flatMap((g) => g.items);
 
   if (filteredItems.length === 0) {
@@ -381,9 +401,11 @@ function renderRow(view: EditorView, state: SuggestState, item: RefItem, index: 
     metaSpan.textContent = `${authors}${year ? ` (${year})` : ""}`;
   } else {
     // Show the readable display (heading text, or the label name) up front and
-    // the `@name` that will be inserted as the muted secondary.
+    // the markup that will be inserted as the muted secondary — so a row that
+    // writes a link instead of an `@` reference says so before it is picked.
     nameSpan.textContent = item.label.display;
-    metaSpan.textContent = `@${item.label.name}`;
+    metaSpan.textContent =
+      item.form === "ref" ? `@${item.label.name}` : `#link(<${item.label.name}>)`;
   }
 
   row.appendChild(nameSpan);
@@ -407,7 +429,17 @@ function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
 
 function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   const cursor = view.state.selection.main.from;
-  const insert = `@${itemName(item)}`;
+  // A prose label has no number for `@` to render, so it is inserted as a link
+  // whose display text starts out as the label name and lands selected, ready
+  // to be typed over.
+  const link =
+    item.type === "label" && item.form === "link"
+      ? linkReference(item.label.name, item.label.display || item.label.name)
+      : null;
+  const insert = link ? link.text : `@${itemName(item)}`;
+  const selection = link
+    ? { anchor: state.from + link.displayFrom, head: state.from + link.displayTo }
+    : { anchor: state.from + insert.length };
   // Set suppression *before* dispatch: the dispatch synchronously runs the
   // tracker's `update`, which would otherwise re-detect the `@key` context and
   // requeue the popup. With the range already set, that update closes the popup
@@ -415,9 +447,14 @@ function acceptItem(view: EditorView, state: SuggestState, item: RefItem) {
   suppressedRange = { from: state.from, to: state.from + insert.length };
   view.dispatch({
     changes: { from: state.from, to: cursor, insert },
-    selection: { anchor: state.from + insert.length },
+    selection,
   });
   hidePopup();
+}
+
+/** The name that `@…` inserts for a given item. */
+function itemName(item: RefItem): string {
+  return item.type === "citation" ? item.entry.key : item.label.name;
 }
 
 function updateSelection(delta: number) {

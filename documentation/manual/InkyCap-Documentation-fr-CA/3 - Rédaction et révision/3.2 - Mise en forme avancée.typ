@@ -45,7 +45,7 @@ Tapez « / », choisissez *Style* (ou commencez à taper le nom), puis sélectio
   [Line spacing], [`#set par(leading: 0.65em)`],
   [Paragraph spacing], [`#set par(spacing: 1.2em)`],
   [First line indent], [`#set par(first-line-indent: 1em)`],
-  [Heading numbering], [`#set heading(numbering: "1.1")`],
+  [Heading numbering], [`#set heading(numbering: "1.")`],
 )
 
 Quelques précisions sur les valeurs :

@@ -320,6 +320,7 @@ pub fn run() {
             commands::files::create_note,
             commands::files::get_note_preview,
             commands::files::get_note_headings,
+            commands::files::get_note_labels,
             commands::files::ensure_heading_label,
             commands::files::get_backlink_context,
             commands::files::get_potential_links,

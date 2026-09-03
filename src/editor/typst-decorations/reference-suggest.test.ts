@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { scoreReferenceQuery } from "./reference-suggest";
+import { buildGroups, scoreReferenceQuery } from "./reference-suggest";
+import type { DocLabel } from "./document-labels";
 
 // The `@` citation popup matches a query against a candidate's
 // `key + title + authors` search text. The load-bearing invariant is that a
@@ -53,5 +54,38 @@ describe("scoreReferenceQuery", () => {
     const two = scoreReferenceQuery("einstein bodies", einstein)!;
     expect(one).not.toBeNull();
     expect(two).toBeGreaterThan(one);
+  });
+});
+
+// Which syntax each row writes. `@name` is `#ref`, which renders the target's
+// number, so it only works where a number exists; everything else has to go out
+// as `#link(<name>)[…]` or it will not compile.
+describe("buildGroups insert form", () => {
+  const label = (name: string, kind: DocLabel["kind"]): DocLabel => ({
+    name,
+    kind,
+    display: name,
+  });
+  const forms = (labels: DocLabel[], headingsNumbered: boolean) =>
+    Object.fromEntries(
+      buildGroups([], labels, "", headingsNumbered)
+        .flatMap((g) => g.items)
+        .filter((item) => item.type === "label")
+        .map((item) => [item.label.name, item.form]),
+    );
+
+  it("writes a link for a label on prose, whatever the document settings", () => {
+    expect(forms([label("l", "label")], true)).toEqual({ l: "link" });
+    expect(forms([label("l", "label")], false)).toEqual({ l: "link" });
+  });
+
+  it("writes @ for figures, tables and equations", () => {
+    const labels = [label("f", "figure"), label("t", "table"), label("e", "equation")];
+    expect(forms(labels, false)).toEqual({ f: "ref", t: "ref", e: "ref" });
+  });
+
+  it("switches heading rows between @ and link on heading numbering", () => {
+    expect(forms([label("h", "heading")], true)).toEqual({ h: "ref" });
+    expect(forms([label("h", "heading")], false)).toEqual({ h: "link" });
   });
 });

@@ -1,143 +1,105 @@
-// Quick-fixes for the Typst diagnostic raised when a `@reference` points at an
-// element that has no number to display — "cannot reference heading without
-// numbering" (and the equivalent for equations).
+// Quick-fixes for the Typst diagnostics raised when an `@reference` points at
+// something `#ref` cannot render.
 //
-// In Typst, `@target` renders the target's *number* ("Section 1", "(2)"), which
-// only exists if that element kind is numbered. Headings and block equations are
-// unnumbered by default, so a reference to one is a hard compile error. Typst's
-// own hint already explains how to enable numbering; InkyCap adds the one-click
-// actions — and, for headings, the alternative Typst doesn't suggest: render the
-// heading's *text* via `#link` instead, which needs no numbering. See the
-// references-design notes; this matches the agreed decision #2.
+// There are two shapes. "cannot reference heading without numbering" (and the
+// equivalent for equations) means the target *kind* can be numbered but this
+// document doesn't number it — so enabling numbering fixes it. Plain "cannot
+// reference text" means the label tags something that has no number at all,
+// usually prose, and no `#set` rule will ever help.
+//
+// Both are answered by the same alternative: `#link(<label>)[text]`, which
+// points at any label and shows words instead of a number. See
+// [reference-form.ts](../typst-decorations/reference-form.ts) for the shared
+// rules; Typst's own hint already covers the numbering side, so InkyCap's job
+// here is the one-click actions.
 
 import type { Action } from "@codemirror/lint";
 import type { EditorView } from "@codemirror/view";
 import type { Text } from "@codemirror/state";
 import { t } from "../../lib/i18n";
 import { scanDocumentLabels } from "../typst-decorations/document-labels";
+import {
+  findPreambleEnd,
+  linkReference,
+  setRuleForElement,
+} from "../typst-decorations/reference-form";
 
-// Matches "cannot reference heading without numbering", capturing the element
-// kind. Tolerant of surrounding text so a future Typst wording tweak still hits.
+// "cannot reference heading without numbering" — the element kind can be
+// numbered, this document just doesn't. Tolerant of surrounding text so a
+// future Typst wording tweak still hits.
 const NUMBERING_REF_RE = /cannot reference (\w+) without numbering/i;
 
-/**
- * The `#set` rule that enables numbering for a given element kind. Equations
- * live under `math.equation` and conventionally number as "(1)"; everything else
- * (headings) numbers as "1.".
- */
-export function setRuleForElement(element: string): string {
-  if (element === "equation") return '#set math.equation(numbering: "(1)")';
-  return `#set ${element}(numbering: "1.")`;
-}
+// "cannot reference text" — the label tags something unnumberable.
+const UNREFERENCEABLE_RE = /cannot reference (\w+)/i;
 
 /**
- * Offset where the document body begins — just past the leading run of blank
- * lines, comments, imports/includes, and a `#note(...)` / `#set-notebox(...)`
- * preamble block. New `#set` rules are inserted here so they sit with the
- * document's other top-matter rather than above the notebox import.
- */
-export function findPreambleEnd(docText: string): number {
-  const len = docText.length;
-  let i = 0;
-  while (i < len) {
-    const lineEnd = docText.indexOf("\n", i);
-    const stop = lineEnd < 0 ? len : lineEnd;
-    const trimmed = docText.slice(i, stop).trim();
-
-    if (
-      trimmed === "" ||
-      trimmed.startsWith("//") ||
-      trimmed.startsWith("#import") ||
-      trimmed.startsWith("#include")
-    ) {
-      i = stop + 1;
-      continue;
-    }
-
-    if (trimmed.startsWith("#note(") || trimmed.startsWith("#set-notebox(")) {
-      // Consume the (possibly multi-line) call by balancing parentheses.
-      let depth = 0;
-      let started = false;
-      let j = i;
-      for (; j < len; j++) {
-        const c = docText[j];
-        if (c === "(") {
-          depth++;
-          started = true;
-        } else if (c === ")") {
-          depth--;
-          if (started && depth === 0) {
-            j++;
-            break;
-          }
-        }
-      }
-      const nl = docText.indexOf("\n", j);
-      i = nl < 0 ? len : nl + 1;
-      continue;
-    }
-
-    break;
-  }
-  return Math.min(i, len);
-}
-
-/** Escape `[` / `]` so heading text can sit inside a `#link[...]` content block. */
-function escapeContent(text: string): string {
-  return text.replace(/([[\]])/g, "\\$1");
-}
-
-/**
- * Quick-fix actions for a numbering reference error, or `undefined` if the
+ * Quick-fix actions for a failed-reference diagnostic, or `undefined` if the
  * message isn't one. The diagnostic is attached to the `@reference` span, so
  * each action's `apply` receives that span as `(from, to)`.
  */
-export function referenceNumberingActions(message: string): Action[] | undefined {
-  const m = NUMBERING_REF_RE.exec(message);
-  if (!m) return undefined;
-  const element = m[1].toLowerCase();
+export function referenceActions(message: string): Action[] | undefined {
+  const numbering = NUMBERING_REF_RE.exec(message);
+  if (numbering) {
+    const element = numbering[1].toLowerCase();
+    const actions: Action[] = [enableNumberingAction(element)];
+    // Heading references have a graceful alternative that needs no numbering:
+    // link to the heading by its text. Other numbered kinds (equations, and
+    // figures/tables when Typst gains the same message) read as a number in
+    // prose, so swapping in their label name would not be an improvement.
+    if (element === "heading") actions.push(textLinkAction());
+    return actions;
+  }
 
-  const enableLabel =
+  // No numbering clause: the target can't be numbered at all, so a text link is
+  // the only fix.
+  if (UNREFERENCEABLE_RE.test(message)) return [textLinkAction()];
+
+  return undefined;
+}
+
+/** Insert the `#set` rule that numbers `element`, at the end of the preamble. */
+function enableNumberingAction(element: string): Action {
+  const name =
     element === "heading"
       ? t("diagnostic.refNumbering.enableHeading")
       : element === "equation"
         ? t("diagnostic.refNumbering.enableEquation")
         : t("diagnostic.refNumbering.enableGeneric");
 
-  const actions: Action[] = [
-    {
-      name: enableLabel,
-      apply(view: EditorView) {
-        const at = findPreambleEnd(view.state.doc.toString());
-        view.dispatch({
-          changes: { from: at, insert: `${setRuleForElement(element)}\n` },
-        });
-        view.focus();
-      },
+  return {
+    name,
+    apply(view: EditorView) {
+      const at = findPreambleEnd(view.state.doc.toString());
+      view.dispatch({
+        changes: { from: at, insert: `${setRuleForElement(element)}\n` },
+      });
+      view.focus();
     },
-  ];
+  };
+}
 
-  // Heading references have a graceful alternative that needs no numbering:
-  // link to the heading by its text. Only offered for headings.
-  if (element === "heading") {
-    actions.push({
-      name: t("diagnostic.refNumbering.useTextLink"),
-      apply(view: EditorView, from: number, to: number) {
-        const key = referencedLabel(view.state.doc, from, to);
-        if (!key) return;
-        const label = scanDocumentLabels(view.state).find((l) => l.name === key);
-        const display = label?.display?.trim() || key;
-        const replacement = `#link(<${key}>)[${escapeContent(display)}]`;
-        view.dispatch({
-          changes: { from, to, insert: replacement },
-          selection: { anchor: from + replacement.length },
-        });
-        view.focus();
-      },
-    });
-  }
-
-  return actions;
+/**
+ * Rewrite the failing `@name` into `#link(<name>)[text]`, leaving the display
+ * text selected so the writer can type their own wording straight away. The
+ * default wording is the label's display text — a heading's own words where we
+ * have them, otherwise the label name as a placeholder.
+ */
+function textLinkAction(): Action {
+  return {
+    name: t("diagnostic.refNumbering.useTextLink"),
+    apply(view: EditorView, from: number, to: number) {
+      const key = referencedLabel(view.state.doc, from, to);
+      if (!key) return;
+      const label = scanDocumentLabels(view.state).find((l) => l.name === key);
+      const display = label?.display?.trim() || key;
+      const link = linkReference(key, display);
+      view.dispatch({
+        changes: { from, to, insert: link.text },
+        selection: { anchor: from + link.displayFrom, head: from + link.displayTo },
+      });
+      view.focus();
+    },
+  };
 }
 
 /** The label name of an `@target` reference occupying `[from, to)`, or null. */
