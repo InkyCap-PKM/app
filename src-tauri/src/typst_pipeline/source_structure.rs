@@ -1,5 +1,5 @@
-//! Where a note's headings and fenced raw blocks are, according to Typst's
-//! own parser.
+//! Where a note's headings, labels, and fenced raw blocks are, according to
+//! Typst's own parser.
 //!
 //! Every line-oriented caller in the backend used to answer these questions
 //! with a regex over `content.lines()`, and each got the same thing wrong: a
@@ -54,6 +54,100 @@ pub fn headings(source: &str) -> Vec<SourceHeading> {
         heading.line = lines.line_at(heading.range.start);
     }
     out
+}
+
+/// One `<label>` definition standing on its own — a label the writer attached
+/// to prose, a figure, an equation, or a table.
+///
+/// Headings' own trailing labels are absent: [`headings`] already reports those
+/// on the heading they belong to, and listing them twice would double up the
+/// wikilink picker. Labels written as *arguments* (`#link(<intro>)`,
+/// `#ref(<intro>)`) are absent too — those point at a definition rather than
+/// making one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLabel {
+    /// The label name, without its angle brackets.
+    pub name: String,
+    /// 1-based line the label sits on.
+    pub line: usize,
+    /// What precedes the label on its line, trimmed — the words it tags, as far
+    /// as the source shows them. Empty when the label opens its line.
+    pub context: String,
+}
+
+/// Every standalone label definition in `source`, in document order.
+///
+/// De-duplicated by name, first occurrence winning, because a name can only
+/// resolve to one target anyway.
+pub fn labels(source: &str) -> Vec<SourceLabel> {
+    let root = parse(source);
+    let mut ranges = Vec::new();
+    collect_labels(&LinkedNode::new(&root), source, &mut ranges);
+
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    let mut lines = LineCounter::new(source);
+    for range in ranges {
+        let Some(raw) = source.get(range.clone()) else {
+            continue;
+        };
+        let name = raw
+            .trim_start_matches('<')
+            .trim_end_matches('>')
+            .to_string();
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+        out.push(SourceLabel {
+            name,
+            line: lines.line_at(range.start),
+            context: line_prefix(source, range.start),
+        });
+    }
+    out
+}
+
+/// The text of the label's line up to the label itself, trimmed.
+fn line_prefix(source: &str, label_start: usize) -> String {
+    let line_start = source[..label_start]
+        .rfind('\n')
+        .map(|nl| nl + 1)
+        .unwrap_or(0);
+    source[line_start..label_start].trim().to_string()
+}
+
+fn collect_labels(node: &LinkedNode<'_>, source: &str, out: &mut Vec<Range<usize>>) {
+    match node.kind() {
+        // A label inside an argument list is a reference to a definition
+        // elsewhere, not a definition. Its whole subtree is skipped.
+        SyntaxKind::Args => return,
+        SyntaxKind::Label => {
+            if !follows_heading_inline(node, source) {
+                out.push(node.range());
+            }
+            return;
+        }
+        _ => {}
+    }
+    for child in node.children() {
+        collect_labels(&child, source, out);
+    }
+}
+
+/// True when this label is a heading's trailing label. Typst parses it as the
+/// heading's *sibling*, so sharing a line with the heading before it is the
+/// test — the mirror of [`trailing_label`], which asks the same question from
+/// the heading's side.
+fn follows_heading_inline(node: &LinkedNode<'_>, source: &str) -> bool {
+    let Some(prev) = node.prev_sibling() else {
+        return false;
+    };
+    if prev.kind() != SyntaxKind::Heading {
+        return false;
+    }
+    source
+        .get(prev.range().end..node.range().start)
+        .is_some_and(|between| !between.contains('\n'))
 }
 
 /// 1-based line numbers covered by a fenced raw block (```` ``` ````), from
@@ -306,6 +400,56 @@ mod tests {
     fn empty_source_has_no_headings() {
         assert_eq!(summarize(""), vec![]);
         assert_eq!(summarize("just prose\n"), vec![]);
+    }
+
+    fn label_names(source: &str) -> Vec<String> {
+        labels(source).into_iter().map(|l| l.name).collect()
+    }
+
+    #[test]
+    fn finds_a_prose_label_with_the_words_it_tags() {
+        let found = labels("= Title\n\nMake a label <label1>\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "label1");
+        assert_eq!(found[0].context, "Make a label");
+        assert_eq!(found[0].line, 3);
+    }
+
+    #[test]
+    fn skips_a_headings_own_label_but_keeps_one_on_the_next_line() {
+        assert_eq!(label_names("= Intro <intro>\n"), Vec::<String>::new());
+        assert_eq!(label_names("= Intro\n\ntext <after>\n"), vec!["after"]);
+    }
+
+    #[test]
+    fn skips_labels_used_as_reference_arguments() {
+        let source = "Body <anchor>\n\nSee #link(<anchor>)[it] and #ref(<anchor>).\n";
+        assert_eq!(label_names(source), vec!["anchor"]);
+    }
+
+    #[test]
+    fn finds_labels_on_figures_and_block_equations() {
+        let source = "#figure(image(\"/a.png\")) <fig>\n\n$ a = b $ <eq>\n";
+        assert_eq!(label_names(source), vec!["fig", "eq"]);
+    }
+
+    #[test]
+    fn ignores_label_syntax_inside_a_fence() {
+        assert_eq!(label_names("```\ntext <nope>\n```\n"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn de_duplicates_repeated_names_keeping_the_first() {
+        let found = labels("one <dup>\n\ntwo <dup>\n");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].context, "one");
+    }
+
+    #[test]
+    fn counts_label_lines_for_multibyte_content() {
+        let found = labels("Überschrift — lang\n\n日本語 <jp>\n");
+        assert_eq!(found[0].line, 3);
+        assert_eq!(found[0].context, "日本語");
     }
 
     #[test]

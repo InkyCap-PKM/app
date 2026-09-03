@@ -462,6 +462,20 @@ export async function getNoteHeadings(
   return invoke<HeadingInfo[]>("get_note_headings", { path });
 }
 
+/** A standalone `<label>` in a note — one the writer attached to prose, a
+ *  figure, or an equation. A heading's own label arrives via `getNoteHeadings`. */
+export interface LabelInfo {
+  name: string;
+  /** The words the label tags, for showing what a link would point at. */
+  context: string;
+}
+
+export async function getNoteLabels(
+  path: string,
+): Promise<LabelInfo[]> {
+  return invoke<LabelInfo[]>("get_note_labels", { path });
+}
+
 export async function ensureHeadingLabel(
   path: string,
   headingText: string,

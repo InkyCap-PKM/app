@@ -31,8 +31,14 @@ let popup: HTMLElement | null = null;
 let selectedIndex = 0;
 let currentSuggestState: SuggestState = EMPTY;
 
+/** In heading mode, which kind of anchor a row points at — headings are shown
+ *  indented by level, labels by the words they tag. */
+type TargetKind = "heading" | "label";
+
 interface SuggestItem {
   name: string;
+  /** Set in heading mode only. */
+  targetKind?: TargetKind;
   /** Absolute note path. Carried through so callers can disambiguate
    *  notes that share a file stem in different folders, and so future
    *  resolution paths can avoid re-deriving from `name`. */
@@ -48,6 +54,15 @@ interface SuggestItem {
 }
 
 let filteredItems: SuggestItem[] = [];
+
+/** Rows as rendered: one untitled section in note mode, one per anchor kind in
+ *  heading mode. `filteredItems` stays the flat view keyboard selection indexes
+ *  into. */
+interface SuggestSection {
+  /** Group header shown above the section; omitted for a single unlabelled run. */
+  title?: string;
+  items: SuggestItem[];
+}
 
 function getPopup(): HTMLElement {
   if (!popup) {
@@ -203,6 +218,7 @@ function resolveNotePath(name: string): string | null {
 async function showPopup(view: EditorView, state: SuggestState) {
   const el = getPopup();
   currentSuggestState = state;
+  let sections: SuggestSection[] = [];
 
   if (state.mode === "heading") {
     const path = resolveNotePath(state.noteName);
@@ -211,31 +227,65 @@ async function showPopup(view: EditorView, state: SuggestState) {
       return;
     }
 
+    // Both anchor kinds a wikilink can point at: the target note's headings and
+    // the labels its writer attached to prose, figures, or equations. Fetched
+    // together so the picker offers every place in that note a link can land.
     let headings: ipc.HeadingInfo[] = [];
+    let noteLabels: ipc.LabelInfo[] = [];
     try {
-      headings = await ipc.getNoteHeadings(path);
+      [headings, noteLabels] = await Promise.all([
+        ipc.getNoteHeadings(path),
+        ipc.getNoteLabels(path),
+      ]);
     } catch {
       hidePopup();
       return;
     }
 
     const query = state.query.toLowerCase();
-    const matched = headings
+    const headingItems: SuggestItem[] = headings
       .filter((h) => query === "" || h.text.toLowerCase().includes(query))
-      .slice(0, 20);
+      .slice(0, 20)
+      .map((h) => ({
+        name: h.text,
+        targetKind: "heading",
+        label: h.label ?? undefined,
+        level: h.level,
+        isCreate: false,
+      }));
 
-    filteredItems = matched.map((h) => ({
-      name: h.text,
-      label: h.label ?? undefined,
-      level: h.level,
-      isCreate: false,
-    }));
+    const labelItems: SuggestItem[] = noteLabels
+      .filter((l) =>
+        query === "" ||
+        l.name.toLowerCase().includes(query) ||
+        l.context.toLowerCase().includes(query))
+      .slice(0, 20)
+      .map((l) => ({
+        // Lead with the words the label tags; the label name follows as the
+        // muted second line, and is the whole row when there are no such words.
+        name: l.context || l.name,
+        targetKind: "label",
+        label: l.name,
+        subtitle: l.context ? l.name : undefined,
+        isCreate: false,
+      }));
+
+    // Headers only earn their space when both kinds are present; a note with
+    // headings alone looks exactly as it did before labels were offered.
+    const bothKinds = headingItems.length > 0 && labelItems.length > 0;
+    sections = [
+      { title: bothKinds ? t("common.headings") : undefined, items: headingItems },
+      { title: bothKinds ? t("common.labels") : undefined, items: labelItems },
+    ].filter((section) => section.items.length > 0);
+    filteredItems = sections.flatMap((section) => section.items);
 
     if (filteredItems.length === 0) {
       el.innerHTML = "";
       const empty = document.createElement("div");
       empty.className = "wikilink-suggest__empty";
-      empty.textContent = query ? "No matching headings" : "No headings in this note";
+      empty.textContent = query
+        ? t("wikilink.suggest.noMatchingAnchors")
+        : t("wikilink.suggest.noAnchors");
       el.appendChild(empty);
       positionPopup(view, state, el);
       return;
@@ -315,6 +365,7 @@ async function showPopup(view: EditorView, state: SuggestState) {
     if (query.length > 0 && !hasExactMatch) {
       filteredItems.push({ name: query, isCreate: true });
     }
+    sections = [{ items: filteredItems }];
   }
 
   if (filteredItems.length === 0) {
@@ -325,35 +376,18 @@ async function showPopup(view: EditorView, state: SuggestState) {
   selectedIndex = 0;
   el.innerHTML = "";
 
-  for (let i = 0; i < filteredItems.length; i++) {
-    const item = filteredItems[i];
-    const row = document.createElement("div");
-    row.className = "wikilink-suggest__item";
-    if (item.isCreate) row.classList.add("wikilink-suggest__item--create");
-    if (i === 0) row.classList.add("is-selected");
-
-    if (state.mode === "heading") {
-      const indent = item.level && item.level > 1 ? " ".repeat(item.level - 1) : "";
-      row.textContent = `${indent}${item.name}`;
-    } else if (item.isCreate) {
-      row.textContent = t("wikilink.suggest.create", { name: item.name });
-    } else {
-      const nameSpan = document.createElement("span");
-      nameSpan.textContent = item.name;
-      row.appendChild(nameSpan);
-      if (item.subtitle) {
-        const hint = document.createElement("span");
-        hint.className = "wikilink-suggest__alias-hint";
-        hint.textContent = item.subtitle;
-        row.appendChild(hint);
-      }
+  let flatIndex = 0;
+  for (const section of sections) {
+    if (section.title) {
+      const header = document.createElement("div");
+      header.className = "wikilink-suggest__group";
+      header.textContent = section.title;
+      el.appendChild(header);
     }
-
-    row.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      acceptItem(view, state, item);
-    });
-    el.appendChild(row);
+    for (const item of section.items) {
+      el.appendChild(renderRow(view, state, item, flatIndex));
+      flatIndex++;
+    }
   }
 
   // Prompt the user toward the linking affordances they can't otherwise
@@ -373,6 +407,43 @@ async function showPopup(view: EditorView, state: SuggestState) {
   el.appendChild(footer);
 
   positionPopup(view, state, el);
+}
+
+/** One selectable row. Headings indent by level; labels lead with the words
+ *  they tag and carry their label name as the muted secondary line. */
+function renderRow(
+  view: EditorView,
+  state: SuggestState,
+  item: SuggestItem,
+  index: number,
+): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "wikilink-suggest__item";
+  if (item.isCreate) row.classList.add("wikilink-suggest__item--create");
+  if (index === 0) row.classList.add("is-selected");
+
+  if (state.mode === "heading" && item.targetKind === "heading") {
+    const indent = item.level && item.level > 1 ? " ".repeat(item.level - 1) : "";
+    row.textContent = `${indent}${item.name}`;
+  } else if (item.isCreate) {
+    row.textContent = t("wikilink.suggest.create", { name: item.name });
+  } else {
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = item.name;
+    row.appendChild(nameSpan);
+    if (item.subtitle) {
+      const hint = document.createElement("span");
+      hint.className = "wikilink-suggest__alias-hint";
+      hint.textContent = item.subtitle;
+      row.appendChild(hint);
+    }
+  }
+
+  row.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    acceptItem(view, state, item);
+  });
+  return row;
 }
 
 function positionPopup(view: EditorView, state: SuggestState, el: HTMLElement) {
@@ -398,7 +469,10 @@ async function acceptItem(view: EditorView, state: SuggestState, item: SuggestIt
   let insert: string;
   if (state.mode === "heading") {
     let label = item.label;
-    if (!label) {
+    // Headings can be picked before they carry a label; writing one into the
+    // target note is what makes the link stable. A label row already *is* the
+    // anchor, so nothing needs creating.
+    if (!label && item.targetKind !== "label") {
       const path = resolveNotePath(state.noteName);
       if (path) {
         try {

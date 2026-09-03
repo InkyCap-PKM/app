@@ -78,11 +78,14 @@ function classify(
   name: string,
   labelFrom: number,
 ): { kind: LabelKind; display: string } {
-  // `= Heading <intro>` — the grammar nests the Label inside the Heading.
-  const parent = node.parent;
-  if (parent?.name === "Heading") {
+  // `= Heading <intro>` — the parser makes the label the heading's *sibling*,
+  // not its child, so the heading is found by stepping back over the separating
+  // space rather than by looking up. (The backend asks the same question the
+  // same way, in `source_structure::trailing_label`.)
+  const heading = precedingHeadingOnSameLine(state, node, labelFrom);
+  if (heading) {
     const headingText = state.doc
-      .sliceString(parent.from, labelFrom)
+      .sliceString(heading.from, heading.to)
       .replace(/^=+\s*/, "")
       .trim();
     return { kind: "heading", display: headingText || name };
@@ -106,6 +109,24 @@ function classify(
   if (/\b(?:figure|image)\s*\(/.test(block)) return { kind: "figure", display: name };
 
   return { kind: "label", display: name };
+}
+
+/**
+ * The heading this label tags, or null. A label belongs to a heading only when
+ * it sits on the same line as one — a label further down the document is
+ * tagging its own content, not the heading above it.
+ */
+function precedingHeadingOnSameLine(
+  state: EditorState,
+  node: ReturnType<typeof syntaxTree>["topNode"],
+  labelFrom: number,
+) {
+  let prev = node.prevSibling;
+  // Whitespace between the heading and its label is a node of its own.
+  while (prev && prev.name === "Space") prev = prev.prevSibling;
+  if (!prev || prev.name !== "Heading") return null;
+  if (state.doc.sliceString(prev.to, labelFrom).includes("\n")) return null;
+  return prev;
 }
 
 /** Byte offset just after the nearest `\n\n` before `pos`, or 0. */
