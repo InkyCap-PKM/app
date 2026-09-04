@@ -32,7 +32,7 @@ See [README.md](README.md) for full setup. In brief:
 ```sh
 npm install
 ./scripts/download-tinymist.sh
-npm run tauri:dev
+npm run tauri dev
 git config core.hooksPath .githooks   # once, enables the rustfmt pre-commit hook
 ```
 

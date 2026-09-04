@@ -108,7 +108,7 @@ left.
 ## Testing your translation live
 
 A built-in **pseudo-locale** (`en-XX`, “Pseudo”) is available in the language
-picker during development (`npm run tauri:dev`). It accents and brackets every
+picker during development (`npm run tauri dev`). It accents and brackets every
 *translated* string (`Theme` → `⟦Ŧħḗḿḗ⟧`) while leaving placeholders intact, so
 it's the quickest way to confirm a surface is actually wired through i18n: any
 text that stays plain ASCII is still hardcoded and should be reported. Switching
