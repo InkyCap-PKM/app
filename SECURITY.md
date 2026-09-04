@@ -10,7 +10,7 @@ are treated as sensitive and never appear in any outbound request.
 Please report security issues **privately**. Do not open a public issue for a
 suspected vulnerability.
 
-- Email **jc@inkycap.org** with a description of the issue, the InkyCap version
+- Email **dev@inkycap.org** with a description of the issue, the InkyCap version
   and platform, and steps to reproduce if you have them.
 - You will receive an acknowledgement, and we will work with you on a fix and a
   coordinated disclosure timeline.
