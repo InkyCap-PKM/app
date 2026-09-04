@@ -10,7 +10,7 @@
 
 ---
 
-InkyCap is a new project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration!**. 
+InkyCap is an experimental project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration**. 
 
 InkyCap is a desktop knowledge-management and writing tool whose documents are plain text [Typst](https://typst.app) files. It provides organizational flexibility, discoverability, and advanced recall functionality for notes. Notes are not trapped in a proprietary format; they are real Typst source, which compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
@@ -27,19 +27,19 @@ InkyCap is a desktop knowledge-management and writing tool whose documents are p
   dedicated References sidebar, with Zotero integration.
 - **The Mycelial View.** A graph that surfaces *emergent concepts* (recurring ideas you have not yet
   named a page for) and *latent links* (notes you mention
-  but never linked), using corpus statistics.
-- **Local-first and private.** No telemetry, no analytics, no remote logging, no built-in gen AI consumption.
-  Your notebox never leaves your device unless you opt into sync or manually share your files.
+  but never linked), using corpus statistics. It's goal is to help you identify where your interests want to grow.
+- **Local-first and private.** No telemetry, no analytics, no remote logging, no built-in generative artificial intelligence consumption.
+  Your notebox never leaves your device unless you decide to synchronize it or manually share your files.
 - **Collaboration when you want it.** Optional whole-notebox git sync with a
-  calm, merge-first model that does not block writing on a conflict.
+  simplified, merge-first model that does not block writing on a conflict.
 - **Open formats in and out.** Import from regular Markdown or an Obsidian-flavoured vault; export to PDF
   (including PDF/A and PDF/UA), HTML, Markdown, and ODT/DOCX/LaTeX via Pandoc.
 
 ## Status
 
-InkyCap is new (June 2026) and in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.  
+InkyCap was introduced June 2026 and is in active development. The feature set is broad and fairly stable but expect some rough edges. It is not a commercial project, rather a labour-of-love. **Issues and contributions are welcome, especially from human developers with expertise in the open technologies underpinning InkyCap**.  
 
-Mostly developed on a Linux system (Ubuntu), it has also been partially tested and seems to work reasonably well on Windows. In theory, it should work on a Mac but I have not tried.
+Mostly developed on a Linux system (Ubuntu), it has also been partially tested and seems to work reasonably well on Windows. In theory, there is evidence it works on a Mac but I do not have one to try it.
 
 ## Installing
 
@@ -50,7 +50,7 @@ Pre-built packages are published on the
 - **Windows:** the `*-setup.exe` installer.
 - **macOS:** the `.app` bundle. (macOS builds would be nice to include but I don't have access to a Mac so need help from someone else. Feel free to build from the source yourself). 
 
-The app has an in-app updater (Settings, Overview). See
+InkyCap has an in-app update-checker (Settings, Overview) that lets you request whether there is a new version available but you must download and install updates yourself (they are not automatic). See
 [documentation/developer/releasing.md](documentation/developer/releasing.md) for
 how releases and the updater work.
 
@@ -81,9 +81,7 @@ step is required before the first build.
 ### Run and test
 
 ```sh
-npm run tauri:dev    # launch the app with hot reload
-                     # (plain `npm run tauri dev` works too; tauri:dev unsets a
-                     #  few VS Code/snap env vars that confuse WebKitGTK on Linux)
+npm run tauri dev    # launch the app with hot reload
 
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit + integration tests
 npm test                                          # Vitest frontend tests
@@ -128,7 +126,7 @@ inkycap/
 - **[CLAUDE.md](CLAUDE.md)** holds the project's governing engineering
   principles (the Typst-first rule, UTF-8/path-safety invariants, i18n, the UI
   token system). Read it before contributing code.
-- **User documentation:** is visible on the [InkyCap website](https://inkycap.org/documentation/user-manual) or from within the application. F1, then click the InkyCap icon at the top. Depending your app language setting (English / Français) the documentation will appear in that language. 
+- **User documentation:** is available within the application. F1, then click the InkyCap icon at the top. Depending your app language setting (English / Français) the documentation will appear in that language. It is also visible on the [InkyCap website](https://inkycap.org/documentation/user-manual) (although it might not be as up-to-date on the site).
 
 ## Contributing
 
@@ -145,7 +143,10 @@ sidecar for language-server features.
 
 ## Security and privacy
 
-InkyCap is local-first and does not transmit information about your use, setup, or your data itself to me (the sole person working on it at the moment). I am aiming to maintain and improve InkyCap on a best-effort, voluntary basis. To report a vulnerability, see [SECURITY.md](SECURITY.md). 
+InkyCap is local-first and does not transmit information about your use, setup, or your data itself. I maintain and improve InkyCap on a best-effort, voluntary basis. To report a vulnerability, see [SECURITY.md](SECURITY.md). 
+
+## Position on AI authorship of InkyCap's source code
+One reason among many that I started InkyCap was as an early experiment to experience how coding with generative artificial intelligence (gen AI) might work. As such, much but not all of InkyCap's development is accomplished with the assistance of gen AI. This does not mean that I blindly accept all the code produced. I try to employ a directed approach to researching, planning, organizing, testing (I do a lot of testing), and revising the development. The project is gated by automated formatting, linting, type, and test suites. Nevertheless, I do not claim total expertise and it's possible that I will overlook something or make errors. I continually question and critique all aspects of AI usage in the project and the broader systemic context. I would value more contributors with human expertise that want to improve InkyCap. I also recognize that some people might provide useful contributions through the use of gen AI tools and I request that these be equally conscientiously considered and tested. The code is original to this project and released under the permissive, open source LiLiQ-P 1.1 licence; copyright is held by the author. InkyCap itself contains no AI features. 
 
 ## Licence
 
