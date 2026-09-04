@@ -26,20 +26,28 @@ BINARIES_DIR="$(cd "$BINARIES_DIR" && pwd)"
 # consolidated `sha256.sum`), so fetch the six that match the archive names
 # built below and copy their hashes here, e.g.
 #   curl -fsSL .../tinymist-x86_64-unknown-linux-gnu.tar.gz.sha256
-declare -A EXPECTED_SHA256=(
-  [x86_64-unknown-linux-gnu]="9b8a1aea6bb3fc9c39cb70496f0082bd518cfede555757bc3cb5225b05abc99b"
-  [aarch64-unknown-linux-gnu]="eba8e14338cf211906d77be6b18102736222da6721e98161133fa0d8ff5ab599"
-  [x86_64-apple-darwin]="fcfcfd01376394048443f81de349d165c271c17c36579eb9a08b889b30b8c3b2"
-  [aarch64-apple-darwin]="16241868c6752aa5e8f9c162562293c7cdf69e82f54687d7886336daf2c51915"
-  [x86_64-pc-windows-msvc]="91edb0d21edca5841b896d702d8086622792d52b71a9b444d8befb0e937969ae"
-  [aarch64-pc-windows-msvc]="ed120fc474a07c5614bb8a7ecd17a649360cba26c2d9f1f96b14a8bc7b3afc11"
-)
+#
+# A `case` rather than an associative array on purpose: macOS still ships bash
+# 3.2, which has no `declare -A`, and this script has to run there (both on a
+# maintainer's Mac and on the macOS CI runners).
+expected_sha256_for() {
+  case "$1" in
+    x86_64-unknown-linux-gnu)  echo "9b8a1aea6bb3fc9c39cb70496f0082bd518cfede555757bc3cb5225b05abc99b" ;;
+    aarch64-unknown-linux-gnu) echo "eba8e14338cf211906d77be6b18102736222da6721e98161133fa0d8ff5ab599" ;;
+    x86_64-apple-darwin)       echo "fcfcfd01376394048443f81de349d165c271c17c36579eb9a08b889b30b8c3b2" ;;
+    aarch64-apple-darwin)      echo "16241868c6752aa5e8f9c162562293c7cdf69e82f54687d7886336daf2c51915" ;;
+    x86_64-pc-windows-msvc)    echo "91edb0d21edca5841b896d702d8086622792d52b71a9b444d8befb0e937969ae" ;;
+    aarch64-pc-windows-msvc)   echo "ed120fc474a07c5614bb8a7ecd17a649360cba26c2d9f1f96b14a8bc7b3afc11" ;;
+    *)                         echo "" ;;
+  esac
+}
 
 # Verify a downloaded archive against the pinned hash for $TARGET. Aborts if the
 # hash is unknown (unrecognized target → fail closed) or doesn't match.
 verify_checksum() {
   local archive="$1" target="$2"
-  local expected="${EXPECTED_SHA256[$target]:-}"
+  local expected
+  expected="$(expected_sha256_for "$target")"
   if [[ -z "$expected" ]]; then
     echo "No pinned SHA-256 for target '$target' — refusing to install an unverified binary." >&2
     exit 1
