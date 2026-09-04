@@ -31,6 +31,7 @@ The moving parts:
 | Linux `.deb`/`.rpm` build (CI, optional — see "Cutting a release") | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
 | Linux `.deb`/`.rpm` build (local) | `scripts/build-linux-docker.sh` |
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
+| macOS + Windows installer build (CI) | `.github/workflows/build-desktop.yml` on the GitHub build mirror |
 
 The repo lives at `codeberg.org/InkyCap/app` (org-owned). There is no separate
 update server, signed manifest, or Codeberg Pages dependency — the releases API
@@ -143,7 +144,21 @@ scripts/build-flatpak.sh                       # -> dist-linux/InkyCap-<version>
 
 (`build-flatpak.sh` packages the `.deb` from step 3 — run that first.)
 
-**5. Build Windows** (on a Windows machine) and attach the installer:
+**5. Build Windows and macOS** on the GitHub build mirror (see "The GitHub
+build mirror" below) and attach the installers:
+
+1. Push the release commit to the mirror: `git push github main`.
+2. On GitHub, open **Actions → Build desktop installers → Run workflow**, leave
+   `ref` as `main`, and run it.
+3. When the run finishes, download the three artifacts from the run summary:
+   `inkycap-windows-x86_64`, `inkycap-macos-aarch64`, `inkycap-macos-x86_64`.
+4. Unzip them and attach the `*-setup.exe`, `.msi` and `.dmg` files to the
+   Codeberg draft. No signing or `.sig` is needed.
+
+The workflow runs the same version self-check as the Linux job, so a bump that
+didn't reach every manifest fails the build instead of shipping.
+
+If you'd rather build Windows by hand on a Windows machine, that still works:
 
 ```powershell
 npm run tauri build                            # NSIS -setup.exe (and .msi)
@@ -153,8 +168,7 @@ src-tauri\target\release\inkycap.exe --version # MUST print the version you bump
 Verify the printed version matches before uploading. A reused local `target/`
 can otherwise bake the *previous* version into the installer while the filename
 reads the new one. If it's wrong, delete `src-tauri\target\release` (or run
-`cargo clean -p inkycap`) and rebuild. Upload the `*-setup.exe` (and the `.msi`
-if you ship it). No signing or `.sig` is needed.
+`cargo clean -p inkycap`) and rebuild.
 
 **6. Publish the draft.** In the web UI, edit the draft and publish it — **this
 is what creates the `vXX.YY.Z` tag** (at the `main` target). The releases API now
@@ -169,6 +183,45 @@ with a **View releases** link. (`git fetch --tags` to pull the new tag locally.)
 > `scripts/build-linux-docker.sh`. The workflow is kept for the day the runners
 > are reliable *and* the ordering is reworked; until then, don't lean on it.
 
-> **macOS note:** macOS is not yet a first-class target. Code-signing /
-> notarization isn't set up, so macOS users see "unidentified developer"
-> warnings; attach the `.dmg`/`.app.tar.gz` to the release when you build one.
+> **macOS note:** macOS builds are produced by the mirror workflow, but macOS
+> is not yet a *fully* first-class target: code-signing and notarization aren't
+> set up, so macOS users see an "unidentified developer" warning on first
+> launch. Fixing that needs a paid Apple Developer account and two repository
+> secrets (a signing certificate and an app-specific password for notarytool).
+> Until then, the release notes should tell macOS users to right-click the app
+> and choose **Open** the first time.
+
+## The GitHub build mirror
+
+Codeberg has no macOS or Windows runners, so a push-only mirror of `main` lives
+on GitHub purely to build those two installers. GitHub Actions is free and
+unmetered for public repositories on its standard Linux, Windows **and** macOS
+runners, which is the whole reason the mirror exists.
+
+**What stays on Codeberg:** the canonical repository, issues, pull requests, and
+every published release. The mirror has no issue tracker in use and the workflow
+deliberately never creates a GitHub release. `src-tauri/src/commands/updates.rs`
+still queries Codeberg's API, and nothing in the app points at GitHub.
+
+**One-time setup:**
+
+1. Create a public repository on GitHub (for example `InkyCap/app`) with no
+   README, licence or `.gitignore`.
+2. Add it as a second remote and push:
+
+   ```sh
+   git remote add github git@github.com:InkyCap/app.git
+   git push github main
+   ```
+
+3. In the GitHub repo, **Settings → Actions → General**, confirm actions are
+   allowed. No secrets are needed; the workflow only reads the repository and
+   uploads artifacts.
+
+**Keeping it in sync.** Push to `github` whenever you're about to cut a release.
+There is no automatic mirroring, and that's deliberate: the mirror is a build
+tool you reach for, not a second source of truth that can drift silently.
+
+**Ongoing cost.** The `.forgejo/workflows/ci.yml` gates (rustfmt, clippy, tests,
+typecheck) are *not* duplicated on the mirror. Codeberg remains the place where
+correctness is checked; GitHub only compiles installers.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { toggleWrap } from "./wrap-format";
+import { toggleEmphasis, toggleWrap } from "./wrap-format";
 
 // `toggleWrap` is the single source of truth for the inline-format toggle rule
 // shared by the keyboard shortcuts and the selection toolbar. The load-bearing
@@ -99,5 +99,101 @@ describe("toggleWrap", () => {
     const from = doc.indexOf("bar");
     const r = apply(doc, from, from + 3, '#link("https://x.test")[', "]", LINK_SLOT);
     expect(r.doc).toBe("foo bar baz");
+  });
+});
+
+// Typst reads `*` / `_` as bold/italic delimiters only when they are not
+// wedged between two letters or digits, so `l'*a*ppropriation` does NOT bold
+// the "a" — the run opened by the first `*` stays open past the second one.
+// `toggleEmphasis` detects that position and writes `#strong[…]` / `#emph[…]`
+// instead, which Typst reads the same way anywhere.
+function emphasize(doc: string, anchor: number, head: number, marker: string, func: string) {
+  const state = EditorState.create({ doc, selection: { anchor, head } });
+  const next = state.update(toggleEmphasis(state, marker, func));
+  return {
+    doc: next.state.doc.toString(),
+    from: next.state.selection.main.from,
+    to: next.state.selection.main.to,
+  };
+}
+
+describe("toggleEmphasis", () => {
+  it("uses the shorthand when the markers land at word boundaries", () => {
+    const r = emphasize("foo bar baz", 4, 7, "*", "strong");
+    expect(r.doc).toBe("foo *bar* baz");
+  });
+
+  it("uses the shorthand when the neighbouring characters are not letters", () => {
+    // The apostrophe before and the end of the line after both let a marker
+    // read as a delimiter, even though the selection starts mid-"word".
+    const doc = "l'appropriation";
+    const from = doc.indexOf("appropriation");
+    const r = emphasize(doc, from, doc.length, "*", "strong");
+    expect(r.doc).toBe("l'*appropriation*");
+  });
+
+  it("uses the function form when only the closing marker lands inside a word", () => {
+    // "appropri" selected: the opening marker follows an apostrophe and would
+    // be fine, but the closing one would sit between "i" and "a".
+    const doc = "l'appropriation";
+    const from = doc.indexOf("appropriation");
+    const r = emphasize(doc, from, from + "appropri".length, "*", "strong");
+    expect(r.doc).toBe("l'#strong[appropri]ation");
+  });
+
+  it("uses #strong[…] for a single letter inside a word", () => {
+    const doc = "l'appropriation collective";
+    const from = doc.indexOf("appropriation");
+    const r = emphasize(doc, from, from + 1, "*", "strong");
+    expect(r.doc).toBe("l'#strong[a]ppropriation collective");
+  });
+
+  it("uses #emph[…] for a single letter inside a word", () => {
+    const doc = "l'appropriation collective";
+    const from = doc.indexOf("appropriation");
+    const r = emphasize(doc, from, from + 1, "_", "emph");
+    expect(r.doc).toBe("l'#emph[a]ppropriation collective");
+  });
+
+  it("uses the function form for an empty caret inside a word", () => {
+    const doc = "appropriation";
+    const r = emphasize(doc, 1, 1, "*", "strong");
+    expect(r.doc).toBe("a#strong[]ppropriation");
+    // Caret sits between the brackets, ready for typing.
+    expect([r.from, r.to]).toEqual(["a#strong[".length, "a#strong[".length]);
+  });
+
+  it("keeps the shorthand for an empty caret at a word boundary", () => {
+    const r = emphasize("foo  baz", 4, 4, "*", "strong");
+    expect(r.doc).toBe("foo ** baz");
+    expect([r.from, r.to]).toEqual([5, 5]);
+  });
+
+  it("keeps the shorthand between characters of a spaceless script", () => {
+    // Typst's own rule exempts Han/Kana/Hangul, where a marker between two
+    // characters is still a delimiter.
+    const doc = "自由文化";
+    const r = emphasize(doc, 1, 2, "*", "strong");
+    expect(r.doc).toBe("自*由*文化");
+  });
+
+  it("toggles the shorthand back off", () => {
+    // Inner text selected, markers decorated away outside it (visual mode).
+    const r = emphasize("foo *bar* baz", 5, 8, "*", "strong");
+    expect(r.doc).toBe("foo bar baz");
+  });
+
+  it("toggles the function form back off", () => {
+    const doc = "l'#strong[a]ppropriation";
+    const from = doc.indexOf("a]") ;
+    const r = emphasize(doc, from, from + 1, "*", "strong");
+    expect(r.doc).toBe("l'appropriation");
+  });
+
+  it("toggles off a hand-written function form captured in the selection", () => {
+    const doc = "l'#emph[a]ppropriation";
+    const from = doc.indexOf("#emph[");
+    const r = emphasize(doc, from, from + "#emph[a]".length, "_", "emph");
+    expect(r.doc).toBe("l'appropriation");
   });
 });

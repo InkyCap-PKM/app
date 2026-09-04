@@ -56,6 +56,47 @@ export function toggleWrap(
 
   const selected = state.doc.sliceString(from, to);
 
+  // (2) and (3) — already wrapped in one shape or the other → strip.
+  const stripped = unwrapIfWrapped(state, before, after);
+  if (stripped) return stripped;
+
+  // (4) Not wrapped → wrap. With an explicit inner slot, collapse the caret
+  // into it (e.g. the URL quotes of `#link("")[label]`); otherwise keep the
+  // wrapped text selected so re-toggling or typing replaces it.
+  if (caretInWrapper != null) {
+    const at = from + caretInWrapper;
+    return {
+      changes: { from, to, insert: before + selected + after },
+      selection: { anchor: at, head: at },
+    };
+  }
+  return {
+    changes: { from, to, insert: before + selected + after },
+    selection: { anchor: from + before.length, head: to + before.length },
+  };
+}
+
+/**
+ * Recognize an existing `before`…`after` wrapper around the selection and
+ * return the transaction that removes it, or `null` when none is present.
+ *
+ * Two shapes count as "already wrapped":
+ *
+ *  2. The selection itself spans the delimiters — a source-mode selection that
+ *     includes the raw `*…*` / `#strike[…]` markup.
+ *  3. The delimiters sit just OUTSIDE the selection — the visual-mode case: the
+ *     markup is decorated away, so the user selects only the inner text and the
+ *     `before`/`after` live in the document immediately around the selection.
+ */
+function unwrapIfWrapped(
+  state: EditorState,
+  before: string,
+  after: string,
+): WrapTransaction | null {
+  const { from, to } = state.selection.main;
+  if (from === to) return null;
+  const selected = state.doc.sliceString(from, to);
+
   // (2) Delimiters captured inside the selection → strip them.
   if (
     selected.length >= before.length + after.length &&
@@ -90,20 +131,98 @@ export function toggleWrap(
     };
   }
 
-  // (4) Not wrapped → wrap. With an explicit inner slot, collapse the caret
-  // into it (e.g. the URL quotes of `#link("")[label]`); otherwise keep the
-  // wrapped text selected so re-toggling or typing replaces it.
-  if (caretInWrapper != null) {
-    const at = from + caretInWrapper;
-    return {
-      changes: { from, to, insert: before + selected + after },
-      selection: { anchor: at, head: at },
-    };
-  }
-  return {
-    changes: { from, to, insert: before + selected + after },
-    selection: { anchor: from + before.length, head: to + before.length },
-  };
+  return null;
+}
+
+/* ── Bold / italic: shorthand markers vs. the function form ──────────────── */
+
+// Typst only treats `*` and `_` as bold/italic delimiters when the characters
+// on either side of the marker are NOT both "wordy". These two patterns mirror
+// the `in_word` test in Typst's own lexer: alphanumeric counts as wordy, except
+// for scripts written without spaces, where a marker between two characters is
+// still a valid delimiter.
+const WORDY_CHAR = /[\p{Alphabetic}\p{Nd}\p{Nl}\p{No}]/u;
+const SPACELESS_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+function isWordy(ch: string | undefined): boolean {
+  return ch != null && WORDY_CHAR.test(ch) && !SPACELESS_SCRIPT.test(ch);
+}
+
+/** The whole character ending at `pos`, surrogate pair included. */
+function charBefore(state: EditorState, pos: number): string | undefined {
+  const slice = state.doc.sliceString(Math.max(0, pos - 2), pos);
+  return Array.from(slice).pop();
+}
+
+/** The whole character starting at `pos`, surrogate pair included. */
+function charAfter(state: EditorState, pos: number): string | undefined {
+  const slice = state.doc.sliceString(pos, Math.min(state.doc.length, pos + 2));
+  return Array.from(slice)[0];
+}
+
+/**
+ * Whether a one-character shorthand marker placed at both ends of the current
+ * selection would actually be read as a delimiter by Typst.
+ *
+ * A marker with a letter or digit on both sides is plain text to Typst, so
+ * `l'*a*ppropriation` does not bold the `a`: the opening `*` starts a bold run
+ * that the `*` after `a` cannot close, and the run instead ends at the next
+ * usable `*` further along the line. Only the outward-facing neighbours matter
+ * — the marker itself sits between the surrounding text and the wrapped text.
+ */
+function shorthandWorksHere(state: EditorState): boolean {
+  const { from, to } = state.selection.main;
+  const selected = state.doc.sliceString(from, to);
+  const chars = Array.from(selected);
+  // With an empty selection the caret's own neighbours stand in for the text
+  // the user is about to type, so both markers get the same verdict.
+  const outerBefore = charBefore(state, from);
+  const outerAfter = charAfter(state, to);
+  const innerAfterOpen = chars[0] ?? outerAfter;
+  const innerBeforeClose = chars[chars.length - 1] ?? outerBefore;
+
+  const openInWord = isWordy(outerBefore) && isWordy(innerAfterOpen);
+  const closeInWord = isWordy(innerBeforeClose) && isWordy(outerAfter);
+  return !openInWord && !closeInWord;
+}
+
+/**
+ * Toggle bold or italic, choosing the markup form that Typst will actually
+ * read at this position.
+ *
+ * Away from word interiors this writes the familiar shorthand (`*bold*`,
+ * `_italic_`). Inside a word it writes the function form instead
+ * (`#strong[…]`, `#emph[…]`), which carries no position restriction and is the
+ * same document to Typst. Both forms toggle back off, so a user who typed the
+ * shorthand by hand still gets it removed on the second invocation.
+ *
+ * @param marker  Shorthand delimiter: `*` for bold, `_` for italic.
+ * @param funcName  Matching Typst function: `strong` or `emph`.
+ */
+export function toggleEmphasis(
+  state: EditorState,
+  marker: string,
+  funcName: string,
+): WrapTransaction {
+  const open = `#${funcName}[`;
+  const close = "]";
+  const stripped =
+    unwrapIfWrapped(state, marker, marker) ?? unwrapIfWrapped(state, open, close);
+  if (stripped) return stripped;
+
+  return shorthandWorksHere(state)
+    ? toggleWrap(state, marker, marker)
+    : toggleWrap(state, open, close);
+}
+
+/** Dispatch {@link toggleEmphasis} on a view and restore focus to the editor. */
+export function applyToggleEmphasis(
+  view: EditorView,
+  marker: string,
+  funcName: string,
+): void {
+  view.dispatch(toggleEmphasis(view.state, marker, funcName));
+  view.focus();
 }
 
 /** Dispatch {@link toggleWrap} on a view and restore focus to the editor. */
