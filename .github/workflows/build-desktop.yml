@@ -1,0 +1,157 @@
+# macOS and Windows installer builds for InkyCap.
+#
+# WHY THIS LIVES ON GITHUB
+# ------------------------
+# The project's home is codeberg.org/InkyCap/app. Codeberg has no macOS or
+# Windows runners, so this repository is a *build mirror*: a push-only copy of
+# `main` that exists to produce the two artifacts the Codeberg release flow
+# can't build for itself. Issues, pull requests and published releases stay on
+# Codeberg. This workflow deliberately does NOT create a GitHub release.
+#
+# HOW IT FITS THE RELEASE RUNBOOK
+# -------------------------------
+# documentation/developer/releasing.md builds the Linux packages locally, then
+# attaches everything to a Codeberg *draft* and publishes by hand — and
+# publishing the draft is what creates the git tag. So at build time the tag
+# does not exist yet, which is why this runs on `workflow_dispatch` (you press
+# the button) rather than on a tag push. Download the artifacts from the run
+# summary and attach them to the draft alongside the .deb/.rpm/Flatpak.
+#
+# A `v*` tag trigger is included as a convenience for after-the-fact rebuilds,
+# once the tag has been mirrored across.
+#
+# WHAT IT PRODUCES
+# ----------------
+#   inkycap-macos-aarch64   .dmg + .app.tar.gz   (Apple silicon)
+#   inkycap-macos-x86_64    .dmg + .app.tar.gz   (Intel, cross-compiled)
+#   inkycap-windows-x86_64  *-setup.exe + .msi
+#
+# The macOS builds are NOT code-signed or notarized — macOS users will see an
+# "unidentified developer" warning. Setting that up needs an Apple Developer
+# account; see the note at the bottom of releasing.md.
+
+name: Build desktop installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build"
+        required: false
+        default: main
+  push:
+    tags:
+      - "v*"
+
+# One build at a time per ref; a newer request cancels an in-flight one.
+concurrency:
+  group: build-desktop-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Keep going if one platform fails, so a Windows problem doesn't cost you
+      # the macOS artifacts (and vice versa).
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (Apple silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app dmg
+            artifact: inkycap-macos-aarch64
+            # The runner is Apple silicon, so the built binary runs natively
+            # and the version self-check below can execute it.
+            native: true
+
+          - label: macOS (Intel)
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: app dmg
+            artifact: inkycap-macos-x86_64
+            # Cross-compiled from the Apple-silicon runner. Running an x86_64
+            # binary here would need Rosetta 2, which isn't installed, so the
+            # version self-check is skipped for this one.
+            native: false
+
+          - label: Windows (x86_64)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis msi
+            artifact: inkycap-windows-x86_64
+            native: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # No toolchain action: rust-toolchain.toml pins the exact compiler
+      # (1.94.1 at time of writing) and rustup honours it from the repo root.
+      # `rustup show` is what actually installs that pinned toolchain; without
+      # it the `target add` below could attach the target to the wrong one.
+      - name: Install the pinned Rust toolchain and target
+        shell: bash
+        run: |
+          rustup show
+          rustup target add ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      # The Tinymist language-server sidecar is not in the repo (~30 MB per
+      # platform); the script fetches it and verifies a committed SHA-256.
+      - name: Fetch Tinymist sidecar
+        shell: bash
+        run: ./scripts/download-tinymist.sh ${{ matrix.target }}
+
+      - name: Build the installers
+        shell: bash
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # Mirrors the check in the Codeberg release workflow: the version the
+      # binary reports at runtime (what Settings -> Overview shows) must match
+      # package.json. Catches a version bump that didn't reach every manifest.
+      - name: Verify the built binary's version
+        if: matrix.native
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECT="$(node -p "require('./package.json').version")"
+          BIN="src-tauri/target/${{ matrix.target }}/release/inkycap"
+          [ -f "$BIN" ] || BIN="${BIN}.exe"
+          GOT="$("$BIN" --version)"
+          if [ "$GOT" != "$EXPECT" ]; then
+            echo "::error::Built binary reports '$GOT' but package.json says '$EXPECT'."
+            exit 1
+          fi
+          echo "Verified: built binary reports version $EXPECT."
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi

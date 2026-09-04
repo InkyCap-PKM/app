@@ -2,7 +2,7 @@ import { type EditorView, type KeyBinding } from "@codemirror/view";
 import { Facet, EditorSelection, type EditorState, type ChangeSpec, type Line, type StateEffect } from "@codemirror/state";
 import { syntaxTree, foldedRanges, foldEffect } from "@codemirror/language";
 import { moveLineUp, moveLineDown } from "@codemirror/commands";
-import { toggleWrap } from "./wrap-format";
+import { toggleEmphasis, toggleWrap } from "./wrap-format";
 import { listSubtreeEndLine, leadingWhitespace } from "./list-scan";
 
 /**
@@ -207,11 +207,11 @@ function smartLineStart(view: EditorView, extend: boolean): boolean {
 }
 
 function toggleBold(state: EditorState) {
-  return toggleWrap(state, "*", "*");
+  return toggleEmphasis(state, "*", "strong");
 }
 
 function toggleItalic(state: EditorState) {
-  return toggleWrap(state, "_", "_");
+  return toggleEmphasis(state, "_", "emph");
 }
 
 function toggleStrikethrough(state: EditorState) {

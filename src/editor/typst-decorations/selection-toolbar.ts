@@ -1,7 +1,7 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { StateField, type ChangeSpec, type Extension } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import { applyToggleWrap } from "./wrap-format";
+import { applyToggleEmphasis, applyToggleWrap } from "./wrap-format";
 import { VERSE_ICON_SVG } from "../../components/icons/verse";
 import { t, localeVersion } from "../../lib/i18n";
 import { positionPopupAtAnchor } from "./popup-position";
@@ -14,6 +14,12 @@ interface InlineAction {
   /** i18n key for the button tooltip, resolved at DOM-build time. */
   titleKey: string;
   wrap: [string, string];
+  /**
+   * Typst function backing this format, for the two shorthand markers whose
+   * `wrap` pair only works outside a word. Set it and the action routes
+   * through `applyToggleEmphasis`, which picks the form Typst can read here.
+   */
+  emphasisFunc?: string;
   styleBold?: boolean;
   styleItalic?: boolean;
   styleStrike?: boolean;
@@ -21,8 +27,8 @@ interface InlineAction {
 }
 
 const INLINE_ACTIONS: InlineAction[] = [
-  { icon: "B", titleKey: "selToolbar.bold", wrap: ["*", "*"], styleBold: true },
-  { icon: "I", titleKey: "selToolbar.italic", wrap: ["_", "_"], styleItalic: true },
+  { icon: "B", titleKey: "selToolbar.bold", wrap: ["*", "*"], emphasisFunc: "strong", styleBold: true },
+  { icon: "I", titleKey: "selToolbar.italic", wrap: ["_", "_"], emphasisFunc: "emph", styleItalic: true },
   { icon: "U", titleKey: "selToolbar.underline", wrap: ["#underline[", "]"], styleUnderline: true },
   { icon: "S", titleKey: "selToolbar.strike", wrap: ["#strike[", "]"], styleStrike: true },
 ];
@@ -259,7 +265,11 @@ function getToolbar(): HTMLElement {
         e.preventDefault();
         closeAllPopups();
         if (!activeView) return;
-        applyToggleWrap(activeView, action.wrap[0], action.wrap[1]);
+        if (action.emphasisFunc) {
+          applyToggleEmphasis(activeView, action.wrap[0], action.emphasisFunc);
+        } else {
+          applyToggleWrap(activeView, action.wrap[0], action.wrap[1]);
+        }
       });
       toolbar.appendChild(btn);
     }

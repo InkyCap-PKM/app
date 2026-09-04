@@ -63,6 +63,30 @@ verify_checksum() {
   echo "Checksum OK ($actual)"
 }
 
+# Extract a .zip without assuming `unzip` is installed. The Windows build needs
+# this path, and neither a stock Git for Windows install nor GitHub's Windows
+# runner image ships `unzip`; they ship 7-Zip and PowerShell instead.
+extract_zip() {
+  local archive="$1" dest="$2"
+  if command -v unzip &>/dev/null; then
+    unzip -q "$archive" -d "$dest"
+  elif command -v 7z &>/dev/null; then
+    7z x -bso0 -bsp0 -o"$dest" "$archive"
+  elif command -v powershell &>/dev/null; then
+    # PowerShell needs native Windows paths, not the MSYS/Cygwin ones bash uses.
+    local win_archive="$archive" win_dest="$dest"
+    if command -v cygpath &>/dev/null; then
+      win_archive="$(cygpath -w "$archive")"
+      win_dest="$(cygpath -w "$dest")"
+    fi
+    powershell -NoProfile -NonInteractive -Command \
+      "Expand-Archive -LiteralPath '${win_archive}' -DestinationPath '${win_dest}' -Force"
+  else
+    echo "Found none of unzip, 7z or powershell - cannot extract ${archive}" >&2
+    exit 1
+  fi
+}
+
 detect_target() {
   local arch os
   arch="$(uname -m)"
@@ -135,7 +159,7 @@ if [[ "$ARCHIVE_EXT" == ".tar.gz" ]]; then
     EXTRACTED="$(find "$TMPDIR" -name "tinymist${EXT}" -type f | head -1)"
   fi
 else
-  unzip -q "$ARCHIVE_PATH" -d "$TMPDIR"
+  extract_zip "$ARCHIVE_PATH" "$TMPDIR"
   EXTRACTED="$(find "$TMPDIR" -name "tinymist${EXT}" -type f | head -1)"
 fi
 

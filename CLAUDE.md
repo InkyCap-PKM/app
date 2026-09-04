@@ -376,6 +376,7 @@ InkyCap is built to be picked up and extended by future human contributors who h
 
 - **Active branch:** `main`
 - **Remote:** `origin` at `git@codeberg.org:InkyCap/app.git` (org-owned; transferred from the original personal `joch/InkyCap-Notes`)
+- **Build mirror:** `github` at `git@github.com:InkyCap/app.git`. Push-only copy of `main`, used solely to build the macOS and Windows installers (`.github/workflows/build-desktop.yml`), because Codeberg has no runners for those platforms. Issues, pull requests and releases stay on Codeberg. See [documentation/developer/releasing.md](documentation/developer/releasing.md).
 
 ## Where to start
 
