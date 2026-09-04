@@ -49,6 +49,7 @@ import { linkClickHandler } from "./visual-links";
 import { tableClipboardHandler, tablePasteHandler, createTableEntryKeymap } from "./visual-tables";
 import { createClickAnchorPlugin } from "./click-anchor";
 import { pillBoundaryNav } from "./pill-boundary-nav";
+import { leadingWhitespace } from "./list-scan";
 
 const escapedChar = Decoration.mark({ class: "cm-typst-escaped" });
 const bold = Decoration.mark({ class: "cm-typst-bold" });
@@ -513,7 +514,13 @@ export function setRuleLabel(raw: string): string {
  */
 function enumItemNumber(state: EditorState, markerFrom: number): string {
   const line = state.doc.lineAt(markerFrom);
-  const indent = markerFrom - line.from;
+  // Read the indent from the line text rather than from the marker's position.
+  // A list marker is always the first thing on its line, so the two agree —
+  // except in the moment after an edit, when the syntax tree may still hold
+  // the marker's pre-edit position. Taking it from the text keeps the number
+  // right through an indent, where a stale position made every item read as
+  // nested and restart at 1.
+  const indent = leadingWhitespace(line.text);
   const explicit = line.text.slice(indent).match(/^(\d+)\./);
   if (explicit) return `${explicit[1]}.`;
 

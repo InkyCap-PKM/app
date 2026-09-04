@@ -389,81 +389,163 @@ function continueList(state: EditorState): { changes: ChangeSpec; selection: { a
   };
 }
 
+/** One nesting level, in spaces. Typst treats leading whitespace as nesting. */
+const INDENT_UNIT = "  ";
+
+/** A planned indent/outdent: one contiguous edit plus the selection to keep. */
+interface IndentPlan {
+  /** Replacement covering every line the plan touches, first to last. */
+  change: { from: number; to: number; insert: string };
+  /** Where the selection sits once the change has been applied. */
+  selection: { anchor: number; head: number };
+  /** CodeMirror user-event name, so history and other extensions can react. */
+  userEvent: string;
+}
+
+/** A line that opens a list item: indent, then a `-`/`+`/`N.` marker and a space. */
+const LIST_LINE_RE = /^([ \t]*)(?:[-+]|\d+\.)[ \t]/;
+
 /**
- * Plan a list indent or outdent.
- *
- * Returns an ascending-by-position list of per-line changes plus the
- * final cursor anchor. The caller should apply changes in REVERSE order,
- * one transaction per change: the codemirror-lang-typst parser uses an
- * incremental edit API that expects positions in its current tree, but
- * CodeMirror's iterChanges yields positions in the original document —
- * so packing multiple shifted changes into a single transaction
- * desynchronises the syntax tree and breaks list-marker decorations
- * downstream. Reverse order keeps each dispatched edit's position valid.
+ * Character shift for a line at `indent` moving one level: two spaces in, or
+ * back out by as much as its indentation allows (zero when already at the
+ * margin, which is how an outdent of a top-level item becomes a no-op).
  */
-function indentList(state: EditorState, direction: 1 | -1): { changes: { from: number; to?: number; insert?: string }[]; finalAnchor: number } | null {
-  const { from } = state.selection.main;
-  const line = state.doc.lineAt(from);
-  const text = line.text;
-
-  if (!/^\s*[-+]\s/.test(text)) return null;
-
-  const currentIndent = text.match(/^(\s*)/)?.[1].length ?? 0;
-  const smart = state.facet(smartIndentListsFacet);
-
-  // Collect the parent line plus, when smart-indent is on, any descendant
-  // lines (anything indented deeper than the parent, until a blank line
-  // or a line at ≤ the parent's indent).
-  const lineStarts: number[] = [line.from];
-  if (smart) {
-    for (let n = line.number + 1; n <= state.doc.lines; n++) {
-      const nextLine = state.doc.line(n);
-      if (nextLine.text.trim() === "") break;
-      const nextIndent = nextLine.text.match(/^(\s*)/)?.[1].length ?? 0;
-      if (nextIndent <= currentIndent) break;
-      lineStarts.push(nextLine.from);
-    }
-  }
-
-  if (direction === 1) {
-    return {
-      changes: lineStarts.map((start) => ({ from: start, insert: "  " })),
-      finalAnchor: from + 2,
-    };
-  }
-
-  if (currentIndent === 0) return null;
-  // Remove the same byte count from every line so relative nesting is
-  // preserved. Children are guaranteed to have > currentIndent leading
-  // spaces (we only included lines with strictly greater indent), so they
-  // can absorb the same removal.
-  const remove = Math.min(2, currentIndent);
-  return {
-    changes: lineStarts.map((start) => ({ from: start, to: start + remove })),
-    finalAnchor: from - remove,
-  };
+function shiftFor(indent: number, direction: 1 | -1): number {
+  return direction === 1 ? INDENT_UNIT.length : -Math.min(INDENT_UNIT.length, indent);
 }
 
 /**
- * Apply a planned list indent/outdent. Dispatches one transaction per
- * change in reverse document order so the Typst parser receives a
- * sequence of edits whose positions remain valid in its current tree.
- * Cursor selection is set on the final transaction, which targets the
- * parent line — the line containing the cursor.
+ * Lines to shift when the caret sits in a single item, keyed by line number.
+ *
+ * With smart indent on, the item's nested descendants ride along so the
+ * subtree keeps its shape — the writer indented "Animals", not each child in
+ * turn. Descendants are the following lines indented deeper than the item, up
+ * to a blank line or a line at the item's level or shallower.
  */
-function applyIndentPlan(view: EditorView, plan: { changes: { from: number; to?: number; insert?: string }[]; finalAnchor: number }): void {
-  const { changes, finalAnchor } = plan;
-  for (let i = changes.length - 1; i >= 0; i--) {
-    const change = changes[i];
-    const spec: ChangeSpec = "insert" in change && change.insert !== undefined
-      ? { from: change.from, insert: change.insert }
-      : { from: change.from, to: change.to ?? change.from };
-    if (i === 0) {
-      view.dispatch({ changes: spec, selection: { anchor: finalAnchor } });
-    } else {
-      view.dispatch({ changes: spec });
-    }
+function shiftsForItem(state: EditorState, lineNumber: number, direction: 1 | -1, smart: boolean): Map<number, number> {
+  const shifts = new Map<number, number>();
+  const match = LIST_LINE_RE.exec(state.doc.line(lineNumber).text);
+  if (!match) return shifts;
+  const indent = match[1].length;
+  const shift = shiftFor(indent, direction);
+  if (shift === 0) return shifts;
+  shifts.set(lineNumber, shift);
+  if (!smart) return shifts;
+  for (let n = lineNumber + 1; n <= state.doc.lines; n++) {
+    const text = state.doc.line(n).text;
+    if (text.trim() === "") break;
+    if (leadingWhitespace(text) <= indent) break;
+    shifts.set(n, shift);
   }
+  return shifts;
+}
+
+/**
+ * Lines to shift when the selection spans several lines, keyed by line number.
+ *
+ * Only what the user selected moves. Selecting "Animals" and two of its three
+ * children indents exactly those three lines; the child left out stays where
+ * it is and so becomes a sibling of "Animals" — that is the point of taking
+ * the trouble to select a partial range, and it is why descendants are not
+ * dragged along here the way they are for a caret in a single item.
+ *
+ * The one thing that moves without being a list item is a wrapped
+ * continuation line, which is indented under the item it belongs to and would
+ * otherwise be left behind by its own text.
+ */
+function shiftsForSelectedLines(state: EditorState, firstNumber: number, lastNumber: number, direction: 1 | -1): Map<number, number> {
+  const shifts = new Map<number, number>();
+  let itemIndent = -1;
+  let itemShift = 0;
+  for (let n = firstNumber; n <= lastNumber; n++) {
+    const text = state.doc.line(n).text;
+    const match = LIST_LINE_RE.exec(text);
+    if (match) {
+      itemIndent = match[1].length;
+      itemShift = shiftFor(itemIndent, direction);
+      if (itemShift !== 0) shifts.set(n, itemShift);
+      continue;
+    }
+    const isContinuation = text.trim() !== "" && itemIndent >= 0 && leadingWhitespace(text) > itemIndent;
+    if (isContinuation) {
+      if (itemShift !== 0) shifts.set(n, itemShift);
+      continue;
+    }
+    // Prose or a blank line ends the run: the next item starts a fresh one.
+    itemIndent = -1;
+    itemShift = 0;
+  }
+  return shifts;
+}
+
+/**
+ * Plan a list indent or outdent for the current selection.
+ *
+ * Returns a single replacement spanning the first through last shifted line,
+ * plus the selection to restore. One contiguous edit rather than one edit per
+ * line is deliberate on three counts: undo takes the whole gesture back in a
+ * single Ctrl+Z, the codemirror-lang-typst parser gets the ordinary
+ * single-range edit its incremental API handles correctly (a transaction
+ * carrying several shifted changes desynchronises its tree, which then
+ * mis-places list-marker decorations), and unshifted lines in the middle of
+ * the range are simply reproduced unchanged.
+ *
+ * Returns null when nothing would move, so Tab falls through to the editor's
+ * generic indent command.
+ */
+function indentList(state: EditorState, direction: 1 | -1): IndentPlan | null {
+  const { anchor, head } = state.selection.main;
+  const firstLine = state.doc.lineAt(Math.min(anchor, head));
+  let lastLine = state.doc.lineAt(Math.max(anchor, head));
+  // A selection that stops exactly at a line's start doesn't reach into it.
+  if (lastLine.number > firstLine.number && Math.max(anchor, head) === lastLine.from) {
+    lastLine = state.doc.line(lastLine.number - 1);
+  }
+
+  const shifts = lastLine.number > firstLine.number
+    ? shiftsForSelectedLines(state, firstLine.number, lastLine.number, direction)
+    : shiftsForItem(state, firstLine.number, direction, state.facet(smartIndentListsFacet));
+  if (shifts.size === 0) return null;
+
+  const shiftedNumbers = [...shifts.keys()].sort((a, b) => a - b);
+  const startLine = state.doc.line(shiftedNumbers[0]);
+  const endLine = state.doc.line(shiftedNumbers[shiftedNumbers.length - 1]);
+
+  const rewritten: string[] = [];
+  for (let n = startLine.number; n <= endLine.number; n++) {
+    const text = state.doc.line(n).text;
+    const shift = shifts.get(n) ?? 0;
+    rewritten.push(shift > 0 ? INDENT_UNIT + text : shift < 0 ? text.slice(-shift) : text);
+  }
+
+  // Where a position ends up: earlier shifted lines move its line start, and
+  // its own line's shift moves it within the line. A position inside removed
+  // indentation lands at the new line start.
+  const mapPos = (pos: number): number => {
+    const line = state.doc.lineAt(pos);
+    let precedingShift = 0;
+    for (const n of shiftedNumbers) {
+      if (n < line.number) precedingShift += shifts.get(n) ?? 0;
+    }
+    const shift = shifts.get(line.number) ?? 0;
+    const column = pos - line.from;
+    return line.from + precedingShift + Math.max(0, column + shift);
+  };
+
+  return {
+    change: { from: startLine.from, to: endLine.to, insert: rewritten.join("\n") },
+    selection: { anchor: mapPos(anchor), head: mapPos(head) },
+    userEvent: direction === 1 ? "input.indent" : "delete.dedent",
+  };
+}
+
+/** Apply a planned list indent/outdent as one undoable transaction. */
+function applyIndentPlan(view: EditorView, plan: IndentPlan): void {
+  view.dispatch({
+    changes: plan.change,
+    selection: plan.selection,
+    userEvent: plan.userEvent,
+  });
 }
 
 /** Is `text` a list item whose leading indent is exactly `indent`? */
