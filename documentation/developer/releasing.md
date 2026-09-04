@@ -205,12 +205,12 @@ still queries Codeberg's API, and nothing in the app points at GitHub.
 
 **One-time setup:**
 
-1. Create a public repository on GitHub (for example `InkyCap/app`) with no
+1. Create a public repository on GitHub (for example `InkyCap-PKM/app`) with no
    README, licence or `.gitignore`.
 2. Add it as a second remote and push:
 
    ```sh
-   git remote add github git@github.com:InkyCap/app.git
+   git remote add github git@github.com:InkyCap-PKM/app.git
    git push github main
    ```
 

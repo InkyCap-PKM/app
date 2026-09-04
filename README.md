@@ -10,7 +10,15 @@
 
 ---
 
-InkyCap is an experimental project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **Human developers: if you are interested in this project, especially if you have expertise in the open technologies underpinning it, please contact me, I would be happy to explore collaboration**. 
+> **Where this project lives.** InkyCap is developed on
+> **[Codeberg](https://codeberg.org/InkyCap/app)**. That is where the issue
+> tracker, pull requests and releases are. The
+> [GitHub repository](https://github.com/InkyCap-PKM/app) is a read-only mirror
+> that exists only to build the macOS and Windows installers, since Codeberg
+> has no runners for those platforms. **Issues and pull requests opened on
+> GitHub will not be seen.** Please use Codeberg.
+
+InkyCap is an experimental project from a person that cares about knowledge management. In spite of making my best efforts to continue it, I am not a professional developer and there are no guarantees here. **If you are interested in this project please contact me, I would be happy to explore collaboration** (especially if you have some expertise or know-how with the open technologies underpinning it). 
 
 InkyCap is a desktop knowledge-management and writing tool whose documents are plain text [Typst](https://typst.app) files. It provides organizational flexibility, discoverability, and advanced recall functionality for notes. Notes are not trapped in a proprietary format; they are real Typst source, which compiles anywhere, and their metadata is queryable with the `typst` command-line tool, with or without InkyCap. InkyCap is currently available in English / Français.
 
