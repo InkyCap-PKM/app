@@ -395,6 +395,8 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
       smartIndentLists: settings.editor.smart_indent_lists,
       enterInsertsLineBreak: settings.editor.enter_inserts_line_break,
       typewriterMode: settings.editor.typewriter_mode,
+      focusMode: settings.editor.focus_mode,
+      focusDim: settings.editor.focus_dim,
       selectionToolbar: settings.editor.selection_toolbar,
       commandPalette: settings.editor.command_palette,
       lspClient: client,
@@ -561,15 +563,12 @@ const TypstEditor: Component<TypstEditorProps> = (props) => {
 
   createEffect(
     on(
+      // `currentMode` is a dependency, not an argument: the handle decides
+      // whether either setting applies to the mode it is in, so the gate
+      // lives in one place. Switching modes just re-applies the settings.
       [() => settings.editor.focus_mode, () => settings.editor.focus_dim, currentMode],
-      ([mode, dim, editorMode]) => {
-        if (!editorHandle) return;
-        const isVisual = editorMode === "live";
-        if (isVisual && mode !== "none") {
-          editorHandle.setFocusMode(mode, dim);
-        } else {
-          editorHandle.setFocusMode("none", false);
-        }
+      ([mode, dim]) => {
+        editorHandle?.setFocusMode(mode, dim);
       },
     ),
   );

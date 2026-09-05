@@ -1509,7 +1509,7 @@
   "settings.editor.focusMode.option.line": "Line",
   "settings.editor.focusMode.option.section": "Section",
   "settings.editor.focusDim.label": "Dim unfocused text",
-  "settings.editor.focusDim.description": "Reduce visibility of text outside the focused area.",
+  "settings.editor.focusDim.description": "Reduce visibility of text outside the focused area. Works with Focus mode off, keeping the paragraph you are writing in clear.",
   "settings.editor.convenience": "Visual editor convenience",
   "settings.editor.selectionToolbar.label": "Popup toolbar on selected text",
   "settings.editor.selectionToolbar.description": "Show a formatting toolbar when text is selected in visual mode.",

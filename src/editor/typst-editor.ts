@@ -176,6 +176,13 @@ import {
   type SearchMatchRange,
 } from "./typst-decorations/search-matches";
 
+/** Focus mode and dimming are independent: either alone needs the extension.
+ *  Both are visual-editor affordances, so source mode shows the document
+ *  plainly. Shared by editor creation and the live setting update. */
+function focusModeExtensionFor(mode: FocusMode, dim: boolean, isVisual: boolean) {
+  return isVisual && (mode !== "none" || dim) ? focusModeExtension(mode, dim) : [];
+}
+
 export interface TypstEditorHandle {
   view: EditorView;
   getText(): string;
@@ -227,6 +234,10 @@ export interface TypstEditorOptions {
   smartIndentLists?: boolean;
   enterInsertsLineBreak?: boolean;
   typewriterMode?: boolean;
+  /** Focus mode and dimming, applied at creation. Without them a fresh editor
+   *  shows neither until the user next changes one of the two settings. */
+  focusMode?: FocusMode;
+  focusDim?: boolean;
   selectionToolbar?: boolean;
   commandPalette?: boolean;
   lspClient?: LspClient | null;
@@ -802,6 +813,8 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
   let toolbarEnabled = options.selectionToolbar !== false;
   let paletteEnabled = options.commandPalette !== false;
   let typewriterEnabled = !!options.typewriterMode;
+  let focusModeSetting: FocusMode = options.focusMode ?? "none";
+  let focusDimSetting = !!options.focusDim;
   // The auto-`\` linebreak is a *visual-mode* affordance: pressing Enter there
   // inserts a Typst linebreak that the visual editor renders invisibly and
   // manages as an atomic "soft break" (see visual-plugin.ts), so the writer
@@ -820,7 +833,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       visualCompartment.of(visualExts),
       autoExpandCompartment.of(autoExpandFacet.of(false)),
       lspCompartment.of(lspExts),
-      focusModeCompartment.of([]),
+      focusModeCompartment.of(focusModeExtensionFor(focusModeSetting, focusDimSetting, isVisual)),
       typewriterCompartment.of(options.typewriterMode && isVisual ? typewriterMode() : []),
       // Spellcheck underlining is installed later via setSpellChecker once the
       // dictionaries have loaded (async); starts empty.
@@ -927,6 +940,7 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
           commandPaletteCompartment.reconfigure(enabled && paletteEnabled ? commandPalette : []),
           // Typewriter scrolling is visual-mode only, like focus mode.
           typewriterCompartment.reconfigure(enabled && typewriterEnabled ? typewriterMode() : []),
+          focusModeCompartment.reconfigure(focusModeExtensionFor(focusModeSetting, focusDimSetting, enabled)),
           // Auto-linebreak is visual-mode only; entering visual mode turns it
           // on (subject to the setting), leaving it returns Enter to a plain
           // newline in source mode.
@@ -950,11 +964,10 @@ export function createTypstEditor(options: TypstEditorOptions): TypstEditorHandl
       }
     },
     setFocusMode(mode: FocusMode, dim: boolean) {
-      const ext = isVisual && mode !== "none"
-        ? focusModeExtension(mode, dim)
-        : [];
+      focusModeSetting = mode;
+      focusDimSetting = dim;
       view.dispatch({
-        effects: focusModeCompartment.reconfigure(ext),
+        effects: focusModeCompartment.reconfigure(focusModeExtensionFor(mode, dim, isVisual)),
       });
     },
     setTypewriterMode(enabled: boolean) {

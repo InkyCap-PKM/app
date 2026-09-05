@@ -1509,7 +1509,7 @@
   "settings.editor.focusMode.option.line": "Ligne",
   "settings.editor.focusMode.option.section": "Section",
   "settings.editor.focusDim.label": "Atténuer le texte hors focus",
-  "settings.editor.focusDim.description": "Réduit la visibilité du texte à l'extérieur de la zone en focus.",
+  "settings.editor.focusDim.description": "Réduit la visibilité du texte à l'extérieur de la zone en focus. Fonctionne même si le mode Focus est désactivé, en gardant net le paragraphe en cours de rédaction.",
   "settings.editor.convenience": "Commodités du mode visuel",
   "settings.editor.selectionToolbar.label": "Barre d'outils contextuelle sur le texte sélectionné",
   "settings.editor.selectionToolbar.description": "Affiche une barre d'outils de mise en forme lorsque du texte est sélectionné en mode visuel.",
