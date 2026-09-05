@@ -29,7 +29,43 @@ export const visualTheme = EditorView.theme({
   // (see `pushListIndent` in visual-plugin) so the two never drift apart. It
   // also stands in for the marker's now-hidden trailing space, so ~1.5em keeps
   // the bullet-to-text gap roughly where it was before that space was folded in.
-  ".cm-content": { "--list-bullet-width": "1.5em" },
+  // ── Shared block geometry ──
+  // Code blocks, block quotes, and callouts each have two states: a rendered
+  // widget while the caret is elsewhere, and in-place editable lines while the
+  // caret is inside. Both states must occupy exactly the same height, or
+  // entering and leaving the block shifts everything below it. Every vertical
+  // measurement the two states share is declared once here and read by both
+  // the widget rules and the edit-line rules further down. Never restate one
+  // of these numbers inline.
+  ".cm-content": {
+    "--list-bullet-width": "1.5em",
+    // CodeMirror's own horizontal padding on every `.cm-line`. Edit-state
+    // lines replace that padding with their block's inset, so they carry it
+    // as a margin instead to keep the block's edges where the widget's are.
+    "--line-inset": "6px",
+    "--line-inset-end": "2px",
+    // Block quote: outer gap, inner padding, text inset past the bar, and
+    // line height.
+    "--quote-margin": "10px",
+    "--quote-pad": "8px",
+    "--quote-inset": "16px",
+    "--quote-line-height": "1.6",
+    // Callout (and annotation, which reuses the callout frame).
+    "--callout-margin": "10px",
+    "--callout-pad": "8px",
+    "--callout-inset": "12px",
+    "--callout-body-size": "0.95em",
+    "--callout-line-height": "1.5",
+    // Code block: the whole block is set at `--codeblock-font-size`; the
+    // header and footer strips are one `--codeblock-row` tall plus the strip
+    // padding, and the code area adds `--codeblock-body-pad` above and below.
+    "--codeblock-font-size": "0.9em",
+    "--codeblock-margin": "10px",
+    "--codeblock-row": "1.5em",
+    "--codeblock-strip-pad": "2px",
+    "--codeblock-inset": "10px",
+    "--codeblock-body-pad": "8px",
+  },
   // (No `.cm-cursor` rule: the editor uses the native caret, which already
   // follows each line's font height — including tall heading lines.)
   ".cm-gutters": {
@@ -214,38 +250,66 @@ export const visualTheme = EditorView.theme({
     // inline-block via text-indent, which left the bullet hanging in the margin.
     marginLeft: "calc(-1 * var(--list-bullet-width))",
   },
+  ".cm-typst-hr-block": {
+    display: "block",
+    position: "relative",
+  },
   ".cm-typst-hr": {
     border: "none",
     borderTop: "2px solid var(--border-primary)",
     margin: "1em 0",
     display: "block",
   },
+  // The rule's pill sits centred on the rule itself, inside its own margins.
+  ".cm-typst-hr-block .cm-typst-block-pill-overlay": {
+    top: "50%",
+    transform: "translateY(-50%)",
+  },
   ".cm-typst-callout": {
     borderLeft: "3px solid var(--accent)",
     borderRadius: "4px",
-    padding: "8px 12px",
-    margin: "4px 0",
+    padding: "var(--callout-pad) var(--callout-inset)",
+    margin: "var(--callout-margin) 0",
     display: "block",
   },
+  // A flex row with a fixed minimum height, so the heading measures the same
+  // whether or not the edit state's pill is sitting in it.
   ".cm-typst-callout-heading": {
+    display: "flex",
+    alignItems: "center",
+    minHeight: "1.6em",
     fontWeight: "bold",
     fontSize: "0.95em",
     marginBottom: "4px",
   },
   ".cm-typst-callout-body": {
-    fontSize: "0.95em",
-    lineHeight: "1.5",
+    fontSize: "var(--callout-body-size)",
+    lineHeight: "var(--callout-line-height)",
   },
   // Lists rendered inside a block body (callout / quote / annotation). The
   // body inherits CM's pre-wrap, so reset list items to normal wrapping and
-  // give the markers room; ordered vs unordered pick their own marker glyph.
+  // give the markers the same room the editor's own list lines get. No
+  // vertical margins: each item must measure exactly one editor line so the
+  // block keeps its height when it switches to in-place editing.
   ".cm-typst-body-list": {
-    margin: "0.15em 0",
-    paddingLeft: "1.6em",
+    margin: "0",
+    paddingLeft: "var(--list-bullet-width)",
     whiteSpace: "normal",
   },
   ".cm-typst-body-list li": {
-    margin: "0.1em 0",
+    margin: "0",
+  },
+  // Block-shaped widgets that replace a range inside a `.cm-line`. CodeMirror
+  // places a zero-width placeholder on each side of such a widget so the caret
+  // has somewhere to sit; if the widget's box were `display: block`, each
+  // placeholder would form an empty row of its own above and below it. As an
+  // inline-block filling the line they share the widget's row instead, so the
+  // widget measures exactly its own height, like the edit-state lines it
+  // alternates with.
+  ".cm-typst-block-row": {
+    display: "inline-block",
+    width: "100%",
+    verticalAlign: "top",
   },
   "ol.cm-typst-body-list": {
     listStyleType: "decimal",
@@ -253,28 +317,40 @@ export const visualTheme = EditorView.theme({
   "ul.cm-typst-body-list": {
     listStyleType: "disc",
   },
+  // ── Code block ──
+  // Rendered widget: header strip (language, copy button), code area, footer
+  // strip. The edit state below rebuilds this frame line by line from the
+  // same geometry variables.
   ".cm-typst-codeblock": {
     fontFamily: "var(--editor-font-mono, monospace)",
+    fontSize: "var(--codeblock-font-size)",
     backgroundColor: "var(--bg-secondary)",
     border: "1px solid var(--border-subtle)",
     borderRadius: "6px",
     padding: "0",
-    margin: "4px 0",
-    display: "block",
+    margin: "var(--codeblock-margin) 0",
     overflow: "hidden",
+  },
+  // Each strip is exactly one code row tall plus its padding, so the edit
+  // state's fence lines can stand in for them at the same height.
+  ".cm-typst-codeblock-header, .cm-typst-codeblock-footer": {
+    boxSizing: "content-box",
+    height: "var(--codeblock-row)",
+    padding: "var(--codeblock-strip-pad) 6px var(--codeblock-strip-pad) var(--codeblock-inset)",
+    backgroundColor: "var(--bg-hover)",
   },
   ".cm-typst-codeblock-header": {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "6px",
-    padding: "2px 6px 2px 10px",
     borderBottom: "1px solid var(--border-subtle)",
-    backgroundColor: "var(--bg-hover)",
-    minHeight: "22px",
+  },
+  ".cm-typst-codeblock-footer": {
+    borderTop: "1px solid var(--border-subtle)",
   },
   ".cm-typst-codeblock-lang": {
-    fontSize: "0.75em",
+    fontSize: "0.83em",
     color: "var(--fg-dim)",
     fontFamily: "var(--editor-font-mono, monospace)",
   },
@@ -282,8 +358,8 @@ export const visualTheme = EditorView.theme({
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    width: "22px",
-    height: "22px",
+    width: "var(--codeblock-row)",
+    height: "var(--codeblock-row)",
     padding: "0",
     border: "none",
     borderRadius: "4px",
@@ -291,7 +367,9 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     cursor: "pointer",
     transition: "background-color 0.12s, color 0.12s",
-    fontFamily: "inherit",
+    // Buttons don't inherit font size by default; the row-height variable
+    // above is in em, so the button must share the block's font size.
+    font: "inherit",
   },
   ".cm-typst-codeblock-copy:hover": {
     backgroundColor: "var(--bg-tertiary, var(--bg-secondary))",
@@ -302,30 +380,60 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-codeblock pre": {
     margin: "0",
-    padding: "8px 10px",
+    padding: "var(--codeblock-body-pad) var(--codeblock-inset)",
     // Wrap long lines inside the box rather than letting them run past the
     // rounded right edge. A notes editor favours always-visible content over
     // a horizontal scrollbar; `pre-wrap` keeps the source's own line breaks
     // and indentation while folding overlong lines back into the box.
     maxWidth: "100%",
     overflowX: "hidden",
-    fontSize: "0.9em",
-    lineHeight: "1.5",
+    lineHeight: "var(--codeblock-row)",
     fontFamily: "inherit",
   },
   ".cm-typst-codeblock code": {
     fontFamily: "inherit",
     display: "block",
+    // A body that is one empty line still measures one row, like its edit line.
+    minHeight: "var(--codeblock-row)",
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
-  // Edit-mode lines: when the cursor enters the code block we show the raw
-  // source instead of the widget. Just the monospace font + a tighter size;
-  // no surrounding frame, since the visible delimiters (` ``` `) already
-  // mark the block boundaries while editing.
+  // Edit state: the caret is inside the block, so its lines are shown as raw
+  // source. The line kinds rebuild the rendered frame piece by piece from the
+  // shared geometry variables: the opening fence line is the header strip,
+  // the lines between are the code area, and the closing fence line is the
+  // footer strip. The block therefore keeps its exact height while editing.
   ".cm-typst-codeblock-edit": {
     fontFamily: "var(--editor-font-mono, monospace) !important",
-    fontSize: "0.9em",
+    fontSize: "var(--codeblock-font-size)",
+    lineHeight: "var(--codeblock-row)",
+    marginLeft: "var(--line-inset)",
+    marginRight: "var(--line-inset-end)",
+    padding: "0 var(--codeblock-inset)",
+    borderLeft: "1px solid var(--border-subtle)",
+    borderRight: "1px solid var(--border-subtle)",
+    backgroundColor: "var(--bg-secondary)",
+  },
+  ".cm-typst-codeblock-edit--open, .cm-typst-codeblock-edit--close": {
+    padding: "var(--codeblock-strip-pad) var(--codeblock-inset)",
+    borderTop: "1px solid var(--border-subtle)",
+    borderBottom: "1px solid var(--border-subtle)",
+    backgroundColor: "var(--bg-hover)",
+    color: "var(--fg-dim)",
+  },
+  ".cm-typst-codeblock-edit--open": {
+    marginTop: "var(--codeblock-margin)",
+    borderRadius: "6px 6px 0 0",
+  },
+  ".cm-typst-codeblock-edit--close": {
+    marginBottom: "var(--codeblock-margin)",
+    borderRadius: "0 0 6px 6px",
+  },
+  ".cm-typst-codeblock-edit--first": {
+    paddingTop: "var(--codeblock-body-pad)",
+  },
+  ".cm-typst-codeblock-edit--last": {
+    paddingBottom: "var(--codeblock-body-pad)",
   },
   ".cm-typst-block-pill-row": {
     display: "flex",
@@ -334,6 +442,16 @@ export const visualTheme = EditorView.theme({
     padding: "1px 0",
     margin: "0",
     lineHeight: "1.4",
+  },
+  // Pill row floated over a block widget's top-left corner (images, media,
+  // horizontal rules) instead of stacked above it, so showing the pill when
+  // the caret arrives doesn't make the block taller.
+  ".cm-typst-block-pill-overlay": {
+    position: "absolute",
+    top: "var(--space-1)",
+    left: "var(--space-1)",
+    padding: "0",
+    zIndex: "1",
   },
   // Collapsed document-style preamble chip: reuses the standard pill chrome
   // (.cm-typst-pill); only the trailing rule-count needs its own muted style.
@@ -354,13 +472,13 @@ export const visualTheme = EditorView.theme({
     color: "var(--fg-dim)",
     marginLeft: "4px",
   },
+  // Both wrappers also carry .cm-typst-block-row; `overflow: hidden` keeps the
+  // inner element's margins inside the wrapper's box.
   ".cm-typst-callout-block": {
-    display: "block",
     position: "relative",
     margin: "0",
   },
   ".cm-typst-blockquote-block": {
-    display: "block",
     position: "relative",
     margin: "0",
   },
@@ -452,6 +570,7 @@ export const visualTheme = EditorView.theme({
   },
   ".cm-typst-media-block": {
     display: "block",
+    position: "relative",
     margin: "4px 0",
   },
   ".cm-typst-media-video": {
@@ -568,16 +687,16 @@ export const visualTheme = EditorView.theme({
     verticalAlign: "super",
     fontWeight: "bold",
   },
+  // ── Block quote ──
+  // Rendered widget (caret away).
   ".cm-typst-blockquote": {
     display: "block",
     borderLeft: "3px solid var(--border-primary)",
-    padding: "8px 16px",
-    margin: "8px 0",
+    padding: "var(--quote-pad) var(--quote-inset)",
+    margin: "var(--quote-margin) 0",
+    lineHeight: "var(--quote-line-height)",
     fontStyle: "italic",
     color: "var(--fg-muted)",
-  },
-  ".cm-typst-blockquote-text": {
-    lineHeight: "1.6",
   },
   ".cm-typst-blockquote-attr": {
     marginTop: "4px",
@@ -585,25 +704,63 @@ export const visualTheme = EditorView.theme({
     fontStyle: "normal",
     color: "var(--fg-dim)",
   },
-  // Editing state for a block quote. The line decoration carries only the bar
-  // + inset (geometry that's safe to apply to a whole line); the italic/muted
-  // fill is a separate mark bounded to the body, so text trailing after the
-  // closing `]` on the same line keeps its ordinary style. (13px left padding
-  // + 3px border ≈ the rendered widget's 16px inset.)
+  // Edit state (caret inside): each body line carries the bar and inset, and
+  // the first and last lines add the widget's outer gap and inner padding, so
+  // the quote is the same height as its rendered form. The italic/muted fill
+  // is a separate mark bounded to the body, so text trailing after the closing
+  // `]` on the same line keeps its ordinary style.
   ".cm-typst-blockquote-line": {
+    marginLeft: "var(--line-inset)",
+    marginRight: "var(--line-inset-end)",
     borderLeft: "3px solid var(--border-primary)",
-    paddingLeft: "13px",
+    padding: "0 var(--quote-inset)",
+    lineHeight: "var(--quote-line-height)",
+    // Lists inside the body keep their hanging indent past this inset.
+    "--line-block-inset": "var(--quote-inset)",
+  },
+  ".cm-typst-blockquote-line.cm-typst-block-edit-first": {
+    marginTop: "var(--quote-margin)",
+    paddingTop: "var(--quote-pad)",
+  },
+  ".cm-typst-blockquote-line.cm-typst-block-edit-last": {
+    marginBottom: "var(--quote-margin)",
+    paddingBottom: "var(--quote-pad)",
   },
   ".cm-typst-blockquote-body": {
     fontStyle: "italic",
     color: "var(--fg-muted)",
   },
-  // Editing state for a callout — the kind's accent colour for the bar is set
-  // per-line inline; the faint tint is a body-bounded mark (also inline), again
-  // so trailing text after `]` isn't swept into the callout's styling.
+  // ── Callout edit state ──
+  // The hidden `#callout(...)[` opener is replaced by a heading row (pill +
+  // label) at the top of the first body line, and every body line carries the
+  // frame's bar, inset and tint (colour set inline per callout kind). Together
+  // they measure the same as the rendered widget.
   ".cm-typst-callout-line": {
+    marginLeft: "var(--line-inset)",
+    marginRight: "var(--line-inset-end)",
     borderLeft: "3px solid var(--accent)",
-    paddingLeft: "13px",
+    padding: "0 var(--callout-inset)",
+    fontSize: "var(--callout-body-size)",
+    lineHeight: "var(--callout-line-height)",
+    "--line-block-inset": "var(--callout-inset)",
+  },
+  ".cm-typst-callout-line.cm-typst-block-edit-first": {
+    marginTop: "var(--callout-margin)",
+    borderRadius: "4px 4px 0 0",
+  },
+  ".cm-typst-callout-line.cm-typst-block-edit-last": {
+    marginBottom: "var(--callout-margin)",
+    paddingBottom: "var(--callout-pad)",
+    borderRadius: "0 0 4px 4px",
+  },
+  // Also carries .cm-typst-block-row, whose inline-block box keeps the
+  // heading's bottom margin inside the row.
+  ".cm-typst-callout-head": {
+    paddingTop: "var(--callout-pad)",
+  },
+  // The line already applies the body font size; don't scale the heading twice.
+  ".cm-typst-callout-head .cm-typst-callout-heading": {
+    fontSize: "inherit",
   },
   // ── Pills (R1–R3) ──
   // Single visual identity for every pill in the visual editor. Inline,

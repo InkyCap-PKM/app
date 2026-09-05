@@ -18,6 +18,8 @@ import {
   ImageBlockWidget,
   MediaBlockWidget,
   BlockquoteBlockWidget,
+  BlockquoteAttributionRowWidget,
+  CalloutHeadRowWidget,
   BibliographyBlockWidget,
   TagWidget,
   TaskWidget,
@@ -178,33 +180,115 @@ function isOnCursorLine(state: EditorState, from: number, to: number, focused: S
   return false;
 }
 
-/**
- * Line-number span of the lines that actually carry body content between
- * `from` and `to`, trimming any leading/trailing line that holds only
- * whitespace (e.g. a multi-line block whose closing `]` sits alone on its own
- * line, leaving `from..to` ending with a bare newline).
+/** Layout of a block content-bracket call's edit state (`#callout(...)[…]`,
+ *  `#quote(block: true)[…]`): which ranges are hidden together with the
+ *  brackets, and which document lines make up the editable body.
  *
- * The editing-mode border on blockquotes/callouts is a per-line decoration, so
- * without this clamp a `#callout(...)[…\n]` paints an extra `border-left`
- * segment on the structural `]`-only line below the text — the "nested"/doubled
- * bar the writer sees when the cursor sits on that trailing line. Clamping to
- * content lines keeps the bar flush with the visible body.
- */
-export function contentLineSpan(state: EditorState, from: number, to: number): { start: number; end: number } {
-  const text = state.doc.sliceString(from, to);
+ *  The rendered widget shows only the body rows, so the edit state must too.
+ *  When the body starts on the line after `[`, that line break (and any
+ *  indentation) is hidden along with the opener; when `]` sits alone on its
+ *  own line, the line break before it is hidden along with the closer. A blank
+ *  line the writer left inside the body stays visible so a caret on it has
+ *  somewhere to be. A body that is entirely whitespace hides only the brackets.
+ *
+ *  Pure string/line arithmetic, so it runs (and is tested) without the parser. */
+export function blockEditLayout(
+  state: EditorState,
+  bodyFrom: number,
+  bodyTo: number,
+): { hideOpenTo: number; hideCloseFrom: number; firstLine: number; lastLine: number } {
+  const body = state.doc.sliceString(bodyFrom, bodyTo);
   let s = 0;
-  while (s < text.length && /\s/.test(text[s])) s++;
-  let e = text.length;
-  while (e > s && /\s/.test(text[e - 1])) e--;
-  if (e <= s) {
-    // Body is entirely whitespace — collapse to the single opening line.
-    const ln = state.doc.lineAt(Math.min(from, state.doc.length)).number;
-    return { start: ln, end: ln };
+  while (s < body.length && /\s/.test(body[s])) s++;
+  let e = body.length;
+  while (e > s && /\s/.test(body[e - 1])) e--;
+  let hideOpenTo = bodyFrom;
+  let hideCloseFrom = bodyTo;
+  if (s < body.length) {
+    if (body.slice(0, s).includes("\n")) hideOpenTo = bodyFrom + s;
+    const trailingBreak = body.slice(e).lastIndexOf("\n");
+    if (trailingBreak >= 0) hideCloseFrom = bodyFrom + e + trailingBreak;
   }
   return {
-    start: state.doc.lineAt(from + s).number,
-    end: state.doc.lineAt(from + e - 1).number,
+    hideOpenTo,
+    hideCloseFrom,
+    firstLine: state.doc.lineAt(hideOpenTo).number,
+    lastLine: state.doc.lineAt(hideCloseFrom).number,
   };
+}
+
+/** Per-line decorations for a block's edit state. Every line gets `className`;
+ *  the first and last additionally get `cm-typst-block-edit-first` /
+ *  `cm-typst-block-edit-last`, which the theme uses to add the outer gap and
+ *  inner padding the rendered widget has. */
+function pushBlockEditLines(
+  decos: Range<Decoration>[],
+  state: EditorState,
+  layout: { firstLine: number; lastLine: number },
+  className: string,
+  style?: string,
+) {
+  for (let ln = layout.firstLine; ln <= layout.lastLine; ln++) {
+    const classes = [className];
+    if (ln === layout.firstLine) classes.push("cm-typst-block-edit-first");
+    if (ln === layout.lastLine) classes.push("cm-typst-block-edit-last");
+    decos.push(
+      Decoration.line({
+        class: classes.join(" "),
+        attributes: style ? { style } : undefined,
+      }).range(state.doc.line(ln).from),
+    );
+  }
+}
+
+/** Splits a fenced raw block's source into its language tag and body text.
+ *  The body keeps every line the source has, blank ones included, so the
+ *  rendered widget shows the same number of rows as the edit state. `hasBody`
+ *  tells an empty body line (```\n\n```) apart from no body at all (```\n```),
+ *  since both give an empty `code`. */
+export function parseRawBlock(text: string): { lang: string; code: string; hasBody: boolean } {
+  const ticks = text.match(/^`+/)?.[0].length ?? 3;
+  const firstNewline = text.indexOf("\n");
+  const lang = firstNewline > ticks ? text.slice(ticks, firstNewline).trim() : "";
+  const codeStart = firstNewline >= 0 ? firstNewline + 1 : ticks;
+  const closeAt = text.lastIndexOf("`".repeat(ticks));
+  const codeEnd = closeAt >= codeStart ? closeAt : text.length;
+  let code = text.slice(codeStart, codeEnd);
+  if (code.endsWith("\n")) code = code.slice(0, -1);
+  return { lang, code, hasBody: codeEnd > codeStart };
+}
+
+/** Edit-state classes for each line of a fenced raw block, first line to last.
+ *  The opening fence line stands in for the rendered widget's header strip and
+ *  the closing fence line (when the fence is alone on it) for the footer strip;
+ *  the lines between are the code area, with the first and last carrying the
+ *  area's padding. See the code block rules in visual-theme.ts. */
+export function rawBlockEditLineClasses(state: EditorState, from: number, to: number): string[] {
+  const open = state.doc.lineAt(from);
+  const end = state.doc.lineAt(to);
+  const closeIsOwnLine = end.number > open.number && /^\s*`+$/.test(state.doc.sliceString(end.from, to));
+  const bodyEnd = closeIsOwnLine ? end.number - 1 : end.number;
+  const out: string[] = [];
+  for (let ln = open.number; ln <= end.number; ln++) {
+    const classes = ["cm-typst-codeblock-edit"];
+    if (ln === open.number) {
+      classes.push("cm-typst-codeblock-edit--open");
+    } else if (closeIsOwnLine && ln === end.number) {
+      classes.push("cm-typst-codeblock-edit--close");
+    } else {
+      if (ln === open.number + 1) classes.push("cm-typst-codeblock-edit--first");
+      if (ln === bodyEnd) classes.push("cm-typst-codeblock-edit--last");
+    }
+    out.push(classes.join(" "));
+  }
+  return out;
+}
+
+function pushRawBlockEditLines(decos: Range<Decoration>[], state: EditorState, from: number, to: number) {
+  const first = state.doc.lineAt(from).number;
+  rawBlockEditLineClasses(state, from, to).forEach((cls, i) => {
+    decos.push(Decoration.line({ class: cls }).range(state.doc.line(first + i).from));
+  });
 }
 
 // Funcs whose `(...)` is never followed by a trailing `[...]` content block.
@@ -618,7 +702,9 @@ function pushListIndent(decos: Range<Decoration>[], state: EditorState, markerFr
         // the bullet widget's own negative margin-left pulls the marker back to
         // the column edge for the hanging indent (see the doc comment above —
         // text-indent is unreliable for a leading inline-block on WebKitGTK).
-        style: `padding-left: calc(${nest}var(--list-bullet-width))`,
+        // `--line-block-inset` is set by the block quote / callout edit-line
+        // rules so a list inside one keeps the block's inset as well.
+        style: `padding-left: calc(var(--line-block-inset, 0px) + ${nest}var(--list-bullet-width))`,
       },
     }).range(line.from),
   );
@@ -776,41 +862,32 @@ function buildDecorations(state: EditorState, onlyRanges?: { from: number; to: n
           }
           case "Raw": {
             const text = state.doc.sliceString(node.from, node.to);
-            const isBlock = text.startsWith("```");
+            const ticks = text.match(/^`+/)?.[0].length ?? 1;
+            // Typst only lays out a three-backtick raw as a block when its
+            // content spans a line break; a one-line ```…``` is inline raw.
+            const isBlock = ticks >= 3 && text.includes("\n");
             if (!isBlock) {
               // Typst's parser is error-tolerant, so a lone or still-unclosed
               // backtick already parses as a Raw node. Hiding its delimiters
               // here would make the backtick the user just typed disappear the
               // moment the cursor moves off it. Only collapse the markup once a
-              // real closing backtick exists (matched pair, at least two chars).
-              const closed = text.length >= 2 && text.endsWith("`");
+              // real closing delimiter exists (matched pair).
+              const closed = text.length >= 2 * ticks && text.endsWith("`".repeat(ticks));
               if (!closed) return false;
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) return false;
               if (autoExpand && onCursor) return false;
-              decos.push(hide.range(node.from, node.from + 1));
-              decos.push(hide.range(node.to - 1, node.to));
-              pushMark(decos, rawInline, node.from + 1, node.to - 1);
+              decos.push(hide.range(node.from, node.from + ticks));
+              decos.push(hide.range(node.to - ticks, node.to));
+              pushMark(decos, rawInline, node.from + ticks, node.to - ticks);
             } else {
               if (isCursorAdjacentOrInside(state, node.from, node.to, cursors)) {
-                const startLine = state.doc.lineAt(node.from);
-                const endLine = state.doc.lineAt(node.to);
-                for (let ln = startLine.number; ln <= endLine.number; ln++) {
-                  const line = state.doc.line(ln);
-                  decos.push(
-                    Decoration.line({ class: "cm-typst-codeblock-edit" }).range(line.from),
-                  );
-                }
+                pushRawBlockEditLines(decos, state, node.from, node.to);
                 return false;
               }
-              const firstNewline = text.indexOf("\n");
-              const lang = firstNewline > 3 ? text.substring(3, firstNewline).trim() : "";
-              const lastDelim = text.lastIndexOf("```");
-              const codeStart = firstNewline >= 0 ? firstNewline + 1 : 3;
-              const codeEnd = lastDelim > 3 ? lastDelim : text.length;
-              const code = text.substring(codeStart, codeEnd).trimEnd();
+              const block = parseRawBlock(text);
               decos.push(
                 Decoration.replace({
-                  widget: new CodeBlockWidget(lang, code),
+                  widget: new CodeBlockWidget(block.lang, block.code, block.hasBody),
                 }).range(node.from, node.to),
               );
             }
@@ -1378,7 +1455,7 @@ export function handleFuncCall(
       if (collapseWouldSwallowCaret(state, from, to, cursors)) return false;
       if (/^#line\b/.test(text)) {
         decos.push(Decoration.replace({
-          widget: showPill ? new FuncChipWidget(from, "line") : new HrWidget(),
+          widget: new HrWidget(from, showPill),
         }).range(from, to));
       }
       return false;
@@ -1400,37 +1477,31 @@ export function handleFuncCall(
       if (expandedPos === from || (autoExpand && onCursor)) return false;
       // Same model as block quote: a single rendered widget when the cursor is
       // away, and an in-place editable body (real text + callout styling, no
-      // duplicate, no caret trap) when it's on. Replaces the old
-      // pushBlockElement "source + side:1 preview" path that rendered twice.
+      // duplicate, no caret trap) when it's on. Both states are built from the
+      // same geometry variables so the block never changes height.
       if (!onCursor) {
         const bodyText = state.doc.sliceString(bodyRange.from, bodyRange.to);
         decos.push(
-          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, false, bodyRange.from) }).range(from, to),
+          Decoration.replace({ widget: new CalloutBlockWidget(kind, title ?? "", bodyText, from, bodyRange.from) }).range(from, to),
         );
         return false;
       }
+      // Cursor on the callout: the opener becomes the heading row (pill +
+      // label) at the top of the first body line, the closer is hidden, and
+      // each body line carries the frame's bar, inset and tint.
       const color = CALLOUT_COLORS[kind] ?? CALLOUT_COLORS.note;
+      const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
       decos.push(
-        Decoration.replace({ widget: new FuncPillWidget(from, "callout") }).range(from, bodyRange.from),
+        Decoration.replace({ widget: new CalloutHeadRowWidget(kind, title ?? "", from) }).range(from, layout.hideOpenTo),
       );
-      if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
-      const calloutSpan = contentLineSpan(state, bodyRange.from, bodyRange.to);
-      for (let ln = calloutSpan.start; ln <= calloutSpan.end; ln++) {
-        decos.push(
-          Decoration.line({
-            class: "cm-typst-callout-line",
-            attributes: { style: `border-left-color: ${color};` },
-          }).range(state.doc.line(ln).from),
-        );
-      }
-      // Tint only the body, not any text trailing after the closing `]`.
-      if (bodyRange.from < bodyRange.to) {
-        decos.push(
-          Decoration.mark({
-            attributes: { style: `background-color: color-mix(in srgb, ${color} 8%, transparent);` },
-          }).range(bodyRange.from, bodyRange.to),
-        );
-      }
+      if (layout.hideCloseFrom < to) decos.push(hide.range(layout.hideCloseFrom, to));
+      pushBlockEditLines(
+        decos,
+        state,
+        layout,
+        "cm-typst-callout-line",
+        `border-left-color: ${color}; background-color: color-mix(in srgb, ${color} 8%, transparent);`,
+      );
       return false;
     }
     case "annotation": {
@@ -1733,34 +1804,37 @@ export function handleFuncCall(
         // preview widget" pattern: it rendered the quote twice and left a
         // block widget at `to` that trapped the caret. Instead we follow the
         // Tier-1 decoration model used by the inline content-bracket pills.
+        const attribution = extractAttributionDisplay(text);
         if (!onCursor) {
           // Cursor away → one rendered blockquote widget. Single, atomic,
           // no trailing block widget, so nothing to duplicate or trap.
           const content = state.doc.sliceString(bodyRange.from, bodyRange.to);
-          const attribution = extractAttributionDisplay(text);
           decos.push(
-            Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, false, bodyRange.from) }).range(from, to),
+            Decoration.replace({ widget: new BlockquoteBlockWidget(content, attribution, from, bodyRange.from) }).range(from, to),
           );
           return false;
         }
         // Cursor on the quote → edit the body as real CodeMirror text: a
         // quote pill replaces the `#quote(block: true)[…]` opener, the
-        // closing `]` is hidden, and the body's lines get blockquote styling.
+        // closing `]` is hidden (or, with an attribution, replaced by the
+        // same attribution row the widget shows), and the body's lines get
+        // blockquote styling built from the same geometry as the widget.
         // Native cursor/undo, no contentEditable, no round-trip.
+        const layout = blockEditLayout(state, bodyRange.from, bodyRange.to);
         decos.push(
-          Decoration.replace({ widget: new FuncPillWidget(from, "quote") }).range(from, bodyRange.from),
+          Decoration.replace({ widget: new FuncPillWidget(from, "quote") }).range(from, layout.hideOpenTo),
         );
-        if (bodyRange.to < to) decos.push(hide.range(bodyRange.to, to));
-        const quoteSpan = contentLineSpan(state, bodyRange.from, bodyRange.to);
-        for (let ln = quoteSpan.start; ln <= quoteSpan.end; ln++) {
-          decos.push(
-            Decoration.line({ class: "cm-typst-blockquote-line" }).range(state.doc.line(ln).from),
-          );
+        if (layout.hideCloseFrom < to) {
+          decos.push((attribution
+            ? Decoration.replace({ widget: new BlockquoteAttributionRowWidget(attribution) })
+            : hide
+          ).range(layout.hideCloseFrom, to));
         }
+        pushBlockEditLines(decos, state, layout, "cm-typst-blockquote-line");
         // Italic/colour only over the body — keeps any text trailing after the
         // closing `]` on the same line looking like the ordinary text it is.
-        if (bodyRange.from < bodyRange.to) {
-          decos.push(blockquoteBodyMark.range(bodyRange.from, bodyRange.to));
+        if (layout.hideOpenTo < layout.hideCloseFrom) {
+          decos.push(blockquoteBodyMark.range(layout.hideOpenTo, layout.hideCloseFrom));
         }
         return false;
       }
@@ -2341,7 +2415,14 @@ function expandRangesToBlockElements(
     // growing to anything shorter would leave part of a multi-line block call
     // outside the rebuild, stranding a stale editing border behind the widget
     // (the doubled "nested" bar).
+    // A fenced code block is the other multi-line element with an edit state:
+    // its per-line header/body/footer styling must be dropped as one unit when
+    // the widget comes back, so it grows to the whole raw node too.
     const growCall = (n: { name: string; from: number; to: number }) => {
+      if (n.name === "Raw" || n.name === "RawBlock") {
+        grow(n.from, n.to);
+        return;
+      }
       if (n.name !== "FuncCall") return;
       const callFrom = (n.from > 0 && state.doc.sliceString(n.from - 1, n.from) === "#")
         ? n.from - 1 : n.from;

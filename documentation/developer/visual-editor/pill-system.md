@@ -33,12 +33,12 @@ This table is the audit reference. Use it to verify any change preserves the int
 | `task`, `due` | inline (widget + pill) | cursor on line | cursor away | yes | simple → edit source; else menu | `task`: body/due/done · `due`: date/label | widget |
 | `sym` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | symbol name | rendered glyph |
 | Generic fallback `#fn[…]` / `#fn(…)` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args (R10) | yes |
-| `image` | block-row above | cursor on line | cursor away | yes | simple → edit source; else menu | file, alt, width, align | yes (rendered block) |
-| `video`, `audio` | block-row above | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | yes (player) |
-| `callout` | block-row above rendered block | cursor on line | cursor away | yes | click pill → expand source | kind | rendered widget |
-| block `quote` | block-row above rendered block | cursor on line | cursor away | yes | click pill → expand source | style, attribution | rendered widget |
-| `annotation` | block-row above rendered block | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | rendered widget |
-| `line` (HR) | inline | cursor on line | cursor away (replaced by HR) | n/a | simple → edit source; else menu | length, stroke | no — pill **is** the affordance |
+| `image` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple → edit source; else menu | file, alt, width, align | yes (rendered block) |
+| `video`, `audio` | pill overlaid on the block's top-left corner | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | yes (player) |
+| `callout` | pill inside the heading row of the in-place edit frame | cursor on line | cursor away | yes | click pill → expand source | kind | body editable in place |
+| block `quote` | pill inline at the start of the first body line | cursor on line | cursor away | yes | click pill → expand source | style, attribution | body editable in place |
+| `annotation` | pill inside the rendered block's heading row | cursor on line | cursor away | yes | simple → edit source; else menu | generic named-args | rendered widget |
+| `line` (HR) | pill overlaid on the rule's left end | cursor on line | cursor away | n/a | simple → edit source; else menu | length, stroke | yes (the rule stays) |
 | `figure` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | caption | wrapped content |
 | `align` | inline wrapper | cursor on line | cursor away | yes | simple → edit source; else menu | left/center/right | wrapped content |
 | `csv` | inline | cursor on line | cursor away | yes | simple → edit source; else menu | file, delimiter, row-type | call label |
@@ -162,7 +162,7 @@ There is **no single `PILL_REGISTRY`**. A pill's behavior comes from two places:
 
 1. **Kind / rendering** — the `handleFuncCall()` switch in [visual-plugin.ts](../../../src/editor/typst-decorations/visual-plugin.ts), gated by three sets:
    - `INTERACTIVE_FUNCS` = `wikilink`, `tag`, `link`, `suggestion` — full widgets, no pill.
-   - `BLOCK_WIDGET_FUNCS` = `image`, `video`, `audio` — block widget that collapses to pill + editable value on the cursor line. `callout`, `quote`, `annotation` (and the aligned-image special case) share this block-row branch.
+   - `BLOCK_WIDGET_FUNCS` = `image`, `video`, `audio` — block widget that gains an overlaid pill on the cursor line. `annotation` (and the aligned-image special case) share this branch; `callout` and block `quote` have their own in-place edit branches (see R13).
    - `BLOCK_FUNCS` = `callout`, `quote`, `verse`, `note`, `bibliography`, `table` — block-level rendering.
    - Anything else with `#fn[…]` / `#fn(…)` falls through to the generic inline `FuncPillWidget`.
 2. **Menu options** — the `REGISTRY` map in [pill-options.ts](../../../src/editor/typst-decorations/pill-options.ts) maps a function name to a `PillOptionsBuilder`; `getPillOptions()` returns its sections, or `genericArgsOptions()` for anything unlisted (see R7).
@@ -179,13 +179,21 @@ Inline content-bracket calls (`#fn[content]` where the body is short, single-par
 
 Applies to: `strike`, `highlight`, `emph`, `strong`, `underline`, `overline`, `sub`, `super`, and inline `quote`.
 
-**Block content-bracket pills (`callout`, block `quote`) deliberately do NOT follow R12.** An earlier iteration tried live-source-body editing for them and hit structural problems: per-line CSS dragged trailing text into the styled box, the body boundary became invisible, and Enter step-out fought multi-line bodies. They use the **rendered-widget + click-to-edit-source** model instead:
+**Block content-bracket pills (`callout`, block `quote`) follow a block form of R12.** The body is editable in place, but as whole lines rather than a mid-paragraph span:
 
-- **Cursor away:** rendered styled block (kind colour, attribution, …). The widget is the visual.
-- **Cursor on line:** same block, with the pill row above.
-- **Click the pill:** expands the call's source between `[…]` for inline editing, rendered widget below for reference. Click again or move the cursor out to collapse.
+- **Cursor away:** one rendered widget (kind colour, heading, attribution, …). The widget is the visual.
+- **Cursor on line:** the opener `#fn(...)[` and closer `]` are hidden and the body lines are real editable source carrying the block's bar, inset and tint. A callout's opener becomes a heading row (pill + label) at the top of the first body line; a quote's opener becomes an inline pill, and a quote with an attribution shows the attribution row under the body just as the widget does.
+- **Click the pill (or "Edit source"):** reveals the raw call so the arguments the body can't reach (kind, title, attribution) can be edited. Re-collapses once the cursor leaves.
 
 The kind (callout), style/attribution (quote), and other arguments live in the pill menu (R7) so most edits don't require source expansion.
+
+### R13 — A block keeps its height between its rendered and edit states
+
+Every block that swaps between a rendered widget and an in-place edit state (code block, block quote, callout) must measure exactly the same in both, otherwise moving the caret into or out of it shifts everything below and the writer loses their place. The shared vertical measurements (outer gap, inner padding, line height, header/footer rows) are declared once as `--quote-*`, `--callout-*` and `--codeblock-*` variables on `.cm-content` in [visual-theme.ts](../../../src/editor/typst-decorations/visual-theme.ts) and read by both the widget rules and the edit-line rules; never restate one of those numbers inline. The row accounting (which line breaks are hidden with the brackets, which fence line is the header or footer) lives in `blockEditLayout`, `parseRawBlock` and `rawBlockEditLineClasses` in visual-plugin.ts and is covered by [block-edit-layout.test.ts](../../../src/editor/typst-decorations/block-edit-layout.test.ts).
+
+Every such widget's root also carries `.cm-typst-block-row` (an inline-block filling the line). CodeMirror puts a zero-width placeholder on each side of an inline widget; with a `display: block` root those placeholders form empty rows above and below the widget that the edit state does not have. The incremental rebuild in `expandRangesToBlockElements` widens a dirty range to the whole call or fenced raw node so no edit-state line styling is left behind when the widget returns.
+
+Blocks that only gain a pill on the cursor line (`image`, `video`, `audio`, `annotation`, `line`) place it inside or over their existing box (overlay or heading row) rather than in a row above it, for the same reason.
 
 Call-only forms with no body bracket (`image`, `line`, `figure`, `cite`, `task`, `due`, …) should expose every meaningful argument as a menu input (R7) so "Edit source" stays a rare path. Image's positional `path` counts: it's a menu input, not a hidden field. The friction R12 fights ("click pill → click Edit source → edit") usually means a missing menu option — reach for R7 before live-edit.
 
@@ -195,7 +203,7 @@ Call-only forms with no body bracket (`image`, `line`, `figure`, `cite`, `task`,
 - [src/editor/typst-decorations/pill-options.ts](../../../src/editor/typst-decorations/pill-options.ts) — the options `REGISTRY`, `getPillOptions()`, `genericArgsOptions()`, and every curated `*Options` builder.
 - [src/editor/typst-decorations/visual-plugin.ts](../../../src/editor/typst-decorations/visual-plugin.ts) — `handleFuncCall()` (the rendering switch), the `BLOCK_FUNCS` / `INTERACTIVE_FUNCS` / `BLOCK_WIDGET_FUNCS` sets, the `expandedFuncField` StateField, and the pill CSS.
 - [src/editor/typst-decorations/visual-widgets.ts](../../../src/editor/typst-decorations/visual-widgets.ts) — `FuncPillWidget` (and `FuncChipWidget`), the inline/block-row pill widget hosts.
-- [src/editor/typst-decorations/widgets.ts](../../../src/editor/typst-decorations/widgets.ts) — `makeBlockPillRow`, the block-widget hosts (`VerseWidget`, image/callout/quote/media widgets, `BibliographyBlockWidget`).
+- [src/editor/typst-decorations/widgets.ts](../../../src/editor/typst-decorations/widgets.ts) — `makeBlockPill` / `makeBlockPillOverlay`, the block-widget hosts (`VerseWidget`, image/callout/quote/media widgets, `BibliographyBlockWidget`), and the edit-state row widgets (`CalloutHeadRowWidget`, `BlockquoteAttributionRowWidget`).
 - [src/editor/typst-decorations/effects.ts](../../../src/editor/typst-decorations/effects.ts) — the `expandFunc` StateEffect (consumed by `expandedFuncField` in visual-plugin.ts).
 - [src/editor/typst-decorations/pill-boundary-nav.ts](../../../src/editor/typst-decorations/pill-boundary-nav.ts) — cursor navigation across pill boundaries.
 - [inkycap-notebox/lib.typ](../../../inkycap-notebox/lib.typ) — notebox-defined functions that pills target (bundled version-less; see [extending/notebox-format.md](../extending/notebox-format.md)).

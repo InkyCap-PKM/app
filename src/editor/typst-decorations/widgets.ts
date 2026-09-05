@@ -159,10 +159,9 @@ function attachImageResize(
 // default simple→expand / complex→menu split.
 const ALWAYS_EXPAND_PILLS = new Set(["callout", "quote", "annotation"]);
 
-function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "cm-typst-block-pill-row";
-  row.appendChild(buildPillButton(funcName, view, () => {
+/** The pill for a block-level call, wired to that call's option menu. */
+function makeBlockPill(funcName: string, pos: number, view: EditorView): HTMLElement {
+  return buildPillButton(funcName, view, () => {
     const callTo = findCallEnd(view, pos);
     return {
       funcName,
@@ -171,8 +170,30 @@ function makeBlockPillRow(funcName: string, pos: number, view: EditorView): HTML
       optionSections: getPillOptions(funcName, view, pos, callTo),
       alwaysExpandOnClick: ALWAYS_EXPAND_PILLS.has(funcName),
     };
-  }));
+  });
+}
+
+/** A block pill floated over the widget's top-left corner. The widget's root
+ *  must be positioned (`position: relative`) so the row anchors to it. Used
+ *  instead of a row stacked above the content so that showing the pill when
+ *  the caret arrives doesn't change the widget's height. */
+function makeBlockPillOverlay(funcName: string, pos: number, view: EditorView): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "cm-typst-block-pill-row cm-typst-block-pill-overlay";
+  row.appendChild(makeBlockPill(funcName, pos, view));
   return row;
+}
+
+/** The heading row shared by the rendered callout/annotation widgets and the
+ *  callout's edit-state head row. `pill` (edit state only) sits before the
+ *  label; the row's fixed minimum height keeps it the same size either way. */
+function buildCalloutHeading(label: string, color: string, pill?: HTMLElement): HTMLElement {
+  const heading = document.createElement("div");
+  heading.className = "cm-typst-callout-heading";
+  heading.style.color = color;
+  if (pill) heading.appendChild(pill);
+  heading.appendChild(document.createTextNode(label));
+  return heading;
 }
 
 
@@ -466,11 +487,7 @@ export class CalloutWidget extends WidgetType {
     wrap.style.borderLeftColor = color;
     wrap.style.backgroundColor = `color-mix(in srgb, ${color} 8%, transparent)`;
 
-    const heading = document.createElement("div");
-    heading.className = "cm-typst-callout-heading";
-    heading.style.color = color;
-    heading.textContent = calloutKindLabel(this.kind, this.title);
-    wrap.appendChild(heading);
+    wrap.appendChild(buildCalloutHeading(calloutKindLabel(this.kind, this.title), color));
 
     if (this.bodyText) {
       const body = document.createElement("div");
@@ -490,21 +507,27 @@ export class CalloutWidget extends WidgetType {
   }
 }
 
+/** Rendered fenced code block: header strip, code area, footer strip. The
+ *  strips exist so the edit state's opening and closing fence lines have a
+ *  row of the same height to take over (see the code block rules in
+ *  visual-theme.ts). `hasBody` is false when the fences are on adjacent lines
+ *  with nothing between them; a body of one empty line is still a body. */
 export class CodeBlockWidget extends WidgetType {
   constructor(
     readonly lang: string,
     readonly code: string,
+    readonly hasBody: boolean,
   ) {
     super();
   }
 
   eq(other: CodeBlockWidget) {
-    return this.lang === other.lang && this.code === other.code;
+    return this.lang === other.lang && this.code === other.code && this.hasBody === other.hasBody;
   }
 
   toDOM() {
     const wrap = document.createElement("div");
-    wrap.className = "cm-typst-codeblock";
+    wrap.className = "cm-typst-codeblock cm-typst-block-row";
 
     const header = document.createElement("div");
     header.className = "cm-typst-codeblock-header";
@@ -554,15 +577,21 @@ export class CodeBlockWidget extends WidgetType {
     header.appendChild(copyBtn);
     wrap.appendChild(header);
 
-    const pre = document.createElement("pre");
-    const code = document.createElement("code");
-    pre.appendChild(code);
-    wrap.appendChild(pre);
+    if (this.hasBody) {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      pre.appendChild(code);
+      wrap.appendChild(pre);
 
-    // Highlight asynchronously; the synchronous fallback inside
-    // highlightCodeInto fills `code` with plain text first so the widget
-    // is never visibly empty during the language load.
-    void highlightCodeInto(this.lang, this.code, code);
+      // Highlight asynchronously; the synchronous fallback inside
+      // highlightCodeInto fills `code` with plain text first so the widget
+      // is never visibly empty during the language load.
+      void highlightCodeInto(this.lang, this.code, code);
+    }
+
+    const footer = document.createElement("div");
+    footer.className = "cm-typst-codeblock-footer";
+    wrap.appendChild(footer);
 
     return wrap;
   }
@@ -669,7 +698,7 @@ export class ImageBlockWidget extends WidgetType {
       && this.align === other.align;
   }
 
-  get estimatedHeight(): number { return this.withPill ? 224 : 200; }
+  get estimatedHeight(): number { return 200; }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
@@ -691,7 +720,7 @@ export class ImageBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("image", this.pos, view));
+    if (this.withPill) wrap.appendChild(makeBlockPillOverlay("image", this.pos, view));
 
     const inner = document.createElement("div");
     inner.style.textAlign = this.align;
@@ -765,8 +794,7 @@ export class MediaBlockWidget extends WidgetType {
   }
 
   get estimatedHeight(): number {
-    const base = this.kind === "audio" ? 54 : 200;
-    return this.withPill ? base + 24 : base;
+    return this.kind === "audio" ? 54 : 200;
   }
 
   toDOM(view: EditorView) {
@@ -789,7 +817,7 @@ export class MediaBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow(this.kind, this.pos, view));
+    if (this.withPill) wrap.appendChild(makeBlockPillOverlay(this.kind, this.pos, view));
 
     const inner = document.createElement("div");
     inner.style.textAlign = "center";
@@ -2125,13 +2153,16 @@ export class BlockquoteWidget extends WidgetType {
   }
 }
 
+/** Rendered callout shown while the caret is outside the call. Its edit-state
+ *  counterpart is `CalloutHeadRowWidget` plus per-line decorations; the two
+ *  share the geometry variables in visual-theme.ts so switching between them
+ *  never changes the block's height. */
 export class CalloutBlockWidget extends WidgetType {
   constructor(
     readonly kind: string,
     readonly title: string,
     readonly bodyText: string,
     readonly pos: number,
-    readonly withPill: boolean,
     readonly bodyFrom: number,
   ) {
     super();
@@ -2140,12 +2171,12 @@ export class CalloutBlockWidget extends WidgetType {
   eq(other: CalloutBlockWidget) {
     return this.kind === other.kind && this.title === other.title
       && this.bodyText === other.bodyText && this.pos === other.pos
-      && this.withPill === other.withPill && this.bodyFrom === other.bodyFrom;
+      && this.bodyFrom === other.bodyFrom;
   }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
-    wrap.className = "cm-typst-callout-block";
+    wrap.className = "cm-typst-callout-block cm-typst-block-row";
     wrap.style.overflow = "hidden";
     this.renderContent(wrap, view);
     return wrap;
@@ -2158,19 +2189,13 @@ export class CalloutBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("callout", this.pos, view));
-
     const color = CALLOUT_COLORS[this.kind] ?? CALLOUT_COLORS.note;
     const inner = document.createElement("div");
     inner.className = "cm-typst-callout";
     inner.style.borderLeftColor = color;
     inner.style.backgroundColor = `color-mix(in srgb, ${color} 8%, transparent)`;
 
-    const heading = document.createElement("div");
-    heading.className = "cm-typst-callout-heading";
-    heading.style.color = color;
-    heading.textContent = calloutKindLabel(this.kind, this.title);
-    inner.appendChild(heading);
+    inner.appendChild(buildCalloutHeading(calloutKindLabel(this.kind, this.title), color));
 
     if (this.bodyText) {
       const body = document.createElement("div");
@@ -2191,7 +2216,8 @@ export class CalloutBlockWidget extends WidgetType {
 // visual-editor sibling of CalloutBlockWidget — so an annotation stays
 // visually distinct from body text even when the cursor is away, matching how
 // lib.typ renders it in the reading view. Reuses the callout block CSS with
-// the annotation accent set inline.
+// the annotation accent set inline. With the caret on the call (`withPill`)
+// the pill sits inside the heading row, so the block stays the same height.
 export class AnnotationBlockWidget extends WidgetType {
   constructor(
     readonly bodyText: string,
@@ -2212,7 +2238,7 @@ export class AnnotationBlockWidget extends WidgetType {
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
-    wrap.className = "cm-typst-callout-block";
+    wrap.className = "cm-typst-callout-block cm-typst-block-row";
     wrap.style.overflow = "hidden";
     this.renderContent(wrap, view);
     return wrap;
@@ -2225,21 +2251,17 @@ export class AnnotationBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("annotation", this.pos, view));
-
     const inner = document.createElement("div");
     inner.className = "cm-typst-callout";
     inner.style.borderLeftColor = ANNOTATION_COLOR;
     inner.style.backgroundColor = `color-mix(in srgb, ${ANNOTATION_COLOR} 8%, transparent)`;
 
-    const heading = document.createElement("div");
-    heading.className = "cm-typst-callout-heading";
-    heading.style.color = ANNOTATION_COLOR;
     const attribution = [this.by, this.on].filter(Boolean).join(" · ");
-    heading.textContent = attribution
+    const label = attribution
       ? t("widget.annotation.labelBy", { name: attribution })
       : t("widget.annotation.label");
-    inner.appendChild(heading);
+    const pill = this.withPill ? makeBlockPill("annotation", this.pos, view) : undefined;
+    inner.appendChild(buildCalloutHeading(label, ANNOTATION_COLOR, pill));
 
     if (this.bodyText) {
       const body = document.createElement("div");
@@ -2256,12 +2278,15 @@ export class AnnotationBlockWidget extends WidgetType {
   }
 }
 
+/** Rendered block quote shown while the caret is outside the call. Its
+ *  edit-state counterpart is per-line decorations plus, when there is an
+ *  attribution, `BlockquoteAttributionRowWidget`; both states share the
+ *  geometry variables in visual-theme.ts so the quote never changes height. */
 export class BlockquoteBlockWidget extends WidgetType {
   constructor(
     readonly content: string,
     readonly attribution: string,
     readonly pos: number,
-    readonly withPill: boolean,
     readonly bodyFrom: number,
   ) {
     super();
@@ -2269,13 +2294,12 @@ export class BlockquoteBlockWidget extends WidgetType {
 
   eq(other: BlockquoteBlockWidget) {
     return this.content === other.content && this.attribution === other.attribution
-      && this.pos === other.pos && this.withPill === other.withPill
-      && this.bodyFrom === other.bodyFrom;
+      && this.pos === other.pos && this.bodyFrom === other.bodyFrom;
   }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
-    wrap.className = "cm-typst-blockquote-block";
+    wrap.className = "cm-typst-blockquote-block cm-typst-block-row";
     wrap.style.overflow = "hidden";
     this.renderContent(wrap, view);
     return wrap;
@@ -2288,8 +2312,6 @@ export class BlockquoteBlockWidget extends WidgetType {
   }
 
   private renderContent(wrap: HTMLElement, view: EditorView) {
-    if (this.withPill) wrap.appendChild(makeBlockPillRow("quote", this.pos, view));
-
     const inner = document.createElement("blockquote");
     inner.className = "cm-typst-blockquote";
 
@@ -2311,6 +2333,64 @@ export class BlockquoteBlockWidget extends WidgetType {
   ignoreEvent(e: Event) {
     return blockBodyIgnoreEvent(e);
   }
+}
+
+/** Edit-state heading row for a callout. Replaces the hidden `#callout(...)[`
+ *  opener at the top of the first body line and shows the pill (kind, title
+ *  and "Edit source" live in its menu) beside the same heading the rendered
+ *  widget draws, so the block keeps its height while the body is edited. */
+export class CalloutHeadRowWidget extends WidgetType {
+  constructor(
+    readonly kind: string,
+    readonly title: string,
+    readonly pos: number,
+  ) {
+    super();
+  }
+
+  eq(other: CalloutHeadRowWidget) {
+    return this.kind === other.kind && this.title === other.title && this.pos === other.pos;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-typst-callout-head cm-typst-block-row";
+    const color = CALLOUT_COLORS[this.kind] ?? CALLOUT_COLORS.note;
+    wrap.appendChild(buildCalloutHeading(
+      calloutKindLabel(this.kind, this.title),
+      color,
+      makeBlockPill("callout", this.pos, view),
+    ));
+    return wrap;
+  }
+
+  ignoreEvent() { return true; }
+}
+
+/** Edit-state attribution row for a block quote. Replaces the hidden closing
+ *  `]` at the end of the last body line with the same "— attribution" row the
+ *  rendered widget shows, so a quote with an attribution keeps its height
+ *  while the body is edited. The attribution itself is edited via the pill. */
+export class BlockquoteAttributionRowWidget extends WidgetType {
+  constructor(readonly attribution: string) {
+    super();
+  }
+
+  eq(other: BlockquoteAttributionRowWidget) {
+    return this.attribution === other.attribution;
+  }
+
+  toDOM() {
+    const row = document.createElement("div");
+    row.className = "cm-typst-block-row";
+    const attr = document.createElement("div");
+    attr.className = "cm-typst-blockquote-attr";
+    attr.textContent = `— ${this.attribution}`;
+    row.appendChild(attr);
+    return row;
+  }
+
+  ignoreEvent() { return true; }
 }
 
 // Bibliography is a non-editable region in visual mode by default — it's a

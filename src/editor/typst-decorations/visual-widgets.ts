@@ -184,12 +184,36 @@ export class ShorthandWidget extends WidgetType {
   }
 }
 
+/** A `#line(...)` horizontal rule. While the caret is on the call the pill
+ *  floats over the rule's left end rather than replacing the rule, so the
+ *  rule and the gap around it keep their height and the page doesn't shift. */
 export class HrWidget extends WidgetType {
-  toDOM() {
-    const el = document.createElement("hr");
-    el.className = "cm-typst-hr";
-    return el;
+  constructor(readonly pos: number, readonly withPill: boolean) { super(); }
+  eq(other: HrWidget) { return this.pos === other.pos && this.withPill === other.withPill; }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-typst-hr-block";
+    const rule = document.createElement("hr");
+    rule.className = "cm-typst-hr";
+    wrap.appendChild(rule);
+    if (this.withPill) {
+      const row = document.createElement("div");
+      row.className = "cm-typst-block-pill-row cm-typst-block-pill-overlay";
+      row.appendChild(buildPillButton("line", view, () => {
+        const callTo = findCallEnd(view, this.pos);
+        return {
+          funcName: "line",
+          callFrom: this.pos,
+          callTo,
+          optionSections: getPillOptions("line", view, this.pos, callTo),
+        };
+      }));
+      wrap.appendChild(row);
+    }
+    return wrap;
   }
+  // The rule is inert and the pill handles its own mouse events.
+  ignoreEvent() { return true; }
 }
 
 export const ANGLE_BRACKET_TAGS = /(?<!\\)<(script|style|iframe|object|embed|form|input|link|meta|base)(?:\s|>|\/)/gi;
