@@ -251,9 +251,15 @@ pub struct BehaviourSettings {
 pub struct UpdateSettings {
     /// Check once shortly after launch. Opt-in; default false.
     pub check_on_startup: bool,
-    /// Also surface development (beta) releases — the even-numbered release
-    /// channel. Default false: only user-facing (odd) releases are offered.
+    /// Also surface development (beta) releases — the odd-numbered release
+    /// channel. Default false: only user-facing (even) releases are offered.
     pub include_beta: bool,
+    /// Advanced: replace the release feed the update check asks. Empty or unset
+    /// means InkyCap's own feed. Intended for forks and self-builders, so it has
+    /// no Settings UI — set it in `settings.json`. Must be `https`, and when it
+    /// is set the check never falls back to InkyCap's hosts.
+    #[serde(default)]
+    pub feed_url: Option<String>,
 }
 
 /// User overrides for global UI keyboard shortcuts.

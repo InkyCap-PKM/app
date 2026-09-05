@@ -1,9 +1,13 @@
 // In-app "new release available" notice.
 //
-// InkyCap does NOT self-update. Installers are downloaded by hand from the
-// releases page. This module asks the backend (commands::updates, which queries
-// Codeberg's releases API) whether a newer version exists and, if so, surfaces
-// a notice plus a link to the releases page.
+// InkyCap does NOT self-update. Installers are downloaded by hand. This module
+// asks the backend (commands::updates) whether a newer version exists and, if
+// so, surfaces a notice plus links to download it.
+//
+// Where releases live is deliberately NOT known here: the backend reads a
+// static release feed that carries the download and releases links, so moving
+// the project to a different code forge needs no frontend change. The constants
+// below are only the last-resort links used before a check has answered.
 //
 // A check only ever runs on explicit user action, or on startup if the user
 // opted in (settings.updates.check_on_startup) — never silently otherwise
@@ -15,7 +19,9 @@ import { settings } from "./settings";
 import { showToast } from "./toasts";
 import { t } from "../lib/i18n";
 
+/** Fallback links, used until a check returns the feed's own. */
 export const RELEASES_URL = "https://codeberg.org/InkyCap/app/releases";
+export const DOWNLOAD_URL = "https://inkycap.org/download";
 
 export type UpdateStatus =
   | "idle"
@@ -27,12 +33,17 @@ export type UpdateStatus =
 const [status, setStatus] = createSignal<UpdateStatus>("idle");
 const [latestVersion, setLatestVersion] = createSignal<string | null>(null);
 const [latestUrl, setLatestUrl] = createSignal<string>(RELEASES_URL);
+const [downloadUrl, setDownloadUrl] = createSignal<string>(DOWNLOAD_URL);
 const [notes, setNotes] = createSignal<string | null>(null);
 const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
 
 export const updateStatus = status;
 export const updateLatestVersion = latestVersion;
+/** The page for the specific release that was found; the feed's releases page
+ *  when it doesn't name one. */
 export const updateLatestUrl = latestUrl;
+/** The download page, as reported by the release feed. */
+export const updateDownloadUrl = downloadUrl;
 export const updateNotes = notes;
 export const updateError = errorMessage;
 
@@ -55,10 +66,16 @@ export async function checkForUpdates(): Promise<void> {
   setLatestUrl(RELEASES_URL);
   try {
     const current = await ipc.appVersion();
-    const latest = await ipc.checkLatestRelease(settings.updates.include_beta);
+    const latest = await ipc.checkLatestRelease(
+      settings.updates.include_beta,
+      settings.updates.feed_url ?? null,
+    );
+    // Adopt the feed's download link whatever the verdict, so it is right by
+    // the time the button that uses it appears.
+    setDownloadUrl(latest.downloadUrl || DOWNLOAD_URL);
     if (latest.version && isNewer(latest.version, current)) {
       setLatestVersion(latest.version);
-      setLatestUrl(latest.url || RELEASES_URL);
+      setLatestUrl(latest.url || latest.releasesUrl || RELEASES_URL);
       setNotes(latest.notes || null);
       setStatus("available");
     } else {

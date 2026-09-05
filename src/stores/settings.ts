@@ -106,6 +106,7 @@ const DEFAULTS: UserSettings = {
   updates: {
     check_on_startup: false,
     include_beta: false,
+    feed_url: null,
   },
   shortcuts: {
     overrides: {},

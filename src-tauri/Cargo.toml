@@ -14,8 +14,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
-# In-app "Check for updates" is notify-only: commands::updates queries Codeberg's
-# releases API (via reqwest) and the UI links to the releases page. InkyCap does
+# In-app "Check for updates" is notify-only: commands::updates fetches a static
+# release feed (via reqwest) and the UI links to the download page. InkyCap does
 # not self-update — no signed manifest, no in-place install. Checks run only when
 # the user clicks, or on startup if they opt in (local-first, no telemetry).
 serde = { version = "1", features = ["derive"] }

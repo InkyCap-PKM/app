@@ -10,14 +10,15 @@ import {
   updateStatus,
   updateLatestVersion,
   updateLatestUrl,
+  updateDownloadUrl,
   updateNotes,
   updateError,
   checkForUpdates,
 } from "../stores/updater";
 
-// Where to download a new release. Held as a constant (not translatable copy)
-// so the domain isn't treated as localizable text.
-const DOWNLOAD_URL = "https://inkycap.org/download";
+// The download and releases links come from the backend's release feed (see
+// stores/updater), not from constants here, so they survive a move to a
+// different code forge without an app release.
 
 export default function UpdateChecker() {
   const t = useI18n();
@@ -56,7 +57,7 @@ export default function UpdateChecker() {
             <button
               type="button"
               class="btn btn--primary btn--sm"
-              onClick={() => ipc.openUrlExternally(DOWNLOAD_URL)}
+              onClick={() => ipc.openUrlExternally(updateDownloadUrl())}
             >
               {t("settings.updates.download")}
             </button>

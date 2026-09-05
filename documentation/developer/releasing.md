@@ -5,27 +5,90 @@ is the runbook for cutting a release and how the check finds it.
 
 ## How the update check works
 
-InkyCap **does not self-update**. The in-app check is notify-only: it asks
-Codeberg's releases API for the latest published release and, if it's newer than
-the running version, shows a *"version X is available"* notice with a **View
-releases** button that opens the releases page. Users download and install the
-new build by hand (every platform — `.deb`/`.rpm`/Flatpak/Windows installer).
+InkyCap **does not self-update**. The in-app check is notify-only: it finds the
+latest published release and, if it's newer than the running version, shows a
+*"version X is available"* notice with **Download** and **View releases**
+buttons. Users download and install the new build by hand (every platform —
+`.deb`/`.rpm`/Flatpak/Windows installer/macOS `.dmg`).
 
-- The check runs in Rust (`src-tauri/src/commands/updates.rs`,
-  `check_latest_release`) rather than the webview, because the Codeberg API
-  sends no CORS headers. It hits:
-  - `…/releases/latest` for the **stable** channel (the API excludes drafts and
-    pre-releases here), or
-  - `…/releases?limit=1&draft=false` when the user opted into betas.
-- **Privacy**: a check runs only on an explicit click, or on startup if the user
-  opted in (`Settings → Behaviour → Software updates`). No silent network calls,
-  no telemetry. Note content and filesystem paths never leave the device.
+### The release feed
 
-The moving parts:
+The app asks one **static JSON file on a host InkyCap controls**, not a code
+forge's API:
+
+```
+https://inkycap.org/releases/latest.json
+```
+
+The feed — not the app — knows where releases are hosted, so **moving the
+project to a different forge is a change to one uploaded file**, not a new app
+release that older installs would never receive. The feed also carries the
+"releases" and "download" links, so those aren't baked into the binary either.
+
+```json
+{
+  "schema": 1,
+  "releases_url": "https://codeberg.org/InkyCap/app/releases",
+  "download_url": "https://inkycap.org/download",
+  "channels": {
+    "stable": {
+      "version": "26.6.10",
+      "published": "2026-06-14",
+      "url": "https://codeberg.org/InkyCap/app/releases/tag/v26.6.10",
+      "notes": "…"
+    },
+    "beta": { "version": "26.7.1", "…": "…" }
+  }
+}
+```
+
+Rules the feed must keep:
+
+- **`schema: 1` at that URL is permanent.** The app refuses a schema it doesn't
+  recognize, so a breaking change has to be published at a *new* path with the
+  old one left serving schema 1. Adding optional keys is always safe — unknown
+  fields are ignored.
+- **Every URL must be `http(s)`.** The app drops anything else and uses its
+  built-in defaults, because the frontend hands these to the OS URL opener.
+- **Serve it with a short cache lifetime** (a few minutes). A long `max-age` on
+  a CDN or Pages host means users keep being told they're up to date after a
+  release lands.
+- **Both channels live in one file.** One request answers stable and beta; with
+  betas enabled the app offers whichever channel is numerically newer, so a beta
+  from earlier in the month never looks like an update over a later stable.
+
+Serving it from `inkycap.org` gives a second escape hatch: the file can move to
+any static host by repointing DNS, with no app change at all.
+
+### Fallback
+
+If the feed can't be fetched or parsed, the check falls back to querying the
+forge's releases API directly (`codeberg.org/api/v1/repos/InkyCap/app`) — the
+path builds before 26.9 used exclusively. That covers a lapsed domain or a host
+outage. Note the fallback is what *older* builds do permanently: **any forge
+move must ship in a release before the move**, and the old repository should
+keep serving at least one final release pointing at the new home.
+
+### Advanced override
+
+`settings.updates.feed_url` in `settings.json` replaces the feed URL, for forks
+and self-builders. It has no Settings UI on purpose. It must be `https`, and
+when it's set the forge fallback is skipped — someone who redirected the check
+wouldn't expect it to quietly reach InkyCap's hosts instead.
+
+### Privacy
+
+A check runs only on an explicit click, or on startup if the user opted in
+(`Settings → Behaviour → Software updates`). No silent network calls, no
+telemetry. Note content and filesystem paths never leave the device. The fetch
+runs in Rust rather than the webview because neither host sends CORS headers.
+
+### The moving parts
 
 | Piece | Where |
 |-------|-------|
-| Release check (Codeberg API) | `src-tauri/src/commands/updates.rs` |
+| Release check (feed + forge fallback) | `src-tauri/src/commands/updates.rs` |
+| Feed generator | `scripts/release-manifest.mjs` (`npm run release:manifest`) |
 | In-app UI | `src/components/UpdateChecker.tsx`, `src/stores/updater.ts` |
 | Settings toggles | `src/components/settings/BehaviourSettingsSection.tsx` (`updates.check_on_startup`, `updates.include_beta`) |
 | Linux `.deb`/`.rpm` build (CI, optional — see "Cutting a release") | `.forgejo/workflows/release.yml` (Ubuntu 22.04 container) |
@@ -33,18 +96,15 @@ The moving parts:
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
 | macOS + Windows installer build (CI) | `.github/workflows/build-desktop.yml` on the GitHub build mirror |
 
-The repo lives at `codeberg.org/InkyCap/app` (org-owned). There is no separate
-update server, signed manifest, or Codeberg Pages dependency — the releases API
-*is* the source of truth, and reflects a published release immediately.
+The repo lives at `codeberg.org/InkyCap/app` (org-owned).
 
-> **History:** earlier versions (≤ 26.6.8) used the Tauri updater plugin with a
-> signed `latest.json` manifest hosted on Codeberg Pages at
-> `updates.inkycap.org`. That whole chain (minisign signing,
-> `createUpdaterArtifacts`, the `pages` branch, the manifest generator) was
-> removed in 26.6.10 in favour of this notify-only check. Existing ≤ 26.6.8
-> installs still point at the old manifest endpoint and won't auto-discover newer
-> releases; they upgrade by downloading 26.6.10+ once, after which the API-based
-> check takes over.
+> **History:** versions ≤ 26.6.8 used the Tauri updater plugin with a signed
+> `latest.json` manifest hosted on Codeberg Pages at `updates.inkycap.org`. That
+> whole chain (minisign signing, `createUpdaterArtifacts`, the `pages` branch,
+> the manifest generator) was removed in 26.6.10 in favour of a notify-only
+> check against Codeberg's releases API. 26.9 kept the notify-only behaviour but
+> moved the source of truth back to a static feed — unsigned this time, which is
+> safe precisely because nothing is downloaded or executed automatically.
 
 ## Versioning & channels
 
@@ -171,9 +231,27 @@ reads the new one. If it's wrong, delete `src-tauri\target\release` (or run
 `cargo clean -p inkycap`) and rebuild.
 
 **6. Publish the draft.** In the web UI, edit the draft and publish it — **this
-is what creates the `vXX.YY.Z` tag** (at the `main` target). The releases API now
-returns it, and **Check for updates** in older builds (26.6.10+) shows the notice
-with a **View releases** link. (`git fetch --tags` to pull the new tag locally.)
+is what creates the `vXX.YY.Z` tag** (at the `main` target). (`git fetch --tags`
+to pull the new tag locally.)
+
+**7. Update the release feed.** Nothing tells users about the release until this
+is uploaded.
+
+```sh
+# Take the release notes from a file so they show up in the in-app notice.
+npm run release:manifest -- --notes RELEASE-NOTES.md --out latest.json
+npm run release:manifest:verify -- latest.json        # sanity check
+```
+
+The generator reads the version from `package.json` (so it can't be mistyped)
+and merges into the existing `latest.json`, leaving the *other* channel's entry
+untouched — publishing a beta never erases the stable entry. Download the
+currently published `latest.json` first, or pass it with `--in`, so the merge
+has something to merge into.
+
+Upload it to `https://inkycap.org/releases/latest.json`. Once it's live,
+**Check for updates** in 26.9+ builds shows the notice; builds from 26.6.10 to
+26.8 pick it up through the forge-API fallback instead.
 
 > **CI build (`.forgejo/workflows/release.yml`) is optional and off the happy
 > path.** It fires on a `v*` tag push and tries to build the Linux packages into

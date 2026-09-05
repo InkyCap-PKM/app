@@ -1177,23 +1177,36 @@ export async function appVersion(): Promise<string> {
   return invoke<string>("app_version");
 }
 
-/** The newest release on Codeberg, as returned by `check_latest_release`. */
+/** The newest release, as returned by `check_latest_release`. */
 export interface LatestRelease {
   /** Version with any leading `v` stripped, e.g. `26.6.10`. */
   version: string;
-  /** Release page URL to open in the browser. */
+  /** This release's own page, to open in the browser. */
   url: string;
   /** Release notes (may be empty). */
   notes: string;
   /** Whether this is a pre-release (beta) build. */
   isPrerelease: boolean;
+  /** Where all releases are listed ("View releases"). */
+  releasesUrl: string;
+  /** Where users download installers ("Download"). */
+  downloadUrl: string;
 }
 
-/** Ask the backend for the latest release from Codeberg's API. With
- *  `includeBeta`, pre-releases are considered; otherwise stable only. The
- *  caller compares `version` against `appVersion()`. Throws on network failure. */
-export async function checkLatestRelease(includeBeta: boolean): Promise<LatestRelease> {
-  return invoke<LatestRelease>("check_latest_release", { includeBeta });
+/** Ask the backend for the latest release. The backend reads InkyCap's release
+ *  feed (a static JSON file), falling back to the forge's releases API, so the
+ *  frontend never needs to know where releases are hosted — `releasesUrl` and
+ *  `downloadUrl` come back with the answer.
+ *
+ *  With `includeBeta`, pre-releases are considered; otherwise stable only.
+ *  `feedUrl` is the advanced `settings.updates.feed_url` override, or null for
+ *  the default feed. The caller compares `version` against `appVersion()`.
+ *  Throws on network failure. */
+export async function checkLatestRelease(
+  includeBeta: boolean,
+  feedUrl: string | null = null,
+): Promise<LatestRelease> {
+  return invoke<LatestRelease>("check_latest_release", { includeBeta, feedUrl });
 }
 
 // Creation rules

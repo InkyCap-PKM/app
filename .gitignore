@@ -61,8 +61,8 @@ dist-linux/
 .flatpak-builder/
 flatpak/.build/
 
-# Release manifest staging (scripts/publish-manifest.sh): the signed artifacts'
-# .sig files copied off the build machines, plus the generated latest.json.
+# Release feed staging: the generated latest.json (scripts/release-manifest.mjs)
+# is uploaded to the website, not committed here.
 release-artifacts/
 /latest.json
 flatpak/.repo/

@@ -470,9 +470,13 @@ export interface BehaviourSettings {
 export interface UpdateSettings {
   /** Check once shortly after launch. Opt-in; default false. */
   check_on_startup: boolean;
-  /** Also surface development (beta) releases — the even-numbered release
-   *  channel. Default false: only user-facing (odd) releases are offered. */
+  /** Also surface development (beta) releases — the odd-numbered release
+   *  channel. Default false: only user-facing (even) releases are offered. */
   include_beta: boolean;
+  /** Advanced: replace the release feed the update check asks. `null` means
+   *  InkyCap's own feed. Intended for forks and self-builders, so it has no
+   *  Settings UI — set it in `settings.json`. Must be `https`. */
+  feed_url: string | null;
 }
 
 /** User overrides for global UI keyboard shortcuts. The default keybinding of
