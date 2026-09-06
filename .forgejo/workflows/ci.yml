@@ -80,6 +80,12 @@ jobs:
             librsvg2-dev libssl-dev pkg-config
       - name: Ensure clippy is installed
         run: rustup component add clippy
+      - name: Fetch Tinymist sidecar
+        # tauri.conf.json declares the Tinymist sidecar as an external binary,
+        # so the Tauri build script refuses to run without it. It is ~30 MB and
+        # deliberately not in the repo, which is why a fresh clone (and this
+        # job) has to fetch it before anything will compile.
+        run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
       - name: Lint with clippy (warnings are errors)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --lib --tests -- -D warnings
 
@@ -107,6 +113,12 @@ jobs:
           apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             librsvg2-dev libssl-dev pkg-config
+      - name: Fetch Tinymist sidecar
+        # tauri.conf.json declares the Tinymist sidecar as an external binary,
+        # so the Tauri build script refuses to run without it. It is ~30 MB and
+        # deliberately not in the repo, which is why a fresh clone (and this
+        # job) has to fetch it before anything will compile.
+        run: ./scripts/download-tinymist.sh x86_64-unknown-linux-gnu
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
