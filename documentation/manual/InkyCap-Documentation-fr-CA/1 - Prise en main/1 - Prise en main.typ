@@ -21,5 +21,5 @@ InkyCap est une application de gestion des connaissances personnelles basée sur
 - #wikilink("4 - Démarrage rapide") vous donne le chemin le plus rapide entre l'installation d'InkyCap et la création d'une boîte de notes, la rédaction de votre première note et la mise en relation de notes par des liens wiki.
 
 #callout("tip", title: "Pour les développeuses, développeurs ou les utilisatrices et utilisateurs avancés")[
-  InkyCap est bâti avec Tauri (un arrière-plan Rust avec une interface en technologies web) et embarque le serveur de langage Tinymist, ce qui vous donne l'autocomplétion du code Typst d'emblée. Aucune installation séparée de Typst ou de Tinymist n'est requise. Le code source et les archives de versions sont hébergés sur Codeberg, à `codeberg.org/InkyCap/app`.
+  InkyCap est bâti avec Tauri (un arrière-plan Rust avec une interface en technologies web) et embarque le serveur de langage Tinymist, ce qui vous donne l'autocomplétion du code Typst d'emblée. Aucune installation séparée de Typst ou de Tinymist n'est requise. Le code source et les archives de versions sont hébergés sur CodeFloe, à `codefloe.com/InkyCap/app`.
 ]

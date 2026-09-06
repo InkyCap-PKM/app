@@ -38,7 +38,7 @@ const SCHEMA = 1;
 // Where releases live today. These are the only forge-specific strings left in
 // the project's shipping path: change them here, regenerate, upload, and every
 // installed build follows without an app release.
-const RELEASES_URL = "https://codeberg.org/InkyCap/app/releases";
+const RELEASES_URL = "https://codefloe.com/InkyCap/app/releases";
 const RELEASE_TAG_URL = (version) => `${RELEASES_URL}/tag/v${version}`;
 const DOWNLOAD_URL = "https://inkycap.org/download";
 

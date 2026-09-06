@@ -27,7 +27,7 @@ finish-args:
   # Service; without this the backup settings can't reach the keyring).
   - --talk-name=org.freedesktop.secrets
   # Network: Zotero connector (localhost), @preview Typst package downloads,
-  # git remotes, and the release-update check (Codeberg API).
+  # git remotes, and the release-update check (release feed / forge API).
   - --share=network
   # ssh-agent, for git collaboration over SSH remotes. (Key files in ~/.ssh
   # are already readable via --filesystem=home for libgit2's direct path.)

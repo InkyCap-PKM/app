@@ -1,4 +1,4 @@
-# Release pipeline for InkyCap on Codeberg (Forgejo Actions).
+# Release pipeline for InkyCap on CodeFloe (Forgejo Actions).
 #
 # ⚠ OPTIONAL / OFF THE HAPPY PATH. The documented release flow
 # (documentation/developer/releasing.md) does NOT push the tag by hand — it
@@ -15,7 +15,7 @@
 # documentation/developer/releasing.md) — they can't be built here (Windows is a
 # different OS; Flatpak needs flatpak-builder + the GNOME runtime).
 #
-# InkyCap does not self-update: the in-app check queries Codeberg's releases API
+# InkyCap does not self-update: the in-app check reads a static release feed
 # and links to the releases page (see src-tauri/src/commands/updates.rs). The
 # RELEASE (last) version component still selects the channel for the *notice*:
 # EVEN is a user-facing/stable release; ODD is a development/beta release, which
@@ -92,7 +92,7 @@ jobs:
           REL_ID=$(curl -fsSL -H "Authorization: token ${TOKEN}" "${API}/releases/tags/${TAG}" | jq -r '.id // empty')
           if [ -z "${REL_ID}" ]; then
             # Created as a DRAFT: the maintainer attaches the Windows installer
-            # and the Flatpak, then publishes the release by hand. Codeberg's
+            # and the Flatpak, then publishes the release by hand. CodeFloe's
             # releases API reflects it immediately — there is no manifest to
             # publish.
             REL_ID=$(curl -fsSL -X POST -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" \

@@ -42,10 +42,10 @@ const DEFAULT_FEED_URL: &str = "https://inkycap.org/releases/latest.json";
 
 /// Forge releases API used when the feed is unreachable. This is the API root
 /// for one repository; the channel endpoints hang off it.
-const FALLBACK_FORGE_API: &str = "https://codeberg.org/api/v1/repos/InkyCap/app";
+const FALLBACK_FORGE_API: &str = "https://codefloe.com/api/v1/repos/InkyCap/app";
 
 /// Links used when neither source supplies one.
-const DEFAULT_RELEASES_URL: &str = "https://codeberg.org/InkyCap/app/releases";
+const DEFAULT_RELEASES_URL: &str = "https://codefloe.com/InkyCap/app/releases";
 const DEFAULT_DOWNLOAD_URL: &str = "https://inkycap.org/download";
 
 /// The only feed schema this build understands. A feed that needs to break
@@ -158,7 +158,7 @@ fn parse_feed(text: &str, include_beta: bool) -> Result<LatestRelease, InkyCapEr
 
 // ── The forge releases API (fallback source) ─────────────────────────
 
-/// The subset of Forgejo's (Codeberg's) release JSON we consume.
+/// The subset of Forgejo's (CodeFloe's) release JSON we consume.
 #[derive(Deserialize)]
 struct ForgeRelease {
     /// Release tag, e.g. `v26.6.10` (historically also bare `26.6.6`).

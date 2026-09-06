@@ -28,13 +28,13 @@ release that older installs would never receive. The feed also carries the
 ```json
 {
   "schema": 1,
-  "releases_url": "https://codeberg.org/InkyCap/app/releases",
+  "releases_url": "https://codefloe.com/InkyCap/app/releases",
   "download_url": "https://inkycap.org/download",
   "channels": {
     "stable": {
       "version": "26.6.10",
       "published": "2026-06-14",
-      "url": "https://codeberg.org/InkyCap/app/releases/tag/v26.6.10",
+      "url": "https://codefloe.com/InkyCap/app/releases/tag/v26.6.10",
       "notes": "…"
     },
     "beta": { "version": "26.7.1", "…": "…" }
@@ -63,7 +63,7 @@ any static host by repointing DNS, with no app change at all.
 ### Fallback
 
 If the feed can't be fetched or parsed, the check falls back to querying the
-forge's releases API directly (`codeberg.org/api/v1/repos/InkyCap/app`) — the
+forge's releases API directly (`codefloe.com/api/v1/repos/InkyCap/app`) — the
 path builds before 26.9 used exclusively. That covers a lapsed domain or a host
 outage. Note the fallback is what *older* builds do permanently: **any forge
 move must ship in a release before the move**, and the old repository should
@@ -96,7 +96,9 @@ runs in Rust rather than the webview because neither host sends CORS headers.
 | Linux Flatpak build (local) | `scripts/build-flatpak.sh` (+ `flatpak/com.inkycap.editor.yml`) |
 | macOS + Windows installer build (CI) | `.github/workflows/build-desktop.yml` on the GitHub build mirror |
 
-The repo lives at `codeberg.org/InkyCap/app` (org-owned).
+The repo lives at `codefloe.com/InkyCap/app` (org-owned). The project moved
+there from Codeberg in September 2026; `codeberg.org/InkyCap/app` is archived
+and read-only, and still serves every release up to v26.9.4.
 
 > **History:** versions ≤ 26.6.8 used the Tauri updater plugin with a signed
 > `latest.json` manifest hosted on Codeberg Pages at `updates.inkycap.org`. That
@@ -121,7 +123,7 @@ The **RELEASE** (last) component does double duty — it counts releases within
 the month *and* its parity selects the channel:
 
 - **even** → user-facing / **stable**
-- **odd** → development / **beta** (marked a *prerelease* on Codeberg)
+- **odd** → development / **beta** (marked a *prerelease* on CodeFloe)
 
 So a month reads `26.6.1` (first beta), `26.6.2` (first stable), `26.6.3` (next
 beta), `26.6.4` (next stable), and so on. The stable check uses
@@ -163,7 +165,7 @@ the next `cargo build`. Commit it alongside the bump so it doesn't drift.
 
 Build the artifacts, attach them to a **draft** release, and **publish by hand**.
 The git tag is created *by publishing the draft* — never push it beforehand (see
-the warning below). Once published, Codeberg's releases API serves the release
+the warning below). Once published, CodeFloe's releases API serves the release
 immediately and the in-app check finds it.
 
 > **⚠ Never push the release tag before the draft is ready.** Forgejo treats a
@@ -213,7 +215,7 @@ build mirror" below) and attach the installers:
 3. When the run finishes, download the three artifacts from the run summary:
    `inkycap-windows-x86_64`, `inkycap-macos-aarch64`, `inkycap-macos-x86_64`.
 4. Unzip them and attach the `*-setup.exe`, `.msi` and `.dmg` files to the
-   Codeberg draft. No signing or `.sig` is needed.
+   CodeFloe draft. No signing or `.sig` is needed.
 
 The workflow runs the same version self-check as the Linux job, so a bump that
 didn't reach every manifest fails the build instead of shipping.
@@ -271,15 +273,15 @@ Upload it to `https://inkycap.org/releases/latest.json`. Once it's live,
 
 ## The GitHub build mirror
 
-Codeberg has no macOS or Windows runners, so a push-only mirror of `main` lives
+CodeFloe has no macOS or Windows runners, so a push-only mirror of `main` lives
 on GitHub purely to build those two installers. GitHub Actions is free and
 unmetered for public repositories on its standard Linux, Windows **and** macOS
 runners, which is the whole reason the mirror exists.
 
-**What stays on Codeberg:** the canonical repository, issues, pull requests, and
+**What stays on CodeFloe:** the canonical repository, issues, pull requests, and
 every published release. The mirror has no issue tracker in use and the workflow
 deliberately never creates a GitHub release. `src-tauri/src/commands/updates.rs`
-still queries Codeberg's API, and nothing in the app points at GitHub.
+still queries CodeFloe's API, and nothing in the app points at GitHub.
 
 **One-time setup:**
 
@@ -301,5 +303,5 @@ There is no automatic mirroring, and that's deliberate: the mirror is a build
 tool you reach for, not a second source of truth that can drift silently.
 
 **Ongoing cost.** The `.forgejo/workflows/ci.yml` gates (rustfmt, clippy, tests,
-typecheck) are *not* duplicated on the mirror. Codeberg remains the place where
+typecheck) are *not* duplicated on the mirror. CodeFloe remains the place where
 correctness is checked; GitHub only compiles installers.

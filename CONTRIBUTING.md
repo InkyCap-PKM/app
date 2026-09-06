@@ -124,7 +124,7 @@ InkyCap is trunk-based: a single long-lived branch, `main`, with no separate
 
 ## Reporting bugs and proposing features
 
-Open an issue on the [Codeberg tracker](https://codeberg.org/InkyCap/app/issues).
+Open an issue on the [CodeFloe tracker](https://codefloe.com/InkyCap/app/issues).
 For bugs, include your platform, the InkyCap version, and the smallest steps that
 reproduce the problem. For security issues, do **not** open a public issue; see
 [SECURITY.md](SECURITY.md).

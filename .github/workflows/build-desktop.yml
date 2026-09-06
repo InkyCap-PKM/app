@@ -2,16 +2,16 @@
 #
 # WHY THIS LIVES ON GITHUB
 # ------------------------
-# The project's home is codeberg.org/InkyCap/app. Codeberg has no macOS or
+# The project's home is codefloe.com/InkyCap/app. CodeFloe has no macOS or
 # Windows runners, so this repository is a *build mirror*: a push-only copy of
-# `main` that exists to produce the two artifacts the Codeberg release flow
+# `main` that exists to produce the two artifacts the CodeFloe release flow
 # can't build for itself. Issues, pull requests and published releases stay on
-# Codeberg. This workflow deliberately does NOT create a GitHub release.
+# CodeFloe. This workflow deliberately does NOT create a GitHub release.
 #
 # HOW IT FITS THE RELEASE RUNBOOK
 # -------------------------------
 # documentation/developer/releasing.md builds the Linux packages locally, then
-# attaches everything to a Codeberg *draft* and publishes by hand — and
+# attaches everything to a CodeFloe *draft* and publishes by hand — and
 # publishing the draft is what creates the git tag. So at build time the tag
 # does not exist yet, which is why this runs on `workflow_dispatch` (you press
 # the button) rather than on a tag push. Download the artifacts from the run
@@ -126,7 +126,7 @@ jobs:
         shell: bash
         run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
-      # Mirrors the check in the Codeberg release workflow: the version the
+      # Mirrors the check in the CodeFloe release workflow: the version the
       # binary reports at runtime (what Settings -> Overview shows) must match
       # package.json. Catches a version bump that didn't reach every manifest.
       - name: Verify the built binary's version

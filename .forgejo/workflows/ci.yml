@@ -1,8 +1,8 @@
-# Forgejo Actions workflow for Codeberg CI.
+# Forgejo Actions workflow for CodeFloe CI.
 #
 # INERT until you enable Actions on the repository:
-#   Codeberg → repo → Settings → Actions → enable, and ensure a runner is
-#   available (Codeberg offers shared runners you opt into).
+#   CodeFloe → repo → Settings → Actions → enable, and ensure a runner is
+#   available (CodeFloe offers shared runners; see its Forgejo Actions docs).
 # Once enabled, every push and pull request runs these gates server-side,
 # unbypassable.
 #
@@ -17,7 +17,8 @@
 #
 # A full Tauri *bundle* (the packaged app) is deliberately not built here — it
 # is heavy on runner minutes and the unit/integration suites cover the logic.
-# `runs-on` / the container image target Codeberg's shared runners; adjust if
+# `runs-on` / the container image target CodeFloe's shared runners, which
+# advertise the `docker` and `debian-latest` labels; adjust if
 # your runner advertises different labels.
 name: CI
 

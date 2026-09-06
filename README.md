@@ -11,12 +11,17 @@
 ---
 
 > **Where this project lives.** InkyCap is developed on
-> **[Codeberg](https://codeberg.org/InkyCap/app)**. That is where the issue
+> **[CodeFloe](https://codefloe.com/InkyCap/app)**. That is where the issue
 > tracker, pull requests and releases are. The
 > [GitHub repository](https://github.com/InkyCap-PKM/app) is a read-only mirror
-> that exists only to build the macOS and Windows installers, since Codeberg
+> that exists only to build the macOS and Windows installers, since CodeFloe
 > has no runners for those platforms. **Issues and pull requests opened on
-> GitHub will not be seen.** Please use Codeberg.
+> GitHub will not be seen.** Please use CodeFloe.
+>
+> The project moved from Codeberg in September 2026. The
+> [Codeberg repository](https://codeberg.org/InkyCap/app) is archived and
+> read-only; it still holds the earlier issue history and every release up to
+> v26.9.4.
 
 ---
 
@@ -54,7 +59,8 @@ Mostly developed on a Linux system (Ubuntu), it has also been partially tested a
 ## Installing
 
 Pre-built packages are published on the
-[releases page](https://codeberg.org/InkyCap/app/releases). Pick the artifact for your platform:
+[releases page](https://codefloe.com/InkyCap/app/releases) and listed on the
+[download page](https://inkycap.org/download). Pick the artifact for your platform:
 
 - **Linux:** `.deb` / `.rpm` / Flatpak (download and install from the Flatpak file, not currently available on FlatHub).
 - **Windows:** the `*-setup.exe` installer.
@@ -78,7 +84,7 @@ how releases and the updater work.
 ### Setup
 
 ```sh
-git clone https://codeberg.org/InkyCap/app.git inkycap
+git clone https://codefloe.com/InkyCap/app.git inkycap
 cd inkycap
 npm install                      # frontend deps (also runs patch-package)
 ./scripts/download-tinymist.sh   # fetch the Tinymist LSP sidecar (verified by pinned SHA-256)
@@ -114,7 +120,7 @@ inkycap/
 ├── scripts/              Build/setup scripts (Tinymist, icons, versioning, i18n)
 ├── documentation/        Developer and user documentation
 ├── CLAUDE.md             Engineering principles and normative coding standards
-└── .forgejo/workflows/   CI and release pipelines (Codeberg/Forgejo Actions)
+└── .forgejo/workflows/   CI and release pipelines (CodeFloe/Forgejo Actions)
 ```
 
 ## Documentation
@@ -161,4 +167,4 @@ One reason among many that I started InkyCap was as an early experiment to exper
 ## Licence
 
 InkyCap is released under the Québec Free and Open-Source Licence, Permissive
-(**LiLiQ-P 1.1**). See [LICENSE](https://codeberg.org/InkyCap/app/src/branch/main/LICENSE) (English) and [LICENSE.fr](https://codeberg.org/InkyCap/app/src/branch/main/LICENSE.fr) (French). This is similar to many other open source licences and is approved by both the Open Source Initiative and Free Software Foundation. It essentially gives you rights to see, copy, modify, redistribute the code. 
+(**LiLiQ-P 1.1**). See [LICENSE](https://codefloe.com/InkyCap/app/src/branch/main/LICENSE) (English) and [LICENSE.fr](https://codefloe.com/InkyCap/app/src/branch/main/LICENSE.fr) (French). This is similar to many other open source licences and is approved by both the Open Source Initiative and Free Software Foundation. It essentially gives you rights to see, copy, modify, redistribute the code. 

@@ -4,7 +4,7 @@ Repo-administration runbook for maintainers: the one-time and occasional
 settings that keep the project healthy as contributors arrive. This is distinct
 from [releasing.md](releasing.md) (how to cut a release) and
 [../../CONTRIBUTING.md](../../CONTRIBUTING.md) (the contributor-facing workflow);
-it documents the Codeberg/Forgejo configuration that backs them.
+it documents the CodeFloe/Forgejo configuration that backs them.
 
 ## Branch protection
 
@@ -31,7 +31,7 @@ protecting the branch `main`.
 - **Require approvals / reviews.** Keep required approvals at **0**. With a
   single maintainer, requiring approvals blocks your own merges. Turn it on only
   once there is more than one person who can review.
-- **Require signed commits.** Codeberg has no key to sign the merge commits it
+- **Require signed commits.** CodeFloe has no key to sign the merge commits it
   creates, and enforcing contributor commit signing adds friction for little
   gain at this stage.
 - **Require branch up-to-date before merge.** Unnecessary churn at current

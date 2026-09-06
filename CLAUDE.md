@@ -375,8 +375,11 @@ InkyCap is built to be picked up and extended by future human contributors who h
 ## Branch & workflow
 
 - **Active branch:** `main`
-- **Remote:** `origin` at `git@codeberg.org:InkyCap/app.git` (org-owned; transferred from the original personal `joch/InkyCap-Notes`)
-- **Build mirror:** `github` at `git@github.com:InkyCap-PKM/app.git`. Push-only copy of `main`, used solely to build the macOS and Windows installers (`.github/workflows/build-desktop.yml`), because Codeberg has no runners for those platforms. Issues, pull requests and releases stay on Codeberg. See [documentation/developer/releasing.md](documentation/developer/releasing.md).
+- **Remote:** `origin` at `git@codefloe.com:InkyCap/app.git` (org-owned). The
+  project moved here from Codeberg in September 2026; the Codeberg repository is
+  archived and read-only, and still holds the earlier issue history and every
+  release up to v26.9.4.
+- **Build mirror:** `github` at `git@github.com:InkyCap-PKM/app.git`. Push-only copy of `main`, used solely to build the macOS and Windows installers (`.github/workflows/build-desktop.yml`), because CodeFloe has no runners for those platforms. Issues, pull requests and releases stay on CodeFloe. See [documentation/developer/releasing.md](documentation/developer/releasing.md).
 
 ## Where to start
 

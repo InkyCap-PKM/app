@@ -20,7 +20,7 @@ import { showToast } from "./toasts";
 import { t } from "../lib/i18n";
 
 /** Fallback links, used until a check returns the feed's own. */
-export const RELEASES_URL = "https://codeberg.org/InkyCap/app/releases";
+export const RELEASES_URL = "https://codefloe.com/InkyCap/app/releases";
 export const DOWNLOAD_URL = "https://inkycap.org/download";
 
 export type UpdateStatus =
