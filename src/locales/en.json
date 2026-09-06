@@ -436,7 +436,7 @@
   "journalScroll.toggle.start": "Journal Scroll anchored from this note",
   "journalScroll.toggle.stop": "Turn off Journal Scroll",
   "journalScroll.anchor.return": "Return to the anchor note",
-  "journalScroll.direction.recentFirst": "Show forward in time form anchor",
+  "journalScroll.direction.recentFirst": "Show forward in time from anchor",
   "journalScroll.direction.oldestFirst": "Show backward in time from anchor",
   "journalScroll.status.recentFirst": "Viewing new to old from {anchor}",
   "journalScroll.status.oldestFirst": "Viewing old to new from {anchor}",
