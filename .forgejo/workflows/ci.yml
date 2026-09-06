@@ -17,12 +17,18 @@
 #
 # A full Tauri *bundle* (the packaged app) is deliberately not built here — it
 # is heavy on runner minutes and the unit/integration suites cover the logic.
-# `runs-on` / the container image target CodeFloe's shared runners, which
-# advertise the `docker` and `debian-latest` labels; adjust if
-# your runner advertises different labels.
+# `runs-on: docker` targets CodeFloe's shared runners, which all advertise a
+# `docker` label (alongside `debian-latest`, `ubuntu-latest`, `alpine-latest`
+# and friends) and report cpu=4 with 7-10 GB of memory. Adjust if your runner
+# advertises different labels.
 name: CI
 
-on: [push, pull_request]
+# `workflow_dispatch` adds a "Run workflow" button in the web UI, so the whole
+# gate can be re-run without pushing anything.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   rustfmt:
