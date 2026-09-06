@@ -36,7 +36,19 @@ jobs:
     container:
       image: rust:1-bookworm
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        # NOT actions/checkout here. That is a JavaScript action, and Forgejo
+        # runs it with `node` inside this job's container; the official Rust
+        # image has no Node, so it exits 127 before anything else happens.
+        # Cloning by hand keeps the pinned Rust toolchain image and needs no
+        # extra tooling. The `frontend` job below runs in a Node image, so it
+        # uses the action normally.
+        # Anything added to these three jobs must likewise avoid JS actions.
+        run: |
+          git init -q .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
       - name: Ensure rustfmt is installed
         run: rustup component add rustfmt
       - name: Check Rust formatting
@@ -47,7 +59,19 @@ jobs:
     container:
       image: rust:1-bookworm
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        # NOT actions/checkout here. That is a JavaScript action, and Forgejo
+        # runs it with `node` inside this job's container; the official Rust
+        # image has no Node, so it exits 127 before anything else happens.
+        # Cloning by hand keeps the pinned Rust toolchain image and needs no
+        # extra tooling. The `frontend` job below runs in a Node image, so it
+        # uses the action normally.
+        # Anything added to these three jobs must likewise avoid JS actions.
+        run: |
+          git init -q .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
       - name: Install Linux build dependencies
         run: |
           apt-get update
@@ -64,7 +88,19 @@ jobs:
     container:
       image: rust:1-bookworm
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        # NOT actions/checkout here. That is a JavaScript action, and Forgejo
+        # runs it with `node` inside this job's container; the official Rust
+        # image has no Node, so it exits 127 before anything else happens.
+        # Cloning by hand keeps the pinned Rust toolchain image and needs no
+        # extra tooling. The `frontend` job below runs in a Node image, so it
+        # uses the action normally.
+        # Anything added to these three jobs must likewise avoid JS actions.
+        run: |
+          git init -q .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
       - name: Install Linux build dependencies
         run: |
           apt-get update
