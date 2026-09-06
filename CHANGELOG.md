@@ -13,6 +13,81 @@ each tagged release, newest first, grouping entries under **Added**, **Changed**
 **Fixed**, **Removed**, **Security**, or **Deprecated** as needed.
 
 
+## [26.9.4] - 2026-09-05
+
+### Added
+
+- An `@` reference can point at a specific section inside another note, and
+  correcting a broken label reference is simpler.
+- The in-app update check reads a static release feed published at
+  `inkycap.org/releases/latest.json` instead of querying the code host's API
+  directly. The feed carries both channels and the release and download links,
+  so a change in where InkyCap is hosted no longer strands installed copies.
+  Builds older than 26.9 fall back to the forge API automatically.
+- Advanced `settings.updates.feed_url` override (https only, no Settings UI)
+  for forks and self-builders.
+
+### Changed
+
+- Bold and italic applied inside a word (Ctrl+B / Ctrl+I and the selection
+  toolbar) now emit markup Typst renders consistently. Plain `*` and `_` do not
+  always display the same way mid-word.
+- Indenting and un-indenting lists behaves more predictably.
+- Shell scripts are pinned to LF line endings so they run from a Windows
+  checkout.
+- README and contributor documentation clarify where to report issues.
+
+### Fixed
+
+- Code blocks, block quotes and callouts keep the same height when the caret
+  enters or leaves them, so the page no longer shifts.
+- The page no longer creeps upward on each click into a block.
+- "Dim unfocused text" works on its own, without Focus mode. Both settings are
+  applied when an editor is created and are remembered across a visual/source
+  switch.
+- The Tinymist language-server download script runs on macOS again, which had
+  failed because macOS ships a bash without associative arrays.
+
+
+## [26.9.2] - 2026-09-02
+
+### Added
+
+- Mycelial View: exclude notes from its calculations by property or tag.
+- "Search in folder" on the file tree's folder right-click menu. Search also
+  lists matches found through filenames, which previously only contributed to
+  relevance scoring.
+- Command palette scan for filenames that could cause cross-platform problems,
+  with a guided fix.
+- Button on Collection rows that opens a file in the visual editor.
+- Folding for lists as well as headings. Lists move with their child items, and
+  expand/collapse state persists for the session.
+
+### Changed
+
+- UI design system overhaul: `layout.css` split into per-area files, a token
+  system for typography, spacing, geometry and motion, token-level
+  accessibility work, semantic status colours, and a single icon-button class.
+- Sorting throughout the app uses the ICU collator, so numerals, accented
+  characters and mixed case order naturally. Replaces the previous custom
+  comparison code.
+- Tab styling and usability with many tabs open, pinned sidebar and right-panel
+  pane headers, and scrollbar refinements.
+
+### Fixed
+
+- Task shortcuts in the visual editor: adding a task with `- [ ]`, the command
+  palette or the slash menu now allows the text to be edited directly, or
+  through a dialog from the pill's right-click menu.
+- Backtick auto-pairing.
+- Verse element: the arrow keys enter and exit it, and it no longer trapped the
+  cursor.
+- Tag filtering in Collections.
+- List creation recognition after a space.
+- Misspelled words no longer shift position when the spellcheck underline
+  appears.
+
+
 ## [26.8.4] - 2026-08-28
 
 ### Fixed
