@@ -214,10 +214,12 @@
 
   /* Backgrounds — neutral gray palette. --bg-primary is the bright
      main-content surface; --bg-secondary is the chrome (sidebars, tab
-     bar, right panel, status bar, vertical toolbar). */
-  --bg-primary: #fafafa;
+     bar, right panel, status bar, vertical toolbar). The writing surface
+     is pure white so the editor and the HTML preview match the paper
+     colour of the paged reading view. */
+  --bg-primary: #ffffff;
   --bg-editor-toolbar: #f5f5f5;
-  --bg-secondary: #f0f0f0;
+  --bg-secondary: #f2f2f2;
   --bg-active: #e1e1e1;
   --bg-hover: color-mix(in srgb, var(--accent-color, #1D7874) 12%, transparent);
   --bg-highlight: #d9d9d9;
