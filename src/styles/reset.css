@@ -38,6 +38,30 @@ textarea {
   font-family: inherit;
 }
 
+/* Focus rings are the app's to draw, never the engine's.
+
+   WebKitGTK's default ring is painted in the desktop's own accent colour, and
+   it repaints it around the focused element every time the window regains
+   focus, whether that element was reached by keyboard or by mouse. The visible
+   symptom is a system-coloured rectangle appearing around whatever was clicked
+   last, but only after switching to another application and back. Clearing the
+   outline on plain :focus is what removes it.
+
+   The second rule then puts a deliberate ring back for keyboard users. The two
+   are equal specificity, so :focus-visible has to come second to win. Controls
+   that draw their own ring (.btn, .ui-icon-btn and the rest, all `outline:
+   none` plus `box-shadow: var(--focus-ring)`) are class selectors and override
+   both; this is the fallback that catches everything else, so no control is
+   left with no affordance at all. Removing it, rather than the outline above,
+   is what would cost keyboard users. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--focus-ring-outline);
+}
+
 /* Placeholder text in every input and textarea — one dim, uniform colour so
    example/prompt text reads clearly as a hint rather than as content the user
    has already typed. This matters most in dark mode, where the engine default

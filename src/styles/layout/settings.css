@@ -350,7 +350,9 @@
 }
 
 .inline-link:focus-visible {
-  outline: var(--focus-ring);
+  /* Text link, so the ring is offset clear of the glyphs and their underline
+     rather than hugging the box the way it does on a button. */
+  outline: var(--focus-ring-outline);
   outline-offset: 2px;
 }
 

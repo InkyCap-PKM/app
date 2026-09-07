@@ -172,7 +172,7 @@
 
   /* ── Buttons & focus ────────────────────────────────────────────
      Shared button geometry consumed by the .btn utility (layout.css).
-     --focus-ring is the single keyboard-focus affordance applied via
+     The focus ring is the single keyboard-focus affordance, applied via
      :focus-visible across interactive elements. */
   /* One opacity for every :disabled control. Low enough to read as
      inert at a glance — a barely-dimmed disabled control invites
@@ -182,7 +182,22 @@
   --btn-pad-y: 6px;
   --btn-pad-x: 14px;
   --btn-radius: var(--radius-md);
-  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-color, #1D7874) 45%, transparent);
+  /* One colour, two shapes, because a ring is drawn two ways in this app.
+     --focus-ring is the box-shadow form, used by controls that override the
+     outline themselves (.btn, .ui-icon-btn and friends). --focus-ring-outline
+     is the outline form, used by the base rule in reset.css that catches
+     everything with no ring of its own. Both sit immediately outside the
+     border box and follow its corner radius, so the two are interchangeable
+     to look at. Retune --focus-ring-color and the whole app follows.
+
+     --focus-ring-drawn is the extra step between the colour and the shapes.
+     It exists so the ring can be switched off wholesale (see the pointer rule
+     just below) without that switch having to out-specify the per-theme and
+     prefers-contrast overrides of --focus-ring-color further down the file. */
+  --focus-ring-color: color-mix(in srgb, var(--accent-color, #1D7874) 45%, transparent);
+  --focus-ring-drawn: var(--focus-ring-color);
+  --focus-ring: 0 0 0 2px var(--focus-ring-drawn);
+  --focus-ring-outline: 2px solid var(--focus-ring-drawn);
 
   /* ── Motion ─────────────────────────────────────────────────────
      Consistent micro-interaction timing. Keep transitions short and
@@ -547,6 +562,29 @@
   --scrollbar-thumb: #c8c8c8;
 }
 
+/* The focus ring belongs to keyboard navigation, so it is drawn only while the
+   keyboard is what the user is navigating with. `data-input-modality` is set
+   on <html> by src/lib/input-modality.ts and already gates the file tree's and
+   the list panels' own keyboard cursors, so the ring joins a policy the app
+   had already settled on rather than inventing a second one.
+
+   This is also what stops a ring appearing around the last-clicked control
+   every time the window regains focus. WebKitGTK re-matches :focus-visible on
+   return, including for an element the user reached with the mouse, so
+   :focus-visible on its own cannot express the answer here. Blanking the
+   colour leaves nothing to paint with either way, and it covers both ring
+   shapes at once without any specificity contest against the component rules
+   that draw them. Controls that mark focus some other way, such as the text
+   inputs that shift their border colour, are unaffected: they never asked for
+   the ring.
+
+   This only holds while the modality attribute is right, which is why
+   input-modality.ts goes to some trouble to ignore the key chords the desktop
+   binds for switching windows. */
+html[data-input-modality="pointer"] {
+  --focus-ring-drawn: transparent;
+}
+
 [data-theme="dark"] {
   /* Native form controls follow the theme — see the light block above. */
   color-scheme: dark;
@@ -857,7 +895,7 @@
   :root[data-palette][data-theme] {
     --border-subtle: var(--border-primary);
     --fg-dim: var(--fg-muted);
-    --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent-color, #1D7874) 85%, transparent);
+    --focus-ring-color: color-mix(in srgb, var(--accent-color, #1D7874) 85%, transparent);
   }
 }
 
