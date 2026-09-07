@@ -143,14 +143,18 @@
    them. Panes that manage their own layout (Annotations) fill this box the
    same way.
    The padding matches `.left-sidebar__content` so section-headers on both
-   sides align horizontally — the section-header itself adds its own 4px
-   inset. */
+   sides align horizontally, and neither box insets its content from the top,
+   so a pane's leading row lands in the band the editor toolbar shares (see
+   panel-header.css). */
 .right-panel__tab-content {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: var(--space-4);
+  /* Top inset omitted for the same reason as `.left-sidebar__content` — see
+     the comment there. */
+  padding: 0 var(--space-4) var(--space-4);
 }
+
 

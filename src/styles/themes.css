@@ -421,17 +421,22 @@
      black shadow has plenty of range to darken a near-white surface, almost
      none on a near-black one, so the dark themes need a much heavier alpha to
      land the same visible step. */
-  /* Row height for a pane's toolbar (.pane-toolbar), so switching a tab
-     between Editor, Journal Scroll and Mycelial View doesn't shift the content
-     below by a few pixels each time. It is a floor, not a cap: controls in the
-     row have to fit inside it, which is why the Mycelial depth picker uses the
-     compact Dropdown. Sibling to the 38px chrome tier used by the tab strip
-     and the panel headers, one step shorter because it sits inside a pane. */
+  /* Height of the row directly below the 38px chrome tier, right across the
+     window: a pane's toolbar (.pane-toolbar — Editor, Journal Scroll, Mycelial
+     View) and the first section header of the left sidebar and right panel
+     (.left-sidebar__section-header / .right-panel__section-header). One value
+     so the three columns read as a single band, and so switching a tab between
+     pane types doesn't shift the content below by a few pixels each time. It
+     is a floor, not a cap: controls in the row have to fit inside it, which is
+     why the Mycelial depth picker uses the compact Dropdown. One step shorter
+     than the chrome tier above it, because it sits inside a pane. */
   --pane-toolbar-height: 32px;
   /* Height for the controls inside that row: what the row leaves once its own
      padding is taken off. Derived so the two stay in step, and shared so a
      picker and a button side by side line up instead of each sizing itself
-     from its own padding and font. */
+     from its own padding and font. Every control in the band uses it —
+     toolbar buttons and panel-header buttons alike — so they all end on the
+     same line. */
   --pane-toolbar-control-height: calc(var(--pane-toolbar-height) - 2 * var(--space-2));
 
   --lip-shadow-toolbar: rgba(0, 0, 0, 0.22);

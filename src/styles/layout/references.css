@@ -5,10 +5,10 @@
 /* ── References Panel ── */
 
 .references-panel {
-  /* No top padding here for the same reason as .outline-panel: the
-     tab-content already provides the 8px gutter, and the References pane's
-     own header bar adds its inset. Extra padding here would push the
-     References header below the matching header rows on the left side. */
+  /* No top padding here for the same reason as .outline-panel: the pane's
+     first section header is a band row and has to start on the same line as
+     the editor's toolbar. Extra padding here would push the References header
+     below the matching header rows in the other columns. */
   padding: 0;
 }
 

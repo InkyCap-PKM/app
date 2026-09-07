@@ -17,9 +17,12 @@
   color: var(--fg-muted);
   cursor: pointer;
   /* Match .editor-header__icon-btn exactly (its sibling in the header) — without
-     pinning the font-size it inherits the larger header font and renders taller. */
+     pinning the font-size it inherits the larger header font and renders taller,
+     and without the shared control height it drops out of the toolbar band. */
   font-size: var(--text-base);
-  padding: var(--space-2) var(--space-4);
+  height: var(--pane-toolbar-control-height);
+  box-sizing: border-box;
+  padding: 0 var(--space-4);
   display: inline-flex;
   align-items: center;
   transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);

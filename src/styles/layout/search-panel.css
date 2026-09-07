@@ -29,6 +29,13 @@
   align-items: center;
 }
 
+/* The input row leads the pane, so it stands in the same band as the editor's
+   toolbar and the other panes' headers (see --pane-toolbar-height). */
+.search-panel__input-row {
+  min-height: var(--pane-toolbar-height);
+  box-sizing: border-box;
+}
+
 .search-panel__input {
   flex: 1;
   background: var(--bg-input);

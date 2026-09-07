@@ -8,7 +8,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4) 0;
+  /* No top padding: the pane's first section header is a band row and has to
+     start on the same line as the editor's toolbar (see panel-header.css). */
+  padding: 0 0 var(--space-4);
 }
 
 .scroll-context__empty {

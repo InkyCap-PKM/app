@@ -28,7 +28,7 @@ const QueryView: Component<{ query: string }> = (props) => {
   );
 
   return (
-    <div class="search-panel__results">
+    <div class="search-panel__results pane-top-inset">
       <Show
         when={(results() ?? []).length > 0}
         fallback={<p class="sidebar-hint">{t("queryView.noResults")}</p>}

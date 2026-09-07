@@ -24,7 +24,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4) var(--space-4);
+  /* No top inset — the first row below is a band row and brings its own
+     height, so it lines up with the other panes' headers. */
+  padding: 0 var(--space-4) var(--space-4);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -37,6 +39,13 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* The view picker row leads the pane, so it stands in the shared band (see
+   --pane-toolbar-height); the filter row below keeps its natural height. */
+.help-panel__header-row:first-child {
+  min-height: var(--pane-toolbar-height);
+  box-sizing: border-box;
 }
 
 .help-panel__view {

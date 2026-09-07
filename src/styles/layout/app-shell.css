@@ -250,7 +250,12 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: var(--space-4);
+  /* No top inset: whatever leads a pane (a section header, the Search input
+     row, the Help view picker) is a band row of its own and supplies the
+     height, so it starts on the same line as the editor's toolbar. A pane
+     that leads with plain content asks for the inset back with
+     `--top-inset` on its body. */
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .main-content {

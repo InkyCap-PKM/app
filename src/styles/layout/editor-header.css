@@ -14,6 +14,19 @@
   /* Surface (gradient, lip shadow, stacking) comes from .pane-toolbar. */
 }
 
+/* Every control group in the row lands on the row's own control height, so the
+   groups match each other, the row keeps the shared band height, and the row's
+   buttons end on the same line as those in the side panels' headers (see
+   `.left-sidebar__section-header` in panel-header.css). Height, not
+   min-height: a floor still lets a taller icon or line box push a group past
+   the band. Same pattern as `.mycelial-view__toolbar` (mycelial.css). */
+.editor-header__nav,
+.editor-header__mode-toggle,
+.editor-header__icon-btn {
+  height: var(--pane-toolbar-control-height);
+  box-sizing: border-box;
+}
+
 .editor-header__center {
   display: inline-flex;
   align-items: center;
@@ -61,7 +74,9 @@
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--text-base);
-  padding: 4px 10px;
+  /* The group above owns the height; the segments stretch to fill it, so they
+     only set their own horizontal padding. */
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -114,7 +129,8 @@
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--text-base);
-  padding: 4px 10px;
+  /* Height comes from .editor-header__mode-toggle — see .editor-header__nav-btn. */
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;

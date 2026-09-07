@@ -471,9 +471,12 @@
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--text-base);
-  padding: var(--space-2) var(--space-4);
+  /* Height comes from the shared toolbar-control rule in editor-header.css, so
+     this only sets its own horizontal padding. */
+  padding: 0 var(--space-4);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 

@@ -9,12 +9,19 @@
    styling, same right-anchored sort menu, same height. The buttons are
    centered horizontally so the cluster sits as a balanced toolbar
    rather than hugging the left edge. */
+/* The toolbar leads the pane, so it stands in the same band as the editor's
+   toolbar and the other panes' headers (see --pane-toolbar-height). The gap
+   below it is a margin rather than bottom padding, so the band is the row's
+   whole box and its buttons centre in it. */
 .right-panel__links-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  padding: 0 var(--space-2) var(--space-3);
+  min-height: var(--pane-toolbar-height);
+  box-sizing: border-box;
+  padding-inline: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .right-panel__links-filter-wrap {

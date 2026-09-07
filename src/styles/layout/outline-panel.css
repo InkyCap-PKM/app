@@ -5,10 +5,10 @@
 /* ── Outline Panel ── */
 
 /* No extra padding on the pane wrapper: the right panel's tab-content
-   already provides the 8px gutter, and the shared section-header adds its
-   own 4px inset. Any additional top-padding here would push the "Outline"
-   label below the left sidebar's "Files" label and break the cross-panel
-   header alignment. */
+   already provides the 8px gutter, and the shared section-header sets its own
+   row height. Any additional top-padding here would push the "Outline" label
+   out of the band it shares with the left sidebar's "Files" label and the
+   editor's toolbar. */
 .outline-panel {
   padding: 0;
 }

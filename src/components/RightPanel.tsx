@@ -1634,7 +1634,9 @@ const RightPanel: Component = () => {
       <Show when={activeCollectionTab()}>
         {(tab) => (
           <div class="right-panel__tab-content">
-            <div class="right-panel__pane-body">
+            {/* Leads with a settings form rather than a header row, so it asks
+                for the top inset the content box no longer applies. */}
+            <div class="right-panel__pane-body pane-top-inset">
               <CollectionSettings
                 collectionPath={tab().path}
                 collectionName={collectionStem(tab().path)}
@@ -1669,6 +1671,9 @@ const RightPanel: Component = () => {
               built-in panes below are unaffected. */}
           <Show when={activeContributed()}>
             {(c) => (
+              /* A contributed pane brings its own layout: it either leads with
+                 a header row of its own (ToolOutputPane) or adds
+                 `pane-top-inset` itself (QueryView). */
               <div class="right-panel__pane-body">
                 <Dynamic component={c().component} />
               </div>

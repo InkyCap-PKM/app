@@ -54,7 +54,7 @@ function resolveIcon(icon: string | undefined): Component<{ size?: number }> {
 const ToolOutputPane: Component<{ toolId: string }> = (props) => {
   const t = useI18n();
   return (
-    <div class="right-panel__tab-content">
+    <div class="right-panel__pane">
       <div class="right-panel__section-header">
         <span>{panes()[props.toolId]?.name ?? ""}</span>
         <div class="right-panel__header-actions">

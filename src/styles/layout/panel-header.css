@@ -14,21 +14,52 @@
    made in ONE place and automatically applies to both panels — preserving
    the cross-panel alignment the design depends on.
 
-   Vertical alignment between the two sides is load-bearing: the section
-   header sits directly inside `.left-sidebar__content` / `.right-panel__
-   tab-content`, both of which use the same 8px padding. Do not add
-   intermediate wrappers with extra top-padding on either side — that will
-   push one column's headers below the other's. */
+   Vertical alignment is load-bearing in both directions. Across the window,
+   the first header of each side pane shares one horizontal band with the
+   editor's own toolbar (`.pane-toolbar`), so "Files", the editor's buttons
+   and "Outline" sit on the same line: all three run from the bottom of the
+   38px chrome tier down by `--pane-toolbar-height`, and their controls all
+   stand `--pane-toolbar-control-height` tall. Do not add intermediate
+   wrappers with extra top-padding on either side — that will push one
+   column's headers out of the band. */
 .left-sidebar__section-header,
 .right-panel__section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-2) var(--space-2) var(--space-4);
+  box-sizing: border-box;
+  min-height: var(--pane-toolbar-height);
+  padding-inline: var(--space-2);
+  /* Gap before whatever follows, as a margin rather than bottom padding so
+     the header's box is exactly the band. */
+  margin-bottom: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg-muted);
   letter-spacing: 0.3px;
+}
+
+/* Opt-out for a pane that leads with plain content rather than a header row
+   (collection settings, a contributed pane's result list): it has nothing to
+   fill the band, so it takes back the top inset the content box no longer
+   applies and starts below the divider the way it used to. Put it on the
+   pane's outermost element. */
+.pane-top-inset {
+  padding-top: var(--space-4);
+}
+
+/* Controls in a panel header stand the same height as the controls in a pane
+   toolbar, so the buttons in all three columns end on the same line. Height
+   only — each keeps its own padding for horizontal breathing room. Same
+   pattern as `.mycelial-view__toolbar` (mycelial.css). */
+.left-sidebar__header-actions .ui-icon-btn,
+.right-panel__header-actions .ui-icon-btn,
+.right-panel__links-toolbar .ui-icon-btn,
+.help-panel__header-row .ui-icon-btn,
+.left-sidebar__split-btn,
+.left-sidebar__add-btn {
+  height: var(--pane-toolbar-control-height);
+  box-sizing: border-box;
 }
 
 /* ── Pinned pane header, scrolling pane body ──────────────────────────────
